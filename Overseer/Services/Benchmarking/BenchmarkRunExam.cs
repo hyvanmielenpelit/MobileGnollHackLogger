@@ -37,21 +37,29 @@ public static class BenchmarkRunExam
             Name = newestRun?.SuiteName ?? string.Empty
         };
 
-        // Answers in newest-run-first order, so the first answer per key is the newest run's.
+        // Answers in newest-run-first order, so the first answer per key is the newest run's. Each
+        // carries its run's panel flag, which decides which score is its published one.
         var byKey = newestFirst
-            .SelectMany(r => r.Answers ?? new List<BenchmarkRunAnswer>())
-            .Select(a => (Key: BenchmarkItemAnalysis.QuestionKey(a), Answer: a))
+            .SelectMany(r =>
+            {
+                bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(r);
+                return (r.Answers ?? new List<BenchmarkRunAnswer>()).Select(a => (Answer: a, IsPanelRun: isPanelRun));
+            })
+            .Select(x => (Key: BenchmarkItemAnalysis.QuestionKey(x.Answer), x.Answer, x.IsPanelRun))
             .Where(x => x.Key.HasValue)
-            .GroupBy(x => x.Key!.Value, x => x.Answer);
+            .GroupBy(x => x.Key!.Value, x => (x.Answer, x.IsPanelRun));
 
         var questions = new List<BenchmarkQuestion>();
         foreach (var group in byKey)
         {
-            var answers = group.ToList();
+            var entries = group.ToList();
+            var answers = entries.Select(e => e.Answer).ToList();
             var newest = answers[0];
 
-            var counting = answers
-                .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
+            var counting = entries
+                .Where(e => BenchmarkRunFinalizer.CountsTowardQualityIndex(e.Answer)
+                            && BenchmarkScoring.IndexQuality(e.Answer, e.IsPanelRun).HasValue)
+                .Select(e => e.Answer)
                 .ToList();
 
             // Revisions only increase, so the highest graded revision is the one the set's counted

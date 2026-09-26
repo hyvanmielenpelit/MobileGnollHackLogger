@@ -171,7 +171,23 @@ public class BenchmarkSynthesisResult
 
     [JsonPropertyName("overallComments")]
     public string OverallComments { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The strengths and weaknesses as structured entries, read by
+    /// <see cref="BenchmarkAssessmentParser.ParseSynthesisFindings"/> rather than deserialized, so a
+    /// malformed entry is skipped instead of failing the synthesis. Empty when absent.
+    /// </summary>
+    [JsonIgnore]
+    public IReadOnlyList<BenchmarkSynthesisFinding> Findings { get; set; } = Array.Empty<BenchmarkSynthesisFinding>();
 }
+
+/// <summary>
+/// One strength or weakness a synthesis names. <see cref="Kind"/> is <c>strength</c> or
+/// <c>weakness</c>; <see cref="Category"/> one of
+/// <see cref="BenchmarkAssessmentParser.SynthesisFindingCategories"/>; <see cref="Questions"/> the
+/// question numbers it rests on, empty for a run-wide finding.
+/// </summary>
+public sealed record BenchmarkSynthesisFinding(string Kind, string Category, IReadOnlyList<int> Questions, string Text);
 
 public class SynthesisParseResult
 {
@@ -462,6 +478,7 @@ public static class BenchmarkAssessmentParser
             }
 
             result.FinalScore = Math.Clamp(result.FinalScore, 1, 100);
+            result.Findings = ParseSynthesisFindings(json);
 
             return new SynthesisParseResult
             {
@@ -478,6 +495,89 @@ public static class BenchmarkAssessmentParser
                 RawJson = json,
                 ErrorMessage = $"Synthesis JSON parse error: {ex.Message}"
             };
+        }
+    }
+
+    /// <summary>The two values of <see cref="BenchmarkSynthesisFinding.Kind"/>.</summary>
+    public static readonly IReadOnlyList<string> SynthesisFindingKinds = new[] { "strength", "weakness" };
+
+    /// <summary>
+    /// The values of <see cref="BenchmarkSynthesisFinding.Category"/>, in the order the synthesis
+    /// prompt lists them. An entry naming anything else is read as <c>other</c>.
+    /// </summary>
+    public static readonly IReadOnlyList<string> SynthesisFindingCategories = new[]
+    {
+        "accuracy", "completeness", "conciseness", "readability", "critical_error", "tool_use", "other"
+    };
+
+    /// <summary>
+    /// The <c>findings</c> array of a stored synthesis (<c>BenchmarkRun.AssessmentJson</c> or
+    /// <c>CoAssessorSynthesisJson</c>). Total on its input: empty for a null, legacy or malformed
+    /// value. An entry without a recognized kind or without text is skipped; an unknown category
+    /// reads as <c>other</c>; question numbers are kept once each, in order, positive only.
+    /// </summary>
+    public static IReadOnlyList<BenchmarkSynthesisFinding> ParseSynthesisFindings(string? synthesisJson)
+    {
+        if (string.IsNullOrWhiteSpace(synthesisJson))
+        {
+            return Array.Empty<BenchmarkSynthesisFinding>();
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(BenchmarkJsonExtractor.Extract(synthesisJson), new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            });
+
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("findings", out var findings)
+                || findings.ValueKind != JsonValueKind.Array)
+            {
+                return Array.Empty<BenchmarkSynthesisFinding>();
+            }
+
+            var result = new List<BenchmarkSynthesisFinding>();
+            foreach (var entry in findings.EnumerateArray())
+            {
+                if (entry.ValueKind != JsonValueKind.Object) continue;
+
+                string? kind = GetStringProperty(entry, "kind")?.ToLowerInvariant();
+                string? text = GetStringProperty(entry, "text");
+                if (kind == null || !SynthesisFindingKinds.Contains(kind) || text == null) continue;
+
+                string? category = GetStringProperty(entry, "category")?.ToLowerInvariant().Replace(' ', '_').Replace('-', '_');
+                if (category == null || !SynthesisFindingCategories.Contains(category))
+                {
+                    category = "other";
+                }
+
+                var questions = new List<int>();
+                if (entry.TryGetProperty("questions", out var qs) && qs.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var q in qs.EnumerateArray())
+                    {
+                        int number;
+                        bool read = q.ValueKind == JsonValueKind.Number
+                            ? q.TryGetInt32(out number)
+                            : int.TryParse(q.ValueKind == JsonValueKind.String ? q.GetString()?.Trim().TrimStart('Q', 'q', '#') : null, out number);
+
+                        if (read && number > 0 && !questions.Contains(number))
+                        {
+                            questions.Add(number);
+                        }
+                    }
+                }
+
+                result.Add(new BenchmarkSynthesisFinding(kind, category, questions, text));
+            }
+
+            return result;
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<BenchmarkSynthesisFinding>();
         }
     }
 

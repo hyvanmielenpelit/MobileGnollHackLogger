@@ -256,7 +256,8 @@ after any card leaves a coherent result.
 ### Rules for a validating run (V)
 
 - **Same configuration as the motivating run** — suite, scoring profile, model under test,
-  assessor, second-opinion assessor and mode, claim verifier, `Concise` response style. The card
+  assessor, co-assessor (or none), second-opinion assessor and mode, claim verifier, `Concise`
+  response style. The card
   lists each value and marks it *same as run <R>*.
 - **Predict the comparability tier before the run is made**, from what Part A moves, using the
   key categories in `BenchmarkComparabilityKey.cs`:
@@ -269,6 +270,12 @@ after any card leaves a coherent result.
   | Two or more of those | Instrument | **NotComparable** |
   | A rubric import (item revisions), a difficulty re-assessment, a new board, another suite | Fundamental | **NotComparable** |
   | Model, thinking level, service tier, parallel mode, response style | Candidate | **NotComparable** |
+
+  A co-assessor is part of `AssessorConfiguration`, not a key of its own: adding one, removing one
+  or changing either panel member moves that one key. But a panel run forces its reference reader
+  to `All` and blind, so against a single-assessor run whose second opinion was not already the same
+  reader in `All` mode, blind, `SecondOpinionConfiguration` moves too, and the pair is
+  **NotComparable**.
 
   **Say the predicted tier and name the keys on the card.** When the prediction is
   NotComparable — the usual case after a rubric import — say what that means in practice: score
@@ -292,7 +299,7 @@ difference between candidates, so a ranking is sound only when **everything but 
 identical**:
 
 - One suite at one set of item revisions and assessed difficulties, one board, one scoring
-  profile, one assessor, one second-opinion configuration, one claim verifier, `Concise` style —
+  profile, one assessor or one panel, one second-opinion configuration, one claim verifier, `Concise` style —
   and **no Part A action between the first and the last run of the set**. Make the set *after*
   the round's fixes, never straddling them.
 - **Take candidates from what is configured, never from memory**: the System AI Configs with the
@@ -302,7 +309,9 @@ identical**:
   prints them.
 - **Choose an assessor from a provider none of the candidates shares** where the roster allows.
   Where it does not, the card warns that the `Same-Provider Assessment Warning` dialog will
-  appear for that run and that `Acknowledge & Start Run` is the intended answer.
+  appear for that run and that `Acknowledge & Start Run` is the intended answer. **When the set
+  spans the providers the scoring roles could come from, grade it with a panel instead** (below):
+  a panel run never shows that dialog.
 - **State the decision rule before the runs are made**, on the three axes:
   - *Intelligence* — Intelligence Index with its interval, critical errors, refuted claims. A
     candidate inside the baseline's interval is a tie, not a loss or a win.
@@ -318,6 +327,36 @@ identical**:
 - A model change is ladder **rung 6** and still has to clear the evidence bar: one run per
   candidate motivates a recommendation; a second comparable run, or a replicate set, justifies
   changing `RecommendedModels`.
+
+### Panel roster (two-family assessor panel)
+
+A run with a **Co-Assessor** is a panel run: the assessor (member A) and the co-assessor (member
+B) both grade every answer, and the published score is their mean. The rules and their reasons
+are in `docs/overseer/ai-benchmark.md` § 3 *The Two-Family Assessor Panel*; a card that proposes
+a panel follows them:
+
+- **Members from two providers, neither under test.** The launcher refuses a panel whose members
+  share a provider, and one where the model under test (provider and model id) is either member.
+  Take an older, or otherwise non-candidate, model of each family — read from the configured
+  System AI Configs, never from memory.
+- **Fixed across every run the set compares.** The panel is part of `AssessorConfiguration`, and
+  the judge-family diagnostics in Model Comparison refuse runs graded by different panels. A
+  roster change between the runs of a set, or between the halves of a verification pair, spends
+  the set.
+- **Reference reader and claim verifier from a third family that scores nothing** — neither a
+  candidate nor a member. They are the neutral anchors the diagnostics compare the panel with, so
+  a card that cannot meet this says which assumption is weakened. The launcher shows an advisory,
+  not a refusal, when either shares a provider with the candidate or a member.
+- **Which families may score is a roster decision the analysis records, not a code rule.** Take
+  it from the analysed report's *Panel Disclosure* and the round's roster, and name any change on
+  the card.
+- **Two panel runs, one per candidate family, under one panel** give the whole judge × candidate
+  matrix; propose them as a pair when the question is family bias, and tag them **B**.
+- **In a panel run the grader overrides are refused** (retry, re-assess, re-run synthesis and
+  single-answer re-run with another configuration), so a card never tells the developer to retry
+  with a substitute grader; `Retry Failed Assessments` without an override is fine.
+- **Cost**: two grader calls per answer and a second synthesis. Scale the estimate from a panel
+  run's own figures when one exists, and say so when it does not.
 
 ### Cost and time
 
@@ -342,14 +381,15 @@ to stop if the projection is more than about twice the estimate.
 | Model Under Test | <entry as the dropdown prints it, with its thinking-level badge> | same / CHANGED |
 | Assessor Model | ... | same |
 | Second Opinion Assessor (optional) | ... or "None - no second opinion" | same |
-| Second Opinion Mode | <option label> | same |
+| Second Opinion Mode | <option label>, or "fixed at All (panel run)" when a co-assessor is set | same |
+| Co-Assessor (panel member B) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |
 | Claim Verifier (optional) | ... or "None - no claim verification" | same |
 | Candidate Response Style | Concise - production default; comparable with previous runs | same |
 | Number of Runs | 1 | |
 
 - Not in the launcher, and must also match: thinking level, service tier, reasoning mode and
   parallel mode (from the System AI Config behind each dropdown entry: check the badges);
-  Blind Second Opinion and max parallel questions (from the scoring profile: Admin ->
+  Blind Second Opinion (forced on in a panel run) and max parallel questions (from the scoring profile: Admin ->
   AI Benchmark -> Scoring Profiles). Do not edit either between the runs of this round.
 - Predicted comparability with run <R>: <tier>, because <keys> move. <What that means for
   reading the result.>
@@ -373,6 +413,10 @@ Rules for writing a card:
   not comparable with previous runs. It appears only as the isolated variable of a C pair.
 - **`Second Opinion Mode` does nothing without a second-opinion assessor**; a card that sets one
   sets the other.
+- **A card that sets a `Co-Assessor` follows § 4 *Panel roster***, says the run is a panel run,
+  and expects the `Second Opinion Mode` selector to show All, disabled, its hint saying the mode is
+  fixed: the server runs the second opinion as the reference reader, grading every answer, blind. A card for a
+  single-assessor run still lists the field, as "None - single assessor".
 - **Name each run R1, R2, …** and use those names everywhere — in Part A's `Needs`, in the chat
   message, and in the prompt of § 6 — so that "the baseline run" never has to be guessed.
 
@@ -442,7 +486,7 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 | Fact | Source |
 |---|---|
 | Admin tabs; benchmark sub-tabs `Run Benchmark`, `Run History`, `Multi-Run Analysis`, `Manage Suites`, `Scoring Profiles`, `Model Comparison` | `Overseer/ClientApp/src/app/admin/admin.component.ts`, `admin/benchmark/benchmark.component.html` |
-| Launcher fields and the `Start Benchmark` button; `Series Projection` | `admin/benchmark/benchmark.component.html` |
+| Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor (panel member B)` field and its panel warnings | `admin/benchmark/benchmark.component.html` |
 | Second Opinion Mode option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
 | Launcher refusals and their messages | `Overseer/Services/Benchmarking/BenchmarkRunLauncher.cs` |
 | Delivery-check failure messages | `Overseer/Services/Benchmarking/BenchmarkCandidateRequestProbe.cs`, `BenchmarkGradingRequestProbe.cs` |

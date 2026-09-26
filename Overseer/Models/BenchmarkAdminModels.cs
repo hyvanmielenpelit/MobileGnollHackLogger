@@ -272,6 +272,14 @@ public class StartBenchmarkRunRequest
     public long AssessorModelConfigurationId { get; set; }
 
     /// <summary>
+    /// Optional. When set, the run is a two-member panel: this configuration (member B) grades
+    /// every answer beside the assessor (member A), and the published score is the mean of the two.
+    /// It must be a different provider from the assessor, and neither member may be the model under
+    /// test. Null means a single-assessor run.
+    /// </summary>
+    public long? CoAssessorModelConfigurationId { get; set; }
+
+    /// <summary>
     /// Optional. When set, answers the assessor flags with a critical error or scores below the
     /// profile's threshold are re-graded once by this configuration. Null means no second
     /// opinion for this run — there is no fallback to the assessor above, because a model
@@ -381,11 +389,23 @@ public class ReassessAnswerRequest
     /// evidence by accident.
     /// </summary>
     public bool ReplaceExistingSecondOpinion { get; set; }
+
+    /// <summary>
+    /// Which panel member to re-grade in a panel run: <c>A</c>, <c>B</c> or <c>Both</c>. Null means
+    /// <c>Both</c>. Ignored on a single-assessor run.
+    /// </summary>
+    public string? Member { get; set; }
 }
 
 public class CalibrateAssessorRequest
 {
     public long AssessorModelConfigurationId { get; set; }
+
+    /// <summary>
+    /// The verdict the calibration is compared against: <c>Assessor</c>, <c>CoAssessor</c> or
+    /// <c>Panel</c>. The last two are accepted only on a panel run. Null means <c>Assessor</c>.
+    /// </summary>
+    public string? CompareAgainst { get; set; }
 }
 
 /// <summary>
@@ -418,6 +438,9 @@ public class BenchmarkAssessorCalibrationDto
     public long DurationMs { get; set; }
     public string? VerdictsJson { get; set; }
     public string? ErrorMessage { get; set; }
+
+    /// <summary><c>Assessor</c>, <c>CoAssessor</c> or <c>Panel</c>. Null on a row recorded before it existed, which means <c>Assessor</c>.</summary>
+    public string? ComparedAgainst { get; set; }
 }
 
 public class BenchmarkRetryRequest
@@ -635,6 +658,32 @@ public class BenchmarkRunAnswerDto
     public int? UnverifiedClaimCount { get; set; }
     public string? UnverifiedClaimsJson { get; set; }
 
+    /// <summary>
+    /// The panel score: the mean of the two members' quality scores, set only when both scored.
+    /// Null on a single-assessor run, where <see cref="QualityScore"/> is the published score.
+    /// </summary>
+    public double? PanelQualityScore { get; set; }
+
+    /// <summary>The two members differ by more than 15 points or on criticalError. Null outside a panel run.</summary>
+    public bool? PanelDisagreed { get; set; }
+
+    /// <summary>
+    /// Panel member B's verdict. <see cref="CoAssessmentJson"/> holds its levels, evidence,
+    /// unverified claims and flags. All null on a single-assessor run.
+    /// </summary>
+    public BenchmarkAssessmentStatus? CoAssessmentStatus { get; set; }
+    public string? CoAssessmentError { get; set; }
+    public int? CoAssessmentQualityScore { get; set; }
+    public int? CoAssessmentRawQualityScore { get; set; }
+    public bool? CoAssessmentCriticalError { get; set; }
+    public string? CoAssessmentJson { get; set; }
+    public string? CoAssessedByModelDisplayNameUsed { get; set; }
+    public DateTime? CoAssessedAtUtc { get; set; }
+    public int? CoAssessorBoardChars { get; set; }
+    public int? CoAssessmentInputTokens { get; set; }
+    public int? CoAssessmentOutputTokens { get; set; }
+    public long? CoAssessmentDurationMs { get; set; }
+
     /// <summary>Second-opinion verdict, present only when one was triggered. Advisory.</summary>
     public int? SecondOpinionQualityScore { get; set; }
     public bool? SecondOpinionCriticalError { get; set; }
@@ -780,6 +829,23 @@ public class BenchmarkRunDetailDto
     public string AssessorModelEndpoint { get; set; } = string.Empty;
 
     public bool AssessorAvailable { get; set; }
+
+    /// <summary>
+    /// True when a co-assessor (panel member B) graded beside the assessor (member A). The
+    /// published scores are then the panel's, and the second opinion is the advisory reference reader.
+    /// </summary>
+    public bool IsPanelRun { get; set; }
+
+    /// <summary>Panel member B. All null on a single-assessor run.</summary>
+    public long? CoAssessorModelConfigurationId { get; set; }
+    public string? CoAssessorModelDisplayNameUsed { get; set; }
+    public string? CoAssessorModelProviderUsed { get; set; }
+    public string? CoAssessorModelIdUsed { get; set; }
+    public string? CoAssessorModelThinkingLevelUsed { get; set; }
+    public string? CoAssessorModelReasoningModeUsed { get; set; }
+
+    /// <summary>"official", or a fingerprinted description of the custom endpoint the co-assessor graded against; null when the run has no co-assessor.</summary>
+    public string? CoAssessorModelEndpoint { get; set; }
 
     /// <summary>Null when the run was started without a second-opinion assessor.</summary>
     public long? SecondOpinionAssessorModelConfigurationId { get; set; }
@@ -985,6 +1051,22 @@ public class BenchmarkRunDetailDto
     public double? SecondOpinionMeanAbsDelta { get; set; }
     public double? SecondOpinionMeanSignedDelta { get; set; }
     public int SecondOpinionCriticalErrorSplitCount { get; set; }
+
+    /// <summary>
+    /// Agreement between the two panel members over the answers both scored, and each member's
+    /// index alone over those answers. All null on a single-assessor run.
+    /// </summary>
+    public int? PanelGradedAnswerCount { get; set; }
+    public double? PanelMeanAbsDelta { get; set; }
+
+    /// <summary>B − A. Negative means member B graded lower.</summary>
+    public double? PanelMeanSignedDelta { get; set; }
+    public int? PanelCriticalErrorSplitCount { get; set; }
+    public int? PanelDisagreementCount { get; set; }
+    public double? PanelIntraclassCorrelation { get; set; }
+    public int? AssessorOnlyQualityIndex { get; set; }
+    public int? CoAssessorOnlyQualityIndex { get; set; }
+
     public string? CandidatePromptOptionsJson { get; set; }
     public string? CandidatePromptSourceUsed { get; set; }
     public string? CandidateSystemPromptSha256 { get; set; }
@@ -1057,6 +1139,27 @@ public class BenchmarkRunDetailDto
     public string? AssessmentJson { get; set; }
     public string? AssessmentText { get; set; }
     public bool AssessmentParseFailed { get; set; }
+
+    /// <summary>Panel member B's own synthesis, written from its own verdicts. Null on a single-assessor run.</summary>
+    public int? CoAssessorFinalScore { get; set; }
+    public string? CoAssessorSynthesisJson { get; set; }
+    public string? CoAssessorSynthesisText { get; set; }
+    public bool CoAssessorSynthesisParseFailed { get; set; }
+
+    /// <summary>
+    /// The structured findings of <see cref="AssessmentJson"/> and <see cref="CoAssessorSynthesisJson"/>,
+    /// parsed on the server. Empty when the synthesis carries none, including every synthesis written
+    /// before findings existed.
+    /// </summary>
+    public List<BenchmarkSynthesisFindingDto> SynthesisFindings { get; set; } = new();
+    public List<BenchmarkSynthesisFindingDto> CoAssessorSynthesisFindings { get; set; } = new();
+
+    /// <summary>
+    /// The computed agreement between the two members' findings. Null unless this is a panel run
+    /// whose two syntheses both exist.
+    /// </summary>
+    public List<BenchmarkSynthesisConvergenceRowDto>? SynthesisConvergence { get; set; }
+
     public long TotalInputTokens { get; set; }
     public long TotalOutputTokens { get; set; }
     public long TotalCacheReadTokens { get; set; }
@@ -1095,6 +1198,20 @@ public class BenchmarkRunDetailDto
     public long TotalSynthesisOutputTokens { get; set; }
     public long TotalSynthesisDurationMs { get; set; }
 
+    /// <summary>Panel member B's per-question assessment usage. Zero on a single-assessor run.</summary>
+    public long TotalCoAssessmentInputTokens { get; set; }
+    public long TotalCoAssessmentOutputTokens { get; set; }
+    public long TotalCoAssessmentCacheReadTokens { get; set; }
+    public long TotalCoAssessmentCacheCreationTokens { get; set; }
+    public long TotalCoAssessmentDurationMs { get; set; }
+
+    /// <summary>Panel member B's own final-synthesis usage. Zero on a single-assessor run.</summary>
+    public long TotalCoSynthesisInputTokens { get; set; }
+    public long TotalCoSynthesisOutputTokens { get; set; }
+    public long TotalCoSynthesisCacheReadTokens { get; set; }
+    public long TotalCoSynthesisCacheCreationTokens { get; set; }
+    public long TotalCoSynthesisDurationMs { get; set; }
+
     public decimal? EstimatedCost { get; set; }
     public decimal? EstimatedCandidateCost { get; set; }
 
@@ -1104,9 +1221,13 @@ public class BenchmarkRunDetailDto
     public decimal? EstimatedVerifierCost { get; set; }
     public decimal? EstimatedSynthesisCost { get; set; }
 
+    /// <summary>Panel member B's assessments and its own synthesis, each on the co-assessor's card. Null outside a panel run.</summary>
+    public decimal? EstimatedCoAssessorCost { get; set; }
+    public decimal? EstimatedCoSynthesisCost { get; set; }
+
     /// <summary>
-    /// Assessor, second opinion, claim verifier and synthesis together — the whole grading side. Summed
-    /// where the roles are costed, so this and the role lines cannot disagree.
+    /// Assessor, co-assessor, second opinion, claim verifier and both syntheses together — the whole
+    /// grading side. Summed where the roles are costed, so this and the role lines cannot disagree.
     /// </summary>
     public decimal? EstimatedGradingCost { get; set; }
 
@@ -1203,6 +1324,40 @@ public class BenchmarkBoardDeliveryDto
     public List<int> MissingQuestions { get; set; } = new();
 }
 
+/// <summary>One structured finding of a synthesis.</summary>
+public class BenchmarkSynthesisFindingDto
+{
+    /// <summary><c>strength</c> or <c>weakness</c>.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>accuracy, completeness, conciseness, readability, critical_error, tool_use or other.</summary>
+    public string Category { get; set; } = string.Empty;
+
+    /// <summary>The question numbers the finding cites; empty for a run-wide finding.</summary>
+    public List<int> Questions { get; set; } = new();
+
+    public string Text { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// One row of the computed agreement between the two panel members' synthesis findings, keyed by
+/// kind, category and question.
+/// </summary>
+public class BenchmarkSynthesisConvergenceRowDto
+{
+    public string Kind { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+
+    /// <summary>Null for a run-wide finding.</summary>
+    public int? Question { get; set; }
+
+    /// <summary><c>Convergent</c>, <c>MemberAOnly</c> or <c>MemberBOnly</c>.</summary>
+    public string Status { get; set; } = string.Empty;
+
+    public string? MemberAText { get; set; }
+    public string? MemberBText { get; set; }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Suite health. Every DTO below carries a read-only finding: the panel that shows them has no
 // write action, and no endpoint here writes a question, a rubric, or a difficulty rating.
@@ -1226,8 +1381,10 @@ public class BenchmarkItemStatisticsDto
     public int UnknownRevisionCount { get; set; }
 
     public double MeanQuality { get; set; }
-    public int MinQuality { get; set; }
-    public int MaxQuality { get; set; }
+
+    /// <summary>Fractional only where a panel score (the mean of two members) is the extreme.</summary>
+    public double MinQuality { get; set; }
+    public double MaxQuality { get; set; }
     public double StdDev { get; set; }
 
     /// <summary>

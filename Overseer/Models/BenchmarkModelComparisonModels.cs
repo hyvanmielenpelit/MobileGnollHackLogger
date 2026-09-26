@@ -374,6 +374,13 @@ public class BenchmarkModelComparisonDto
     /// so the view states the reasons rather than reinventing them — or quietly charting them.
     /// </summary>
     public List<BenchmarkModelComparisonExcludedMeasureDto> ExcludedMeasures { get; set; } = new();
+
+    /// <summary>
+    /// Judge-family diagnostics over the charted entries. Null unless at least one run in the
+    /// comparison is a panel run; a not-applicable result, with its reason, when the entries were not
+    /// all graded by the same panel.
+    /// </summary>
+    public BenchmarkPanelDiagnosticsDto? PanelDiagnostics { get; set; }
 }
 
 /// <summary>A measure the comparison deliberately refuses to chart, and the reason.</summary>
@@ -389,4 +396,125 @@ public class BenchmarkModelComparisonExcludedMeasureDto
 
     /// <summary>Where the reader should look instead.</summary>
     public string Instead { get; set; } = string.Empty;
+}
+
+// Judge-family diagnostics: mirrors of BenchmarkPanelDiagnosticsResult and its records. Member
+// strings are "A" and "B". An estimate with insufficient data carries a null value and interval.
+
+/// <summary>
+/// Cross-run judge-family diagnostics for a comparison whose entries were all graded by one panel.
+/// When <see cref="Applicable"/> is false the lists are empty, the labels null, and
+/// <see cref="NotApplicableReason"/> says why.
+/// </summary>
+public class BenchmarkPanelDiagnosticsDto
+{
+    public bool Applicable { get; set; }
+    public string? NotApplicableReason { get; set; }
+    public string? MemberALabel { get; set; }
+    public string? MemberAProvider { get; set; }
+    public string? MemberBLabel { get; set; }
+    public string? MemberBProvider { get; set; }
+    public string? ReferenceLabel { get; set; }
+    public string? ReferenceProvider { get; set; }
+    public List<BenchmarkPanelEntryIndicesDto> Entries { get; set; } = new();
+
+    /// <summary>Entry pairs ordered differently under member A and under member B.</summary>
+    public List<BenchmarkPanelRankedPairDto> JudgeDependentPairs { get; set; } = new();
+
+    /// <summary>Entry pairs ordered differently under the panel and under the reference reader.</summary>
+    public List<BenchmarkPanelRankedPairDto> ReferenceDependentPairs { get; set; } = new();
+
+    public List<BenchmarkPanelFamilyGapDto> FamilyGaps { get; set; } = new();
+    public List<BenchmarkPanelAuditCellDto> AccusationAudit { get; set; } = new();
+    public List<BenchmarkPanelMemberAuditSummaryDto> AuditSummaries { get; set; } = new();
+
+    /// <summary>What each figure can and cannot show, in plain language.</summary>
+    public List<string> Caveats { get; set; } = new();
+}
+
+/// <summary>One entry's index under each member alone, the panel and the reference reader, with its rank under each.</summary>
+public class BenchmarkPanelEntryIndicesDto
+{
+    public string EntryKey { get; set; } = string.Empty;
+    public string EntryLabel { get; set; } = string.Empty;
+    public string? CandidateProvider { get; set; }
+    public int? MemberAIndex { get; set; }
+    public int? MemberBIndex { get; set; }
+    public int? PanelIndex { get; set; }
+
+    /// <summary>Null unless every answer of the entry has a reference score.</summary>
+    public int? ReferenceIndex { get; set; }
+
+    public int? RankA { get; set; }
+    public int? RankB { get; set; }
+    public int? RankPanel { get; set; }
+    public int? RankReference { get; set; }
+}
+
+/// <summary>Two entries whose order depends on which reader graded them.</summary>
+public class BenchmarkPanelRankedPairDto
+{
+    public string FirstEntryKey { get; set; } = string.Empty;
+    public string FirstEntryLabel { get; set; } = string.Empty;
+    public string SecondEntryKey { get; set; } = string.Empty;
+    public string SecondEntryLabel { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+}
+
+/// <summary>A point estimate with its 95 % interval; all null when the data are insufficient.</summary>
+public class BenchmarkPanelEstimateDto
+{
+    public double? Value { get; set; }
+    public double? CiLow { get; set; }
+    public double? CiHigh { get; set; }
+}
+
+/// <summary>
+/// The mean per-question quality gap between two candidate providers (Provider1 − Provider2) under
+/// each reader. The interaction contrast and asymmetry estimate exist only for the pair of the two
+/// members' own providers.
+/// </summary>
+public class BenchmarkPanelFamilyGapDto
+{
+    public string Provider1 { get; set; } = string.Empty;
+    public string Provider2 { get; set; } = string.Empty;
+    public int PairedQuestionCount { get; set; }
+    public bool InsufficientData { get; set; }
+    public bool IsMemberProviderPair { get; set; }
+    public BenchmarkPanelEstimateDto GapA { get; set; } = new();
+    public BenchmarkPanelEstimateDto GapB { get; set; } = new();
+    public BenchmarkPanelEstimateDto GapPanel { get; set; } = new();
+    public BenchmarkPanelEstimateDto? GapRef { get; set; }
+    public BenchmarkPanelEstimateDto? InteractionContrast { get; set; }
+    public string? InteractionContrastLabel { get; set; }
+    public BenchmarkPanelEstimateDto? AsymmetryEstimate { get; set; }
+    public string? AsymmetryEstimateLabel { get; set; }
+}
+
+/// <summary>
+/// One member's charges against one candidate provider's answers, by the claim verifier's verdict.
+/// Overturned means the verifier supported the accused statement.
+/// </summary>
+public class BenchmarkPanelAuditCellDto
+{
+    public string Member { get; set; } = string.Empty;
+    public string MemberProvider { get; set; } = string.Empty;
+    public string CandidateProvider { get; set; } = string.Empty;
+    public bool SameFamily { get; set; }
+    public int Charges { get; set; }
+    public int Overturned { get; set; }
+    public int Upheld { get; set; }
+    public int Indeterminate { get; set; }
+    public double? OverturnRate { get; set; }
+}
+
+/// <summary>
+/// A member's overturn rate on other-family candidates minus its rate on same-family candidates.
+/// Null when either side has too few charges.
+/// </summary>
+public class BenchmarkPanelMemberAuditSummaryDto
+{
+    public string Member { get; set; } = string.Empty;
+    public string MemberProvider { get; set; } = string.Empty;
+    public double? FamilyOverturnGap { get; set; }
 }

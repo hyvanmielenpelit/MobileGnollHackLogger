@@ -128,6 +128,44 @@ describe('BenchmarkCostPanelComponent', () => {
     });
   });
 
+  describe('panel roles', () => {
+    it('should hide the co-assessor and co-assessor synthesis lines when they are null', () => {
+      fillEveryRole();
+      setInputs({ coAssessor: null, coSynthesis: null });
+      fixture.detectChanges();
+
+      expect(roleNames()).not.toContain('Co-assessor');
+      expect(roleNames()).not.toContain('Co-assessor synthesis');
+      expect(roleNames().length).toBe(5);
+    });
+
+    it('should place the co-assessor after the assessor and its synthesis after the final synthesis', () => {
+      fillEveryRole();
+      setInputs({ coAssessor: 1.5, coSynthesis: 0.1 });
+      fixture.detectChanges();
+
+      expect(roleNames()).toEqual([
+        'Model under test',
+        'Assessor',
+        'Co-assessor',
+        'Second opinion',
+        'Claim verifier',
+        'Final synthesis',
+        'Co-assessor synthesis'
+      ]);
+      expect(roleShares().reduce((running, share) => running + share, 0)).toBe(100);
+    });
+
+    it('should show a zero co-assessor line, since zero is a measurement', () => {
+      fillEveryRole();
+      setInputs({ coAssessor: 0 });
+      fixture.detectChanges();
+
+      expect(roleNames()).toContain('Co-assessor');
+      expect(roleNames()).not.toContain('Co-assessor synthesis');
+    });
+  });
+
   describe('shares', () => {
     it('should sum to 100 per cent', () => {
       fillEveryRole();

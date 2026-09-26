@@ -41,6 +41,16 @@ public static class BenchmarkClaimVerificationPrompt
     /// answer of a run and so form a byte-identical prefix across its verifier calls; then the task
     /// framing and adjudication sections, the question and rubric, the assessor's evidence, the
     /// harness context, the candidate's tool calls and the claims.
+    ///
+    /// The critical-error quote and the out-of-rubric basis are the claims whose
+    /// <paramref name="claimRoles"/> carry <see cref="BenchmarkClaimRoles.CriticalErrorQuote"/> and
+    /// <see cref="BenchmarkClaimRoles.OutOfRubricBasis"/>; without such roles the quote is claim 0 and
+    /// the basis follows it. The first quote's context is <paramref name="criticalErrorQuoteContext"/>,
+    /// any other quote's is its entry in <paramref name="claimContexts"/>.
+    /// <paramref name="assessorEvidenceByMember"/> carries one accuracy evidence per panel member that
+    /// contributed items; with more than one, the adjudication wording names no assessor's position
+    /// and each member's evidence is printed in its own block, labeled <c>Assessor 1</c>,
+    /// <c>Assessor 2</c> in list order, in place of <paramref name="assessorEvidence"/>.
     /// </summary>
     public static string BuildPrompt(
         string suiteName,
@@ -61,15 +71,43 @@ public static class BenchmarkClaimVerificationPrompt
         IReadOnlyList<string?>? claimContexts = null,
         ToolCallLeads? toolCallLeads = null,
         IReadOnlyList<string?>? claimCharges = null,
-        IReadOnlyList<IReadOnlyList<string>?>? claimChargedParts = null)
+        IReadOnlyList<IReadOnlyList<string>?>? claimChargedParts = null,
+        IReadOnlyList<string?>? assessorEvidenceByMember = null)
     {
-        bool quoteHasContext = isCriticalErrorAdjudication && !string.IsNullOrWhiteSpace(criticalErrorQuoteContext);
-        bool IsAccused(int i) => claimRoles != null && i < claimRoles.Count
-            && claimRoles[i].Contains(BenchmarkClaimRoles.AccusedQuote);
-        bool IsAssessorStatement(int i) => claimRoles != null && i < claimRoles.Count
-            && claimRoles[i].Contains(BenchmarkClaimRoles.AssessorStatement);
+        bool HasRole(int i, string role) => claimRoles != null && i < claimRoles.Count
+            && claimRoles[i] != null && claimRoles[i].Contains(role);
+        bool IsAccused(int i) => HasRole(i, BenchmarkClaimRoles.AccusedQuote);
+        bool IsAssessorStatement(int i) => HasRole(i, BenchmarkClaimRoles.AssessorStatement);
         bool hasAccused = Enumerable.Range(0, claims.Count).Any(IsAccused);
         bool hasAssessorStatements = Enumerable.Range(0, claims.Count).Any(IsAssessorStatement);
+        bool panel = assessorEvidenceByMember != null && assessorEvidenceByMember.Count > 1;
+
+        var quotePositions = Enumerable.Range(0, claims.Count)
+            .Where(i => HasRole(i, BenchmarkClaimRoles.CriticalErrorQuote))
+            .ToList();
+        if (quotePositions.Count == 0)
+        {
+            quotePositions.Add(0);
+        }
+        var basisPositions = Enumerable.Range(0, claims.Count)
+            .Where(i => HasRole(i, BenchmarkClaimRoles.OutOfRubricBasis))
+            .ToList();
+        if (basisPositions.Count == 0)
+        {
+            basisPositions.Add(isCriticalErrorAdjudication ? 1 : 0);
+        }
+
+        string? QuoteContext(int i)
+        {
+            if (!isCriticalErrorAdjudication || !quotePositions.Contains(i)) return null;
+            string? context = i == quotePositions[0] ? criticalErrorQuoteContext : null;
+            if (string.IsNullOrWhiteSpace(context) && !IsAccused(i) && claimContexts != null && i < claimContexts.Count)
+            {
+                context = claimContexts[i];
+            }
+            return string.IsNullOrWhiteSpace(context) ? null : context;
+        }
+        var quoteContextPositions = quotePositions.Where(p => QuoteContext(p) != null).ToList();
         string? boardBlock = BuildBoardBlock(boardName, boardText);
         var sb = new StringBuilder();
         sb.AppendLine("CRITICAL INSTRUCTIONS:");
@@ -124,35 +162,60 @@ public static class BenchmarkClaimVerificationPrompt
             sb.AppendLine("Two independent readers reviewed this answer and reached conflicting verdicts regarding accuracy or critical error classification (e.g. one flagged a fabrication while the other did not).");
             sb.AppendLine("You are provided with candidate claims and assessor counter-claims. Check BOTH against GnollHack source code and wiki facts to determine the ground truth.");
         }
+        // With more than one assessor's items in the list, no wording names an assessor by position:
+        // the charges are presented alike whichever member raised them.
+        string assessorSubject = panel ? "An assessor" : "The first assessor";
         if (isCriticalErrorAdjudication)
         {
+            bool oneQuote = quotePositions.Count == 1;
             sb.AppendLine();
             sb.AppendLine("CRITICAL ERROR ADJUDICATION:");
-            sb.AppendLine("The first assessor marked the first claim below as a critical error — a confidently asserted, material falsehood. Its stated evidence follows the rubric. Check that claim against the source code and wiki exactly as you check the others; if it is true, the verdict is Supported with a citation. A claim absent from the rubric is not thereby false. The assessor's evidence says which part of the claim it holds false. Judge that part: a true clause elsewhere in the claim does not make the verdict Supported.");
-            if (quoteHasContext)
+            sb.AppendLine(
+                $"{assessorSubject} marked {ClaimsPhrase(quotePositions, firstAsWord: true)} as a critical error — a confidently asserted, material falsehood."
+                + (panel ? " The assessors' stated evidence follows the rubric, one block per assessor." : " Its stated evidence follows the rubric.")
+                + (oneQuote
+                    ? " Check that claim against the source code and wiki exactly as you check the others; if it is true, the verdict is Supported with a citation."
+                    : " Check each such claim against the source code and wiki exactly as you check the others; if one is true, its verdict is Supported with a citation.")
+                + " A claim absent from the rubric is not thereby false."
+                + (panel
+                    ? " The evidence of the assessor that marked a claim says which part of it that assessor holds false."
+                    : " The assessor's evidence says which part of the claim it holds false.")
+                + " Judge that part: a true clause elsewhere in the claim does not make the verdict Supported.");
+            if (quoteContextPositions.Count == 1 && quoteContextPositions[0] == 0)
             {
                 sb.AppendLine("The first claim is a list item or fragment, and its block names the heading or line it sits under in the answer. Judge the assertion the answer makes by placing this text under that heading, not whether the quoted words are individually true. Echo only the claim text, without the context line.");
+            }
+            else if (quoteContextPositions.Count == 1)
+            {
+                sb.AppendLine($"Claim {Number(quoteContextPositions[0])} is a list item or fragment, and its block names the heading or line it sits under in the answer. Judge the assertion the answer makes by placing this text under that heading, not whether the quoted words are individually true. Echo only the claim text, without the context line.");
+            }
+            else if (quoteContextPositions.Count > 1)
+            {
+                sb.AppendLine($"Claims {JoinAnd(quoteContextPositions.Select(Number))} are list items or fragments, and each block names the heading or line its text sits under in the answer. Judge the assertion the answer makes by placing each text under its heading, not whether the quoted words are individually true. Echo only the claim text, without the context line.");
             }
         }
         if (isOutOfRubricAdjudication)
         {
-            // BenchmarkService submits the critical-error quote as claim 1 (ClaimIndex 0) and the
-            // basis after it; alone, the basis is claim 1.
-            int basisClaimNumber = isCriticalErrorAdjudication ? 2 : 1;
             sb.AppendLine();
             sb.AppendLine("OUT-OF-RUBRIC DEDUCTION ADJUDICATION:");
-            sb.AppendLine($"The first assessor docked ACCURACY on a statement from its own knowledge rather than the rubric, quoted as claim {basisClaimNumber} below (ClaimIndex {basisClaimNumber - 1}). Check that statement against the source code and wiki exactly as you check the others; Refuted means the assessor's statement is false.");
+            sb.AppendLine(basisPositions.Count == 1
+                ? $"{assessorSubject} docked ACCURACY on a statement from its own knowledge rather than the rubric, quoted as {ClaimsPhrase(basisPositions, firstAsWord: false)}. Check that statement against the source code and wiki exactly as you check the others; Refuted means the assessor's statement is false."
+                : $"Two assessors each docked ACCURACY on a statement from its own knowledge rather than the rubric, quoted as {ClaimsPhrase(basisPositions, firstAsWord: false)}. Check each statement against the source code and wiki exactly as you check the others; Refuted means that assessor's statement is false.");
         }
         if (hasAccused)
         {
             sb.AppendLine();
             sb.AppendLine("ACCUSED SENTENCE ADJUDICATION:");
-            sb.AppendLine("The first assessor graded without tools and charged the sentences of the answer marked \"Charged by the assessor as false or imprecise\" below. Check each exactly as you check the others, and judge the charged part: the words the assessor quoted, read in their sentence and the context given with it. Supported means the charged part is true as the answer states it; Refuted means the charged part is false. A true clause elsewhere in the sentence does not make a false charged part Supported. A sentence absent from the rubric is not thereby false.");
+            sb.AppendLine(panel
+                ? $"The assessors graded without tools and between them charged the sentences of the answer marked \"{ChargedLabel(panel)}\" below. Check each exactly as you check the others, and judge the charged part: the words the assessor quoted, read in their sentence and the context given with it. Supported means the charged part is true as the answer states it; Refuted means the charged part is false. A true clause elsewhere in the sentence does not make a false charged part Supported. A sentence absent from the rubric is not thereby false."
+                : "The first assessor graded without tools and charged the sentences of the answer marked \"Charged by the assessor as false or imprecise\" below. Check each exactly as you check the others, and judge the charged part: the words the assessor quoted, read in their sentence and the context given with it. Supported means the charged part is true as the answer states it; Refuted means the charged part is false. A true clause elsewhere in the sentence does not make a false charged part Supported. A sentence absent from the rubric is not thereby false.");
         }
         if (hasAssessorStatements)
         {
             sb.AppendLine();
-            sb.AppendLine("ASSESSOR STATEMENT ADJUDICATION: the items marked 'Stated by the first assessor' are the assessor's own statements about the game, not sentences of the answer. Supported means the assessor's statement is true.");
+            sb.AppendLine(panel
+                ? "ASSESSOR STATEMENT ADJUDICATION: the items marked 'Stated by an assessor' are an assessor's own statements about the game, not sentences of the answer. Supported means the assessor's statement is true."
+                : "ASSESSOR STATEMENT ADJUDICATION: the items marked 'Stated by the first assessor' are the assessor's own statements about the game, not sentences of the answer. Supported means the assessor's statement is true.");
         }
         sb.AppendLine($"Suite: {suiteName}");
         sb.AppendLine($"Question #{orderIndex}");
@@ -168,7 +231,26 @@ public static class BenchmarkClaimVerificationPrompt
         }
         // Carried under any adjudication: a critical-error quote or an out-of-rubric basis is argued
         // from the assessor's own stated evidence exactly as a disputed verdict is.
-        if ((isDisputedVerdict || isCriticalErrorAdjudication || isOutOfRubricAdjudication) && !string.IsNullOrWhiteSpace(assessorEvidence))
+        bool adjudicating = isDisputedVerdict || isCriticalErrorAdjudication || isOutOfRubricAdjudication;
+        if (panel)
+        {
+            if (adjudicating && assessorEvidenceByMember!.Any(e => !string.IsNullOrWhiteSpace(e)))
+            {
+                sb.AppendLine();
+                sb.AppendLine("Assessor Evidence / Counter-Claims:");
+                for (int m = 0; m < assessorEvidenceByMember!.Count; m++)
+                {
+                    string? evidence = assessorEvidenceByMember[m];
+                    if (string.IsNullOrWhiteSpace(evidence)) continue;
+
+                    string label = $"Assessor {(m + 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+                    sb.AppendLine($"--- BEGIN ASSESSOR EVIDENCE ({label}) ---");
+                    sb.AppendLine(evidence);
+                    sb.AppendLine($"--- END ASSESSOR EVIDENCE ({label}) ---");
+                }
+            }
+        }
+        else if (adjudicating && !string.IsNullOrWhiteSpace(assessorEvidence))
         {
             sb.AppendLine();
             sb.AppendLine("Assessor Evidence / Counter-Claims:");
@@ -206,15 +288,16 @@ public static class BenchmarkClaimVerificationPrompt
         {
             sb.AppendLine($"=== START CLAIM {i} ===");
             sb.AppendLine($"ClaimIndex: {i}");
-            if (i == 0 && quoteHasContext)
+            string? quoteContext = QuoteContext(i);
+            if (quoteContext != null)
             {
-                sb.AppendLine($"Context (not part of the claim): Under \"{criticalErrorQuoteContext!.Trim()}\":");
+                sb.AppendLine($"Context (not part of the claim): Under \"{quoteContext.Trim()}\":");
             }
             if (IsAccused(i))
             {
-                sb.AppendLine("Charged by the assessor as false or imprecise (a sentence of the answer).");
+                sb.AppendLine($"{ChargedLabel(panel)} (a sentence of the answer).");
                 string? context = claimContexts != null && i < claimContexts.Count ? claimContexts[i] : null;
-                if (!string.IsNullOrWhiteSpace(context) && !(i == 0 && quoteHasContext))
+                if (!string.IsNullOrWhiteSpace(context) && quoteContext == null)
                 {
                     sb.AppendLine($"Context (not part of the claim): {context.Trim()}");
                 }
@@ -231,7 +314,7 @@ public static class BenchmarkClaimVerificationPrompt
             }
             if (IsAssessorStatement(i))
             {
-                sb.AppendLine("Stated by the first assessor (not part of the answer).");
+                sb.AppendLine(panel ? "Stated by an assessor (not part of the answer)." : "Stated by the first assessor (not part of the answer).");
             }
             sb.AppendLine(claims[i]);
             sb.AppendLine($"=== END CLAIM {i} ===");
@@ -266,6 +349,38 @@ public static class BenchmarkClaimVerificationPrompt
         sb.AppendLine("}");
 
         return sb.ToString();
+    }
+
+    /// <summary>The label an accused claim's block carries.</summary>
+    private static string ChargedLabel(bool panel)
+        => panel ? "Charged by an assessor as false or imprecise" : "Charged by the assessor as false or imprecise";
+
+    /// <summary>A claim's number as the verifier reads it: its ClaimIndex plus one.</summary>
+    private static string Number(int position) => (position + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string JoinAnd(IEnumerable<string> items)
+    {
+        var list = items.ToList();
+        return list.Count <= 1
+            ? string.Concat(list)
+            : string.Join(", ", list.Take(list.Count - 1)) + " and " + list[^1];
+    }
+
+    /// <summary>
+    /// "the first claim below" for claim 0 alone when <paramref name="firstAsWord"/>; otherwise
+    /// "claim 2 below (ClaimIndex 1)" or "claims 1 and 3 below (ClaimIndex 0 and 2)".
+    /// </summary>
+    private static string ClaimsPhrase(IReadOnlyList<int> positions, bool firstAsWord)
+    {
+        if (firstAsWord && positions.Count == 1 && positions[0] == 0)
+        {
+            return "the first claim below";
+        }
+
+        string indexes = JoinAnd(positions.Select(p => p.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        return positions.Count == 1
+            ? $"claim {Number(positions[0])} below (ClaimIndex {indexes})"
+            : $"claims {JoinAnd(positions.Select(Number))} below (ClaimIndex {indexes})";
     }
 
     /// <summary>

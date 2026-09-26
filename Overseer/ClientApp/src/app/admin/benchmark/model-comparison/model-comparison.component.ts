@@ -90,6 +90,8 @@ import {
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
   BenchmarkModelComparisonPricingBasis,
+  BenchmarkPanelDiagnosticsDto,
+  BenchmarkPanelFamilyGapDto,
   ComparisonSelectedSource,
   ComparisonSelectionNotice,
   orderedNotices,
@@ -170,12 +172,21 @@ import {
   comparisonTableCells,
   composeTableImage,
   encodeComparisonTable,
+  familyGapPairText,
+  familyRelationText,
+  formatFamilyGapCellText,
   formatIndexText,
   formatMsText,
+  formatOverturnGapText,
+  formatPanelIndexText,
+  formatRateText,
   formatUsdText,
   measureTableImage,
   migrateTableColumnConfig,
   normalizeTableColumnConfig,
+  panelMemberText,
+  panelPairsEmptyText,
+  panelRoleText,
   populatedColumnKeys,
   resolveTableImageLayout,
   shownTableColumns,
@@ -4469,7 +4480,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     flavour: TableModelFlavour,
     rows: readonly BenchmarkModelComparisonEntryDto[] = this.tableRows()
   ): ComparisonTableModel {
-    return buildComparisonTableModel(rows, this.tableProvenance, this.tableColumns, flavour, this.tableCellsByKey);
+    const model = buildComparisonTableModel(rows, this.tableProvenance, this.tableColumns, flavour, this.tableCellsByKey);
+    const diagnostics = this.panelDiagnostics;
+    return diagnostics ? { ...model, panelDiagnostics: diagnostics } : model;
   }
 
   /** The table image's theme, row style and size: *Fit the table* at a density, or a box in plain pixels. */
@@ -4768,6 +4781,34 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   formatUsd(value: number | null | undefined): string {
     return formatUsdText(value);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Assessor panel diagnostics
+  //
+  // Rendered from the payload as the server computed them. The cell formats are the Markdown
+  // block's, from `table-export`, for the same reason as the table's.
+  // ---------------------------------------------------------------------------------------------
+
+  /** The comparison's judge-family diagnostics, or null when no run in it is a panel run. */
+  get panelDiagnostics(): BenchmarkPanelDiagnosticsDto | null {
+    return this.comparison?.panelDiagnostics ?? null;
+  }
+
+  readonly panelMemberText = panelMemberText;
+  readonly panelRoleText = panelRoleText;
+  readonly formatPanelIndex = formatPanelIndexText;
+  readonly formatFamilyGapCell = formatFamilyGapCellText;
+  readonly familyGapPair = familyGapPairText;
+  readonly formatRate = formatRateText;
+  readonly formatOverturnGap = formatOverturnGapText;
+  readonly familyRelation = familyRelationText;
+  readonly panelPairsEmpty = panelPairsEmptyText;
+
+  /** The family gap rows that carry either labeled contrast: the members' own provider pair. */
+  get panelContrastGaps(): BenchmarkPanelFamilyGapDto[] {
+    return (this.panelDiagnostics?.familyGaps ?? [])
+      .filter(gap => !!gap.interactionContrastLabel || !!gap.asymmetryEstimateLabel);
   }
 
   // ---------------------------------------------------------------------------------------------

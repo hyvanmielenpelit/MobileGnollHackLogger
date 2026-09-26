@@ -525,8 +525,8 @@ public static class BenchmarkGroupReportBuilder
                 $"| {Inv(item.Mean, "F1")} " +
                 $"| {Inv(item.Median, "F1")} " +
                 $"| {Inv(item.StandardDeviation, "F1")} " +
-                $"| {item.Min} " +
-                $"| {item.Max} " +
+                $"| {Inv(item.Min, "0.#")} " +
+                $"| {Inv(item.Max, "0.#")} " +
                 $"| {Inv(item.InterquartileRange, "F1")} " +
                 $"| {(item.CoefficientOfVariation.HasValue ? Inv(item.CoefficientOfVariation.Value * 100.0, "F1") + " %" : "—")} " +
                 $"| {ci} " +

@@ -1,0 +1,140 @@
+// The card, prose and badge look match the run detail dialog's own cards, which live in the
+// parent's encapsulated stylesheet and so do not reach this component.
+:host {
+  display: block;
+  margin-bottom: 20px;
+}
+
+.synthesis-card {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.synthesis-heading {
+  margin: 0 0 10px 0;
+  color: #fff;
+}
+
+.synthesis-tabpanel {
+  padding-top: 12px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+.synthesis-meta {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: #999;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.synthesis-score {
+  color: #ddd;
+  font-weight: 600;
+}
+
+.family-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 200, 255, 0.4);
+  color: #7dd3fc;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+
+  &.is-same-family {
+    border-color: rgba(251, 191, 36, 0.6);
+    color: #fbbf24;
+  }
+}
+
+.synthesis-parse-note {
+  margin-bottom: 10px;
+}
+
+.prose-review {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  font-size: 14px;
+  color: #ddd;
+}
+
+.findings-heading {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: #ddd;
+}
+
+.findings-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  color: #bbb;
+
+  li + li {
+    margin-top: 4px;
+  }
+}
+
+.finding-category {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ccc;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.finding-questions {
+  color: #888;
+}
+
+.convergence-summary {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: #ccc;
+}
+
+.convergence-table-wrap {
+  overflow-x: auto;
+}
+
+.convergence-table {
+  font-size: 12px;
+
+  td {
+    vertical-align: top;
+  }
+}
+
+.convergence-status {
+  white-space: nowrap;
+
+  &.convergence-both { color: #4ade80; }
+  &.convergence-a,
+  &.convergence-b { color: #fbbf24; }
+}
+
+.synthesis-raw {
+  margin-top: 12px;
+
+  pre {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 12px;
+  }
+}

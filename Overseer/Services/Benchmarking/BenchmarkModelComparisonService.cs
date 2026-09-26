@@ -178,6 +178,20 @@ public static class BenchmarkModelComparison
 
         int comparableCount = entries.Count(e => !e.Excluded);
 
+        // Judge-family diagnostics read the charted entries only, and appear only once a panel run
+        // is in the comparison; whether those entries share one panel is the diagnostics' own gate.
+        BenchmarkPanelDiagnosticsDto? panelDiagnostics = null;
+        if (members.SelectMany(s => s.Runs).Any(BenchmarkRunFinalizer.IsPanelRun))
+        {
+            var labels = entries.ToDictionary(e => e.Key, e => e.Label, StringComparer.Ordinal);
+            var diagnosticEntries = measurable
+                .Where(s => !verdicts[s.Key].IsExcluded)
+                .Select(s => (EntryKey: s.Key, EntryLabel: labels.GetValueOrDefault(s.Key) ?? s.Key, Runs: s.Runs))
+                .ToList();
+
+            panelDiagnostics = ToDto(BenchmarkPanelDiagnostics.Compute(diagnosticEntries));
+        }
+
         return new BenchmarkModelComparisonDto
         {
             PricingBasis = basis.ToString(),
@@ -195,7 +209,89 @@ public static class BenchmarkModelComparison
             ThinkingLevelsDiffer = comparability.ThinkingLevelsDiffer,
             SpeedAxisCaveat = comparability.SpeedAxisCaveat,
             Explanation = comparability.Explanation,
-            ExcludedMeasures = ExcludedMeasures(comparableCount).ToList()
+            ExcludedMeasures = ExcludedMeasures(comparableCount).ToList(),
+            PanelDiagnostics = panelDiagnostics
+        };
+    }
+
+    private static BenchmarkPanelDiagnosticsDto ToDto(BenchmarkPanelDiagnosticsResult result)
+    {
+        static BenchmarkPanelEstimateDto Estimate(BenchmarkPanelEstimate e) =>
+            new() { Value = e.Value, CiLow = e.CiLow, CiHigh = e.CiHigh };
+
+        static BenchmarkPanelEstimateDto? OptionalEstimate(BenchmarkPanelEstimate? e) =>
+            e == null ? null : Estimate(e);
+
+        static BenchmarkPanelRankedPairDto Pair(BenchmarkPanelRankedPair p) => new()
+        {
+            FirstEntryKey = p.FirstEntryKey,
+            FirstEntryLabel = p.FirstEntryLabel,
+            SecondEntryKey = p.SecondEntryKey,
+            SecondEntryLabel = p.SecondEntryLabel,
+            Description = p.Description
+        };
+
+        return new BenchmarkPanelDiagnosticsDto
+        {
+            Applicable = result.Applicable,
+            NotApplicableReason = result.NotApplicableReason,
+            MemberALabel = result.MemberALabel,
+            MemberAProvider = result.MemberAProvider,
+            MemberBLabel = result.MemberBLabel,
+            MemberBProvider = result.MemberBProvider,
+            ReferenceLabel = result.ReferenceLabel,
+            ReferenceProvider = result.ReferenceProvider,
+            Entries = result.Entries.Select(e => new BenchmarkPanelEntryIndicesDto
+            {
+                EntryKey = e.EntryKey,
+                EntryLabel = e.EntryLabel,
+                CandidateProvider = e.CandidateProvider,
+                MemberAIndex = e.MemberAIndex,
+                MemberBIndex = e.MemberBIndex,
+                PanelIndex = e.PanelIndex,
+                ReferenceIndex = e.ReferenceIndex,
+                RankA = e.RankA,
+                RankB = e.RankB,
+                RankPanel = e.RankPanel,
+                RankReference = e.RankReference
+            }).ToList(),
+            JudgeDependentPairs = result.JudgeDependentPairs.Select(Pair).ToList(),
+            ReferenceDependentPairs = result.ReferenceDependentPairs.Select(Pair).ToList(),
+            FamilyGaps = result.FamilyGaps.Select(g => new BenchmarkPanelFamilyGapDto
+            {
+                Provider1 = g.Provider1,
+                Provider2 = g.Provider2,
+                PairedQuestionCount = g.PairedQuestionCount,
+                InsufficientData = g.InsufficientData,
+                IsMemberProviderPair = g.IsMemberProviderPair,
+                GapA = Estimate(g.GapA),
+                GapB = Estimate(g.GapB),
+                GapPanel = Estimate(g.GapPanel),
+                GapRef = OptionalEstimate(g.GapRef),
+                InteractionContrast = OptionalEstimate(g.InteractionContrast),
+                InteractionContrastLabel = g.InteractionContrastLabel,
+                AsymmetryEstimate = OptionalEstimate(g.AsymmetryEstimate),
+                AsymmetryEstimateLabel = g.AsymmetryEstimateLabel
+            }).ToList(),
+            AccusationAudit = result.AccusationAudit.Select(c => new BenchmarkPanelAuditCellDto
+            {
+                Member = c.Member,
+                MemberProvider = c.MemberProvider,
+                CandidateProvider = c.CandidateProvider,
+                SameFamily = c.SameFamily,
+                Charges = c.Charges,
+                Overturned = c.Overturned,
+                Upheld = c.Upheld,
+                Indeterminate = c.Indeterminate,
+                OverturnRate = c.OverturnRate
+            }).ToList(),
+            AuditSummaries = result.AuditSummaries.Select(s => new BenchmarkPanelMemberAuditSummaryDto
+            {
+                Member = s.Member,
+                MemberProvider = s.MemberProvider,
+                FamilyOverturnGap = s.FamilyOverturnGap
+            }).ToList(),
+            Caveats = result.Caveats.ToList()
         };
     }
 
@@ -792,7 +888,9 @@ public class BenchmarkModelComparisonService
                         ClaimVerifier: run.ClaimVerifierModelSnapshot == null ? null : _pricingService.ResolveDefault(
                             run.ClaimVerifierModelSnapshot.Provider, run.ClaimVerifierModelSnapshot.ModelId, today),
                         SecondOpinion: run.SecondOpinionAssessorModelSnapshot == null ? null : _pricingService.ResolveDefault(
-                            run.SecondOpinionAssessorModelSnapshot.Provider, run.SecondOpinionAssessorModelSnapshot.ModelId, today));
+                            run.SecondOpinionAssessorModelSnapshot.Provider, run.SecondOpinionAssessorModelSnapshot.ModelId, today),
+                        CoAssessor: run.CoAssessorModelSnapshot == null ? null : _pricingService.ResolveDefault(
+                            run.CoAssessorModelSnapshot.Provider, run.CoAssessorModelSnapshot.ModelId, today));
             }
             catch (Exception ex)
             {

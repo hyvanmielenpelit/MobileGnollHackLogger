@@ -789,6 +789,231 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Null(retried.EvidenceInformedJson);
     }
 
+    // --- The panel's union manifest and its provenance -------------------------------------
+
+    private const string Spelltool = "The Grail of Healing is a spelltool.";
+    private const string Heals = "Applying it heals **1000 hit points** and restores 500 mana.";
+    private const string NoCharges = "It has no charges and never runs out.";
+    private const string Regenerate = "Gnolls regenerate hit points faster at night than other races do.";
+    private const string BasisA = "the grail heals 2000 hit points.";
+    private const string BasisB = "grails hold five charges.";
+
+    private static BenchmarkService.ClaimContribution Contribution(
+        BenchmarkPanelMember member,
+        string[]? claims = null,
+        string? quote = null,
+        string? basis = null,
+        BenchmarkService.AccusedQuote[]? accused = null,
+        string[]? statements = null)
+        => new(member, claims, quote, basis, accused, statements);
+
+    [Fact]
+    public void UnionManifest_BothMembersQuotes_AKeepsTheFirstPlace_BFollows_AndTheBasesFollowTheQuotes()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            // Listed out of member order on purpose: the manifest orders by member.
+            Contribution(BenchmarkPanelMember.B, new[] { "the grail of healing   is a spelltool." }, NoCharges, BasisB),
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool }, Heals, BasisA)
+        }, AnswerText);
+
+        Assert.Equal(new[] { Heals, NoCharges, BasisA, BasisB, Spelltool }, manifest.Select(m => m.Text));
+        Assert.Equal(new[] { BenchmarkClaimRoles.CriticalErrorQuote }, manifest[0].Roles);
+        Assert.Equal(new[] { BenchmarkClaimRoles.CriticalErrorQuote }, manifest[1].Roles);
+        Assert.Equal(new[] { BenchmarkClaimRoles.OutOfRubricBasis }, manifest[2].Roles);
+        Assert.Equal(new[] { BenchmarkClaimRoles.OutOfRubricBasis }, manifest[3].Roles);
+        Assert.Equal(new[] { BenchmarkClaimRoles.UnverifiedClaim }, manifest[4].Roles);
+
+        Assert.Equal(new[] { "A" }, manifest[0].RaisedBy);
+        Assert.Equal(new[] { "B" }, manifest[1].RaisedBy);
+        Assert.Equal(new[] { "A" }, manifest[2].RaisedBy);
+        Assert.Equal(new[] { "B" }, manifest[3].RaisedBy);
+        // A claim both members raised, differing only in case and spacing, is listed once for both.
+        Assert.Equal(new[] { "A", "B" }, manifest[4].RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_AWithoutAQuote_BsQuoteTakesTheFirstPlace()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool }),
+            Contribution(BenchmarkPanelMember.B, quote: NoCharges)
+        }, AnswerText);
+
+        Assert.Equal(new[] { NoCharges, Spelltool }, manifest.Select(m => m.Text));
+        Assert.Equal(new[] { BenchmarkClaimRoles.CriticalErrorQuote }, manifest[0].Roles);
+        Assert.Equal(new[] { "B" }, manifest[0].RaisedBy);
+        Assert.Equal(new[] { "A" }, manifest[1].RaisedBy);
+
+        // The placement a single-assessor manifest gives the quote.
+        var single = BenchmarkService.BuildClaimManifest(new[] { Spelltool }, NoCharges, null, null);
+        Assert.Equal(single.Select(m => m.Text), manifest.Select(m => m.Text));
+    }
+
+    [Fact]
+    public void UnionManifest_AQuoteBothMembersRaised_IsOneItemRaisedByBoth()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, quote: Heals, basis: BasisA),
+            Contribution(BenchmarkPanelMember.B, quote: Heals, basis: BasisA)
+        }, AnswerText);
+
+        Assert.Equal(new[] { Heals, BasisA }, manifest.Select(m => m.Text));
+        Assert.Equal(new[] { "A", "B" }, manifest[0].RaisedBy);
+        Assert.Equal(new[] { "A", "B" }, manifest[1].RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_BsQuoteEqualToAsUnverifiedClaim_TakesItsPlace_RaisedByBoth()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool, NoCharges }),
+            Contribution(BenchmarkPanelMember.B, quote: NoCharges)
+        }, AnswerText);
+
+        Assert.Equal(new[] { Spelltool, NoCharges }, manifest.Select(m => m.Text));
+        Assert.Equal(new[] { BenchmarkClaimRoles.CriticalErrorQuote }, manifest[1].Roles);
+        Assert.Equal(new[] { "A", "B" }, manifest[1].RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_ASentenceBothMembersCharged_UnionsTheFragmentsAndTheCharges()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, accused: new[]
+            {
+                new BenchmarkService.AccusedQuote(NoCharges, "Under \"Using it\".", new[] { "no charges" }, "A: it has charges.")
+            }),
+            Contribution(BenchmarkPanelMember.B, accused: new[]
+            {
+                new BenchmarkService.AccusedQuote(NoCharges, "Under \"Using it\".", new[] { "never runs out", "No charges" }, "B: it runs out.")
+            })
+        }, AnswerText);
+
+        var item = Assert.Single(manifest);
+        Assert.Equal(new[] { BenchmarkClaimRoles.AccusedQuote }, item.Roles);
+        Assert.Equal(new[] { "no charges", "never runs out" }, item.QuotedFragments);
+        Assert.Equal("A: it has charges. B: it runs out.", item.Charge);
+        Assert.Equal(new[] { "A", "B" }, item.RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_OneMember_ListsWhatTheSingleAssessorManifestLists()
+    {
+        var accused = new[] { new BenchmarkService.AccusedQuote(NoCharges, "ctx") };
+        var single = BenchmarkService.BuildClaimManifest(new[] { Spelltool, Regenerate }, Heals, BasisA, accused, answerText: AnswerText);
+        var union = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool, Regenerate }, Heals, BasisA, accused)
+        }, AnswerText);
+
+        Assert.Equal(single.Select(m => m.Text), union.Select(m => m.Text));
+        Assert.Equal(single.Select(m => string.Join(",", m.Roles)), union.Select(m => string.Join(",", m.Roles)));
+        Assert.All(single, m => Assert.Null(m.RaisedBy));
+        Assert.All(union, m => Assert.Equal(new[] { "A" }, m.RaisedBy));
+    }
+
+    [Fact]
+    public void StampRoles_CarriesRaisedByFromAUnionManifest_AndNoneFromASingleAssessorManifest()
+    {
+        var union = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool }),
+            Contribution(BenchmarkPanelMember.B, new[] { Spelltool, Regenerate })
+        }, AnswerText);
+        var stamped = BenchmarkService.StampRoles(new[]
+        {
+            new BenchmarkClaimVerification(0, Spelltool, BenchmarkClaimVerdict.Supported, "src/objects.c:10", "True."),
+            new BenchmarkClaimVerification(1, Regenerate, BenchmarkClaimVerdict.Refuted, "src/attrib.c:20", "False.")
+        }, union);
+
+        Assert.Equal(new[] { "A", "B" }, stamped[0].RaisedBy);
+        Assert.Equal(new[] { "B" }, stamped[1].RaisedBy);
+        Assert.Contains("\"raisedBy\":[\"A\",\"B\"]", JsonSerializer.Serialize(stamped));
+
+        var single = BenchmarkService.BuildClaimManifest(new[] { Spelltool }, null, null, null);
+        var singleStamped = Assert.Single(BenchmarkService.StampRoles(new[]
+        {
+            new BenchmarkClaimVerification(0, Spelltool, BenchmarkClaimVerdict.Supported, "src/objects.c:10", "True.")
+        }, single));
+        Assert.Null(singleStamped.RaisedBy);
+        Assert.DoesNotContain("raisedBy", JsonSerializer.Serialize(new[] { singleStamped }));
+    }
+
+    [Fact]
+    public void RaisedByMembers_KeepsEachMembersItems_AndAnItemWithoutProvenanceForBoth()
+    {
+        var verifications = new[]
+        {
+            new BenchmarkClaimVerification(0, "a", BenchmarkClaimVerdict.Supported, "x", null) { RaisedBy = new[] { "A" } },
+            new BenchmarkClaimVerification(1, "b", BenchmarkClaimVerdict.Supported, "x", null) { RaisedBy = new[] { "B" } },
+            new BenchmarkClaimVerification(2, "ab", BenchmarkClaimVerdict.Supported, "x", null) { RaisedBy = new[] { "A", "B" } },
+            new BenchmarkClaimVerification(3, "legacy", BenchmarkClaimVerdict.Supported, "x", null)
+        };
+
+        Assert.Equal(new[] { "a", "ab", "legacy" }, BenchmarkService.RaisedByMembers(verifications, BenchmarkPanelMember.A).Select(v => v.Claim));
+        Assert.Equal(new[] { "b", "ab", "legacy" }, BenchmarkService.RaisedByMembers(verifications, BenchmarkPanelMember.B).Select(v => v.Claim));
+        Assert.Equal(4, BenchmarkService.RaisedByMembers(verifications, BenchmarkPanelMember.Both).Count);
+    }
+
+    [Fact]
+    public void PanelOutcome_ASupportedQuoteContestsOnlyTheMemberThatRaisedIt()
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerText = AnswerText,
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            AccuracyLevel = 2,
+            CompletenessLevel = 4,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = 25,
+            CriticalError = true,
+            CriticalErrorQuote = Heals,
+            CoAssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            CoAssessmentQualityScore = 25,
+            CoAssessmentCriticalError = true,
+            CoAssessmentJson = new BenchmarkCoAssessmentRecord
+            {
+                AccuracyLevel = 2,
+                CompletenessLevel = 4,
+                ConcisenessLevel = 5,
+                ReadabilityLevel = 5,
+                CriticalError = true,
+                CriticalErrorQuote = NoCharges,
+                QualityScore = 25,
+                Flags = new BenchmarkCoAssessmentFlags()
+            }.Serialize()
+        };
+        var verifications = new[]
+        {
+            new BenchmarkClaimVerification(0, Heals, BenchmarkClaimVerdict.Refuted, "src/potion.c:40", "It heals less.")
+                { Roles = new[] { BenchmarkClaimRoles.CriticalErrorQuote }, RaisedBy = new[] { "A" } },
+            new BenchmarkClaimVerification(1, NoCharges, BenchmarkClaimVerdict.Supported, "src/objects.c:2889", "It has no charges.")
+                { Roles = new[] { BenchmarkClaimRoles.CriticalErrorQuote }, RaisedBy = new[] { "B" } }
+        };
+
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer, verifications, BenchmarkVerdictView.FromPrimary(answer), BenchmarkVerdictView.FromCoAssessment(answer));
+
+        // Member A's charge was upheld; member B's quote is true, so B's critical error is contested.
+        var flags = (BenchmarkAnswerFlags)answer.AnswerFlags;
+        Assert.False(flags.HasFlag(BenchmarkAnswerFlags.ContestedCriticalError));
+        var record = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!;
+        Assert.True(record.Flags!.ContestedCriticalError);
+        Assert.False(record.Flags.ContestedAccuracyDeduction);
+
+        // Neither quote is an ordinary claim, so neither is counted.
+        Assert.Equal(0, answer.ClaimsSupportedCount);
+        Assert.Equal(0, answer.ClaimsRefutedCount);
+        Assert.Contains("\"raisedBy\":[\"B\"]", answer.ClaimVerificationJson);
+    }
+
     private static BenchmarkService CreateService(Dictionary<string, string?> settings)
     {
         var services = new ServiceCollection();

@@ -218,6 +218,52 @@ public class BenchmarkClaimVerificationParserTests
     }
 
     [Fact]
+    public void Parse_IgnoresARaisedByMemberInModelOutput()
+    {
+        // Provenance is stamped by the harness from its own manifest, never taken from the verifier.
+        var claims = new List<string> { "Gnolls gain infravision at level 1" };
+        string json = "{\"verifications\":[{\"claimIndex\":0,\"claim\":\"Gnolls gain infravision at level 1\",\"verdict\":\"Supported\",\"citation\":\"src/role.c:45\",\"basis\":\"b\",\"raisedBy\":[\"B\"]}]}";
+
+        var result = BenchmarkClaimVerificationParser.Parse(json, claims);
+
+        Assert.True(result.Success);
+        Assert.Null(result.Verifications[0].RaisedBy);
+    }
+
+    [Fact]
+    public void RaisedBy_RoundTripsThroughStoredJson_AndIsOmittedWhenNull()
+    {
+        var panel = new BenchmarkClaimVerification(0, "c", BenchmarkClaimVerdict.Refuted, "src/a.c:1", "b")
+        {
+            Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim },
+            RaisedBy = new[] { "A", "B" }
+        };
+        var single = panel with { RaisedBy = null };
+
+        string panelJson = System.Text.Json.JsonSerializer.Serialize(new[] { panel });
+        string singleJson = System.Text.Json.JsonSerializer.Serialize(new[] { single });
+
+        Assert.Contains("\"raisedBy\":[\"A\",\"B\"]", panelJson);
+        Assert.DoesNotContain("raisedBy", singleJson);
+
+        var read = Assert.Single(System.Text.Json.JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(panelJson)!);
+        Assert.Equal(new[] { "A", "B" }, read.RaisedBy);
+        Assert.Equal(new[] { BenchmarkClaimRoles.UnverifiedClaim }, read.Roles);
+    }
+
+    [Fact]
+    public void StoredJsonWithoutRaisedBy_ReadsAsNull()
+    {
+        // A record stored before harness 40, or by a single-assessor run.
+        const string stored = "[{\"claimIndex\":0,\"claim\":\"c\",\"verdict\":\"Supported\",\"citation\":\"src/a.c:3\",\"basis\":\"b\",\"roles\":[\"criticalErrorQuote\"]}]";
+
+        var verification = Assert.Single(System.Text.Json.JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(stored)!);
+
+        Assert.Null(verification.RaisedBy);
+        Assert.Equal(new[] { BenchmarkClaimRoles.CriticalErrorQuote }, verification.Roles);
+    }
+
+    [Fact]
     public void StoredJsonWithoutRoles_StillReads()
     {
         const string stored = "[{\"claimIndex\":0,\"claim\":\"c\",\"verdict\":\"Refuted\",\"citation\":\"src/a.c\",\"basis\":\"b\"}]";

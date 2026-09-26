@@ -711,8 +711,16 @@ export interface StartBenchmarkRunRequest {
   testedModelConfigurationId: number;
   assessorModelConfigurationId: number;
   /**
+   * Optional. When set, the run is a two-member panel: this configuration (member B) grades every
+   * answer beside the assessor (member A), and the published score is the mean of the two. It
+   * must be a different provider from the assessor, and neither member may be the model under
+   * test. Null means a single-assessor run.
+   */
+  coAssessorModelConfigurationId?: number | null;
+  /**
    * Optional. When set, answers flagged with a critical error or scored below the profile's
-   * threshold are re-graded once by this configuration. Null means no second opinion.
+   * threshold are re-graded once by this configuration. Null means no second opinion. In a panel
+   * run it is the reference reader, and the server forces its mode to All, blind.
    */
   secondOpinionAssessorModelConfigurationId?: number | null;
   /**
@@ -785,7 +793,18 @@ export interface BenchmarkAssessorCalibrationDto {
   durationMs: number;
   verdictsJson?: string | null;
   errorMessage?: string | null;
+  /** The verdict the calibration was compared against. Null on a row recorded before it existed, which means `Assessor`. */
+  comparedAgainst?: BenchmarkCalibrationTarget | null;
 }
+
+/**
+ * What a calibration compares its verdicts against: the assessor (member A), the co-assessor
+ * (member B) or the panel score. The last two are accepted only on a panel run.
+ */
+export type BenchmarkCalibrationTarget = 'Assessor' | 'CoAssessor' | 'Panel';
+
+/** Which panel member a re-assessment re-grades. The server treats an absent value as `Both`. */
+export type BenchmarkPanelMember = 'A' | 'B' | 'Both';
 
 export interface SameProviderWarningDto {
   sameProvider: boolean;
@@ -943,6 +962,31 @@ export interface BenchmarkRunAnswerDto {
   /** The claim the assessor called a critical error, quoted from the graded answer. */
   criticalErrorQuote?: string | null;
 
+  /**
+   * The panel score: the mean of the two members' quality scores, set only when both scored.
+   * Null on a single-assessor run, where qualityScore is the published score.
+   */
+  panelQualityScore?: number | null;
+  /** The two members differ by more than 15 points or on criticalError. Null outside a panel run. */
+  panelDisagreed?: boolean | null;
+
+  /**
+   * Panel member B's verdict. `coAssessmentJson` holds its levels, evidence, unverified claims and
+   * flags (see `BenchmarkCoAssessmentRecord`). All null on a single-assessor run.
+   */
+  coAssessmentStatus?: string | number | null;
+  coAssessmentError?: string | null;
+  coAssessmentQualityScore?: number | null;
+  coAssessmentRawQualityScore?: number | null;
+  coAssessmentCriticalError?: boolean | null;
+  coAssessmentJson?: string | null;
+  coAssessedByModelDisplayNameUsed?: string | null;
+  coAssessedAtUtc?: string | null;
+  coAssessorBoardChars?: number | null;
+  coAssessmentInputTokens?: number | null;
+  coAssessmentOutputTokens?: number | null;
+  coAssessmentDurationMs?: number | null;
+
   /** Second-opinion verdict, present only where one was triggered. Advisory: the first scored. */
   secondOpinionQualityScore?: number | null;
   secondOpinionCriticalError?: boolean | null;
@@ -1005,6 +1049,64 @@ export interface BenchmarkRunAnswerDto {
   rerunOfErrorMessage?: string | null;
 }
 
+/**
+ * Panel member B's full verdict, as `BenchmarkRunAnswerDto.coAssessmentJson` stores it. The
+ * levels are null only on a record written without a grader (a model-produced empty answer).
+ */
+export interface BenchmarkCoAssessmentRecord {
+  accuracyLevel?: number | null;
+  completenessLevel?: number | null;
+  concisenessLevel?: number | null;
+  readabilityLevel?: number | null;
+  criticalError?: boolean;
+  criticalErrorQuote?: string | null;
+  criticalErrorDemoted?: boolean;
+  qualityScore?: number | null;
+  rawQualityScore?: number | null;
+  comment?: string | null;
+  accuracyEvidence?: string | null;
+  completenessEvidence?: string | null;
+  readabilityEvidence?: string | null;
+  unverifiedClaims?: string[] | null;
+  flags?: {
+    contestedVerdict?: boolean;
+    unevidencedDeduction?: boolean;
+    omissionAsAccuracy?: boolean;
+    outOfRubricAccuracy?: boolean;
+    dimensionOutlier?: boolean;
+    completenessOutOfScope?: boolean;
+    readabilityFormOnly?: boolean;
+    contestedCriticalError?: boolean;
+    contestedAccuracyDeduction?: boolean;
+  } | null;
+}
+
+/** One structured finding of a synthesis. */
+export interface BenchmarkSynthesisFindingDto {
+  /** `strength` or `weakness`. */
+  kind: string;
+  /** accuracy, completeness, conciseness, readability, critical_error, tool_use or other. */
+  category: string;
+  /** The question numbers the finding cites; empty for a run-wide finding. */
+  questions: number[];
+  text: string;
+}
+
+/**
+ * One row of the computed agreement between the two panel members' synthesis findings, keyed by
+ * kind, category and question.
+ */
+export interface BenchmarkSynthesisConvergenceRowDto {
+  kind: string;
+  category: string;
+  /** Null for a run-wide finding. */
+  question: number | null;
+  /** `Convergent`, `MemberAOnly` or `MemberBOnly`. */
+  status: string;
+  memberAText: string | null;
+  memberBText: string | null;
+}
+
 export interface BenchmarkRunDetailDto {
   id: number;
   /** The run stopped before finishing its suite. Decided by the server (BenchmarkRunFinalizer.IsAbortedRun). */
@@ -1034,6 +1136,21 @@ export interface BenchmarkRunDetailDto {
   assessorModelReasoningModeUsed?: string | null;
   assessorModelEndpoint?: string | null;
   assessorAvailable?: boolean;
+
+  /**
+   * True when a co-assessor (panel member B) graded beside the assessor (member A). The published
+   * scores are then the panel's, and the second opinion is the advisory reference reader.
+   */
+  isPanelRun?: boolean;
+
+  /** Panel member B. All null on a single-assessor run. */
+  coAssessorModelConfigurationId?: number | null;
+  coAssessorModelDisplayNameUsed?: string | null;
+  coAssessorModelProviderUsed?: string | null;
+  coAssessorModelIdUsed?: string | null;
+  coAssessorModelThinkingLevelUsed?: string | null;
+  coAssessorModelReasoningModeUsed?: string | null;
+  coAssessorModelEndpoint?: string | null;
 
   /** Null when the run was started without a second-opinion assessor. */
   secondOpinionAssessorModelConfigurationId?: number | null;
@@ -1164,6 +1281,21 @@ export interface BenchmarkRunDetailDto {
   secondOpinionMeanAbsDelta?: number | null;
   secondOpinionMeanSignedDelta?: number | null;
   secondOpinionCriticalErrorSplitCount?: number;
+
+  /**
+   * Agreement between the two panel members over the answers both scored, and each member's
+   * index alone over those answers. All null on a single-assessor run.
+   */
+  panelGradedAnswerCount?: number | null;
+  panelMeanAbsDelta?: number | null;
+  /** B − A. Negative means member B graded lower. */
+  panelMeanSignedDelta?: number | null;
+  panelCriticalErrorSplitCount?: number | null;
+  panelDisagreementCount?: number | null;
+  panelIntraclassCorrelation?: number | null;
+  assessorOnlyQualityIndex?: number | null;
+  coAssessorOnlyQualityIndex?: number | null;
+
   candidatePromptOptionsJson?: string | null;
   candidatePromptSourceUsed?: string | null;
   candidateSystemPromptSha256?: string | null;
@@ -1195,6 +1327,23 @@ export interface BenchmarkRunDetailDto {
   assessmentJson?: string | null;
   assessmentText?: string | null;
   assessmentParseFailed: boolean;
+
+  /** Panel member B's own synthesis, written from its own verdicts. Null on a single-assessor run. */
+  coAssessorFinalScore?: number | null;
+  coAssessorSynthesisJson?: string | null;
+  coAssessorSynthesisText?: string | null;
+  coAssessorSynthesisParseFailed?: boolean;
+
+  /**
+   * The structured findings of assessmentJson and coAssessorSynthesisJson, parsed on the server.
+   * Empty when the synthesis carries none, including every synthesis written before findings existed.
+   */
+  synthesisFindings?: BenchmarkSynthesisFindingDto[];
+  coAssessorSynthesisFindings?: BenchmarkSynthesisFindingDto[];
+
+  /** The computed agreement between the two members' findings. Null unless both panel syntheses exist. */
+  synthesisConvergence?: BenchmarkSynthesisConvergenceRowDto[] | null;
+
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheReadTokens: number;
@@ -1229,6 +1378,20 @@ export interface BenchmarkRunDetailDto {
   totalSynthesisInputTokens?: number;
   totalSynthesisOutputTokens?: number;
   totalSynthesisDurationMs?: number;
+
+  /** Panel member B's per-question assessment usage. Zero on a single-assessor run. */
+  totalCoAssessmentInputTokens?: number;
+  totalCoAssessmentOutputTokens?: number;
+  totalCoAssessmentCacheReadTokens?: number;
+  totalCoAssessmentCacheCreationTokens?: number;
+  totalCoAssessmentDurationMs?: number;
+
+  /** Panel member B's own final-synthesis usage. Zero on a single-assessor run. */
+  totalCoSynthesisInputTokens?: number;
+  totalCoSynthesisOutputTokens?: number;
+  totalCoSynthesisCacheReadTokens?: number;
+  totalCoSynthesisCacheCreationTokens?: number;
+  totalCoSynthesisDurationMs?: number;
 
   /**
    * Completeness deductions the assessor itself placed outside the question's scope. This is
@@ -1323,7 +1486,10 @@ export interface BenchmarkRunDetailDto {
   estimatedSecondOpinionCost?: number | null;
   estimatedVerifierCost?: number | null;
   estimatedSynthesisCost?: number | null;
-  /** Assessor, second opinion, claim verifier and synthesis together — the whole grading side. */
+  /** Panel member B's assessments and its own synthesis. Null outside a panel run. */
+  estimatedCoAssessorCost?: number | null;
+  estimatedCoSynthesisCost?: number | null;
+  /** Assessor, co-assessor, second opinion, claim verifier and both syntheses together — the whole grading side. */
   estimatedGradingCost?: number | null;
   pricingSource?: string | null;
   pricingIncomplete?: boolean;
@@ -2047,6 +2213,14 @@ export class AdminBenchmarkService {
   }
 
   /**
+   * Re-grades one answer of a panel run with the run's own members: A, B or both. No assessor
+   * override is sent, since the server refuses one on a panel run.
+   */
+  reassessPanelAnswer(runId: number, answerId: number, member: BenchmarkPanelMember): Observable<{ runId: number }> {
+    return this.http.post<{ runId: number }>(`/api/admin/benchmark/runs/${runId}/answers/${answerId}/reassess`, { member });
+  }
+
+  /**
    * Records a prospective assessor's verdict in the second-opinion slot and changes no score,
    * level, flag or index. The mode for comparing a candidate assessor against the one in use.
    *
@@ -2064,10 +2238,20 @@ export class AdminBenchmarkService {
       { assessorModelConfigurationId, trial: true, replaceExistingSecondOpinion });
   }
 
-  /** Grades every answer of a run with another model and records only the agreement statistics. */
-  calibrateAssessor(runId: number, assessorModelConfigurationId: number): Observable<BenchmarkAssessorCalibrationDto> {
+  /**
+   * Grades every answer of a run with another model and records only the agreement statistics.
+   * `compareAgainst` is sent only when given; the server reads its absence as `Assessor`.
+   */
+  calibrateAssessor(
+    runId: number,
+    assessorModelConfigurationId: number,
+    compareAgainst?: BenchmarkCalibrationTarget | null
+  ): Observable<BenchmarkAssessorCalibrationDto> {
+    const body = compareAgainst
+      ? { assessorModelConfigurationId, compareAgainst }
+      : { assessorModelConfigurationId };
     return this.http.post<BenchmarkAssessorCalibrationDto>(
-      `/api/admin/benchmark/runs/${runId}/calibrate`, { assessorModelConfigurationId });
+      `/api/admin/benchmark/runs/${runId}/calibrate`, body);
   }
 
   getCalibrations(runId: number): Observable<BenchmarkAssessorCalibrationDto[]> {

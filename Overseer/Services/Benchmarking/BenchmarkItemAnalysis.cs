@@ -73,9 +73,13 @@ public sealed record BenchmarkItemStatistics
     /// </summary>
     public int UnknownRevisionCount { get; init; }
 
+    /// <summary>
+    /// Over each answer's published score, <see cref="BenchmarkScoring.IndexQuality"/>: a panel
+    /// run's score is the mean of two integers, so the minimum and maximum can fall on a half point.
+    /// </summary>
     public double MeanQuality { get; init; }
-    public int MinQuality { get; init; }
-    public int MaxQuality { get; init; }
+    public double MinQuality { get; init; }
+    public double MaxQuality { get; init; }
 
     /// <summary>Population standard deviation. 0 for a single run.</summary>
     public double StdDev { get; init; }
@@ -269,7 +273,8 @@ public static class BenchmarkItemAnalysis
     /// One sample per run: the run, and its scored answer to <paramref name="question"/>, matched on
     /// <see cref="QuestionKey"/>.
     ///
-    /// An answer counts only when it is <c>Ok</c>, carries a quality score, and was answered
+    /// An answer counts only when it is <c>Ok</c>, carries a published score
+    /// (<see cref="BenchmarkScoring.IndexQuality"/>), and was answered
     /// against <paramref name="question"/>'s revision. Suite Health passes the live questions, so
     /// that is the current revision there; group statistics pass the questions
     /// <see cref="BenchmarkRunExam"/> builds from the runs, so it is the revision the runs were
@@ -293,10 +298,11 @@ public static class BenchmarkItemAnalysis
         var samples = new List<(BenchmarkRun Run, BenchmarkRunAnswer Answer)>();
         foreach (var run in runs)
         {
+            bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
             var answer = (run.Answers ?? new List<BenchmarkRunAnswer>())
                 .FirstOrDefault(a => QuestionKey(a) == question.Id
                                      && BenchmarkRunFinalizer.CountsTowardQualityIndex(a)
-                                     && a.QualityScore.HasValue
+                                     && BenchmarkScoring.IndexQuality(a, isPanelRun).HasValue
                                      && (a.ItemRevisionUsed == null || a.ItemRevisionUsed == question.ItemRevision));
 
             if (answer != null)
@@ -329,10 +335,10 @@ public static class BenchmarkItemAnalysis
             };
         }
 
-        var scores = samples.Select(s => s.Answer.QualityScore!.Value).ToList();
+        var scores = samples.Select(s => ScoreOf(s)).ToList();
         double mean = scores.Average();
-        int min = scores.Min();
-        int max = scores.Max();
+        double min = scores.Min();
+        double max = scores.Max();
         double variance = scores.Sum(s => (s - mean) * (s - mean)) / scores.Count;
         double stdDev = Math.Sqrt(variance);
 
@@ -409,10 +415,14 @@ public static class BenchmarkItemAnalysis
         if (ranked.Count < MinRunsForDiscrimination) return null;
 
         int half = ranked.Count / 2;
-        double top = ranked.Take(half).Average(s => (double)s.Answer.QualityScore!.Value);
-        double bottom = ranked.Skip(ranked.Count - half).Average(s => (double)s.Answer.QualityScore!.Value);
+        double top = ranked.Take(half).Average(s => ScoreOf(s));
+        double bottom = ranked.Skip(ranked.Count - half).Average(s => ScoreOf(s));
         return top - bottom;
     }
+
+    /// <summary>A sample's published score. Every sample carries one: see <see cref="Samples"/>.</summary>
+    private static double ScoreOf((BenchmarkRun Run, BenchmarkRunAnswer Answer) sample)
+        => BenchmarkScoring.IndexQuality(sample.Answer, BenchmarkRunFinalizer.IsPanelRun(sample.Run))!.Value;
 
     private static int DistinctCount(IEnumerable<string?> values)
     {

@@ -140,7 +140,8 @@
   @media (max-width: 800px)  { grid-template-columns: 1fr; }
 }
 
-.form-row.claim-verifier-row {
+.form-row.claim-verifier-row,
+.form-row.co-assessor-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
@@ -921,7 +922,8 @@
   }
 }
 
-.second-opinion-box {
+.second-opinion-box,
+.co-assessment-box {
   padding: 10px 12px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-left: 3px solid rgba(0, 200, 255, 0.5);
@@ -1215,13 +1217,6 @@
     font-weight: 700;
     color: #eee;
   }
-}
-
-.prose-review {
-  white-space: pre-wrap;
-  line-height: 1.6;
-  font-size: 14px;
-  color: #ddd;
 }
 
 .evaluation-chip-row {
@@ -2415,6 +2410,30 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   .calibration-table { font-size: 12px; }
   .calibration-error { color: #fbbf24; }
 }
+
+// Assessor panel. Terse for the same component style budget as above.
+// The co-assessor sits under the Assessor Model column it pairs with, once the rows go multi-column.
+@media (min-width: 801px) {
+  .form-row.co-assessor-row > .form-group { grid-column: 2; }
+}
+.co-assessment-box {
+  border-left-color: rgba(74, 222, 128, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  .evaluation-chip-row { margin: 4px 0; }
+}
+.co-assessment-error { color: #fbbf24; }
+.panel-disagree-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid rgba(251, 191, 36, 0.6);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 600;
+}
+.panel-score-chip { font-weight: 800; }
 
 .badge-board {
   background: rgba(59, 130, 246, 0.15);

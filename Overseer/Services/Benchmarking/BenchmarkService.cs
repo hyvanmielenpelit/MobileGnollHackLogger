@@ -73,6 +73,20 @@ public class BenchmarkService
         "This run stopped before finishing its suite, so it has no Intelligence Index or Speed Index. " +
         "Re-scoring or re-running it would publish indices computed over only the questions that completed.";
 
+    /// <summary>Why a grader override (retry, re-assess, re-run, re-run synthesis) was refused on a panel run.</summary>
+    public const string PanelOverrideRefusedMessage =
+        "This is a panel run. Grader overrides are refused: a panel graded partly by a substitute model is a mixed instrument.";
+
+    /// <summary>Why a trial re-assessment over an existing second opinion was refused on a panel run.</summary>
+    public const string PanelTrialReplaceRefusedMessage =
+        "This is a panel run. The existing second opinion is the reference reader's verdict and cannot be replaced by a trial.";
+
+    /// <summary>
+    /// What an assessor calibration may compare against: member A's verdicts, member B's, or the
+    /// panel's mean. The last two exist only on panel runs.
+    /// </summary>
+    public static readonly string[] CalibrationCompareTargets = { "Assessor", "CoAssessor", "Panel" };
+
     /// <summary>
     /// True when the run was graded under the scoring method this build grades under. Anything
     /// that grades part of a run (re-assess, calibrate, re-run, retries, series resume) is refused
@@ -291,6 +305,11 @@ public class BenchmarkService
         ApplicationDbContext db, BenchmarkRun run, CancellationToken ct)
         => ResolveGraderAsync(db, run.SecondOpinionAssessorModelConfigurationId, run.SecondOpinionAssessorModelSnapshot, "The second-opinion assessor configuration was not found.", ct);
 
+    /// <summary>The run's co-assessor (panel member B), with the settings it was launched with.</summary>
+    internal Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveCoAssessorAsync(
+        ApplicationDbContext db, BenchmarkRun run, CancellationToken ct)
+        => ResolveGraderAsync(db, run.CoAssessorModelConfigurationId, run.CoAssessorModelSnapshot, "The co-assessor configuration was not found.", ct);
+
     /// <summary>
     /// A grader's usable configuration and key. With <paramref name="recorded"/> the configuration is
     /// bound to it; without, the live settings are captured now and recorded as the grader's.
@@ -412,6 +431,25 @@ public class BenchmarkService
                 return;
             }
 
+            // A panel cannot grade without its second member, so an unusable one fails the run as an
+            // unusable assessor does.
+            SystemAiApiConfiguration? coAssessorConfig = null;
+            string? coAssessorApiKey = null;
+            if (BenchmarkRunFinalizer.IsPanelRun(run))
+            {
+                string? coAssessorError;
+                (coAssessorConfig, coAssessorApiKey, coAssessorError) = await ResolveCoAssessorAsync(db, run, cancellationToken);
+                if (coAssessorConfig == null || coAssessorApiKey == null)
+                {
+                    run.Status = BenchmarkRunStatus.Failed;
+                    run.ErrorMessage = BenchmarkAssessmentFailure.Truncate("Co-assessor configuration unusable: " + coAssessorError);
+                    run.CompletedAtUtc = DateTime.UtcNow;
+                    await db.SaveChangesAsync(cancellationToken);
+                    _runManager.Complete(runId);
+                    return;
+                }
+            }
+
             // Load scoring profile
             BenchmarkScoringProfile profile;
             if (run.ScoringProfileId.HasValue)
@@ -444,6 +482,14 @@ public class BenchmarkService
             else if (!run.SecondOpinionAssessorModelConfigurationId.HasValue)
             {
                 run.SecondOpinionModeUsed = (int)BenchmarkSecondOpinionMode.Off;
+            }
+
+            // In a panel run the second opinion is the reference reader: it reads every answer, blind,
+            // whatever the profile or the start request asked for.
+            if (BenchmarkRunFinalizer.IsPanelRun(run) && run.SecondOpinionAssessorModelConfigurationId.HasValue)
+            {
+                run.SecondOpinionModeUsed = (int)BenchmarkSecondOpinionMode.All;
+                run.SecondOpinionBlindUsed = true;
             }
 
             if (run.ClaimVerifierModelConfigurationId.HasValue)
@@ -524,6 +570,16 @@ public class BenchmarkService
                 _logger.LogInformation("Tested and assessor models share credential key '{Key}'. Serializing assessment behind answering.", testedKey);
             }
 
+            if (coAssessorConfig != null)
+            {
+                string coAssessorKey = AiRequestGovernor.GetCredentialKey(coAssessorConfig.Provider, null, coAssessorConfig.Id);
+                if (string.Equals(testedKey, coAssessorKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation("Tested and co-assessor models share credential key '{Key}'. Serializing assessment behind answering.", testedKey);
+                    credentialCollision = true;
+                }
+            }
+
             var createdAnswers = new ConcurrentBag<BenchmarkRunAnswer>();
 
             // Grading — assessment, claim verification and any per-answer second opinion — runs
@@ -572,7 +628,7 @@ public class BenchmarkService
                             gradingTasks.Add(GradeAnswerAsync(
                                 qScope, run, ans, question.ExpectedPoints,
                                 assessorConfig, assessorApiKey, scoringConstants,
-                                gradingGate, cancellationToken));
+                                gradingGate, cancellationToken, coAssessorConfig, coAssessorApiKey));
                             scopeHandedOver = true;
                         }
                     }
@@ -613,7 +669,8 @@ public class BenchmarkService
                         {
                             await ExecutePerQuestionAssessmentAsync(
                                 qDb, qConfigService, run, ans, question.ExpectedPoints,
-                                assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+                                assessorConfig, assessorApiKey, scoringConstants, cancellationToken,
+                                coAssessorConfig, coAssessorApiKey);
                         }
                     }
                     finally
@@ -640,7 +697,8 @@ public class BenchmarkService
                     suiteQuestions.TryGetValue(ans.OrderIndex, out var ep);
                     await ExecutePerQuestionAssessmentAsync(
                         db, configService, run, ans, ep,
-                        assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+                        assessorConfig, assessorApiKey, scoringConstants, cancellationToken,
+                        coAssessorConfig, coAssessorApiKey);
                 }
             }
 
@@ -677,7 +735,9 @@ public class BenchmarkService
 
             // Final Synthesis Pass
             _runManager.MarkStage(runId, BenchmarkRunStage.Synthesizing);
-            await ExecuteFinalSynthesisAsync(db, configService, run, assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+            await ExecuteFinalSynthesisAsync(
+                db, configService, run, assessorConfig, assessorApiKey, scoringConstants, cancellationToken,
+                coAssessorConfig, coAssessorApiKey);
 
             // Finalize Run totals & status
             runStopwatch.Stop();
@@ -793,6 +853,20 @@ public class BenchmarkService
             string testedApiKey = _cryptoService.Decrypt(testedConfig.EncryptedApiKey, testedConfig.ApiKeyNonce!, testedConfig.ApiKeyTag!, "SYSTEM_API_KEY");
             string assessorApiKey = _cryptoService.Decrypt(assessorConfig.EncryptedApiKey, assessorConfig.ApiKeyNonce!, assessorConfig.ApiKeyTag!, "SYSTEM_API_KEY");
 
+            SystemAiApiConfiguration? coAssessorConfig = null;
+            string? coAssessorApiKey = null;
+            if (BenchmarkRunFinalizer.IsPanelRun(run))
+            {
+                string? coAssessorError;
+                (coAssessorConfig, coAssessorApiKey, coAssessorError) = await ResolveCoAssessorAsync(db, run, cancellationToken);
+                if (coAssessorConfig == null || coAssessorApiKey == null)
+                {
+                    await RestoreTerminalStatusAsync(db, run, "Failed-question re-run could not start: " + coAssessorError);
+                    _runManager.Complete(runId);
+                    return;
+                }
+            }
+
             if (run.ClaimVerifierModelConfigurationId.HasValue)
             {
                 var (verifierConfig, verifierApiKey, verifierError) = await ResolveClaimVerifierAsync(db, run, cancellationToken);
@@ -863,7 +937,8 @@ public class BenchmarkService
 
                 await ExecutePerQuestionAssessmentAsync(
                     db, configService, run, answer, BenchmarkRunExamRecord.Rubric(answer),
-                    assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+                    assessorConfig, assessorApiKey, scoringConstants, cancellationToken,
+                    coAssessorConfig, coAssessorApiKey);
                 _runManager.MarkRerunScored(runId, answer.OrderIndex);
             }
 
@@ -882,7 +957,9 @@ public class BenchmarkService
             await RunClaimVerificationAsync(db, configService, run, cancellationToken);
 
             _runManager.MarkStage(runId, BenchmarkRunStage.Synthesizing);
-            await ExecuteFinalSynthesisAsync(db, configService, run, assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+            await ExecuteFinalSynthesisAsync(
+                db, configService, run, assessorConfig, assessorApiKey, scoringConstants, cancellationToken,
+                coAssessorConfig, coAssessorApiKey);
 
             rerunStopwatch.Stop();
             run.RerunCompletedAtUtc = DateTime.UtcNow;
@@ -1546,6 +1623,7 @@ public class BenchmarkService
             ThoughtText = isTerminalFailure ? null : sanitized.ThoughtText,
             Status = status,
             AssessmentStatus = BenchmarkAssessmentStatus.Pending,
+            CoAssessmentStatus = BenchmarkRunFinalizer.IsPanelRun(run) ? BenchmarkAssessmentStatus.Pending : null,
             ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError),
             ProviderErrorDetail = isTerminalFailure ? BenchmarkAssessmentFailure.Truncate(terminalErrorDetail, 4000) : null,
             HttpStatusCode = canceledByOperator ? null : classification.HttpStatus,
@@ -1789,6 +1867,10 @@ public class BenchmarkService
         answer.ThoughtText = isTerminalFailure ? null : sanitized.ThoughtText;
         answer.Status = status;
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
+        if (BenchmarkRunFinalizer.IsPanelRun(run))
+        {
+            answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Pending;
+        }
         answer.ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError);
         answer.ProviderErrorDetail = isTerminalFailure ? BenchmarkAssessmentFailure.Truncate(terminalErrorDetail, 4000) : null;
         answer.HttpStatusCode = canceledByOperator ? null : classification.HttpStatus;
@@ -1879,7 +1961,9 @@ public class BenchmarkService
         string assessorApiKey,
         BenchmarkScoringConstants scoringConstants,
         SemaphoreSlim gate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SystemAiApiConfiguration? coAssessorConfig = null,
+        string? coAssessorApiKey = null)
     {
         try
         {
@@ -1891,7 +1975,8 @@ public class BenchmarkService
 
                 await ExecutePerQuestionAssessmentAsync(
                     db, configService, run, answer, expectedPoints,
-                    assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+                    assessorConfig, assessorApiKey, scoringConstants, cancellationToken,
+                    coAssessorConfig, coAssessorApiKey);
             }
             finally
             {
@@ -1923,8 +2008,17 @@ public class BenchmarkService
         SystemAiApiConfiguration assessorConfig,
         string assessorApiKey,
         BenchmarkScoringConstants constants,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SystemAiApiConfiguration? coAssessorConfig = null,
+        string? coAssessorApiKey = null,
+        BenchmarkPanelMember members = BenchmarkPanelMember.Both)
     {
+        // In a panel run the members named by `members` are graded, each from the same prompt; outside
+        // one, only the assessor. Re-grading one member leaves the other's stored verdict as it is.
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        bool gradeA = !isPanelRun || members.HasFlag(BenchmarkPanelMember.A);
+        bool gradeB = isPanelRun && members.HasFlag(BenchmarkPanelMember.B);
+
         // An answer with no text has nothing for a grader to read, and the assessor's empty reply was being
         // recorded as a harness stage failure — a guaranteed one, paid for at assessor rates on every empty
         // answer. Which branch applies is the whole distinction scoring method 10 rests on: a model that
@@ -1933,25 +2027,64 @@ public class BenchmarkService
         // CompletedWithErrors — an empty answer is an error whatever produced it.
         if (answer.Status == BenchmarkAnswerStatus.EmptyAnswer || string.IsNullOrWhiteSpace(answer.AnswerText))
         {
-            if (BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(answer))
+            const string NotGradedComment =
+                "Not assessed by a grader: the model ended its turn without producing an answer. "
+                + "Scored 0 under scoring method 10.";
+            string? notGradedError = null;
+            if (!BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(answer))
             {
-                answer.QualityScore = 0;
-                answer.RawQualityScore = 0;
-                answer.Score = 0;
-                answer.AssessmentStatus = BenchmarkAssessmentStatus.Scored;
-                answer.ReviewComment =
-                    "Not assessed by a grader: the model ended its turn without producing an answer. "
-                    + "Scored 0 under scoring method 10.";
-                answer.AssessmentError = null;
-            }
-            else
-            {
-                answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
-                answer.AssessmentError = answer.Status == BenchmarkAnswerStatus.Canceled
+                notGradedError = answer.Status == BenchmarkAnswerStatus.Canceled
                     ? "Not assessed: the operator canceled the run before the answer completed; excluded from scoring."
                     : BenchmarkRunFinalizer.HasTerminalFailure(answer)
                         ? "Not assessed: the provider failed the request; excluded from scoring."
                         : "Not assessed: the answer contained no text, and the provider reported no normal stop.";
+            }
+
+            if (gradeA)
+            {
+                if (notGradedError == null)
+                {
+                    answer.QualityScore = 0;
+                    answer.RawQualityScore = 0;
+                    answer.Score = 0;
+                    answer.AssessmentStatus = BenchmarkAssessmentStatus.Scored;
+                    answer.ReviewComment = NotGradedComment;
+                    answer.AssessmentError = null;
+                }
+                else
+                {
+                    answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
+                    answer.AssessmentError = notGradedError;
+                }
+            }
+
+            if (gradeB)
+            {
+                if (notGradedError == null)
+                {
+                    answer.CoAssessmentQualityScore = 0;
+                    answer.CoAssessmentRawQualityScore = 0;
+                    answer.CoAssessmentCriticalError = false;
+                    answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+                    {
+                        QualityScore = 0,
+                        RawQualityScore = 0,
+                        Comment = NotGradedComment,
+                        Flags = new BenchmarkCoAssessmentFlags()
+                    }.Serialize();
+                    answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+                    answer.CoAssessmentError = null;
+                }
+                else
+                {
+                    answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+                    answer.CoAssessmentError = notGradedError;
+                }
+            }
+
+            if (isPanelRun)
+            {
+                ComputePanelScore(answer);
             }
 
             await db.SaveChangesAsync(CancellationToken.None);
@@ -1966,15 +2099,46 @@ public class BenchmarkService
         }
         catch (InvalidOperationException ex)
         {
-            answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
-            answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            if (gradeA)
+            {
+                answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
+                answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            }
+            if (gradeB)
+            {
+                answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+                answer.CoAssessmentError = BenchmarkAssessmentFailure.Truncate(ex.Message);
+            }
+            if (isPanelRun)
+            {
+                ComputePanelScore(answer);
+            }
             _logger.LogWarning("Benchmark run {RunId} answer {OrderIndex} assessment failed: {Error}",
                 run.Id, answer.OrderIndex, ex.Message);
             await db.SaveChangesAsync(CancellationToken.None);
             return;
         }
 
-        answer.AssessmentStatus = BenchmarkAssessmentStatus.Assessing;
+        // A panel member that could not be resolved fails its own verdict, re-runnable, and the
+        // other member grades as usual.
+        if (gradeB && (coAssessorConfig == null || string.IsNullOrWhiteSpace(coAssessorApiKey)))
+        {
+            gradeB = false;
+            answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+            answer.CoAssessmentError = "Not assessed: the co-assessor configuration was unavailable.";
+            _logger.LogWarning("Benchmark run {RunId} answer {OrderIndex}: co-assessment skipped, the co-assessor configuration was unavailable.",
+                run.Id, answer.OrderIndex);
+        }
+
+        if (!gradeA && !gradeB)
+        {
+            ComputePanelScore(answer);
+            await db.SaveChangesAsync(CancellationToken.None);
+            return;
+        }
+
+        if (gradeA) answer.AssessmentStatus = BenchmarkAssessmentStatus.Assessing;
+        if (gradeB) answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Assessing;
         await db.SaveChangesAsync(CancellationToken.None);
 
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
@@ -1995,109 +2159,48 @@ public class BenchmarkService
             answer.ScrubbedArtifactCount,
             answer.ToolCallBudgetUsed,
             boardGivenAbove: boardBlock != null);
-        var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
-            GradingSystemPrompt,
-            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
-            prompt,
-            boardBlock);
 
-        var runRequest = new AgentRunRequest
+        // One request per member, each with its own seed history: the repair turn appends to it, and
+        // a shared one would hand each member the other's repair. The two calls run concurrently and
+        // touch no DbContext; everything that does runs after both have returned.
+        var requestA = gradeA
+            ? BuildPerQuestionGradingRequest(run, prompt, boardBlock, assessorConfig, assessorApiKey,
+                GraderOutputCap(assessorConfig, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens))
+            : null;
+        var requestB = gradeB
+            ? BuildPerQuestionGradingRequest(run, prompt, boardBlock, coAssessorConfig!, coAssessorApiKey!,
+                GraderOutputCap(coAssessorConfig!, run.CoAssessorModelSnapshotId, run.CoAssessorEffectiveMaxOutputTokens))
+            : null;
+
+        Task<PerQuestionGradingOutcome>? gradingA = requestA != null
+            ? RunPerQuestionGradingAsync(run, answer, requestA, "assessor", "Assessor", cancellationToken)
+            : null;
+        Task<PerQuestionGradingOutcome>? gradingB = requestB != null
+            ? RunPerQuestionGradingAsync(run, answer, requestB, "co-assessor", "Co-assessor", cancellationToken)
+            : null;
+
+        if (gradingA != null && gradingB != null)
         {
-            ProviderName = assessorConfig.Provider,
-            ModelId = assessorConfig.ModelId,
-            ApiKey = assessorApiKey,
-            Endpoint = EndpointFor(assessorConfig),
-            ModelDisplayName = assessorConfig.DisplayName,
-            SystemPrompt = gradingPrompt.FullPrompt,
-            SegmentedPrompt = gradingPrompt,
-            ThinkingLevel = assessorConfig.ThinkingLevel,
-            ReasoningMode = assessorConfig.ReasoningMode,
-            ReasoningSummary = assessorConfig.ReasoningSummary,
-            ServiceTier = assessorConfig.ServiceTier,
-            MaxOutputTokens = GraderOutputCap(assessorConfig, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens),
-            MaxToolIterations = 0,
-            EnableToolUse = false,
-            EnableWebSearch = false,
-            EnableSubAgents = false,
-            SystemModelId = assessorConfig.Id,
-            PromptCacheKey = $"benchmark:per_question:{assessorConfig.ModelId}",
-            CacheConversationTail = false,
-            Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
-            ToolExecutionContext = new Tools.ToolExecutionContext
-            {
-                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(run.Id),
-                UserId = run.StartedByUserId ?? string.Empty,
-                ShowDebugLog = false
-            },
-            SeedHistory = gradingSeedHistory
-        };
-
-        var runResult = new AgentRunResult();
-        var sw = Stopwatch.StartNew();
-        string? terminalError = null;
-        try
-        {
-            // A request that would not carry the board ahead of the question fails this answer's
-            // assessment, re-runnable, before anything is sent.
-            VerifyPerQuestionGradingDelivery(runRequest, "assessor", run, answer.OrderIndex);
-            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
-            {
-                if (evt.Type == "error") terminalError = evt.Data?.ToString();
-            }
-        }
-        catch (OperationCanceledException) { throw; }   // cancellation must still cancel the run
-        catch (Exception ex) { terminalError = ex.Message; }
-
-        // Accumulated across the retry below, so a run that needed a second attempt reports what
-        // it actually consumed. The stopwatch keeps running for the same reason.
-        int assessmentInputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
-        int assessmentOutputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
-        int assessmentCacheReadTokens = runResult.CacheReadTokens;
-        int assessmentCacheCreationTokens = runResult.CacheCreationTokens;
-
-        // The graded text is passed so an unverifiable critical error is demoted rather than
-        // capping the question at 25 on an assertion nobody can check.
-        var parseResult = string.IsNullOrWhiteSpace(terminalError)
-            ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText, answer.AnswerText)
-            : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = terminalError };
-
-        if (string.IsNullOrWhiteSpace(terminalError) && !parseResult.Success)
-        {
-            _logger.LogWarning("Assessor per-question output failed JSON parsing. Retrying once...");
-            runRequest.SeedHistory.Add(new { role = "assistant", content = runResult.FinalText ?? string.Empty });
-            runRequest.SeedHistory.Add(new { role = "user", content = $"Your previous response was not valid JSON or could not be parsed: {parseResult.ErrorMessage}. Please output ONLY the raw JSON object according to the schema without any markdown wrapping or extra text." });
-
-            var retryResult = new AgentRunResult();
-            try
-            {
-                VerifyPerQuestionGradingDelivery(runRequest, "assessor", run, answer.OrderIndex);
-                await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, cancellationToken))
-                {
-                    if (evt.Type == "error") terminalError = evt.Data?.ToString();
-                }
-            }
-            catch (OperationCanceledException) { throw; }
-            catch (Exception ex) { terminalError = ex.Message; }
-
-            if (string.IsNullOrWhiteSpace(terminalError))
-            {
-                parseResult = BenchmarkAssessmentParser.ParsePerQuestion(retryResult.FinalText, answer.AnswerText);
-            }
-            assessmentInputTokens += retryResult.TotalPromptTokens > 0 ? retryResult.TotalPromptTokens : retryResult.EstimatedInputTokens;
-            assessmentOutputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
-            assessmentCacheReadTokens += retryResult.CacheReadTokens;
-            assessmentCacheCreationTokens += retryResult.CacheCreationTokens;
-            if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
+            await Task.WhenAll(gradingA, gradingB);
         }
 
-        sw.Stop();
-        answer.AssessmentInputTokens = assessmentInputTokens;
-        answer.AssessmentOutputTokens = assessmentOutputTokens;
-        answer.AssessmentCacheReadTokens = assessmentCacheReadTokens;
-        answer.AssessmentCacheCreationTokens = assessmentCacheCreationTokens;
-        answer.AssessmentDurationMs = sw.ElapsedMilliseconds;
+        PerQuestionGradingOutcome? outcomeA = gradingA != null ? await gradingA : null;
+        PerQuestionGradingOutcome? outcomeB = gradingB != null ? await gradingB : null;
 
-        if (string.IsNullOrWhiteSpace(terminalError) && parseResult.Success && parseResult.Result != null)
+        string? terminalError = outcomeA?.TerminalError;
+        var parseResult = outcomeA?.Parse ?? new PerQuestionAssessmentParseResult { Success = false };
+        var runResult = outcomeA?.LastResult ?? new AgentRunResult();
+
+        if (outcomeA != null)
+        {
+            answer.AssessmentInputTokens = outcomeA.InputTokens;
+            answer.AssessmentOutputTokens = outcomeA.OutputTokens;
+            answer.AssessmentCacheReadTokens = outcomeA.CacheReadTokens;
+            answer.AssessmentCacheCreationTokens = outcomeA.CacheCreationTokens;
+            answer.AssessmentDurationMs = outcomeA.DurationMs;
+        }
+
+        if (outcomeA != null && string.IsNullOrWhiteSpace(terminalError) && parseResult.Success && parseResult.Result != null)
         {
             var res = parseResult.Result;
             answer.AccuracyLevel = res.AccuracyLevel;
@@ -2288,7 +2391,7 @@ public class BenchmarkService
             answer.AssessmentStatus = BenchmarkAssessmentStatus.Scored;
             answer.AssessmentError = null;
         }
-        else
+        else if (outcomeA != null)
         {
             var failure = BenchmarkAssessmentFailure.Describe(terminalError, parseResult.ErrorMessage);
             answer.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
@@ -2297,42 +2400,92 @@ public class BenchmarkService
                 run.Id, answer.OrderIndex, failure.Message);
         }
 
-        // The assessor's own text, on every graded answer and on both branches above: a verdict that
-        // failed to parse is exactly the one whose text is worth having, and a verdict that parsed
-        // still cannot say afterwards whether a dimension was graded at the floor or never graded at
-        // all. The parse result carries the text when a reply arrived; runResult.FinalText is what
-        // remains when the call ended in a terminal error before any parse.
-        answer.AssessmentRawText = CapAssessmentRawText(parseResult.RawText ?? runResult.FinalText);
+        if (outcomeA != null)
+        {
+            // The assessor's own text, on every graded answer and on both branches above: a verdict that
+            // failed to parse is exactly the one whose text is worth having, and a verdict that parsed
+            // still cannot say afterwards whether a dimension was graded at the floor or never graded at
+            // all. The parse result carries the text when a reply arrived; runResult.FinalText is what
+            // remains when the call ended in a terminal error before any parse.
+            answer.AssessmentRawText = CapAssessmentRawText(parseResult.RawText ?? runResult.FinalText);
 
-        answer.AssessedByModelConfigurationId = assessorConfig.Id;
-        answer.AssessedByModelSnapshot = await GraderSnapshotAsync(db, assessorConfig, CancellationToken.None);
-        answer.AssessedAtUtc = DateTime.UtcNow;
+            answer.AssessedByModelConfigurationId = assessorConfig.Id;
+            answer.AssessedByModelSnapshot = await GraderSnapshotAsync(db, assessorConfig, CancellationToken.None);
+            answer.AssessedAtUtc = DateTime.UtcNow;
+        }
+
+        if (outcomeB != null)
+        {
+            ApplyCoAssessment(answer, outcomeB.Parse, outcomeB.TerminalError, constants, assessorBoardChars, outcomeB.LastResult.FinalText);
+            answer.CoAssessmentInputTokens = outcomeB.InputTokens;
+            answer.CoAssessmentOutputTokens = outcomeB.OutputTokens;
+            answer.CoAssessmentCacheReadTokens = outcomeB.CacheReadTokens;
+            answer.CoAssessmentCacheCreationTokens = outcomeB.CacheCreationTokens;
+            answer.CoAssessmentDurationMs = outcomeB.DurationMs;
+            answer.CoAssessedByModelSnapshot = await GraderSnapshotAsync(db, coAssessorConfig!, CancellationToken.None);
+            answer.CoAssessedAtUtc = DateTime.UtcNow;
+            if (answer.CoAssessmentStatus == BenchmarkAssessmentStatus.Failed)
+            {
+                _logger.LogWarning("Benchmark run {RunId} answer {OrderIndex} co-assessment failed: {Error}",
+                    run.Id, answer.OrderIndex, answer.CoAssessmentError);
+            }
+        }
+
+        if (isPanelRun)
+        {
+            ComputePanelScore(answer);
+        }
 
         await db.SaveChangesAsync(CancellationToken.None);
 
-        try
+        if (outcomeA != null)
         {
-            await configService.RecordUsageAsync(
-                assessorConfig.Id,
-                run.StartedByUserId,
-                runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
-                runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
-                roleContext: 4,
-                cacheReadTokens: runResult.CacheReadTokens,
-                cacheCreationTokens: runResult.CacheCreationTokens,
-                totalDurationMs: (int)sw.ElapsedMilliseconds);
+            try
+            {
+                await configService.RecordUsageAsync(
+                    assessorConfig.Id,
+                    run.StartedByUserId,
+                    runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
+                    runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
+                    roleContext: 4,
+                    cacheReadTokens: runResult.CacheReadTokens,
+                    cacheCreationTokens: runResult.CacheCreationTokens,
+                    totalDurationMs: (int)outcomeA.DurationMs);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record usage for per-question assessor call.");
+            }
         }
-        catch (Exception ex)
+
+        if (outcomeB != null)
         {
-            _logger.LogWarning(ex, "Failed to record usage for per-question assessor call.");
+            var coResult = outcomeB.LastResult;
+            try
+            {
+                await configService.RecordUsageAsync(
+                    coAssessorConfig!.Id,
+                    run.StartedByUserId,
+                    coResult.TotalPromptTokens > 0 ? coResult.TotalPromptTokens : coResult.EstimatedInputTokens,
+                    coResult.OutputTokens > 0 ? coResult.OutputTokens : coResult.EstimatedOutputTokens,
+                    roleContext: 4,
+                    cacheReadTokens: coResult.CacheReadTokens,
+                    cacheCreationTokens: coResult.CacheCreationTokens,
+                    totalDurationMs: (int)outcomeB.DurationMs);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record usage for per-question co-assessor call.");
+            }
         }
 
         // A critical-error quote is checked here too, not only an unadjudicable claim: the quote is
         // the one assertion in the answer whose truth the cap already turns on, and the assessor
         // grades without tools while the verifier has them. So is the statement an out-of-rubric
         // Accuracy deduction rests on, which the assessor gave from its own knowledge, and a
-        // sentence of the answer the assessor quoted when it docked Accuracy.
-        if (run.ClaimVerifierModelConfigurationId.HasValue && NeedsClaimVerificationOrAccusation(answer))
+        // sentence of the answer the assessor quoted when it docked Accuracy. In a panel run, either
+        // member's verdict qualifies the answer, and the union of both members' items is checked.
+        if (run.ClaimVerifierModelConfigurationId.HasValue && NeedsClaimVerificationForRun(run, answer))
         {
             try
             {
@@ -2361,6 +2514,360 @@ public class BenchmarkService
         await MaybeRunSecondOpinionAsync(
             db, configService, run, answer, expectedPoints, constants, cancellationToken);
     }
+
+    /// <summary>
+    /// One member's per-question grading turn, its repair turn included: the parse, the terminal
+    /// error, the result whose usage is recorded, and what both turns consumed together.
+    /// </summary>
+    private sealed record PerQuestionGradingOutcome(
+        PerQuestionAssessmentParseResult Parse,
+        string? TerminalError,
+        AgentRunResult LastResult,
+        int InputTokens,
+        int OutputTokens,
+        int CacheReadTokens,
+        int CacheCreationTokens,
+        long DurationMs);
+
+    /// <summary>
+    /// A per-question grading request for <paramref name="config"/>: the grading instructions, the
+    /// board block when the suite has one, then <paramref name="prompt"/>, with a fresh seed history.
+    /// Its budget of two model calls leaves room for exactly one repair turn.
+    /// </summary>
+    private AgentRunRequest BuildPerQuestionGradingRequest(
+        BenchmarkRun run,
+        string prompt,
+        string? boardBlock,
+        SystemAiApiConfiguration config,
+        string apiKey,
+        int maxOutputTokens)
+    {
+        var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
+            GradingSystemPrompt,
+            BenchmarkAssessmentPrompt.BuildPerQuestionPreamble(run.SuiteName),
+            prompt,
+            boardBlock);
+
+        return new AgentRunRequest
+        {
+            ProviderName = config.Provider,
+            ModelId = config.ModelId,
+            ApiKey = apiKey,
+            Endpoint = EndpointFor(config),
+            ModelDisplayName = config.DisplayName,
+            SystemPrompt = gradingPrompt.FullPrompt,
+            SegmentedPrompt = gradingPrompt,
+            ThinkingLevel = config.ThinkingLevel,
+            ReasoningMode = config.ReasoningMode,
+            ReasoningSummary = config.ReasoningSummary,
+            ServiceTier = config.ServiceTier,
+            MaxOutputTokens = maxOutputTokens,
+            MaxToolIterations = 0,
+            EnableToolUse = false,
+            EnableWebSearch = false,
+            EnableSubAgents = false,
+            SystemModelId = config.Id,
+            PromptCacheKey = $"benchmark:per_question:{config.ModelId}",
+            CacheConversationTail = false,
+            Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
+            ToolExecutionContext = new Tools.ToolExecutionContext
+            {
+                SessionId = Overseer.Services.Privacy.SessionRef.Persistent(run.Id),
+                UserId = run.StartedByUserId ?? string.Empty,
+                ShowDebugLog = false
+            },
+            SeedHistory = gradingSeedHistory
+        };
+    }
+
+    /// <summary>
+    /// Sends one per-question grading request and, when its reply does not parse, one repair turn on
+    /// the same request. Writes nothing and touches no DbContext, so two members' calls may run at
+    /// once. Cancellation propagates; any other failure is the outcome's terminal error.
+    /// </summary>
+    private async Task<PerQuestionGradingOutcome> RunPerQuestionGradingAsync(
+        BenchmarkRun run,
+        BenchmarkRunAnswer answer,
+        AgentRunRequest runRequest,
+        string role,
+        string logLabel,
+        CancellationToken cancellationToken)
+    {
+        var runResult = new AgentRunResult();
+        var sw = Stopwatch.StartNew();
+        string? terminalError = null;
+        try
+        {
+            // A request that would not carry the board ahead of the question fails this answer's
+            // assessment, re-runnable, before anything is sent.
+            VerifyPerQuestionGradingDelivery(runRequest, role, run, answer.OrderIndex);
+            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, runResult, cancellationToken))
+            {
+                if (evt.Type == "error") terminalError = evt.Data?.ToString();
+            }
+        }
+        catch (OperationCanceledException) { throw; }   // cancellation must still cancel the run
+        catch (Exception ex) { terminalError = ex.Message; }
+
+        // Accumulated across the retry below, so a run that needed a second attempt reports what
+        // it actually consumed. The stopwatch keeps running for the same reason.
+        int inputTokens = runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens;
+        int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
+        int cacheReadTokens = runResult.CacheReadTokens;
+        int cacheCreationTokens = runResult.CacheCreationTokens;
+
+        // The graded text is passed so an unverifiable critical error is demoted rather than
+        // capping the question at 25 on an assertion nobody can check.
+        var parseResult = string.IsNullOrWhiteSpace(terminalError)
+            ? BenchmarkAssessmentParser.ParsePerQuestion(runResult.FinalText, answer.AnswerText)
+            : new PerQuestionAssessmentParseResult { Success = false, ErrorMessage = terminalError };
+
+        if (string.IsNullOrWhiteSpace(terminalError) && !parseResult.Success)
+        {
+            _logger.LogWarning("{Grader} per-question output failed JSON parsing. Retrying once...", logLabel);
+            runRequest.SeedHistory.Add(new { role = "assistant", content = runResult.FinalText ?? string.Empty });
+            runRequest.SeedHistory.Add(new { role = "user", content = $"Your previous response was not valid JSON or could not be parsed: {parseResult.ErrorMessage}. Please output ONLY the raw JSON object according to the schema without any markdown wrapping or extra text." });
+
+            var retryResult = new AgentRunResult();
+            try
+            {
+                VerifyPerQuestionGradingDelivery(runRequest, role, run, answer.OrderIndex);
+                await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, retryResult, cancellationToken))
+                {
+                    if (evt.Type == "error") terminalError = evt.Data?.ToString();
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { terminalError = ex.Message; }
+
+            if (string.IsNullOrWhiteSpace(terminalError))
+            {
+                parseResult = BenchmarkAssessmentParser.ParsePerQuestion(retryResult.FinalText, answer.AnswerText);
+            }
+            inputTokens += retryResult.TotalPromptTokens > 0 ? retryResult.TotalPromptTokens : retryResult.EstimatedInputTokens;
+            outputTokens += retryResult.OutputTokens > 0 ? retryResult.OutputTokens : retryResult.EstimatedOutputTokens;
+            cacheReadTokens += retryResult.CacheReadTokens;
+            cacheCreationTokens += retryResult.CacheCreationTokens;
+            if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
+        }
+
+        sw.Stop();
+        return new PerQuestionGradingOutcome(
+            parseResult, terminalError, runResult,
+            inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, sw.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// Writes panel member B's verdict: the <c>Co*</c> score columns, <see cref="BenchmarkRunAnswer.CoAssessmentJson"/>
+    /// with the flags member A's would set on <see cref="BenchmarkRunAnswer.AnswerFlags"/>, its raw
+    /// text and board figure, and its status — <c>Scored</c>, or <c>Failed</c> with the reason.
+    /// Never touches <see cref="BenchmarkRunAnswer.AnswerFlags"/> or member A's columns. A new verdict
+    /// drops the claim verification and re-grade that described the old one, as member A's does.
+    /// </summary>
+    internal static void ApplyCoAssessment(
+        BenchmarkRunAnswer answer,
+        PerQuestionAssessmentParseResult parseResult,
+        string? terminalError,
+        BenchmarkScoringConstants constants,
+        int? boardChars,
+        string? finalText)
+    {
+        answer.CoAssessmentRawText = CapAssessmentRawText(parseResult.RawText ?? finalText);
+
+        if (!string.IsNullOrWhiteSpace(terminalError) || !parseResult.Success || parseResult.Result == null)
+        {
+            var failure = BenchmarkAssessmentFailure.Describe(terminalError, parseResult.ErrorMessage);
+            answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+            answer.CoAssessmentError = failure.Message;
+            return;
+        }
+
+        var res = parseResult.Result;
+        ClearReplacedVerdictEvidence(answer);
+
+        var dedupedUnverifiedClaims = DeduplicateUnverifiedClaims(res.UnverifiedClaims, answer.AnswerText);
+        bool docksSuspectedFalse = !res.AccuracyOutOfRubric
+            && DocksSuspectedFalse(answer.AnswerText, res.AccuracyEvidence, res.UnverifiedClaims, res.AccuracyLevel);
+        bool dimensionOutlier = BenchmarkRunFinalizer.CountsTowardQualityIndex(answer)
+            && BenchmarkVerdictConsistency.IsDimensionOutlier(
+                res.AccuracyLevel, res.AccuracyEvidence,
+                res.CompletenessLevel, res.CompletenessEvidence,
+                res.ConcisenessLevel,
+                res.ReadabilityLevel,
+                res.Comment);
+
+        var (qualityScore, rawQualityScore, _) = BenchmarkScoring.Quality(
+            res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
+            res.CriticalError, constants);
+
+        answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+        {
+            AccuracyLevel = res.AccuracyLevel,
+            CompletenessLevel = res.CompletenessLevel,
+            ConcisenessLevel = res.ConcisenessLevel,
+            ReadabilityLevel = res.ReadabilityLevel,
+            CriticalError = res.CriticalError,
+            CriticalErrorQuote = BenchmarkAssessmentFailure.Truncate(res.CriticalErrorQuote, 2048),
+            CriticalErrorDemoted = res.CriticalErrorDemoted,
+            QualityScore = qualityScore,
+            RawQualityScore = rawQualityScore,
+            Comment = res.Comment,
+            AccuracyEvidence = res.AccuracyEvidence,
+            CompletenessEvidence = res.CompletenessEvidence,
+            ReadabilityEvidence = res.ReadabilityEvidence,
+            UnverifiedClaims = dedupedUnverifiedClaims,
+            Flags = new BenchmarkCoAssessmentFlags
+            {
+                ContestedVerdict = res.ContestedVerdict,
+                UnevidencedDeduction = res.UnevidencedDeduction,
+                OmissionAsAccuracy = res.OmissionAsAccuracy,
+                OutOfRubricAccuracy = res.AccuracyOutOfRubric || docksSuspectedFalse,
+                DimensionOutlier = dimensionOutlier,
+                CompletenessOutOfScope = res.CompletenessOutOfScope,
+                ReadabilityFormOnly = res.ReadabilityFormOnly
+            }
+        }.Serialize();
+
+        answer.CoAssessmentQualityScore = qualityScore;
+        answer.CoAssessmentRawQualityScore = rawQualityScore;
+        answer.CoAssessmentCriticalError = res.CriticalError;
+        answer.CoAssessorBoardChars = boardChars;
+        answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+        answer.CoAssessmentError = null;
+    }
+
+    /// <summary>
+    /// The answer's panel score and disagreement: the mean of the two members' quality scores, and
+    /// whether they are more than <see cref="SecondOpinionDisagreementPoints"/> apart or split on the
+    /// critical-error flag. Both null unless both members scored.
+    /// </summary>
+    internal static void ComputePanelScore(BenchmarkRunAnswer answer)
+    {
+        if (answer.AssessmentStatus == BenchmarkAssessmentStatus.Scored
+            && answer.QualityScore is int scoreA
+            && answer.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored
+            && answer.CoAssessmentQualityScore is int scoreB)
+        {
+            answer.PanelQualityScore = (scoreA + scoreB) / 2.0;
+            answer.PanelDisagreed = Math.Abs(scoreA - scoreB) > SecondOpinionDisagreementPoints
+                || answer.CriticalError != (answer.CoAssessmentCriticalError ?? false);
+        }
+        else
+        {
+            answer.PanelQualityScore = null;
+            answer.PanelDisagreed = null;
+        }
+    }
+
+    /// <summary>
+    /// Clears an answer's verdicts before it is re-executed: member A's verdict, and in a panel run
+    /// member B's and the panel score, with B's status back to <c>Pending</c>. The second-opinion
+    /// verdict is cleared in every run, since the new answer may not select one again. Token and
+    /// cost counters are kept.
+    /// </summary>
+    internal static void ClearForRerun(BenchmarkRunAnswer answer, bool isPanelRun)
+    {
+        answer.AccuracyLevel = null;
+        answer.CompletenessLevel = null;
+        answer.ConcisenessLevel = null;
+        answer.ReadabilityLevel = null;
+        answer.AccuracyScore = null;
+        answer.CompletenessScore = null;
+        answer.ConcisenessScore = null;
+        answer.ReadabilityScore = null;
+        answer.QualityScore = null;
+        answer.SpeedScore = null;
+        answer.Score = null;
+        answer.CriticalError = false;
+        answer.ReviewComment = null;
+        answer.AssessmentError = null;
+        answer.AssessedByModelConfigurationId = null;
+        answer.AssessedByModelSnapshot = null;
+        answer.AssessedByModelSnapshotId = null;
+        answer.AssessedAtUtc = null;
+        answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
+
+        answer.SecondOpinionJson = null;
+        answer.SecondOpinionQualityScore = null;
+        answer.SecondOpinionCriticalError = null;
+        answer.SecondOpinionDisagreed = false;
+        answer.SecondOpinionTrigger = null;
+        answer.SecondOpinionError = null;
+        answer.SecondOpinionByModelSnapshot = null;
+        answer.SecondOpinionByModelSnapshotId = null;
+
+        answer.CoAssessmentStatus = isPanelRun ? BenchmarkAssessmentStatus.Pending : null;
+        answer.CoAssessmentError = null;
+        answer.CoAssessmentQualityScore = null;
+        answer.CoAssessmentRawQualityScore = null;
+        answer.CoAssessmentCriticalError = null;
+        answer.CoAssessmentJson = null;
+        answer.CoAssessmentRawText = null;
+        answer.CoAssessedByModelSnapshot = null;
+        answer.CoAssessedByModelSnapshotId = null;
+        answer.CoAssessedAtUtc = null;
+        answer.CoAssessorBoardChars = null;
+        answer.PanelQualityScore = null;
+        answer.PanelDisagreed = null;
+    }
+
+    /// <summary>
+    /// Member B's quality and raw quality recomputed from the four levels and the critical-error flag
+    /// its <see cref="BenchmarkRunAnswer.CoAssessmentJson"/> records, as a rescore recomputes member
+    /// A's from the primary columns: the record's two scores and the <c>Co*</c> score columns are
+    /// rewritten. An answer whose record carries no levels is left as it is.
+    /// </summary>
+    internal static void RecomputeCoAssessmentScores(BenchmarkRunAnswer answer, BenchmarkScoringConstants constants)
+    {
+        var record = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson);
+        if (record?.AccuracyLevel is not int accuracy
+            || record.CompletenessLevel is not int completeness
+            || record.ConcisenessLevel is not int conciseness
+            || record.ReadabilityLevel is not int readability)
+        {
+            return;
+        }
+
+        var (quality, rawQuality, _) = BenchmarkScoring.Quality(
+            accuracy, completeness, conciseness, readability, record.CriticalError, constants);
+
+        record.QualityScore = quality;
+        record.RawQualityScore = rawQuality;
+        answer.CoAssessmentJson = record.Serialize();
+        answer.CoAssessmentQualityScore = quality;
+        answer.CoAssessmentRawQualityScore = rawQuality;
+        answer.CoAssessmentCriticalError = record.CriticalError;
+    }
+
+    /// <summary>
+    /// Whether a reference reading disagrees with a panel answer: more than
+    /// <see cref="SecondOpinionDisagreementPoints"/> from the panel score, or a critical-error flag
+    /// opposite to one both members agree on. A split panel has no agreed flag to disagree with.
+    /// </summary>
+    internal static bool DisagreesWithPanel(BenchmarkRunAnswer answer, int readerQualityScore, bool readerCriticalError)
+        => answer.PanelQualityScore.HasValue
+            && (Math.Abs(readerQualityScore - answer.PanelQualityScore.Value) > SecondOpinionDisagreementPoints
+                || (answer.CoAssessmentCriticalError.HasValue
+                    && answer.CriticalError == answer.CoAssessmentCriticalError.Value
+                    && readerCriticalError != answer.CriticalError));
+
+    /// <summary>The scored panel members' verdicts, member A first; empty when neither scored.</summary>
+    internal static List<BenchmarkVerdictView> PanelViews(BenchmarkRunAnswer answer)
+    {
+        var views = new List<BenchmarkVerdictView>(2);
+        if (BenchmarkVerdictView.FromPrimary(answer) is { } a) views.Add(a);
+        if (BenchmarkVerdictView.FromCoAssessment(answer) is { } b) views.Add(b);
+        return views;
+    }
+
+    /// <summary>
+    /// <see cref="NeedsClaimVerificationOrAccusation(BenchmarkRunAnswer)"/> outside a panel run; in
+    /// one, whether either scored member's verdict gives the verifier something to check.
+    /// </summary>
+    private bool NeedsClaimVerificationForRun(BenchmarkRun run, BenchmarkRunAnswer answer)
+        => BenchmarkRunFinalizer.IsPanelRun(run)
+            ? PanelViews(answer).Any(v => NeedsClaimVerificationOrAccusation(v, answer.AnswerText))
+            : NeedsClaimVerificationOrAccusation(answer);
 
     /// <summary>
     /// The length <see cref="BenchmarkRunAnswer.AssessmentRawText"/> holds. A verdict runs to a few
@@ -2436,7 +2943,11 @@ public class BenchmarkService
         BenchmarkScoringConstants constants,
         CancellationToken cancellationToken)
     {
-        if (answer.AssessmentStatus != BenchmarkAssessmentStatus.Scored || !answer.QualityScore.HasValue)
+        // In a panel run the reference reader grades against the panel's score, so it waits for both
+        // members.
+        if (BenchmarkRunFinalizer.IsPanelRun(run)
+                ? !answer.PanelQualityScore.HasValue
+                : answer.AssessmentStatus != BenchmarkAssessmentStatus.Scored || !answer.QualityScore.HasValue)
         {
             return;
         }
@@ -2829,11 +3340,15 @@ public class BenchmarkService
             .OrderBy(a => a.OrderIndex)
             .ToListAsync(cancellationToken);
 
-        candidateAnswers = candidateAnswers
-            .Where(a => NeedsClaimVerificationOrAccusation(a) ||
-                        (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
-                        (a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError))
-            .ToList();
+        candidateAnswers = BenchmarkRunFinalizer.IsPanelRun(run)
+            ? candidateAnswers
+                .Where(a => NeedsClaimVerificationForRun(run, a) || IsPanelDisputed(a))
+                .ToList()
+            : candidateAnswers
+                .Where(a => NeedsClaimVerificationOrAccusation(a) ||
+                            (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
+                            (a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError))
+                .ToList();
 
         if (candidateAnswers.Count == 0) return;
 
@@ -2958,80 +3473,14 @@ public class BenchmarkService
             return;
         }
 
-        List<string>? claims = null;
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(answer.UnverifiedClaimsJson))
-            {
-                claims = JsonSerializer.Deserialize<List<string>>(answer.UnverifiedClaimsJson);
-            }
-        }
-        catch (JsonException)
-        {
-            claims = null;
-        }
-
-        bool isDisputed = (((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
-                          (answer.SecondOpinionCriticalError.HasValue && answer.SecondOpinionCriticalError.Value != answer.CriticalError);
-
-        string? accuracyEvidence = null;
-        if (!string.IsNullOrWhiteSpace(answer.AssessmentEvidenceJson))
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(answer.AssessmentEvidenceJson);
-                if (doc.RootElement.TryGetProperty("accuracy", out var accElem))
-                {
-                    accuracyEvidence = accElem.GetString();
-                }
-            }
-            catch
-            {
-                // Ignore parse errors on advisory evidence json
-            }
-        }
-
-        // Only the answer's own sentences are persisted as its unverified claims; the assessor's
-        // sentences are carried in the manifest alone. A retry finds the answer claims this branch
-        // persisted earlier and recovers the assessor statements from the same deterministic
-        // extraction.
-        List<string> assessorStatements = new();
-        if (isDisputed)
-        {
-            var disputed = ExtractDisputedClaims(answer, accuracyEvidence);
-            if (claims == null || claims.Count == 0)
-            {
-                claims = disputed.AnswerClaims;
-                assessorStatements = disputed.AssessorStatements;
-                if (claims.Count > 0)
-                {
-                    answer.UnverifiedClaimCount = claims.Count;
-                    answer.UnverifiedClaimsJson = JsonSerializer.Serialize(claims);
-                }
-            }
-            else if (claims.SequenceEqual(disputed.AnswerClaims, StringComparer.Ordinal))
-            {
-                assessorStatements = disputed.AssessorStatements;
-            }
-        }
-
-        // After the disputed branch has persisted whatever it collected, so the quote is carried in
-        // the prompt only and never lands in the unadjudicable-claims columns. The out-of-rubric
-        // basis is carried the same way. Fixed order: the critical-error quote is claim 0 and the
-        // basis claim 1; alone, the basis is claim 0. The verifier preamble names the basis by that
-        // position. Assessor statements and accused quotes follow; each item's roles come from this
-        // manifest, never from model output.
-        bool isCriticalErrorAdjudication = IsCriticalErrorAdjudication(answer);
-        string? outOfRubricBasis = OutOfRubricBasisOf(answer);
-        bool isOutOfRubricAdjudication = outOfRubricBasis != null;
-        var manifest = BuildClaimManifest(
-            claims,
-            isCriticalErrorAdjudication ? answer.CriticalErrorQuote : null,
-            outOfRubricBasis,
-            AccusedQuotesFor(answer),
-            assessorStatements,
-            answer.AnswerText);
-        claims = manifest.Select(m => m.Text).ToList();
+        var plan = BenchmarkRunFinalizer.IsPanelRun(run)
+            ? BuildPanelClaimPlan(answer)
+            : BuildSingleClaimPlan(answer);
+        var manifest = plan.Manifest;
+        var claims = manifest.Select(m => m.Text).ToList();
+        bool isDisputed = plan.IsDisputed;
+        bool isCriticalErrorAdjudication = plan.IsCriticalErrorAdjudication;
+        bool isOutOfRubricAdjudication = plan.IsOutOfRubricAdjudication;
 
         if (claims.Count == 0) return;
 
@@ -3073,17 +3522,16 @@ public class BenchmarkService
             isDisputedVerdict: isDisputed,
             isCriticalErrorAdjudication: isCriticalErrorAdjudication,
             isOutOfRubricAdjudication: isOutOfRubricAdjudication,
-            assessorEvidence: accuracyEvidence,
+            assessorEvidence: plan.AccuracyEvidence,
             boardName: RunBoardName(run),
             boardText: RunBoardText(run),
-            criticalErrorQuoteContext: isCriticalErrorAdjudication
-                ? BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answer.AnswerText, answer.CriticalErrorQuote)
-                : null,
+            criticalErrorQuoteContext: plan.CriticalErrorQuoteContext,
             claimRoles: manifest.Select(m => m.Roles).ToList(),
-            claimContexts: manifest.Select(m => m.Context).ToList(),
+            claimContexts: plan.ClaimContexts,
             toolCallLeads: toolCallLeads,
             claimCharges: manifest.Select(m => m.Charge).ToList(),
-            claimChargedParts: manifest.Select(m => m.QuotedFragments).ToList());
+            claimChargedParts: manifest.Select(m => m.QuotedFragments).ToList(),
+            assessorEvidenceByMember: plan.EvidenceByMember);
 
         var chargedPartItems = BenchmarkClaimVerificationPrompt.ChargedPartItems(
             claims,
@@ -3262,7 +3710,14 @@ public class BenchmarkService
                 // count and flag below reads the demoted verdict.
                 var verifications = StampRoles(parseResult.Verifications, manifest);
                 verifications = AnnotateCitationLiveness(verifications);
-                ApplyClaimVerificationOutcome(answer, verifications, isCriticalErrorAdjudication, outOfRubricBasis);
+                if (plan.IsPanel)
+                {
+                    ApplyPanelClaimVerificationOutcome(answer, verifications, plan.MemberA, plan.MemberB);
+                }
+                else
+                {
+                    ApplyClaimVerificationOutcome(answer, verifications, isCriticalErrorAdjudication, plan.OutOfRubricBasis);
+                }
 
                 verdictsPersisted = true;
             }
@@ -3361,6 +3816,312 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// <see cref="ApplyClaimVerificationOutcome"/> for a panel run's union verification. The counts
+    /// and <see cref="BenchmarkAnswerFlags.RefutedClaim"/> are over every ordinary claim, whichever
+    /// member raised it. <see cref="BenchmarkAnswerFlags.ContestedCriticalError"/> and
+    /// <see cref="BenchmarkAnswerFlags.ContestedAccuracyDeduction"/> stay member A's, decided over the
+    /// items A raised; member B's two are decided over its own items and written to the flags of
+    /// <see cref="BenchmarkRunAnswer.CoAssessmentJson"/>.
+    /// </summary>
+    internal static void ApplyPanelClaimVerificationOutcome(
+        BenchmarkRunAnswer answer,
+        IReadOnlyList<BenchmarkClaimVerification> verifications,
+        BenchmarkVerdictView? memberA,
+        BenchmarkVerdictView? memberB)
+    {
+        var answerClaimVerifications = verifications.Where(BenchmarkClaimRoles.IsOrdinaryClaim).ToList();
+        answer.ClaimsSupportedCount = answerClaimVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Supported);
+        answer.ClaimsRefutedCount = answerClaimVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted);
+        answer.ClaimsIndeterminateCount = answerClaimVerifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Indeterminate);
+        answer.ClaimVerificationJson = JsonSerializer.Serialize(verifications);
+
+        if (answer.ClaimsRefutedCount > 0)
+        {
+            answer.AnswerFlags |= (int)BenchmarkAnswerFlags.RefutedClaim;
+        }
+        else
+        {
+            answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.RefutedClaim;
+        }
+
+        var (criticalA, accuracyA) = ContestedFindingsFor(memberA, verifications);
+        if (criticalA)
+        {
+            answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedCriticalError;
+        }
+        else
+        {
+            answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedCriticalError;
+        }
+
+        if (accuracyA)
+        {
+            answer.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
+        }
+        else
+        {
+            answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
+        }
+
+        var record = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson);
+        if (record != null)
+        {
+            var (criticalB, accuracyB) = ContestedFindingsFor(memberB, verifications);
+            record.Flags ??= new BenchmarkCoAssessmentFlags();
+            record.Flags.ContestedCriticalError = criticalB;
+            record.Flags.ContestedAccuracyDeduction = accuracyB;
+            answer.CoAssessmentJson = record.Serialize();
+        }
+    }
+
+    /// <summary>
+    /// One member's two contested findings, read over the items that member raised: its
+    /// critical-error quote was supported; or its out-of-rubric basis or one of its own statements was
+    /// refuted, or a sentence it charged, or a "Suspected false:" sentence it docked, was supported
+    /// with a citation. Both false without a verdict.
+    /// </summary>
+    internal static (bool ContestedCriticalError, bool ContestedAccuracyDeduction) ContestedFindingsFor(
+        BenchmarkVerdictView? view,
+        IReadOnlyList<BenchmarkClaimVerification> verifications)
+    {
+        if (view == null) return (false, false);
+
+        var raised = RaisedByMembers(verifications, view.Member);
+        bool critical = view.CriticalError
+            && !string.IsNullOrWhiteSpace(view.CriticalErrorQuote)
+            && CriticalErrorQuoteWasSupported(verifications, view, view.Member);
+        bool accuracy = (OutOfRubricBasisOf(view) != null && OutOfRubricBasisWasRefuted(verifications, view, view.Member))
+            || SupportedAccusations(raised).Count > 0
+            || RefutedAssessorStatements(raised).Count > 0
+            || SupportedDockedSuspicions(view, verifications, view.Member).Count > 0;
+        return (critical, accuracy);
+    }
+
+    /// <summary>
+    /// The verifications raised by any of <paramref name="members"/>. A record without
+    /// <see cref="BenchmarkClaimVerification.RaisedBy"/> (a single-assessor or legacy one) counts for every member.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> RaisedByMembers(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkPanelMember members)
+        => (verifications ?? Array.Empty<BenchmarkClaimVerification>())
+            .Where(v => v.RaisedBy == null
+                || (members.HasFlag(BenchmarkPanelMember.A) && v.RaisedBy.Contains("A"))
+                || (members.HasFlag(BenchmarkPanelMember.B) && v.RaisedBy.Contains("B")))
+            .ToList();
+
+    /// <summary>
+    /// A panel answer's verdict is disputed: either member's verdict is contested, the two members
+    /// split on the critical-error flag, or the reference reader splits from a flag both members agree on.
+    /// </summary>
+    internal static bool IsPanelDisputed(BenchmarkRunAnswer answer)
+    {
+        var a = BenchmarkVerdictView.FromPrimary(answer);
+        var b = BenchmarkVerdictView.FromCoAssessment(answer);
+        if ((a?.ContestedVerdict ?? false) || (b?.ContestedVerdict ?? false)) return true;
+        if (a == null || b == null) return false;
+        if (a.CriticalError != b.CriticalError) return true;
+        return answer.SecondOpinionCriticalError.HasValue && answer.SecondOpinionCriticalError.Value != a.CriticalError;
+    }
+
+    /// <summary>
+    /// What one answer submits to the claim verifier and how the prompt presents it: the manifest,
+    /// the adjudication kinds, the evidence, and the quote contexts. In a panel run also the two
+    /// members' verdicts the outcome is decided against.
+    /// </summary>
+    private sealed record ClaimPlan(
+        List<ClaimSubmission> Manifest,
+        bool IsDisputed,
+        bool IsCriticalErrorAdjudication,
+        bool IsOutOfRubricAdjudication,
+        string? OutOfRubricBasis,
+        string? AccuracyEvidence,
+        string? CriticalErrorQuoteContext,
+        List<string?> ClaimContexts,
+        IReadOnlyList<string?>? EvidenceByMember,
+        bool IsPanel,
+        BenchmarkVerdictView? MemberA,
+        BenchmarkVerdictView? MemberB);
+
+    /// <summary>A single-assessor answer's claim plan, read from the primary columns.</summary>
+    private ClaimPlan BuildSingleClaimPlan(BenchmarkRunAnswer answer)
+    {
+        List<string>? claims = null;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(answer.UnverifiedClaimsJson))
+            {
+                claims = JsonSerializer.Deserialize<List<string>>(answer.UnverifiedClaimsJson);
+            }
+        }
+        catch (JsonException)
+        {
+            claims = null;
+        }
+
+        bool isDisputed = (((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.ContestedVerdict) != 0 ||
+                          (answer.SecondOpinionCriticalError.HasValue && answer.SecondOpinionCriticalError.Value != answer.CriticalError);
+
+        string? accuracyEvidence = null;
+        if (!string.IsNullOrWhiteSpace(answer.AssessmentEvidenceJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(answer.AssessmentEvidenceJson);
+                if (doc.RootElement.TryGetProperty("accuracy", out var accElem))
+                {
+                    accuracyEvidence = accElem.GetString();
+                }
+            }
+            catch
+            {
+                // Ignore parse errors on advisory evidence json
+            }
+        }
+
+        // Only the answer's own sentences are persisted as its unverified claims; the assessor's
+        // sentences are carried in the manifest alone. A retry finds the answer claims this branch
+        // persisted earlier and recovers the assessor statements from the same deterministic
+        // extraction.
+        List<string> assessorStatements = new();
+        if (isDisputed)
+        {
+            var disputed = ExtractDisputedClaims(answer, accuracyEvidence);
+            if (claims == null || claims.Count == 0)
+            {
+                claims = disputed.AnswerClaims;
+                assessorStatements = disputed.AssessorStatements;
+                if (claims.Count > 0)
+                {
+                    answer.UnverifiedClaimCount = claims.Count;
+                    answer.UnverifiedClaimsJson = JsonSerializer.Serialize(claims);
+                }
+            }
+            else if (claims.SequenceEqual(disputed.AnswerClaims, StringComparer.Ordinal))
+            {
+                assessorStatements = disputed.AssessorStatements;
+            }
+        }
+
+        // After the disputed branch has persisted whatever it collected, so the quote is carried in
+        // the prompt only and never lands in the unadjudicable-claims columns. The out-of-rubric
+        // basis is carried the same way. Fixed order: the critical-error quote is claim 0 and the
+        // basis claim 1; alone, the basis is claim 0. The verifier preamble names both by the roles
+        // this manifest gives them. Assessor statements and accused quotes follow; each item's roles
+        // come from this manifest, never from model output.
+        bool isCriticalErrorAdjudication = IsCriticalErrorAdjudication(answer);
+        string? outOfRubricBasis = OutOfRubricBasisOf(answer);
+        var manifest = BuildClaimManifest(
+            claims,
+            isCriticalErrorAdjudication ? answer.CriticalErrorQuote : null,
+            outOfRubricBasis,
+            AccusedQuotesFor(answer),
+            assessorStatements,
+            answer.AnswerText);
+
+        return new ClaimPlan(
+            manifest,
+            isDisputed,
+            isCriticalErrorAdjudication,
+            outOfRubricBasis != null,
+            outOfRubricBasis,
+            accuracyEvidence,
+            isCriticalErrorAdjudication
+                ? BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answer.AnswerText, answer.CriticalErrorQuote)
+                : null,
+            manifest.Select(m => m.Context).ToList(),
+            null,
+            false,
+            null,
+            null);
+    }
+
+    /// <summary>
+    /// A panel answer's claim plan: the union of both scored members' items
+    /// (<see cref="BuildUnionClaimManifest"/>), each member's accuracy evidence in member order, and
+    /// the context of every critical-error quote. Member A's disputed-answer claims are persisted as a
+    /// single-assessor run persists them; member B's are recovered by the same extraction on a retry.
+    /// </summary>
+    private ClaimPlan BuildPanelClaimPlan(BenchmarkRunAnswer answer)
+    {
+        var memberA = BenchmarkVerdictView.FromPrimary(answer);
+        var memberB = BenchmarkVerdictView.FromCoAssessment(answer);
+        bool isDisputed = IsPanelDisputed(answer);
+
+        var contributions = new List<ClaimContribution>();
+        var evidenceByMember = new List<string?>();
+        foreach (var view in new[] { memberA, memberB })
+        {
+            if (view == null) continue;
+
+            var claims = view.UnverifiedClaims.ToList();
+            var assessorStatements = new List<string>();
+            if (isDisputed)
+            {
+                var disputed = ExtractDisputedClaims(view, answer.AnswerText);
+                if (claims.Count == 0)
+                {
+                    claims = disputed.AnswerClaims;
+                    assessorStatements = disputed.AssessorStatements;
+                    if (view.Member == BenchmarkPanelMember.A && claims.Count > 0)
+                    {
+                        answer.UnverifiedClaimCount = claims.Count;
+                        answer.UnverifiedClaimsJson = JsonSerializer.Serialize(claims);
+                    }
+                }
+                else if (claims.SequenceEqual(disputed.AnswerClaims, StringComparer.Ordinal))
+                {
+                    assessorStatements = disputed.AssessorStatements;
+                }
+            }
+
+            var contribution = new ClaimContribution(
+                view.Member,
+                claims,
+                view.CriticalError && !string.IsNullOrWhiteSpace(view.CriticalErrorQuote) ? view.CriticalErrorQuote : null,
+                OutOfRubricBasisOf(view),
+                AccusedQuotesFor(view, answer.AnswerText),
+                assessorStatements);
+            if (contribution.IsEmpty) continue;
+
+            contributions.Add(contribution);
+            evidenceByMember.Add(view.AccuracyEvidence);
+        }
+
+        var manifest = BuildUnionClaimManifest(contributions, answer.AnswerText);
+        bool isCriticalErrorAdjudication = contributions.Any(c => c.CriticalErrorQuote != null);
+        string? firstQuote = manifest.FirstOrDefault(m => m.Roles.Contains(BenchmarkClaimRoles.CriticalErrorQuote))?.Text;
+
+        // The first quote's context goes in its own parameter, as a single-assessor run passes it; a
+        // further quote's goes in its item's context, unless the item is also an accused sentence,
+        // whose context that slot already holds.
+        var contexts = manifest
+            .Select(m => m.Context == null
+                         && m.Roles.Contains(BenchmarkClaimRoles.CriticalErrorQuote)
+                         && !m.Roles.Contains(BenchmarkClaimRoles.AccusedQuote)
+                         && !string.Equals(m.Text, firstQuote, StringComparison.Ordinal)
+                ? BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answer.AnswerText, m.Text)
+                : m.Context)
+            .ToList();
+
+        return new ClaimPlan(
+            manifest,
+            isDisputed,
+            isCriticalErrorAdjudication,
+            contributions.Any(c => c.OutOfRubricBasis != null),
+            null,
+            evidenceByMember.Count == 1 ? evidenceByMember[0] : null,
+            isCriticalErrorAdjudication && firstQuote != null
+                ? BenchmarkClaimVerificationPrompt.CriticalErrorQuoteContext(answer.AnswerText, firstQuote)
+                : null,
+            contexts,
+            evidenceByMember.Count > 1 ? evidenceByMember : null,
+            true,
+            memberA,
+            memberB);
+    }
+
+    /// <summary>
     /// The verifications with a <see cref="BenchmarkClaimVerification.CitationNote"/> where the cited
     /// GnollHack function has no live call site; unchanged when the source index is unavailable.
     /// </summary>
@@ -3408,6 +4169,15 @@ public class BenchmarkService
         answer.AnswerFlags &= ~(int)(BenchmarkAnswerFlags.RefutedClaim
             | BenchmarkAnswerFlags.ContestedCriticalError
             | BenchmarkAnswerFlags.ContestedAccuracyDeduction);
+
+        // Member B's counterparts of the two contested flags, which the same verification set.
+        var coAssessment = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson);
+        if (coAssessment?.Flags is { } coFlags && (coFlags.ContestedCriticalError || coFlags.ContestedAccuracyDeduction))
+        {
+            coFlags.ContestedCriticalError = false;
+            coFlags.ContestedAccuracyDeduction = false;
+            answer.CoAssessmentJson = coAssessment.Serialize();
+        }
     }
 
     /// <summary>
@@ -3472,6 +4242,9 @@ public class BenchmarkService
         CancellationToken cancellationToken)
     {
         if (!_configuration.GetValue<bool>("Benchmark:EvidenceInformedRegrade:Enabled", true)) return;
+        // It re-grades as member A alone, which would give one panel member a correction channel the
+        // other lacks.
+        if (BenchmarkRunFinalizer.IsPanelRun(run)) return;
         if (!QualifiesForEvidenceInformedRegrade(answer)) return;
         if (!run.AssessorModelConfigurationId.HasValue || !answer.QualityScore.HasValue) return;
 
@@ -4145,7 +4918,8 @@ public class BenchmarkService
         long runId,
         long assessorConfigId,
         string? createdByUserName,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string compareAgainst = "Assessor")
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -4158,6 +4932,19 @@ public class BenchmarkService
         {
             _logger.LogWarning("Benchmark run {RunId} not found for assessor calibration.", runId);
             return;
+        }
+
+        // Member B's verdicts and the panel's mean exist only on a panel run.
+        string? target = CalibrationCompareTargets.FirstOrDefault(t => string.Equals(t, compareAgainst, StringComparison.OrdinalIgnoreCase));
+        if (target == null)
+        {
+            throw new InvalidOperationException(
+                $"Unknown calibration comparison '{compareAgainst}'. Expected one of: {string.Join(", ", CalibrationCompareTargets)}.");
+        }
+        if (target != "Assessor" && !BenchmarkRunFinalizer.IsPanelRun(run))
+        {
+            throw new InvalidOperationException(
+                $"Run {run.Id} is not a panel run, so it has no {(target == "Panel" ? "panel score" : "co-assessor verdict")} to calibrate against. Compare against the assessor instead.");
         }
 
         // A calibration compares the stored verdicts with ones graded under this build's anchors,
@@ -4178,6 +4965,7 @@ public class BenchmarkService
         {
             BenchmarkRunId = run.Id,
             AssessorModelConfigurationId = assessorConfigId,
+            ComparedAgainst = target,
             CreatedAtUtc = DateTime.UtcNow,
             CreatedByUserName = createdByUserName
         };
@@ -4207,7 +4995,7 @@ public class BenchmarkService
         var constants = _scoringProfileService.ToConstants(profile);
 
         var verdicts = new List<object>();
-        var deltas = new List<int>();
+        var deltas = new List<double>();
         int disagreements = 0;
         var sw = Stopwatch.StartNew();
         int unrecordedRubricCount = 0;
@@ -4216,9 +5004,13 @@ public class BenchmarkService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            // The verdict compared against: member A's, member B's, or the panel's mean. The panel's
+            // critical-error flag is the one both members agree on; where they split there is none.
+            var (referenceScore, referenceCritical) = CalibrationReference(answer, target);
+
             // A calibration compares graders, and there is nothing to compare on an answer the
             // original assessor never scored either.
-            if (answer.Status != BenchmarkAnswerStatus.Ok || !answer.QualityScore.HasValue)
+            if (answer.Status != BenchmarkAnswerStatus.Ok || referenceScore == null)
             {
                 calibration.SkippedAnswerCount++;
                 continue;
@@ -4266,25 +5058,27 @@ public class BenchmarkService
                 res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
                 res.CriticalError, constants);
 
-            int delta = quality - answer.QualityScore.Value;
+            double deltaValue = quality - Convert.ToDouble(referenceScore, System.Globalization.CultureInfo.InvariantCulture);
+            // An integer reference keeps an integer delta in the stored record.
+            object delta = referenceScore is int intReference ? quality - intReference : deltaValue;
             // Same definition as a live run's, so a calibration and an All-mode run are read the
             // same way: a gap above one BARS level on the dominant dimension, or a split on
             // criticalError.
-            bool disagreed = Math.Abs(delta) > SecondOpinionDisagreementPoints ||
-                             res.CriticalError != answer.CriticalError;
+            bool disagreed = Math.Abs(deltaValue) > SecondOpinionDisagreementPoints ||
+                             (referenceCritical.HasValue && res.CriticalError != referenceCritical.Value);
             if (disagreed) disagreements++;
 
-            deltas.Add(Math.Abs(delta));
+            deltas.Add(Math.Abs(deltaValue));
             calibration.AnswerCount++;
 
             verdicts.Add(new
             {
                 orderIndex = answer.OrderIndex,
-                originalQualityScore = answer.QualityScore.Value,
+                originalQualityScore = referenceScore,
                 calibrationQualityScore = quality,
                 delta,
                 disagreed,
-                originalCriticalError = answer.CriticalError,
+                originalCriticalError = referenceCritical,
                 calibrationCriticalError = res.CriticalError,
                 accuracyLevel = res.AccuracyLevel,
                 completenessLevel = res.CompletenessLevel,
@@ -4328,6 +5122,38 @@ public class BenchmarkService
             "Calibration of run {RunId} with {Model}: {Count} answer(s), mean absolute delta {Delta}, {Disagreements} disagreement(s).",
             run.Id, calibration.AssessorModelSnapshot.Label(), calibration.AnswerCount,
             calibration.MeanAbsDelta, calibration.DisagreementCount);
+    }
+
+    /// <summary>
+    /// The score and critical-error flag a calibration compares with: member A's (an <c>int</c>
+    /// score), member B's (an <c>int</c>), or the panel's mean (a <c>double</c>) with the flag both
+    /// members agree on, null where they split. A null score skips the answer.
+    /// </summary>
+    private static (object? Score, bool? CriticalError) CalibrationReference(BenchmarkRunAnswer answer, string target)
+    {
+        if (target == "CoAssessor")
+        {
+            return answer.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored && answer.CoAssessmentQualityScore is int scoreB
+                ? ((object?)scoreB, (bool?)(answer.CoAssessmentCriticalError ?? false))
+                : ((object?)null, (bool?)null);
+        }
+
+        if (target == "Panel")
+        {
+            if (answer.PanelQualityScore is not double panel)
+            {
+                return (null, null);
+            }
+
+            bool? agreed = answer.CoAssessmentCriticalError is bool criticalB && criticalB == answer.CriticalError
+                ? answer.CriticalError
+                : null;
+            return (panel, agreed);
+        }
+
+        return answer.QualityScore is int scoreA
+            ? ((object?)scoreA, (bool?)answer.CriticalError)
+            : ((object?)null, (bool?)null);
     }
 
     /// <summary>One assessor pass over one stored answer: the verdict, and what it cost.</summary>
@@ -4706,7 +5532,9 @@ public class BenchmarkService
         BenchmarkScoringConstants constants,
         CancellationToken cancellationToken)
     {
-        if (!answer.QualityScore.HasValue)
+        // A panel answer is compared with the panel's score, which needs both members' verdicts.
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        if (isPanelRun ? !answer.PanelQualityScore.HasValue : !answer.QualityScore.HasValue)
         {
             _logger.LogWarning(
                 "Benchmark run {RunId} answer {OrderIndex}: trial re-assessment skipped — the answer has no verdict to compare against.",
@@ -4769,16 +5597,18 @@ public class BenchmarkService
             unverifiedClaims = res.UnverifiedClaims
         });
 
-        answer.SecondOpinionDisagreed =
-            Math.Abs(trialQuality - answer.QualityScore.Value) > SecondOpinionDisagreementPoints ||
-            res.CriticalError != answer.CriticalError;
+        answer.SecondOpinionDisagreed = isPanelRun
+            ? DisagreesWithPanel(answer, trialQuality, res.CriticalError)
+            : Math.Abs(trialQuality - answer.QualityScore!.Value) > SecondOpinionDisagreementPoints ||
+              res.CriticalError != answer.CriticalError;
 
         await db.SaveChangesAsync(CancellationToken.None);
 
         _logger.LogInformation(
             "Benchmark run {RunId} answer {OrderIndex}: trial verdict {Trial} from {Model} against the scored {Scored}. Score unchanged.",
             run.Id, answer.OrderIndex, trialQuality,
-            assessorConfig.DisplayName ?? assessorConfig.ModelId, answer.QualityScore.Value);
+            assessorConfig.DisplayName ?? assessorConfig.ModelId,
+            isPanelRun ? answer.PanelQualityScore!.Value : answer.QualityScore!.Value);
     }
 
     /// <summary>Trigger names, stored on the answer and printed in the report.</summary>
@@ -4841,13 +5671,19 @@ public class BenchmarkService
         CancellationToken cancellationToken)
     {
         // Re-checked rather than assumed: this is reached from the per-answer trigger path and
-        // from the outlier sweep, and only the first of those has already established both.
-        if (!run.SecondOpinionAssessorModelConfigurationId.HasValue || !answer.QualityScore.HasValue)
+        // from the outlier sweep, and only the first of those has already established both. In a
+        // panel run the reading is compared with the panel's score, and it grades blind.
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        if (!run.SecondOpinionAssessorModelConfigurationId.HasValue
+            || (isPanelRun ? !answer.PanelQualityScore.HasValue : !answer.QualityScore.HasValue))
         {
             return;
         }
 
-        int firstQualityScore = answer.QualityScore.Value;
+        double referenceScore = isPanelRun ? answer.PanelQualityScore!.Value : answer.QualityScore!.Value;
+        int firstQualityScore = isPanelRun
+            ? (int)Math.Round(referenceScore, MidpointRounding.AwayFromZero)
+            : answer.QualityScore!.Value;
 
         var (secondConfig, secondApiKey, resolveError) = await ResolveSecondOpinionAsync(db, run, cancellationToken);
 
@@ -4875,7 +5711,7 @@ public class BenchmarkService
             return;
         }
 
-        bool blind = run.SecondOpinionBlindUsed || (run.Id == 0 && constants.SecondOpinionBlind);
+        bool blind = isPanelRun || run.SecondOpinionBlindUsed || (run.Id == 0 && constants.SecondOpinionBlind);
 
         List<BenchmarkClaimVerification>? claimVerifications = null;
         if (!string.IsNullOrWhiteSpace(answer.ClaimVerificationJson))
@@ -5076,9 +5912,10 @@ public class BenchmarkService
 
         // 15 points is roughly one BARS level on the dominant dimension: below that the two
         // graders are saying the same thing in different words.
-        answer.SecondOpinionDisagreed =
-            Math.Abs(secondQuality - firstQualityScore) > SecondOpinionDisagreementPoints ||
-            second.CriticalError != answer.CriticalError;
+        answer.SecondOpinionDisagreed = isPanelRun
+            ? DisagreesWithPanel(answer, secondQuality, second.CriticalError)
+            : Math.Abs(secondQuality - firstQualityScore) > SecondOpinionDisagreementPoints ||
+              second.CriticalError != answer.CriticalError;
 
         await db.SaveChangesAsync(CancellationToken.None);
 
@@ -5086,7 +5923,7 @@ public class BenchmarkService
         {
             _logger.LogInformation(
                 "Benchmark run {RunId} answer {OrderIndex}: assessors disagree ({First} vs {Second}, critical {FirstCritical} vs {SecondCritical}).",
-                run.Id, answer.OrderIndex, answer.QualityScore.Value, secondQuality, answer.CriticalError, second.CriticalError);
+                run.Id, answer.OrderIndex, referenceScore, secondQuality, answer.CriticalError, second.CriticalError);
         }
 
         try
@@ -5160,6 +5997,11 @@ public class BenchmarkService
     /// <summary>Verifier-supported claims carried into the synthesis prompt per answer.</summary>
     internal const int SupportedClaimsPerAnswer = 6;
 
+    /// <summary>
+    /// The run's final synthesis. In a panel run each member writes its own, from its own verdicts
+    /// only, one after the other: member A's to the synthesis columns, member B's to the
+    /// <c>CoAssessor*</c> ones. A panel synthesis carries no reference-reader or re-grade data.
+    /// </summary>
     private async Task ExecuteFinalSynthesisAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
@@ -5167,121 +6009,156 @@ public class BenchmarkService
         SystemAiApiConfiguration assessorConfig,
         string assessorApiKey,
         BenchmarkScoringConstants constants,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SystemAiApiConfiguration? coAssessorConfig = null,
+        string? coAssessorApiKey = null)
     {
         var answers = await db.BenchmarkRunAnswers
             .Where(a => a.BenchmarkRunId == run.Id)
             .OrderBy(a => a.OrderIndex)
             .ToListAsync(cancellationToken);
 
-        var summaries = answers.Select(a =>
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+
+        var summaries = answers
+            .Select(a => BuildVerdictSummary(run, a, BenchmarkPanelMember.A, includeAdvisory: !isPanelRun))
+            .ToList();
+        var outcome = await RunSynthesisAsync(
+            run, summaries, assessorConfig, assessorApiKey,
+            GraderOutputCap(assessorConfig, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens),
+            "Assessor", cancellationToken);
+        var parseResult = outcome.Parse;
+        var runResult = outcome.LastResult;
+
+        if (parseResult.Success && parseResult.Result != null)
         {
-            string? outOfRubricBasis = OutOfRubricBasisOf(a);
-            var refutedList = new List<(string Claim, string? Citation, string? Basis)>();
-            var supportedList = new List<string>();
-            var supportedAccusations = new List<(string Claim, string? Citation)>();
-            var refutedAssessorStatements = new List<string>();
-            bool basisRefuted = false;
-            if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
-            {
-                try
-                {
-                    var verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
-                        a.ClaimVerificationJson,
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    if (verifications != null)
-                    {
-                        // The assessor's own statements and charges — the out-of-rubric basis, the
-                        // critical-error quote, an accused sentence and an assessor statement — are
-                        // excluded from both lists: a verdict on any of them is a statement about the
-                        // grading, and the synthesis prints those separately.
-                        var ownClaims = OrdinaryClaimVerifications(verifications, a);
-                        basisRefuted = OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis);
-                        // A docked "Suspected false:" sentence the verifier supported is, to the
-                        // synthesis, a sentence the assessor charged as false and the source bore out.
-                        supportedAccusations.AddRange(SupportedAccusations(verifications)
-                            .Concat(SupportedDockedSuspicions(a, verifications))
-                            .Select(v => (Claim: v.Claim.Trim(), v.Citation))
-                            .DistinctBy(x => x.Claim, StringComparer.Ordinal));
-                        refutedAssessorStatements.AddRange(RefutedAssessorStatements(verifications)
-                            .Select(v => v.Claim.Trim()));
+            run.FinalScore = parseResult.Result.FinalScore;
+            run.AssessmentJson = parseResult.RawJson;
+            run.AssessmentText = parseResult.Result.OverallComments;
+            run.AssessmentParseFailed = false;
+        }
+        else
+        {
+            run.FinalScore = null;
+            run.AssessmentJson = runResult.FinalText;
+            run.AssessmentText = null;
+            run.AssessmentParseFailed = true;
+        }
 
-                        foreach (var v in ownClaims.Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
-                        {
-                            refutedList.Add((v.Claim, v.Citation, v.Basis));
-                        }
+        // Assigned, not accumulated: a rerun-synthesis replaces the prior attempt's figure rather
+        // than doubling it. Not summed in BenchmarkRunFinalizer.ApplyTotals — there is no per-answer
+        // synthesis row to sum from.
+        run.TotalSynthesisInputTokens = outcome.InputTokens;
+        run.TotalSynthesisOutputTokens = outcome.OutputTokens;
+        run.TotalSynthesisCacheReadTokens = outcome.CacheReadTokens;
+        run.TotalSynthesisCacheCreationTokens = outcome.CacheCreationTokens;
+        run.TotalSynthesisDurationMs = outcome.DurationMs;
 
-                        foreach (var v in ownClaims
-                                     .Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Supported
-                                                 && !string.IsNullOrWhiteSpace(x.Claim))
-                                     .Take(SupportedClaimsPerAnswer))
-                        {
-                            string claim = v.Claim.Trim();
-                            if (claim.Length > SupportedClaimMaxLength)
-                            {
-                                claim = claim.Substring(0, SupportedClaimMaxLength).TrimEnd();
-                            }
+        await db.SaveChangesAsync(CancellationToken.None);
 
-                            supportedList.Add(claim);
-                        }
-                    }
-                }
-                catch (JsonException)
-                {
-                    // Ignore malformed JSON in advisory/synthesis path
-                }
-            }
+        try
+        {
+            await configService.RecordUsageAsync(
+                assessorConfig.Id,
+                run.StartedByUserId,
+                runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
+                runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
+                roleContext: 4,
+                cacheReadTokens: runResult.CacheReadTokens,
+                cacheCreationTokens: runResult.CacheCreationTokens,
+                totalDurationMs: (int)outcome.DurationMs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record usage for assessor synthesis call.");
+        }
 
-            return new BenchmarkPerQuestionVerdictSummary
-            {
-                OrderIndex = a.OrderIndex,
-                QuestionText = a.QuestionText,
-                ExpectedPoints = BenchmarkRunExamRecord.Rubric(a),
-                AccuracyLevel = a.AccuracyLevel,
-                CompletenessLevel = a.CompletenessLevel,
-                ConcisenessLevel = a.ConcisenessLevel,
-                ReadabilityLevel = a.ReadabilityLevel,
-                QualityScore = a.QualityScore,
-                SpeedScore = a.SpeedScore,
-                DurationMs = a.DurationMs,
-                AssessedDifficulty = a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
-                CriticalError = a.CriticalError,
-                AccuracyEvidence = ReadEvidence(a.AssessmentEvidenceJson, "accuracy"),
-                CompletenessEvidence = ReadEvidence(a.AssessmentEvidenceJson, "completeness"),
-                UnverifiedClaimCount = a.UnverifiedClaimCount ?? 0,
-                ClaimsSupportedCount = a.ClaimsSupportedCount,
-                ClaimsRefutedCount = a.ClaimsRefutedCount,
-                ClaimsIndeterminateCount = a.ClaimsIndeterminateCount,
-                RefutedClaims = refutedList,
-                SupportedClaims = supportedList,
-                ContestedCriticalErrorQuotes =
-                    (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedCriticalError) != 0
-                     && !string.IsNullOrWhiteSpace(a.CriticalErrorQuote)
-                        ? new[] { a.CriticalErrorQuote!.Trim() }
-                        : Array.Empty<string>(),
-                // A refuted out-of-rubric basis or assessor statement only; a supported accusation
-                // sets the same flag and is listed on its own.
-                ContestedAccuracyDeductionBases =
-                    (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedAccuracyDeduction) != 0
-                        ? (outOfRubricBasis != null && basisRefuted ? new[] { outOfRubricBasis } : Array.Empty<string>())
-                            .Concat(refutedAssessorStatements)
-                            .Distinct(StringComparer.Ordinal)
-                            .ToArray()
-                        : Array.Empty<string>(),
-                SupportedAccusations = supportedAccusations,
-                // A rejected or unprovenanced re-grade never reaches the synthesis as a withdrawal.
-                EvidenceInformedQualityScore = IsEligibleEvidenceInformedRegrade(run, a) ? a.EvidenceInformedQualityScore : null,
-                EvidenceInformedCriticalError = IsEligibleEvidenceInformedRegrade(run, a) ? a.EvidenceInformedCriticalError : null,
-                EvidenceInformedWithdrawn = IsEligibleEvidenceInformedRegrade(run, a)
-                    ? ReadEvidenceInformedWithdrawn(a.EvidenceInformedJson)
-                    : Array.Empty<string>(),
-                SecondOpinionQualityScore = a.SecondOpinionQualityScore,
-                SecondOpinionCriticalError = a.SecondOpinionCriticalError,
-                ReviewComment = a.ReviewComment,
-                Status = a.Status
-            };
-        }).ToList();
+        if (!isPanelRun)
+        {
+            return;
+        }
 
+        if (coAssessorConfig == null || string.IsNullOrWhiteSpace(coAssessorApiKey))
+        {
+            _logger.LogWarning(
+                "Benchmark run {RunId}: the co-assessor's synthesis was not written, its configuration was unavailable.",
+                run.Id);
+            return;
+        }
+
+        var coSummaries = answers
+            .Select(a => BuildVerdictSummary(run, a, BenchmarkPanelMember.B, includeAdvisory: false))
+            .ToList();
+        var coOutcome = await RunSynthesisAsync(
+            run, coSummaries, coAssessorConfig, coAssessorApiKey,
+            GraderOutputCap(coAssessorConfig, run.CoAssessorModelSnapshotId, run.CoAssessorEffectiveMaxOutputTokens),
+            "Co-assessor", cancellationToken);
+        var coParse = coOutcome.Parse;
+        var coResult = coOutcome.LastResult;
+
+        if (coParse.Success && coParse.Result != null)
+        {
+            run.CoAssessorFinalScore = coParse.Result.FinalScore;
+            run.CoAssessorSynthesisJson = coParse.RawJson;
+            run.CoAssessorSynthesisText = coParse.Result.OverallComments;
+            run.CoAssessorSynthesisParseFailed = false;
+        }
+        else
+        {
+            run.CoAssessorFinalScore = null;
+            run.CoAssessorSynthesisJson = coResult.FinalText;
+            run.CoAssessorSynthesisText = null;
+            run.CoAssessorSynthesisParseFailed = true;
+        }
+
+        run.TotalCoSynthesisInputTokens = coOutcome.InputTokens;
+        run.TotalCoSynthesisOutputTokens = coOutcome.OutputTokens;
+        run.TotalCoSynthesisCacheReadTokens = coOutcome.CacheReadTokens;
+        run.TotalCoSynthesisCacheCreationTokens = coOutcome.CacheCreationTokens;
+        run.TotalCoSynthesisDurationMs = coOutcome.DurationMs;
+
+        await db.SaveChangesAsync(CancellationToken.None);
+
+        try
+        {
+            await configService.RecordUsageAsync(
+                coAssessorConfig.Id,
+                run.StartedByUserId,
+                coResult.TotalPromptTokens > 0 ? coResult.TotalPromptTokens : coResult.EstimatedInputTokens,
+                coResult.OutputTokens > 0 ? coResult.OutputTokens : coResult.EstimatedOutputTokens,
+                roleContext: 4,
+                cacheReadTokens: coResult.CacheReadTokens,
+                cacheCreationTokens: coResult.CacheCreationTokens,
+                totalDurationMs: (int)coOutcome.DurationMs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record usage for co-assessor synthesis call.");
+        }
+    }
+
+    /// <summary>
+    /// One synthesis call and, when its reply does not parse, one repair turn: the parse, the result
+    /// whose usage is recorded, the tokens of both turns together, and the first turn's duration.
+    /// </summary>
+    private sealed record SynthesisOutcome(
+        SynthesisParseResult Parse,
+        AgentRunResult LastResult,
+        int InputTokens,
+        int OutputTokens,
+        int CacheReadTokens,
+        int CacheCreationTokens,
+        long DurationMs);
+
+    private async Task<SynthesisOutcome> RunSynthesisAsync(
+        BenchmarkRun run,
+        IReadOnlyList<BenchmarkPerQuestionVerdictSummary> summaries,
+        SystemAiApiConfiguration config,
+        string apiKey,
+        int maxOutputTokens,
+        string logLabel,
+        CancellationToken cancellationToken)
+    {
         var board = BenchmarkRunExamRecord.Board(run);
         string? boardName = board != null ? run.GameSnapshotNameUsed : null;
         string? boardDigest = board?.DigestText;
@@ -5295,23 +6172,23 @@ public class BenchmarkService
 
         var runRequest = new AgentRunRequest
         {
-            ProviderName = assessorConfig.Provider,
-            ModelId = assessorConfig.ModelId,
-            ApiKey = assessorApiKey,
-            Endpoint = EndpointFor(assessorConfig),
-            ModelDisplayName = assessorConfig.DisplayName,
+            ProviderName = config.Provider,
+            ModelId = config.ModelId,
+            ApiKey = apiKey,
+            Endpoint = EndpointFor(config),
+            ModelDisplayName = config.DisplayName,
             SystemPrompt = gradingPrompt.FullPrompt,
             SegmentedPrompt = gradingPrompt,
-            ThinkingLevel = assessorConfig.ThinkingLevel,
-            ReasoningMode = assessorConfig.ReasoningMode,
-            ReasoningSummary = assessorConfig.ReasoningSummary,
-            ServiceTier = assessorConfig.ServiceTier,
-            MaxOutputTokens = GraderOutputCap(assessorConfig, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens),
+            ThinkingLevel = config.ThinkingLevel,
+            ReasoningMode = config.ReasoningMode,
+            ReasoningSummary = config.ReasoningSummary,
+            ServiceTier = config.ServiceTier,
+            MaxOutputTokens = maxOutputTokens,
             MaxToolIterations = 0,
             EnableToolUse = false,
             EnableWebSearch = false,
             EnableSubAgents = false,
-            SystemModelId = assessorConfig.Id,
+            SystemModelId = config.Id,
             CacheConversationTail = false,
             Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
             ToolExecutionContext = new Tools.ToolExecutionContext
@@ -5339,7 +6216,7 @@ public class BenchmarkService
 
         if (!parseResult.Success)
         {
-            _logger.LogWarning("Assessor synthesis output failed JSON parsing. Retrying once...");
+            _logger.LogWarning("{Grader} synthesis output failed JSON parsing. Retrying once...", logLabel);
             runRequest.SeedHistory.Add(new { role = "assistant", content = runResult.FinalText ?? string.Empty });
             runRequest.SeedHistory.Add(new { role = "user", content = $"Your previous response was not valid JSON or could not be parsed: {parseResult.ErrorMessage}. Please output ONLY the raw JSON object according to the schema without any markdown wrapping or extra text." });
 
@@ -5353,48 +6230,165 @@ public class BenchmarkService
             if (retryResult.TotalPromptTokens > 0) runResult = retryResult;
         }
 
-        if (parseResult.Success && parseResult.Result != null)
+        return new SynthesisOutcome(
+            parseResult, runResult,
+            synthesisInputTokens, synthesisOutputTokens, synthesisCacheReadTokens, synthesisCacheCreationTokens,
+            sw.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// One answer's entry in a synthesis prompt, from one panel member's verdict. Member A's reads the
+    /// primary columns; with <paramref name="includeAdvisory"/> it also carries the second opinion and
+    /// an eligible evidence-informed re-grade, which is exactly the single-assessor summary. Member B's
+    /// reads <see cref="BenchmarkRunAnswer.CoAssessmentJson"/>. In a panel run each member's claim
+    /// lists and claim counts cover only the items it raised. The question, rubric, status, speed and
+    /// difficulty are the answer's own.
+    /// </summary>
+    internal static BenchmarkPerQuestionVerdictSummary BuildVerdictSummary(
+        BenchmarkRun run,
+        BenchmarkRunAnswer a,
+        BenchmarkPanelMember member,
+        bool includeAdvisory)
+    {
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        bool isMemberB = member == BenchmarkPanelMember.B;
+        var record = isMemberB && a.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored
+            ? BenchmarkCoAssessmentRecord.Parse(a.CoAssessmentJson)
+            : null;
+        var viewB = isMemberB ? BenchmarkVerdictView.FromCoAssessment(a) : null;
+
+        string? outOfRubricBasis = isMemberB
+            ? (viewB != null ? OutOfRubricBasisOf(viewB) : null)
+            : OutOfRubricBasisOf(a);
+        var refutedList = new List<(string Claim, string? Citation, string? Basis)>();
+        var supportedList = new List<string>();
+        var supportedAccusations = new List<(string Claim, string? Citation)>();
+        var refutedAssessorStatements = new List<string>();
+        bool basisRefuted = false;
+        int? claimsSupported = isMemberB ? null : a.ClaimsSupportedCount;
+        int? claimsRefuted = isMemberB ? null : a.ClaimsRefutedCount;
+        int? claimsIndeterminate = isMemberB ? null : a.ClaimsIndeterminateCount;
+        if (!string.IsNullOrWhiteSpace(a.ClaimVerificationJson))
         {
-            run.FinalScore = parseResult.Result.FinalScore;
-            run.AssessmentJson = parseResult.RawJson;
-            run.AssessmentText = parseResult.Result.OverallComments;
-            run.AssessmentParseFailed = false;
-        }
-        else
-        {
-            run.FinalScore = null;
-            run.AssessmentJson = runResult.FinalText;
-            run.AssessmentText = null;
-            run.AssessmentParseFailed = true;
+            try
+            {
+                var verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
+                    a.ClaimVerificationJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (verifications != null)
+                {
+                    if (isPanelRun)
+                    {
+                        verifications = RaisedByMembers(verifications, member);
+                    }
+
+                    // The assessor's own statements and charges — the out-of-rubric basis, the
+                    // critical-error quote, an accused sentence and an assessor statement — are
+                    // excluded from both lists: a verdict on any of them is a statement about the
+                    // grading, and the synthesis prints those separately.
+                    var ownClaims = OrdinaryClaimVerifications(verifications, a);
+                    basisRefuted = OutOfRubricBasisWasRefuted(verifications, outOfRubricBasis);
+                    // A docked "Suspected false:" sentence the verifier supported is, to the
+                    // synthesis, a sentence the assessor charged as false and the source bore out.
+                    var dockedSuspicions = isMemberB
+                        ? (viewB != null ? SupportedDockedSuspicions(viewB, verifications, member) : new List<BenchmarkClaimVerification>())
+                        : SupportedDockedSuspicions(a, verifications);
+                    supportedAccusations.AddRange(SupportedAccusations(verifications)
+                        .Concat(dockedSuspicions)
+                        .Select(v => (Claim: v.Claim.Trim(), v.Citation))
+                        .DistinctBy(x => x.Claim, StringComparer.Ordinal));
+                    refutedAssessorStatements.AddRange(RefutedAssessorStatements(verifications)
+                        .Select(v => v.Claim.Trim()));
+
+                    foreach (var v in ownClaims.Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
+                    {
+                        refutedList.Add((v.Claim, v.Citation, v.Basis));
+                    }
+
+                    foreach (var v in ownClaims
+                                 .Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Supported
+                                             && !string.IsNullOrWhiteSpace(x.Claim))
+                                 .Take(SupportedClaimsPerAnswer))
+                    {
+                        string claim = v.Claim.Trim();
+                        if (claim.Length > SupportedClaimMaxLength)
+                        {
+                            claim = claim.Substring(0, SupportedClaimMaxLength).TrimEnd();
+                        }
+
+                        supportedList.Add(claim);
+                    }
+
+                    // A panel member's counts cover its own claims; the answer's columns total both.
+                    if (isPanelRun)
+                    {
+                        claimsSupported = ownClaims.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Supported);
+                        claimsRefuted = ownClaims.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted);
+                        claimsIndeterminate = ownClaims.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Indeterminate);
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Ignore malformed JSON in advisory/synthesis path
+            }
         }
 
-        // Assigned, not accumulated: a rerun-synthesis replaces the prior attempt's figure rather
-        // than doubling it. Not summed in BenchmarkRunFinalizer.ApplyTotals — there is no per-answer
-        // synthesis row to sum from.
-        run.TotalSynthesisInputTokens = synthesisInputTokens;
-        run.TotalSynthesisOutputTokens = synthesisOutputTokens;
-        run.TotalSynthesisCacheReadTokens = synthesisCacheReadTokens;
-        run.TotalSynthesisCacheCreationTokens = synthesisCacheCreationTokens;
-        run.TotalSynthesisDurationMs = sw.ElapsedMilliseconds;
+        bool contestedCriticalError = isMemberB
+            ? record?.Flags?.ContestedCriticalError == true
+            : (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedCriticalError) != 0;
+        bool contestedAccuracyDeduction = isMemberB
+            ? record?.Flags?.ContestedAccuracyDeduction == true
+            : (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.ContestedAccuracyDeduction) != 0;
+        string? criticalErrorQuote = isMemberB ? record?.CriticalErrorQuote : a.CriticalErrorQuote;
 
-        await db.SaveChangesAsync(CancellationToken.None);
-
-        try
+        return new BenchmarkPerQuestionVerdictSummary
         {
-            await configService.RecordUsageAsync(
-                assessorConfig.Id,
-                run.StartedByUserId,
-                runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
-                runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
-                roleContext: 4,
-                cacheReadTokens: runResult.CacheReadTokens,
-                cacheCreationTokens: runResult.CacheCreationTokens,
-                totalDurationMs: (int)sw.ElapsedMilliseconds);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to record usage for assessor synthesis call.");
-        }
+            OrderIndex = a.OrderIndex,
+            QuestionText = a.QuestionText,
+            ExpectedPoints = BenchmarkRunExamRecord.Rubric(a),
+            AccuracyLevel = isMemberB ? record?.AccuracyLevel : a.AccuracyLevel,
+            CompletenessLevel = isMemberB ? record?.CompletenessLevel : a.CompletenessLevel,
+            ConcisenessLevel = isMemberB ? record?.ConcisenessLevel : a.ConcisenessLevel,
+            ReadabilityLevel = isMemberB ? record?.ReadabilityLevel : a.ReadabilityLevel,
+            QualityScore = isMemberB ? (record != null ? a.CoAssessmentQualityScore : null) : a.QualityScore,
+            SpeedScore = a.SpeedScore,
+            DurationMs = a.DurationMs,
+            AssessedDifficulty = a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
+            CriticalError = isMemberB ? record != null && (a.CoAssessmentCriticalError ?? record.CriticalError) : a.CriticalError,
+            AccuracyEvidence = isMemberB ? record?.AccuracyEvidence : ReadEvidence(a.AssessmentEvidenceJson, "accuracy"),
+            CompletenessEvidence = isMemberB ? record?.CompletenessEvidence : ReadEvidence(a.AssessmentEvidenceJson, "completeness"),
+            UnverifiedClaimCount = isMemberB ? record?.UnverifiedClaims?.Count ?? 0 : a.UnverifiedClaimCount ?? 0,
+            ClaimsSupportedCount = claimsSupported,
+            ClaimsRefutedCount = claimsRefuted,
+            ClaimsIndeterminateCount = claimsIndeterminate,
+            RefutedClaims = refutedList,
+            SupportedClaims = supportedList,
+            ContestedCriticalErrorQuotes =
+                contestedCriticalError && !string.IsNullOrWhiteSpace(criticalErrorQuote)
+                    ? new[] { criticalErrorQuote!.Trim() }
+                    : Array.Empty<string>(),
+            // A refuted out-of-rubric basis or assessor statement only; a supported accusation
+            // sets the same flag and is listed on its own.
+            ContestedAccuracyDeductionBases =
+                contestedAccuracyDeduction
+                    ? (outOfRubricBasis != null && basisRefuted ? new[] { outOfRubricBasis } : Array.Empty<string>())
+                        .Concat(refutedAssessorStatements)
+                        .Distinct(StringComparer.Ordinal)
+                        .ToArray()
+                    : Array.Empty<string>(),
+            SupportedAccusations = supportedAccusations,
+            // A rejected or unprovenanced re-grade never reaches the synthesis as a withdrawal.
+            EvidenceInformedQualityScore = includeAdvisory && IsEligibleEvidenceInformedRegrade(run, a) ? a.EvidenceInformedQualityScore : null,
+            EvidenceInformedCriticalError = includeAdvisory && IsEligibleEvidenceInformedRegrade(run, a) ? a.EvidenceInformedCriticalError : null,
+            EvidenceInformedWithdrawn = includeAdvisory && IsEligibleEvidenceInformedRegrade(run, a)
+                ? ReadEvidenceInformedWithdrawn(a.EvidenceInformedJson)
+                : Array.Empty<string>(),
+            SecondOpinionQualityScore = includeAdvisory ? a.SecondOpinionQualityScore : null,
+            SecondOpinionCriticalError = includeAdvisory ? a.SecondOpinionCriticalError : null,
+            ReviewComment = isMemberB ? record?.Comment : a.ReviewComment,
+            Status = a.Status
+        };
     }
 
     public async Task RunDifficultyAssessmentAsync(string jobId, CancellationToken cancellationToken)
@@ -5995,15 +6989,28 @@ public class BenchmarkService
             a.Score = quality;
         }
 
+        // Member B's scores are recomputed from its own stored levels on the same terms, and each
+        // answer's panel score from the two.
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        if (isPanelRun)
+        {
+            foreach (var a in run.Answers)
+            {
+                RecomputeCoAssessmentScores(a, constants);
+                ComputePanelScore(a);
+            }
+        }
+
         var scorableItems = run.Answers
-            .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
-            .Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
+            .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && BenchmarkScoring.IndexQuality(a, isPanelRun).HasValue)
+            .Select(a => (BenchmarkScoring.IndexQuality(a, isPanelRun), a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
             .ToList();
 
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
         run.QualityIndexStandardError = BenchmarkScoring.QualityIndexStandardError(scorableItems);
         run.UnweightedQualityIndex = BenchmarkScoring.UnweightedQualityMean(
-            run.Answers.Where(BenchmarkRunFinalizer.CountsTowardQualityIndex).Select(a => a.QualityScore));
+            run.Answers.Where(BenchmarkRunFinalizer.CountsTowardQualityIndex).Select(a => BenchmarkScoring.IndexQuality(a, isPanelRun)));
+        BenchmarkRunFinalizer.ApplyPanelStatistics(run, run.Answers);
 
         // The speed filter keeps Status == Ok: a null SpeedScore excludes an unanswered answer
         // anyway, and saying so explicitly is clearer than relying on it.
@@ -6076,12 +7083,32 @@ public class BenchmarkService
                 return;
             }
 
+            bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+            if (isPanelRun && assessorConfigId.HasValue)
+            {
+                await RestoreTerminalStatusAsync(db, run, PanelOverrideRefusedMessage);
+                return;
+            }
+
             var (assessorConfig, assessorApiKey, assessorError) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
                 answer.AssessmentError = BenchmarkAssessmentFailure.Truncate(assessorError);
                 await RestoreTerminalStatusAsync(db, run, assessorError);
                 return;
+            }
+
+            SystemAiApiConfiguration? coAssessorConfig = null;
+            string? coAssessorApiKey = null;
+            if (isPanelRun)
+            {
+                string? coAssessorError;
+                (coAssessorConfig, coAssessorApiKey, coAssessorError) = await ResolveCoAssessorAsync(db, run, cancellationToken);
+                if (coAssessorConfig == null || coAssessorApiKey == null)
+                {
+                    await RestoreTerminalStatusAsync(db, run, coAssessorError);
+                    return;
+                }
             }
 
             // Ahead of clearing the verdict below, so a refused re-run leaves the answer as it was.
@@ -6100,25 +7127,7 @@ public class BenchmarkService
             BeginRerun(run, systemPrompt);
             await db.SaveChangesAsync(cancellationToken);
 
-            answer.AccuracyLevel = null;
-            answer.CompletenessLevel = null;
-            answer.ConcisenessLevel = null;
-            answer.ReadabilityLevel = null;
-            answer.AccuracyScore = null;
-            answer.CompletenessScore = null;
-            answer.ConcisenessScore = null;
-            answer.ReadabilityScore = null;
-            answer.QualityScore = null;
-            answer.SpeedScore = null;
-            answer.Score = null;
-            answer.CriticalError = false;
-            answer.ReviewComment = null;
-            answer.AssessmentError = null;
-            answer.AssessedByModelConfigurationId = null;
-            answer.AssessedByModelSnapshot = null;
-            answer.AssessedByModelSnapshotId = null;
-            answer.AssessedAtUtc = null;
-            answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
+            ClearForRerun(answer, isPanelRun);
             await db.SaveChangesAsync(cancellationToken);
 
             var profile = run.ScoringProfileId.HasValue
@@ -6148,7 +7157,8 @@ public class BenchmarkService
 
             await ExecutePerQuestionAssessmentAsync(
                 db, configService, run, answer, expectedPoints,
-                assessorConfig, assessorApiKey, scoringConstants, cancellationToken);
+                assessorConfig, assessorApiKey, scoringConstants, cancellationToken,
+                coAssessorConfig, coAssessorApiKey);
             _runManager.MarkRerunScored(runId, answer.OrderIndex);
 
             run.RerunCompletedAtUtc = DateTime.UtcNow;
@@ -6202,7 +7212,8 @@ public class BenchmarkService
         bool trial,
         BenchmarkRunStatus originalStatus,
         DateTime? originalCompletedAtUtc,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        BenchmarkPanelMember member = BenchmarkPanelMember.Both)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -6267,6 +7278,22 @@ public class BenchmarkService
                 return;
             }
 
+            // In a panel run a verdict is never replaced by a substitute model, and a trial only fills
+            // an empty reference-reader slot: an existing second opinion there is the reader's evidence.
+            bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+            if (isPanelRun && !trial && assessorConfigId.HasValue)
+            {
+                _logger.LogWarning("Re-assessment of benchmark run {RunId} answer {AnswerId} refused: {Reason}", run.Id, answerId, PanelOverrideRefusedMessage);
+                await RestoreTerminalStatusAsync(db, run, PanelOverrideRefusedMessage);
+                return;
+            }
+            if (isPanelRun && trial && answer.SecondOpinionQualityScore.HasValue)
+            {
+                _logger.LogWarning("Trial re-assessment of benchmark run {RunId} answer {AnswerId} refused: {Reason}", run.Id, answerId, PanelTrialReplaceRefusedMessage);
+                await RestoreCapturedStatusAsync(db, run, originalStatus, originalCompletedAtUtc);
+                return;
+            }
+
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
@@ -6280,6 +7307,19 @@ public class BenchmarkService
                     await RestoreTerminalStatusAsync(db, run, error);
                 }
                 return;
+            }
+
+            SystemAiApiConfiguration? coAssessorConfig = null;
+            string? coAssessorApiKey = null;
+            if (isPanelRun && !trial && member.HasFlag(BenchmarkPanelMember.B))
+            {
+                string? coAssessorError;
+                (coAssessorConfig, coAssessorApiKey, coAssessorError) = await ResolveCoAssessorAsync(db, run, cancellationToken);
+                if (coAssessorConfig == null || coAssessorApiKey == null)
+                {
+                    await RestoreTerminalStatusAsync(db, run, coAssessorError);
+                    return;
+                }
             }
 
             // The row was already flipped to Running by the caller before the answer was even
@@ -6317,20 +7357,28 @@ public class BenchmarkService
             else
             {
                 // Captured before the verdict is overwritten. PreviousQualityScore holds the
-                // *original* score, so a second re-assessment increments the count and leaves
-                // this alone rather than recording whichever verdict it happened to displace.
+                // *original* published score — the panel's in a panel run — so a second
+                // re-assessment increments the count and leaves this alone rather than recording
+                // whichever verdict it happened to displace.
                 if (answer.ReassessmentCount == 0)
                 {
-                    answer.PreviousQualityScore = answer.QualityScore;
+                    double? previous = BenchmarkScoring.IndexQuality(answer, isPanelRun);
+                    answer.PreviousQualityScore = previous.HasValue
+                        ? (int)Math.Round(previous.Value, MidpointRounding.AwayFromZero)
+                        : null;
                 }
 
                 await ExecutePerQuestionAssessmentAsync(
                     db, configService, run, answer, expectedPoints,
-                    assessorConfig, assessorApiKey, constants, cancellationToken);
+                    assessorConfig, assessorApiKey, constants, cancellationToken,
+                    coAssessorConfig, coAssessorApiKey, member);
 
                 answer.ReassessmentCount++;
                 answer.ReassessedAtUtc = DateTime.UtcNow;
-                answer.ReassessedByModelSnapshot = await GraderSnapshotAsync(db, assessorConfig, CancellationToken.None);
+                answer.ReassessedByModelSnapshot = await GraderSnapshotAsync(
+                    db,
+                    isPanelRun && !member.HasFlag(BenchmarkPanelMember.A) && coAssessorConfig != null ? coAssessorConfig : assessorConfig,
+                    CancellationToken.None);
             }
 
             var allAnswers = await db.BenchmarkRunAnswers
@@ -6410,11 +7458,32 @@ public class BenchmarkService
                 return;
             }
 
+            bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+            if (isPanelRun && assessorConfigId.HasValue)
+            {
+                await RestoreTerminalStatusAsync(db, run, PanelOverrideRefusedMessage);
+                return;
+            }
+
             var (assessorConfig, assessorApiKey, error) = await ResolveAssessorAsync(db, run, assessorConfigId, cancellationToken);
             if (assessorConfig == null || assessorApiKey == null)
             {
                 await RestoreTerminalStatusAsync(db, run, error);
                 return;
+            }
+
+            // A panel run re-runs both members' syntheses.
+            SystemAiApiConfiguration? coAssessorConfig = null;
+            string? coAssessorApiKey = null;
+            if (isPanelRun)
+            {
+                string? coAssessorError;
+                (coAssessorConfig, coAssessorApiKey, coAssessorError) = await ResolveCoAssessorAsync(db, run, cancellationToken);
+                if (coAssessorConfig == null || coAssessorApiKey == null)
+                {
+                    await RestoreTerminalStatusAsync(db, run, coAssessorError);
+                    return;
+                }
             }
 
             run.Status = BenchmarkRunStatus.Running;
@@ -6426,7 +7495,9 @@ public class BenchmarkService
                 : await _scoringProfileService.GetDefaultProfileAsync();
             var constants = _scoringProfileService.ToConstants(profile);
 
-            await ExecuteFinalSynthesisAsync(db, configService, run, assessorConfig, assessorApiKey, constants, cancellationToken);
+            await ExecuteFinalSynthesisAsync(
+                db, configService, run, assessorConfig, assessorApiKey, constants, cancellationToken,
+                coAssessorConfig, coAssessorApiKey);
 
             var allAnswers = await db.BenchmarkRunAnswers
                 .Where(a => a.BenchmarkRunId == run.Id)
@@ -6486,8 +7557,18 @@ public class BenchmarkService
                 return;
             }
 
+            // In a panel run an answer is retried when either member's verdict is missing, and only the
+            // missing member is re-graded.
+            bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+            if (isPanelRun && assessorConfigId.HasValue)
+            {
+                await RestoreTerminalStatusAsync(db, run, PanelOverrideRefusedMessage);
+                return;
+            }
+
             var unscoredAnswers = run.Answers
-                .Where(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored)
+                .Where(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored
+                            || (isPanelRun && a.CoAssessmentStatus != BenchmarkAssessmentStatus.Scored))
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
 
@@ -6502,6 +7583,19 @@ public class BenchmarkService
             {
                 await RestoreTerminalStatusAsync(db, run, error);
                 return;
+            }
+
+            SystemAiApiConfiguration? coAssessorConfig = null;
+            string? coAssessorApiKey = null;
+            if (isPanelRun)
+            {
+                string? coAssessorError;
+                (coAssessorConfig, coAssessorApiKey, coAssessorError) = await ResolveCoAssessorAsync(db, run, cancellationToken);
+                if (coAssessorConfig == null || coAssessorApiKey == null)
+                {
+                    await RestoreTerminalStatusAsync(db, run, coAssessorError);
+                    return;
+                }
             }
 
             run.Status = BenchmarkRunStatus.Running;
@@ -6522,9 +7616,12 @@ public class BenchmarkService
                 }
 
                 string? expectedPoints = BenchmarkRunExamRecord.Rubric(answer);
+                var members = (answer.AssessmentStatus != BenchmarkAssessmentStatus.Scored ? BenchmarkPanelMember.A : 0)
+                    | (isPanelRun && answer.CoAssessmentStatus != BenchmarkAssessmentStatus.Scored ? BenchmarkPanelMember.B : 0);
                 await ExecutePerQuestionAssessmentAsync(
                     db, configService, run, answer, expectedPoints,
-                    assessorConfig, assessorApiKey, constants, cancellationToken);
+                    assessorConfig, assessorApiKey, constants, cancellationToken,
+                    coAssessorConfig, coAssessorApiKey, members);
             }
 
             var allAnswers = await db.BenchmarkRunAnswers
@@ -6852,7 +7949,7 @@ public class BenchmarkService
 
     /// <summary>
     /// The answer carries an out-of-rubric Accuracy deduction whose basis the verifier can check:
-    /// the flag is set and <see cref="OutOfRubricBasisOf"/> yields a statement from the stored
+    /// the flag is set and <see cref="OutOfRubricBasisOf(BenchmarkRunAnswer)"/> yields a statement from the stored
     /// accuracy evidence.
     /// </summary>
     internal static bool IsOutOfRubricAdjudication(BenchmarkRunAnswer answer)
@@ -6929,6 +8026,18 @@ public class BenchmarkService
         string? accuracyEvidence = ReadEvidence(answer.AssessmentEvidenceJson, "accuracy");
         return ExtractOutOfRubricBasis(accuracyEvidence)
             ?? BenchmarkVerdictConsistency.UnverifiabilityBasisOf(accuracyEvidence);
+    }
+
+    /// <summary><see cref="OutOfRubricBasisOf(BenchmarkRunAnswer)"/> for one panel member's verdict, on the same gate.</summary>
+    internal static string? OutOfRubricBasisOf(BenchmarkVerdictView v)
+    {
+        if (!v.OutOfRubricAccuracy)
+        {
+            return null;
+        }
+
+        return ExtractOutOfRubricBasis(v.AccuracyEvidence)
+            ?? BenchmarkVerdictConsistency.UnverifiabilityBasisOf(v.AccuracyEvidence);
     }
 
     /// <summary>
@@ -7017,6 +8126,16 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// <see cref="OutOfRubricBasisWasRefuted(IReadOnlyList{BenchmarkClaimVerification}, string)"/> for
+    /// <paramref name="view"/>'s basis, over the items <paramref name="members"/> raised.
+    /// </summary>
+    internal static bool OutOfRubricBasisWasRefuted(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkVerdictView view,
+        BenchmarkPanelMember members)
+        => OutOfRubricBasisWasRefuted(RaisedByMembers(verifications, members), OutOfRubricBasisOf(view));
+
+    /// <summary>
     /// The claim list the verifier is given for a critical-error adjudication: the trimmed quote at
     /// index 0, ahead of whatever else was already there, and not repeated when an entry already
     /// matches it verbatim.
@@ -7067,6 +8186,16 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// <see cref="CriticalErrorQuoteWasSupported(IReadOnlyList{BenchmarkClaimVerification}, string)"/>
+    /// for <paramref name="view"/>'s quote, over the items <paramref name="members"/> raised.
+    /// </summary>
+    internal static bool CriticalErrorQuoteWasSupported(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkVerdictView view,
+        BenchmarkPanelMember members)
+        => CriticalErrorQuoteWasSupported(RaisedByMembers(verifications, members), view.CriticalErrorQuote);
+
+    /// <summary>
     /// What a contested answer with no unverified claims submits to the verifier: sentences of the
     /// answer, which are persisted as its unverified claims, and statements of the assessor, which
     /// are submitted as <see cref="BenchmarkClaimRoles.AssessorStatement"/> and never persisted.
@@ -7097,6 +8226,14 @@ public class BenchmarkService
     /// statement). At most <see cref="MaxDisputedClaims"/> in all.
     /// </summary>
     internal static DisputedClaims ExtractDisputedClaims(BenchmarkRunAnswer answer, string? accuracyEvidence)
+        => ExtractDisputedClaims(answer.CriticalErrorQuote, answer.AnswerText, accuracyEvidence, answer.ReviewComment);
+
+    /// <summary><see cref="ExtractDisputedClaims(BenchmarkRunAnswer, string)"/> for one panel member's verdict.</summary>
+    internal static DisputedClaims ExtractDisputedClaims(BenchmarkVerdictView view, string? answerText)
+        => ExtractDisputedClaims(view.CriticalErrorQuote, answerText, view.AccuracyEvidence, view.Comment);
+
+    private static DisputedClaims ExtractDisputedClaims(
+        string? criticalErrorQuote, string? answerText, string? accuracyEvidence, string? reviewComment)
     {
         var answerClaims = new List<string>();
         var assessorStatements = new List<string>();
@@ -7104,19 +8241,19 @@ public class BenchmarkService
             || assessorStatements.Contains(text, StringComparer.OrdinalIgnoreCase);
         int Total() => answerClaims.Count + assessorStatements.Count;
 
-        if (!string.IsNullOrWhiteSpace(answer.CriticalErrorQuote))
+        if (!string.IsNullOrWhiteSpace(criticalErrorQuote))
         {
-            var quote = answer.CriticalErrorQuote.Trim();
+            var quote = criticalErrorQuote.Trim();
             if (quote.Length >= 5)
             {
                 answerClaims.Add(quote);
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(answer.AnswerText))
+        if (!string.IsNullOrWhiteSpace(answerText))
         {
             int numericClaimsCount = 0;
-            foreach (var raw in AnswerSentenceSplitRegex.Split(answer.AnswerText))
+            foreach (var raw in AnswerSentenceSplitRegex.Split(answerText))
             {
                 var trimmed = raw.Trim();
                 if (trimmed.Length >= 10 && trimmed.Length <= 300 && Regex.IsMatch(trimmed, @"\d")
@@ -7148,9 +8285,9 @@ public class BenchmarkService
             }
         }
 
-        if (Total() == 0 && !string.IsNullOrWhiteSpace(answer.ReviewComment))
+        if (Total() == 0 && !string.IsNullOrWhiteSpace(reviewComment))
         {
-            var comment = answer.ReviewComment.Trim();
+            var comment = reviewComment.Trim();
             if (comment.Length <= 400)
             {
                 assessorStatements.Add(comment);
@@ -7190,6 +8327,31 @@ public class BenchmarkService
         public bool SuspectedFalse { get; init; }
         public string? Suspicion { get; init; }
         public string? RecordedClaim { get; init; }
+
+        /// <summary>The panel members that raised the item, <c>"A"</c> before <c>"B"</c>; null in a single-assessor run.</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? RaisedBy { get; init; }
+    }
+
+    /// <summary>
+    /// One panel member's items for <see cref="BuildUnionClaimManifest"/>: its unverified claims, its
+    /// critical-error quote when one is under adjudication, its out-of-rubric basis, the sentences it
+    /// charged, and the statements of its own evidence a disputed answer submits.
+    /// </summary>
+    internal sealed record ClaimContribution(
+        BenchmarkPanelMember Member,
+        IReadOnlyList<string>? UnverifiedClaims,
+        string? CriticalErrorQuote,
+        string? OutOfRubricBasis,
+        IReadOnlyList<AccusedQuote>? AccusedQuotes,
+        IReadOnlyList<string>? AssessorStatements = null)
+    {
+        public bool IsEmpty =>
+            (UnverifiedClaims?.Count ?? 0) == 0
+            && string.IsNullOrWhiteSpace(CriticalErrorQuote)
+            && string.IsNullOrWhiteSpace(OutOfRubricBasis)
+            && (AccusedQuotes?.Count ?? 0) == 0
+            && (AssessorStatements?.Count ?? 0) == 0;
     }
 
     /// <summary>
@@ -7238,6 +8400,23 @@ public class BenchmarkService
     /// <summary><see cref="NeedsClaimVerification"/>, or a sentence the assessor charged that the verifier can check.</summary>
     internal bool NeedsClaimVerificationOrAccusation(BenchmarkRunAnswer answer)
         => NeedsClaimVerification(answer) || AccusedQuotesFor(answer).Count > 0;
+
+    /// <summary><see cref="AccusedQuotesFor(BenchmarkRunAnswer)"/> for one panel member's verdict, on the same eligibility rule.</summary>
+    internal IReadOnlyList<AccusedQuote> AccusedQuotesFor(BenchmarkVerdictView v, string? answerText)
+        => AccusedQuotesEnabled
+            && (v.AccuracyLevel <= AccusedQuoteEligibleMaxAccuracyLevel || v.ContestedVerdict)
+                ? ExtractAccusedQuotes(answerText, v.AccuracyEvidence)
+                : Array.Empty<AccusedQuote>();
+
+    /// <summary>
+    /// <see cref="NeedsClaimVerificationOrAccusation(BenchmarkRunAnswer)"/> for one panel member's
+    /// verdict: an unverified claim, a critical-error quote, an out-of-rubric basis, or an accused sentence.
+    /// </summary>
+    internal bool NeedsClaimVerificationOrAccusation(BenchmarkVerdictView v, string? answerText)
+        => v.UnverifiedClaims.Count > 0
+            || (v.CriticalError && !string.IsNullOrWhiteSpace(v.CriticalErrorQuote))
+            || OutOfRubricBasisOf(v) != null
+            || AccusedQuotesFor(v, answerText).Count > 0;
 
     /// <summary>
     /// The sentences of the answer the assessor quoted in its accuracy evidence: each span between
@@ -7449,6 +8628,36 @@ public class BenchmarkService
         if (spans.Count == 0) return new List<BenchmarkClaimVerification>();
 
         return verifications
+            .Where(v => v.SuspectedFalse == true
+                && v.EffectiveVerdict == BenchmarkClaimVerdict.Supported
+                && !string.IsNullOrWhiteSpace(v.Citation)
+                && !string.IsNullOrWhiteSpace(v.Claim))
+            .Where(v =>
+            {
+                string claim = NormalizeWithMap(v.Claim).Normalized;
+                return spans.Any(span => claim.Contains(span, StringComparison.OrdinalIgnoreCase));
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// <see cref="SupportedDockedSuspicions(BenchmarkRunAnswer, IReadOnlyList{BenchmarkClaimVerification})"/>
+    /// for <paramref name="view"/>'s Accuracy level and evidence, over the items <paramref name="members"/> raised.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> SupportedDockedSuspicions(
+        BenchmarkVerdictView view,
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkPanelMember members)
+    {
+        if (verifications == null || view.AccuracyLevel >= 6)
+        {
+            return new List<BenchmarkClaimVerification>();
+        }
+
+        var spans = DockedQuotedSpans(view.AccuracyEvidence);
+        if (spans.Count == 0) return new List<BenchmarkClaimVerification>();
+
+        return RaisedByMembers(verifications, members)
             .Where(v => v.SuspectedFalse == true
                 && v.EffectiveVerdict == BenchmarkClaimVerdict.Supported
                 && !string.IsNullOrWhiteSpace(v.Citation)
@@ -8020,8 +9229,238 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// A panel run's submission manifest: every scored member's items once, each recording in
+    /// <see cref="ClaimSubmission.RaisedBy"/> which members raised it.
+    ///
+    /// Unverified claims come first, member A's then member B's new ones, a claim both raised listed
+    /// once (whitespace-collapsed, ignoring case) and suspected-false when either member recorded it
+    /// so. Member A's critical-error quote keeps the single-assessor placement: first, unless it equals
+    /// a listed claim, whose place it takes. Member B's distinct quote follows A's, or takes that rule
+    /// when A raised none. The out-of-rubric bases follow the quotes, A's before B's. Roles are
+    /// assigned by text match, as <see cref="BuildClaimManifest"/> assigns them. Assessor statements
+    /// and accused sentences follow in member order under <see cref="BuildClaimManifest"/>'s rules; an
+    /// accused sentence another member also charged adds its fragments and charge to the item.
+    /// </summary>
+    internal static List<ClaimSubmission> BuildUnionClaimManifest(
+        IReadOnlyList<ClaimContribution> contributions,
+        string? answerText)
+    {
+        var ordered = contributions.OrderBy(c => c.Member).ToList();
+        var raisedBy = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+        void Raise(string text, BenchmarkPanelMember member)
+        {
+            string key = text.Trim();
+            if (!raisedBy.TryGetValue(key, out var members))
+            {
+                raisedBy[key] = members = new SortedSet<string>(StringComparer.Ordinal);
+            }
+            members.Add(BenchmarkVerdictView.LabelOf(member));
+        }
+        static string ClaimKey(string text)
+            => string.Join(' ', text.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        var suspected = new Dictionary<string, (string Entry, string? Reason)>(StringComparer.Ordinal);
+        var texts = new List<string>();
+        var textByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var contribution in ordered)
+        {
+            foreach (string entry in DeduplicateUnverifiedClaims(contribution.UnverifiedClaims, answerText))
+            {
+                string text = entry;
+                string? reason = null;
+                bool isSuspected = BenchmarkSuspectedFalseClaim.TryParse(entry, answerText, out string sentence, out reason);
+                if (isSuspected)
+                {
+                    text = sentence;
+                }
+
+                string key = ClaimKey(text);
+                if (textByKey.TryGetValue(key, out string? listed))
+                {
+                    text = listed;
+                }
+                else
+                {
+                    textByKey[key] = text;
+                    texts.Add(text);
+                }
+
+                if (isSuspected)
+                {
+                    suspected.TryAdd(text, (entry, reason));
+                }
+                Raise(text, contribution.Member);
+            }
+        }
+
+        string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        var byMember = ordered.ToDictionary(c => c.Member);
+        string? quoteA = byMember.TryGetValue(BenchmarkPanelMember.A, out var a) ? Trimmed(a.CriticalErrorQuote) : null;
+        string? quoteB = byMember.TryGetValue(BenchmarkPanelMember.B, out var b) ? Trimmed(b.CriticalErrorQuote) : null;
+        string? basisA = a != null ? Trimmed(a.OutOfRubricBasis) : null;
+        string? basisB = b != null ? Trimmed(b.OutOfRubricBasis) : null;
+        if (quoteB != null && string.Equals(quoteB, quoteA, StringComparison.Ordinal)) quoteB = null;
+        if (basisB != null && string.Equals(basisB, basisA, StringComparison.Ordinal)) basisB = null;
+
+        if (quoteA != null)
+        {
+            texts = WithCriticalErrorQuoteFirst(texts, quoteA);
+        }
+        if (quoteB != null && !texts.Any(t => string.Equals(t, quoteB, StringComparison.Ordinal)))
+        {
+            int after = quoteA != null ? texts.FindIndex(t => string.Equals(t, quoteA, StringComparison.Ordinal)) + 1 : 0;
+            texts.Insert(Math.Clamp(after, 0, texts.Count), quoteB);
+        }
+
+        int quoteCount = (quoteA != null ? 1 : 0) + (quoteB != null ? 1 : 0);
+        if (basisA != null)
+        {
+            texts = WithOutOfRubricBasis(texts, basisA, quoteCount);
+        }
+        if (basisB != null)
+        {
+            int after = basisA != null
+                ? texts.FindIndex(t => string.Equals(t.Trim(), basisA, StringComparison.Ordinal)) + 1
+                : quoteCount;
+            texts = WithOutOfRubricBasis(texts, basisB, after);
+        }
+
+        if (quoteA != null) Raise(quoteA, BenchmarkPanelMember.A);
+        if (quoteB != null) Raise(quoteB, BenchmarkPanelMember.B);
+        if (basisA != null) Raise(basisA, BenchmarkPanelMember.A);
+        if (basisB != null) Raise(basisB, BenchmarkPanelMember.B);
+        // A member whose quote equals the other's raised it too.
+        if (b != null && quoteA != null && string.Equals(Trimmed(b.CriticalErrorQuote), quoteA, StringComparison.Ordinal)) Raise(quoteA, BenchmarkPanelMember.B);
+        if (b != null && basisA != null && string.Equals(Trimmed(b.OutOfRubricBasis), basisA, StringComparison.Ordinal)) Raise(basisA, BenchmarkPanelMember.B);
+
+        IReadOnlyList<string>? RaisedList(string text)
+            => raisedBy.TryGetValue(text.Trim(), out var members) ? members.ToList() : null;
+
+        var quotes = new[] { quoteA, quoteB }.Where(q => q != null).ToList();
+        var bases = new[] { basisA, basisB }.Where(q => q != null).ToList();
+        var items = new List<ClaimSubmission>();
+        foreach (string text in texts)
+        {
+            string trimmed = text.Trim();
+            var itemRoles = new List<string>();
+            if (quotes.Any(q => string.Equals(trimmed, q, StringComparison.Ordinal)))
+            {
+                itemRoles.Add(BenchmarkClaimRoles.CriticalErrorQuote);
+            }
+            if (bases.Any(q => string.Equals(trimmed, q, StringComparison.Ordinal)))
+            {
+                itemRoles.Add(BenchmarkClaimRoles.OutOfRubricBasis);
+            }
+
+            var item = new ClaimSubmission(text, itemRoles, null) { RaisedBy = RaisedList(text) };
+            if (itemRoles.Count == 0)
+            {
+                itemRoles.Add(BenchmarkClaimRoles.UnverifiedClaim);
+                if (suspected.TryGetValue(text, out var recorded))
+                {
+                    item = item with { SuspectedFalse = true, Suspicion = recorded.Reason, RecordedClaim = recorded.Entry };
+                }
+            }
+            items.Add(item);
+        }
+
+        static IReadOnlyList<string> WithMember(IReadOnlyList<string>? raised, BenchmarkPanelMember member)
+        {
+            var set = new SortedSet<string>(raised ?? Array.Empty<string>(), StringComparer.Ordinal)
+            {
+                BenchmarkVerdictView.LabelOf(member)
+            };
+            return set.ToList();
+        }
+
+        foreach (var contribution in ordered)
+        {
+            foreach (string statement in contribution.AssessorStatements ?? Array.Empty<string>())
+            {
+                string trimmed = statement.Trim();
+                if (trimmed.Length == 0) continue;
+
+                int existing = items.FindIndex(i => string.Equals(i.Text.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+                if (existing >= 0)
+                {
+                    if (items[existing].Roles.Contains(BenchmarkClaimRoles.AssessorStatement))
+                    {
+                        items[existing] = items[existing] with { RaisedBy = WithMember(items[existing].RaisedBy, contribution.Member) };
+                    }
+                    continue;
+                }
+                if (bases.Any(basis => trimmed.Contains(basis!, StringComparison.OrdinalIgnoreCase))) continue;
+
+                items.Add(new ClaimSubmission(trimmed, new List<string> { BenchmarkClaimRoles.AssessorStatement }, null)
+                {
+                    RaisedBy = WithMember(null, contribution.Member)
+                });
+            }
+        }
+
+        foreach (var contribution in ordered)
+        {
+            foreach (var accused in contribution.AccusedQuotes ?? Array.Empty<AccusedQuote>())
+            {
+                string trimmed = accused.Text.Trim();
+                int existing = items.FindIndex(i => string.Equals(i.Text.Trim(), trimmed, StringComparison.Ordinal));
+                if (existing >= 0)
+                {
+                    var item = items[existing];
+                    if (item.Roles.Contains(BenchmarkClaimRoles.AssessorStatement))
+                    {
+                        continue;
+                    }
+
+                    bool chargedByOther = item.Roles.Contains(BenchmarkClaimRoles.AccusedQuote)
+                        && !(item.RaisedBy ?? Array.Empty<string>()).Contains(BenchmarkVerdictView.LabelOf(contribution.Member));
+                    var roles = item.Roles.ToList();
+                    if (!roles.Contains(BenchmarkClaimRoles.AccusedQuote))
+                    {
+                        roles.Add(BenchmarkClaimRoles.AccusedQuote);
+                    }
+
+                    var fragments = item.QuotedFragments ?? accused.QuotedFragments;
+                    string? charge = item.Charge ?? accused.Charge;
+                    if (chargedByOther)
+                    {
+                        fragments = (item.QuotedFragments ?? Array.Empty<string>())
+                            .Concat(accused.QuotedFragments ?? Array.Empty<string>())
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+                        if (!string.IsNullOrWhiteSpace(item.Charge) && !string.IsNullOrWhiteSpace(accused.Charge)
+                            && !item.Charge.Contains(accused.Charge, StringComparison.Ordinal))
+                        {
+                            charge = CapWithEllipsis(item.Charge + " " + accused.Charge, AccusedQuoteChargeMaxLength * 2);
+                        }
+                    }
+
+                    items[existing] = item with
+                    {
+                        Roles = roles,
+                        Context = item.Context ?? accused.Context,
+                        QuotedFragments = fragments,
+                        Charge = charge,
+                        RaisedBy = WithMember(item.RaisedBy, contribution.Member)
+                    };
+                    continue;
+                }
+
+                items.Add(new ClaimSubmission(trimmed, new List<string> { BenchmarkClaimRoles.AccusedQuote }, accused.Context)
+                {
+                    QuotedFragments = accused.QuotedFragments,
+                    Charge = accused.Charge,
+                    RaisedBy = WithMember(null, contribution.Member)
+                });
+            }
+        }
+
+        return items;
+    }
+
+    /// <summary>
     /// Each verification stamped with the manifest item at its claim index: its roles, and the
-    /// fragments, charge and suspected-false record that item carries.
+    /// fragments, charge, suspected-false record and raising members that item carries.
     /// </summary>
     internal static List<BenchmarkClaimVerification> StampRoles(
         IReadOnlyList<BenchmarkClaimVerification> verifications,
@@ -8042,7 +9481,8 @@ public class BenchmarkService
                     Charge = item.Charge,
                     SuspectedFalse = item.SuspectedFalse ? true : null,
                     Suspicion = item.Suspicion,
-                    RecordedClaim = item.RecordedClaim
+                    RecordedClaim = item.RecordedClaim,
+                    RaisedBy = item.RaisedBy?.ToList()
                 };
             })
             .ToList();

@@ -33,6 +33,15 @@ public record BenchmarkClaimVerification(
     public IReadOnlyList<string>? Roles { get; init; }
 
     /// <summary>
+    /// The panel members whose verdicts submitted this item, <c>"A"</c> and/or <c>"B"</c>, stamped
+    /// by the harness from its own submission manifest like <see cref="Roles"/>. Null in a
+    /// single-assessor run and on a record stored before harness 40.
+    /// </summary>
+    [JsonPropertyName("raisedBy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? RaisedBy { get; init; }
+
+    /// <summary>
     /// Set by <see cref="BenchmarkCitationLivenessCheck"/> when the cited source function has no live
     /// call site, and by <see cref="BenchmarkClaimVerificationParser"/> when a charged part was not
     /// judged separately. The stored <see cref="Verdict"/> is left as the verifier gave it; every flag

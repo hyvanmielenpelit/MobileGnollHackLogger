@@ -618,4 +618,110 @@ public class BenchmarkAssessmentParserTests
         Assert.Equal(5, result.Result.ReadabilityLevel);
         Assert.NotNull(result.RawText);
     }
+
+    [Fact]
+    public void SynthesisFindings_AreParsedWithKindCategoryQuestionsAndText()
+    {
+        var result = BenchmarkAssessmentParser.ParseFinalSynthesis(
+            """
+            {
+              "finalScore": 74,
+              "strengths": "Good tool use.",
+              "weaknesses": "Two factual errors.",
+              "overallComments": "Solid overall.",
+              "findings": [
+                { "kind": "Weakness", "category": "Critical Error", "questions": [3, "Q5", 3, 0, -2, "#7"], "text": "  Misstated the AC of dragon scale mail.  " },
+                { "kind": "strength", "category": "tool-use", "questions": [], "text": "Checked the source before answering." }
+              ]
+            }
+            """);
+
+        Assert.True(result.Success);
+        var findings = result.Result!.Findings;
+        Assert.Equal(2, findings.Count);
+
+        // Kind lower-cased; category normalized to the schema's spelling; question numbers kept once
+        // each, in order, positive only, from numbers and from "Q5" / "#7" strings; text trimmed.
+        Assert.Equal("weakness", findings[0].Kind);
+        Assert.Equal("critical_error", findings[0].Category);
+        Assert.Equal(new[] { 3, 5, 7 }, findings[0].Questions);
+        Assert.Equal("Misstated the AC of dragon scale mail.", findings[0].Text);
+
+        Assert.Equal("strength", findings[1].Kind);
+        Assert.Equal("tool_use", findings[1].Category);
+        Assert.Empty(findings[1].Questions);
+    }
+
+    [Fact]
+    public void SynthesisFindings_MalformedEntriesAreDropped_AndAnUnknownCategoryReadsAsOther()
+    {
+        var result = BenchmarkAssessmentParser.ParseFinalSynthesis(
+            """
+            {
+              "finalScore": 60,
+              "strengths": "s",
+              "weaknesses": "w",
+              "overallComments": "c",
+              "findings": [
+                "a bare string",
+                42,
+                { "kind": "observation", "category": "accuracy", "questions": [1], "text": "Unknown kind." },
+                { "category": "accuracy", "questions": [1], "text": "No kind." },
+                { "kind": "weakness", "category": "accuracy", "questions": [1] },
+                { "kind": "weakness", "category": "accuracy", "questions": [1], "text": "   " },
+                { "kind": "weakness", "category": "accuracy", "questions": [1], "text": 17 },
+                { "kind": "weakness", "category": "hallucination", "questions": "Q2", "text": "Kept, with category other." },
+                { "kind": "strength", "text": "Kept without a category or questions." }
+              ]
+            }
+            """);
+
+        Assert.True(result.Success);
+        var findings = result.Result!.Findings;
+        Assert.Equal(2, findings.Count);
+
+        Assert.Equal("weakness", findings[0].Kind);
+        Assert.Equal("other", findings[0].Category);
+        Assert.Empty(findings[0].Questions); // "questions" was not an array
+        Assert.Equal("Kept, with category other.", findings[0].Text);
+
+        Assert.Equal("strength", findings[1].Kind);
+        Assert.Equal("other", findings[1].Category);
+        Assert.Empty(findings[1].Questions);
+    }
+
+    [Fact]
+    public void SynthesisFindings_LegacyJsonWithoutFindings_ParsesWithAnEmptyList()
+    {
+        var result = BenchmarkAssessmentParser.ParseFinalSynthesis(
+            """
+            {
+              "finalScore": 82,
+              "strengths": "Accurate.",
+              "weaknesses": "Verbose.",
+              "overallComments": "A synthesis written before the findings array existed."
+            }
+            """);
+
+        Assert.True(result.Success);
+        Assert.Equal(82, result.Result!.FinalScore);
+        Assert.Equal("Accurate.", result.Result.Strengths);
+        Assert.NotNull(result.Result.Findings);
+        Assert.Empty(result.Result.Findings);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not json at all")]
+    [InlineData("{ \"findings\": ")]
+    [InlineData("{ \"findings\": { \"kind\": \"weakness\", \"text\": \"An object, not an array.\" } }")]
+    [InlineData("[ { \"kind\": \"weakness\", \"text\": \"A root array.\" } ]")]
+    public void ParseSynthesisFindings_IsTotal_OnNullLegacyOrMalformedInput(string? json)
+    {
+        var findings = BenchmarkAssessmentParser.ParseSynthesisFindings(json);
+
+        Assert.NotNull(findings);
+        Assert.Empty(findings);
+    }
 }

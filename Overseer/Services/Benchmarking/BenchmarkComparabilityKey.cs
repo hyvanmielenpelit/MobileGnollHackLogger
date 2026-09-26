@@ -460,8 +460,9 @@ public static class BenchmarkComparabilityKey
 
             AssessorConfigurationKey => Info(name,
                 "Assessor configuration",
-                "The grading model and how it was configured; a difference means a different "
-                + "grader produced the scores.",
+                "The grading model and how it was configured, and in a panel run the co-assessor "
+                + "(panel member B) as well; a difference means a different grader or panel "
+                + "produced the scores.",
                 BenchmarkComparabilityValueKind.List),
 
             SecondOpinionConfigurationKey => Info(name,
@@ -923,8 +924,18 @@ public static class BenchmarkComparabilityKey
         };
     }
 
+    /// <summary>
+    /// Member A's grader fields, followed by member B's after a <c>panelMember=</c> marker when a
+    /// co-assessor graded. Without a co-assessor the value is member A's fields alone.
+    /// </summary>
     private static string AssessorSignature(BenchmarkRun run)
-        => string.Join(";", GraderFields(run.AssessorModelSnapshot, run.AssessorEffectiveMaxOutputTokens));
+    {
+        string signature = string.Join(";", GraderFields(run.AssessorModelSnapshot, run.AssessorEffectiveMaxOutputTokens));
+        if (run.CoAssessorModelSnapshot == null) return signature;
+
+        return signature + ";panelMember="
+            + string.Join(";", GraderFields(run.CoAssessorModelSnapshot, run.CoAssessorEffectiveMaxOutputTokens));
+    }
 
     private static string SecondOpinionSignature(BenchmarkRun run)
     {

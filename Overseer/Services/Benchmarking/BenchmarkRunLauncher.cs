@@ -109,7 +109,8 @@ public class BenchmarkRunLauncher
         SystemAiApiConfiguration? SecondOpinionConfig,
         SystemAiApiConfiguration? ClaimVerifierConfig,
         int? RequestedMode,
-        bool IsSameProvider);
+        bool IsSameProvider,
+        SystemAiApiConfiguration? CoAssessorConfig);
 
     /// <summary>
     /// Every rule a run must satisfy, in one place. Creates nothing, so a caller that only needs
@@ -171,6 +172,47 @@ public class BenchmarkRunLauncher
                 "Assessor model configuration is invalid, missing an API key, or not configured with the Benchmark role."), null);
         }
 
+        // Optional: a co-assessor makes the run a two-member panel. Held to the same bar as the
+        // second opinion, and the panel must span two providers with neither member being the
+        // model under test.
+        SystemAiApiConfiguration? coAssessorConfig = null;
+        if (request.CoAssessorModelConfigurationId.HasValue)
+        {
+            coAssessorConfig = await _dbContext.SystemAiApiConfigurations
+                .FindAsync(new object?[] { request.CoAssessorModelConfigurationId.Value }, ct);
+
+            if (coAssessorConfig == null || !coAssessorConfig.IsEnabled ||
+                string.IsNullOrWhiteSpace(coAssessorConfig.EncryptedApiKey) ||
+                (coAssessorConfig.ModelRole & 4) != 4)
+            {
+                return (BenchmarkRunLaunchResult.Fail(
+                    BenchmarkRunLaunchOutcome.Invalid,
+                    "Co-assessor configuration is invalid, disabled, missing an API key, or not configured with the Benchmark role."), null);
+            }
+
+            if (coAssessorConfig.Id == assessorConfig.Id)
+            {
+                return (BenchmarkRunLaunchResult.Fail(
+                    BenchmarkRunLaunchOutcome.Invalid,
+                    "The co-assessor must be a different configuration from the assessor."), null);
+            }
+
+            if (_complianceGuard.IsSameProvider(assessorConfig, coAssessorConfig))
+            {
+                return (BenchmarkRunLaunchResult.Fail(
+                    BenchmarkRunLaunchOutcome.Invalid,
+                    $"A panel needs members from two providers. The assessor and the co-assessor both belong to {assessorConfig.Provider}."), null);
+            }
+
+            if (_complianceGuard.IsSameModel(testedConfig, assessorConfig) ||
+                _complianceGuard.IsSameModel(testedConfig, coAssessorConfig))
+            {
+                return (BenchmarkRunLaunchResult.Fail(
+                    BenchmarkRunLaunchOutcome.Invalid,
+                    "A model under test cannot grade itself. Choose an older or other model of that family as the panel member."), null);
+            }
+        }
+
         // Optional: a second-opinion assessor re-grades severe verdicts. Held to the same bar as
         // the assessor, and simply absent when the operator did not pick one.
         SystemAiApiConfiguration? secondOpinionConfig = null;
@@ -226,10 +268,18 @@ public class BenchmarkRunLauncher
             secondOpinionConfig = null;
         }
 
+        // In a panel run the second opinion is the reference reader, which grades every answer: the
+        // requested mode is ignored. The service forces blind reading at run start.
+        bool isPanelRun = coAssessorConfig != null;
+        if (isPanelRun && secondOpinionConfig != null)
+        {
+            requestedMode = (int)BenchmarkSecondOpinionMode.All;
+        }
+
         // Full validation, DNS included: the run records this endpoint and will call nothing else.
         foreach (var (role, config) in new (string, SystemAiApiConfiguration?)[]
         {
-            ("Tested model", testedConfig), ("Assessor", assessorConfig),
+            ("Tested model", testedConfig), ("Assessor", assessorConfig), ("Co-assessor", coAssessorConfig),
             ("Second opinion assessor", secondOpinionConfig), ("Claim verifier", claimVerifierConfig)
         })
         {
@@ -243,7 +293,10 @@ public class BenchmarkRunLauncher
             }
         }
 
-        bool isSameProvider = _complianceGuard.IsSameProvider(testedConfig, assessorConfig);
+        // A panel spans two providers by construction, and its balance is what answers same-family
+        // preference: the acknowledgeable gate applies to single-assessor runs only, and a panel run
+        // records no acknowledgement.
+        bool isSameProvider = !isPanelRun && _complianceGuard.IsSameProvider(testedConfig, assessorConfig);
         if (isSameProvider && !request.AcknowledgeSameProvider)
         {
             return (new BenchmarkRunLaunchResult
@@ -261,7 +314,7 @@ public class BenchmarkRunLauncher
         }
         return (null, new ValidatedLaunch(
             suite, testedConfig, assessorConfig, secondOpinionConfig, claimVerifierConfig,
-            requestedMode, isSameProvider));
+            requestedMode, isSameProvider, coAssessorConfig));
     }
 
     /// <summary>
@@ -312,15 +365,19 @@ public class BenchmarkRunLauncher
         var assessorConfig = validated.AssessorConfig;
         var secondOpinionConfig = validated.SecondOpinionConfig;
         var claimVerifierConfig = validated.ClaimVerifierConfig;
+        var coAssessorConfig = validated.CoAssessorConfig;
         int? requestedMode = validated.RequestedMode;
         bool isSameProvider = validated.IsSameProvider;
 
         string? pricingSnapshotJson = BuildPricingSnapshotJson(
-            testedConfig, assessorConfig, secondOpinionConfig, claimVerifierConfig);
+            testedConfig, assessorConfig, secondOpinionConfig, claimVerifierConfig, coAssessorConfig);
 
         // Captured before the run is added, so each capture on the still-clean context saves at once.
         var testedSnapshot = await SystemAiConfigurationSnapshotStore.CaptureAsync(_dbContext, testedConfig, ct);
         var assessorSnapshot = await SystemAiConfigurationSnapshotStore.CaptureAsync(_dbContext, assessorConfig, ct);
+        var coAssessorSnapshot = coAssessorConfig != null
+            ? await SystemAiConfigurationSnapshotStore.CaptureAsync(_dbContext, coAssessorConfig, ct)
+            : null;
         var secondOpinionSnapshot = secondOpinionConfig != null
             ? await SystemAiConfigurationSnapshotStore.CaptureAsync(_dbContext, secondOpinionConfig, ct)
             : null;
@@ -341,6 +398,12 @@ public class BenchmarkRunLauncher
             AssessorModelConfigurationId = assessorConfig.Id,
             AssessorModelSnapshot = assessorSnapshot,
             AssessorEffectiveMaxOutputTokens = _benchmarkService.ResolveAssessorOutputCap(assessorSnapshot.MaxOutputTokens),
+
+            CoAssessorModelConfigurationId = coAssessorConfig?.Id,
+            CoAssessorModelSnapshot = coAssessorSnapshot,
+            CoAssessorEffectiveMaxOutputTokens = coAssessorSnapshot != null
+                ? _benchmarkService.ResolveAssessorOutputCap(coAssessorSnapshot.MaxOutputTokens)
+                : null,
 
             SecondOpinionAssessorModelConfigurationId = secondOpinionConfig?.Id,
             SecondOpinionAssessorModelSnapshot = secondOpinionSnapshot,
@@ -426,12 +489,14 @@ public class BenchmarkRunLauncher
         SystemAiApiConfiguration testedConfig,
         SystemAiApiConfiguration assessorConfig,
         SystemAiApiConfiguration? secondOpinionConfig,
-        SystemAiApiConfiguration? claimVerifierConfig)
+        SystemAiApiConfiguration? claimVerifierConfig,
+        SystemAiApiConfiguration? coAssessorConfig)
     {
         if (_modelPricingService == null) return null;
 
         var candidatePricing = _modelPricingService.Resolve(testedConfig);
         var assessorPricing = _modelPricingService.Resolve(assessorConfig);
+        var coAssessorPricing = coAssessorConfig != null ? _modelPricingService.Resolve(coAssessorConfig) : null;
         var secondOpinionPricing = secondOpinionConfig != null ? _modelPricingService.Resolve(secondOpinionConfig) : null;
         var claimVerifierPricing = claimVerifierConfig != null ? _modelPricingService.Resolve(claimVerifierConfig) : null;
 
@@ -454,15 +519,30 @@ public class BenchmarkRunLauncher
             serviceTierMultipliers = p.ServiceTierMultipliers
         };
 
-        var snapshot = new
+        var capturedAtUtc = DateTime.UtcNow;
+
+        // The coAssessor key is written only in a panel run, so a single-assessor snapshot keeps
+        // the shape, and therefore the pricing fingerprint, of every earlier run.
+        if (coAssessorConfig == null)
         {
-            capturedAtUtc = DateTime.UtcNow,
+            return JsonSerializer.Serialize(new
+            {
+                capturedAtUtc,
+                candidate = ToSnapshotObj(candidatePricing),
+                assessor = ToSnapshotObj(assessorPricing),
+                secondOpinion = ToSnapshotObj(secondOpinionPricing),
+                claimVerifier = ToSnapshotObj(claimVerifierPricing)
+            });
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            capturedAtUtc,
             candidate = ToSnapshotObj(candidatePricing),
             assessor = ToSnapshotObj(assessorPricing),
+            coAssessor = ToSnapshotObj(coAssessorPricing),
             secondOpinion = ToSnapshotObj(secondOpinionPricing),
             claimVerifier = ToSnapshotObj(claimVerifierPricing)
-        };
-
-        return JsonSerializer.Serialize(snapshot);
+        });
     }
 }

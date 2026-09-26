@@ -1,0 +1,152 @@
+<!--
+  One synthesis is a plain card. Two are a tab row (frontend_ui_controls §5): one tab per member
+  and an Agreement tab, inactive panels removed from the DOM by @if.
+-->
+@if (syntheses.length > 0) {
+  <section class="synthesis-card" [attr.aria-labelledby]="idPrefix + '-heading'">
+    <h4 class="synthesis-heading" [id]="idPrefix + '-heading'">Assessor Qualitative Synthesis</h4>
+
+    @if (!hasTabs) {
+      <ng-container [ngTemplateOutlet]="synthesisBody" [ngTemplateOutletContext]="{ $implicit: syntheses[0] }"></ng-container>
+    } @else {
+      <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Syntheses by panel member">
+        @for (key of tabKeys; track key; let i = $index) {
+          <button type="button" role="tab" class="gh-tab"
+                  [id]="tabId(key)"
+                  [attr.aria-controls]="panelId(key)"
+                  [attr.aria-selected]="activeKey === key"
+                  [attr.tabindex]="activeKey === key ? 0 : -1"
+                  (keydown)="onTabKeydown($event, i)"
+                  (click)="selectTab(key)">
+            @if (synthesisFor(key); as tabSynthesis) {
+              <span>{{ tabSynthesis.memberLabel }}: {{ tabSynthesis.modelLabel }}</span>
+              @if (tabSynthesis.familyRelation) {
+                <span class="family-badge" [class.is-same-family]="tabSynthesis.familyRelation === 'same-family'">{{ tabSynthesis.familyRelation }}</span>
+              }
+            } @else {
+              Agreement
+            }
+          </button>
+        }
+      </div>
+
+      @for (key of tabKeys; track key) {
+        @if (activeKey === key) {
+          <div class="synthesis-tabpanel" role="tabpanel" [id]="panelId(key)" [attr.aria-labelledby]="tabId(key)" tabindex="0">
+            @if (synthesisFor(key); as panelSynthesis) {
+              <ng-container [ngTemplateOutlet]="synthesisBody" [ngTemplateOutletContext]="{ $implicit: panelSynthesis }"></ng-container>
+            } @else {
+              <p class="synthesis-meta">
+                Computed by the server from the two members' structured findings, matched on kind,
+                category and question. Neither member saw the other's synthesis.
+              </p>
+              @if (convergence && convergence.length > 0) {
+                <p class="convergence-summary">{{ convergenceSummary }}</p>
+                <div class="convergence-table-wrap">
+                  <table class="gh-table convergence-table">
+                    <caption class="visually-hidden">Agreement between the two members' synthesis findings</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Finding</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Question</th>
+                        <th scope="col">Raised by</th>
+                        <th scope="col">Member A</th>
+                        <th scope="col">Member B</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of convergence; track $index) {
+                        <tr>
+                          <td>{{ kindLabel(row.kind) }}</td>
+                          <td>{{ categoryLabel(row.category) }}</td>
+                          <td>{{ row.question != null ? 'Q' + row.question : 'Run-wide' }}</td>
+                          <td><span class="convergence-status" [class]="statusClass(row.status)">{{ statusLabel(row.status) }}</span></td>
+                          <td>{{ row.memberAText ?? '—' }}</td>
+                          <td>{{ row.memberBText ?? '—' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              } @else {
+                <p class="text-muted">
+                  No agreement was computed: it needs both members' structured findings, and at least
+                  one synthesis carries none.
+                </p>
+              }
+            }
+          </div>
+        }
+      }
+    }
+  </section>
+}
+
+<ng-template #synthesisBody let-s>
+  <p class="synthesis-meta">
+    {{ s.memberLabel }} · {{ s.modelLabel }}
+    @if (s.provider) {
+      · {{ s.provider }}
+    }
+    @if (s.familyRelation) {
+      <span class="family-badge" [class.is-same-family]="s.familyRelation === 'same-family'">{{ s.familyRelation }}</span>
+    }
+    @if (s.holisticScore != null) {
+      <span class="synthesis-score">Holistic score {{ s.holisticScore }} / 100</span>
+    }
+  </p>
+
+  @if (s.parseFailed) {
+    <div class="alert alert-warning synthesis-parse-note" role="note">
+      <div class="alert-content">
+        <div class="alert-body">
+          This synthesis could not be parsed, so its findings are missing and its holistic score may
+          be too. The raw output is below.
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (s.text) {
+    <div class="prose-review">{{ s.text }}</div>
+  } @else {
+    <p class="text-muted">No synthesis text was recorded.</p>
+  }
+
+  @if (strengthsOf(s).length > 0) {
+    <h5 class="findings-heading">Strengths</h5>
+    <ul class="findings-list">
+      @for (finding of strengthsOf(s); track $index) {
+        <li>
+          <span class="finding-category">{{ categoryLabel(finding.category) }}</span>
+          {{ finding.text }}
+          @if (finding.questions.length > 0) {
+            <span class="finding-questions">({{ questionsLabel(finding.questions) }})</span>
+          }
+        </li>
+      }
+    </ul>
+  }
+  @if (weaknessesOf(s).length > 0) {
+    <h5 class="findings-heading">Weaknesses</h5>
+    <ul class="findings-list">
+      @for (finding of weaknessesOf(s); track $index) {
+        <li>
+          <span class="finding-category">{{ categoryLabel(finding.category) }}</span>
+          {{ finding.text }}
+          @if (finding.questions.length > 0) {
+            <span class="finding-questions">({{ questionsLabel(finding.questions) }})</span>
+          }
+        </li>
+      }
+    </ul>
+  }
+
+  @if (s.parseFailed && s.rawJson) {
+    <details class="gh-disclosure synthesis-raw">
+      <summary>Raw synthesis output</summary>
+      <div class="gh-disclosure-body"><pre>{{ s.rawJson }}</pre></div>
+    </details>
+  }
+</ng-template>

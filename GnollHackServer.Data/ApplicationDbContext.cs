@@ -129,10 +129,12 @@ namespace MobileGnollHackLogger.Data
             {
                 e.HasOne(r => r.TestedModelSnapshot).WithMany().HasForeignKey(r => r.TestedModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne(r => r.AssessorModelSnapshot).WithMany().HasForeignKey(r => r.AssessorModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(r => r.CoAssessorModelSnapshot).WithMany().HasForeignKey(r => r.CoAssessorModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne(r => r.SecondOpinionAssessorModelSnapshot).WithMany().HasForeignKey(r => r.SecondOpinionAssessorModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne(r => r.ClaimVerifierModelSnapshot).WithMany().HasForeignKey(r => r.ClaimVerifierModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.Navigation(r => r.TestedModelSnapshot).AutoInclude();
                 e.Navigation(r => r.AssessorModelSnapshot).AutoInclude();
+                e.Navigation(r => r.CoAssessorModelSnapshot).AutoInclude();
                 e.Navigation(r => r.SecondOpinionAssessorModelSnapshot).AutoInclude();
                 e.Navigation(r => r.ClaimVerifierModelSnapshot).AutoInclude();
             });
@@ -140,11 +142,13 @@ namespace MobileGnollHackLogger.Data
             modelBuilder.Entity<BenchmarkRunAnswer>(e =>
             {
                 e.HasOne(a => a.AssessedByModelSnapshot).WithMany().HasForeignKey(a => a.AssessedByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.HasOne(a => a.CoAssessedByModelSnapshot).WithMany().HasForeignKey(a => a.CoAssessedByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne(a => a.SecondOpinionByModelSnapshot).WithMany().HasForeignKey(a => a.SecondOpinionByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne(a => a.ClaimVerificationByModelSnapshot).WithMany().HasForeignKey(a => a.ClaimVerificationByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne(a => a.ReassessedByModelSnapshot).WithMany().HasForeignKey(a => a.ReassessedByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.HasOne(a => a.EvidenceInformedByModelSnapshot).WithMany().HasForeignKey(a => a.EvidenceInformedByModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.Navigation(a => a.AssessedByModelSnapshot).AutoInclude();
+                e.Navigation(a => a.CoAssessedByModelSnapshot).AutoInclude();
                 e.Navigation(a => a.SecondOpinionByModelSnapshot).AutoInclude();
                 e.Navigation(a => a.ClaimVerificationByModelSnapshot).AutoInclude();
                 e.Navigation(a => a.ReassessedByModelSnapshot).AutoInclude();

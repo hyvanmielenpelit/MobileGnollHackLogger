@@ -436,4 +436,110 @@ public class BenchmarkItemAnalysisTests
         Assert.Equal(90, analysis.Items[0].EmpiricalDifficulty);
         Assert.Equal(30, question.AssessedDifficulty);
     }
+
+    // --- Panel runs: the published score is the panel's -------------------------------------------
+
+    /// <summary>
+    /// A panel run whose one answer member A scored <paramref name="memberA"/> and member B
+    /// <paramref name="memberB"/>; the panel score is their mean, or null when member B did not score.
+    /// </summary>
+    private static BenchmarkRun PanelRun(long runId, long questionId, int memberA, int? memberB)
+    {
+        var run = Run(runId, questionId, memberA);
+        run.CoAssessorModelConfigurationId = 7;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-judge");
+
+        var answer = run.Answers.Single();
+        answer.CoAssessmentStatus = memberB.HasValue ? BenchmarkAssessmentStatus.Scored : BenchmarkAssessmentStatus.Failed;
+        answer.CoAssessmentQualityScore = memberB;
+        answer.PanelQualityScore = memberB.HasValue ? (memberA + memberB.Value) / 2.0 : null;
+        return run;
+    }
+
+    [Fact]
+    public void Compute_PanelRuns_ReadThePanelScore_NotMemberAs()
+    {
+        // Panel scores 64.5 / 85.5 / 75: mean 75, population SD sqrt(220.5 / 3) = sqrt(73.5) = 8.57.
+        // Member A alone would have given 60 / 80 / 70, a mean of 70.
+        var question = Question(1, 1, assessedDifficulty: 30);
+        var runs = new[]
+        {
+            PanelRun(1, 1, 60, 69),
+            PanelRun(2, 1, 80, 91),
+            PanelRun(3, 1, 70, 80)
+        };
+
+        var item = Assert.Single(BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs).Items);
+
+        Assert.Equal(3, item.RunCount);
+        Assert.Equal(75.0, item.MeanQuality, 9);
+        Assert.Equal(64.5, item.MinQuality);
+        Assert.Equal(85.5, item.MaxQuality);
+        Assert.Equal(8.57, Math.Round(item.StdDev, 2));
+        Assert.Equal(25, item.EmpiricalDifficulty);
+        Assert.Equal(-5, item.DifficultyDelta);
+    }
+
+    [Fact]
+    public void Compute_ExcludesAPanelAnswerWithoutAPanelScore_EvenThoughMemberAScoredIt()
+    {
+        var question = Question(1, 1);
+        var runs = new[]
+        {
+            PanelRun(1, 1, 60, 70),
+            PanelRun(2, 1, 90, null)
+        };
+
+        var item = Assert.Single(BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs).Items);
+
+        Assert.Equal(1, item.RunCount);
+        Assert.Equal(65.0, item.MeanQuality, 9);
+        Assert.Equal(new long[] { 1 }, BenchmarkItemAnalysis.Samples(question, runs).Select(s => s.Run.Id));
+    }
+
+    [Fact]
+    public void Compute_MixedPanelAndSingleRuns_ReadEachRunsOwnPublishedScore()
+    {
+        // The single-assessor run contributes its 60; the panel run its 85.5. Mean 72.75.
+        var question = Question(1, 1);
+        var runs = new[]
+        {
+            Run(1, 1, 60),
+            PanelRun(2, 1, 80, 91)
+        };
+
+        var item = Assert.Single(BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs).Items);
+
+        Assert.Equal(72.75, item.MeanQuality, 9);
+        Assert.Equal(60.0, item.MinQuality);
+        Assert.Equal(85.5, item.MaxQuality);
+    }
+
+    [Fact]
+    public void Compute_IntegerFixture_IsUnchangedByTheDoubleWidening_AndIgnoresAStrayPanelScore()
+    {
+        // The hand-built fixture of the first test, with a panel score left on each single-assessor
+        // answer: a run without a co-assessor never reads it.
+        var question = Question(1, 1, assessedDifficulty: 30);
+        var runs = new[]
+        {
+            Run(1, 1, 60),
+            Run(2, 1, 80),
+            Run(3, 1, 70)
+        };
+        foreach (var run in runs)
+        {
+            run.Answers.Single().PanelQualityScore = 100;
+        }
+
+        var item = Assert.Single(BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs).Items);
+
+        Assert.Equal(3, item.RunCount);
+        Assert.Equal(70.0, item.MeanQuality);
+        Assert.Equal(60.0, item.MinQuality);
+        Assert.Equal(80.0, item.MaxQuality);
+        Assert.Equal(8.16, Math.Round(item.StdDev, 2));
+        Assert.Equal(30, item.EmpiricalDifficulty);
+        Assert.Equal(0, item.DifficultyDelta);
+    }
 }

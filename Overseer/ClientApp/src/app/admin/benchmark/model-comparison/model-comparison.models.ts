@@ -230,6 +230,121 @@ export interface BenchmarkModelComparisonDto {
   speedAxisCaveat?: string | null;
   explanation: string;
   excludedMeasures: BenchmarkModelComparisonExcludedMeasureDto[];
+  /**
+   * Judge-family diagnostics over the charted entries. Absent or null unless at least one run in the
+   * comparison is a panel run; not applicable, with the reason, when the entries were not all graded
+   * by the same panel.
+   */
+  panelDiagnostics?: BenchmarkPanelDiagnosticsDto | null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Judge-family diagnostics: member strings are "A" and "B"; an estimate with insufficient data
+// carries a null value and interval
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Cross-run judge-family diagnostics for a comparison whose entries were all graded by one panel.
+ * When `applicable` is false the lists are empty, the labels null, and `notApplicableReason` says why.
+ */
+export interface BenchmarkPanelDiagnosticsDto {
+  applicable: boolean;
+  notApplicableReason?: string | null;
+  memberALabel?: string | null;
+  memberAProvider?: string | null;
+  memberBLabel?: string | null;
+  memberBProvider?: string | null;
+  referenceLabel?: string | null;
+  referenceProvider?: string | null;
+  entries: BenchmarkPanelEntryIndicesDto[];
+  /** Entry pairs ordered differently under member A and under member B. */
+  judgeDependentPairs: BenchmarkPanelRankedPairDto[];
+  /** Entry pairs ordered differently under the panel and under the reference reader. */
+  referenceDependentPairs: BenchmarkPanelRankedPairDto[];
+  familyGaps: BenchmarkPanelFamilyGapDto[];
+  accusationAudit: BenchmarkPanelAuditCellDto[];
+  auditSummaries: BenchmarkPanelMemberAuditSummaryDto[];
+  /** What each figure can and cannot show, in plain language. */
+  caveats: string[];
+}
+
+/** One entry's index under each member alone, the panel and the reference reader, with its rank under each. */
+export interface BenchmarkPanelEntryIndicesDto {
+  entryKey: string;
+  entryLabel: string;
+  candidateProvider?: string | null;
+  memberAIndex?: number | null;
+  memberBIndex?: number | null;
+  panelIndex?: number | null;
+  /** Null unless every answer of the entry has a reference score. */
+  referenceIndex?: number | null;
+  rankA?: number | null;
+  rankB?: number | null;
+  rankPanel?: number | null;
+  rankReference?: number | null;
+}
+
+/** Two entries whose order depends on which reader graded them. */
+export interface BenchmarkPanelRankedPairDto {
+  firstEntryKey: string;
+  firstEntryLabel: string;
+  secondEntryKey: string;
+  secondEntryLabel: string;
+  description: string;
+}
+
+/** A point estimate with its 95 % interval; all null when the data are insufficient. */
+export interface BenchmarkPanelEstimateDto {
+  value?: number | null;
+  ciLow?: number | null;
+  ciHigh?: number | null;
+}
+
+/**
+ * The mean per-question quality gap between two candidate providers (`provider1 − provider2`) under
+ * each reader. The interaction contrast and the asymmetry estimate exist only for the pair of the
+ * two members' own providers.
+ */
+export interface BenchmarkPanelFamilyGapDto {
+  provider1: string;
+  provider2: string;
+  pairedQuestionCount: number;
+  insufficientData: boolean;
+  isMemberProviderPair: boolean;
+  gapA: BenchmarkPanelEstimateDto;
+  gapB: BenchmarkPanelEstimateDto;
+  gapPanel: BenchmarkPanelEstimateDto;
+  gapRef?: BenchmarkPanelEstimateDto | null;
+  interactionContrast?: BenchmarkPanelEstimateDto | null;
+  interactionContrastLabel?: string | null;
+  asymmetryEstimate?: BenchmarkPanelEstimateDto | null;
+  asymmetryEstimateLabel?: string | null;
+}
+
+/**
+ * One member's charges against one candidate provider's answers, by the claim verifier's verdict.
+ * Overturned means the verifier supported the accused statement; `overturnRate` is a fraction.
+ */
+export interface BenchmarkPanelAuditCellDto {
+  member: string;
+  memberProvider: string;
+  candidateProvider: string;
+  sameFamily: boolean;
+  charges: number;
+  overturned: number;
+  upheld: number;
+  indeterminate: number;
+  overturnRate?: number | null;
+}
+
+/**
+ * A member's overturn rate on other-family candidates minus its rate on same-family candidates, as a
+ * fraction. Null when either side has too few ruled charges.
+ */
+export interface BenchmarkPanelMemberAuditSummaryDto {
+  member: string;
+  memberProvider: string;
+  familyOverturnGap?: number | null;
 }
 
 // ---------------------------------------------------------------------------------------------

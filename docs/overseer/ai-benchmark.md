@@ -4331,6 +4331,172 @@ of which a validated evidence-informed re-grade then relied on. `HarnessVersion`
   comparable across 38 and 39; a run stamped 38 or earlier carries no charged-part verdicts, and its
   stored verdicts are unchanged. `wiki_view` result lengths are not comparable on over-cap articles.
 
+### Harness Version 40 Updates
+
+A two-family assessor panel. The benchmark grades OpenAI and Anthropic candidates, and a single
+assessor from either family grades one of them as a same-family judge; the roster rule keeps Google
+models in non-scoring roles. A run may therefore name a **co-assessor** beside the assessor, and the
+two grade it as a panel. The strategy, the roster rules and the limits of what the panel can show are
+in § 3, **The Two-Family Assessor Panel**. `HarnessVersion` moves to **"40"**; `ScoringMethodVersion`
+stays **12**. No tool guide changes, so `ToolGuidesSha256` does not move, and neither does
+`CandidateSystemPromptSha256`. EF Core migration `AddBenchmarkAssessorPanel` adds columns only, with no
+data motion (§ 5).
+
+- **Two members grade every answer.** Member A is the assessor; member B is the co-assessor
+  (`CoAssessorModelConfigurationId`, its snapshot and `CoAssessorEffectiveMaxOutputTokens`, captured at
+  launch like the other roles). A **panel run** is a run with a co-assessor
+  (`BenchmarkRunFinalizer.IsPanelRun`). Both members grade every answer concurrently, with the
+  identical prompt and blind to each other. Member A's verdict fills the primary columns as before;
+  member B's fills the `Co*` columns, with its whole verdict — levels, critical error and its quote,
+  quality and raw quality, comment, evidence, unverified claims and advisory flags — in
+  `CoAssessmentJson`. Every answer of a panel run is created with `CoAssessmentStatus = Pending` (null
+  in a single-assessor run), and every re-run resets it to `Pending`. A rescore recomputes member B
+  from the levels in `CoAssessmentJson` as it recomputes member A from the primary columns.
+
+- **The panel score is what publishes.** `PanelQualityScore` is the mean of the two members' final
+  quality scores, set only when both are `Scored`, and every index, statistic, chart and item analysis
+  reads it through `BenchmarkScoring.IndexQuality`. An answer without a panel score is excluded from the
+  index exactly as a failed assessment is, and a member-B verdict that is pending, assessing or failed
+  is unresolved work (`HasUnresolvedWork`): the run ends `CompletedWithErrors` until the assessment is
+  retried, never silently indexed on member A alone. A model-produced empty answer scores 0 under both
+  members, so its panel score is 0; any other empty answer, or a board-guard failure, fails both
+  members. `PanelDisagreed` marks an answer whose members are more than 15 points apart
+  (`SecondOpinionDisagreementPoints`) or split on `criticalError`; the run view badges it *MEMBERS
+  DISAGREE*, and the published score is still the mean.
+
+- **The second opinion becomes the reference reader.** In a panel run the second-opinion role grades
+  every answer, blind, and never scores. The launcher stamps `SecondOpinionModeUsed = All` whatever mode
+  was requested (an explicit *Off* still drops the role), the run reads blind whatever the scoring
+  profile says, and the start dialog disables the mode selector. The reader waits for both members and
+  is compared with the panel score: `SecondOpinionMeanAbsDelta` and `SecondOpinionMeanSignedDelta` are
+  reader against panel, and a critical-error split counts only where both members agree and the reader
+  differs. Its disagreement (`DisagreesWithPanel`) is a gap above 15 points from the panel score, or a
+  flag opposite to one both members agree on; a split panel has no agreed flag to disagree with.
+
+- **One claim verification over the union of both members' charges.** The verifier runs once per
+  answer over every charge either member raised — unverified claims, critical-error quotes,
+  out-of-rubric bases, accused sentences — and each item records in `raisedBy` (`"A"`, `"B"` or both)
+  which member raised it; the field is omitted in a single-assessor run. With more than one member the
+  prompt words the charges neutrally (*"An assessor…"*) and prints one evidence block per member,
+  labeled `(Assessor 1)` and `(Assessor 2)`. The claim numbers of the critical-error quote and the
+  out-of-rubric basis are derived from the roles the items carry rather than from fixed positions, so
+  both members' quotes can be present; a single-assessor prompt is byte-identical to harness 39. Each
+  member's contested flags are derived from the items it raised: member A's in `AnswerFlags`, member B's
+  in `CoAssessmentJson`.
+
+- **No evidence-informed re-grade in a panel run.** It re-grades as member A alone, which would give
+  one family's judge a correction channel the other does not have. The report's sensitivity figures
+  built on it — contested-verdict, evidence-informed, verification-cleared and FORM-cleared — are not
+  computed for a panel run; the member-alone indices take their place.
+
+- **Two syntheses, with structured findings.** In a panel run each member writes its own synthesis from
+  its own verdicts, one after the other: member A's to the existing synthesis columns, member B's to
+  `CoAssessorFinalScore`, `CoAssessorSynthesisJson`, `CoAssessorSynthesisText` and
+  `CoAssessorSynthesisParseFailed`. A panel synthesis carries no reference-reader or re-grade data, and
+  each member's claim lists and counts cover only the items it raised. Every synthesis, single-assessor
+  runs included, gains a `findings` array in its JSON schema and instruction 7:
+
+  > 7. List every strength and weakness you name in `findings` as well, one entry each: `kind` is
+  > "strength" or "weakness"; `category` is one of accuracy, completeness, conciseness, readability,
+  > critical_error, tool_use, other; `questions` lists the question numbers the finding rests on, empty
+  > for a run-wide finding; `text` states it in one sentence.
+
+  `BenchmarkAssessmentParser.ParseSynthesisFindings` never throws: an entry with a bad kind or empty
+  text is skipped and an unknown category reads as `other`. `BenchmarkSynthesisConvergence` compares the
+  two members' findings by `(kind, category, question)` — a multi-question finding becomes one row per
+  question, a run-wide one a row with no question — and marks each row `Convergent`, `MemberAOnly` or
+  `MemberBOnly` (*Both members*, *Member A only*, *Member B only* in the UI). The run view shows the two
+  syntheses in tabs beside a computed *Agreement* tab.
+
+- **Panel statistics and member-alone indices.** The finalizer stores `PanelGradedAnswerCount`,
+  `PanelMeanAbsDelta`, `PanelMeanSignedDelta` (B − A), `PanelCriticalErrorSplitCount`,
+  `PanelDisagreementCount` and `PanelIntraclassCorrelation` (ICC(A,1)), and each member's own
+  difficulty-weighted index over the answers the panel scored, `AssessorOnlyQualityIndex` and
+  `CoAssessorOnlyQualityIndex`. The member-alone indices are advisory, and are withheld with the headline
+  index when a terminal failure withholds it. Formulas under **Aggregation Formulas**.
+
+- **Judge-family diagnostics in Model Comparison.** When any charted run is a panel run, the comparison
+  carries `PanelDiagnostics` (`BenchmarkPanelDiagnostics.Compute`: pure, no model call, no score
+  changed), and the Markdown export appends it as a trailing block. It is not applicable unless every
+  run is a panel run graded by the same member A and member B — the grader fields
+  `BenchmarkComparabilityKey` signs — and by the same reference reader where one is present. It carries:
+  1. **Per-entry indices** under member A alone, member B alone, the panel and the reference reader,
+     pooled over the entry's runs with the finalizer's formulas. The reader's index appears only for an
+     entry where it graded every answer the panel scored; a manual trial verdict is not the reader's.
+  2. **Rankings** under each grader. A **judge-dependent pair** is two entries that member A and member
+     B rank in opposite order (a tie is not a reversal); a **reference-dependent pair** is two entries
+     the panel and the reference reader rank in opposite order.
+  3. **Family gap table.** For each pair of candidate providers, questions are paired by question key
+     and item revision, and `GapA`, `GapB`, `GapPanel` and `GapRef` are the means of the per-question
+     differences between the families' mean quality, each with a 95 % Student t interval, withheld below
+     5 paired questions. For the pair of the members' own providers, provider 1 is member A's and
+     provider 2 member B's, and two contrasts are added: `InteractionContrast` = GapA − GapB, *"total
+     same-family preference of both members; does not measure the bias of the panel mean"*, and
+     `AsymmetryEstimate` = GapPanel − GapRef, *"estimated panel bias; valid only if the reference reader
+     is neutral between these two families"*. Other pairs are ordered alphabetically.
+  4. **Accusation audit.** For each member and candidate provider, the charges the member raised —
+     verification items whose `raisedBy` names it and whose roles are a critical-error quote, an accused
+     sentence, a suspected-false claim or an out-of-rubric basis — counted as *Overturned*, *Upheld* and
+     *Indeterminate* by `EffectiveVerdict`. A charge against the answer is overturned by *Supported*;
+     an out-of-rubric basis, which is the member's own statement, is overturned by *Refuted*. The
+     overturn rate is Overturned / (Overturned + Upheld), indeterminate excluded. `FamilyOverturnGap` is
+     a member's rate on other-family candidates minus its rate on same-family ones, withheld below 10
+     ruled charges on either side.
+  5. **Caveats**, a fixed list stating what each figure can and cannot show.
+
+- **Launcher rules.** `StartBenchmarkRunRequest.coAssessorModelConfigurationId` is validated like the
+  second opinion (enabled, an API key, the Benchmark role, the endpoint policy), and the run is refused
+  (400) when the co-assessor is the assessor's configuration, when the two share a provider (*"A panel
+  needs members from two providers…"*), or when the model under test is the same model as either member
+  — provider and model id, trimmed and case-insensitive (`BenchmarkComplianceGuard.IsSameModel`; *"A
+  model under test cannot grade itself…"*). A panel run skips the acknowledgeable same-provider 409 gate
+  and records `SameProviderAcknowledged = false`; single-assessor runs keep the gate. The start dialog
+  adds *Co-Assessor (panel member B)* (default *None — single assessor*), shows both refusals as
+  warnings before Start, and advises — without blocking — when the reference reader or the claim
+  verifier shares a provider with the model under test or a panel member. The selection is remembered
+  with the other launcher settings.
+
+- **Grader overrides are refused in a panel run.** Retry-failed-assessments, reassess, re-run synthesis
+  and single-answer re-run with an override configuration return 400 (*"This is a panel run. Grader
+  overrides are refused…"*): a panel graded partly by a substitute model is a mixed instrument. Without
+  an override they run on the run's own members. Reassess takes `member` (`A`, `B` or `Both`). A trial
+  re-assessment (*Try another assessor*) writes to the reference-reader slot and never scores; in a panel
+  run it may only fill an empty slot, and replacing an existing reference verdict returns 409 whatever
+  `replaceExistingSecondOpinion` says, so the UI hides that option. With the reader in `All` mode a trial
+  is possible only on an answer whose reader call failed.
+
+- **Calibration target.** An assessor calibration takes `compareAgainst` (`Assessor`, `CoAssessor` or
+  `Panel`, the last two on panel runs only), stored as `BenchmarkAssessorCalibration.ComparedAgainst`.
+
+- **Cost.** The pricing snapshot gains a `coAssessor` card beside `secondOpinion`, written only in a panel
+  run, so a single-assessor run's pricing snapshot is unchanged. The cost roles `CoAssessor` and
+  `CoSynthesis` are priced on that card and included in grading, and the cost is marked incomplete when
+  either spent without a card; multi-run analysis names them *Co-assessor* and *Co-assessor synthesis*.
+  `TotalCoAssessment*` is recomputed from the answer rows like `TotalAssessment*`; `TotalCoSynthesis*`
+  is recorded at run level like `TotalSynthesis*`. Each member is its own configuration and so its own
+  rate-limit bucket.
+
+- **Report.** A panel run adds `### Co-Assessor (Panel Member B)` to the manifest, marks the assessor
+  *Panel member A*, prints `### Panel Agreement`, `### Reference Reader Agreement`, the member-alone
+  indices and a *Panel Disclosure* of which roles scored, gives every question block member B's verdict,
+  the panel score and the reference reader, and splits § 6 into `### 6.1 Panel Member A:`,
+  `### 6.2 Panel Member B:` and `### 6.3 Where the Readers Agree and Disagree (computed)`. A
+  single-assessor report is unchanged except that § 6 prints the synthesis findings as **Strengths** and
+  **Weaknesses** when present.
+
+- **What does not move.** `ScoringMethodVersion` (12): the per-verdict grading rules do not change and
+  single-assessor runs score exactly as before. No `BenchmarkAnswerFlags` member is added.
+  `BenchmarkComparabilityKey.DefinitionVersion` stays 2: `AssessorConfiguration` appends
+  `;panelMember=` and member B's grader fields only when a co-assessor graded, so every existing run's
+  key value is byte-identical. `ToolGuidesSha256`, `CandidateSystemPromptSha256`, the chat system prompt
+  and `_policy.md` do not move.
+
+- **Comparability.** Only the Instrument key `HarnessVersion` moves for a single-assessor run, which
+  grades as under 39 apart from the findings schema. Between a panel run and a single-assessor run at
+  harness 40, `AssessorConfiguration` differs, and so does `SecondOpinionConfiguration` unless the
+  single-assessor run already used the same reader in `All` mode, blind; the consequences are in § 3.
+  Two panel runs under the same panel and reader differ in neither.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
@@ -4347,8 +4513,43 @@ of which a validated evidence-informed re-grade then relied on. `HarnessVersion`
 - **Assessor Agreement**: the mean of $|\text{first}(q) - \text{second}(q)|$ over the answers graded
   twice, stored as `SecondOpinionMeanAbsDelta` beside `SecondOpinionGradedAnswerCount`. A **disagreement**
   is a gap above **15** quality points, or a split on `criticalError`. Interpretable only together with
-  its coverage: an unbiased inter-rater rate requires `SecondOpinionMode = All`.
+  its coverage: an unbiased inter-rater rate requires `SecondOpinionMode = All`. In a panel run "first"
+  is the panel score and "second" the reference reader, and a `criticalError` split counts only where
+  both members agree and the reader differs.
 - **Speed Index**: the **equal-weight mean** of $\text{Speed}(q)$ over answered questions. Difficulty enters through $Target(q)$, not through the weight — weighting here as well would count difficulty twice and drag the index toward the floor by construction. (This line previously claimed a difficulty-weighted mean, which neither the code nor the generated report has ever produced.)
+
+The panel formulas below apply to panel runs only (harness 40, a run with a co-assessor); on a
+single-assessor run every panel figure is null. $A$ is member A, the assessor, and $B$ member B, the
+co-assessor.
+
+- **Panel Quality**: $\text{Panel}(q) = (\text{Quality}_A(q) + \text{Quality}_B(q)) / 2$, stored unrounded
+  as `PanelQualityScore` and null unless both members scored. In a panel run it takes the place of
+  $\text{Quality}(q)$ in the Intelligence Index, its standard error and the Unweighted Quality Mean
+  (`BenchmarkScoring.IndexQuality`); an answer with a null panel score is excluded from them.
+- **Index Raw Quality**: the pre-cap counterpart that feeds the Raw Quality Index — on a single-assessor
+  run the assessor's `RawQualityScore ?? QualityScore`; on a panel run the mean of the two members'
+  `RawQualityScore ?? QualityScore`, null unless both scored (`BenchmarkScoring.IndexRawQuality`). No
+  column stores it.
+- **Panel-graded set**: $P$, the answers that count toward the Intelligence Index and that both members
+  scored; `PanelGradedAnswerCount` $= |P|$. The panel agreement figures are over $P$:
+  `PanelMeanAbsDelta` $= \text{mean}\,|\text{Quality}_B - \text{Quality}_A|$, `PanelMeanSignedDelta`
+  $= \text{mean}(\text{Quality}_B - \text{Quality}_A)$ (negative when member B grades lower), both at one
+  decimal; `PanelCriticalErrorSplitCount`; and `PanelDisagreementCount`, the answers more than **15**
+  points apart or split on `criticalError`.
+- **Member-alone indices**: $I_A = \sum_{q \in P} \text{Difficulty}(q) \cdot \text{Quality}_A(q) / \sum_{q \in P} \text{Difficulty}(q)$,
+  and $I_B$ likewise, stored as `AssessorOnlyQualityIndex` and `CoAssessorOnlyQualityIndex`. The weights
+  are the published index's; the population is $P$, not every answered question. Advisory diagnostics,
+  never an alternative result, and withheld together with the headline index when a terminal failure
+  withholds it.
+- **Panel Intraclass Correlation**: ICC(A,1) of the pairs $(\text{Quality}_A(q), \text{Quality}_B(q))$ over
+  $P$ — two-way random effects, absolute agreement, single rater (McGraw & Wong, 1996). With $n = |P|$
+  pairs, $k = 2$ raters, and $MS_R$, $MS_C$, $MS_E$ the two-way ANOVA mean squares for rows (answers),
+  columns (members) and residual:
+  $$\text{ICC}(A,1) = \frac{MS_R - MS_E}{MS_R + (k-1)\,MS_E + \frac{k}{n}(MS_C - MS_E)}$$
+  Stored at two decimals as `PanelIntraclassCorrelation`; null below 5 pairs, and when the total
+  variance or the denominator is 0. Unlike `PanelMeanAbsDelta`, it reads agreement against the spread of
+  the answers themselves, and unlike a consistency ICC it counts a constant offset between the members
+  as disagreement.
 
 ---
 
@@ -4406,6 +4607,80 @@ launch returns 409 until the administrator acknowledges the notice, and the ackn
 it on another grader's scale, which the comparison view keeps out of the figures and which runs 43–46
 show can be larger than the spread between candidates. No decision is recorded on which of the two an
 Anthropic candidate run takes; make it before launching one, not after.
+
+### The Two-Family Assessor Panel
+
+From harness 40 a run can be graded by a **panel** of two assessors from two providers, and this is the
+arrangement for grading OpenAI and Anthropic candidates on one scale. The mechanics are in **Harness
+Version 40 Updates**; this section is the strategy.
+
+**Why a panel.** No single provider is assessor-eligible for both candidate families: any one assessor
+is a same-family judge for one of them. The panel does not look for a neutral judge; it balances two
+partial ones. If member A inflates its own family's candidates by $\gamma_A$ and member B its own by
+$\gamma_B$, the gap each reads between the two families is off by $+\gamma_A$ and $-\gamma_B$, and the
+panel mean's gap by $(\gamma_A - \gamma_B)/2$: zero when the two preferences are equal, halved when they
+are not. Every index, statistic and chart reads the panel score; each member's own index is kept as a
+diagnostic.
+
+**Roster rules.** "Family" means provider, compared as `BenchmarkComplianceGuard.IsSameProvider`
+compares it — not `BenchmarkRubricGapDetector.ModelFamilyOf`, which splits one vendor's model lines, while
+family preference spans them.
+
+| Role | Rule | How it is held |
+|---|---|---|
+| **Member A** (assessor) and **member B** (co-assessor) — the only roles that score | Two different providers | Launch refused (400) |
+| | Neither is the model under test: take an older, or otherwise non-candidate, model of each family | Launch refused (400) when provider and model id equal the candidate's |
+| | Fixed across every run you intend to compare | The panel is part of the `AssessorConfiguration` key; the diagnostics refuse runs graded by different panels |
+| **Reference reader** (the second-opinion role) | From a third family, neither a candidate nor a member; grades every answer, blind; never scores | Mode forced to `All` and blind; a start-dialog advisory, not a block, when it shares a provider with the candidate or a member |
+| **Claim verifier** | From a third family, neither a candidate nor a member; checks the union of both members' charges once; never scores | The same advisory |
+| **Google** models | Non-scoring roles only: reference reader and claim verifier | Roster choice. Nothing in code names a vendor; the report's *Panel Disclosure* states which roles scored |
+
+An older same-family member removes **self**-preference; **family** preference remains, and the panel's
+balance is what handles it. The acknowledgeable same-provider gate applies to single-assessor runs only:
+a panel run is balanced by construction and records no acknowledgment. If Google models become
+candidates, the verifier and the reference reader move to another non-candidate family.
+
+**Anchors instead of human calibration.** Overseer has no human-calibration feature, and the panel does
+not add one. Three machine anchors, none of which scores, stand in its place:
+
+1. **The third-family reference reader.** The asymmetry estimate, GapPanel − GapRef in the Model
+   Comparison diagnostics, estimates the panel's residual bias on the gap between the members' two
+   families. It is valid **only if the reference reader is neutral between those two families**; a reader
+   with a preference of its own shifts the estimate by that preference.
+2. **The verifier accusation audit.** How often each member's charges are overturned by tool-grounded
+   verification, split by candidate family. A member whose charges against the other family fail more
+   often than against its own shows family bias, measured by a neutral verifier on a narrower task than
+   grading. It assumes the verifier is neutral, counts only charges the verifier could check, and is
+   withheld below 10 ruled charges on either side.
+3. **Structural safeguards.** A family-balanced panel, no self-grading, per-member indices, and a flag on
+   every pair of entries whose ranking depends on which member graded (a judge-dependent pair).
+
+Together they replace the assumption "both families self-prefer equally" with the weaker and checkable
+"a third family is neutral between OpenAI and Anthropic". They cannot remove every assumption, and the
+diagnostics' caveats say so. The interaction contrast, GapA − GapB, is the members' **total** same-family
+preference; it does not measure the bias of the panel mean.
+
+**The first runs.** Two panel runs under one panel — one OpenAI candidate and one Anthropic candidate —
+produce the whole judge × candidate matrix directly; no preliminary grading phase is needed.
+
+**Calibration keeps one job: judge succession.** A calibration of a panel run can compare against member
+A, member B or the panel. When a member model is retired or replaced, calibrate the incoming model
+against the member it replaces on stored runs before any new run uses it; with older-model judges this
+is a recurring need.
+
+**Comparability.** The panel is folded into the `AssessorConfiguration` Instrument key: member B's grader
+fields are appended only when a co-assessor graded, so every single-assessor run's value is unchanged and
+the key definition stays at version 2. Moving from one assessor to a panel is therefore **one**
+instrument difference (Tier C), not two — but only when the earlier run already used the same reader in
+`All` mode, blind. Because a panel run forces its reader to `All` and blind, a single-assessor run with a
+`Flagged` reader, or an anchored one, also differs in `SecondOpinionConfiguration`, and two differing
+instrument keys make the pair NotComparable. Two panel runs under the same panel and reader are
+comparable on every grader key. In Model Comparison `AssessorConfiguration` must match, so an entry
+graded by a different panel is excluded before the diagnostics run; the diagnostics' own gate — the same
+member A, member B and, where present, reference reader across every run — covers what remains.
+
+**Cost.** Two grader calls per answer and a second synthesis, accepted by design; the verifier stays one
+pass over the union. The report prices member B's grading and synthesis as their own roles.
 
 ### What the staged migration completed
 
@@ -4742,14 +5017,16 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 - **`BenchmarkScoringProfile`**: Name, `IsDefault`, dimensional weights, `LevelScoresJson`, `CriticalErrorCeiling`, `SpeedTargetMs`, `SpeedDecayK`, `MaxParallelQuestions`, `SecondOpinionQualityThreshold`, `SecondOpinionMode`, `SecondOpinionOutlierDeltaPoints`.
 - **`BenchmarkSuite`**: Unique suite name, description (accepts Markdown, rendered as sanitized HTML), timestamps, and questions.
 - **`BenchmarkQuestion`**: Order index, `ItemRevision` (bumped whenever the question text, band or rubric changes — an edited question is a different item), question text, difficulty tier, `AssessedDifficulty` ($1\text{--}100$), `AssessedDifficultyAtUtc`, expected rubric points, and the assessing model: `AssessedDifficultyModelSnapshotId` (its recorded settings, display name included) and `AssessedDifficultyModelConfigurationId` (attribution only).
-- **`BenchmarkRun`**: The four model roles, each as a settings snapshot (`TestedModelSnapshotId` and `AssessorModelSnapshotId`, required; `SecondOpinionAssessorModelSnapshotId` and `ClaimVerifierModelSnapshotId`, null for an absent role) beside an attribution-only `…ModelConfigurationId`, the effective grader output caps (`AssessorEffectiveMaxOutputTokens`, `SecondOpinionEffectiveMaxOutputTokens`, `ClaimVerifierEffectiveMaxOutputTokens`), run status, `QualityIndex`, `UnweightedQualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `HarnessVersion`, the instrument fingerprint (`CandidateSystemPromptSha256`, `CandidateSystemPromptText`, `ToolGuidesSha256`) and the corpus fingerprints (`KnowledgeBaseHeadSha`, and from harness 16 `WikiHeadSha` and `SourceCodeHeadSha` — Git HEAD SHAs of the GnollHack wiki and source corpora, where null means "not recorded", never "no corpus"), `DifficultyFallbackUsed` (set when a scored answer carries no assessed difficulty and is therefore weighted by its authored band's fallback — from scoring method 10 that is how an unanswered question is weighted), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, `AnsweredQuestionCount` and `UnansweredQuestionCount` (questions the model failed to answer — not the complement of the former, since a provider error and a question that never ran are neither), the integrity counts (`TransportDefectAnswerCount`, `RecoveredAnswerCount`, `AdvisoryFlagAnswerCount`, `ContestedVerdictAnswerCount`, `ReassessedAnswerCount`), the second-opinion record (`SecondOpinionModeUsed`, `SecondOpinionGradedAnswerCount`, `SecondOpinionMeanAbsDelta`), token accounting, and assessment synthesis.
+- **`BenchmarkRun`**: The five model roles, each as a settings snapshot (`TestedModelSnapshotId` and `AssessorModelSnapshotId`, required; `CoAssessorModelSnapshotId`, `SecondOpinionAssessorModelSnapshotId` and `ClaimVerifierModelSnapshotId`, null for an absent role) beside an attribution-only `…ModelConfigurationId`, the effective grader output caps (`AssessorEffectiveMaxOutputTokens`, `CoAssessorEffectiveMaxOutputTokens`, `SecondOpinionEffectiveMaxOutputTokens`, `ClaimVerifierEffectiveMaxOutputTokens`), run status, `QualityIndex`, `UnweightedQualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `HarnessVersion`, the instrument fingerprint (`CandidateSystemPromptSha256`, `CandidateSystemPromptText`, `ToolGuidesSha256`) and the corpus fingerprints (`KnowledgeBaseHeadSha`, and from harness 16 `WikiHeadSha` and `SourceCodeHeadSha` — Git HEAD SHAs of the GnollHack wiki and source corpora, where null means "not recorded", never "no corpus"), `DifficultyFallbackUsed` (set when a scored answer carries no assessed difficulty and is therefore weighted by its authored band's fallback — from scoring method 10 that is how an unanswered question is weighted), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, `AnsweredQuestionCount` and `UnansweredQuestionCount` (questions the model failed to answer — not the complement of the former, since a provider error and a question that never ran are neither), the integrity counts (`TransportDefectAnswerCount`, `RecoveredAnswerCount`, `AdvisoryFlagAnswerCount`, `ContestedVerdictAnswerCount`, `ReassessedAnswerCount`), the second-opinion record (`SecondOpinionModeUsed`, `SecondOpinionGradedAnswerCount`, `SecondOpinionMeanAbsDelta`), token accounting, and assessment synthesis.
 - **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, token/duration metrics, the assessor's evidence (`AssessmentEvidenceJson`, `CriticalErrorQuote`, `UnverifiedClaimCount`, `UnverifiedClaimsJson`), the second-opinion verdict and its `SecondOpinionTrigger`, re-assessment provenance (`PreviousQualityScore`, `ReassessedAtUtc`, `ReassessmentCount`), and the snapshot of every model that graded it (`AssessedByModelSnapshotId`, `SecondOpinionByModelSnapshotId`, `ClaimVerificationByModelSnapshotId`, `ReassessedByModelSnapshotId`, `EvidenceInformedByModelSnapshotId`).
 - **`BenchmarkRunAnswer` termination provenance**: `TerminationReason` describes what the harness loop did (canceled, budget exhausted, iteration limit, completed); `ProviderFinishReason` is the provider's own verbatim reason for ending the response, unmapped. Read together they separate an empty answer the model produced — a normal stop with no text, scored 0 from scoring method 10 — from one a transport defect destroyed, which stays unscored. Null means "not recorded" and never "stopped normally".
 - **`BenchmarkRunAnswer` item identity**: `BenchmarkQuestionId` (nullable FK, `DeleteBehavior.SetNull`) and `ItemRevisionUsed`. The stable link between an answer and the question it answers; before it existed, `OrderIndex` was the only link and a suite reorder silently re-attached every earlier run's answers to the wrong questions. Null means "unlinked" and is excluded from item analysis rather than guessed at.
 - **`BenchmarkRunAnswer` rubric record**: `ExpectedPointsUsed` (nvarchar(max), null) and `ExpectedPointsRecorded` (bit). The rubric the answer is graded against, copied when the answer row is created; every re-grade reads it, never the live question. `ExpectedPointsRecorded = false` means the rubric is not known, and any re-grade of that answer is refused; with it true, a null `ExpectedPointsUsed` means the question had no rubric points.
+- **`BenchmarkRun` assessor panel** (from harness 40; null, zero or false on every single-assessor run): the co-assessor, panel member B — `CoAssessorModelConfigurationId` (attribution only, and what makes a run a panel run), `CoAssessorModelSnapshotId` (FK to `SystemAiConfigurationSnapshot`, `Restrict`, auto-included) and `CoAssessorEffectiveMaxOutputTokens`; member B's synthesis — `CoAssessorFinalScore`, `CoAssessorSynthesisJson`, `CoAssessorSynthesisText`, `CoAssessorSynthesisParseFailed` (bit, default false), beside member A's in the existing synthesis columns; member B's usage — `TotalCoAssessmentInputTokens`, `…OutputTokens`, `…CacheReadTokens`, `…CacheCreationTokens` and `…DurationMs`, recomputed from the answer rows, and the five matching `TotalCoSynthesis…` recorded at run level, all non-null `bigint` defaulting to 0 like their `TotalAssessment…` and `TotalSynthesis…` counterparts; the panel statistics — `PanelGradedAnswerCount`, `PanelMeanAbsDelta`, `PanelMeanSignedDelta` (B − A), `PanelCriticalErrorSplitCount`, `PanelDisagreementCount`, `PanelIntraclassCorrelation`; and the member-alone indices `AssessorOnlyQualityIndex` and `CoAssessorOnlyQualityIndex` (see **Aggregation Formulas**).
+- **`BenchmarkRunAnswer` assessor panel** (from harness 40): `PanelQualityScore` (float, the mean of both members' quality scores and the answer's published score in a panel run) and `PanelDisagreed` (bit), both null unless both members scored; member B's verdict — `CoAssessmentStatus` (null on a single-assessor run, `Pending` from creation on a panel run), `CoAssessmentError`, `CoAssessmentQualityScore`, `CoAssessmentRawQualityScore`, `CoAssessmentCriticalError`, and `CoAssessmentJson`, the whole verdict (levels, critical error and its quote, quality scores, comment, evidence, unverified claims and advisory flags; member A's stay in the primary columns and `AnswerFlags`); its provenance — `CoAssessmentRawText` (first 8,000 characters), `CoAssessedByModelSnapshotId` (FK, `Restrict`, auto-included), `CoAssessedAtUtc`, `CoAssessorBoardChars`; and its usage — `CoAssessmentInputTokens`, `…OutputTokens`, `…CacheReadTokens`, `…CacheCreationTokens`, `CoAssessmentDurationMs`. A claim verification item of a panel run records in `raisedBy` which member raised it, inside the existing `ClaimVerificationJson`.
 - **`BenchmarkRun` exam record**: `BoardSnapshotId` (nullable FK to `BenchmarkRunBoardSnapshot`, `Restrict`) — the board text and digest the run was asked and graded with, null when the run had no board; a non-null `GameSnapshotSha256Used` with a null `BoardSnapshotId` means the board is unknown. `DefaultSuiteVersionUsed` (int, null) — the default-suite version at launch, which the report prints after the key.
 - **`BenchmarkRunBoardSnapshot`**: `Sha256` (`char(64)`, unique), `SanitizedText`, `DigestText`, `CharCount`, `CreatedAtUtc`. Append-only and content-addressed: the key is the lower-case hex SHA-256 of the UTF-16LE `SanitizedText + "\0" + (DigestText ?? "")`, so a digest change is a new row. No suite operation edits or deletes a row; written through `BenchmarkRunBoardSnapshotStore.GetOrCreateAsync` at launch.
-- **`BenchmarkAssessorCalibration`**: One non-destructive re-grading of a run by an alternative assessor — the assessor's settings snapshot (`AssessorModelSnapshotId`), `AnswerCount`, `SkippedAnswerCount`, `MeanAbsDelta`, `DisagreementCount`, token and duration cost, and `VerdictsJson`. Admin-UI only: it never appears in the Markdown report, because a calibration is an experiment about graders rather than a property of the run.
+- **`BenchmarkAssessorCalibration`**: One non-destructive re-grading of a run by an alternative assessor — the assessor's settings snapshot (`AssessorModelSnapshotId`), `AnswerCount`, `SkippedAnswerCount`, `MeanAbsDelta`, `DisagreementCount`, token and duration cost, `VerdictsJson`, and `ComparedAgainst` (`Assessor`, `CoAssessor` or `Panel`, max length 16; the last two exist only on panel runs, and null means `Assessor`). Admin-UI only: it never appears in the Markdown report, because a calibration is an experiment about graders rather than a property of the run.
 - **`BenchmarkRunAnswerToolCall`** (from harness 17): One row per tool call **attempted** during an answer's turn — `SortOrder`, `IterationIndex`, `Name`, `ToolCallId`, `Status`, `ArgsText`, `Result`, `Error`, `QueueWaitMs`, `ExecutionMs`, `Depth`, `AgentName`, `ArgsTruncated`, `ResultTruncated`, `ResultLengthChars` — cascade-deleted with `BenchmarkRunAnswer` and indexed on `(BenchmarkRunAnswerId, SortOrder)`. `ArgsText` and `Result` are pruned by age; every other field survives the prune. See **Harness Version 17 Updates**.
 
 ### Model Configuration Snapshots
@@ -4773,15 +5050,15 @@ row per distinct combination of settings ever used, keyed by `Sha256`, never upd
   null field means **not recorded**; the comparability keys render it `(not recorded)`, never `(none)`.
   Legacy candidate rows recorded everything and are complete. Every legacy call went to the official
   endpoint, so their null endpoint fields are true.
-- **References.** Twelve foreign keys point here, all `Restrict` and all auto-included: the four run
-  roles, the five per-answer graders, the difficulty assessor, the calibration assessor and the rubric
+- **References.** Fourteen foreign keys point here, all `Restrict` and all auto-included: the five run
+  roles, the six per-answer graders, the difficulty assessor, the calibration assessor and the rubric
   author. The `…ModelConfigurationId` columns beside them are plain attribution ids, not foreign keys:
   they keep "the run had a second opinion" and "graded by a different assessor" answerable, and default
   the re-run dialogs, but deleting a configuration never touches them.
 
 **A run executes with the settings it recorded.** Launch captures a snapshot for each role and the
-output cap each grader's calls will send (`AssessorEffectiveMaxOutputTokens` and its two siblings,
-harness fallbacks included). Every later model call of the run — candidate, assessor, second opinion,
+output cap each grader's calls will send (`AssessorEffectiveMaxOutputTokens` and its three siblings,
+harness fallbacks included). Every later model call of the run — candidate, assessor, co-assessor, second opinion,
 claim verifier, re-runs and re-assessments — takes its settings **and endpoint** from the role's
 snapshot and only its key from the live configuration (`SystemAiConfigurationSnapshotStore.Bind`). A
 mid-run edit therefore changes nothing. If the live configuration's provider or endpoint no longer

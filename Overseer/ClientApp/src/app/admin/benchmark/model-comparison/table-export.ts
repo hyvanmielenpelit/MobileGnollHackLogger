@@ -28,7 +28,12 @@
  *    drawing read one layout, so they cannot disagree.
  */
 
-import type { BenchmarkModelComparisonEntryDto } from './model-comparison.models';
+import type {
+  BenchmarkModelComparisonEntryDto,
+  BenchmarkPanelDiagnosticsDto,
+  BenchmarkPanelEstimateDto,
+  BenchmarkPanelFamilyGapDto
+} from './model-comparison.models';
 import { showReasoningBadge } from '../../../utils/model-badge-format.util';
 import {
   FIGURE_EXPORT_MAX_DIMENSION,
@@ -121,6 +126,11 @@ export interface ComparisonTableModel {
   readonly columns: readonly ComparisonTableColumn[];
   readonly rows: readonly ComparisonTableRow[];
   readonly provenance: ComparisonTableProvenance;
+  /**
+   * The comparison's judge-family diagnostics. Only Markdown writes them, as a trailing block, and
+   * only when they are applicable; every other encoder ignores them.
+   */
+  readonly panelDiagnostics?: BenchmarkPanelDiagnosticsDto | null;
 }
 
 /** What one encoder produced, including the format actually written. */
@@ -481,6 +491,107 @@ export function comparisonStateLabel(entry: BenchmarkModelComparisonEntryDto): s
 }
 
 // ------------------------------------------------------------------------------------------------
+// The judge-family diagnostics' formats, shared by the Assessor panel diagnostics section and the
+// Markdown block
+// ------------------------------------------------------------------------------------------------
+
+/** What a family gap's cells read when too few questions were paired for an estimate. */
+export const INSUFFICIENT_DATA_TEXT = 'insufficient data';
+
+/** A signed number at a fixed precision, with no negative zero: `+3.2`, `-1.0`, `0.0`. */
+function signedText(value: number, digits: number): string {
+  const text = value.toFixed(digits);
+  if (Number(text) === 0) {
+    return (0).toFixed(digits);
+  }
+  return value > 0 ? `+${text}` : text;
+}
+
+function finite(value: number | null | undefined): value is number {
+  return value != null && Number.isFinite(value);
+}
+
+/** `A` → `Member A`, `B` → `Member B`; any other value as given. */
+export function panelMemberText(member: string): string {
+  return member === 'A' || member === 'B' ? `Member ${member}` : member;
+}
+
+/** A grader's model and provider on one line: `GPT-5 mini (OpenAI)`, or `none` when no model filled the role. */
+export function panelRoleText(label: string | null | undefined, provider: string | null | undefined): string {
+  const name = (label ?? '').trim();
+  const family = (provider ?? '').trim();
+  if (name === '') {
+    return family === '' ? 'none' : family;
+  }
+  return family === '' ? name : `${name} (${family})`;
+}
+
+/** An index with its rank under the same grader: `72 (#1)`, or the absent marker. */
+export function formatPanelIndexText(value: number | null | undefined, rank: number | null | undefined): string {
+  if (!finite(value)) {
+    return ABSENT_TEXT;
+  }
+  const index = String(Math.round(value));
+  return finite(rank) ? `${index} (#${rank})` : index;
+}
+
+/** A signed quality-point estimate with its 95 % interval in brackets: `+3.2 [-1.0, +7.4]`. */
+export function formatPanelEstimateText(estimate: BenchmarkPanelEstimateDto | null | undefined): string {
+  const value = estimate?.value;
+  if (!finite(value)) {
+    return ABSENT_TEXT;
+  }
+  const low = estimate?.ciLow;
+  const high = estimate?.ciHigh;
+  const interval = finite(low) && finite(high) ? ` [${signedText(low, 1)}, ${signedText(high, 1)}]` : '';
+  return `${signedText(value, 1)}${interval}`;
+}
+
+/**
+ * One estimate of a family gap row: `insufficient data` on a flagged row, the absent marker where the
+ * estimate does not exist (no reference reader, or not the members' own pair), else the estimate.
+ */
+export function formatFamilyGapCellText(
+  gap: BenchmarkPanelFamilyGapDto,
+  estimate: BenchmarkPanelEstimateDto | null | undefined
+): string {
+  if (estimate == null) {
+    return ABSENT_TEXT;
+  }
+  return gap.insufficientData ? INSUFFICIENT_DATA_TEXT : formatPanelEstimateText(estimate);
+}
+
+/** `OpenAI − Anthropic`: the direction every gap on the row is measured in. */
+export function familyGapPairText(gap: BenchmarkPanelFamilyGapDto): string {
+  return `${gap.provider1} − ${gap.provider2}`;
+}
+
+/** A fraction as a whole percentage: `0.4167` → `42%`. */
+export function formatRateText(rate: number | null | undefined): string {
+  return finite(rate) ? `${Math.round(rate * 100)}%` : ABSENT_TEXT;
+}
+
+/** A member's family overturn gap in signed percentage points, or why it is withheld. */
+export function formatOverturnGapText(gap: number | null | undefined): string {
+  return finite(gap) ? `${signedText(gap * 100, 0)} pp` : 'withheld: too few ruled charges';
+}
+
+/** `Same family` or `Other family`: the member's provider against the candidate's. */
+export function familyRelationText(sameFamily: boolean): string {
+  return sameFamily ? 'Same family' : 'Other family';
+}
+
+/** What an empty list of order-dependent pairs means, for the judge pairs and for the reference pairs. */
+export function panelPairsEmptyText(kind: 'judge' | 'reference', diagnostics: BenchmarkPanelDiagnosticsDto): string {
+  if (kind === 'judge') {
+    return 'None: member A and member B order every pair of entries the same way.';
+  }
+  return (diagnostics.referenceLabel ?? '').trim() === ''
+    ? 'None: no reference reader graded these runs.'
+    : 'None: the panel and the reference reader order every pair of entries the same way.';
+}
+
+// ------------------------------------------------------------------------------------------------
 // The model
 // ------------------------------------------------------------------------------------------------
 
@@ -713,9 +824,17 @@ export function toTsv(model: ComparisonTableModel): string {
   return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
 
-/** A GFM table under a caption line, with the notices as a list beneath it. */
+/** A Markdown cell or list item: a pipe escaped so the column count survives, line breaks flattened. */
+function escapeMarkdown(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
+}
+
+/**
+ * A GFM table under a caption line, with the notices as a list beneath it, and the judge-family
+ * diagnostics as a trailing block when they are present and applicable.
+ */
 export function toMarkdown(model: ComparisonTableModel): string {
-  const escape = (value: string): string => value.replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
+  const escape = escapeMarkdown;
 
   const lines: string[] = [
     `**Comparison table** — ${provenanceLine(model.provenance)}`,
@@ -734,7 +853,125 @@ export function toMarkdown(model: ComparisonTableModel): string {
       lines.push(`- ${escape(notice)}`);
     }
   }
+  if (model.panelDiagnostics?.applicable) {
+    lines.push('', ...panelDiagnosticsMarkdown(model.panelDiagnostics));
+  }
   return `${lines.join('\n')}\n`;
+}
+
+/**
+ * The `## Assessor Panel Diagnostics` block: the three graders, the indices by grader, the
+ * order-dependent pairs, the family gaps with their contrasts, the accusation audit and the caveats,
+ * in the words and formats the on-screen section uses.
+ */
+function panelDiagnosticsMarkdown(diagnostics: BenchmarkPanelDiagnosticsDto): string[] {
+  const escape = escapeMarkdown;
+  const row = (cells: readonly string[]): string => `| ${cells.map(escape).join(' | ')} |`;
+  const table = (headers: readonly string[], rows: readonly (readonly string[])[]): string[] =>
+    [row(headers), `| ${headers.map(() => '---').join(' | ')} |`, ...rows.map(row)];
+  const list = (items: readonly string[]): string[] => items.map(item => `- ${escape(item)}`);
+  const pairs = (kind: 'judge' | 'reference'): string[] => {
+    const found = kind === 'judge' ? diagnostics.judgeDependentPairs : diagnostics.referenceDependentPairs;
+    return found.length > 0
+      ? list(found.map(pair => pair.description))
+      : [escape(panelPairsEmptyText(kind, diagnostics))];
+  };
+
+  const lines: string[] = [
+    '## Assessor Panel Diagnostics',
+    '',
+    ...list([
+      `Member A: ${panelRoleText(diagnostics.memberALabel, diagnostics.memberAProvider)}`,
+      `Member B: ${panelRoleText(diagnostics.memberBLabel, diagnostics.memberBProvider)}`,
+      `Reference reader: ${panelRoleText(diagnostics.referenceLabel, diagnostics.referenceProvider)}`
+    ]),
+    '',
+    '### Indices by Grader',
+    ''
+  ];
+  if (diagnostics.entries.length > 0) {
+    lines.push(...table(
+      ['Entry', 'Provider', 'Member A', 'Member B', 'Panel', 'Reference'],
+      diagnostics.entries.map(entry => [
+        entry.entryLabel,
+        entry.candidateProvider || ABSENT_TEXT,
+        formatPanelIndexText(entry.memberAIndex, entry.rankA),
+        formatPanelIndexText(entry.memberBIndex, entry.rankB),
+        formatPanelIndexText(entry.panelIndex, entry.rankPanel),
+        formatPanelIndexText(entry.referenceIndex, entry.rankReference)
+      ])
+    ));
+  } else {
+    lines.push('No entries.');
+  }
+
+  lines.push('', '### Judge-Dependent Pairs', '', ...pairs('judge'));
+  lines.push('', '### Reference-Dependent Pairs', '', ...pairs('reference'));
+
+  lines.push('', '### Family Gaps', '');
+  if (diagnostics.familyGaps.length > 0) {
+    lines.push(
+      'Mean per-question quality difference, Provider 1 − Provider 2, in quality points with its 95% interval in brackets.',
+      '',
+      ...table(
+        ['Providers', 'Paired questions', 'Member A', 'Member B', 'Panel', 'Reference'],
+        diagnostics.familyGaps.map(gap => [
+          familyGapPairText(gap),
+          String(gap.pairedQuestionCount),
+          formatFamilyGapCellText(gap, gap.gapA),
+          formatFamilyGapCellText(gap, gap.gapB),
+          formatFamilyGapCellText(gap, gap.gapPanel),
+          formatFamilyGapCellText(gap, gap.gapRef)
+        ])
+      )
+    );
+    const contrasts: string[] = [];
+    for (const gap of diagnostics.familyGaps) {
+      if (gap.interactionContrastLabel) {
+        contrasts.push(`Interaction contrast (${familyGapPairText(gap)}): ` +
+          `${formatFamilyGapCellText(gap, gap.interactionContrast)} — ${gap.interactionContrastLabel}`);
+      }
+      if (gap.asymmetryEstimateLabel) {
+        contrasts.push(`Asymmetry estimate (${familyGapPairText(gap)}): ` +
+          `${formatFamilyGapCellText(gap, gap.asymmetryEstimate)} — ${gap.asymmetryEstimateLabel}`);
+      }
+    }
+    if (contrasts.length > 0) {
+      lines.push('', ...list(contrasts));
+    }
+  } else {
+    lines.push('No pair of candidate families to compare.');
+  }
+
+  lines.push('', '### Accusation Audit', '');
+  if (diagnostics.accusationAudit.length > 0) {
+    lines.push(...table(
+      ['Member', 'Member provider', 'Candidate provider', 'Family', 'Charges', 'Overturned', 'Upheld', 'Indeterminate', 'Overturn rate'],
+      diagnostics.accusationAudit.map(cell => [
+        panelMemberText(cell.member),
+        cell.memberProvider || ABSENT_TEXT,
+        cell.candidateProvider || ABSENT_TEXT,
+        familyRelationText(cell.sameFamily),
+        String(cell.charges),
+        String(cell.overturned),
+        String(cell.upheld),
+        String(cell.indeterminate),
+        formatRateText(cell.overturnRate)
+      ])
+    ));
+  } else {
+    lines.push('No charges to audit.');
+  }
+  if (diagnostics.auditSummaries.length > 0) {
+    lines.push('', ...list(diagnostics.auditSummaries.map(summary =>
+      `${panelMemberText(summary.member)} (${summary.memberProvider || ABSENT_TEXT}) family overturn gap: ` +
+      formatOverturnGapText(summary.familyOverturnGap))));
+  }
+
+  if (diagnostics.caveats.length > 0) {
+    lines.push('', '### Caveats', '', ...list(diagnostics.caveats));
+  }
+  return lines;
 }
 
 /** The machine shape: provenance, the column declarations, and one object of raw values per row. */

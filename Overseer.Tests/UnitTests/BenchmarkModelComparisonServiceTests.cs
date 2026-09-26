@@ -770,4 +770,164 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Equal(new[] { "a", "b" }, dto.BaselineEntryKeys);
         Assert.Equal(ComputedAt, dto.ComputedAtUtc);
     }
+
+    // --- Judge-family diagnostics -----------------------------------------------------------------
+
+    /// <summary>
+    /// <see cref="Run"/> graded by a two-family panel: member A an OpenAI judge scoring
+    /// <paramref name="memberA"/>, member B an Anthropic judge scoring <paramref name="memberB"/>,
+    /// and each answer's panel score their mean.
+    /// </summary>
+    private static BenchmarkRun PanelRun(
+        long id,
+        string candidateProvider,
+        string modelId,
+        int[] memberA,
+        int[] memberB,
+        string coAssessorModelId = "anthropic-judge")
+    {
+        var run = Run(id, modelId, memberA);
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(
+            provider: candidateProvider,
+            modelId: modelId,
+            displayName: modelId,
+            thinkingLevel: "high",
+            reasoningMode: "enabled",
+            reasoningSummary: "auto",
+            serviceTier: "default",
+            maxOutputTokens: 32000,
+            parallelExecutionMode: MobileGnollHackLogger.Data.ParallelExecutionMode.Enabled);
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "openai-judge");
+        run.CoAssessorModelConfigurationId = 9;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: coAssessorModelId);
+
+        for (int i = 0; i < run.Answers.Count; i++)
+        {
+            var answer = run.Answers[i];
+            answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+            answer.CoAssessmentQualityScore = memberB[i];
+            answer.PanelQualityScore = (memberA[i] + memberB[i]) / 2.0;
+        }
+
+        return run;
+    }
+
+    [Fact]
+    public void PanelDiagnostics_AreNull_WhenNoRunIsAPanelRun()
+    {
+        var dto = Build(new[]
+        {
+            Source("a", Card(), Run(1, "gpt-5.6-luna")),
+            Source("b", Card(), Run(2, "gemini-3.8-flash-lite"))
+        });
+
+        Assert.Null(dto.PanelDiagnostics);
+    }
+
+    [Fact]
+    public void PanelDiagnostics_AreAttached_ToAComparisonOfRunsGradedByOnePanel()
+    {
+        var dto = Build(new[]
+        {
+            Source("a", Card(), PanelRun(1, "OpenAI", "gpt-5.6-luna", new[] { 70, 80, 90 }, new[] { 80, 90, 100 })),
+            Source("b", Card(), PanelRun(2, "Anthropic", "claude-candidate", new[] { 60, 70, 80 }, new[] { 60, 70, 80 }))
+        });
+
+        Assert.Equal(2, dto.ComparableCount);
+
+        // The charted quality is the panel's: 75 / 85 / 95 at equal weights, not member A's 80.
+        Assert.Equal(85.0, Entry(dto, "a").Quality!.PointEstimate, 9);
+
+        var diagnostics = dto.PanelDiagnostics;
+        Assert.NotNull(diagnostics);
+        Assert.True(diagnostics!.Applicable);
+        Assert.Null(diagnostics.NotApplicableReason);
+        Assert.Equal("OpenAI", diagnostics.MemberAProvider);
+        Assert.Equal("Anthropic", diagnostics.MemberBProvider);
+        Assert.Null(diagnostics.ReferenceProvider);
+
+        Assert.Equal(new[] { "a", "b" }, diagnostics.Entries.Select(e => e.EntryKey).OrderBy(k => k));
+        var entryA = diagnostics.Entries.Single(e => e.EntryKey == "a");
+        Assert.Equal(Entry(dto, "a").Label, entryA.EntryLabel);
+        Assert.Equal("OpenAI", entryA.CandidateProvider);
+        Assert.Equal(80, entryA.MemberAIndex);
+        Assert.Equal(90, entryA.MemberBIndex);
+        Assert.Equal(85, entryA.PanelIndex);
+
+        // Three questions pair, below the five an estimate needs.
+        var gap = Assert.Single(diagnostics.FamilyGaps);
+        Assert.True(gap.IsMemberProviderPair);
+        Assert.Equal("OpenAI", gap.Provider1);
+        Assert.Equal("Anthropic", gap.Provider2);
+        Assert.Equal(3, gap.PairedQuestionCount);
+        Assert.True(gap.InsufficientData);
+        Assert.Null(gap.GapA.Value);
+
+        Assert.Equal(4, diagnostics.AccusationAudit.Count);
+        Assert.Equal(2, diagnostics.AuditSummaries.Count);
+        Assert.Equal(BenchmarkPanelDiagnostics.Caveats, diagnostics.Caveats);
+    }
+
+    [Fact]
+    public void PanelDiagnostics_AreNotApplicable_WhenTheChartedRunsHadASingleAssessor()
+    {
+        // The two single-assessor entries outnumber the panel entry and form the baseline, which
+        // excludes the panel entry; the diagnostics read the charted entries and refuse.
+        var dto = Build(new[]
+        {
+            Source("a", Card(), Run(1, "gpt-5.6-luna")),
+            Source("b", Card(), Run(2, "gemini-3.8-flash-lite")),
+            Source("c", Card(), PanelRun(3, "Anthropic", "claude-candidate", new[] { 60, 70, 80 }, new[] { 60, 70, 80 }))
+        });
+
+        Assert.True(Entry(dto, "c").Excluded);
+
+        var diagnostics = dto.PanelDiagnostics;
+        Assert.NotNull(diagnostics);
+        Assert.False(diagnostics!.Applicable);
+        Assert.Contains("Every run must be a panel run", diagnostics.NotApplicableReason);
+        Assert.Empty(diagnostics.Entries);
+        Assert.Empty(diagnostics.FamilyGaps);
+        Assert.Empty(diagnostics.AccusationAudit);
+        Assert.Empty(diagnostics.Caveats);
+    }
+
+    [Fact]
+    public void PanelDiagnostics_AreNotApplicable_ForAGroupWhoseRunsWereGradedByDifferentPanels()
+    {
+        // Within one entry the differing member B is a must-match difference, so the entry is
+        // excluded from every chart and the diagnostics are left with nothing to read.
+        var dto = Build(new[]
+        {
+            Source("b", Card(),
+                PanelRun(2, "Anthropic", "claude-candidate", new[] { 60, 70, 80 }, new[] { 60, 70, 80 }),
+                PanelRun(3, "Anthropic", "claude-candidate", new[] { 60, 70, 80 }, new[] { 60, 70, 80 }, "anthropic-judge-2"))
+        });
+
+        Assert.True(Entry(dto, "b").Excluded);
+        Assert.NotNull(dto.PanelDiagnostics);
+        Assert.False(dto.PanelDiagnostics!.Applicable);
+        Assert.NotNull(dto.PanelDiagnostics.NotApplicableReason);
+        Assert.Empty(dto.PanelDiagnostics.Entries);
+    }
+
+    [Fact]
+    public void PanelDiagnostics_ReadOnlyTheChartedEntries_SoAnEntryGradedByAnotherPanelIsLeftOut()
+    {
+        // The two entries differ on member B, a must-match key, so the second is excluded from the
+        // charts and never reaches the diagnostics' same-panel gate.
+        var dto = Build(new[]
+        {
+            Source("a", Card(), PanelRun(1, "OpenAI", "gpt-5.6-luna", new[] { 70, 80, 90 }, new[] { 80, 90, 100 })),
+            Source("b", Card(), PanelRun(2, "Anthropic", "claude-candidate", new[] { 60, 70, 80 }, new[] { 60, 70, 80 }, "anthropic-judge-2"))
+        });
+
+        Assert.False(Entry(dto, "a").Excluded);
+        Assert.True(Entry(dto, "b").Excluded);
+
+        var diagnostics = dto.PanelDiagnostics;
+        Assert.NotNull(diagnostics);
+        Assert.DoesNotContain(diagnostics!.Entries, e => e.EntryKey == "b");
+        Assert.Equal("anthropic-judge", diagnostics.MemberBLabel);
+    }
 }

@@ -902,4 +902,84 @@ public class BenchmarkComparabilityKeyTests
         // Stored beside every persisted key hash; a group analysed under another version reads as stale.
         Assert.Equal(2, BenchmarkComparabilityKey.DefinitionVersion);
     }
+
+    // -- Two-family assessor panel: member B folded into the assessor key -------------------------
+
+    private const string MemberASignature =
+        "provider=Google;model=gemini-3.7-pro;thinking=(none);reasoningMode=(none);reasoningSummary=(none);"
+        + "serviceTier=(none);maxOutputTokens=32000;endpoint=official";
+
+    private static BenchmarkRun PanelRun(long id, string coAssessorModelId = "claude-opus-4-6", int coAssessorCap = 16000)
+    {
+        var run = Run(id);
+        run.AssessorEffectiveMaxOutputTokens = 32000;
+        run.CoAssessorModelConfigurationId = 9;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+            provider: "Anthropic",
+            modelId: coAssessorModelId,
+            thinkingLevel: "high");
+        run.CoAssessorEffectiveMaxOutputTokens = coAssessorCap;
+        return run;
+    }
+
+    [Fact]
+    public void AssessorSignature_WithoutACoAssessor_IsUnchanged()
+    {
+        var run = Run(13);
+        run.AssessorEffectiveMaxOutputTokens = 32000;
+
+        string value = KeyValue(run, BenchmarkComparabilityKey.AssessorConfigurationKey);
+
+        Assert.Equal(MemberASignature, value);
+        Assert.DoesNotContain("panelMember", value);
+    }
+
+    [Fact]
+    public void AssessorSignature_WithACoAssessor_AppendsMemberBAfterAPanelMemberMarker()
+    {
+        Assert.Equal(
+            MemberASignature
+            + ";panelMember=provider=Anthropic;model=claude-opus-4-6;thinking=high;reasoningMode=(none);"
+            + "reasoningSummary=(none);serviceTier=(none);maxOutputTokens=16000;endpoint=official",
+            KeyValue(PanelRun(13), BenchmarkComparabilityKey.AssessorConfigurationKey));
+    }
+
+    [Fact]
+    public void AddingACoAssessor_IsOneInstrumentDifference_TierC()
+    {
+        var single = Run(13);
+        single.AssessorEffectiveMaxOutputTokens = 32000;
+        var panel = PanelRun(14);
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { single, panel });
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        var difference = Assert.Single(result.Differences);
+        Assert.Equal(BenchmarkComparabilityKey.AssessorConfigurationKey, difference.Name);
+        Assert.Equal(BenchmarkComparabilityKeyKind.Instrument, difference.Kind);
+    }
+
+    [Fact]
+    public void TwoRunsGradedByTheSamePanel_ResolveTierA()
+    {
+        var result = BenchmarkComparabilityKey.Resolve(new[] { PanelRun(13), PanelRun(14) });
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Empty(result.Differences);
+    }
+
+    [Theory]
+    [InlineData("claude-opus-4-7", 16000)]
+    [InlineData("claude-opus-4-6", 24000)]
+    public void ChangingMemberB_MovesTheAssessorKey(string coAssessorModelId, int coAssessorCap)
+    {
+        var baseline = PanelRun(13);
+        var changed = PanelRun(14, coAssessorModelId, coAssessorCap);
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { baseline, changed });
+
+        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
+        Assert.Equal(BenchmarkComparabilityKey.AssessorConfigurationKey, Assert.Single(result.Differences).Name);
+        Assert.NotEqual(BenchmarkComparabilityKey.ComputeKeyHash(baseline), BenchmarkComparabilityKey.ComputeKeyHash(changed));
+    }
 }

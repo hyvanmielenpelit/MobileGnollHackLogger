@@ -312,6 +312,37 @@ Two runs count as reproduction **only** when they match on all of:
 
 Below this threshold, findings are logged in the **Model Behaviour Notes** (§ 11) and the prompt remains untouched.
 
+### Reading a panel run
+
+A run with a co-assessor (harness 40 on) is graded by a **two-family panel**: member A (the
+assessor) and member B (the co-assessor), from two providers, both grade every answer blind to each
+other, and the published score is their mean. The second opinion is the **reference reader** — it
+grades every answer, blind, and never scores. The mechanics and the assumptions are in
+`docs/overseer/ai-benchmark.md` § 3 *The Two-Family Assessor Panel*. Weigh its findings by how many
+independent readers carry them:
+
+- **Convergent findings and panel-agreed verdicts clear the bar more easily.** A synthesis finding the
+  run view's Agreement tab marks *Both members* (`Convergent`; report § 6.3), or a verdict where the members did not disagree (no
+  *MEMBERS DISAGREE* badge), was reached by two judges from different families. That is stronger
+  evidence within one run than any single-assessor finding; it still motivates rather than justifies
+  a prompt change, and the two-run or controlled-pair bar above stands.
+- **A single-reader, same-family strength is the weakest evidence there is.** A strength only one
+  member names, when that member shares the candidate's provider, is exactly what same-family
+  preference would produce. Do not credit it without the other member or a tool-grounded check.
+- **A single-reader weakness needs its evidence opened.** Read the member's evidence and the claim
+  verifier's items it raised (`raisedBy`) before filing it; the verifier checks both members' charges.
+- **A judge-dependent ranking must not by itself move the chat's model choice.** When Model
+  Comparison's judge-family diagnostics list a pair of entries as judge-dependent — member A and member
+  B rank them in opposite order — the panel's order for that pair rests on the balance between the
+  members, not on their agreement. It is a tie for rung 6 until another comparable run or a replicate
+  set separates them.
+- **The bias figures are estimates with stated assumptions.** The asymmetry estimate assumes the
+  reference reader is neutral between the members' two families; the accusation audit assumes the
+  verifier is. Quote them with their intervals and the diagnostics' caveats, never as a verdict on a
+  provider.
+- **The reference reader's disagreement is with the panel score**, not with member A: read it as a
+  reason to open the answer, as with any second reader.
+
 ---
 
 ## 7. The Ladder of Safe Changes

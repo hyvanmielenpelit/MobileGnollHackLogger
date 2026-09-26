@@ -4,7 +4,7 @@ import { DecimalPipe } from '@angular/common';
 /** Distinguishes the heading ids of the several panels a page may hold. */
 let costPanelSequence = 0;
 
-/** One rendered role line: its name, its formatted amount, and its share of the five roles. */
+/** One rendered role line: its name, its formatted amount, and its share of the roles shown. */
 export interface BenchmarkCostRoleRow {
   key: string;
   name: string;
@@ -72,11 +72,17 @@ export class BenchmarkCostPanelComponent {
   /** The per-question assessments only; the synthesis is a peer role below. */
   @Input() assessor: number | null = null;
 
+  /** Panel member B's per-question assessments. Null outside a panel run. */
+  @Input() coAssessor: number | null = null;
+
   @Input() secondOpinion: number | null = null;
   @Input() claimVerifier: number | null = null;
   @Input() synthesis: number | null = null;
 
-  /** Assessor, second opinion, claim verifier and synthesis together, summed server-side. */
+  /** Panel member B's own synthesis. Null outside a panel run. */
+  @Input() coSynthesis: number | null = null;
+
+  /** Every grading role and both syntheses together, summed server-side. */
   @Input() grading: number | null = null;
 
   @Input() pricingSource: string | null = null;
@@ -96,9 +102,11 @@ export class BenchmarkCostPanelComponent {
   private static readonly ROLE_ORDER: readonly { key: string; name: string }[] = [
     { key: 'candidate', name: 'Model under test' },
     { key: 'assessor', name: 'Assessor' },
+    { key: 'coAssessor', name: 'Co-assessor' },
     { key: 'secondOpinion', name: 'Second opinion' },
     { key: 'claimVerifier', name: 'Claim verifier' },
-    { key: 'synthesis', name: 'Final synthesis' }
+    { key: 'synthesis', name: 'Final synthesis' },
+    { key: 'coSynthesis', name: 'Co-assessor synthesis' }
   ];
 
   get heading(): string {
@@ -125,9 +133,11 @@ export class BenchmarkCostPanelComponent {
     const figures: Record<string, number | null> = {
       candidate: this.candidate,
       assessor: this.assessor,
+      coAssessor: this.coAssessor,
       secondOpinion: this.secondOpinion,
       claimVerifier: this.claimVerifier,
-      synthesis: this.synthesis
+      synthesis: this.synthesis,
+      coSynthesis: this.coSynthesis
     };
 
     const present = BenchmarkCostPanelComponent.ROLE_ORDER

@@ -16,15 +16,25 @@ public static class BenchmarkRunFinalizer
     };
 
     /// <summary>
+    /// A run graded by a two-member assessor panel: member A is the assessor, member B the
+    /// co-assessor, and the published per-answer score is their mean.
+    /// </summary>
+    public static bool IsPanelRun(BenchmarkRun run) => run.CoAssessorModelConfigurationId.HasValue;
+
+    /// <summary>
     /// An answer with no text stays here even when scoring method 10 has scored it 0: an unanswered
     /// question is an error, not merely a low score, so it keeps the run at CompletedWithErrors, and
     /// the failed-question re-run re-executes it — see <see cref="NeedsReExecution"/>.
+    ///
+    /// Member B's status is null outside panel runs and <c>Pending</c> from creation inside them,
+    /// so an unattempted or failed co-assessment is unresolved work, never a silently A-only score.
     /// </summary>
     public static bool HasUnresolvedWork(BenchmarkRunAnswer answer)
     {
         return answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed
                 or BenchmarkAnswerStatus.Canceled or BenchmarkAnswerStatus.EmptyAnswer
-            || answer.AssessmentStatus is BenchmarkAssessmentStatus.Failed or BenchmarkAssessmentStatus.Pending or BenchmarkAssessmentStatus.Assessing;
+            || answer.AssessmentStatus is BenchmarkAssessmentStatus.Failed or BenchmarkAssessmentStatus.Pending or BenchmarkAssessmentStatus.Assessing
+            || answer.CoAssessmentStatus is BenchmarkAssessmentStatus.Failed or BenchmarkAssessmentStatus.Pending or BenchmarkAssessmentStatus.Assessing;
     }
 
     /// <summary>
@@ -320,9 +330,10 @@ public static class BenchmarkRunFinalizer
     }
 
     /// <summary>
-    /// Per-role token and duration sums over a run's answers: primary assessor, second opinion, and
-    /// claim verifier. No synthesis members — the final synthesis has no per-answer row to sum from,
-    /// and <see cref="BenchmarkService"/> assigns its totals onto <see cref="BenchmarkRun"/> directly.
+    /// Per-role token and duration sums over a run's answers: primary assessor, co-assessor (panel
+    /// member B; zero outside panel runs), second opinion, and claim verifier. No synthesis members —
+    /// the final synthesis has no per-answer row to sum from, and <see cref="BenchmarkService"/>
+    /// assigns its totals onto <see cref="BenchmarkRun"/> directly.
     /// </summary>
     internal readonly record struct BenchmarkGradingTotals(
         long TotalAssessmentInputTokens,
@@ -330,6 +341,11 @@ public static class BenchmarkRunFinalizer
         long TotalAssessmentCacheReadTokens,
         long TotalAssessmentCacheCreationTokens,
         long TotalAssessmentDurationMs,
+        long TotalCoAssessmentInputTokens,
+        long TotalCoAssessmentOutputTokens,
+        long TotalCoAssessmentCacheReadTokens,
+        long TotalCoAssessmentCacheCreationTokens,
+        long TotalCoAssessmentDurationMs,
         long TotalSecondOpinionInputTokens,
         long TotalSecondOpinionOutputTokens,
         long TotalSecondOpinionCacheReadTokens,
@@ -354,6 +370,11 @@ public static class BenchmarkRunFinalizer
             TotalAssessmentCacheReadTokens: answers.Sum(a => (long)(a.AssessmentCacheReadTokens ?? 0)),
             TotalAssessmentCacheCreationTokens: answers.Sum(a => (long)(a.AssessmentCacheCreationTokens ?? 0)),
             TotalAssessmentDurationMs: answers.Sum(a => a.AssessmentDurationMs ?? 0L),
+            TotalCoAssessmentInputTokens: answers.Sum(a => (long)(a.CoAssessmentInputTokens ?? 0)),
+            TotalCoAssessmentOutputTokens: answers.Sum(a => (long)(a.CoAssessmentOutputTokens ?? 0)),
+            TotalCoAssessmentCacheReadTokens: answers.Sum(a => (long)(a.CoAssessmentCacheReadTokens ?? 0)),
+            TotalCoAssessmentCacheCreationTokens: answers.Sum(a => (long)(a.CoAssessmentCacheCreationTokens ?? 0)),
+            TotalCoAssessmentDurationMs: answers.Sum(a => a.CoAssessmentDurationMs ?? 0L),
             TotalSecondOpinionInputTokens: answers.Sum(a => (long)(a.SecondOpinionInputTokens ?? 0)),
             TotalSecondOpinionOutputTokens: answers.Sum(a => (long)(a.SecondOpinionOutputTokens ?? 0)),
             TotalSecondOpinionCacheReadTokens: answers.Sum(a => (long)(a.SecondOpinionCacheReadTokens ?? 0)),
@@ -389,15 +410,21 @@ public static class BenchmarkRunFinalizer
         run.TotalLongContextCacheReadTokens = longContextTotals.TotalLongContextCacheReadTokens;
         run.TotalLongContextCacheCreationTokens = longContextTotals.TotalLongContextCacheCreationTokens;
 
-        // Assessor, second-opinion and claim-verifier sides, kept separate from the candidate totals
-        // above: the run's cost is all of these together, and the model under test must not be
-        // charged for its graders.
+        // Assessor, co-assessor, second-opinion and claim-verifier sides, kept separate from the
+        // candidate totals above: the run's cost is all of these together, and the model under test
+        // must not be charged for its graders.
         var gradingTotals = SumGradingTotals(answers);
         run.TotalAssessmentInputTokens = gradingTotals.TotalAssessmentInputTokens;
         run.TotalAssessmentOutputTokens = gradingTotals.TotalAssessmentOutputTokens;
         run.TotalAssessmentCacheReadTokens = gradingTotals.TotalAssessmentCacheReadTokens;
         run.TotalAssessmentCacheCreationTokens = gradingTotals.TotalAssessmentCacheCreationTokens;
         run.TotalAssessmentDurationMs = gradingTotals.TotalAssessmentDurationMs;
+
+        run.TotalCoAssessmentInputTokens = gradingTotals.TotalCoAssessmentInputTokens;
+        run.TotalCoAssessmentOutputTokens = gradingTotals.TotalCoAssessmentOutputTokens;
+        run.TotalCoAssessmentCacheReadTokens = gradingTotals.TotalCoAssessmentCacheReadTokens;
+        run.TotalCoAssessmentCacheCreationTokens = gradingTotals.TotalCoAssessmentCacheCreationTokens;
+        run.TotalCoAssessmentDurationMs = gradingTotals.TotalCoAssessmentDurationMs;
 
         run.TotalSecondOpinionInputTokens = gradingTotals.TotalSecondOpinionInputTokens;
         run.TotalSecondOpinionOutputTokens = gradingTotals.TotalSecondOpinionOutputTokens;
@@ -483,24 +510,33 @@ public static class BenchmarkRunFinalizer
         // CountsTowardQualityIndex is the same population scorableItems uses in Apply below. An
         // answer the index excludes has no gradeable text, so a delta against it measures two
         // graders reading a transport failure, not their agreement about a candidate.
+        //
+        // In a panel run the second opinion is the reference reader, compared against the panel
+        // score; a critical-error split counts only where both members agree and the reader differs.
+        bool isPanelRun = IsPanelRun(run);
         var secondOpinions = answers
             .Where(CountsTowardQualityIndex)
             .Where(a => a.SecondOpinionQualityScore.HasValue
-                        && a.QualityScore.HasValue
+                        && BenchmarkScoring.IndexQuality(a, isPanelRun).HasValue
                         && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal))
             .ToList();
+
+        double ReaderDelta(BenchmarkRunAnswer a)
+            => a.SecondOpinionQualityScore!.Value - BenchmarkScoring.IndexQuality(a, isPanelRun)!.Value;
 
         // Stored at one decimal, midpoints away from zero, so every surface that formats the
         // figure (UI toFixed(1), report F1, diagnostics) prints the same value.
         run.SecondOpinionGradedAnswerCount = secondOpinions.Count;
         run.SecondOpinionMeanAbsDelta = secondOpinions.Count > 0
-            ? RoundAgreementDelta(secondOpinions.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value)))
+            ? RoundAgreementDelta(secondOpinions.Average(a => Math.Abs(ReaderDelta(a))))
             : null;
         run.SecondOpinionMeanSignedDelta = secondOpinions.Count > 0
-            ? RoundAgreementDelta(secondOpinions.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value)))
+            ? RoundAgreementDelta(secondOpinions.Average(a => ReaderDelta(a)))
             : null;
         run.SecondOpinionCriticalErrorSplitCount = secondOpinions.Count(
-            a => a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError);
+            a => a.SecondOpinionCriticalError.HasValue
+                 && a.SecondOpinionCriticalError.Value != a.CriticalError
+                 && (!isPanelRun || a.CoAssessmentCriticalError == a.CriticalError));
         run.ToolOverheadMs = answers.Any(a => a.ToolTimeMs.HasValue)
             ? answers.Sum(a => a.ToolTimeMs ?? 0L)
             : null;
@@ -512,7 +548,8 @@ public static class BenchmarkRunFinalizer
     /// belongs to the original execution. The default is the first-run behaviour.
     ///
     /// When any answer has a terminal failure (<see cref="HasTerminalFailure"/>), the Quality Index,
-    /// its standard error, the unweighted Quality Index and the Speed Index are withheld — set null —
+    /// its standard error, the unweighted Quality Index, the Speed Index and a panel run's
+    /// member-alone indices are withheld — set null —
     /// because a run that lost a question at the provider has no honest headline over the questions
     /// that happened to finish.
     /// </summary>
@@ -531,9 +568,10 @@ public static class BenchmarkRunFinalizer
             answer.SpeedScore = null;
         }
 
+        bool isPanelRun = IsPanelRun(run);
         var scorableItems = answers
             .Where(CountsTowardQualityIndex)
-            .Select(a => (a.QualityScore, a.AssessedDifficulty ?? FallbackDifficulty(a.Difficulty)))
+            .Select(a => (BenchmarkScoring.IndexQuality(a, isPanelRun), IndexDifficulty(a)))
             .ToList();
 
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
@@ -544,7 +582,9 @@ public static class BenchmarkRunFinalizer
         // invisible from either number alone. On the 2026-09-03 run they were 94 and 92, because
         // the two weakest answers were also two of the easiest questions.
         run.UnweightedQualityIndex = BenchmarkScoring.UnweightedQualityMean(
-            answers.Where(CountsTowardQualityIndex).Select(a => a.QualityScore));
+            answers.Where(CountsTowardQualityIndex).Select(a => BenchmarkScoring.IndexQuality(a, isPanelRun)));
+
+        ApplyPanelStatistics(run, answers);
 
         // Equal weight: difficulty already scales each question's own speed target.
         run.SpeedIndex = BenchmarkScoring.SpeedIndex(
@@ -560,6 +600,8 @@ public static class BenchmarkRunFinalizer
             run.QualityIndexStandardError = null;
             run.UnweightedQualityIndex = null;
             run.SpeedIndex = null;
+            run.AssessorOnlyQualityIndex = null;
+            run.CoAssessorOnlyQualityIndex = null;
         }
 
         if (!preserveCompletedAt || run.CompletedAtUtc == null)
@@ -568,5 +610,68 @@ public static class BenchmarkRunFinalizer
         }
 
         run.Status = ComputeStatus(answers);
+    }
+
+    /// <summary>The difficulty an answer is weighted by in every quality index of its run.</summary>
+    private static int IndexDifficulty(BenchmarkRunAnswer answer)
+        => answer.AssessedDifficulty ?? FallbackDifficulty(answer.Difficulty);
+
+    /// <summary>
+    /// Panel agreement and the member-alone indices, over the answers that count toward the quality
+    /// index and that both members scored. Every figure is null on a single-assessor run.
+    ///
+    /// A disagreement is a gap above <see cref="BenchmarkService.SecondOpinionDisagreementPoints"/>
+    /// or a split on CriticalError, recomputed here from the stored verdicts. The ICC is ICC(A,1)
+    /// at two decimals; the deltas take <see cref="RoundAgreementDelta"/>. The member-alone indices
+    /// are advisory and use the same difficulty weighting as the published index.
+    /// </summary>
+    public static void ApplyPanelStatistics(BenchmarkRun run, IReadOnlyCollection<BenchmarkRunAnswer> answers)
+    {
+        if (!IsPanelRun(run))
+        {
+            run.PanelGradedAnswerCount = null;
+            run.PanelMeanAbsDelta = null;
+            run.PanelMeanSignedDelta = null;
+            run.PanelCriticalErrorSplitCount = null;
+            run.PanelDisagreementCount = null;
+            run.PanelIntraclassCorrelation = null;
+            run.AssessorOnlyQualityIndex = null;
+            run.CoAssessorOnlyQualityIndex = null;
+            return;
+        }
+
+        var graded = answers
+            .Where(CountsTowardQualityIndex)
+            .Where(a => a.AssessmentStatus == BenchmarkAssessmentStatus.Scored
+                        && a.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored
+                        && a.QualityScore.HasValue
+                        && a.CoAssessmentQualityScore.HasValue)
+            .ToList();
+
+        bool CriticalErrorSplit(BenchmarkRunAnswer a)
+            => a.CoAssessmentCriticalError.HasValue && a.CoAssessmentCriticalError.Value != a.CriticalError;
+
+        run.PanelGradedAnswerCount = graded.Count;
+        run.PanelMeanAbsDelta = graded.Count > 0
+            ? RoundAgreementDelta(graded.Average(a => (double)Math.Abs(a.CoAssessmentQualityScore!.Value - a.QualityScore!.Value)))
+            : null;
+        run.PanelMeanSignedDelta = graded.Count > 0
+            ? RoundAgreementDelta(graded.Average(a => (double)(a.CoAssessmentQualityScore!.Value - a.QualityScore!.Value)))
+            : null;
+        run.PanelCriticalErrorSplitCount = graded.Count(CriticalErrorSplit);
+        run.PanelDisagreementCount = graded.Count(
+            a => Math.Abs(a.CoAssessmentQualityScore!.Value - a.QualityScore!.Value) > BenchmarkService.SecondOpinionDisagreementPoints
+                 || CriticalErrorSplit(a));
+
+        double? icc = BenchmarkScoring.IntraclassCorrelationAbsolute(
+            graded.Select(a => ((double)a.QualityScore!.Value, (double)a.CoAssessmentQualityScore!.Value)).ToList());
+        run.PanelIntraclassCorrelation = icc.HasValue
+            ? Math.Round(icc.Value, 2, MidpointRounding.AwayFromZero)
+            : null;
+
+        run.AssessorOnlyQualityIndex = BenchmarkScoring.QualityIndex(
+            graded.Select(a => (a.QualityScore, IndexDifficulty(a))).ToList());
+        run.CoAssessorOnlyQualityIndex = BenchmarkScoring.QualityIndex(
+            graded.Select(a => (a.CoAssessmentQualityScore, IndexDifficulty(a))).ToList());
     }
 }

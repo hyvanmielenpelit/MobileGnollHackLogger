@@ -1243,4 +1243,276 @@ public class BenchmarkRunFinalizerTests
 
         Assert.False(BenchmarkRunFinalizer.IsAbortedRun(run, answers));
     }
+
+    // --- Two-family assessor panel ------------------------------------------------------------------
+
+    private static BenchmarkRun PanelRun(int questionCount) => new()
+    {
+        Id = 40,
+        TotalQuestionCount = questionCount,
+        CoAssessorModelConfigurationId = 7
+    };
+
+    /// <summary>
+    /// An answer both members scored, with the panel score the grading path stores beside the two
+    /// verdicts. Critical errors default to agreement.
+    /// </summary>
+    private static BenchmarkRunAnswer PanelAnswer(int orderIndex, int memberA, int memberB)
+    {
+        var answer = MakeAnswer(orderIndex);
+        answer.QualityScore = memberA;
+        answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+        answer.CoAssessmentQualityScore = memberB;
+        answer.CoAssessmentCriticalError = false;
+        answer.PanelQualityScore = (memberA + memberB) / 2.0;
+        return answer;
+    }
+
+    /// <summary>
+    /// Five answers at equal difficulty. Member A: 60 70 80 90 50 (mean 70). Member B: 70 76 90 94 70
+    /// (mean 80). Panel: 65 73 85 92 60 (mean 75). B − A: 10 6 10 4 20, so the mean signed and the
+    /// mean absolute difference are both 10.0.
+    /// </summary>
+    private static List<BenchmarkRunAnswer> PanelAnswers() => new()
+    {
+        PanelAnswer(1, 60, 70),
+        PanelAnswer(2, 70, 76),
+        PanelAnswer(3, 80, 90),
+        PanelAnswer(4, 90, 94),
+        PanelAnswer(5, 50, 70)
+    };
+
+    [Fact]
+    public void IsPanelRun_IsTrueOnlyWithACoAssessor()
+    {
+        Assert.True(BenchmarkRunFinalizer.IsPanelRun(new BenchmarkRun { CoAssessorModelConfigurationId = 3 }));
+        Assert.False(BenchmarkRunFinalizer.IsPanelRun(new BenchmarkRun()));
+    }
+
+    [Fact]
+    public void Apply_PanelRun_IndexesThePanelScore_NotMemberAs()
+    {
+        var run = PanelRun(5);
+        var answers = PanelAnswers();
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        // Equal difficulty weights, so each index is the plain mean of its scores.
+        Assert.Equal(75, run.QualityIndex);
+        Assert.Equal(75, run.UnweightedQualityIndex);
+        Assert.Equal(70, run.AssessorOnlyQualityIndex);
+        Assert.Equal(80, run.CoAssessorOnlyQualityIndex);
+        Assert.NotEqual(run.AssessorOnlyQualityIndex, run.QualityIndex);
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+    }
+
+    [Fact]
+    public void Apply_PanelRun_ComputesPanelStatistics()
+    {
+        var run = PanelRun(5);
+        var answers = PanelAnswers();
+        // Q2 splits on the critical error; Q5's gap of 20 exceeds the 15-point threshold.
+        answers[1].CoAssessmentCriticalError = true;
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(5, run.PanelGradedAnswerCount);
+        Assert.Equal(10.0, run.PanelMeanAbsDelta);
+        Assert.Equal(10.0, run.PanelMeanSignedDelta);
+        Assert.Equal(1, run.PanelCriticalErrorSplitCount);
+        Assert.Equal(2, run.PanelDisagreementCount);
+
+        // ICC(A,1) over the five pairs is 425/588 = 0.7228, stored at two decimals.
+        Assert.Equal(0.72, run.PanelIntraclassCorrelation);
+    }
+
+    [Fact]
+    public void Apply_PanelRun_SignedDeltaIsBMinusA()
+    {
+        var run = PanelRun(2);
+        var answers = new List<BenchmarkRunAnswer> { PanelAnswer(1, 80, 70), PanelAnswer(2, 90, 86) };
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(-7.0, run.PanelMeanSignedDelta);
+        Assert.Equal(7.0, run.PanelMeanAbsDelta);
+        Assert.Equal(0, run.PanelDisagreementCount);
+
+        // Fewer than five pairs: no ICC.
+        Assert.Null(run.PanelIntraclassCorrelation);
+    }
+
+    [Fact]
+    public void Apply_PanelRun_ComparesTheReferenceReaderAgainstThePanelScore()
+    {
+        var run = PanelRun(5);
+        var answers = PanelAnswers();
+        int[] reader = { 70, 73, 80, 92, 60 };
+        for (int i = 0; i < answers.Count; i++)
+        {
+            answers[i].SecondOpinionQualityScore = reader[i];
+            answers[i].SecondOpinionTrigger = "All";
+            answers[i].SecondOpinionCriticalError = false;
+        }
+
+        // Q1: both members say no critical error and the reader says yes, so it counts as a split.
+        answers[0].SecondOpinionCriticalError = true;
+        // Q2: the members themselves split, so the reader differing from member A alone is not one.
+        answers[1].CoAssessmentCriticalError = true;
+        answers[1].SecondOpinionCriticalError = true;
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        // Reader minus panel: 5 0 -5 0 0. Against member A it would have been 10 3 0 2 10.
+        Assert.Equal(5, run.SecondOpinionGradedAnswerCount);
+        Assert.Equal(2.0, run.SecondOpinionMeanAbsDelta);
+        Assert.Equal(0.0, run.SecondOpinionMeanSignedDelta);
+        Assert.Equal(1, run.SecondOpinionCriticalErrorSplitCount);
+    }
+
+    [Fact]
+    public void Apply_PanelRun_LeavesAnAnswerWithoutAPanelScoreOutOfTheReferenceAgreement()
+    {
+        var run = PanelRun(2);
+        var scored = PanelAnswer(1, 80, 90);
+        scored.SecondOpinionQualityScore = 81;
+        scored.SecondOpinionTrigger = "All";
+
+        var memberBFailed = PanelAnswer(2, 70, 70);
+        memberBFailed.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+        memberBFailed.CoAssessmentQualityScore = null;
+        memberBFailed.PanelQualityScore = null;
+        memberBFailed.SecondOpinionQualityScore = 20;
+        memberBFailed.SecondOpinionTrigger = "All";
+
+        BenchmarkRunFinalizer.Apply(run, new[] { scored, memberBFailed });
+
+        Assert.Equal(1, run.SecondOpinionGradedAnswerCount);
+        Assert.Equal(4.0, run.SecondOpinionMeanAbsDelta);
+        Assert.Equal(-4.0, run.SecondOpinionMeanSignedDelta);
+    }
+
+    [Fact]
+    public void Apply_PanelRun_IsCompletedWithErrors_WhenMemberBFailed_AndExcludesThatAnswer()
+    {
+        var run = PanelRun(3);
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            PanelAnswer(1, 60, 70),
+            PanelAnswer(2, 80, 90),
+            PanelAnswer(3, 40, 40)
+        };
+        answers[2].CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+        answers[2].CoAssessmentQualityScore = null;
+        answers[2].CoAssessmentError = "timeout";
+        answers[2].PanelQualityScore = null;
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
+
+        // The panel scored Q1 and Q2 alone: (65 + 85) / 2. Member A's 40 on Q3 does not stand in.
+        Assert.Equal(75, run.QualityIndex);
+        Assert.Equal(2, run.PanelGradedAnswerCount);
+        Assert.Equal(70, run.AssessorOnlyQualityIndex);
+        Assert.Equal(80, run.CoAssessorOnlyQualityIndex);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkAssessmentStatus.Pending)]
+    [InlineData(BenchmarkAssessmentStatus.Assessing)]
+    [InlineData(BenchmarkAssessmentStatus.Failed)]
+    public void HasUnresolvedWork_IsTrue_WhileMemberBHasNotScored(BenchmarkAssessmentStatus status)
+    {
+        var answer = PanelAnswer(1, 80, 80);
+        answer.CoAssessmentStatus = status;
+
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answer));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(new[] { answer }));
+    }
+
+    [Fact]
+    public void HasUnresolvedWork_IgnoresANullCoAssessmentStatus_OutsidePanelRuns()
+    {
+        var answer = MakeAnswer(1);
+
+        Assert.Null(answer.CoAssessmentStatus);
+        Assert.False(BenchmarkRunFinalizer.HasUnresolvedWork(answer));
+    }
+
+    [Fact]
+    public void Apply_PanelRun_WithholdsTheMemberAloneIndices_WithTheHeadline_OnATerminalFailure()
+    {
+        var run = PanelRun(3);
+        var failed = MakeAnswer(3, status: BenchmarkAnswerStatus.ProviderError);
+        failed.QualityScore = null;
+        failed.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+        var answers = new List<BenchmarkRunAnswer> { PanelAnswer(1, 60, 70), PanelAnswer(2, 80, 90), failed };
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Null(run.QualityIndex);
+        Assert.Null(run.AssessorOnlyQualityIndex);
+        Assert.Null(run.CoAssessorOnlyQualityIndex);
+
+        // The agreement figures describe the two graders, not the headline, and stay.
+        Assert.Equal(2, run.PanelGradedAnswerCount);
+    }
+
+    [Fact]
+    public void ApplyTotals_SumsTheCoAssessorsUsage_IntoItsOwnColumns()
+    {
+        var run = PanelRun(2);
+        var answers = new List<BenchmarkRunAnswer> { PanelAnswer(1, 60, 70), PanelAnswer(2, 80, 90) };
+        foreach (var a in answers)
+        {
+            a.AssessmentInputTokens = 1_000;
+            a.AssessmentOutputTokens = 100;
+            a.CoAssessmentInputTokens = 3_000;
+            a.CoAssessmentOutputTokens = 300;
+            a.CoAssessmentCacheReadTokens = 2_000;
+            a.CoAssessmentCacheCreationTokens = 200;
+            a.CoAssessmentDurationMs = 1_500;
+        }
+
+        BenchmarkRunFinalizer.ApplyTotals(run, answers);
+
+        Assert.Equal(6_000, run.TotalCoAssessmentInputTokens);
+        Assert.Equal(600, run.TotalCoAssessmentOutputTokens);
+        Assert.Equal(4_000, run.TotalCoAssessmentCacheReadTokens);
+        Assert.Equal(400, run.TotalCoAssessmentCacheCreationTokens);
+        Assert.Equal(3_000, run.TotalCoAssessmentDurationMs);
+
+        // Member A's columns carry member A's usage only.
+        Assert.Equal(2_000, run.TotalAssessmentInputTokens);
+        Assert.Equal(200, run.TotalAssessmentOutputTokens);
+    }
+
+    [Fact]
+    public void Apply_SingleAssessorRun_LeavesEveryPanelFieldNull_AndIndexesMemberA()
+    {
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
+        var answers = new List<BenchmarkRunAnswer> { MakeAnswer(1), MakeAnswer(2) };
+        answers[0].QualityScore = 60;
+        answers[1].QualityScore = 80;
+
+        // A panel score left on a single run's answer is never read.
+        answers[0].PanelQualityScore = 100;
+        answers[1].PanelQualityScore = 100;
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(70, run.QualityIndex);
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+        Assert.Null(run.PanelGradedAnswerCount);
+        Assert.Null(run.PanelMeanAbsDelta);
+        Assert.Null(run.PanelMeanSignedDelta);
+        Assert.Null(run.PanelCriticalErrorSplitCount);
+        Assert.Null(run.PanelDisagreementCount);
+        Assert.Null(run.PanelIntraclassCorrelation);
+        Assert.Null(run.AssessorOnlyQualityIndex);
+        Assert.Null(run.CoAssessorOnlyQualityIndex);
+        Assert.Equal(0, run.TotalCoAssessmentInputTokens);
+        Assert.Equal(0, run.TotalCoAssessmentOutputTokens);
+    }
 }

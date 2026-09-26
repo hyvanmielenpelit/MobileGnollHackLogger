@@ -37,6 +37,7 @@ import {
   BenchmarkModelComparisonCostDto,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
+  BenchmarkPanelDiagnosticsDto,
   ComparisonSelectedSource,
   ComparisonSelectionNotice,
   ComparisonSelectionState,
@@ -4052,6 +4053,238 @@ describe('ModelComparisonComponent', () => {
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(writeText.calls.mostRecent().args[0] as string).toContain('| Model |');
     expect(component.exportStatus).toContain('Copied 3 entries as Markdown');
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Assessor panel diagnostics
+  // -------------------------------------------------------------------------------------------
+
+  const INTERACTION_LABEL =
+    'total same-family preference of both members; does not measure the bias of the panel mean';
+  const ASYMMETRY_LABEL =
+    'estimated panel bias; valid only if the reference reader is neutral between these two families';
+
+  /** Two candidate families graded by an OpenAI member A, an Anthropic member B and a Google reference reader. */
+  function panelDiagnostics(overrides: Partial<BenchmarkPanelDiagnosticsDto> = {}): BenchmarkPanelDiagnosticsDto {
+    return {
+      applicable: true,
+      notApplicableReason: null,
+      memberALabel: 'GPT-4.1',
+      memberAProvider: 'OpenAI',
+      memberBLabel: 'Claude Sonnet 4',
+      memberBProvider: 'Anthropic',
+      referenceLabel: 'Gemini 2.5 Pro',
+      referenceProvider: 'Google',
+      entries: [
+        {
+          entryKey: 'run:1', entryLabel: 'GPT-5', candidateProvider: 'OpenAI',
+          memberAIndex: 72, memberBIndex: 66, panelIndex: 69, referenceIndex: 68,
+          rankA: 1, rankB: 2, rankPanel: 1, rankReference: 1
+        },
+        {
+          entryKey: 'run:2', entryLabel: 'Claude Opus 4', candidateProvider: 'Anthropic',
+          memberAIndex: 64, memberBIndex: 70, panelIndex: 67, referenceIndex: null,
+          rankA: 2, rankB: 1, rankPanel: 2, rankReference: null
+        }
+      ],
+      judgeDependentPairs: [
+        {
+          firstEntryKey: 'run:1', firstEntryLabel: 'GPT-5', secondEntryKey: 'run:2', secondEntryLabel: 'Claude Opus 4',
+          description: 'Member A ranks GPT-5 above Claude Opus 4 (72 vs 64); member B ranks Claude Opus 4 above GPT-5 (70 vs 66).'
+        }
+      ],
+      referenceDependentPairs: [],
+      familyGaps: [
+        {
+          provider1: 'OpenAI',
+          provider2: 'Anthropic',
+          pairedQuestionCount: 18,
+          insufficientData: false,
+          isMemberProviderPair: true,
+          gapA: { value: 8, ciLow: 3.25, ciHigh: 12.75 },
+          gapB: { value: -4, ciLow: -9.5, ciHigh: 1.5 },
+          gapPanel: { value: 2, ciLow: -1, ciHigh: 5 },
+          gapRef: { value: 1, ciLow: -2.2, ciHigh: 4.3 },
+          interactionContrast: { value: 12, ciLow: 6, ciHigh: 18 },
+          interactionContrastLabel: INTERACTION_LABEL,
+          asymmetryEstimate: { value: 1, ciLow: -2, ciHigh: 4 },
+          asymmetryEstimateLabel: ASYMMETRY_LABEL
+        }
+      ],
+      accusationAudit: [
+        {
+          member: 'A', memberProvider: 'OpenAI', candidateProvider: 'Anthropic', sameFamily: false,
+          charges: 14, overturned: 5, upheld: 7, indeterminate: 2, overturnRate: 5 / 12
+        },
+        {
+          member: 'B', memberProvider: 'Anthropic', candidateProvider: 'Anthropic', sameFamily: true,
+          charges: 12, overturned: 3, upheld: 9, indeterminate: 0, overturnRate: 0.25
+        }
+      ],
+      auditSummaries: [
+        { member: 'A', memberProvider: 'OpenAI', familyOverturnGap: 0.12 },
+        { member: 'B', memberProvider: 'Anthropic', familyOverturnGap: null }
+      ],
+      caveats: ['The published score is the panel mean.', 'The reference reader never scores.'],
+      ...overrides
+    };
+  }
+
+  function notApplicableDiagnostics(): BenchmarkPanelDiagnosticsDto {
+    return {
+      applicable: false,
+      notApplicableReason: 'Every run must be a panel run; 1 run (12) had a single assessor.',
+      entries: [],
+      judgeDependentPairs: [],
+      referenceDependentPairs: [],
+      familyGaps: [],
+      accusationAudit: [],
+      auditSummaries: [],
+      caveats: []
+    };
+  }
+
+  /** The rendered diagnostics section, or null while none is rendered. */
+  function panelSection(): HTMLElement | null {
+    return (fixture.debugElement.query(By.css('#mc-fig-panel-table .mc-panel-diagnostics'))?.nativeElement as HTMLElement | undefined) ?? null;
+  }
+
+  /** One diagnostics table's body rows, each as its trimmed cell texts. */
+  function panelRows(tableClass: string): string[][] {
+    return Array.from(panelSection()!.querySelectorAll(`table.${tableClass} tbody tr`))
+      .map(row => Array.from(row.querySelectorAll('th, td')).map(cell => cell.textContent?.trim() ?? ''));
+  }
+
+  it('renders no assessor panel diagnostics section when the comparison carries none', () => {
+    renderTable(buildDto(comparableSet(2)));
+
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-table table.mc-table'))).toBeTruthy();
+    expect(panelSection()).toBeNull();
+  });
+
+  it('renders only the reason when the assessor panel diagnostics do not apply', () => {
+    renderTable(buildDto(comparableSet(2), { panelDiagnostics: notApplicableDiagnostics() }));
+
+    const section = panelSection()!;
+    expect(section).not.toBeNull();
+    expect(section.getAttribute('aria-labelledby')).toBe('mc-panel-heading');
+    expect(section.querySelector('#mc-panel-heading')?.textContent?.trim()).toBe('Assessor panel diagnostics');
+    const reason = section.querySelector('.mc-panel-na')!;
+    expect(reason.textContent?.trim()).toBe('Every run must be a panel run; 1 run (12) had a single assessor.');
+    expect(reason.getAttribute('role')).toBe('note');
+    expect(section.querySelectorAll('table').length).toBe(0);
+    expect(section.querySelector('.mc-panel-caveats')).toBeNull();
+  });
+
+  it('renders the graders, the indices by grader and the order-dependent pairs', () => {
+    renderTable(buildDto(comparableSet(2), { panelDiagnostics: panelDiagnostics() }));
+    const section = panelSection()!;
+
+    expect(Array.from(section.querySelectorAll('.mc-panel-roles dd')).map(dd => dd.textContent?.trim()))
+      .toEqual(['GPT-4.1 (OpenAI)', 'Claude Sonnet 4 (Anthropic)', 'Gemini 2.5 Pro (Google)']);
+    expect(Array.from(section.querySelectorAll('table.mc-panel-indices thead th')).map(th => th.textContent?.trim()))
+      .toEqual(['Entry', 'Provider', 'Member A', 'Member B', 'Panel', 'Reference']);
+    expect(panelRows('mc-panel-indices')).toEqual([
+      ['GPT-5', 'OpenAI', '72 (#1)', '66 (#2)', '69 (#1)', '68 (#1)'],
+      ['Claude Opus 4', 'Anthropic', '64 (#2)', '70 (#1)', '67 (#2)', '—']
+    ]);
+    expect(section.querySelector('.mc-panel-judge-pairs li')?.textContent?.trim())
+      .toBe('Member A ranks GPT-5 above Claude Opus 4 (72 vs 64); member B ranks Claude Opus 4 above GPT-5 (70 vs 66).');
+    expect(section.querySelector('.mc-panel-reference-pairs-empty')?.textContent?.trim())
+      .toBe('None: the panel and the reference reader order every pair of entries the same way.');
+  });
+
+  it('renders the family gaps with their intervals and both contrasts under their labels, verbatim', () => {
+    renderTable(buildDto(comparableSet(2), { panelDiagnostics: panelDiagnostics() }));
+    const section = panelSection()!;
+
+    expect(panelRows('mc-panel-gaps')).toEqual([
+      ['OpenAI − Anthropic', '18', '+8.0 [+3.3, +12.8]', '-4.0 [-9.5, +1.5]', '+2.0 [-1.0, +5.0]', '+1.0 [-2.2, +4.3]']
+    ]);
+    const interaction = section.querySelector('.mc-panel-interaction')!;
+    expect(interaction.querySelector('dt')?.textContent?.trim()).toBe('Interaction contrast (OpenAI − Anthropic)');
+    expect(interaction.querySelector('.mc-panel-contrast-value')?.textContent?.trim()).toBe('+12.0 [+6.0, +18.0]');
+    expect(interaction.querySelector('.mc-panel-contrast-label')?.textContent?.trim()).toBe(INTERACTION_LABEL);
+    const asymmetry = section.querySelector('.mc-panel-asymmetry')!;
+    expect(asymmetry.querySelector('dt')?.textContent?.trim()).toBe('Asymmetry estimate (OpenAI − Anthropic)');
+    expect(asymmetry.querySelector('.mc-panel-contrast-label')?.textContent?.trim()).toBe(ASYMMETRY_LABEL);
+  });
+
+  it('shows insufficient data on a flagged family gap row, and its contrasts', () => {
+    const empty = { value: null, ciLow: null, ciHigh: null };
+    const flagged = panelDiagnostics({
+      familyGaps: [{
+        ...panelDiagnostics().familyGaps[0],
+        pairedQuestionCount: 3,
+        insufficientData: true,
+        gapA: empty, gapB: empty, gapPanel: empty, gapRef: empty, interactionContrast: empty, asymmetryEstimate: empty
+      }]
+    });
+    renderTable(buildDto(comparableSet(2), { panelDiagnostics: flagged }));
+    const section = panelSection()!;
+
+    expect(panelRows('mc-panel-gaps')).toEqual([
+      ['OpenAI − Anthropic', '3', 'insufficient data', 'insufficient data', 'insufficient data', 'insufficient data']
+    ]);
+    expect(section.querySelector('table.mc-panel-gaps tbody tr')?.classList).toContain('mc-panel-insufficient');
+    expect(section.querySelector('.mc-panel-interaction .mc-panel-contrast-value')?.textContent?.trim())
+      .toBe('insufficient data');
+  });
+
+  it('renders the accusation audit, each member\'s family overturn gap and the caveats', () => {
+    renderTable(buildDto(comparableSet(2), { panelDiagnostics: panelDiagnostics() }));
+    const section = panelSection()!;
+
+    expect(panelRows('mc-panel-audit')).toEqual([
+      ['Member A', 'OpenAI', 'Anthropic', 'Other family', '14', '5', '7', '2', '42%'],
+      ['Member B', 'Anthropic', 'Anthropic', 'Same family', '12', '3', '9', '0', '25%']
+    ]);
+    expect(Array.from(section.querySelectorAll('.mc-panel-audit-summaries li')).map(li => li.textContent?.trim()))
+      .toEqual([
+        'Member A (OpenAI) family overturn gap: +12 pp',
+        'Member B (Anthropic) family overturn gap: withheld: too few ruled charges'
+      ]);
+    expect(Array.from(section.querySelectorAll('.mc-panel-caveats li')).map(li => li.textContent?.trim()))
+      .toEqual(['The published score is the panel mean.', 'The reference reader never scores.']);
+  });
+
+  it('renders server text in the diagnostics as plain text, never as markup', () => {
+    renderTable(buildDto(comparableSet(2), {
+      panelDiagnostics: panelDiagnostics({ caveats: ['<b>bold</b> <img src=x>'] })
+    }));
+    const caveat = panelSection()!.querySelector('.mc-panel-caveats li')!;
+
+    expect(caveat.textContent?.trim()).toBe('<b>bold</b> <img src=x>');
+    expect(caveat.querySelector('b')).toBeNull();
+    expect(caveat.querySelector('img')).toBeNull();
+  });
+
+  it('leaves the comparison table\'s columns and rows as they are beside the diagnostics', () => {
+    renderTable(buildDto(comparableSet(3), { panelDiagnostics: panelDiagnostics() }));
+
+    expect(panelSection()).not.toBeNull();
+    expect(tableHeaders().length).toBe(DEFAULT_TABLE_COLUMNS.shown.length);
+    expect(tableHeaders()).toEqual(component.shownColumns.map(column => column.header));
+    expect(fixture.debugElement.queryAll(By.css('table.mc-table tbody tr')).length).toBe(3);
+  });
+
+  it('copies Markdown with the diagnostics block when they apply, and without it when they do not', async () => {
+    renderTable(buildDto(comparableSet(3), { panelDiagnostics: panelDiagnostics() }));
+    const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+    withClipboard({ writeText });
+
+    chooseTableFormat('md');
+    await component.copyTable();
+    const applied = writeText.calls.mostRecent().args[0] as string;
+    expect(applied).toContain('| Model |');
+    expect(applied).toContain('\n## Assessor Panel Diagnostics\n');
+    expect(applied).toContain('| GPT-5 | OpenAI | 72 (#1) | 66 (#2) | 69 (#1) | 68 (#1) |');
+    expect(applied.indexOf('| Model |')).toBeLessThan(applied.indexOf('## Assessor Panel Diagnostics'));
+
+    fixture.componentRef.setInput('comparison', buildDto(comparableSet(3), { panelDiagnostics: notApplicableDiagnostics() }));
+    fixture.detectChanges();
+    await component.copyTable();
+    expect(writeText.calls.mostRecent().args[0] as string).not.toContain('Assessor Panel Diagnostics');
   });
 
   it('copies the table image as a PNG, WebP chosen or not', async () => {

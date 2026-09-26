@@ -35,6 +35,13 @@ public class BenchmarkAssessorCalibration
     public long? AssessorModelSnapshotId { get; set; }
     public SystemAiConfigurationSnapshot? AssessorModelSnapshot { get; set; }
 
+    /// <summary>
+    /// The verdict the calibration was compared against: <c>Assessor</c>, <c>CoAssessor</c> or
+    /// <c>Panel</c>. The last two exist only on panel runs. Null means <c>Assessor</c>.
+    /// </summary>
+    [MaxLength(16)]
+    public string? ComparedAgainst { get; set; }
+
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
 
     [MaxLength(256)]

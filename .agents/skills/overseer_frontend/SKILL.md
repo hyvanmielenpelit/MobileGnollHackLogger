@@ -541,6 +541,7 @@ Whenever modifying or extending the benchmark setup form, ensure the following f
 - **`scoringProfileId`**: Selected scoring profile ID.
 - **`testedConfigId`**: Target/candidate model configuration ID.
 - **`assessorConfigId`**: Evaluator/assessor model configuration ID.
+- **`coAssessorConfigId`**: Co-assessor (panel member B) model configuration ID (or `null` for a single-assessor run). Restored to `null` when the configuration no longer qualifies.
 - **`secondOpinionConfigId`**: Second opinion model configuration ID (or `null`).
 - **`secondOpinionMode`**: Explicit second opinion mode override (or `null` to follow the profile default).
 - **`claimVerifierConfigId`**: Claim verifier model configuration ID (or `null`).

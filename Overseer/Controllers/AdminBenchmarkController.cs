@@ -2839,6 +2839,35 @@ public class AdminBenchmarkController : ControllerBase
         // storage format lives in BenchmarkScoring; the client gets the fields, not the JSON.
         var runConstants = BenchmarkScoring.ConstantsFromSnapshot(run.ScoringProfileSnapshotJson);
 
+        // Each member's synthesis findings, parsed from the stored JSON once here, and in a panel
+        // run whose two syntheses both exist, their computed agreement.
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        var synthesisFindings = BenchmarkAssessmentParser.ParseSynthesisFindings(run.AssessmentJson);
+        var coAssessorSynthesisFindings = BenchmarkAssessmentParser.ParseSynthesisFindings(run.CoAssessorSynthesisJson);
+        List<BenchmarkSynthesisConvergenceRowDto>? synthesisConvergence =
+            isPanelRun && !string.IsNullOrWhiteSpace(run.AssessmentJson) && !string.IsNullOrWhiteSpace(run.CoAssessorSynthesisJson)
+                ? BenchmarkSynthesisConvergence.Compute(synthesisFindings, coAssessorSynthesisFindings)
+                    .Select(r => new BenchmarkSynthesisConvergenceRowDto
+                    {
+                        Kind = r.Kind,
+                        Category = r.Category,
+                        Question = r.Question,
+                        Status = r.Status.ToString(),
+                        MemberAText = r.MemberAText,
+                        MemberBText = r.MemberBText
+                    })
+                    .ToList()
+                : null;
+
+        static List<BenchmarkSynthesisFindingDto> ToFindingDtos(IReadOnlyList<BenchmarkSynthesisFinding> findings) =>
+            findings.Select(f => new BenchmarkSynthesisFindingDto
+            {
+                Kind = f.Kind,
+                Category = f.Category,
+                Questions = f.Questions.ToList(),
+                Text = f.Text
+            }).ToList();
+
         bool assessorAvailable = run.AssessorModelConfigurationId.HasValue &&
             await _dbContext.SystemAiApiConfigurations.AnyAsync(c =>
                 c.Id == run.AssessorModelConfigurationId.Value &&
@@ -2884,6 +2913,12 @@ public class AdminBenchmarkController : ControllerBase
         bool hasSynthesis = ModelPricingService.RoleHasTokens(
             totals.TotalSynthesisInputTokens, totals.TotalSynthesisOutputTokens,
             totals.TotalSynthesisCacheReadTokens, totals.TotalSynthesisCacheCreationTokens);
+        bool hasCoAssessor = ModelPricingService.RoleHasTokens(
+            totals.TotalCoAssessmentInputTokens, totals.TotalCoAssessmentOutputTokens,
+            totals.TotalCoAssessmentCacheReadTokens, totals.TotalCoAssessmentCacheCreationTokens);
+        bool hasCoSynthesis = ModelPricingService.RoleHasTokens(
+            totals.TotalCoSynthesisInputTokens, totals.TotalCoSynthesisOutputTokens,
+            totals.TotalCoSynthesisCacheReadTokens, totals.TotalCoSynthesisCacheCreationTokens);
 
         // A role that spent nothing, or whose card did not resolve, reports no figure at all: the cost
         // panel omits a null role and keeps a zero one, because zero is a measurement and absence is not.
@@ -2896,9 +2931,13 @@ public class AdminBenchmarkController : ControllerBase
         decimal? verifierCost = Priced(hasVerifier, pricing?.ClaimVerifier, costs.ClaimVerifier);
         // The synthesis runs on the assessor's configuration and is priced on the assessor's card.
         decimal? synthesisCost = Priced(hasSynthesis, pricing?.Assessor, costs.Synthesis);
+        // Panel member B and its own synthesis are both priced on the co-assessor's card.
+        decimal? coAssessorCost = Priced(hasCoAssessor, pricing?.CoAssessor, costs.CoAssessor);
+        decimal? coSynthesisCost = Priced(hasCoSynthesis, pricing?.CoAssessor, costs.CoSynthesis);
 
         decimal? gradingCost =
-            (assessorCost.HasValue || secondOpinionCost.HasValue || verifierCost.HasValue || synthesisCost.HasValue)
+            (assessorCost.HasValue || secondOpinionCost.HasValue || verifierCost.HasValue || synthesisCost.HasValue
+                || coAssessorCost.HasValue || coSynthesisCost.HasValue)
                 ? costs.Grading
                 : null;
 
@@ -2922,7 +2961,7 @@ public class AdminBenchmarkController : ControllerBase
         // H3: one classifier, on the server. The report already reads these figures through
         // BenchmarkChatTransfer; projecting them here is what lets the diagnostics stop keeping a second,
         // hard-coded copy of the tool-name lists that drifted every time a tool was added.
-        var toolRouting = BenchmarkChatTransfer.AnalyzeToolRouting(run.Answers.ToList());
+        var toolRouting = BenchmarkChatTransfer.AnalyzeToolRouting(run.Answers.ToList(), isPanelRun);
 
         // Per-answer outcome counts, without loading a single payload column: GetRun projects every
         // answer of the run into the dialog, so a .ThenInclude(a => a.ToolCalls) here would pull in
@@ -2988,6 +3027,17 @@ public class AdminBenchmarkController : ControllerBase
             AssessorModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.AssessorModelSnapshot),
             AssessorAvailable = assessorAvailable,
 
+            IsPanelRun = isPanelRun,
+            CoAssessorModelConfigurationId = run.CoAssessorModelConfigurationId,
+            CoAssessorModelDisplayNameUsed = run.CoAssessorModelSnapshot.Label(),
+            CoAssessorModelProviderUsed = run.CoAssessorModelSnapshot?.Provider,
+            CoAssessorModelIdUsed = run.CoAssessorModelSnapshot?.ModelId,
+            CoAssessorModelThinkingLevelUsed = run.CoAssessorModelSnapshot?.ThinkingLevel,
+            CoAssessorModelReasoningModeUsed = run.CoAssessorModelSnapshot?.ReasoningMode,
+            CoAssessorModelEndpoint = run.CoAssessorModelSnapshot != null
+                ? SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.CoAssessorModelSnapshot)
+                : null,
+
             SecondOpinionAssessorModelConfigurationId = run.SecondOpinionAssessorModelConfigurationId,
             SecondOpinionAssessorModelDisplayNameUsed = run.SecondOpinionAssessorModelSnapshot.Label(),
             SecondOpinionAssessorModelProviderUsed = run.SecondOpinionAssessorModelSnapshot?.Provider,
@@ -3015,8 +3065,8 @@ public class AdminBenchmarkController : ControllerBase
             QualityIndex = run.QualityIndex,
             RawQualityIndex = BenchmarkScoring.QualityIndex(
                 run.Answers
-                    .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
-                    .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
+                    .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && BenchmarkScoring.IndexQuality(a, isPanelRun).HasValue)
+                    .Select(a => (BenchmarkScoring.IndexRawQuality(a, isPanelRun), a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
                     .ToList()),
             UnweightedQualityIndex = run.UnweightedQualityIndex,
             QualityIndexStandardError = run.QualityIndexStandardError,
@@ -3076,6 +3126,14 @@ public class AdminBenchmarkController : ControllerBase
             SecondOpinionMeanAbsDelta = run.SecondOpinionMeanAbsDelta,
             SecondOpinionMeanSignedDelta = run.SecondOpinionMeanSignedDelta,
             SecondOpinionCriticalErrorSplitCount = run.SecondOpinionCriticalErrorSplitCount,
+            PanelGradedAnswerCount = run.PanelGradedAnswerCount,
+            PanelMeanAbsDelta = run.PanelMeanAbsDelta,
+            PanelMeanSignedDelta = run.PanelMeanSignedDelta,
+            PanelCriticalErrorSplitCount = run.PanelCriticalErrorSplitCount,
+            PanelDisagreementCount = run.PanelDisagreementCount,
+            PanelIntraclassCorrelation = run.PanelIntraclassCorrelation,
+            AssessorOnlyQualityIndex = run.AssessorOnlyQualityIndex,
+            CoAssessorOnlyQualityIndex = run.CoAssessorOnlyQualityIndex,
             CandidatePromptOptionsJson = run.CandidatePromptOptionsJson,
             CandidatePromptSourceUsed = run.CandidatePromptSourceUsed,
             CandidateSystemPromptSha256 = run.CandidateSystemPromptSha256,
@@ -3118,6 +3176,13 @@ public class AdminBenchmarkController : ControllerBase
             AssessmentJson = run.AssessmentJson,
             AssessmentText = run.AssessmentText,
             AssessmentParseFailed = run.AssessmentParseFailed,
+            CoAssessorFinalScore = run.CoAssessorFinalScore,
+            CoAssessorSynthesisJson = run.CoAssessorSynthesisJson,
+            CoAssessorSynthesisText = run.CoAssessorSynthesisText,
+            CoAssessorSynthesisParseFailed = run.CoAssessorSynthesisParseFailed,
+            SynthesisFindings = ToFindingDtos(synthesisFindings),
+            CoAssessorSynthesisFindings = ToFindingDtos(coAssessorSynthesisFindings),
+            SynthesisConvergence = synthesisConvergence,
             TotalInputTokens = totalInputTokens,
             TotalOutputTokens = totalOutputTokens,
             TotalCacheReadTokens = totalCacheReadTokens,
@@ -3141,6 +3206,16 @@ public class AdminBenchmarkController : ControllerBase
             TotalSynthesisInputTokens = run.TotalSynthesisInputTokens,
             TotalSynthesisOutputTokens = run.TotalSynthesisOutputTokens,
             TotalSynthesisDurationMs = run.TotalSynthesisDurationMs,
+            TotalCoAssessmentInputTokens = totals.TotalCoAssessmentInputTokens,
+            TotalCoAssessmentOutputTokens = totals.TotalCoAssessmentOutputTokens,
+            TotalCoAssessmentCacheReadTokens = totals.TotalCoAssessmentCacheReadTokens,
+            TotalCoAssessmentCacheCreationTokens = totals.TotalCoAssessmentCacheCreationTokens,
+            TotalCoAssessmentDurationMs = totals.TotalCoAssessmentDurationMs,
+            TotalCoSynthesisInputTokens = run.TotalCoSynthesisInputTokens,
+            TotalCoSynthesisOutputTokens = run.TotalCoSynthesisOutputTokens,
+            TotalCoSynthesisCacheReadTokens = run.TotalCoSynthesisCacheReadTokens,
+            TotalCoSynthesisCacheCreationTokens = run.TotalCoSynthesisCacheCreationTokens,
+            TotalCoSynthesisDurationMs = run.TotalCoSynthesisDurationMs,
             ErrorMessage = run.ErrorMessage,
             EstimatedCost = totalEstimatedCost,
             EstimatedCandidateCost = candidateCost,
@@ -3148,6 +3223,8 @@ public class AdminBenchmarkController : ControllerBase
             EstimatedSecondOpinionCost = secondOpinionCost,
             EstimatedVerifierCost = verifierCost,
             EstimatedSynthesisCost = synthesisCost,
+            EstimatedCoAssessorCost = coAssessorCost,
+            EstimatedCoSynthesisCost = coSynthesisCost,
             EstimatedGradingCost = gradingCost,
             PricingSource = pricingSource,
             PricingIncomplete = pricingIncomplete,
@@ -3268,6 +3345,20 @@ public class AdminBenchmarkController : ControllerBase
                     CriticalErrorQuote = a.CriticalErrorQuote,
                     UnverifiedClaimCount = a.UnverifiedClaimCount,
                     UnverifiedClaimsJson = a.UnverifiedClaimsJson,
+                    PanelQualityScore = a.PanelQualityScore,
+                    PanelDisagreed = a.PanelDisagreed,
+                    CoAssessmentStatus = a.CoAssessmentStatus,
+                    CoAssessmentError = a.CoAssessmentError,
+                    CoAssessmentQualityScore = a.CoAssessmentQualityScore,
+                    CoAssessmentRawQualityScore = a.CoAssessmentRawQualityScore,
+                    CoAssessmentCriticalError = a.CoAssessmentCriticalError,
+                    CoAssessmentJson = a.CoAssessmentJson,
+                    CoAssessedByModelDisplayNameUsed = a.CoAssessedByModelSnapshot.Label(),
+                    CoAssessedAtUtc = a.CoAssessedAtUtc,
+                    CoAssessorBoardChars = a.CoAssessorBoardChars,
+                    CoAssessmentInputTokens = a.CoAssessmentInputTokens,
+                    CoAssessmentOutputTokens = a.CoAssessmentOutputTokens,
+                    CoAssessmentDurationMs = a.CoAssessmentDurationMs,
                     SecondOpinionQualityScore = a.SecondOpinionQualityScore,
                     SecondOpinionCriticalError = a.SecondOpinionCriticalError,
                     SecondOpinionByModelDisplayNameUsed = a.SecondOpinionByModelSnapshot.Label(),
@@ -3406,7 +3497,19 @@ public class AdminBenchmarkController : ControllerBase
             TotalSynthesisOutputTokens = run.TotalSynthesisOutputTokens,
             TotalSynthesisCacheReadTokens = run.TotalSynthesisCacheReadTokens,
             TotalSynthesisCacheCreationTokens = run.TotalSynthesisCacheCreationTokens,
-            TotalSynthesisDurationMs = run.TotalSynthesisDurationMs
+            TotalSynthesisDurationMs = run.TotalSynthesisDurationMs,
+
+            TotalCoAssessmentInputTokens = grading.TotalCoAssessmentInputTokens,
+            TotalCoAssessmentOutputTokens = grading.TotalCoAssessmentOutputTokens,
+            TotalCoAssessmentCacheReadTokens = grading.TotalCoAssessmentCacheReadTokens,
+            TotalCoAssessmentCacheCreationTokens = grading.TotalCoAssessmentCacheCreationTokens,
+            TotalCoAssessmentDurationMs = grading.TotalCoAssessmentDurationMs,
+
+            TotalCoSynthesisInputTokens = run.TotalCoSynthesisInputTokens,
+            TotalCoSynthesisOutputTokens = run.TotalCoSynthesisOutputTokens,
+            TotalCoSynthesisCacheReadTokens = run.TotalCoSynthesisCacheReadTokens,
+            TotalCoSynthesisCacheCreationTokens = run.TotalCoSynthesisCacheCreationTokens,
+            TotalCoSynthesisDurationMs = run.TotalCoSynthesisDurationMs
         };
     }
 
@@ -3503,6 +3606,8 @@ public class AdminBenchmarkController : ControllerBase
                 r.ClaimVerifierModelSnapshot,
                 r.SecondOpinionAssessorModelConfigurationId,
                 r.SecondOpinionAssessorModelSnapshot,
+                r.CoAssessorModelConfigurationId,
+                r.CoAssessorModelSnapshot,
                 r.TotalInputTokens,
                 r.TotalOutputTokens,
                 r.TotalCacheReadTokens,
@@ -3533,7 +3638,17 @@ public class AdminBenchmarkController : ControllerBase
                 r.TotalSynthesisInputTokens,
                 r.TotalSynthesisOutputTokens,
                 r.TotalSynthesisCacheReadTokens,
-                r.TotalSynthesisCacheCreationTokens
+                r.TotalSynthesisCacheCreationTokens,
+                r.TotalCoAssessmentInputTokens,
+                r.TotalCoAssessmentOutputTokens,
+                r.TotalCoAssessmentCacheReadTokens,
+                r.TotalCoAssessmentCacheCreationTokens,
+                r.TotalCoAssessmentDurationMs,
+                r.TotalCoSynthesisInputTokens,
+                r.TotalCoSynthesisOutputTokens,
+                r.TotalCoSynthesisCacheReadTokens,
+                r.TotalCoSynthesisCacheCreationTokens,
+                r.TotalCoSynthesisDurationMs
             })
             .ToListAsync();
 
@@ -3558,6 +3673,8 @@ public class AdminBenchmarkController : ControllerBase
                     ClaimVerifierModelSnapshot = item.ClaimVerifierModelSnapshot,
                     SecondOpinionAssessorModelConfigurationId = item.SecondOpinionAssessorModelConfigurationId,
                     SecondOpinionAssessorModelSnapshot = item.SecondOpinionAssessorModelSnapshot,
+                    CoAssessorModelConfigurationId = item.CoAssessorModelConfigurationId,
+                    CoAssessorModelSnapshot = item.CoAssessorModelSnapshot,
                     TotalInputTokens = item.TotalInputTokens,
                     TotalOutputTokens = item.TotalOutputTokens,
                     TotalCacheReadTokens = item.TotalCacheReadTokens,
@@ -3581,7 +3698,17 @@ public class AdminBenchmarkController : ControllerBase
                     TotalSynthesisInputTokens = item.TotalSynthesisInputTokens,
                     TotalSynthesisOutputTokens = item.TotalSynthesisOutputTokens,
                     TotalSynthesisCacheReadTokens = item.TotalSynthesisCacheReadTokens,
-                    TotalSynthesisCacheCreationTokens = item.TotalSynthesisCacheCreationTokens
+                    TotalSynthesisCacheCreationTokens = item.TotalSynthesisCacheCreationTokens,
+                    TotalCoAssessmentInputTokens = item.TotalCoAssessmentInputTokens,
+                    TotalCoAssessmentOutputTokens = item.TotalCoAssessmentOutputTokens,
+                    TotalCoAssessmentCacheReadTokens = item.TotalCoAssessmentCacheReadTokens,
+                    TotalCoAssessmentCacheCreationTokens = item.TotalCoAssessmentCacheCreationTokens,
+                    TotalCoAssessmentDurationMs = item.TotalCoAssessmentDurationMs,
+                    TotalCoSynthesisInputTokens = item.TotalCoSynthesisInputTokens,
+                    TotalCoSynthesisOutputTokens = item.TotalCoSynthesisOutputTokens,
+                    TotalCoSynthesisCacheReadTokens = item.TotalCoSynthesisCacheReadTokens,
+                    TotalCoSynthesisCacheCreationTokens = item.TotalCoSynthesisCacheCreationTokens,
+                    TotalCoSynthesisDurationMs = item.TotalCoSynthesisDurationMs
                 };
 
                 var pricing = await _modelPricingService.ResolveForRunAsync(tempRun);
@@ -3684,14 +3811,85 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(recordRefusal);
         }
 
-        long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
-        var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
-        if (!assessorValid)
+        bool trial = request?.Trial ?? false;
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+
+        // Which panel member a re-grade replaces. Null means both; a single-assessor run has only
+        // member A, so there the member is always Both and the service re-grades the one verdict.
+        BenchmarkPanelMember member;
+        switch (request?.Member?.Trim())
         {
-            return BadRequest(assessorError);
+            case null:
+            case "":
+                member = BenchmarkPanelMember.Both;
+                break;
+            case var m when string.Equals(m, "A", StringComparison.OrdinalIgnoreCase):
+                member = BenchmarkPanelMember.A;
+                break;
+            case var m when string.Equals(m, "B", StringComparison.OrdinalIgnoreCase):
+                member = BenchmarkPanelMember.B;
+                break;
+            case var m when string.Equals(m, "Both", StringComparison.OrdinalIgnoreCase):
+                member = BenchmarkPanelMember.Both;
+                break;
+            default:
+                return BadRequest("Member must be A, B or Both.");
         }
 
-        bool trial = request?.Trial ?? false;
+        if (!isPanelRun)
+        {
+            if (member == BenchmarkPanelMember.B)
+            {
+                return BadRequest("This run has no co-assessor, so there is no member B to re-grade.");
+            }
+            member = BenchmarkPanelMember.Both;
+        }
+
+        // A grader override would leave the panel graded partly by a substitute model. A trial
+        // names the model it tries and writes only to the reference-reader slot, so it is not one.
+        if (isPanelRun && !trial && request?.AssessorModelConfigurationId.HasValue == true)
+        {
+            return BadRequest(BenchmarkService.PanelOverrideRefusedMessage);
+        }
+
+        if (isPanelRun && !trial)
+        {
+            // Each member re-grades on its own configuration, so each one the request touches must
+            // still be usable.
+            if (member.HasFlag(BenchmarkPanelMember.A))
+            {
+                var (memberAValid, memberAError) = await ValidateAssessorConfigurationAsync(run.AssessorModelConfigurationId);
+                if (!memberAValid)
+                {
+                    return BadRequest(memberAError);
+                }
+            }
+
+            if (member.HasFlag(BenchmarkPanelMember.B))
+            {
+                var (memberBValid, memberBError) = await ValidateAssessorConfigurationAsync(run.CoAssessorModelConfigurationId);
+                if (!memberBValid)
+                {
+                    return BadRequest($"Co-assessor: {memberBError}");
+                }
+            }
+        }
+        else
+        {
+            long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
+            var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
+            if (!assessorValid)
+            {
+                return BadRequest(assessorError);
+            }
+        }
+
+        // In a panel run the existing second opinion is the reference reader's verdict, which a
+        // trial may never replace, whatever the request says.
+        if (isPanelRun && trial && answer.SecondOpinionQualityScore.HasValue)
+        {
+            return Conflict(BenchmarkService.PanelTrialReplaceRefusedMessage);
+        }
 
         // An automatic second opinion is run evidence; a manual trial is an experiment, and an
         // experiment must not erase evidence. Under All mode every answer carries a second
@@ -3723,7 +3921,7 @@ public class AdminBenchmarkController : ControllerBase
 
         _ = Task.Run(() => _benchmarkService.ReassessSingleQuestionAsync(
             run.Id, answerId, request?.AssessorModelConfigurationId, trial,
-            originalStatus, originalCompletedAtUtc, cts.Token));
+            originalStatus, originalCompletedAtUtc, cts.Token, member));
         return Accepted(new { runId = id, trial });
     }
 
@@ -3767,6 +3965,24 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(BenchmarkRunExamRecord.BoardNotRecordedRefusal);
         }
 
+        // The verdict the calibration is compared against. Member B and the panel score exist only
+        // in a panel run.
+        string? requestedTarget = request.CompareAgainst?.Trim();
+        string compareAgainst = string.IsNullOrEmpty(requestedTarget)
+            ? BenchmarkService.CalibrationCompareTargets[0]
+            : BenchmarkService.CalibrationCompareTargets.FirstOrDefault(t =>
+                string.Equals(t, requestedTarget, StringComparison.OrdinalIgnoreCase)) ?? string.Empty;
+        if (compareAgainst.Length == 0)
+        {
+            return BadRequest($"CompareAgainst must be one of: {string.Join(", ", BenchmarkService.CalibrationCompareTargets)}.");
+        }
+
+        if (!BenchmarkRunFinalizer.IsPanelRun(run) &&
+            !string.Equals(compareAgainst, BenchmarkService.CalibrationCompareTargets[0], StringComparison.Ordinal))
+        {
+            return BadRequest($"This run has no co-assessor, so a calibration can only be compared against {BenchmarkService.CalibrationCompareTargets[0]}.");
+        }
+
         var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(request.AssessorModelConfigurationId);
         if (!assessorValid)
         {
@@ -3785,7 +4001,7 @@ public class AdminBenchmarkController : ControllerBase
             try
             {
                 await _benchmarkService.RunAssessorCalibrationAsync(
-                    id, request.AssessorModelConfigurationId, userName, cts.Token);
+                    id, request.AssessorModelConfigurationId, userName, cts.Token, compareAgainst);
             }
             finally
             {
@@ -3820,7 +4036,8 @@ public class AdminBenchmarkController : ControllerBase
                 OutputTokens = c.OutputTokens,
                 DurationMs = c.DurationMs,
                 VerdictsJson = c.VerdictsJson,
-                ErrorMessage = c.ErrorMessage
+                ErrorMessage = c.ErrorMessage,
+                ComparedAgainst = c.ComparedAgainst
             })
             .ToListAsync();
 
@@ -3883,11 +4100,26 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest("The tested model configuration has no API key.");
         }
 
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        if (isPanelRun && request?.AssessorModelConfigurationId.HasValue == true)
+        {
+            return BadRequest(BenchmarkService.PanelOverrideRefusedMessage);
+        }
+
         long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
         var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
         if (!assessorValid)
         {
             return BadRequest(assessorError);
+        }
+
+        if (isPanelRun)
+        {
+            var (coAssessorValid, coAssessorError) = await ValidateAssessorConfigurationAsync(run.CoAssessorModelConfigurationId);
+            if (!coAssessorValid)
+            {
+                return BadRequest($"Co-assessor: {coAssessorError}");
+            }
         }
 
         var cts = new CancellationTokenSource();
@@ -3942,11 +4174,27 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(recordRefusal);
         }
 
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        if (isPanelRun && request?.AssessorModelConfigurationId.HasValue == true)
+        {
+            return BadRequest(BenchmarkService.PanelOverrideRefusedMessage);
+        }
+
         long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
         var (assessorValid, assessorError) = await ValidateAssessorConfigurationAsync(targetAssessorId);
         if (!assessorValid)
         {
             return BadRequest(assessorError);
+        }
+
+        // In a panel run member B writes its own synthesis on its own configuration.
+        if (isPanelRun)
+        {
+            var (coAssessorValid, coAssessorError) = await ValidateAssessorConfigurationAsync(run.CoAssessorModelConfigurationId);
+            if (!coAssessorValid)
+            {
+                return BadRequest($"Co-assessor: {coAssessorError}");
+            }
         }
 
         var cts = new CancellationTokenSource();
@@ -3993,14 +4241,25 @@ public class AdminBenchmarkController : ControllerBase
             return BadRequest(BenchmarkService.ScoringMethodRefusal(run));
         }
 
-        if (!run.Answers.Any(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored))
+        // In a panel run a verdict member B never delivered is as unscored as one member A never did.
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        bool IsUnscored(BenchmarkRunAnswer a) =>
+            a.AssessmentStatus != BenchmarkAssessmentStatus.Scored
+            || (isPanelRun && a.CoAssessmentStatus != BenchmarkAssessmentStatus.Scored);
+
+        if (!run.Answers.Any(IsUnscored))
         {
             return BadRequest("This run has no unscored assessments to retry.");
         }
 
-        if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers.Where(a => a.AssessmentStatus != BenchmarkAssessmentStatus.Scored)) is { } recordRefusal)
+        if (BenchmarkRunExamRecord.RefusalFor(run, run.Answers.Where(IsUnscored)) is { } recordRefusal)
         {
             return BadRequest(recordRefusal);
+        }
+
+        if (isPanelRun && request?.AssessorModelConfigurationId.HasValue == true)
+        {
+            return BadRequest(BenchmarkService.PanelOverrideRefusedMessage);
         }
 
         long? targetAssessorId = request?.AssessorModelConfigurationId ?? run.AssessorModelConfigurationId;
@@ -4008,6 +4267,15 @@ public class AdminBenchmarkController : ControllerBase
         if (!assessorValid)
         {
             return BadRequest(assessorError);
+        }
+
+        if (isPanelRun)
+        {
+            var (coAssessorValid, coAssessorError) = await ValidateAssessorConfigurationAsync(run.CoAssessorModelConfigurationId);
+            if (!coAssessorValid)
+            {
+                return BadRequest($"Co-assessor: {coAssessorError}");
+            }
         }
 
         var cts = new CancellationTokenSource();

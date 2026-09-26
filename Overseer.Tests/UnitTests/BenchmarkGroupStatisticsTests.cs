@@ -432,6 +432,101 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(4, item.Analysis!.RunCount);
     }
 
+    /// <summary>
+    /// <see cref="Run"/> as a panel run: member A's scores are <paramref name="memberA"/>, member B's
+    /// <paramref name="memberB"/>, and each answer's panel score is their mean.
+    /// </summary>
+    private static BenchmarkRun PanelRun(long runId, BenchmarkQuestion[] questions, int[] memberA, int[] memberB)
+    {
+        var run = Run(runId, questions, memberA);
+        run.CoAssessorModelConfigurationId = 7;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-judge");
+
+        for (int i = 0; i < questions.Length; i++)
+        {
+            var answer = run.Answers[i];
+            answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+            answer.CoAssessmentQualityScore = memberB[i];
+            answer.PanelQualityScore = (memberA[i] + memberB[i]) / 2.0;
+        }
+
+        return run;
+    }
+
+    [Fact]
+    public void PerItem_OverPanelRuns_ReadsThePanelScore_WithHalfPointExtremes()
+    {
+        // One item. Member A: 60 / 70 / 80 / 90. Member B: 65 / 70 / 81 / 96.
+        //   panel = 62.5 / 70 / 80.5 / 93, mean 76.5, median (70 + 80.5) / 2 = 75.25
+        //   member A alone would have given a mean of 75
+        var questions = Questions(50);
+        var runs = new[]
+        {
+            PanelRun(1, questions, new[] { 60 }, new[] { 65 }),
+            PanelRun(2, questions, new[] { 70 }, new[] { 70 }),
+            PanelRun(3, questions, new[] { 80 }, new[] { 81 }),
+            PanelRun(4, questions, new[] { 90 }, new[] { 96 })
+        };
+
+        var item = Assert.Single(BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Items);
+
+        Assert.Equal(4, item.RunCount);
+        Assert.Equal(76.5, item.Mean, 9);
+        Assert.Equal(75.25, item.Median, 9);
+        Assert.Equal(62.5, item.Min, 9);
+        Assert.Equal(93.0, item.Max, 9);
+        Assert.Equal(new[] { 62.5, 70.0, 80.5, 93.0 }, item.Scores);
+    }
+
+    [Fact]
+    public void MultiRunIndex_OverPanelRuns_IsBuiltFromThePanelScores()
+    {
+        // Weights 20 / 50 / 80, total 150.
+        //   run 1 panel = 65 / 75 / 85: (1300 + 3750 + 6800) / 150 = 11850 / 150 = 79
+        //   run 2 panel = 70 / 80 / 90: (1400 + 4000 + 7200) / 150 = 12600 / 150 = 84
+        //   point estimate = 81.5; member A alone (60 / 70 / 80 and 70 / 80 / 90) would give 74 and 84
+        var questions = Questions(20, 50, 80);
+        var runs = new[]
+        {
+            PanelRun(1, questions, new[] { 60, 70, 80 }, new[] { 70, 80, 90 }),
+            PanelRun(2, questions, new[] { 70, 80, 90 }, new[] { 70, 80, 90 })
+        };
+
+        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, runs);
+
+        Assert.Equal(new[] { 79.0, 84.0 }, result.Index.PerRunIndices.Select(v => Math.Round(v, 9)));
+        Assert.Equal(81.5, result.Index.PointEstimate, 9);
+        Assert.Equal(new[] { 67.5, 77.5, 87.5 }, result.Items.Select(i => i.Mean));
+    }
+
+    [Fact]
+    public void PerItem_IntegerFixture_IsUnchangedByTheDoubleWidening()
+    {
+        // The fixture of PerItem_ReportsMeanMedianSampleSdIqrCvAndTheCriticalErrorRate, with a stray
+        // panel score on every answer that a run without a co-assessor never reads.
+        var questions = Questions(50);
+        var runs = new[]
+        {
+            Run(1, questions, new[] { 60 }),
+            Run(2, questions, new[] { 70 }),
+            Run(3, questions, new[] { 80 }),
+            Run(4, questions, new[] { 90 })
+        };
+        foreach (var run in runs)
+        {
+            run.Answers[0].PanelQualityScore = 5;
+        }
+
+        var item = Assert.Single(BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Items);
+
+        Assert.Equal(75.0, item.Mean, 9);
+        Assert.Equal(75.0, item.Median, 9);
+        Assert.Equal(60.0, item.Min);
+        Assert.Equal(90.0, item.Max);
+        Assert.Equal(Math.Sqrt(500.0 / 3.0), item.StandardDeviation!.Value, 9);
+        Assert.Equal(15.0, item.InterquartileRange!.Value, 9);
+    }
+
     [Fact]
     public void UnstableItems_AreFlaggedAtTheConfiguredSpread()
     {

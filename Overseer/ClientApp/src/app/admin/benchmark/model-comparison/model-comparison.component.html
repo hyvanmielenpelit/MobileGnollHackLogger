@@ -1390,6 +1390,203 @@
                   </section>
 
                   <ng-container *ngTemplateOutlet="setNoticeList"></ng-container>
+
+                  <!-- Judge-family diagnostics, present when a run in the comparison is a panel run. Its
+                       own section, beside the comparison table rather than in its columns. Every figure is
+                       the server's; the cell formats are the Markdown export's. Plain text throughout. -->
+                  @if (panelDiagnostics; as diag) {
+                    <section class="mc-section mc-panel-diagnostics" aria-labelledby="mc-panel-heading">
+                      <h4 id="mc-panel-heading" class="mc-preview-label">Assessor panel diagnostics</h4>
+
+                      @if (!diag.applicable) {
+                        <p class="mc-panel-note mc-panel-na" role="note">{{ diag.notApplicableReason || 'The diagnostics do not apply to this comparison.' }}</p>
+                      } @else {
+                        <dl class="mc-panel-roles">
+                          <div>
+                            <dt>Member A</dt>
+                            <dd>{{ panelRoleText(diag.memberALabel, diag.memberAProvider) }}</dd>
+                          </div>
+                          <div>
+                            <dt>Member B</dt>
+                            <dd>{{ panelRoleText(diag.memberBLabel, diag.memberBProvider) }}</dd>
+                          </div>
+                          <div>
+                            <dt>Reference reader</dt>
+                            <dd>{{ panelRoleText(diag.referenceLabel, diag.referenceProvider) }}</dd>
+                          </div>
+                        </dl>
+
+                        <h5 id="mc-panel-indices-heading" class="mc-panel-subheading">Indices by grader</h5>
+                        @if (diag.entries.length > 0) {
+                          <div class="mc-panel-scroll">
+                            <table class="gh-table mc-panel-table mc-panel-indices" aria-labelledby="mc-panel-indices-heading">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Entry</th>
+                                  <th scope="col">Provider</th>
+                                  <th scope="col">Member A</th>
+                                  <th scope="col">Member B</th>
+                                  <th scope="col">Panel</th>
+                                  <th scope="col">Reference</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (entry of diag.entries; track entry.entryKey) {
+                                  <tr>
+                                    <th scope="row">{{ entry.entryLabel }}</th>
+                                    <td>{{ entry.candidateProvider || '—' }}</td>
+                                    <td class="mc-panel-num">{{ formatPanelIndex(entry.memberAIndex, entry.rankA) }}</td>
+                                    <td class="mc-panel-num">{{ formatPanelIndex(entry.memberBIndex, entry.rankB) }}</td>
+                                    <td class="mc-panel-num">{{ formatPanelIndex(entry.panelIndex, entry.rankPanel) }}</td>
+                                    <td class="mc-panel-num">{{ formatPanelIndex(entry.referenceIndex, entry.rankReference) }}</td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                        } @else {
+                          <p class="mc-panel-note">No entries.</p>
+                        }
+
+                        <h5 id="mc-panel-judge-heading" class="mc-panel-subheading">Judge-dependent pairs</h5>
+                        @if (diag.judgeDependentPairs.length > 0) {
+                          <ul class="mc-panel-list mc-panel-judge-pairs" aria-labelledby="mc-panel-judge-heading">
+                            @for (pair of diag.judgeDependentPairs; track $index) {
+                              <li>{{ pair.description }}</li>
+                            }
+                          </ul>
+                        } @else {
+                          <p class="mc-panel-note mc-panel-judge-pairs-empty">{{ panelPairsEmpty('judge', diag) }}</p>
+                        }
+
+                        <h5 id="mc-panel-reference-heading" class="mc-panel-subheading">Reference-dependent pairs</h5>
+                        @if (diag.referenceDependentPairs.length > 0) {
+                          <ul class="mc-panel-list mc-panel-reference-pairs" aria-labelledby="mc-panel-reference-heading">
+                            @for (pair of diag.referenceDependentPairs; track $index) {
+                              <li>{{ pair.description }}</li>
+                            }
+                          </ul>
+                        } @else {
+                          <p class="mc-panel-note mc-panel-reference-pairs-empty">{{ panelPairsEmpty('reference', diag) }}</p>
+                        }
+
+                        <h5 id="mc-panel-gaps-heading" class="mc-panel-subheading">Family gaps</h5>
+                        @if (diag.familyGaps.length > 0) {
+                          <p id="mc-panel-gaps-note" class="mc-panel-note">
+                            Mean per-question quality difference, Provider 1 − Provider 2, in quality points with its
+                            95% interval in brackets.
+                          </p>
+                          <div class="mc-panel-scroll">
+                            <table class="gh-table mc-panel-table mc-panel-gaps" aria-labelledby="mc-panel-gaps-heading"
+                                   aria-describedby="mc-panel-gaps-note">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Providers</th>
+                                  <th scope="col">Paired questions</th>
+                                  <th scope="col">Member A</th>
+                                  <th scope="col">Member B</th>
+                                  <th scope="col">Panel</th>
+                                  <th scope="col">Reference</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (gap of diag.familyGaps; track $index) {
+                                  <tr [class.mc-panel-insufficient]="gap.insufficientData">
+                                    <th scope="row">{{ familyGapPair(gap) }}</th>
+                                    <td class="mc-panel-num">{{ gap.pairedQuestionCount }}</td>
+                                    <td class="mc-panel-num">{{ formatFamilyGapCell(gap, gap.gapA) }}</td>
+                                    <td class="mc-panel-num">{{ formatFamilyGapCell(gap, gap.gapB) }}</td>
+                                    <td class="mc-panel-num">{{ formatFamilyGapCell(gap, gap.gapPanel) }}</td>
+                                    <td class="mc-panel-num">{{ formatFamilyGapCell(gap, gap.gapRef) }}</td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                          @if (panelContrastGaps.length > 0) {
+                            <dl class="mc-panel-contrasts">
+                              @for (gap of panelContrastGaps; track $index) {
+                                @if (gap.interactionContrastLabel) {
+                                  <div class="mc-panel-contrast mc-panel-interaction">
+                                    <dt>Interaction contrast ({{ familyGapPair(gap) }})</dt>
+                                    <dd>
+                                      <span class="mc-panel-contrast-value">{{ formatFamilyGapCell(gap, gap.interactionContrast) }}</span>
+                                      <span class="mc-panel-contrast-label">{{ gap.interactionContrastLabel }}</span>
+                                    </dd>
+                                  </div>
+                                }
+                                @if (gap.asymmetryEstimateLabel) {
+                                  <div class="mc-panel-contrast mc-panel-asymmetry">
+                                    <dt>Asymmetry estimate ({{ familyGapPair(gap) }})</dt>
+                                    <dd>
+                                      <span class="mc-panel-contrast-value">{{ formatFamilyGapCell(gap, gap.asymmetryEstimate) }}</span>
+                                      <span class="mc-panel-contrast-label">{{ gap.asymmetryEstimateLabel }}</span>
+                                    </dd>
+                                  </div>
+                                }
+                              }
+                            </dl>
+                          }
+                        } @else {
+                          <p class="mc-panel-note">No pair of candidate families to compare.</p>
+                        }
+
+                        <h5 id="mc-panel-audit-heading" class="mc-panel-subheading">Accusation audit</h5>
+                        @if (diag.accusationAudit.length > 0) {
+                          <div class="mc-panel-scroll">
+                            <table class="gh-table mc-panel-table mc-panel-audit" aria-labelledby="mc-panel-audit-heading">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Member</th>
+                                  <th scope="col">Member provider</th>
+                                  <th scope="col">Candidate provider</th>
+                                  <th scope="col">Family</th>
+                                  <th scope="col">Charges</th>
+                                  <th scope="col">Overturned</th>
+                                  <th scope="col">Upheld</th>
+                                  <th scope="col">Indeterminate</th>
+                                  <th scope="col">Overturn rate</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (cell of diag.accusationAudit; track $index) {
+                                  <tr>
+                                    <th scope="row">{{ panelMemberText(cell.member) }}</th>
+                                    <td>{{ cell.memberProvider || '—' }}</td>
+                                    <td>{{ cell.candidateProvider || '—' }}</td>
+                                    <td>{{ familyRelation(cell.sameFamily) }}</td>
+                                    <td class="mc-panel-num">{{ cell.charges }}</td>
+                                    <td class="mc-panel-num">{{ cell.overturned }}</td>
+                                    <td class="mc-panel-num">{{ cell.upheld }}</td>
+                                    <td class="mc-panel-num">{{ cell.indeterminate }}</td>
+                                    <td class="mc-panel-num">{{ formatRate(cell.overturnRate) }}</td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                        } @else {
+                          <p class="mc-panel-note">No charges to audit.</p>
+                        }
+                        @if (diag.auditSummaries.length > 0) {
+                          <ul class="mc-panel-list mc-panel-audit-summaries" aria-label="Family overturn gap per member">
+                            @for (summary of diag.auditSummaries; track $index) {
+                              <li>{{ panelMemberText(summary.member) }} ({{ summary.memberProvider || '—' }}) family overturn gap: {{ formatOverturnGap(summary.familyOverturnGap) }}</li>
+                            }
+                          </ul>
+                        }
+
+                        @if (diag.caveats.length > 0) {
+                          <h5 id="mc-panel-caveats-heading" class="mc-panel-subheading">Caveats</h5>
+                          <ul class="mc-panel-list mc-panel-caveats" aria-labelledby="mc-panel-caveats-heading">
+                            @for (caveat of diag.caveats; track $index) {
+                              <li>{{ caveat }}</li>
+                            }
+                          </ul>
+                        }
+                      }
+                    </section>
+                  }
                 </div>
               }
             </div>

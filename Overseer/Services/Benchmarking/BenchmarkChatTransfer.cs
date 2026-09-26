@@ -149,9 +149,17 @@ public static class BenchmarkChatTransfer
         return total;
     }
 
+    /// <summary>
+    /// <paramref name="isPanelRun"/> selects each answer's published score
+    /// (<see cref="BenchmarkScoring.IndexQuality"/>) for the quality correlation. Null infers it
+    /// from the answers: member B's status is set on every answer of a panel run and on no other.
+    /// </summary>
     public static BenchmarkToolRoutingAnalysis AnalyzeToolRouting(
-        IReadOnlyList<BenchmarkRunAnswer> answers)
+        IReadOnlyList<BenchmarkRunAnswer> answers,
+        bool? isPanelRun = null)
     {
+        bool panel = isPanelRun ?? answers.Any(a => a.CoAssessmentStatus.HasValue);
+
         // The gradeable-answer population, not Status == Ok: every figure this report shows is
         // over the set the quality index is computed on, and one line running a narrower
         // population than the rest is a report that disagrees with itself about how many
@@ -245,7 +253,8 @@ public static class BenchmarkChatTransfer
 
         foreach (var a in answered)
         {
-            if (!a.QualityScore.HasValue) continue;
+            double? quality = BenchmarkScoring.IndexQuality(a, panel);
+            if (!quality.HasValue) continue;
 
             var counts = ToolCallCountsFor(a);
             int ansTotal = counts.Values.Sum();
@@ -254,7 +263,7 @@ public static class BenchmarkChatTransfer
 
             sourceShares.Add(share);
             modelTimes.Add(a.ModelTimeMs);
-            qualityScores.Add(a.QualityScore.Value);
+            qualityScores.Add(quality.Value);
         }
 
         double? rTime = PearsonCorrelation(sourceShares, modelTimes);

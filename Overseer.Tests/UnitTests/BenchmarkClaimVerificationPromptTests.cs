@@ -512,6 +512,242 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.DoesNotContain("\"chargedPartVerdict\"", BuildPrompt());
     }
 
+    // --- Panel wording ----------------------------------------------------------------------
+
+    private const string QuoteA = "Prayer always fixes hunger.";
+    private const string QuoteB = "Elbereth scares every monster.";
+    private const string EvidenceA = "Accuracy 2. The answer says prayer always fixes hunger, which is false.";
+    private const string EvidenceB = "Accuracy 3. The answer says Elbereth scares every monster, which is false.";
+
+    private static string BuildPanelPrompt(
+        List<string> claims,
+        List<IReadOnlyList<string>> roles,
+        IReadOnlyList<string?>? evidenceByMember,
+        bool isCriticalErrorAdjudication = false,
+        bool isOutOfRubricAdjudication = false,
+        string? criticalErrorQuoteContext = null,
+        List<string?>? contexts = null)
+        => BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite",
+            4,
+            "How do I stay fed?",
+            null,
+            claims,
+            new List<string> { "source_code_search" },
+            15,
+            isCriticalErrorAdjudication: isCriticalErrorAdjudication,
+            isOutOfRubricAdjudication: isOutOfRubricAdjudication,
+            criticalErrorQuoteContext: criticalErrorQuoteContext,
+            claimRoles: roles,
+            claimContexts: contexts,
+            assessorEvidenceByMember: evidenceByMember);
+
+    [Fact]
+    public void BuildPrompt_Panel_BothMembersQuotes_AreNamedByTheirPositions_InNeutralWording()
+    {
+        string prompt = BuildPanelPrompt(
+            new List<string> { QuoteA, QuoteB, "Own claim." },
+            new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+                new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            },
+            new[] { EvidenceA, EvidenceB },
+            isCriticalErrorAdjudication: true);
+
+        Assert.Contains("An assessor marked claims 1 and 2 below (ClaimIndex 0 and 1) as a critical error", prompt);
+        Assert.Contains("The assessors' stated evidence follows the rubric, one block per assessor.", prompt);
+        Assert.Contains("if one is true, its verdict is Supported with a citation.", prompt);
+        Assert.Contains("The evidence of the assessor that marked a claim says which part of it that assessor holds false.", prompt);
+        Assert.DoesNotContain("The first assessor", prompt);
+        Assert.DoesNotContain("Its stated evidence follows the rubric.", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_Panel_OnlyMemberBsQuote_IsTheFirstClaim()
+    {
+        // Member A raised no critical error; B's quote takes the first position by its role.
+        string prompt = BuildPanelPrompt(
+            new List<string> { QuoteB, "Own claim." },
+            new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+                new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            },
+            new[] { EvidenceA, EvidenceB },
+            isCriticalErrorAdjudication: true);
+
+        Assert.Contains("An assessor marked the first claim below as a critical error", prompt);
+        Assert.Contains("Check that claim against the source code and wiki exactly as you check the others", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_Panel_EachQuoteReadsItsOwnContext()
+    {
+        string prompt = BuildPanelPrompt(
+            new List<string> { QuoteA, QuoteB },
+            new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote }
+            },
+            new[] { EvidenceA, EvidenceB },
+            isCriticalErrorAdjudication: true,
+            criticalErrorQuoteContext: "Food",
+            contexts: new List<string?> { null, "Safety" }).Replace("\r\n", "\n");
+
+        Assert.Contains("Claims 1 and 2 are list items or fragments, and each block names the heading or line its text sits under", prompt);
+        Assert.Contains("ClaimIndex: 0\nContext (not part of the claim): Under \"Food\":\n" + QuoteA, prompt);
+        Assert.Contains("ClaimIndex: 1\nContext (not part of the claim): Under \"Safety\":\n" + QuoteB, prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_Panel_LabelsEachEvidenceBlockByAssessorNumber_NeverByModelOrMember()
+    {
+        string prompt = BuildPanelPrompt(
+            new List<string> { QuoteA, QuoteB },
+            new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote }
+            },
+            new[] { EvidenceA, EvidenceB },
+            isCriticalErrorAdjudication: true).Replace("\r\n", "\n");
+
+        Assert.Contains("--- BEGIN ASSESSOR EVIDENCE (Assessor 1) ---\n" + EvidenceA + "\n--- END ASSESSOR EVIDENCE (Assessor 1) ---", prompt);
+        Assert.Contains("--- BEGIN ASSESSOR EVIDENCE (Assessor 2) ---\n" + EvidenceB + "\n--- END ASSESSOR EVIDENCE (Assessor 2) ---", prompt);
+        Assert.DoesNotContain("--- BEGIN ASSESSOR EVIDENCE ---", prompt);
+        Assert.DoesNotContain("member A", prompt, System.StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("member B", prompt, System.StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("co-assessor", prompt, System.StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildPrompt_Panel_SkipsTheBlockOfAMemberWithoutEvidence()
+    {
+        string prompt = BuildPanelPrompt(
+            new List<string> { QuoteB },
+            new List<IReadOnlyList<string>> { new[] { BenchmarkClaimRoles.CriticalErrorQuote } },
+            new[] { null, EvidenceB },
+            isCriticalErrorAdjudication: true);
+
+        Assert.DoesNotContain("(Assessor 1)", prompt);
+        Assert.Contains("--- BEGIN ASSESSOR EVIDENCE (Assessor 2) ---", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_Panel_TwoBases_AreNamedAsTwoAssessorsStatements()
+    {
+        const string basisA = "Prayer timeout starts at 300.";
+        const string basisB = "Elbereth has no effect on @ humans.";
+        string prompt = BuildPanelPrompt(
+            new List<string> { basisA, basisB, "Own claim." },
+            new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.OutOfRubricBasis },
+                new[] { BenchmarkClaimRoles.OutOfRubricBasis },
+                new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            },
+            new[] { EvidenceA, EvidenceB },
+            isOutOfRubricAdjudication: true);
+
+        Assert.Contains("Two assessors each docked ACCURACY on a statement from its own knowledge rather than the rubric, quoted as claims 1 and 2 below (ClaimIndex 0 and 1).", prompt);
+        Assert.Contains("Refuted means that assessor's statement is false.", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_Panel_AQuoteAndABasis_TakeThePositionsTheirRolesCarry()
+    {
+        // B's quote after A's, then A's basis: the basis is claim 3, not the fixed second slot.
+        const string basisA = "Prayer timeout starts at 300.";
+        string prompt = BuildPanelPrompt(
+            new List<string> { QuoteA, QuoteB, basisA },
+            new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+                new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+                new[] { BenchmarkClaimRoles.OutOfRubricBasis }
+            },
+            new[] { EvidenceA, EvidenceB },
+            isCriticalErrorAdjudication: true,
+            isOutOfRubricAdjudication: true);
+
+        Assert.Contains("An assessor marked claims 1 and 2 below (ClaimIndex 0 and 1) as a critical error", prompt);
+        Assert.Contains("An assessor docked ACCURACY on a statement from its own knowledge rather than the rubric, quoted as claim 3 below (ClaimIndex 2).", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_Panel_AccusedSentencesAndStatements_AreChargedByAnAssessor()
+    {
+        string prompt = BuildPanelPrompt(
+            new List<string> { "It has no charges and never runs out.", "Grails cannot run out of charges." },
+            new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.AccusedQuote },
+                new[] { BenchmarkClaimRoles.AssessorStatement }
+            },
+            new[] { EvidenceA, EvidenceB });
+
+        Assert.Contains("The assessors graded without tools and between them charged the sentences of the answer marked \"Charged by an assessor as false or imprecise\" below.", prompt);
+        Assert.Contains("Charged by an assessor as false or imprecise (a sentence of the answer).", prompt);
+        Assert.Contains("the items marked 'Stated by an assessor' are an assessor's own statements about the game", prompt);
+        Assert.Contains("Stated by an assessor (not part of the answer).", prompt);
+        Assert.DoesNotContain("Charged by the assessor", prompt);
+        Assert.DoesNotContain("first assessor", prompt);
+    }
+
+    [Fact]
+    public void BuildPrompt_OneEvidenceEntry_IsByteIdenticalToTheSingleAssessorPrompt()
+    {
+        var claims = new List<string> { QuoteA, "Prayer timeout starts at 300.", "It has no charges and never runs out." };
+        var roles = new List<IReadOnlyList<string>>
+        {
+            new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+            new[] { BenchmarkClaimRoles.OutOfRubricBasis },
+            new[] { BenchmarkClaimRoles.AccusedQuote }
+        };
+
+        string single = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite", 4, "How do I stay fed?", "- rubric", claims, new List<string> { "source_code_search" }, 15,
+            isDisputedVerdict: true, isCriticalErrorAdjudication: true, isOutOfRubricAdjudication: true,
+            assessorEvidence: EvidenceA, criticalErrorQuoteContext: "Food", claimRoles: roles);
+        string oneMember = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite", 4, "How do I stay fed?", "- rubric", claims, new List<string> { "source_code_search" }, 15,
+            isDisputedVerdict: true, isCriticalErrorAdjudication: true, isOutOfRubricAdjudication: true,
+            assessorEvidence: EvidenceA, criticalErrorQuoteContext: "Food", claimRoles: roles,
+            assessorEvidenceByMember: new[] { EvidenceA });
+
+        Assert.Equal(single, oneMember);
+        Assert.Contains("The first assessor marked the first claim below as a critical error", single);
+        Assert.Contains("--- BEGIN ASSESSOR EVIDENCE ---", single);
+    }
+
+    [Fact]
+    public void BuildPrompt_SingleAssessor_RolePositions_MatchTheFixedPositionsARunWithoutRolesReads()
+    {
+        // The quote at 0 and the basis at 1 under a critical-error adjudication, as before harness 40.
+        var claims = new List<string> { QuoteA, "Prayer timeout starts at 300.", "Own claim." };
+        var roles = new List<IReadOnlyList<string>>
+        {
+            new[] { BenchmarkClaimRoles.CriticalErrorQuote },
+            new[] { BenchmarkClaimRoles.OutOfRubricBasis },
+            new[] { BenchmarkClaimRoles.UnverifiedClaim }
+        };
+
+        string withRoles = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite", 4, "Q?", null, claims, new List<string> { "source_code_search" }, 15,
+            isCriticalErrorAdjudication: true, isOutOfRubricAdjudication: true, assessorEvidence: EvidenceA,
+            criticalErrorQuoteContext: "Food", claimRoles: roles);
+        string withoutRoles = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite", 4, "Q?", null, claims, new List<string> { "source_code_search" }, 15,
+            isCriticalErrorAdjudication: true, isOutOfRubricAdjudication: true, assessorEvidence: EvidenceA,
+            criticalErrorQuoteContext: "Food");
+
+        Assert.Equal(withoutRoles, withRoles);
+        Assert.Contains("The first assessor docked ACCURACY on a statement from its own knowledge rather than the rubric, quoted as claim 2 below (ClaimIndex 1).", withRoles);
+    }
+
     [Fact]
     public void ChargedPartItems_MarksExactlyTheClaimsPrintedWithAChargedPartLine()
     {

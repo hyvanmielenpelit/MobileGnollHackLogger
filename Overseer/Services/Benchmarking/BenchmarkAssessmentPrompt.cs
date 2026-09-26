@@ -580,8 +580,19 @@ public static class BenchmarkAssessmentPrompt
     ///     chargedPartVerdict and chargedPartBasis, Indeterminate when that is missing; the verifier
     ///     gains 3l (a wiki statement contradicted by source needs both named). ScoringMethodVersion
     ///     stays 12 and CandidateSystemPromptSha256 does not move.
+    /// v40: a two-family assessor panel. A run may name a co-assessor (member B) beside the assessor
+    ///     (member A); both grade every answer with the identical prompt, blind to each other, and the
+    ///     published per-answer score is the mean of their quality scores. In a panel run the second
+    ///     opinion is the reference reader: forced to All and blind, compared against the panel score,
+    ///     and never scoring. The claim verifier checks the union of both members' charges once, each
+    ///     item recording in raisedBy which member raised it, and its prompt words the charges
+    ///     neutrally with one evidence block per member; the quote and basis claims are named by the
+    ///     positions their roles carry. Each member writes its own synthesis from its own verdicts, and
+    ///     every synthesis gains a structured findings array. The evidence-informed re-grade does not
+    ///     run in a panel run. Single-assessor runs grade exactly as under 39 apart from the findings
+    ///     schema. ScoringMethodVersion stays 12 and CandidateSystemPromptSha256 does not move.
     /// </summary>
-    public const string HarnessVersion = "39";
+    public const string HarnessVersion = "40";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -1271,6 +1282,9 @@ public static class BenchmarkAssessmentPrompt
         // lines itself gets the arithmetic wrong; every count anyone can name a number for belongs to
         // one of these data blocks, not to counting sentences.
         sb.AppendLine("6. Every count you state — how many answers sit at a given level, how many claims were supported, refuted or indeterminate — is copied from the data blocks below, never recomputed by rereading or recounting the per-question verdicts. This synthesis feeds no score.");
+        // The structured counterpart of the two prose fields: a second synthesis of the same run is
+        // compared with this one entry by entry, which prose cannot support.
+        sb.AppendLine($"7. List every strength and weakness you name in `findings` as well, one entry each: `kind` is \"strength\" or \"weakness\"; `category` is one of {string.Join(", ", BenchmarkAssessmentParser.SynthesisFindingCategories)}; `questions` lists the question numbers the finding rests on, empty for a run-wide finding; `text` states it in one sentence.");
         sb.AppendLine();
         // The distribution the model would otherwise have to derive itself by counting "Levels:"
         // lines below; handing it over pre-counted is what instruction 6 tells the model to rely on.
@@ -1430,7 +1444,10 @@ public static class BenchmarkAssessmentPrompt
   ""finalScore"": 82,
   ""strengths"": ""Summary of model strengths observed across the run."",
   ""weaknesses"": ""Summary of model weaknesses observed across the run."",
-  ""overallComments"": ""Detailed multi-paragraph review evaluating the overall run, accuracy, domain knowledge, and tool effectiveness.""
+  ""overallComments"": ""Detailed multi-paragraph review evaluating the overall run, accuracy, domain knowledge, and tool effectiveness."",
+  ""findings"": [
+    { ""kind"": ""weakness"", ""category"": ""accuracy"", ""questions"": [3, 7], ""text"": ""One-sentence statement of the finding."" }
+  ]
 }");
 
         return sb.ToString();

@@ -34,6 +34,8 @@ public class BenchmarkGroupAnalysisService
     public const string SecondOpinionRole = "Second opinion";
     public const string ClaimVerifierRole = "Claim verifier";
     public const string SynthesisRole = "Final synthesis";
+    public const string CoAssessorRole = "Co-assessor";
+    public const string CoSynthesisRole = "Co-assessor synthesis";
 
     public BenchmarkGroupAnalysisService(
         ApplicationDbContext db,
@@ -374,6 +376,24 @@ public class BenchmarkGroupAnalysisService
             if (hasSynthesis && pricing.Assessor != null)
             {
                 byRole[SynthesisRole] = (double)roleCosts.Synthesis;
+            }
+
+            // Panel member B and its own synthesis, both on the co-assessor's card. Neither spends
+            // on a single-assessor run, so neither is keyed there.
+            bool hasCoAssessor = ModelPricingService.RoleHasTokens(
+                run.TotalCoAssessmentInputTokens, run.TotalCoAssessmentOutputTokens,
+                run.TotalCoAssessmentCacheReadTokens, run.TotalCoAssessmentCacheCreationTokens);
+            if (hasCoAssessor && pricing.CoAssessor != null)
+            {
+                byRole[CoAssessorRole] = (double)roleCosts.CoAssessor;
+            }
+
+            bool hasCoSynthesis = ModelPricingService.RoleHasTokens(
+                run.TotalCoSynthesisInputTokens, run.TotalCoSynthesisOutputTokens,
+                run.TotalCoSynthesisCacheReadTokens, run.TotalCoSynthesisCacheCreationTokens);
+            if (hasCoSynthesis && pricing.CoAssessor != null)
+            {
+                byRole[CoSynthesisRole] = (double)roleCosts.CoSynthesis;
             }
 
             costs.Add(new BenchmarkGroupRunCost { RunId = run.Id, CostByRole = byRole });

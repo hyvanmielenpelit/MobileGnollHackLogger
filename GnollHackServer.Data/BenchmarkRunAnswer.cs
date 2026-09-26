@@ -233,6 +233,61 @@ public class BenchmarkRunAnswer
     [MaxLength(2048)]
     public string? CriticalErrorQuote { get; set; }
 
+    // --- Assessor panel ----------------------------------------------------------------------
+
+    /// <summary>
+    /// The published score in a panel run: the mean of the two members' final quality scores.
+    /// Null unless both members scored, and on every single-assessor run.
+    /// </summary>
+    public double? PanelQualityScore { get; set; }
+
+    /// <summary>
+    /// The two panel members are more than 15 quality points apart, or split on the
+    /// critical-error flag. Null unless both members scored.
+    /// </summary>
+    public bool? PanelDisagreed { get; set; }
+
+    // --- Co-assessment (panel member B) --------------------------------------------------------
+
+    /// <summary>
+    /// Member B's grading status. Null on every single-assessor run; <c>Pending</c> from creation
+    /// in a panel run.
+    /// </summary>
+    public BenchmarkAssessmentStatus? CoAssessmentStatus { get; set; }
+
+    [MaxLength(2048)]
+    public string? CoAssessmentError { get; set; }
+
+    public int? CoAssessmentQualityScore { get; set; }
+    public int? CoAssessmentRawQualityScore { get; set; }
+    public bool? CoAssessmentCriticalError { get; set; }
+
+    /// <summary>
+    /// Member B's full verdict as JSON: levels, critical error and its quote, quality scores,
+    /// comment, evidence, unverified claims and its advisory flags. Member A's verdict lives in
+    /// the primary columns and <see cref="AnswerFlags"/>; this never touches them.
+    /// </summary>
+    public string? CoAssessmentJson { get; set; }
+
+    /// <summary>Member B's final text for this answer, verbatim, first 8,000 characters.</summary>
+    [MaxLength(8000)]
+    public string? CoAssessmentRawText { get; set; }
+
+    /// <summary>The model that produced <see cref="CoAssessmentJson"/>.</summary>
+    public long? CoAssessedByModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? CoAssessedByModelSnapshot { get; set; }
+
+    public DateTime? CoAssessedAtUtc { get; set; }
+
+    /// <summary>Characters of game board placed in member B's prompt.</summary>
+    public int? CoAssessorBoardChars { get; set; }
+
+    public int? CoAssessmentInputTokens { get; set; }
+    public int? CoAssessmentOutputTokens { get; set; }
+    public int? CoAssessmentCacheReadTokens { get; set; }
+    public int? CoAssessmentCacheCreationTokens { get; set; }
+    public long? CoAssessmentDurationMs { get; set; }
+
     // --- Second opinion ----------------------------------------------------------------------
 
     /// <summary>

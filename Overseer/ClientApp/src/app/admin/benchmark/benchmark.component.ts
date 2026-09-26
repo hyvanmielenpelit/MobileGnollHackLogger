@@ -23,6 +23,9 @@ import {
   DifficultyAssessmentJobLogEntryDto,
   BenchmarkFootprintDto,
   BenchmarkAssessorCalibrationDto,
+  BenchmarkCalibrationTarget,
+  BenchmarkCoAssessmentRecord,
+  BenchmarkPanelMember,
   BenchmarkLastAssessorDto,
   BenchmarkSecondOpinionMode,
   BENCHMARK_SECOND_OPINION_MODES,
@@ -53,6 +56,11 @@ import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-
 import { QuestionGenerationDialogComponent } from './question-generation/question-generation-dialog.component';
 import { SuiteDescriptionGenerationDialogComponent } from './description-generation/suite-description-generation-dialog.component';
 import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './cost-panel/benchmark-cost-panel.component';
+import {
+  BenchmarkFamilyRelation,
+  BenchmarkSynthesisPanelComponent,
+  BenchmarkSynthesisView
+} from './synthesis-panel/benchmark-synthesis-panel.component';
 import { SnapshotViewerComponent } from '../../shared/snapshot-viewer/snapshot-viewer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../utils/polyfills.util';
 import { SystemService } from '../../services/system.service';
@@ -228,6 +236,8 @@ interface BenchmarkRunSettings {
   suiteId: number | null;
   testedConfigId: number | null;
   assessorConfigId: number | null;
+  /** Panel member B, or null for a single-assessor run. */
+  coAssessorConfigId: number | null;
   secondOpinionConfigId: number | null;
   claimVerifierConfigId: number | null;
   /** The operator's explicit override, or null to keep following the scoring profile's own default. */
@@ -250,7 +260,7 @@ interface BenchmarkRunSettings {
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
     QuestionGenerationDialogComponent, SuiteDescriptionGenerationDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
-    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, ProviderBadgeComponent,
+    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent
   ],
@@ -437,6 +447,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   secondOpinionConfigId: number | null = null;
 
   /**
+   * Optional panel member B. When set, it grades every answer beside the assessor (member A), the
+   * published score is the mean of the two, and the second opinion becomes the reference reader.
+   * Null, the default, is a single-assessor run.
+   */
+  coAssessorConfigId: number | null = null;
+
+  /**
    * Optional model: verifies unverified factual claims against the game source code and wiki
    * using read-only tools. Null means no claim verification for this run, which is the default.
    */
@@ -473,6 +490,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   isTestedModelDropdownOpen = false;
   isAssessorModelDropdownOpen = false;
   isSecondOpinionModelDropdownOpen = false;
+  isCoAssessorModelDropdownOpen = false;
   isClaimVerifierModelDropdownOpen = false;
   startingRun = false;
   runErrorMessage: string | null = null;
@@ -806,6 +824,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   calibrationErrorMessage: string | null = null;
   calibrationAssessorConfigId: number | null = null;
   isCalibrationAssessorDropdownOpen = false;
+  /** What a panel run's calibration compares against. A single-assessor run sends none. */
+  calibrationTarget: BenchmarkCalibrationTarget = 'Assessor';
+  readonly calibrationTargetOptions: readonly { value: BenchmarkCalibrationTarget; label: string }[] = [
+    { value: 'Assessor', label: 'Assessor A' },
+    { value: 'CoAssessor', label: 'Co-assessor B' },
+    { value: 'Panel', label: 'Panel (mean of A and B)' }
+  ];
   runningSynthesis = false;
   retryingAssessments = false;
   retryingClaimVerification = false;
@@ -821,6 +846,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   retryAnswer: BenchmarkRunAnswerDto | null = null;
   retryAssessorConfigId: number | null = null;
   isRetryAssessorDropdownOpen = false;
+  /** The members a panel run's re-assessment re-grades. */
+  retryPanelMember: BenchmarkPanelMember = 'Both';
+  readonly retryPanelMemberOptions: readonly { value: BenchmarkPanelMember; label: string }[] = [
+    { value: 'Both', label: 'Both members' },
+    { value: 'A', label: 'Member A (assessor) only' },
+    { value: 'B', label: 'Member B (co-assessor) only' }
+  ];
 
   // Suite Health. The suite whose full-screen dialog is open, or null. One at a time by
   // construction: there is a single dialog element for every suite card.
@@ -1491,6 +1523,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.isSecondOpinionModelDropdownOpen && !target.closest('.second-opinion-model-selector')) {
       this.isSecondOpinionModelDropdownOpen = false;
     }
+    if (this.isCoAssessorModelDropdownOpen && !target.closest('.co-assessor-model-selector')) {
+      this.isCoAssessorModelDropdownOpen = false;
+    }
     if (this.isClaimVerifierModelDropdownOpen && !target.closest('.claim-verifier-model-selector')) {
       this.isClaimVerifierModelDropdownOpen = false;
     }
@@ -1522,6 +1557,75 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.benchmarkCapableConfigs.find(c => c.id === this.claimVerifierConfigId);
   }
 
+  get selectedCoAssessorModel(): SystemAiConfigDto | undefined {
+    return this.benchmarkCapableConfigs.find(c => c.id === this.coAssessorConfigId);
+  }
+
+  /** A co-assessor is selected, so the run being set up is a two-member panel. */
+  get isPanelLaunch(): boolean {
+    return this.coAssessorConfigId != null;
+  }
+
+  /** "Family" is the provider, compared the way the server's IsSameProvider compares it. */
+  private static sameProvider(a: string | null | undefined, b: string | null | undefined): boolean {
+    return !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+  }
+
+  /** Provider and model id, as the server's IsSameModel compares a candidate with a panel member. */
+  private static sameModel(a: SystemAiConfigDto | undefined, b: SystemAiConfigDto | undefined): boolean {
+    return !!a && !!b &&
+      AdminBenchmarkComponent.sameProvider(a.provider, b.provider) &&
+      !!a.modelId && !!b.modelId &&
+      a.modelId.trim().toLowerCase() === b.modelId.trim().toLowerCase();
+  }
+
+  /** Mirrors the server's refusal: the two panel members must come from different providers. */
+  get showCoAssessorSameProviderAdvisory(): boolean {
+    return this.isPanelLaunch &&
+      AdminBenchmarkComponent.sameProvider(this.selectedAssessorModel?.provider, this.selectedCoAssessorModel?.provider);
+  }
+
+  /** Mirrors the server's refusal: neither panel member may be the model under test. */
+  get showCoAssessorCandidateAdvisory(): boolean {
+    const candidate = this.selectedTestedModel;
+    return this.isPanelLaunch &&
+      (AdminBenchmarkComponent.sameModel(candidate, this.selectedAssessorModel) ||
+        AdminBenchmarkComponent.sameModel(candidate, this.selectedCoAssessorModel));
+  }
+
+  /** Why the server would refuse this panel run, or '' when it would not. */
+  get panelLaunchRefusal(): string {
+    if (this.showCoAssessorSameProviderAdvisory) {
+      return 'The assessor and the co-assessor must come from different providers.';
+    }
+    if (this.showCoAssessorCandidateAdvisory) {
+      return 'Neither panel member may be the model under test; choose another model for the panel.';
+    }
+    return '';
+  }
+
+  /**
+   * The roles a panel run's reference reader or claim verifier shares a provider with. Advisory:
+   * a non-scoring role is most useful from a family that is neither a candidate nor a panel member.
+   */
+  private sharedFamilyRoles(provider: string | null | undefined): string[] {
+    if (!this.isPanelLaunch || !provider) return [];
+    const roles: [string, string | null | undefined][] = [
+      ['the model under test', this.selectedTestedModel?.provider],
+      ['panel member A', this.selectedAssessorModel?.provider],
+      ['panel member B', this.selectedCoAssessorModel?.provider]
+    ];
+    return roles.filter(([, p]) => AdminBenchmarkComponent.sameProvider(provider, p)).map(([role]) => role);
+  }
+
+  get referenceReaderSharedFamilyRoles(): string[] {
+    return this.secondOpinionConfigId == null ? [] : this.sharedFamilyRoles(this.selectedSecondOpinionModel?.provider);
+  }
+
+  get claimVerifierSharedFamilyRoles(): string[] {
+    return this.claimVerifierConfigId == null ? [] : this.sharedFamilyRoles(this.selectedClaimVerifierModel?.provider);
+  }
+
   /**
    * The verifier is the candidate model itself. Tools supply the evidence rather than the model's
    * memory, so this is not worthless — but it is the weakest available pairing.
@@ -1539,6 +1643,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * looking configured.
    */
   get secondOpinionMode(): number {
+    // A panel run's reference reader grades every answer, blind; the server forces it.
+    if (this.isPanelLaunch) {
+      return BenchmarkSecondOpinionMode.All;
+    }
     return this.secondOpinionModeOverride
       ?? this.selectedScoringProfile?.secondOpinionMode
       ?? BenchmarkSecondOpinionMode.Flagged;
@@ -1554,10 +1662,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get secondOpinionModeDisabled(): boolean {
-    return this.secondOpinionConfigId == null;
+    return this.secondOpinionConfigId == null || this.isPanelLaunch;
   }
 
   get secondOpinionModeHint(): string {
+    if (this.isPanelLaunch) {
+      return 'In a panel run the reference reader grades every answer, blind, so the mode is fixed at All.';
+    }
     if (this.secondOpinionModeDisabled) {
       return 'Select a second opinion assessor first — the mode does nothing without one.';
     }
@@ -1570,6 +1681,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * modes, and can agree for reasons that have nothing to do with the answer.
    */
   get showAssessorPairingAdvisory(): boolean {
+    // A panel run names every shared family in referenceReaderSharedFamilyRoles instead.
+    if (this.isPanelLaunch) return false;
     const assessor = this.selectedAssessorModel?.provider;
     const second = this.selectedSecondOpinionModel?.provider;
     return !!assessor && !!second && assessor.toLowerCase() === second.toLowerCase();
@@ -1631,6 +1744,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.isTestedModelDropdownOpen) {
       this.isAssessorModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isCoAssessorModelDropdownOpen = false;
       this.isClaimVerifierModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
@@ -1643,6 +1757,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.isAssessorModelDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isCoAssessorModelDropdownOpen = false;
       this.isClaimVerifierModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
@@ -1655,6 +1770,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.isSecondOpinionModelDropdownOpen) {
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
+      this.isCoAssessorModelDropdownOpen = false;
+      this.isClaimVerifierModelDropdownOpen = false;
+      this.isDifficultyAssessorDropdownOpen = false;
+      this.isRetryAssessorDropdownOpen = false;
+    }
+  }
+
+  toggleCoAssessorModelDropdown(event: Event) {
+    event.stopPropagation();
+    this.isCoAssessorModelDropdownOpen = !this.isCoAssessorModelDropdownOpen;
+    if (this.isCoAssessorModelDropdownOpen) {
+      this.isTestedModelDropdownOpen = false;
+      this.isAssessorModelDropdownOpen = false;
+      this.isSecondOpinionModelDropdownOpen = false;
       this.isClaimVerifierModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
@@ -1668,6 +1797,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isCoAssessorModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
@@ -1680,6 +1810,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isCoAssessorModelDropdownOpen = false;
       this.isClaimVerifierModelDropdownOpen = false;
       this.isRetryAssessorDropdownOpen = false;
     }
@@ -1692,6 +1823,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.isTestedModelDropdownOpen = false;
       this.isAssessorModelDropdownOpen = false;
       this.isSecondOpinionModelDropdownOpen = false;
+      this.isCoAssessorModelDropdownOpen = false;
       this.isClaimVerifierModelDropdownOpen = false;
       this.isDifficultyAssessorDropdownOpen = false;
     }
@@ -1710,6 +1842,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   selectSecondOpinionModel(config: SystemAiConfigDto | null) {
     this.secondOpinionConfigId = config?.id ?? null;
     this.isSecondOpinionModelDropdownOpen = false;
+  }
+
+  selectCoAssessorModel(config: SystemAiConfigDto | null) {
+    this.coAssessorConfigId = config?.id ?? null;
+    this.isCoAssessorModelDropdownOpen = false;
   }
 
   selectClaimVerifierModel(config: SystemAiConfigDto | null) {
@@ -1764,11 +1901,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * The candidate's share of the catalog total, apportioned across the same five role amounts and
-   * in the same order the cost panel receives them (candidate, assessor, second opinion, claim
-   * verifier, synthesis), by the same largest-remainder rule — so the card and the panel below it
-   * always print the same whole percent. `'share unknown'` when the candidate figure itself is
-   * missing.
+   * The candidate's share of the catalog total, apportioned across the same role amounts and in
+   * the same order the cost panel receives them (candidate, assessor, co-assessor, second opinion,
+   * claim verifier, synthesis, co-assessor synthesis), by the same largest-remainder rule — so the
+   * card and the panel below it always print the same whole percent. `'share unknown'` when the
+   * candidate figure itself is missing.
    */
   candidateCostShareLabel(run: BenchmarkRunDetailDto): string {
     const candidate = run.estimatedCandidateCost;
@@ -1778,9 +1915,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const roleAmounts: { key: string; amount: number | null | undefined }[] = [
       { key: 'candidate', amount: run.estimatedCandidateCost },
       { key: 'assessor', amount: run.estimatedAssessorCost },
+      { key: 'coAssessor', amount: run.estimatedCoAssessorCost },
       { key: 'secondOpinion', amount: run.estimatedSecondOpinionCost },
       { key: 'claimVerifier', amount: run.estimatedVerifierCost },
-      { key: 'synthesis', amount: run.estimatedSynthesisCost }
+      { key: 'synthesis', amount: run.estimatedSynthesisCost },
+      { key: 'coSynthesis', amount: run.estimatedCoSynthesisCost }
     ];
     const present = roleAmounts.filter((role): role is { key: string; amount: number } =>
       role.amount != null && Number.isFinite(role.amount)
@@ -2050,9 +2189,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.assessorConfigId = benchmarkModels[0].id;
       }
 
-      // The two optional roles restore to null when their configuration no longer qualifies, which is the
+      // The optional roles restore to null when their configuration no longer qualifies, which is the
       // same as "not selected" and is what the run request already means by a null id.
       if (remembered) {
+        if (remembered.coAssessorConfigId != null) {
+          this.coAssessorConfigId = qualifies(remembered.coAssessorConfigId)
+            ? remembered.coAssessorConfigId
+            : null;
+        }
         if (remembered.secondOpinionConfigId != null) {
           this.secondOpinionConfigId = qualifies(remembered.secondOpinionConfigId)
             ? remembered.secondOpinionConfigId
@@ -3040,6 +3184,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         suiteId: this.selectedSuiteId,
         testedConfigId: this.testedConfigId,
         assessorConfigId: this.assessorConfigId,
+        coAssessorConfigId: this.coAssessorConfigId,
         secondOpinionConfigId: this.secondOpinionConfigId,
         claimVerifierConfigId: this.claimVerifierConfigId,
         // The override, not the getter: a run left on the profile default must keep following the
@@ -3079,6 +3224,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       suiteId: num(raw.suiteId),
       testedConfigId: num(raw.testedConfigId),
       assessorConfigId: num(raw.assessorConfigId),
+      coAssessorConfigId: num(raw.coAssessorConfigId),
       secondOpinionConfigId: num(raw.secondOpinionConfigId),
       claimVerifierConfigId: num(raw.claimVerifierConfigId),
       secondOpinionMode: num(raw.secondOpinionMode),
@@ -3222,7 +3368,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       claimVerifierModelConfigurationId: this.claimVerifierConfigId,
       verboseMode: this.candidateVerboseMode,
       scoringProfileId: this.selectedScoringProfileId,
-      acknowledgeSameProvider: acknowledgeSameProvider
+      acknowledgeSameProvider: acknowledgeSameProvider,
+      // Only on a panel run, so a single-assessor request carries the body it always has.
+      ...(this.coAssessorConfigId != null ? { coAssessorModelConfigurationId: this.coAssessorConfigId } : {})
     };
 
     // Before the request, not after it: the operator's choices are worth remembering whether or not the
@@ -3258,7 +3406,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       },
       error: (err) => {
         this.startingRun = false;
-        if (err?.status === 409 && err.error?.sameProvider) {
+        // Never for a panel run: the server blocks self-grading there outright and answers no 409.
+        if (err?.status === 409 && err.error?.sameProvider && req.coAssessorModelConfigurationId == null) {
           this.sameProviderWarning = err.error as SameProviderWarningDto;
           this.sameProviderDialog?.nativeElement.showModal();
         } else {
@@ -3391,7 +3540,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       },
       error: (err) => {
         this.startingRun = false;
-        if (err?.status === 409 && err.error?.sameProvider) {
+        // Never for a panel run: the server blocks self-grading there outright and answers no 409.
+        if (err?.status === 409 && err.error?.sameProvider && req.coAssessorModelConfigurationId == null) {
           this.sameProviderWarning = err.error as SameProviderWarningDto;
           this.sameProviderDialog?.nativeElement.showModal();
         } else {
@@ -4622,6 +4772,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       lines.push(`Tested:   ${run.testedModelDisplayNameUsed} (${run.testedModelProviderUsed} / ${run.testedModelIdUsed})`);
       lines.push(`          thinking: ${run.testedModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.testedModelReasoningModeUsed ?? 'default'}, service tier: ${this.diagnosticsServiceTierLabel(run.testedModelServiceTierUsed)}, max output tokens: ${run.testedModelMaxOutputTokensUsed ?? 'default'}, parallel mode: ${run.testedModelParallelExecutionModeUsed}`);
       lines.push(`Assessor: ${run.assessorModelDisplayNameUsed} (${run.assessorModelProviderUsed} / ${run.assessorModelIdUsed}), thinking: ${run.assessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.assessorModelReasoningModeUsed ?? 'default'}, available=${run.assessorAvailable}`);
+      if (run.isPanelRun) {
+        lines.push(`Co-assessor: ${run.coAssessorModelDisplayNameUsed} (${run.coAssessorModelProviderUsed} / ${run.coAssessorModelIdUsed}), thinking: ${run.coAssessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.coAssessorModelReasoningModeUsed ?? 'default'}`);
+      }
       // The third role, named whether or not one was used: "no second opinion" is itself a fact
       // about how the run was graded, and the capture used to omit it entirely.
       if (run.secondOpinionAssessorModelConfigurationId != null) {
@@ -5506,6 +5659,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.calibrations = [];
     this.calibrationErrorMessage = null;
     this.calibrationAssessorConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
+    this.calibrationTarget = 'Assessor';
     this.runDetailDialog?.nativeElement.showModal();
     this.loadCalibrations(runId);
 
@@ -5597,6 +5751,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       ? this.resolveRetryClaimVerifier()
       : this.resolveRetryAssessor();
     this.isRetryAssessorDropdownOpen = false;
+    this.retryPanelMember = 'Both';
     this.retryDialog?.nativeElement.showModal();
     this.cdr.detectChanges();
   }
@@ -5609,6 +5764,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.isRetryAssessorDropdownOpen = false;
     this.retryDialog?.nativeElement.close();
     this.cdr.detectChanges();
+  }
+
+  /**
+   * A panel run's grader actions re-grade with the run's own members: the server refuses an
+   * assessor override there, since a panel graded partly by a substitute model is a mixed
+   * instrument. The trial and the claim-verification retry keep their picker; neither scores.
+   */
+  get retryUsesPanelMembers(): boolean {
+    return !!this.selectedRunDetail?.isPanelRun &&
+      (this.retryScope === 'assessment' || this.retryScope === 'question' ||
+        this.retryScope === 'synthesis' || this.retryScope === 'assessments');
   }
 
   private resolveRetryAssessor(): number | null {
@@ -5632,8 +5798,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
     const runId = this.retryRunId;
     const scope = this.retryScope;
-    const assessorId = this.retryAssessorConfigId;
+    const panelMembers = this.retryUsesPanelMembers;
+    // No override is ever sent for a panel run's grader actions; each member re-grades on its own.
+    const assessorId = panelMembers ? null : this.retryAssessorConfigId;
+    const member = this.retryPanelMember;
     const answer = this.retryAnswer;
+    const isPanelRun = !!this.selectedRunDetail?.isPanelRun;
 
     this.closeRetryDialog();
 
@@ -5641,7 +5811,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       if (!answer) return;
       this.actionErrorMessage = null;
       this.reassessingAnswerId = answer.id;
-      this.benchmarkService.reassessAnswer(runId, answer.id, assessorId).subscribe({
+      const request = panelMembers
+        ? this.benchmarkService.reassessPanelAnswer(runId, answer.id, member)
+        : this.benchmarkService.reassessAnswer(runId, answer.id, assessorId);
+      request.subscribe({
         next: () => {
           this.startDetailPolling(runId);
         },
@@ -5657,8 +5830,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.trialReassessingAnswerId = answer.id;
       // Overwriting an existing automatic second opinion is refused server-side unless asked
       // for: that verdict is run evidence, and an experiment must not erase it by accident. The
-      // operator confirms the replacement here before the call, not after the refusal.
-      const replaceExisting = answer.secondOpinionQualityScore != null &&
+      // operator confirms the replacement here before the call, not after the refusal. In a panel
+      // run it is the reference reader's verdict, which is never replaced.
+      const replaceExisting = !isPanelRun &&
+        answer.secondOpinionQualityScore != null &&
         answer.secondOpinionTrigger !== 'Manual';
       this.benchmarkService
         .trialReassessAnswer(runId, answer.id, assessorId, replaceExisting)
@@ -6408,7 +6583,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   hasUnscoredAssessments(): boolean {
-    return (this.selectedRunDetail?.answers ?? []).some(ans => this.isAssessmentFailed(ans) || this.isAssessmentIncomplete(ans));
+    return (this.selectedRunDetail?.answers ?? []).some(ans =>
+      this.isAssessmentFailed(ans) || this.isAssessmentIncomplete(ans) || this.isCoAssessmentUnscored(ans));
+  }
+
+  /** In a panel run, member B's verdict is not Scored; the server retries it with the failed assessments. */
+  isCoAssessmentUnscored(ans: BenchmarkRunAnswerDto): boolean {
+    return !!this.selectedRunDetail?.isPanelRun &&
+      ans.coAssessmentStatus != null &&
+      this.formatAssessmentStatus(ans.coAssessmentStatus) !== 'Scored';
   }
 
   hasFailedClaimVerifications(): boolean {
@@ -7314,7 +7497,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
     this.calibrating = true;
     this.calibrationErrorMessage = null;
-    this.benchmarkService.calibrateAssessor(runId, this.calibrationAssessorConfigId).subscribe({
+    // Only a panel run names a target; a single-assessor run's request stays as it always was.
+    const request = this.selectedRunDetail?.isPanelRun
+      ? this.benchmarkService.calibrateAssessor(runId, this.calibrationAssessorConfigId, this.calibrationTarget)
+      : this.benchmarkService.calibrateAssessor(runId, this.calibrationAssessorConfigId);
+    request.subscribe({
       next: () => {
         this.calibrating = false;
         this.loadCalibrations(runId);
@@ -7327,13 +7514,107 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     });
   }
 
+  // --- Assessor panel (run detail) ---
+
+  /** A calibration row's target, named as the panel names its members. Null reads as `Assessor`. */
+  calibrationTargetLabel(target: string | null | undefined): string {
+    const value = target ?? 'Assessor';
+    return this.calibrationTargetOptions.find(o => o.value === value)?.label ?? value;
+  }
+
+  /** `same-family` when the grader's provider is the candidate's, the server's definition of family. */
+  familyRelationOf(provider: string | null | undefined, candidateProvider: string | null | undefined): BenchmarkFamilyRelation | null {
+    if (!provider || !candidateProvider) return null;
+    return AdminBenchmarkComponent.sameProvider(provider, candidateProvider) ? 'same-family' : 'cross-family';
+  }
+
+  /** Member B's full verdict from `coAssessmentJson`; null when absent or malformed. */
+  coAssessmentOf(ans: BenchmarkRunAnswerDto): BenchmarkCoAssessmentRecord | null {
+    if (!ans.coAssessmentJson) return null;
+    try {
+      const parsed = JSON.parse(ans.coAssessmentJson) as unknown;
+      return parsed && typeof parsed === 'object' ? parsed as BenchmarkCoAssessmentRecord : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The `B − A` mean as a signed figure, the way the agreement tile signs its delta. */
+  get panelSignedDeltaLabel(): string {
+    const delta = this.selectedRunDetail?.panelMeanSignedDelta;
+    if (delta == null) return 'n/a';
+    const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
+    return `${sign}${Math.abs(delta).toFixed(1)}`;
+  }
+
+  get panelIccLabel(): string {
+    const icc = this.selectedRunDetail?.panelIntraclassCorrelation;
+    return icc == null ? 'n/a' : icc.toFixed(2);
+  }
+
+  private synthesisViewCache: { run: BenchmarkRunDetailDto; views: BenchmarkSynthesisView[] } | null = null;
+
+  /**
+   * The syntheses the synthesis panel shows: the assessor's, and in a panel run the co-assessor's.
+   * Cached per run object, since a fresh array on every check would re-bind the panel's input each
+   * time and fail the development-mode stability check.
+   */
+  synthesisViewsOf(run: BenchmarkRunDetailDto): BenchmarkSynthesisView[] {
+    if (this.synthesisViewCache?.run === run) {
+      return this.synthesisViewCache.views;
+    }
+
+    const panel = !!run.isPanelRun;
+    const views: BenchmarkSynthesisView[] = [];
+    if (run.assessmentText || run.assessmentParseFailed) {
+      views.push({
+        key: 'A',
+        memberLabel: panel ? 'Member A' : 'Assessor',
+        modelLabel: run.assessorModelDisplayNameUsed || run.assessorModelIdUsed,
+        provider: run.assessorModelProviderUsed || null,
+        familyRelation: this.familyRelationOf(run.assessorModelProviderUsed, run.testedModelProviderUsed),
+        text: run.assessmentText ?? null,
+        findings: run.synthesisFindings ?? [],
+        holisticScore: run.finalScore ?? null,
+        parseFailed: !!run.assessmentParseFailed,
+        rawJson: run.assessmentJson ?? null
+      });
+    }
+    if (panel && (run.coAssessorSynthesisText || run.coAssessorSynthesisParseFailed)) {
+      views.push({
+        key: 'B',
+        memberLabel: 'Member B',
+        modelLabel: run.coAssessorModelDisplayNameUsed || run.coAssessorModelIdUsed || 'Co-assessor',
+        provider: run.coAssessorModelProviderUsed ?? null,
+        familyRelation: this.familyRelationOf(run.coAssessorModelProviderUsed, run.testedModelProviderUsed),
+        text: run.coAssessorSynthesisText ?? null,
+        findings: run.coAssessorSynthesisFindings ?? [],
+        holisticScore: run.coAssessorFinalScore ?? null,
+        parseFailed: !!run.coAssessorSynthesisParseFailed,
+        rawJson: run.coAssessorSynthesisJson ?? null
+      });
+    }
+
+    this.synthesisViewCache = { run, views };
+    return views;
+  }
+
+  /**
+   * The trial re-assessment writes to the reference-reader slot. In a panel run that verdict is
+   * evidence and is never replaced, so the trial is offered only where the slot is empty.
+   */
+  canTrialReassess(ans: BenchmarkRunAnswerDto): boolean {
+    return !this.selectedRunDetail?.isPanelRun || ans.secondOpinionQualityScore == null;
+  }
+
   get canStartRun(): boolean {
     return !this.startingRun &&
       !!this.selectedSuiteId &&
       !!this.testedConfigId &&
       !!this.assessorConfigId &&
       !(this.activeRunDetail && this.formatStatus(this.activeRunDetail.status) === 'Running') &&
-      !!this.selectedSuite?.difficultyFullyAssessed;
+      !!this.selectedSuite?.difficultyFullyAssessed &&
+      !this.panelLaunchRefusal;
   }
 
   /** Names the first condition Start Benchmark is waiting on, for the button's aria-disabled hint. Empty once canStartRun is true. */
@@ -7346,6 +7627,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
     if (!this.testedConfigId || !this.assessorConfigId) {
       return 'Choose a model under test and an assessor.';
+    }
+    if (this.panelLaunchRefusal) {
+      return this.panelLaunchRefusal;
     }
     return '';
   }

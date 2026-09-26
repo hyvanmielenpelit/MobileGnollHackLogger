@@ -265,7 +265,59 @@ public static class BenchmarkScoring
         return (int)Math.Round(clampedSpeed, MidpointRounding.AwayFromZero);
     }
 
+    /// <summary>
+    /// The answer's published score, the one every index and statistic reads: the panel score
+    /// (the mean of both members' final quality scores) in a panel run, otherwise the assessor's
+    /// quality score. Null excludes the answer from the index.
+    /// </summary>
+    public static double? IndexQuality(BenchmarkRunAnswer a, bool isPanelRun)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        return isPanelRun ? a.PanelQualityScore : a.QualityScore;
+    }
+
+    /// <summary>
+    /// The pre-cap counterpart of <see cref="IndexQuality"/>: in a panel run the mean of both
+    /// members' <c>RawQualityScore ?? QualityScore</c>, null unless both scored; otherwise the
+    /// assessor's <c>RawQualityScore ?? QualityScore</c>.
+    /// </summary>
+    public static double? IndexRawQuality(BenchmarkRunAnswer a, bool isPanelRun)
+    {
+        ArgumentNullException.ThrowIfNull(a);
+        if (!isPanelRun)
+        {
+            return a.RawQualityScore ?? a.QualityScore;
+        }
+
+        if (a.AssessmentStatus != BenchmarkAssessmentStatus.Scored
+            || a.CoAssessmentStatus != BenchmarkAssessmentStatus.Scored)
+        {
+            return null;
+        }
+
+        int? rawA = a.RawQualityScore ?? a.QualityScore;
+        int? rawB = a.CoAssessmentRawQualityScore ?? a.CoAssessmentQualityScore;
+        return rawA.HasValue && rawB.HasValue
+            ? (rawA.Value + rawB.Value) / 2.0
+            : null;
+    }
+
     public static int? QualityIndex(IEnumerable<(int? QualityScore, int? Difficulty)> items)
+    {
+        return QualityIndex(items?.Select(i => ((double?)i.QualityScore, i.Difficulty))!);
+    }
+
+    public static int? QualityIndex(IEnumerable<(int? QualityScore, int Difficulty)> items)
+    {
+        return QualityIndex(items?.Select(i => ((double?)i.QualityScore, (int?)i.Difficulty))!);
+    }
+
+    public static int? QualityIndex(IEnumerable<(double? QualityScore, int Difficulty)> items)
+    {
+        return QualityIndex(items?.Select(i => (i.QualityScore, (int?)i.Difficulty))!);
+    }
+
+    public static int? QualityIndex(IEnumerable<(double? QualityScore, int? Difficulty)> items)
     {
         if (items == null) return null;
 
@@ -292,11 +344,6 @@ public static class BenchmarkScoring
         return (int)Math.Round(weightedSum / weightSum, MidpointRounding.AwayFromZero);
     }
 
-    public static int? QualityIndex(IEnumerable<(int? QualityScore, int Difficulty)> items)
-    {
-        return QualityIndex(items?.Select(i => (i.QualityScore, (int?)i.Difficulty))!);
-    }
-
     /// <summary>
     /// Standard error of the difficulty-weighted Intelligence Index over the answered items, with the
     /// n/(n−1) correction. Null below 3 items. This is item-sampling error — how much the index would
@@ -304,6 +351,22 @@ public static class BenchmarkScoring
     /// the model's run-to-run variance, which one sample per question cannot estimate.
     /// </summary>
     public static double? QualityIndexStandardError(IEnumerable<(int? QualityScore, int? Difficulty)> items)
+    {
+        return QualityIndexStandardError(items?.Select(i => ((double?)i.QualityScore, i.Difficulty))!);
+    }
+
+    public static double? QualityIndexStandardError(IEnumerable<(int? QualityScore, int Difficulty)> items)
+    {
+        return QualityIndexStandardError(items?.Select(i => ((double?)i.QualityScore, (int?)i.Difficulty))!);
+    }
+
+    public static double? QualityIndexStandardError(IEnumerable<(double? QualityScore, int Difficulty)> items)
+    {
+        return QualityIndexStandardError(items?.Select(i => (i.QualityScore, (int?)i.Difficulty))!);
+    }
+
+    /// <inheritdoc cref="QualityIndexStandardError(IEnumerable{ValueTuple{int?, int?}})"/>
+    public static double? QualityIndexStandardError(IEnumerable<(double? QualityScore, int? Difficulty)> items)
     {
         if (items == null) return null;
 
@@ -334,11 +397,6 @@ public static class BenchmarkScoring
         double correction = (double)n / (n - 1);
         double variance = sumWeightedSqDev * correction;
         return Math.Sqrt(variance) / weightSum;
-    }
-
-    public static double? QualityIndexStandardError(IEnumerable<(int? QualityScore, int Difficulty)> items)
-    {
-        return QualityIndexStandardError(items?.Select(i => (i.QualityScore, (int?)i.Difficulty))!);
     }
 
     /// <summary>
@@ -384,6 +442,12 @@ public static class BenchmarkScoring
     /// </summary>
     public static int? UnweightedQualityMean(IEnumerable<int?> qualityScores)
     {
+        return UnweightedQualityMean(qualityScores?.Select(q => (double?)q)!);
+    }
+
+    /// <inheritdoc cref="UnweightedQualityMean(IEnumerable{int?})"/>
+    public static int? UnweightedQualityMean(IEnumerable<double?> qualityScores)
+    {
         if (qualityScores == null) return null;
 
         double sum = 0.0;
@@ -404,6 +468,49 @@ public static class BenchmarkScoring
         }
 
         return (int)Math.Round(sum / count, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>
+    /// ICC(A,1) of paired ratings from two raters: two-way random effects, absolute agreement,
+    /// single rater (McGraw &amp; Wong, 1996), from the two-way ANOVA mean squares for rows (subjects),
+    /// columns (raters) and residual:
+    /// <c>(MSR − MSE) / (MSR + (k − 1)·MSE + k·(MSC − MSE) / n)</c>, with k = 2.
+    /// Unrounded. Null below 5 pairs, and when the total variance or the denominator is 0.
+    /// </summary>
+    public static double? IntraclassCorrelationAbsolute(IReadOnlyList<(double A, double B)> pairs)
+    {
+        const int MinPairs = 5;
+        const int k = 2;
+
+        if (pairs == null || pairs.Count < MinPairs) return null;
+
+        int n = pairs.Count;
+        double meanA = pairs.Average(p => p.A);
+        double meanB = pairs.Average(p => p.B);
+        double grandMean = (meanA + meanB) / 2.0;
+
+        double ssTotal = 0.0;
+        double ssRows = 0.0;
+        foreach (var (a, b) in pairs)
+        {
+            ssTotal += (a - grandMean) * (a - grandMean) + (b - grandMean) * (b - grandMean);
+            double rowDev = (a + b) / 2.0 - grandMean;
+            ssRows += k * rowDev * rowDev;
+        }
+
+        if (ssTotal <= 0.0) return null;
+
+        double ssColumns = n * ((meanA - grandMean) * (meanA - grandMean) + (meanB - grandMean) * (meanB - grandMean));
+        double ssError = Math.Max(0.0, ssTotal - ssRows - ssColumns);
+
+        double msRows = ssRows / (n - 1);
+        double msColumns = ssColumns / (k - 1);
+        double msError = ssError / ((n - 1) * (k - 1));
+
+        double denominator = msRows + (k - 1) * msError + k * (msColumns - msError) / n;
+        if (denominator <= 0.0) return null;
+
+        return (msRows - msError) / denominator;
     }
 
     /// <summary>

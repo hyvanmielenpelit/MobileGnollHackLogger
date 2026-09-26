@@ -619,4 +619,204 @@ public class BenchmarkComplianceGuardTests
         var acceptedResult = await controller.StartRun(request);
         Assert.IsType<AcceptedResult>(acceptedResult);
     }
+
+    // --- 4. Panel Launch Rules ---
+
+    private static SystemAiApiConfiguration BenchmarkConfig(string provider, string modelId, string displayName) => new()
+    {
+        DisplayName = displayName,
+        Provider = provider,
+        ModelId = modelId,
+        EncryptedApiKey = "dummy_encrypted",
+        ApiKeyNonce = "nonce",
+        ApiKeyTag = "tag",
+        ModelRole = 4,
+        IsEnabled = true
+    };
+
+    private static async Task<SystemAiApiConfiguration> AddConfigAsync(ApplicationDbContext db, string provider, string modelId, string displayName)
+    {
+        var config = BenchmarkConfig(provider, modelId, displayName);
+        db.SystemAiApiConfigurations.Add(config);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return config;
+    }
+
+    [Fact]
+    public async Task StartRun_Panel_WithBothMembersFromOneProvider_Returns400_AndCreatesNoRun()
+    {
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await SeedConfigsAndSuite(db);
+        var otherAnthropic = await AddConfigAsync(db, "Anthropic", "claude-opus-4-6", "Claude Opus");
+
+        var result = await controller.StartRun(new StartBenchmarkRunRequest
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = modelA.Id,
+            AssessorModelConfigurationId = modelC.Id,
+            CoAssessorModelConfigurationId = otherAnthropic.Id
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("A panel needs members from two providers", Assert.IsType<string>(badRequest.Value));
+        Assert.Empty(db.BenchmarkRuns);
+    }
+
+    [Fact]
+    public async Task StartRun_Panel_WhenTheCandidateModelIsTheCoAssessorModel_Returns400()
+    {
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, _, _, modelC) = await SeedConfigsAndSuite(db);
+        var candidate = await AddConfigAsync(db, "OpenAI", "gpt-5.5", "GPT 5.5");
+        // Another configuration row of the same model: the rule is on the model, not the row.
+        var member = await AddConfigAsync(db, "OpenAI", " GPT-5.5 ", "GPT 5.5 (grader)");
+
+        var result = await controller.StartRun(new StartBenchmarkRunRequest
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = candidate.Id,
+            AssessorModelConfigurationId = modelC.Id,
+            CoAssessorModelConfigurationId = member.Id
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("cannot grade itself", Assert.IsType<string>(badRequest.Value));
+        Assert.Empty(db.BenchmarkRuns);
+    }
+
+    [Fact]
+    public async Task StartRun_Panel_WhenTheCandidateModelIsTheAssessorModel_Returns400()
+    {
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, _, _, modelC) = await SeedConfigsAndSuite(db);
+        var openAiMember = await AddConfigAsync(db, "OpenAI", "gpt-4.1", "GPT 4.1");
+
+        // A single-assessor run would only ask for acknowledgement here; a panel run refuses.
+        var result = await controller.StartRun(new StartBenchmarkRunRequest
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = modelC.Id,
+            AssessorModelConfigurationId = modelC.Id,
+            CoAssessorModelConfigurationId = openAiMember.Id,
+            AcknowledgeSameProvider = true
+        });
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("cannot grade itself", Assert.IsType<string>(badRequest.Value));
+        Assert.Empty(db.BenchmarkRuns);
+    }
+
+    [Fact]
+    public async Task StartRun_Panel_OpenAiCandidateWithAnOlderOpenAiMember_IsAcceptedWithout409()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, _, _, modelC) = await SeedConfigsAndSuite(db);
+        var candidate = await AddConfigAsync(db, "OpenAI", "gpt-5.5", "GPT 5.5");
+        var openAiMember = await AddConfigAsync(db, "OpenAI", "gpt-4.1", "GPT 4.1");
+
+        // Same provider as the candidate, not acknowledged: the panel's balance answers same-family
+        // preference, so the acknowledgeable gate does not apply.
+        var result = await controller.StartRun(new StartBenchmarkRunRequest
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = candidate.Id,
+            AssessorModelConfigurationId = openAiMember.Id,
+            CoAssessorModelConfigurationId = modelC.Id,
+            AcknowledgeSameProvider = false
+        });
+
+        Assert.IsType<AcceptedResult>(result);
+        var run = await db.BenchmarkRuns.FirstAsync(ct);
+        Assert.Equal(openAiMember.Id, run.AssessorModelConfigurationId);
+        Assert.Equal(modelC.Id, run.CoAssessorModelConfigurationId);
+        Assert.NotNull(run.CoAssessorModelSnapshot);
+        Assert.Equal("Anthropic", run.CoAssessorModelSnapshot!.Provider);
+        Assert.True(BenchmarkRunFinalizer.IsPanelRun(run));
+        Assert.False(run.SameProviderAcknowledged);
+    }
+
+    [Fact]
+    public async Task StartRun_Panel_ForcesTheReferenceReaderToAll_WhateverModeWasRequested()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, _, modelB, modelC) = await SeedConfigsAndSuite(db);
+        var candidate = await AddConfigAsync(db, "OpenAI", "gpt-5.5", "GPT 5.5");
+        var openAiMember = await AddConfigAsync(db, "OpenAI", "gpt-4.1", "GPT 4.1");
+
+        var result = await controller.StartRun(new StartBenchmarkRunRequest
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = candidate.Id,
+            AssessorModelConfigurationId = openAiMember.Id,
+            CoAssessorModelConfigurationId = modelC.Id,
+            SecondOpinionAssessorModelConfigurationId = modelB.Id,
+            SecondOpinionMode = (int)BenchmarkSecondOpinionMode.Flagged
+        });
+
+        Assert.IsType<AcceptedResult>(result);
+        var run = await db.BenchmarkRuns.FirstAsync(ct);
+        Assert.Equal(modelB.Id, run.SecondOpinionAssessorModelConfigurationId);
+        Assert.Equal((int)BenchmarkSecondOpinionMode.All, run.SecondOpinionModeUsed);
+    }
+
+    [Fact]
+    public async Task ReassessAnswer_TrialOverTheReferenceReadersVerdict_OnAPanelRun_Is409_EvenWithReplaceRequested()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, modelB, modelC) = await SeedConfigsAndSuite(db);
+        var openAiMember = await AddConfigAsync(db, "OpenAI", "gpt-4.1", "GPT 4.1");
+        var completedAt = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            Status = BenchmarkRunStatus.Completed,
+            BenchmarkSuiteId = suite.Id,
+            SuiteName = suite.Name,
+            TestedModelConfigurationId = modelA.Id,
+            AssessorModelConfigurationId = modelC.Id,
+            CoAssessorModelConfigurationId = openAiMember.Id,
+            SecondOpinionAssessorModelConfigurationId = modelB.Id,
+            SecondOpinionModeUsed = (int)BenchmarkSecondOpinionMode.All,
+            CandidatePromptOptionsJson = "{}",
+            ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion,
+            TotalQuestionCount = 1,
+            StartedAtUtc = completedAt.AddHours(-1),
+            CompletedAtUtc = completedAt
+        });
+        var answer = new BenchmarkRunAnswer
+        {
+            QuestionText = "Q1",
+            AnswerText = "A1",
+            Status = BenchmarkAnswerStatus.Ok,
+            OrderIndex = 1,
+            ExpectedPointsUsed = "- point",
+            ExpectedPointsRecorded = true,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            QualityScore = 80,
+            CoAssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            CoAssessmentQualityScore = 70,
+            PanelQualityScore = 75,
+            SecondOpinionQualityScore = 60,
+            SecondOpinionCriticalError = false
+        };
+        run.Answers.Add(answer);
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync(ct);
+
+        var result = await controller.ReassessAnswer(run.Id, answer.Id, new ReassessAnswerRequest
+        {
+            Trial = true,
+            ReplaceExistingSecondOpinion = true,
+            AssessorModelConfigurationId = modelB.Id
+        });
+
+        var conflict = Assert.IsType<ConflictObjectResult>(result);
+        Assert.Equal(BenchmarkService.PanelTrialReplaceRefusedMessage, conflict.Value);
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+        Assert.Equal(completedAt, run.CompletedAtUtc);
+        Assert.Equal(60, answer.SecondOpinionQualityScore);
+    }
 }

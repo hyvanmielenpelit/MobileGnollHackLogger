@@ -382,4 +382,149 @@ public class BenchmarkPerRoleCostTests
         // No per-question assessment tokens, yet the assessor's card priced the synthesis and so counts.
         Assert.Equal("mixed", ModelPricingService.ComputeRunRoleCosts(run, pricing).Source);
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // The panel's member B and its own synthesis.
+    // ---------------------------------------------------------------------------------------------
+
+    private static readonly ModelPricing CoAssessorCard =
+        new(5.00m, 25.00m, CachedInputPerMillion: 0.50m, CacheWritePerMillion: 6.25m);
+
+    private static BenchmarkRunPricing PanelPricing(ModelPricing? coAssessor) => new(
+        Candidate: CandidateCard,
+        Assessor: AssessorCard,
+        ClaimVerifier: VerifierCard,
+        SecondOpinion: SecondOpinionCard,
+        CoAssessor: coAssessor);
+
+    private static BenchmarkRun PanelRunWithCoAssessorSpend() => BenchmarkModelSnapshots.Attach(new BenchmarkRun
+    {
+        CoAssessorModelConfigurationId = 9,
+        TotalInputTokens = 500_000,
+        TotalOutputTokens = 50_000,
+        TotalAssessmentInputTokens = 200_000,
+        TotalAssessmentOutputTokens = 20_000,
+        TotalSynthesisInputTokens = 40_000,
+        TotalSynthesisOutputTokens = 4_000,
+        TotalCoAssessmentInputTokens = 300_000,
+        TotalCoAssessmentOutputTokens = 30_000,
+        TotalCoAssessmentCacheReadTokens = 100_000,
+        TotalCoAssessmentCacheCreationTokens = 10_000,
+        TotalCoSynthesisInputTokens = 60_000,
+        TotalCoSynthesisOutputTokens = 6_000,
+        TotalCoSynthesisCacheReadTokens = 20_000,
+        TotalCoSynthesisCacheCreationTokens = 2_000
+    });
+
+    [Fact]
+    public void ComputeRunRoleCosts_PricesTheCoAssessorAndItsSynthesisOnTheCoAssessorsCard()
+    {
+        var run = PanelRunWithCoAssessorSpend();
+
+        var costs = ModelPricingService.ComputeRunRoleCosts(run, PanelPricing(CoAssessorCard));
+
+        decimal coAssessor = ModelPricingService.ComputeCostFromTotals(CoAssessorCard, 300_000, 30_000, 100_000, 10_000);
+        decimal coSynthesis = ModelPricingService.ComputeCostFromTotals(CoAssessorCard, 60_000, 6_000, 20_000, 2_000);
+
+        Assert.Equal(coAssessor, costs.CoAssessor);
+        Assert.Equal(coSynthesis, costs.CoSynthesis);
+
+        // Not member A's card, which prices member A and member A's synthesis.
+        Assert.NotEqual(
+            ModelPricingService.ComputeCostFromTotals(AssessorCard, 300_000, 30_000, 100_000, 10_000),
+            costs.CoAssessor);
+        Assert.Equal(ModelPricingService.ComputeCostFromTotals(AssessorCard, 200_000, 20_000, 0, 0), costs.Assessor);
+        Assert.Equal(ModelPricingService.ComputeCostFromTotals(AssessorCard, 40_000, 4_000, 0, 0), costs.Synthesis);
+
+        Assert.Equal(
+            costs.Assessor + costs.SecondOpinion + costs.ClaimVerifier + costs.Synthesis + costs.CoAssessor + costs.CoSynthesis,
+            costs.Grading);
+        Assert.Equal(costs.Candidate + costs.Grading, costs.Total);
+        Assert.False(costs.Incomplete);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCostBreakdowns_CarryTheCoAssessorRolesAsTheirOwnBuckets()
+    {
+        var run = PanelRunWithCoAssessorSpend();
+
+        var breakdowns = ModelPricingService.ComputeRunRoleCostBreakdowns(run, PanelPricing(CoAssessorCard));
+        var costs = ModelPricingService.ComputeRunRoleCosts(run, PanelPricing(CoAssessorCard));
+
+        Assert.Equal(costs.CoAssessor, breakdowns.CoAssessor.Total);
+        Assert.Equal(costs.CoSynthesis, breakdowns.CoSynthesis.Total);
+        Assert.True(breakdowns.CoAssessor.CacheRead > 0m);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_WhenTheCoAssessorSpentTokensWithNoCard_IsIncomplete()
+    {
+        var run = PanelRunWithCoAssessorSpend();
+
+        var costs = ModelPricingService.ComputeRunRoleCosts(run, PanelPricing(coAssessor: null));
+
+        Assert.True(costs.Incomplete);
+        Assert.Equal(0m, costs.Total);
+        Assert.Equal(0m, costs.CoAssessor);
+        Assert.Equal(0m, costs.CoSynthesis);
+
+        // The roles that did resolve still report their own figures.
+        Assert.True(costs.Candidate > 0m);
+        Assert.True(costs.Assessor > 0m);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_CoSynthesisSpendAloneWithNoCard_IsIncomplete()
+    {
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            CoAssessorModelConfigurationId = 9,
+            TotalInputTokens = 500_000,
+            TotalOutputTokens = 50_000,
+            TotalCoSynthesisInputTokens = 60_000,
+            TotalCoSynthesisOutputTokens = 6_000
+        });
+
+        var costs = ModelPricingService.ComputeRunRoleCosts(run, PanelPricing(coAssessor: null));
+
+        Assert.True(costs.Incomplete);
+        Assert.Equal(0m, costs.Total);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_SingleAssessorRun_HasZeroCoAssessorRoles_AndNeedsNoCoAssessorCard()
+    {
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun());
+        BenchmarkRunFinalizer.ApplyTotals(run, GradedAnswers());
+
+        var withoutCard = ModelPricingService.ComputeRunRoleCosts(run, Pricing());
+        var withCard = ModelPricingService.ComputeRunRoleCosts(run, PanelPricing(CoAssessorCard));
+
+        Assert.Equal(0m, withoutCard.CoAssessor);
+        Assert.Equal(0m, withoutCard.CoSynthesis);
+        Assert.False(withoutCard.Incomplete);
+
+        // A card with nothing to price changes nothing, not even the source.
+        Assert.Equal(withoutCard, withCard);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_SourceIsMixed_WhenOnlyTheCoAssessorsCardIsOverridden()
+    {
+        var run = PanelRunWithCoAssessorSpend();
+
+        var costs = ModelPricingService.ComputeRunRoleCosts(
+            run, PanelPricing(CoAssessorCard with { Source = ModelPricingSource.Custom }));
+
+        Assert.Equal("mixed", costs.Source);
+    }
+
+    [Fact]
+    public void GroupCostRoles_NameTheCoAssessorAndItsSynthesisApart()
+    {
+        Assert.Equal("Co-assessor", BenchmarkGroupAnalysisService.CoAssessorRole);
+        Assert.Equal("Co-assessor synthesis", BenchmarkGroupAnalysisService.CoSynthesisRole);
+        Assert.NotEqual(BenchmarkGroupAnalysisService.AssessorRole, BenchmarkGroupAnalysisService.CoAssessorRole);
+        Assert.NotEqual(BenchmarkGroupAnalysisService.SynthesisRole, BenchmarkGroupAnalysisService.CoSynthesisRole);
+    }
 }

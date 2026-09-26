@@ -4378,4 +4378,267 @@ public class BenchmarkReportBuilderTests
         Assert.True(sensitivity < speed, "the sensitivities come before the Speed Index.");
         Assert.True(speed < finalIndices, "all of this is § 2, ahead of § 7.");
     }
+
+    // --- Two-family assessor panel -----------------------------------------------------------------
+
+    private const string PanelFindingsA =
+        "{\"overallScore\":72,\"findings\":[{\"kind\":\"weakness\",\"category\":\"accuracy\",\"questions\":[2],\"text\":\"Q2 misstates the item weight.\"}]}";
+
+    private const string PanelFindingsB =
+        "{\"overallScore\":78,\"findings\":["
+        + "{\"kind\":\"weakness\",\"category\":\"accuracy\",\"questions\":[2],\"text\":\"The weight in Q2 is wrong.\"},"
+        + "{\"kind\":\"strength\",\"category\":\"tool_use\",\"questions\":[],\"text\":\"Consistent source lookups.\"}]}";
+
+    /// <summary>
+    /// A panel answer: member A's verdict in the primary columns, member B's in the co-assessment
+    /// columns and its JSON record, the panel score their mean, and a blind reference reader's score.
+    /// </summary>
+    private static BenchmarkRunAnswer PanelReportAnswer(int orderIndex, int memberA, int memberB, int reader)
+    {
+        var answer = ScoredAnswer(orderIndex, BenchmarkDifficulty.Intermediate, 50, memberA);
+        answer.AccuracyLevel = 5;
+        answer.CompletenessLevel = 5;
+        answer.ConcisenessLevel = 5;
+        answer.ReadabilityLevel = 5;
+        answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+        answer.CoAssessmentQualityScore = memberB;
+        answer.CoAssessmentRawQualityScore = memberB;
+        answer.CoAssessmentCriticalError = false;
+        answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+        {
+            AccuracyLevel = 4,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 6,
+            ReadabilityLevel = 5,
+            QualityScore = memberB,
+            RawQualityScore = memberB,
+            Comment = $"Member B on Q{orderIndex}."
+        }.Serialize();
+        answer.PanelQualityScore = (memberA + memberB) / 2.0;
+        answer.PanelDisagreed = Math.Abs(memberA - memberB) > 15;
+        answer.SecondOpinionQualityScore = reader;
+        answer.SecondOpinionCriticalError = false;
+        answer.SecondOpinionTrigger = "All";
+        answer.SecondOpinionByModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-reader", displayName: "Gemini Reader");
+        return answer;
+    }
+
+    /// <summary>
+    /// A finalized panel run on five equally difficult questions. Member A (OpenAI, the candidate's
+    /// family) scores 70 60 80 90 50, member B (Anthropic) 80 90 84 88 60, and the reference reader
+    /// (Google) 74 70 82 90 55. Panel: 75 75 82 89 55, whose mean 75.2 indexes at 75; member A alone
+    /// indexes at 70 and member B alone at 80.
+    /// </summary>
+    private static BenchmarkRun PanelReportRun()
+    {
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.All,
+            PanelReportAnswer(1, 70, 80, 74),
+            PanelReportAnswer(2, 60, 90, 70),
+            PanelReportAnswer(3, 80, 84, 82),
+            PanelReportAnswer(4, 90, 88, 90),
+            PanelReportAnswer(5, 50, 60, 55));
+        run.HarnessVersion = "40";
+        run.ScoringMethodVersion = 12;
+        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-judge", displayName: "GPT Judge");
+        run.CoAssessorModelConfigurationId = 9;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-judge", displayName: "Claude Judge");
+        run.SecondOpinionAssessorModelConfigurationId = 11;
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-reader", displayName: "Gemini Reader");
+        run.SecondOpinionBlindUsed = true;
+
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+
+        run.FinalScore = 72;
+        run.CoAssessorFinalScore = 78;
+        run.AssessmentText = "Question 2 hallucinates a material that does not exist in the game.";
+        run.AssessmentJson = PanelFindingsA;
+        run.CoAssessorSynthesisText = "Member B's reading of the run.";
+        run.CoAssessorSynthesisJson = PanelFindingsB;
+
+        run.TotalInputTokens = 1_000_000;
+        run.TotalOutputTokens = 50_000;
+        run.TotalAssessmentInputTokens = 200_000;
+        run.TotalAssessmentOutputTokens = 10_000;
+        run.TotalCoAssessmentInputTokens = 300_000;
+        run.TotalCoAssessmentOutputTokens = 15_000;
+        run.TotalSynthesisInputTokens = 20_000;
+        run.TotalSynthesisOutputTokens = 2_000;
+        run.TotalCoSynthesisInputTokens = 30_000;
+        run.TotalCoSynthesisOutputTokens = 3_000;
+        return run;
+    }
+
+    private static BenchmarkRunPricing PanelReportPricing() => new(
+        Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+        Assessor: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
+        SecondOpinion: null,
+        ClaimVerifier: null,
+        IsSnapshot: true,
+        CoAssessor: new ModelPricing(3.00m, 15.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"));
+
+    [Fact]
+    public void PanelRun_IndexesThePanelScore_AndStatesTheMemberAloneIndices()
+    {
+        var run = PanelReportRun();
+        Assert.Equal(75, run.QualityIndex);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Intelligence Index: 75", report);
+        Assert.Contains("- **Panel:** mean of both members' per-answer quality. Member A alone: 70 / 100. Member B alone: 80 / 100. Reference reader (advisory): 74 / 100.", report);
+        Assert.Contains("- **Sensitivity figures:** not computed for a panel run.", report);
+        Assert.Contains("### Panel Member A Alone: 70 / 100", report);
+        Assert.Contains("### Panel Member B Alone: 80 / 100", report);
+        Assert.Contains("- **Holistic Score, Panel Member A:** 72 / 100", report);
+        Assert.Contains("- **Holistic Score, Panel Member B:** 78 / 100", report);
+        Assert.Contains("### Holistic Score, Panel Member A: 72 / 100", report);
+        Assert.Contains("### Holistic Score, Panel Member B: 78 / 100", report);
+        Assert.DoesNotContain("Holistic Assessor Score", report);
+    }
+
+    [Fact]
+    public void PanelRun_NamesBothMembersAndTheirRoles()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        Assert.Contains("- **Role:** Panel member A (same-family to the candidate)", report);
+        Assert.Contains("### Co-Assessor (Panel Member B)", report);
+        Assert.Contains("- **Display Name:** Claude Judge", report);
+        Assert.Contains("- **Role:** Panel member B (cross-family to the candidate)", report);
+        Assert.Contains("- **Mode:** All, blind — reference reader: advisory, never scores; compared against the panel score.", report);
+        Assert.Contains("- **Panel Disclosure:**", report);
+        Assert.Contains("evaluated by **GPT Judge** (OpenAI) and **Claude Judge** (Anthropic)", report);
+        Assert.DoesNotContain("Same-Provider Evaluation Notice", report);
+    }
+
+    [Fact]
+    public void PanelRun_ReportsPanelAgreement_AndTheReferenceReaderAgainstThePanel()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        // B − A: 10 30 4 −2 10.
+        Assert.Contains("### Panel Agreement", report);
+        Assert.Contains("- **Graded by both:** 5 of 5 answered questions.", report);
+        Assert.Contains("- **Mean absolute difference |B − A|:** 11.2 points.", report);
+        Assert.Contains("- **Mean signed difference B − A:** +10.4 points", report);
+        Assert.Contains("- **ICC(A,1):** ", report);
+        Assert.Contains("- **Disagreements:** 1 of 5 (20.0%) — Q2.", report);
+        Assert.Contains("- **Not scored by the panel:** none.", report);
+
+        // Reader − panel: −1 −5 0 1 0.
+        Assert.Contains("### Reference Reader Agreement", report);
+        Assert.Contains("- **Mean absolute difference from the panel:** 1.4 points.", report);
+    }
+
+    [Fact]
+    public void PanelRun_PrintsEachAnswersMemberBVerdict_PanelScore_AndReferenceReader()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        Assert.Contains("> - **Panel Member A (GPT Judge):**", report);
+        Assert.Contains("> - **Panel Member B (Claude Judge):** Accuracy=4/6, Completeness=5/6, Conciseness=6/6, Readability=5/6 — 90 / 100, critical error no", report);
+        Assert.Contains(">   - **Comment:** Member B on Q2.", report);
+        Assert.Contains("> - **Panel Score:** 75 (mean of A and B) — members disagree", report);
+        Assert.Contains("> - **Reference Reader (Gemini Reader):** 70 / 100, critical error no", report);
+    }
+
+    [Fact]
+    public void PanelRun_SaysWhenMemberBDidNotScoreAnAnswer()
+    {
+        var run = PanelReportRun();
+        var answer = run.Answers[4];
+        answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+        answer.CoAssessmentError = "The co-assessor timed out.";
+        answer.CoAssessmentQualityScore = null;
+        answer.PanelQualityScore = null;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("> - **Panel Member B (Claude Judge):** not scored (Failed) — The co-assessor timed out.", report);
+        Assert.Contains("> - **Panel Score:** not computed", report);
+        Assert.Contains("- **Not scored by the panel:** 1 — Q5 (member B: Failed).", report);
+    }
+
+    [Fact]
+    public void PanelRun_PricesAndCountsTheCoAssessorAndItsSynthesis()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun(), runPricing: PanelReportPricing());
+
+        Assert.Contains("- **Co-Assessor Tokens:**", report);
+        Assert.Contains("- **Co-Synthesis Tokens:**", report);
+        Assert.Contains("  - Co-Assessor (claude-judge): $", report);
+        Assert.Contains("  - Co-Synthesis (claude-judge): $", report);
+
+        // 1,000,000 + 200,000 + 300,000 + 20,000 + 30,000 in; 50,000 + 10,000 + 15,000 + 2,000 + 3,000 out.
+        Assert.Contains("- **Total Tokens:** 1,550,000 in / 80,000 out", report);
+    }
+
+    [Fact]
+    public void PanelRun_PrintsBothSyntheses_AndTheComputedAgreement()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        Assert.Contains("### 6.1 Panel Member A: GPT Judge (OpenAI)", report);
+        Assert.Contains("### 6.2 Panel Member B: Claude Judge (Anthropic)", report);
+        Assert.Contains("Member B's reading of the run.", report);
+        Assert.Contains("### 6.3 Where the Readers Agree and Disagree (computed)", report);
+        Assert.Contains("| Convergent |", report);
+        Assert.Contains("| Member B only |", report);
+
+        int sixOne = report.IndexOf("### 6.1 Panel Member A:", StringComparison.Ordinal);
+        int sixTwo = report.IndexOf("### 6.2 Panel Member B:", StringComparison.Ordinal);
+        int sixThree = report.IndexOf("### 6.3 Where the Readers Agree", StringComparison.Ordinal);
+        Assert.True(sixOne < sixTwo && sixTwo < sixThree);
+    }
+
+    [Fact]
+    public void PanelRun_ReadsEachMembersSynthesisAgainstThatMembersOwnVerdicts()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        Assert.Contains("### Synthesis Divergence (Panel Member A)", report);
+        Assert.Contains("- **Question 2:** member A's synthesis reports a hallucination that member A's own verdict did not flag as a critical error.", report);
+        Assert.DoesNotContain("### Synthesis Divergence (Panel Member B)", report);
+    }
+
+    [Fact]
+    public void SingleAssessorRun_PrintsNoPanelSection_EvenWithAReaderAndSynthesisFindings()
+    {
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.All,
+            ScoredAnswer(1, BenchmarkDifficulty.Intermediate, 50, 70),
+            ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 90));
+        run.SecondOpinionAssessorModelConfigurationId = 11;
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-reviewer", displayName: "Claude Reviewer");
+        foreach (var answer in run.Answers)
+        {
+            answer.SecondOpinionQualityScore = 80;
+            answer.SecondOpinionTrigger = "All";
+            answer.SecondOpinionByModelSnapshot = run.SecondOpinionAssessorModelSnapshot;
+        }
+        run.AssessmentText = "A single reading of the run.";
+        run.AssessmentJson = PanelFindingsB;
+        run.TotalInputTokens = 100_000;
+        run.TotalAssessmentInputTokens = 20_000;
+        run.TotalSynthesisInputTokens = 5_000;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("Panel Member", report);
+        Assert.DoesNotContain("Panel Agreement", report);
+        Assert.DoesNotContain("Reference Reader", report);
+        Assert.DoesNotContain("Co-Assessor", report);
+        Assert.DoesNotContain("Co-Synthesis", report);
+        Assert.DoesNotContain("Panel Disclosure", report);
+        Assert.DoesNotContain("Sensitivity figures:** not computed for a panel run", report);
+
+        Assert.Contains("### Second Opinion Assessor", report);
+        Assert.Contains("- **Holistic Assessor Score:**", report);
+
+        // A single run prints its structured findings under § 6.
+        Assert.Contains("**Strengths**", report);
+        Assert.Contains("**Weaknesses**", report);
+        Assert.Contains("- The weight in Q2 is wrong.", report);
+    }
 }

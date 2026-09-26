@@ -934,6 +934,128 @@
   max-width: 36ch;
 }
 
+/* --- Assessor panel diagnostics, under the Interactive table --- */
+
+/* Ruled off from the comparison table and its notices above it. */
+.mc-panel-diagnostics {
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mc-panel-subheading {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.mc-panel-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #a1a1aa;
+  max-width: 90ch;
+}
+
+/* The three graders as label / value pairs on a two-column grid. */
+.mc-panel-roles {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  font-size: 13px;
+
+  div {
+    display: contents;
+  }
+
+  dt {
+    color: #898781;
+  }
+
+  dd {
+    margin: 0;
+    color: #d4d4d8;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* Small tables that are never sorted, filtered or paged: plain `.gh-table`s, each scrolling
+   sideways on its own so a narrow panel never scrolls the page. */
+.mc-panel-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.mc-panel-table {
+  th,
+  td {
+    vertical-align: top;
+  }
+
+  /* Row headers name the row; they do not carry the column header's ground. */
+  tbody th {
+    background: transparent;
+    color: #d4d4d8;
+    font-weight: 600;
+  }
+
+  .mc-panel-num {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* A family gap row with too few paired questions: its cells say so in words, muted. */
+.mc-panel-insufficient .mc-panel-num {
+  color: #898781;
+  font-style: italic;
+}
+
+.mc-panel-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d4d4d8;
+  max-width: 90ch;
+}
+
+/* The two labeled contrasts: the estimate, then its label as the server words it. */
+.mc-panel-contrasts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+
+  dt {
+    color: #c3c2b7;
+    font-weight: 600;
+  }
+
+  dd {
+    margin: 2px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+  }
+}
+
+.mc-panel-contrast-value {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+}
+
+.mc-panel-contrast-label {
+  color: #a1a1aa;
+}
+
 /* --- The Download tab --- */
 
 /* Its sections stacked: the formats, the sizes, the scope line and the actions. */

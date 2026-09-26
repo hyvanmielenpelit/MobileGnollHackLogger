@@ -372,7 +372,7 @@ public class BenchmarkScoringTests
     {
         Assert.Equal(50, BenchmarkScoring.UnweightedQualityMean(new int?[] { 40, null, 60, null }));
         Assert.Null(BenchmarkScoring.UnweightedQualityMean(new int?[] { null, null }));
-        Assert.Null(BenchmarkScoring.UnweightedQualityMean(null!));
+        Assert.Null(BenchmarkScoring.UnweightedQualityMean((IEnumerable<int?>)null!));
     }
 
     [Fact]
@@ -416,5 +416,187 @@ public class BenchmarkScoringTests
         Assert.Null(BenchmarkScoring.QualityIndexStandardError(twoItems));
         Assert.Null(BenchmarkScoring.QualityIndexStandardError(Array.Empty<(int?, int?)>()));
         Assert.Null(BenchmarkScoring.QualityIndexStandardError((IEnumerable<(int? QualityScore, int? Difficulty)>)null!));
+    }
+
+    // --- Panel scores: the double? overloads and the published score ------------------------------
+
+    [Fact]
+    public void DoubleOverloads_EqualTheIntegerResults_OnIntegerInput()
+    {
+        // A single-assessor run's scores are integers widened to double; every aggregate must come
+        // out exactly as it did before the widening.
+        var asInt = Run7.Select(x => ((int?)x.Quality, (int?)x.Difficulty)).ToList();
+        var asDouble = Run7.Select(x => ((double?)x.Quality, (int?)x.Difficulty)).ToList();
+        var asIntFixedDifficulty = Run7.Select(x => ((int?)x.Quality, x.Difficulty)).ToList();
+        var asDoubleFixedDifficulty = Run7.Select(x => ((double?)x.Quality, x.Difficulty)).ToList();
+
+        Assert.Equal(BenchmarkScoring.QualityIndex(asInt), BenchmarkScoring.QualityIndex(asDouble));
+        Assert.Equal(BenchmarkScoring.QualityIndex(asInt), BenchmarkScoring.QualityIndex(asIntFixedDifficulty));
+        Assert.Equal(BenchmarkScoring.QualityIndex(asInt), BenchmarkScoring.QualityIndex(asDoubleFixedDifficulty));
+        Assert.Equal(94, BenchmarkScoring.QualityIndex(asDouble));
+
+        Assert.Equal(BenchmarkScoring.QualityIndexStandardError(asInt), BenchmarkScoring.QualityIndexStandardError(asDouble));
+        Assert.Equal(BenchmarkScoring.QualityIndexStandardError(asInt), BenchmarkScoring.QualityIndexStandardError(asIntFixedDifficulty));
+        Assert.Equal(BenchmarkScoring.QualityIndexStandardError(asInt), BenchmarkScoring.QualityIndexStandardError(asDoubleFixedDifficulty));
+
+        Assert.Equal(
+            BenchmarkScoring.UnweightedQualityMean(Run7.Select(x => (int?)x.Quality)),
+            BenchmarkScoring.UnweightedQualityMean(Run7.Select(x => (double?)x.Quality)));
+    }
+
+    [Fact]
+    public void DoubleOverloads_IgnoreNullScores_AndAreNullOnNoInput()
+    {
+        Assert.Equal(50, BenchmarkScoring.UnweightedQualityMean(new double?[] { 40.0, null, 60.0 }));
+        Assert.Null(BenchmarkScoring.UnweightedQualityMean(new double?[] { null, null }));
+        Assert.Null(BenchmarkScoring.UnweightedQualityMean((IEnumerable<double?>)null!));
+
+        Assert.Equal(70, BenchmarkScoring.QualityIndex(new (double? QualityScore, int? Difficulty)[] { (70.0, 50), (null, 50) }));
+        Assert.Null(BenchmarkScoring.QualityIndex(Array.Empty<(double? QualityScore, int? Difficulty)>()));
+        Assert.Null(BenchmarkScoring.QualityIndexStandardError((IEnumerable<(double? QualityScore, int? Difficulty)>)null!));
+    }
+
+    [Fact]
+    public void QualityIndex_OverHalfPointPanelScores_WeightsThemUnrounded()
+    {
+        // (20 * 64.5 + 80 * 85.5) / 100 = 1290 / 100 + 6840 / 100 = 81.3, which rounds to 81.
+        // Rounding each score first would give (20 * 65 + 80 * 86) / 100 = 81.8, which rounds to 82.
+        var items = new (double? QualityScore, int? Difficulty)[] { (64.5, 20), (85.5, 80) };
+
+        Assert.Equal(81, BenchmarkScoring.QualityIndex(items));
+    }
+
+    private static BenchmarkRunAnswer PanelAnswer(
+        int a,
+        int b,
+        int? rawA = null,
+        int? rawB = null,
+        BenchmarkAssessmentStatus coStatus = BenchmarkAssessmentStatus.Scored) => new()
+        {
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            QualityScore = a,
+            RawQualityScore = rawA,
+            CoAssessmentStatus = coStatus,
+            CoAssessmentQualityScore = coStatus == BenchmarkAssessmentStatus.Scored ? b : null,
+            CoAssessmentRawQualityScore = rawB,
+            PanelQualityScore = coStatus == BenchmarkAssessmentStatus.Scored ? (a + b) / 2.0 : null
+        };
+
+    [Fact]
+    public void IndexQuality_IsThePanelScoreInAPanelRun_AndTheAssessorsScoreOtherwise()
+    {
+        var answer = PanelAnswer(70, 81);
+
+        Assert.Equal(75.5, BenchmarkScoring.IndexQuality(answer, isPanelRun: true));
+        Assert.Equal(70.0, BenchmarkScoring.IndexQuality(answer, isPanelRun: false));
+    }
+
+    [Fact]
+    public void IndexQuality_IsNullInAPanelRun_WhenMemberBDidNotScore()
+    {
+        var answer = PanelAnswer(70, 0, coStatus: BenchmarkAssessmentStatus.Failed);
+
+        Assert.Null(BenchmarkScoring.IndexQuality(answer, isPanelRun: true));
+        Assert.Equal(70.0, BenchmarkScoring.IndexQuality(answer, isPanelRun: false));
+        Assert.Throws<ArgumentNullException>(() => BenchmarkScoring.IndexQuality(null!, isPanelRun: true));
+    }
+
+    [Fact]
+    public void IndexRawQuality_InAPanelRun_IsTheMeanOfBothMembersPreCapScores()
+    {
+        // Member A was capped from 90 to 25; member B's raw is absent, so its final score stands in.
+        var answer = PanelAnswer(25, 80, rawA: 90);
+
+        Assert.Equal(85.0, BenchmarkScoring.IndexRawQuality(answer, isPanelRun: true));
+        Assert.Equal(90.0, BenchmarkScoring.IndexRawQuality(answer, isPanelRun: false));
+
+        var bothRaw = PanelAnswer(25, 25, rawA: 90, rawB: 71);
+        Assert.Equal(80.5, BenchmarkScoring.IndexRawQuality(bothRaw, isPanelRun: true));
+    }
+
+    [Fact]
+    public void IndexRawQuality_InAPanelRun_IsNullUnlessBothMembersScored()
+    {
+        var memberBFailed = PanelAnswer(70, 0, rawA: 80, coStatus: BenchmarkAssessmentStatus.Failed);
+        Assert.Null(BenchmarkScoring.IndexRawQuality(memberBFailed, isPanelRun: true));
+
+        var memberAFailed = PanelAnswer(70, 60);
+        memberAFailed.AssessmentStatus = BenchmarkAssessmentStatus.Failed;
+        Assert.Null(BenchmarkScoring.IndexRawQuality(memberAFailed, isPanelRun: true));
+
+        // Outside a panel run member B's status is never read.
+        Assert.Equal(80.0, BenchmarkScoring.IndexRawQuality(memberBFailed, isPanelRun: false));
+    }
+
+    [Fact]
+    public void IndexRawQuality_OutsideAPanelRun_FallsBackToTheQualityScore()
+    {
+        var answer = new BenchmarkRunAnswer { QualityScore = 64 };
+
+        Assert.Equal(64.0, BenchmarkScoring.IndexRawQuality(answer, isPanelRun: false));
+    }
+
+    // --- ICC(A,1) ---------------------------------------------------------------------------------
+
+    [Fact]
+    public void IntraclassCorrelationAbsolute_MatchesAHandComputedTwoBySixExample()
+    {
+        // A = 60 70 80 90 50 40, B = 64 76 82 96 52 48; n = 6, k = 2.
+        //   mean A = 65, mean B = 209/3, grand mean = 202/3
+        //   SS rows    = 2 * sum((row mean - grand)^2) = 10304/3
+        //   SS columns = 6 * ((65 - 202/3)^2 + (209/3 - 202/3)^2) = 196/3
+        //   SS total   = 10544/3, so SS error = 10544/3 - 10304/3 - 196/3 = 44/3
+        //   MSR = (10304/3) / 5 = 10304/15, MSC = 196/3, MSE = (44/3) / 5 = 44/15
+        //   ICC(A,1) = (MSR - MSE) / (MSR + MSE + 2 (MSC - MSE) / 6)
+        //            = (10260/15) / (10348/15 + 312/15) = 10260 / 10660 = 513/533 = 0.962476547842...
+        var pairs = new (double A, double B)[]
+        {
+            (60, 64), (70, 76), (80, 82), (90, 96), (50, 52), (40, 48)
+        };
+
+        double? icc = BenchmarkScoring.IntraclassCorrelationAbsolute(pairs);
+
+        Assert.NotNull(icc);
+        Assert.Equal(513.0 / 533.0, icc!.Value, 12);
+        Assert.Equal(0.962476547842, icc.Value, 12);
+    }
+
+    [Fact]
+    public void IntraclassCorrelationAbsolute_IsOne_ForIdenticalRatingsWithSpread()
+    {
+        var pairs = new (double A, double B)[] { (40, 40), (55, 55), (70, 70), (85, 85), (100, 100) };
+
+        Assert.Equal(1.0, BenchmarkScoring.IntraclassCorrelationAbsolute(pairs)!.Value, 12);
+    }
+
+    [Fact]
+    public void IntraclassCorrelationAbsolute_PenalizesAConstantOffset_BecauseItMeasuresAbsoluteAgreement()
+    {
+        // A consistency ICC would be 1 here; absolute agreement counts the 10-point offset against it.
+        var pairs = new (double A, double B)[] { (40, 50), (55, 65), (70, 80), (85, 95), (60, 70) };
+
+        double icc = BenchmarkScoring.IntraclassCorrelationAbsolute(pairs)!.Value;
+
+        Assert.True(icc < 1.0);
+        Assert.True(icc > 0.0);
+    }
+
+    [Fact]
+    public void IntraclassCorrelationAbsolute_IsNull_BelowFivePairs()
+    {
+        var four = new (double A, double B)[] { (60, 64), (70, 76), (80, 82), (90, 96) };
+
+        Assert.Null(BenchmarkScoring.IntraclassCorrelationAbsolute(four));
+        Assert.Null(BenchmarkScoring.IntraclassCorrelationAbsolute(Array.Empty<(double, double)>()));
+        Assert.Null(BenchmarkScoring.IntraclassCorrelationAbsolute(null!));
+    }
+
+    [Fact]
+    public void IntraclassCorrelationAbsolute_IsNull_AtZeroVariance()
+    {
+        var constant = new (double A, double B)[] { (80, 80), (80, 80), (80, 80), (80, 80), (80, 80) };
+
+        Assert.Null(BenchmarkScoring.IntraclassCorrelationAbsolute(constant));
     }
 }

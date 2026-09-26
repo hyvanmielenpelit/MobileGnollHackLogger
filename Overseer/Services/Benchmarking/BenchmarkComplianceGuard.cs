@@ -148,4 +148,23 @@ public class BenchmarkComplianceGuard
 
         return IsSameProvider(testedConfig.Provider, assessorConfig.Provider);
     }
+
+    /// <summary>
+    /// Provider and model id both equal, trimmed and case-insensitive. A panel refuses a member
+    /// that is the model under test, so no model grades itself.
+    /// </summary>
+    public bool IsSameModel(SystemAiApiConfiguration? first, SystemAiApiConfiguration? second)
+    {
+        if (first == null || second == null || !IsSameProvider(first.Provider, second.Provider))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(first.ModelId) || string.IsNullOrWhiteSpace(second.ModelId))
+        {
+            return false;
+        }
+
+        return string.Equals(first.ModelId.Trim(), second.ModelId.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
 }

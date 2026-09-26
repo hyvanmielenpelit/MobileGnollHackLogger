@@ -2,7 +2,7 @@ import { FIGURE_EXPORT_MAX_DIMENSION } from './figure-export';
 import { DEFAULT_APPEARANCE_STYLE } from './figure-style';
 import type { FigureAppearanceStyle } from './figure-style';
 import { resolveFigureTheme } from './figure-theme';
-import type { BenchmarkModelComparisonEntryDto } from './model-comparison.models';
+import type { BenchmarkModelComparisonEntryDto, BenchmarkPanelDiagnosticsDto } from './model-comparison.models';
 import {
   COMPARISON_TABLE_COLUMNS,
   ComparisonTableColumn,
@@ -18,10 +18,15 @@ import {
   comparisonTableCells,
   composeTableImage,
   encodeComparisonTable,
+  formatOverturnGapText,
+  formatPanelEstimateText,
+  formatPanelIndexText,
+  formatRateText,
   formatUsdText,
   measureTableImage,
   migrateTableColumnConfig,
   normalizeTableColumnConfig,
+  panelRoleText,
   populatedColumnKeys,
   readingCellText,
   resolveTableImageLayout,
@@ -915,6 +920,195 @@ describe('table-export', () => {
       expect(tsv.text).toBe(toTsv(built).slice(1));
       expect(tableClipboardPayload(built, 'md')).toEqual({ text: toMarkdown(built) });
       expect(tableClipboardPayload(built, 'json')).toEqual({ text: toJson(built) });
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The assessor panel diagnostics
+  // -------------------------------------------------------------------------------------------
+
+  describe('the assessor panel diagnostics block', () => {
+    const INTERACTION_LABEL =
+      'total same-family preference of both members; does not measure the bias of the panel mean';
+    const ASYMMETRY_LABEL =
+      'estimated panel bias; valid only if the reference reader is neutral between these two families';
+
+    /** Two candidate families graded by an OpenAI member A, an Anthropic member B and a Google reference reader. */
+    function diagnostics(overrides: Partial<BenchmarkPanelDiagnosticsDto> = {}): BenchmarkPanelDiagnosticsDto {
+      return {
+        applicable: true,
+        notApplicableReason: null,
+        memberALabel: 'GPT-4.1',
+        memberAProvider: 'OpenAI',
+        memberBLabel: 'Claude Sonnet 4',
+        memberBProvider: 'Anthropic',
+        referenceLabel: 'Gemini 2.5 Pro',
+        referenceProvider: 'Google',
+        entries: [
+          {
+            entryKey: 'run:1', entryLabel: 'GPT-5', candidateProvider: 'OpenAI',
+            memberAIndex: 72, memberBIndex: 66, panelIndex: 69, referenceIndex: 68,
+            rankA: 1, rankB: 2, rankPanel: 1, rankReference: 1
+          },
+          {
+            entryKey: 'run:2', entryLabel: 'Claude Opus 4', candidateProvider: 'Anthropic',
+            memberAIndex: 64, memberBIndex: 70, panelIndex: 67, referenceIndex: null,
+            rankA: 2, rankB: 1, rankPanel: 2, rankReference: null
+          }
+        ],
+        judgeDependentPairs: [
+          {
+            firstEntryKey: 'run:1', firstEntryLabel: 'GPT-5', secondEntryKey: 'run:2', secondEntryLabel: 'Claude Opus 4',
+            description: 'Member A ranks GPT-5 above Claude Opus 4 (72 vs 64); member B ranks Claude Opus 4 above GPT-5 (70 vs 66).'
+          }
+        ],
+        referenceDependentPairs: [],
+        familyGaps: [
+          {
+            provider1: 'OpenAI',
+            provider2: 'Anthropic',
+            pairedQuestionCount: 18,
+            insufficientData: false,
+            isMemberProviderPair: true,
+            gapA: { value: 8, ciLow: 3.25, ciHigh: 12.75 },
+            gapB: { value: -4, ciLow: -9.5, ciHigh: 1.5 },
+            gapPanel: { value: 2, ciLow: -1, ciHigh: 5 },
+            gapRef: { value: 1.04, ciLow: -2.2, ciHigh: 4.3 },
+            interactionContrast: { value: 12, ciLow: 6, ciHigh: 18 },
+            interactionContrastLabel: INTERACTION_LABEL,
+            asymmetryEstimate: { value: -0.04, ciLow: -3.1, ciHigh: 3 },
+            asymmetryEstimateLabel: ASYMMETRY_LABEL
+          }
+        ],
+        accusationAudit: [
+          {
+            member: 'A', memberProvider: 'OpenAI', candidateProvider: 'Anthropic', sameFamily: false,
+            charges: 14, overturned: 5, upheld: 7, indeterminate: 2, overturnRate: 5 / 12
+          },
+          {
+            member: 'A', memberProvider: 'OpenAI', candidateProvider: 'OpenAI', sameFamily: true,
+            charges: 12, overturned: 3, upheld: 9, indeterminate: 0, overturnRate: 0.25
+          }
+        ],
+        auditSummaries: [
+          { member: 'A', memberProvider: 'OpenAI', familyOverturnGap: 5 / 12 - 0.25 },
+          { member: 'B', memberProvider: 'Anthropic', familyOverturnGap: null }
+        ],
+        caveats: ['The published score is the panel mean.', 'The reference reader never scores.'],
+        ...overrides
+      };
+    }
+
+    function notApplicable(): BenchmarkPanelDiagnosticsDto {
+      return {
+        applicable: false,
+        notApplicableReason: 'Every run must be a panel run; 1 run (12) had a single assessor.',
+        entries: [],
+        judgeDependentPairs: [],
+        referenceDependentPairs: [],
+        familyGaps: [],
+        accusationAudit: [],
+        auditSummaries: [],
+        caveats: []
+      };
+    }
+
+    function withDiagnostics(built: ComparisonTableModel, value: BenchmarkPanelDiagnosticsDto | null): ComparisonTableModel {
+      return { ...built, panelDiagnostics: value };
+    }
+
+    it('writes Markdown unchanged when the diagnostics are absent, null or not applicable', () => {
+      const plain = toMarkdown(model());
+
+      expect(toMarkdown(withDiagnostics(model(), null))).toBe(plain);
+      expect(toMarkdown(withDiagnostics(model(), notApplicable()))).toBe(plain);
+      expect(plain).not.toContain('Assessor Panel Diagnostics');
+    });
+
+    it('appends the block after the table and its notices when the diagnostics apply', () => {
+      const plain = toMarkdown(model());
+      const text = toMarkdown(withDiagnostics(model(), diagnostics()));
+
+      // The comparison table and its notices come first, unchanged, then one blank line and the block.
+      expect(text.startsWith(`${plain}\n## Assessor Panel Diagnostics\n`)).toBeTrue();
+      expect(text.endsWith('\n')).toBeTrue();
+      expect(text).toContain('- Member A: GPT-4.1 (OpenAI)');
+      expect(text).toContain('- Member B: Claude Sonnet 4 (Anthropic)');
+      expect(text).toContain('- Reference reader: Gemini 2.5 Pro (Google)');
+      expect(text).toContain('| Entry | Provider | Member A | Member B | Panel | Reference |');
+      expect(text).toContain('| GPT-5 | OpenAI | 72 (#1) | 66 (#2) | 69 (#1) | 68 (#1) |');
+      expect(text).toContain('| Claude Opus 4 | Anthropic | 64 (#2) | 70 (#1) | 67 (#2) | — |');
+      expect(text).toContain('### Judge-Dependent Pairs\n\n- Member A ranks GPT-5 above Claude Opus 4');
+      expect(text).toContain('None: the panel and the reference reader order every pair of entries the same way.');
+    });
+
+    it('writes the family gaps with their 95% intervals and both contrasts under their labels, verbatim', () => {
+      const text = toMarkdown(withDiagnostics(model(), diagnostics()));
+
+      expect(text).toContain('| Providers | Paired questions | Member A | Member B | Panel | Reference |');
+      expect(text).toContain(
+        '| OpenAI − Anthropic | 18 | +8.0 [+3.3, +12.8] | -4.0 [-9.5, +1.5] | +2.0 [-1.0, +5.0] | +1.0 [-2.2, +4.3] |');
+      expect(text).toContain(`- Interaction contrast (OpenAI − Anthropic): +12.0 [+6.0, +18.0] — ${INTERACTION_LABEL}`);
+      // A negative zero is printed as zero.
+      expect(text).toContain(`- Asymmetry estimate (OpenAI − Anthropic): 0.0 [-3.1, +3.0] — ${ASYMMETRY_LABEL}`);
+    });
+
+    it('writes insufficient data on a flagged family gap and its contrasts', () => {
+      const empty = { value: null, ciLow: null, ciHigh: null };
+      const text = toMarkdown(withDiagnostics(model(), diagnostics({
+        familyGaps: [{
+          ...diagnostics().familyGaps[0],
+          pairedQuestionCount: 3,
+          insufficientData: true,
+          gapA: empty, gapB: empty, gapPanel: empty, gapRef: empty, interactionContrast: empty, asymmetryEstimate: empty
+        }]
+      })));
+
+      expect(text).toContain(
+        '| OpenAI − Anthropic | 3 | insufficient data | insufficient data | insufficient data | insufficient data |');
+      expect(text).toContain(`- Interaction contrast (OpenAI − Anthropic): insufficient data — ${INTERACTION_LABEL}`);
+    });
+
+    it('writes the accusation audit, each member\'s family overturn gap, and the caveats', () => {
+      const text = toMarkdown(withDiagnostics(model(), diagnostics()));
+
+      expect(text).toContain(
+        '| Member | Member provider | Candidate provider | Family | Charges | Overturned | Upheld | Indeterminate | Overturn rate |');
+      expect(text).toContain('| Member A | OpenAI | Anthropic | Other family | 14 | 5 | 7 | 2 | 42% |');
+      expect(text).toContain('| Member A | OpenAI | OpenAI | Same family | 12 | 3 | 9 | 0 | 25% |');
+      expect(text).toContain('- Member A (OpenAI) family overturn gap: +17 pp');
+      expect(text).toContain('- Member B (Anthropic) family overturn gap: withheld: too few ruled charges');
+      expect(text.endsWith('### Caveats\n\n- The published score is the panel mean.\n- The reference reader never scores.\n'))
+        .toBeTrue();
+    });
+
+    it('leaves every other format, and the comparison table\'s columns, as they are', () => {
+      const plain = model();
+      const attached = withDiagnostics(plain, diagnostics());
+
+      expect(attached.columns.length).toBe(29);
+      expect(toCsv(attached)).toBe(toCsv(plain));
+      expect(toTsv(attached)).toBe(toTsv(plain));
+      expect(toJson(attached)).toBe(toJson(plain));
+      expect(toHtml(attached)).toBe(toHtml(plain));
+      // The comparison table's own rows keep their twenty-nine cells.
+      const tableRows = toMarkdown(attached).split('\n').filter(line => line.startsWith('|')).slice(0, 3);
+      expect(tableRows.map(line => line.split(' | ').length)).toEqual([29, 29, 29]);
+      expect(tableClipboardPayload(attached, 'md').text).toContain('## Assessor Panel Diagnostics');
+    });
+
+    it('formats indices, estimates, rates and roles the way the section prints them', () => {
+      expect(formatPanelIndexText(71.6, 2)).toBe('72 (#2)');
+      expect(formatPanelIndexText(71, null)).toBe('71');
+      expect(formatPanelIndexText(null, 1)).toBe('—');
+      expect(formatPanelEstimateText({ value: 3.25, ciLow: -1, ciHigh: 7.4 })).toBe('+3.3 [-1.0, +7.4]');
+      expect(formatPanelEstimateText({ value: 2, ciLow: null, ciHigh: null })).toBe('+2.0');
+      expect(formatPanelEstimateText(null)).toBe('—');
+      expect(formatRateText(0.4167)).toBe('42%');
+      expect(formatRateText(null)).toBe('—');
+      expect(formatOverturnGapText(-0.05)).toBe('-5 pp');
+      expect(panelRoleText('GPT-4.1', 'OpenAI')).toBe('GPT-4.1 (OpenAI)');
+      expect(panelRoleText(null, null)).toBe('none');
     });
   });
 });

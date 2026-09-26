@@ -47,20 +47,27 @@ public record ModelPricing(
     ScheduledPricingChange? ScheduledChange = null,
     bool ScheduleElapsed = false);
 
+/// <summary>
+/// The price cards resolved for a run's roles. <see cref="CoAssessor"/> is the panel's member B,
+/// null on a single-assessor run; it also prices member B's own synthesis.
+/// </summary>
 public record BenchmarkRunPricing(
     ModelPricing? Candidate = null,
     ModelPricing? Assessor = null,
     ModelPricing? ClaimVerifier = null,
     ModelPricing? SecondOpinion = null,
-    bool IsSnapshot = false);
+    bool IsSnapshot = false,
+    ModelPricing? CoAssessor = null);
 
 /// <summary>
-/// One benchmark run's cost, split across the five roles that spend on it.
+/// One benchmark run's cost, split across the roles that spend on it.
 ///
 /// <para><see cref="Grading"/> is <see cref="Assessor"/>, <see cref="SecondOpinion"/>,
-/// <see cref="ClaimVerifier"/> and <see cref="Synthesis"/> together; <see cref="Total"/> is those
-/// four plus <see cref="Candidate"/>. Both subtotals are derived where the roles are costed, so a
-/// report and a screen reading the same run cannot disagree about what "grading" includes.</para>
+/// <see cref="ClaimVerifier"/>, <see cref="Synthesis"/>, <see cref="CoAssessor"/> and
+/// <see cref="CoSynthesis"/> together; <see cref="Total"/> is those plus <see cref="Candidate"/>.
+/// Both subtotals are derived where the roles are costed, so a report and a screen reading the
+/// same run cannot disagree about what "grading" includes. The two co-assessor roles are zero on
+/// a single-assessor run.</para>
 ///
 /// <para><see cref="Incomplete"/> says a role that spent tokens has no resolved price. The per-role
 /// figures still stand and are worth showing, but <see cref="Total"/> is 0 in that case: a sum that
@@ -71,7 +78,8 @@ public record BenchmarkRunPricing(
 /// </summary>
 public readonly record struct BenchmarkRoleCosts(
     decimal Candidate, decimal Assessor, decimal SecondOpinion, decimal ClaimVerifier,
-    decimal Synthesis, decimal Grading, decimal Total, bool Incomplete, string Source);
+    decimal Synthesis, decimal Grading, decimal Total, bool Incomplete, string Source,
+    decimal CoAssessor = 0m, decimal CoSynthesis = 0m);
 
 /// <summary>
 /// One costing split into the four disjoint buckets a provider bills, so a caller that wants to show
@@ -109,7 +117,7 @@ public readonly record struct ModelCostBreakdown(
 }
 
 /// <summary>
-/// The five roles of <see cref="BenchmarkRoleCosts"/>, each as its bucket breakdown. Produced by the
+/// The roles of <see cref="BenchmarkRoleCosts"/>, each as its bucket breakdown. Produced by the
 /// same per-role wiring that produces the totals, so a role's parts and its total come from one call.
 /// </summary>
 public readonly record struct BenchmarkRoleCostBreakdowns(
@@ -117,7 +125,9 @@ public readonly record struct BenchmarkRoleCostBreakdowns(
     ModelCostBreakdown Assessor,
     ModelCostBreakdown SecondOpinion,
     ModelCostBreakdown ClaimVerifier,
-    ModelCostBreakdown Synthesis);
+    ModelCostBreakdown Synthesis,
+    ModelCostBreakdown CoAssessor = default,
+    ModelCostBreakdown CoSynthesis = default);
 
 public class ModelPricingService
 {
@@ -384,8 +394,19 @@ public class ModelPricingService
                 var assessor = ParseRole("assessor");
                 var claimVerifier = ParseRole("claimVerifier");
                 var secondOpinion = ParseRole("secondOpinion");
+                var coAssessor = ParseRole("coAssessor");
 
-                return new BenchmarkRunPricing(candidate, assessor, claimVerifier, secondOpinion, IsSnapshot: true);
+                // A panel run whose snapshot has no coAssessor key resolves that card live, like the
+                // whole card set of a run recorded before snapshots existed. A key present as null
+                // records an unpriced model and stays null.
+                if (coAssessor == null && run.CoAssessorModelConfigurationId.HasValue && !root.TryGetProperty("coAssessor", out _))
+                {
+                    coAssessor = await ResolveForConfigurationAsync(
+                        run.CoAssessorModelConfigurationId,
+                        run.CoAssessorModelSnapshot?.Provider, run.CoAssessorModelSnapshot?.ModelId);
+                }
+
+                return new BenchmarkRunPricing(candidate, assessor, claimVerifier, secondOpinion, IsSnapshot: true, CoAssessor: coAssessor);
             }
             catch
             {
@@ -397,8 +418,11 @@ public class ModelPricingService
         var liveAssessor = await ResolveForConfigurationAsync(run.AssessorModelConfigurationId, run.AssessorModelSnapshot.Provider, run.AssessorModelSnapshot.ModelId);
         var liveVerifier = await ResolveForConfigurationAsync(run.ClaimVerifierModelConfigurationId, run.ClaimVerifierModelSnapshot?.Provider, run.ClaimVerifierModelSnapshot?.ModelId);
         var liveSecondOpinion = await ResolveForConfigurationAsync(run.SecondOpinionAssessorModelConfigurationId, run.SecondOpinionAssessorModelSnapshot?.Provider, run.SecondOpinionAssessorModelSnapshot?.ModelId);
+        var liveCoAssessor = run.CoAssessorModelConfigurationId.HasValue || run.CoAssessorModelSnapshot != null
+            ? await ResolveForConfigurationAsync(run.CoAssessorModelConfigurationId, run.CoAssessorModelSnapshot?.Provider, run.CoAssessorModelSnapshot?.ModelId)
+            : null;
 
-        return new BenchmarkRunPricing(liveCandidate, liveAssessor, liveVerifier, liveSecondOpinion, IsSnapshot: false);
+        return new BenchmarkRunPricing(liveCandidate, liveAssessor, liveVerifier, liveSecondOpinion, IsSnapshot: false, CoAssessor: liveCoAssessor);
     }
 
     /// <summary>
@@ -649,7 +673,8 @@ public class ModelPricingService
     /// <para>The final synthesis is priced on <see cref="BenchmarkRunPricing.Assessor"/>: it runs on the
     /// assessor's configuration, which is why <see cref="BenchmarkRunPricing"/> carries no synthesis
     /// member. It is a peer of the per-question assessments, not a component of them, and
-    /// <see cref="BenchmarkRoleCosts.Assessor"/> excludes it.</para>
+    /// <see cref="BenchmarkRoleCosts.Assessor"/> excludes it. In a panel run member B's own
+    /// synthesis is priced the same way on <see cref="BenchmarkRunPricing.CoAssessor"/>.</para>
     /// </summary>
     /// <param name="run">The run whose stored totals are costed.</param>
     /// <param name="pricing">The price cards resolved for the run's roles.</param>
@@ -728,8 +753,30 @@ public class ModelPricingService
                 run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens)
             : default;
 
+        // Panel member B and its own synthesis, both on the co-assessor's card. Zero token totals
+        // on a single-assessor run leave both at default.
+        var coAssessorCard = pricing.CoAssessor;
+
+        var coAssessor = coAssessorCard != null && RoleHasTokens(
+                run.TotalCoAssessmentInputTokens, run.TotalCoAssessmentOutputTokens,
+                run.TotalCoAssessmentCacheReadTokens, run.TotalCoAssessmentCacheCreationTokens)
+            ? ComputeCostBreakdownFromTotals(
+                coAssessorCard,
+                run.TotalCoAssessmentInputTokens, run.TotalCoAssessmentOutputTokens,
+                run.TotalCoAssessmentCacheReadTokens, run.TotalCoAssessmentCacheCreationTokens)
+            : default;
+
+        var coSynthesis = coAssessorCard != null && RoleHasTokens(
+                run.TotalCoSynthesisInputTokens, run.TotalCoSynthesisOutputTokens,
+                run.TotalCoSynthesisCacheReadTokens, run.TotalCoSynthesisCacheCreationTokens)
+            ? ComputeCostBreakdownFromTotals(
+                coAssessorCard,
+                run.TotalCoSynthesisInputTokens, run.TotalCoSynthesisOutputTokens,
+                run.TotalCoSynthesisCacheReadTokens, run.TotalCoSynthesisCacheCreationTokens)
+            : default;
+
         return new BenchmarkRoleCostBreakdowns(
-            candidate, assessor, secondOpinion, claimVerifier, synthesis);
+            candidate, assessor, secondOpinion, claimVerifier, synthesis, coAssessor, coSynthesis);
     }
 
     public static BenchmarkRoleCosts ComputeRunRoleCosts(
@@ -761,6 +808,14 @@ public class ModelPricingService
             run.TotalSynthesisInputTokens, run.TotalSynthesisOutputTokens,
             run.TotalSynthesisCacheReadTokens, run.TotalSynthesisCacheCreationTokens);
 
+        var coAssessorCard = pricing.CoAssessor;
+        bool hasCoAssessor = RoleHasTokens(
+            run.TotalCoAssessmentInputTokens, run.TotalCoAssessmentOutputTokens,
+            run.TotalCoAssessmentCacheReadTokens, run.TotalCoAssessmentCacheCreationTokens);
+        bool hasCoSynthesis = RoleHasTokens(
+            run.TotalCoSynthesisInputTokens, run.TotalCoSynthesisOutputTokens,
+            run.TotalCoSynthesisCacheReadTokens, run.TotalCoSynthesisCacheCreationTokens);
+
         var breakdowns = ComputeRunRoleCostBreakdowns(run, pricing, servedTier);
 
         decimal candidate = breakdowns.Candidate.Total;
@@ -768,8 +823,10 @@ public class ModelPricingService
         decimal secondOpinion = breakdowns.SecondOpinion.Total;
         decimal claimVerifier = breakdowns.ClaimVerifier.Total;
         decimal synthesis = breakdowns.Synthesis.Total;
+        decimal coAssessor = breakdowns.CoAssessor.Total;
+        decimal coSynthesis = breakdowns.CoSynthesis.Total;
 
-        decimal grading = assessor + secondOpinion + claimVerifier + synthesis;
+        decimal grading = assessor + secondOpinion + claimVerifier + synthesis + coAssessor + coSynthesis;
 
         // The candidate's card is required whatever its token counts: a run whose model under test
         // cannot be priced has no total worth printing.
@@ -777,13 +834,16 @@ public class ModelPricingService
             || (hasAssessor && assessorCard == null)
             || (hasSecondOpinion && secondOpinionCard == null)
             || (hasVerifier && verifierCard == null)
-            || (hasSynthesis && assessorCard == null);
+            || (hasSynthesis && assessorCard == null)
+            || (hasCoAssessor && coAssessorCard == null)
+            || (hasCoSynthesis && coAssessorCard == null);
 
-        var sources = new List<ModelPricingSource>(4);
+        var sources = new List<ModelPricingSource>(5);
         if (candidateCard != null) sources.Add(candidateCard.Source);
         if ((hasAssessor || hasSynthesis) && assessorCard != null) sources.Add(assessorCard.Source);
         if (hasSecondOpinion && secondOpinionCard != null) sources.Add(secondOpinionCard.Source);
         if (hasVerifier && verifierCard != null) sources.Add(verifierCard.Source);
+        if ((hasCoAssessor || hasCoSynthesis) && coAssessorCard != null) sources.Add(coAssessorCard.Source);
 
         string source = string.Empty;
         if (sources.Count > 0)
@@ -796,7 +856,7 @@ public class ModelPricingService
         return new BenchmarkRoleCosts(
             candidate, assessor, secondOpinion, claimVerifier, synthesis, grading,
             incomplete ? 0m : candidate + grading,
-            incomplete, source);
+            incomplete, source, coAssessor, coSynthesis);
     }
 }
 

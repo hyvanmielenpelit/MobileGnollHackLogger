@@ -219,9 +219,39 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsThirtyNine()
+    public void HarnessVersion_IsForty()
     {
-        Assert.Equal("39", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("40", BenchmarkAssessmentPrompt.HarnessVersion);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_AsksForTheStructuredFindingsArray()
+    {
+        var summary = new BenchmarkPerQuestionVerdictSummary
+        {
+            OrderIndex = 1,
+            QuestionText = "Q?",
+            AccuracyLevel = 5,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = 90,
+            Status = BenchmarkAnswerStatus.Ok
+        };
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { summary }).Replace("\r\n", "\n");
+
+        // The instruction names every kind and category the parser accepts, and the schema carries
+        // one example entry with all four fields.
+        Assert.Contains("List every strength and weakness you name in `findings` as well", prompt);
+        Assert.Contains("`kind` is \"strength\" or \"weakness\"", prompt);
+        Assert.Contains("`category` is one of " + string.Join(", ", BenchmarkAssessmentParser.SynthesisFindingCategories), prompt);
+        Assert.Contains("\"findings\": [\n    { \"kind\": \"weakness\", \"category\": \"accuracy\", \"questions\": [3, 7], \"text\": ", prompt);
+
+        int schema = prompt.IndexOf("--- OUTPUT JSON SCHEMA ---", StringComparison.Ordinal);
+        Assert.True(schema >= 0);
+        Assert.True(prompt.IndexOf("\"findings\":", StringComparison.Ordinal) > schema);
+        Assert.True(prompt.IndexOf("\"overallComments\":", schema, StringComparison.Ordinal) < prompt.IndexOf("\"findings\":", schema, StringComparison.Ordinal));
     }
 
     [Fact]
@@ -763,18 +793,18 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs39_ScoringMethodIs12()
+    public void Versions_HarnessIs40_ScoringMethodIs12()
     {
-        Assert.Equal("39", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("40", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 39 keeps scoring method 12, under which ACCURACY is graded against the rubric and
-        // the board only and an own-knowledge suspicion becomes a "Suspected false: " unverified
-        // claim. A contested verdict is read from the comment and the accuracy evidence with game
-        // vocabulary masked and denied fabrications skipped; a disputed answer carries its
-        // accused-sentence verdict counts; a single cited line inside a #define header is noted as a
-        // macro definition and counts as Indeterminate; and a charged item is read from its own
-        // chargedPartVerdict. None of these feeds a score, and no tool guide or candidate prompt
-        // moves, so a 39-stamped run differs from a 38-stamped one on HarnessVersion alone.
+        // Harness 40 keeps scoring method 12: the per-verdict grading rules do not change. It adds the
+        // two-family assessor panel — a co-assessor grades every answer beside the assessor with the
+        // identical prompt, the published per-answer score is the mean of the two, the second opinion
+        // becomes the reference reader, the claim verifier checks the union of both members' charges
+        // with raisedBy provenance, and each member writes its own synthesis. Every synthesis gains a
+        // structured findings array. Single-assessor runs grade exactly as under 39 apart from that
+        // schema, and a panel run is separated by the co-assessor fields appended to the assessor
+        // comparability key rather than by a scoring method bump.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

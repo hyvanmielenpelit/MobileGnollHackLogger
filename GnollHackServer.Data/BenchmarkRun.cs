@@ -337,6 +337,20 @@ public class BenchmarkRun
     /// </summary>
     public int? AssessorEffectiveMaxOutputTokens { get; set; }
 
+    // Co-Assessor snapshot: panel member B.
+    //
+    // Null means a single-assessor run. When set, the co-assessor grades every answer beside the
+    // assessor (panel member A), blind to it and with the identical prompt, and the published
+    // per-answer score is the mean of the two members' quality scores.
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
+    public long? CoAssessorModelConfigurationId { get; set; }
+
+    public long? CoAssessorModelSnapshotId { get; set; }
+    public SystemAiConfigurationSnapshot? CoAssessorModelSnapshot { get; set; }
+
+    /// <summary>The output cap actually sent on every co-assessor call. Fixed at launch.</summary>
+    public int? CoAssessorEffectiveMaxOutputTokens { get; set; }
+
     // Second Opinion Assessor snapshot.
     //
     // Null means this run performs no second-opinion re-grading. There is deliberately no
@@ -584,6 +598,46 @@ public class BenchmarkRun
     /// </summary>
     public int SecondOpinionSampleCountUsed { get; set; }
 
+    // Panel agreement between the assessor (member A) and the co-assessor (member B), over the
+    // answers that count toward the quality index and that both members scored. Null on every
+    // single-assessor run.
+
+    /// <summary>Answers both panel members scored.</summary>
+    public int? PanelGradedAnswerCount { get; set; }
+
+    /// <summary>Mean |B − A| quality gap across <see cref="PanelGradedAnswerCount"/> answers.</summary>
+    public double? PanelMeanAbsDelta { get; set; }
+
+    /// <summary>Mean signed quality gap, B − A. Negative means member B graded lower.</summary>
+    public double? PanelMeanSignedDelta { get; set; }
+
+    /// <summary>Answers where the two members disagreed on CriticalError.</summary>
+    public int? PanelCriticalErrorSplitCount { get; set; }
+
+    /// <summary>
+    /// Answers whose members differ by more than the second-opinion disagreement threshold, or
+    /// disagree on CriticalError.
+    /// </summary>
+    public int? PanelDisagreementCount { get; set; }
+
+    /// <summary>
+    /// ICC(A,1) of the two members' quality scores: two-way random, absolute agreement, single
+    /// rater. Null below 5 pairs or when the total variance is 0.
+    /// </summary>
+    public double? PanelIntraclassCorrelation { get; set; }
+
+    /// <summary>
+    /// Difficulty-weighted index of member A's scores alone, over the answers the panel scored.
+    /// Advisory: the published index is the panel's.
+    /// </summary>
+    public int? AssessorOnlyQualityIndex { get; set; }
+
+    /// <summary>
+    /// Difficulty-weighted index of member B's scores alone, over the answers the panel scored.
+    /// Advisory: the published index is the panel's.
+    /// </summary>
+    public int? CoAssessorOnlyQualityIndex { get; set; }
+
     /// <summary>
     /// Canonical JSON representation of the candidate prompt options used to build the system prompt.
     /// </summary>
@@ -729,6 +783,16 @@ public class BenchmarkRun
 
     public bool AssessmentParseFailed { get; set; }
 
+    // The co-assessor's own synthesis in a panel run, written from its own verdicts only. The
+    // fields above hold member A's.
+    public int? CoAssessorFinalScore { get; set; }
+
+    public string? CoAssessorSynthesisJson { get; set; }
+
+    public string? CoAssessorSynthesisText { get; set; }
+
+    public bool CoAssessorSynthesisParseFailed { get; set; }
+
     // Token totals and duration
     public long TotalInputTokens { get; set; }
     public long TotalOutputTokens { get; set; }
@@ -755,6 +819,14 @@ public class BenchmarkRun
     public long TotalAssessmentCacheReadTokens { get; set; }
     public long TotalAssessmentCacheCreationTokens { get; set; }
     public long TotalAssessmentDurationMs { get; set; }
+
+    // Co-assessor-side usage in a panel run, kept apart from the assessor totals above and
+    // recomputed from the answer rows like them. Zero on every single-assessor run.
+    public long TotalCoAssessmentInputTokens { get; set; }
+    public long TotalCoAssessmentOutputTokens { get; set; }
+    public long TotalCoAssessmentCacheReadTokens { get; set; }
+    public long TotalCoAssessmentCacheCreationTokens { get; set; }
+    public long TotalCoAssessmentDurationMs { get; set; }
 
     // Second-opinion-side usage, kept apart from candidate, assessor and claim-verifier totals.
     // The second opinion is a separate assessor call from the primary assessment above and is
@@ -785,6 +857,16 @@ public class BenchmarkRun
     public long TotalSynthesisCacheReadTokens { get; set; }
     public long TotalSynthesisCacheCreationTokens { get; set; }
     public long TotalSynthesisDurationMs { get; set; }
+
+    /// <summary>
+    /// The co-assessor's final-synthesis usage in a panel run, recorded at run level only, like
+    /// <see cref="TotalSynthesisInputTokens"/>. Zero on every single-assessor run.
+    /// </summary>
+    public long TotalCoSynthesisInputTokens { get; set; }
+    public long TotalCoSynthesisOutputTokens { get; set; }
+    public long TotalCoSynthesisCacheReadTokens { get; set; }
+    public long TotalCoSynthesisCacheCreationTokens { get; set; }
+    public long TotalCoSynthesisDurationMs { get; set; }
 
     /// <summary>
     /// Resolved per-million prices for every role, captured when the run started. A report

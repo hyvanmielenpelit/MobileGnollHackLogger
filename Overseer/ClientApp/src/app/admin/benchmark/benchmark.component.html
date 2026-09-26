@@ -155,7 +155,7 @@
             <div class="pulse-indicator" aria-hidden="true"></div>
             <div>
               <h4>Benchmark Run in Progress (Run #{{ activeRunDetail.id }})</h4>
-              <p class="text-muted">Suite: {{ activeRunDetail.suiteName }} | Model: {{ activeRunDetail.testedModelDisplayNameUsed }} | Evaluator: {{ activeRunDetail.assessorModelDisplayNameUsed }}</p>
+              <p class="text-muted">Suite: {{ activeRunDetail.suiteName }} | Model: {{ activeRunDetail.testedModelDisplayNameUsed }} | Evaluator: {{ activeRunDetail.assessorModelDisplayNameUsed }}{{ activeRunDetail.isPanelRun ? ' + ' + activeRunDetail.coAssessorModelDisplayNameUsed : '' }}</p>
             </div>
           </div>
           <div class="banner-progress" role="status">
@@ -438,7 +438,7 @@
                  the assessor above. Selected here like every other model, never in configuration:
                  a System AI Config is a database row an administrator manages in this UI. -->
             <div class="form-group">
-              <label>Second Opinion Assessor (optional)</label>
+              <label>Second Opinion Assessor{{ isPanelLaunch ? ' (reference reader)' : '' }} (optional)</label>
               <div class="custom-model-selector second-opinion-model-selector">
                 <button type="button" class="selector-trigger" (click)="toggleSecondOpinionModelDropdown($event)" [class.open]="isSecondOpinionModelDropdownOpen">
                   <span class="model-name" [class.text-muted]="!selectedSecondOpinionModel">{{ selectedSecondOpinionModel?.displayName || selectedSecondOpinionModel?.modelId || 'None — no second opinion' }}</span>
@@ -520,6 +520,97 @@
                   </div>
                 </div>
               }
+
+              @if (referenceReaderSharedFamilyRoles.length > 0) {
+                <div class="alert alert-info mt-10 reference-reader-family-advisory" role="note">
+                  <div class="alert-content">
+                    <div class="alert-heading"><strong>Reference reader shares a provider</strong></div>
+                    <div class="alert-body">
+                      {{ selectedSecondOpinionModel?.provider }} is also the provider of
+                      {{ referenceReaderSharedFamilyRoles.join(' and ') }}. The reference reader is the
+                      neutral anchor the panel's family gap is compared against, so it is best taken
+                      from a family that is neither a candidate nor a panel member.
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Row 2b: Co-Assessor (panel member B). A row of its own, between the model row and the
+               claim-verifier row, so neither of those rows' column counts changes. -->
+          <div class="form-row co-assessor-row">
+            <div class="form-group">
+              <label>Co-Assessor (panel member B)</label>
+              <div class="custom-model-selector co-assessor-model-selector">
+                <button type="button" class="selector-trigger" (click)="toggleCoAssessorModelDropdown($event)" [class.open]="isCoAssessorModelDropdownOpen">
+                  <span class="model-name" [class.text-muted]="!selectedCoAssessorModel">{{ selectedCoAssessorModel?.displayName || selectedCoAssessorModel?.modelId || 'None — single assessor' }}</span>
+                  @if (selectedCoAssessorModel?.thinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(selectedCoAssessorModel?.thinkingLevel) }}</span>
+                  }
+                  @if (showReasoningBadge(selectedCoAssessorModel?.reasoningMode)) {
+                    <span class="reasoning-badge">{{ selectedCoAssessorModel?.reasoningMode }}</span>
+                  }
+                  @if (selectedCoAssessorModel?.provider) {
+                    <app-provider-badge [provider]="selectedCoAssessorModel?.provider"></app-provider-badge>
+                  }
+                  @if (selectedCoAssessorModel?.effectiveInputPricePerMillion != null) {
+                    <span class="price-badge">{{ formatPickerPrice(selectedCoAssessorModel) }}</span>
+                  }
+                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+                @if (isCoAssessorModelDropdownOpen) {
+                  <div class="selector-dropdown">
+                    <div class="model-option" (click)="selectCoAssessorModel(null)" [class.selected]="coAssessorConfigId === null">
+                      <span class="model-name text-muted">None — single assessor</span>
+                    </div>
+                    @for (model of benchmarkCapableConfigs; track model.id) {
+                      <div class="model-option" (click)="selectCoAssessorModel(model)" [class.selected]="coAssessorConfigId === model.id">
+                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                        @if (model.thinkingLevel) {
+                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                        }
+                        @if (showReasoningBadge(model.reasoningMode)) {
+                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                        }
+                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
+                        @if (model.effectiveInputPricePerMillion != null) {
+                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+              <span class="form-hint">
+                Grades every answer beside the assessor; the published score is the mean of the two.
+                Choose a model from a different provider, not one under test.
+              </span>
+
+              <!-- The server's two panel refusals, shown before Start so the run is never sent. -->
+              @if (showCoAssessorSameProviderAdvisory) {
+                <div class="alert alert-warning mt-10 co-assessor-advisory" role="note">
+                  <div class="alert-content">
+                    <div class="alert-heading"><strong>Panel members share a provider</strong></div>
+                    <div class="alert-body">
+                      The assessor and the co-assessor both come from {{ selectedCoAssessorModel?.provider }}.
+                      A panel balances two families against each other, so its members must come from
+                      different providers.
+                    </div>
+                  </div>
+                </div>
+              }
+              @if (showCoAssessorCandidateAdvisory) {
+                <div class="alert alert-warning mt-10 co-assessor-advisory" role="note">
+                  <div class="alert-content">
+                    <div class="alert-heading"><strong>A panel member is the model under test</strong></div>
+                    <div class="alert-body">
+                      The model under test would grade its own answers. In a panel run neither member
+                      may be the candidate model; choose an older or other model of the same family.
+                    </div>
+                  </div>
+                </div>
+              }
             </div>
           </div>
 
@@ -585,6 +676,20 @@
                       The model under test would be checking its own claims. The tools supply the evidence
                       rather than the model's memory, so this is not worthless — but it is the weakest available
                       pairing.
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (claimVerifierSharedFamilyRoles.length > 0) {
+                <div class="alert alert-info mt-10 claim-verifier-family-advisory" role="note">
+                  <div class="alert-content">
+                    <div class="alert-heading"><strong>Verifier shares a provider</strong></div>
+                    <div class="alert-body">
+                      {{ selectedClaimVerifierModel?.provider }} is also the provider of
+                      {{ claimVerifierSharedFamilyRoles.join(' and ') }}. The verifier checks both panel
+                      members' charges, so it is best taken from a family that is neither a candidate nor
+                      a panel member.
                     </div>
                   </div>
                 </div>
@@ -1549,7 +1654,11 @@
           </div>
           <p class="dialog-subtitle">
             Model: <strong>{{ selectedRunDetail.testedModelDisplayNameUsed }}</strong> |
-            Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }}</strong> |
+            @if (selectedRunDetail.isPanelRun) {
+              Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }} + {{ selectedRunDetail.coAssessorModelDisplayNameUsed }}</strong> |
+            } @else {
+              Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }}</strong> |
+            }
             @if (candidatePromptSummaryOf(selectedRunDetail); as promptSummary) {
               Prompt: <strong>{{ promptSummary }}</strong> |
             }
@@ -1719,9 +1828,23 @@
             answers is conditioned on the first assessor's own uncertainty; the same figure over
             every answer is an inter-rater agreement rate. Only the fraction tells them apart.
           -->
+          <!--
+            The two panel members: each one's index alone over the answers both scored, their
+            absolute-agreement ICC and the mean B − A. The headline index above is the panel's.
+          -->
+          @if (selectedRunDetail.isPanelRun) {
+            <div class="score-card panel-tile">
+              <span class="score-label">Panel</span>
+              <span class="score-subvalue">
+                A {{ selectedRunDetail.assessorOnlyQualityIndex ?? 'N/A' }} · B {{ selectedRunDetail.coAssessorOnlyQualityIndex ?? 'N/A' }}
+              </span>
+              <span class="score-note">ICC {{ panelIccLabel }} · mean B − A {{ panelSignedDeltaLabel }}</span>
+              <span class="score-note">{{ selectedRunDetail.panelDisagreementCount ?? 0 }} disagreement(s) over {{ selectedRunDetail.panelGradedAnswerCount ?? 0 }} answers both scored</span>
+            </div>
+          }
           @if (showAgreementTile) {
             <div class="score-card">
-              <span class="score-label">Assessor Agreement</span>
+              <span class="score-label">{{ selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement' }}</span>
               <span class="score-subvalue">
                 {{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · ' + agreementMeanSignedDeltaLabel : '' }}
                 <!--
@@ -1739,6 +1862,9 @@
           <div class="score-card">
             <span class="score-label">Holistic Assessor Score</span>
             <span class="score-subvalue">{{ selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A' }} / 100</span>
+            @if (selectedRunDetail.isPanelRun) {
+              <span class="score-note">member A; member B {{ selectedRunDetail.coAssessorFinalScore ?? 'N/A' }} / 100</span>
+            }
           </div>
           <!--
             The pair the report prints as Total Candidate Answer Time and Total Elapsed Wall Time.
@@ -2044,12 +2170,13 @@
           }
         </div>
 
-        <!-- Assessor Review Card -->
-        @if (selectedRunDetail.assessmentText) {
-          <div class="benchmark-card assessor-card mb-20">
-            <h4>Assessor Qualitative Synthesis</h4>
-            <div class="prose-review">{{ selectedRunDetail.assessmentText }}</div>
-          </div>
+        <!-- Assessor synthesis: one card, or in a panel run one tab per member and an Agreement tab. -->
+        @if (synthesisViewsOf(selectedRunDetail); as syntheses) {
+          @if (syntheses.length > 0) {
+            <app-benchmark-synthesis-panel
+              [syntheses]="syntheses"
+              [convergence]="selectedRunDetail.synthesisConvergence ?? null"></app-benchmark-synthesis-panel>
+          }
         }
 
         <!--
@@ -2139,7 +2266,7 @@
         }
 
         <!--
-          Where the Estimated Cost card's figure went. The five roles and the grading subtotal are
+          Where the Estimated Cost card's figure went. The roles and the grading subtotal are
           visible rather than behind a hover, because the split is the point.
         -->
         <app-benchmark-cost-panel
@@ -2147,9 +2274,11 @@
           [total]="selectedRunDetail.estimatedCost ?? null"
           [candidate]="selectedRunDetail.estimatedCandidateCost ?? null"
           [assessor]="selectedRunDetail.estimatedAssessorCost ?? null"
+          [coAssessor]="selectedRunDetail.estimatedCoAssessorCost ?? null"
           [secondOpinion]="selectedRunDetail.estimatedSecondOpinionCost ?? null"
           [claimVerifier]="selectedRunDetail.estimatedVerifierCost ?? null"
           [synthesis]="selectedRunDetail.estimatedSynthesisCost ?? null"
+          [coSynthesis]="selectedRunDetail.estimatedCoSynthesisCost ?? null"
           [grading]="selectedRunDetail.estimatedGradingCost ?? null"
           [pricingSource]="selectedRunDetail.pricingSource ?? null"
           [pricingIncomplete]="selectedRunDetail.pricingIncomplete ?? false"
@@ -2201,9 +2330,13 @@
                   @if (ans.criticalError) {
                     <span class="critical-badge" title="Critical error cap applied (Quality capped at 25)">CRITICAL ERROR</span>
                   }
+                  @if (ans.panelDisagreed) {
+                    <span class="panel-disagree-badge"
+                          title="The two panel members differ by more than 15 points or on critical error. The published score is still their mean.">MEMBERS DISAGREE</span>
+                  }
                   @if (ans.secondOpinionDisagreed) {
                     <span class="disputed-badge"
-                          title="A second assessor reached a materially different verdict. The first verdict is what scored.">DISPUTED</span>
+                          [title]="selectedRunDetail.isPanelRun ? 'The reference reader reached a materially different verdict. It never scores; the panel score stands.' : 'A second assessor reached a materially different verdict. The first verdict is what scored.'">DISPUTED</span>
                   }
                   <span class="q-title">{{ ans.questionText }}</span>
                 </div>
@@ -2213,12 +2346,24 @@
                       Assessed by {{ ans.assessedByModelDisplayNameUsed }}
                     </span>
                   }
+                  <!-- In a panel run the published score is the panel chip; Q and B are the members'. -->
+                  @if (selectedRunDetail.isPanelRun && ans.panelQualityScore != null) {
+                    <span class="q-score-badge panel-score-chip" [class]="getQuestionScoreBadgeClass(ans.panelQualityScore)"
+                          title="Panel score: the mean of the two members' quality scores">
+                      Panel: {{ ans.panelQualityScore | number:'1.0-1' }}
+                    </span>
+                  }
                   @if (ans.qualityScore != null) {
                     <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.qualityScore)">
-                      Q: {{ ans.qualityScore }}
+                      {{ selectedRunDetail.isPanelRun ? 'A' : 'Q' }}: {{ ans.qualityScore }}
                       @if (ans.rawQualityScore != null && ans.rawQualityScore !== ans.qualityScore) {
                         <small class="q-raw-score" title="Raw Quality Score before cap">({{ ans.rawQualityScore }})</small>
                       }
+                    </span>
+                  }
+                  @if (selectedRunDetail.isPanelRun && ans.coAssessmentQualityScore != null) {
+                    <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.coAssessmentQualityScore)">
+                      B: {{ ans.coAssessmentQualityScore }}
                     </span>
                   }
                   @if (ans.speedScore != null) {
@@ -2320,20 +2465,97 @@
                     }
                   }
 
+                  <!--
+                    Panel member B's verdict, beside member A's above. Both grade blind to each other
+                    with the same prompt, and the published score is their mean.
+                  -->
+                  @if (selectedRunDetail.isPanelRun) {
+                    <div class="co-assessment-box mb-15" [class.is-disputed]="ans.panelDisagreed">
+                      <div>
+                        <strong>Co-assessor ({{ ans.coAssessedByModelDisplayNameUsed || selectedRunDetail.coAssessorModelDisplayNameUsed }}):</strong>
+                        @if (ans.coAssessmentQualityScore != null && !isCoAssessmentUnscored(ans)) {
+                          {{ ans.coAssessmentQualityScore }} / 100, critical error
+                          {{ ans.coAssessmentCriticalError ? 'yes' : 'no' }}
+                          @if (ans.coAssessmentRawQualityScore != null && ans.coAssessmentRawQualityScore !== ans.coAssessmentQualityScore) {
+                            <span class="text-muted">(raw {{ ans.coAssessmentRawQualityScore }})</span>
+                          }
+                        } @else {
+                          assessment {{ ans.coAssessmentStatus != null ? formatAssessmentStatus(ans.coAssessmentStatus) : 'not recorded' }}
+                        }
+                      </div>
+                      @if (ans.panelQualityScore != null) {
+                        <div>
+                          <strong>Panel score:</strong> {{ ans.panelQualityScore | number:'1.0-1' }} / 100
+                          @if (ans.panelDisagreed) {
+                            <span class="panel-disagree-badge">members disagree</span>
+                          }
+                        </div>
+                      }
+                      @if (coAssessmentOf(ans); as co) {
+                        @if (co.accuracyLevel != null) {
+                          <div class="evaluation-chip-row">
+                            <div class="eval-chip"><strong>Accuracy:</strong> Level {{ co.accuracyLevel }}/6</div>
+                            <div class="eval-chip"><strong>Completeness:</strong> Level {{ co.completenessLevel }}/6</div>
+                            <div class="eval-chip"><strong>Conciseness:</strong> Level {{ co.concisenessLevel }}/6</div>
+                            <div class="eval-chip"><strong>Readability:</strong> Level {{ co.readabilityLevel }}/6</div>
+                          </div>
+                        }
+                        @if (co.criticalError && co.criticalErrorQuote) {
+                          <div><strong>Critical error quote:</strong> “{{ co.criticalErrorQuote }}”</div>
+                        }
+                        @if (co.criticalErrorDemoted) {
+                          <div><strong>Critical error:</strong> claimed but not applied — the quoted claim could not be found in the graded answer.</div>
+                        }
+                        @if (co.comment) {
+                          <div><strong>Verdict:</strong> {{ co.comment }}</div>
+                        }
+                        @if (co.accuracyEvidence) {
+                          <div><strong>Accuracy evidence:</strong> {{ co.accuracyEvidence }}</div>
+                        }
+                        @if (co.completenessEvidence) {
+                          <div><strong>Completeness evidence:</strong> {{ co.completenessEvidence }}</div>
+                        }
+                        @if (co.readabilityEvidence) {
+                          <div><strong>Readability evidence:</strong> {{ co.readabilityEvidence }}</div>
+                        }
+                        @if (co.unverifiedClaims && co.unverifiedClaims.length > 0) {
+                          <div><strong>Unverified claims ({{ co.unverifiedClaims.length }}):</strong></div>
+                          <ul class="unverified-claim-list">
+                            @for (claim of co.unverifiedClaims; track $index) {
+                              <li>“{{ claim }}”</li>
+                            }
+                          </ul>
+                        }
+                      }
+                      @if (ans.coAssessmentError) {
+                        <div class="co-assessment-error">{{ ans.coAssessmentError }}</div>
+                      }
+                      <div class="second-opinion-note">
+                        Member B grades every answer beside member A, blind to its verdict; the published
+                        score is the mean of the two.
+                      </div>
+                    </div>
+                  }
+
                   @if (ans.secondOpinionQualityScore != null) {
                     <div class="second-opinion-box mb-15" [class.is-disputed]="ans.secondOpinionDisagreed">
                       <div>
-                        <strong>Second opinion ({{ ans.secondOpinionByModelDisplayNameUsed }}):</strong>
+                        <strong>{{ selectedRunDetail.isPanelRun ? 'Reference reader' : 'Second opinion' }} ({{ ans.secondOpinionByModelDisplayNameUsed }}):</strong>
                         {{ ans.secondOpinionQualityScore }} / 100, critical error
                         {{ ans.secondOpinionCriticalError ? 'yes' : 'no' }} —
-                        {{ ans.secondOpinionDisagreed ? 'disagrees with' : 'agrees with' }} the first verdict.
+                        {{ ans.secondOpinionDisagreed ? 'disagrees with' : 'agrees with' }} {{ selectedRunDetail.isPanelRun ? 'the panel' : 'the first verdict' }}.
                         @if (ans.secondOpinionTrigger) {
                           <span class="second-opinion-trigger">(trigger: {{ secondOpinionTriggerLabel(ans.secondOpinionTrigger) }})</span>
                         }
                       </div>
                       <div class="second-opinion-note">
-                        Advisory. The first verdict is what scored; re-assess this question if you want the
-                        second reading to replace it.
+                        @if (selectedRunDetail.isPanelRun) {
+                          Advisory. The reference reader never scores; it is the neutral reading the panel is
+                          compared against.
+                        } @else {
+                          Advisory. The first verdict is what scored; re-assess this question if you want the
+                          second reading to replace it.
+                        }
                       </div>
                     </div>
                   }
@@ -2634,12 +2856,18 @@
                       consequential distinction on this screen — so the trial is a separate,
                       differently-styled action rather than a checkbox on the button above.
                     -->
-                    <button type="button" class="btn-gh btn-gh-trial" (click)="openRetryDialog('trial', selectedRunDetail.id, ans)"
-                            [disabled]="isRunBusy() || trialReassessingAnswerId === ans.id"
-                            title="Records another assessor's verdict in the second-opinion slot. Changes no score, level, flag or index.">
-                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6v5l4 9a2 2 0 0 1-1.8 3H6.8A2 2 0 0 1 5 17l4-9V3z"></path><line x1="9" y1="3" x2="15" y2="3"></line></svg>
-                      {{ trialReassessingAnswerId === ans.id ? 'Trying...' : 'Try another assessor (does not change the score)' }}
-                    </button>
+                    <!--
+                      In a panel run the second-opinion slot holds the reference reader's verdict,
+                      which a trial may never replace, so the trial is offered only where it is empty.
+                    -->
+                    @if (canTrialReassess(ans)) {
+                      <button type="button" class="btn-gh btn-gh-trial" (click)="openRetryDialog('trial', selectedRunDetail.id, ans)"
+                              [disabled]="isRunBusy() || trialReassessingAnswerId === ans.id"
+                              title="Records another assessor's verdict in the second-opinion slot. Changes no score, level, flag or index.">
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6v5l4 9a2 2 0 0 1-1.8 3H6.8A2 2 0 0 1 5 17l4-9V3z"></path><line x1="9" y1="3" x2="15" y2="3"></line></svg>
+                        {{ trialReassessingAnswerId === ans.id ? 'Trying...' : 'Try another assessor (does not change the score)' }}
+                      </button>
+                    }
                   </div>
                 </div>
               }
@@ -2687,6 +2915,16 @@
                 }
               </div>
             </div>
+            @if (selectedRunDetail.isPanelRun) {
+              <div class="form-group">
+                <label for="calibrationTargetSelect">Compare against</label>
+                <select id="calibrationTargetSelect" class="gh-input" [(ngModel)]="calibrationTarget">
+                  @for (option of calibrationTargetOptions; track option.value) {
+                    <option [ngValue]="option.value">{{ option.label }}</option>
+                  }
+                </select>
+              </div>
+            }
             <button type="button" class="btn-gh" (click)="runCalibration(selectedRunDetail.id)"
                     [disabled]="calibrating || calibrationAssessorConfigId == null || isRunBusy()">
               {{ calibrating ? 'Calibrating...' : 'Calibrate assessor' }}
@@ -2708,6 +2946,9 @@
               <thead>
                 <tr>
                   <th scope="col">Assessor</th>
+                  @if (selectedRunDetail.isPanelRun) {
+                    <th scope="col">Compared against</th>
+                  }
                   <th scope="col">Mean abs. delta</th>
                   <th scope="col">Disagreements</th>
                   <th scope="col">Answers</th>
@@ -2723,6 +2964,9 @@
                       {{ cal.assessorDisplayNameUsed }}
                       <app-provider-badge [provider]="cal.assessorProviderUsed"></app-provider-badge>
                     </td>
+                    @if (selectedRunDetail.isPanelRun) {
+                      <td>{{ calibrationTargetLabel(cal.comparedAgainst) }}</td>
+                    }
                     <td>{{ cal.meanAbsDelta != null ? (cal.meanAbsDelta | number:'1.1-1') : 'N/A' }}</td>
                     <td>{{ cal.disagreementCount }}</td>
                     <td>{{ cal.answerCount }}@if (cal.skippedAnswerCount > 0) { <span class="text-muted"> ({{ cal.skippedAnswerCount }} skipped)</span> }</td>
@@ -2732,7 +2976,7 @@
                   </tr>
                   @if (cal.errorMessage) {
                     <tr>
-                      <td colspan="7" class="calibration-error">{{ cal.errorMessage }}</td>
+                      <td [attr.colspan]="selectedRunDetail.isPanelRun ? 8 : 7" class="calibration-error">{{ cal.errorMessage }}</td>
                     </tr>
                   }
                 }
@@ -3811,7 +4055,25 @@
         }
       </p>
 
-      @if (!retryOriginalAssessorAvailable) {
+      @if (retryUsesPanelMembers) {
+        <p class="text-muted mb-15 retry-panel-note">
+          This is a panel run, so each member re-grades on its own configuration. No other assessor
+          can be chosen: a panel graded partly by a substitute model would be a mixed instrument.
+        </p>
+        @if (retryScope === 'assessment') {
+          <fieldset class="gh-choice mb-15 retry-panel-member">
+            <legend>Members to re-grade</legend>
+            @for (option of retryPanelMemberOptions; track option.value) {
+              <label class="gh-radio">
+                <input type="radio" name="retryPanelMember" [value]="option.value"
+                       [checked]="retryPanelMember === option.value"
+                       (change)="retryPanelMember = option.value">
+                <span>{{ option.label }}</span>
+              </label>
+            }
+          </fieldset>
+        }
+      } @else if (!retryOriginalAssessorAvailable) {
         <div class="alert alert-warning mb-15" role="alert">
           <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -3841,61 +4103,63 @@
         </div>
       }
 
-      <div class="form-group mb-15">
-        <label>{{ retryScope === 'claim-verification' ? 'Claim Verifier Model' : 'Assessor Model' }}</label>
-        <div class="custom-model-selector retry-assessor-model-selector">
-          <button type="button" class="selector-trigger" (click)="toggleRetryAssessorDropdown($event)" [class.open]="isRetryAssessorDropdownOpen">
-            <span class="model-name" [class.text-muted]="!selectedRetryAssessorModel">{{ selectedRetryAssessorModel?.displayName || selectedRetryAssessorModel?.modelId || 'Select Model' }}</span>
-            @if (selectedRetryAssessorModel?.thinkingLevel) {
-              <span class="thinking-badge">{{ formatThinkingLevel(selectedRetryAssessorModel?.thinkingLevel) }}</span>
-            }
-            @if (showReasoningBadge(selectedRetryAssessorModel?.reasoningMode)) {
-              <span class="reasoning-badge">{{ selectedRetryAssessorModel?.reasoningMode }}</span>
-            }
-            @if (selectedRetryAssessorModel?.provider) {
-              <app-provider-badge [provider]="selectedRetryAssessorModel?.provider"></app-provider-badge>
-            }
-            @if (selectedRetryAssessorModel?.parallelExecutionMode === 0) {
-              <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-            }
-            @if (selectedRetryAssessorModel?.parallelExecutionMode === 1) {
-              <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-            }
-            <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          </button>
-          @if (isRetryAssessorDropdownOpen) {
-            <div class="selector-dropdown">
-              @if (benchmarkCapableConfigs.length === 0) {
-                <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+      @if (!retryUsesPanelMembers) {
+        <div class="form-group mb-15">
+          <label>{{ retryScope === 'claim-verification' ? 'Claim Verifier Model' : 'Assessor Model' }}</label>
+          <div class="custom-model-selector retry-assessor-model-selector">
+            <button type="button" class="selector-trigger" (click)="toggleRetryAssessorDropdown($event)" [class.open]="isRetryAssessorDropdownOpen">
+              <span class="model-name" [class.text-muted]="!selectedRetryAssessorModel">{{ selectedRetryAssessorModel?.displayName || selectedRetryAssessorModel?.modelId || 'Select Model' }}</span>
+              @if (selectedRetryAssessorModel?.thinkingLevel) {
+                <span class="thinking-badge">{{ formatThinkingLevel(selectedRetryAssessorModel?.thinkingLevel) }}</span>
               }
-              @for (model of benchmarkCapableConfigs; track model.id) {
-                <div class="model-option" (click)="selectRetryAssessorModel(model)" [class.selected]="retryAssessorConfigId === model.id">
-                  <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                  @if (model.thinkingLevel) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                  }
-                  @if (showReasoningBadge(model.reasoningMode)) {
-                    <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                  }
-                  <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                  @if (model.parallelExecutionMode === 0) {
-                    <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                  }
-                  @if (model.parallelExecutionMode === 1) {
-                    <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                  }
-                </div>
+              @if (showReasoningBadge(selectedRetryAssessorModel?.reasoningMode)) {
+                <span class="reasoning-badge">{{ selectedRetryAssessorModel?.reasoningMode }}</span>
               }
-            </div>
-          }
+              @if (selectedRetryAssessorModel?.provider) {
+                <app-provider-badge [provider]="selectedRetryAssessorModel?.provider"></app-provider-badge>
+              }
+              @if (selectedRetryAssessorModel?.parallelExecutionMode === 0) {
+                <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+              }
+              @if (selectedRetryAssessorModel?.parallelExecutionMode === 1) {
+                <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+              }
+              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            @if (isRetryAssessorDropdownOpen) {
+              <div class="selector-dropdown">
+                @if (benchmarkCapableConfigs.length === 0) {
+                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
+                }
+                @for (model of benchmarkCapableConfigs; track model.id) {
+                  <div class="model-option" (click)="selectRetryAssessorModel(model)" [class.selected]="retryAssessorConfigId === model.id">
+                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
+                    @if (model.thinkingLevel) {
+                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
+                    }
+                    @if (showReasoningBadge(model.reasoningMode)) {
+                      <span class="reasoning-badge">{{ model.reasoningMode }}</span>
+                    }
+                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
+                    @if (model.parallelExecutionMode === 0) {
+                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
+                    }
+                    @if (model.parallelExecutionMode === 1) {
+                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
         </div>
-      </div>
+      }
     </div>
     <div class="dialog-footer">
       <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRetryDialog()">Cancel</button>
       <button type="button" class="btn-gh"
               aria-label="Confirm retry action"
-              [disabled]="!retryAssessorConfigId"
+              [disabled]="!retryUsesPanelMembers && !retryAssessorConfigId"
               (click)="confirmRetry()">
         @if (retryScope === 'assessment') { Re-assess }
         @else if (retryScope === 'question') { Re-run Question }
@@ -4007,9 +4271,29 @@
               }
             </dd>
           </div>
+          @if (activeRunDetail.isPanelRun) {
+            <div class="run-model-row">
+              <dt>Co-assessor</dt>
+              <dd>
+                <span class="model-name">{{ activeRunDetail.coAssessorModelDisplayNameUsed || activeRunDetail.coAssessorModelIdUsed }}</span>
+                @if (activeRunDetail.coAssessorModelThinkingLevelUsed) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.coAssessorModelThinkingLevelUsed) }}</span>
+                }
+                @if (showReasoningBadge(activeRunDetail.coAssessorModelReasoningModeUsed)) {
+                  <span class="reasoning-badge">{{ activeRunDetail.coAssessorModelReasoningModeUsed }}</span>
+                }
+                @if (activeRunDetail.coAssessorModelProviderUsed) {
+                  <app-provider-badge [provider]="activeRunDetail.coAssessorModelProviderUsed"></app-provider-badge>
+                }
+                @if (activeRunDetail.coAssessorModelEndpoint && activeRunDetail.coAssessorModelEndpoint !== 'official') {
+                  <span class="model-name">Endpoint: {{ activeRunDetail.coAssessorModelEndpoint }}</span>
+                }
+              </dd>
+            </div>
+          }
           @if ((activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed) && activeRunDetail.secondOpinionModeUsed !== 0) {
             <div class="run-model-row">
-              <dt>Second opinion assessor</dt>
+              <dt>{{ activeRunDetail.isPanelRun ? 'Reference reader' : 'Second opinion assessor' }}</dt>
               <dd>
                 <span class="model-name">{{ activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed }}</span>
                 @if (activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) {
@@ -4151,7 +4435,7 @@
         }
         @if (runShowsSecondOpinionCounter) {
           <div class="run-stat">
-            <dt>Second opinions</dt>
+            <dt>{{ activeRunDetail?.isPanelRun ? 'Reference readings' : 'Second opinions' }}</dt>
             <dd>{{ runSecondOpinionCount | number }}@if (runSecondOpinionInFlightCount > 0) {<span class="run-stat-inflight"> · {{ runSecondOpinionInFlightCount }} in progress</span>}</dd>
           </div>
         }
@@ -4166,9 +4450,11 @@
         [total]="activeRunDetail?.estimatedCost ?? null"
         [candidate]="activeRunDetail?.estimatedCandidateCost ?? null"
         [assessor]="activeRunDetail?.estimatedAssessorCost ?? null"
+        [coAssessor]="activeRunDetail?.estimatedCoAssessorCost ?? null"
         [secondOpinion]="activeRunDetail?.estimatedSecondOpinionCost ?? null"
         [claimVerifier]="activeRunDetail?.estimatedVerifierCost ?? null"
         [synthesis]="activeRunDetail?.estimatedSynthesisCost ?? null"
+        [coSynthesis]="activeRunDetail?.estimatedCoSynthesisCost ?? null"
         [grading]="activeRunDetail?.estimatedGradingCost ?? null"
         [pricingSource]="activeRunDetail?.pricingSource ?? null"
         [pricingIncomplete]="activeRunDetail?.pricingIncomplete ?? false"

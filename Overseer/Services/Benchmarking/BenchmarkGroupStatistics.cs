@@ -124,8 +124,9 @@ public sealed record BenchmarkGroupItemStatistics
     /// </summary>
     public double Median { get; init; }
 
-    public int Min { get; init; }
-    public int Max { get; init; }
+    /// <summary>Extremes of <see cref="Scores"/>; a panel run's score can fall on a half point.</summary>
+    public double Min { get; init; }
+    public double Max { get; init; }
 
     /// <summary>
     /// Sample standard deviation with the <i>n</i>−1 denominator. Null below two runs, where it is
@@ -1075,7 +1076,9 @@ public static class BenchmarkGroupStatistics
         BenchmarkItemStatistics? analysis,
         BenchmarkGroupStatisticsOptions cfg)
     {
-        var scores = samples.Select(s => (double)s.Answer.QualityScore!.Value).ToList();
+        var scores = samples
+            .Select(s => BenchmarkScoring.IndexQuality(s.Answer, BenchmarkRunFinalizer.IsPanelRun(s.Run))!.Value)
+            .ToList();
         int runCount = scores.Count;
 
         double mean = scores.Average();
@@ -1118,8 +1121,8 @@ public static class BenchmarkGroupStatistics
             RunIds = samples.Select(s => s.Run.Id).ToList(),
             Mean = mean,
             Median = Median(scores)!.Value,
-            Min = (int)scores.Min(),
-            Max = (int)scores.Max(),
+            Min = scores.Min(),
+            Max = scores.Max(),
             StandardDeviation = sd,
             InterquartileRange = iqr,
             CoefficientOfVariation = cv,
