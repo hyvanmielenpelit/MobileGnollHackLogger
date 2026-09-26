@@ -269,9 +269,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     chart** (eye), **Interactive table** (table) and **Table preview** (image). When nothing can be
     charted the two chart tabs are `aria-disabled`, the reason is shown (per shape: no models, fewer
     than two models measured the same way, or the admin unticked models under Data → Models down to
-    fewer than two), and the step opens on *Interactive table*. The view bar (`.mc-fig-actions`)
-    holds the sidebar toggle, the tab row, contextual actions (*Download all charts*; *Copy table*
-    and *Download table* in the table views), **About** and **Recompute**.
+    fewer than two), and the step opens on *Interactive table*. The view bar (`.mc-fig-bar`) holds
+    only the sidebar toggle and the view tabs; each view's actions are on its own toolbar row.
+  - **About** and **Recompute** sit at the right end of the step tab row (`.mc-wizard-tabbar`,
+    group `.mc-wizard-meta`), on step 2 only.
   - **About** (`#mc-about-trigger`) is a `.btn-ghost` with the help-circle glyph the source picker's
     *About conditions* button already uses, visible text *About*, and a count badge equal to the
     number of caveat notes while any exist. It opens the **About this comparison** dialog
@@ -288,8 +289,12 @@ To find specific popups, look in the corresponding component's `.html` template:
   - **The sidebar follows the view.** Chart views show **Data · Theme · Charts · Download**; table
     views show **Data · Theme · Table · Download**. A tab in both sets stays selected across a view
     change; only *Charts* and *Table* swap. Stored tabs migrate `emphasis` → `data`, `style` →
-    `charts`, `download` / `export` → `download`. The sidebar's collapsed state, tab and view are in
-    `localStorage['overseer.modelComparison.figureSidebar']`.
+    `charts`, `download` / `export` → `download`. The sidebar's collapsed state, width, tab and view
+    are in `localStorage['overseer.modelComparison.figureSidebar']`.
+  - **The sidebar is resizable** with an `app-pane-resizer` on its right edge: 18–40 rem (at most
+    half the workspace), 26 rem by default, stored as `sidebarWidth` (px) in the same record and
+    applied as `--mc-sidebar-width` on `.mc-fig-workspace`. The handle is not rendered while the
+    sidebar is collapsed and is hidden where the sidebar stacks (workspace ≤ 860 px).
     - **Data**, in order:
       - **Models** (both view groups) — one row per model with a **Show** checkbox (plot this
         model, up to the chart cap) and a **Highlight** checkbox, shown only in the chart views
@@ -320,12 +325,24 @@ To find specific popups, look in the corresponding component's `.html` template:
       columns*) and *Image layout* (row bands, row rules). One column configuration drives the
       Interactive table, the Table preview and every download and copy; reading formats keep a
       combined column combined, data formats write its parts, and no value is written twice.
-    - **Download**: chart views — *Chart size* (`app-export-size-section`, id prefix `mc-export`),
-      *Image format*, *Download all charts*; table views — *Table format* (Excel, CSV, TSV, Markdown,
-      JSON, HTML, Image), *Table image size* (`app-export-size-section` with *Fit the table*, id
-      prefix `mc-table-image`, the *Fit the table* size shown as information in custom mode), the
-      same *Image format*, a scope line, *Download table* and *Copy table*, whose name follows the
-      format.
+    - **Download** holds settings only, no download or copy button: chart views — *Chart size*
+      (`app-export-size-section`, id prefix `mc-export`), *Image format* and a hint naming where the
+      downloads are; table views — *Table format* (Excel, CSV, TSV, Markdown, JSON, HTML, Image),
+      *Table image size* (`app-export-size-section` with *Fit the table*, id prefix
+      `mc-table-image`, the *Fit the table* size shown as information in custom mode), the same
+      *Image format* and a scope line.
+  - **Toolbar rows**, one per view, each ending in a right-aligned group of icon-only
+    `.action-btn`s: *All charts* — zoom, then **Download all charts** (the *download-all* glyph,
+    two arrows into one tray); *Single chart* — figure picker, zoom, **Copy** and **Download**;
+    *Table preview* — *Comparison table* label, zoom, **Copy table** and **Download table**;
+    *Interactive table* — *Comparison table* heading with an `app-info-tip` (*Every entry is
+    listed here…*, also the table's `aria-describedby`), **Copy table** and **Download table**,
+    sticky while the table scrolls, then one meta line *Computed … · Rows follow the model order: …*
+    with a link-style *Use model order* once a header sorts it. Copy table's and Download table's
+    names follow the format. The rows stay on one line until the panel is under 44 rem wide.
+  - **All-charts tiles** each carry **Copy**, **Download** and **Open in Single view** top-right,
+    shown while the tile is hovered or holds focus and always on devices without hover (opacity
+    only). Copy and Download are tab stops; Open is not, since Enter on the tile opens it.
   - **Every chart view shows bitmaps composed by the export pipeline** — `resolveFigureLayout`,
     `renderPlotOffscreen` from each card's Chart.js configuration, then the chrome — the same code
     that writes the downloaded file, so what is on the page is what is downloaded. No
@@ -335,7 +352,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     click opens it in *Single chart*) in a natively scrolling grid with a zoom group and **Fit
     height**; tiles are composed at display resolution, debounced, only near the viewport, with a
     generation counter discarding a stale composition. *Single chart* has zoom, drag-pan, *Fit to
-    screen*, *Actual pixels*, *Reset view*, Copy and Download. *Table preview* reuses that stage for
+    screen*, *Actual pixels*, *Reset view*, Copy and an icon-only Download. *Table preview* reuses that stage for
     the table image, with its own view state opening at Fit. Every composition first awaits the
     chosen font (`ensureFigureFont`).
   - Stored per browser: `overseer.modelComparison.figureStyle` (the per-family styles plus

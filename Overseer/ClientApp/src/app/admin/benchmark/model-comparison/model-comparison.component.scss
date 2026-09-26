@@ -24,13 +24,6 @@
   color: var(--primary-color);
 }
 
-/* Heading and its lead note as one unit, tighter than the section's own gap. */
-.mc-section-intro {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
 .mc-export-format {
   width: auto;
   min-width: 170px;
@@ -452,7 +445,7 @@
   }
 }
 
-/* The line naming the table's order, with *Use model order* beside it once a header sorts it. */
+/* The Data tab's line naming the table's sort, with *Use model order* beside it. */
 .mc-table-order {
   display: flex;
   align-items: center;
@@ -645,16 +638,33 @@
   margin: 12px 24px 0;
 }
 
-/* Pinned under the header. `.gh-tabs` sets `position: relative` for its own scroll-state
-   container; sticky replaces it and is equally a positioned ancestor. The background is the
-   dialog's own ground, which a pinned row needs so scrolled content does not read through it. */
-.mc-wizard-steps {
+/* The step tabs, and on step 2 About and Recompute at the row's end. Pinned under the header; the
+   background is the dialog's own ground, which a pinned row needs so scrolled content does not read
+   through it. One rule line under the whole row, as under `.mc-fig-bar`; the tab row drops its own. */
+.mc-wizard-tabbar {
   flex-shrink: 0;
   position: sticky;
   top: 0;
   z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 0 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(16, 16, 16, 0.98);
+}
+
+.mc-wizard-steps {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-bottom: none;
+}
+
+.mc-wizard-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .mc-wizard-body {
@@ -875,11 +885,38 @@
 
 /* --- The Interactive table --- */
 
+/* The table's header row: its title and info tip, then Copy table and Download table. Sticky in the
+   panel's opaque ground, so the two stay reachable while the table scrolls. */
+.mc-table-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: -16px -24px 0;
+  padding: 16px 24px 8px;
+  background: rgba(16, 16, 16, 0.98);
+}
+
+.mc-table-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* One line under the header row: when the table was computed, and the order its rows follow. */
+.mc-table-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: 12px;
+  color: #c3c2b7;
+}
+
 /* The computation time, in the same words every exported file carries it in. Muted: it qualifies
    the table rather than titling it. */
 .mc-table-computed {
-  margin: 0;
-  font-size: 12px;
   color: #8b8b90;
 }
 
@@ -913,24 +950,6 @@
   color: #c3c2b7;
 }
 
-.mc-download-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-
-  .btn-gh[aria-disabled="true"] {
-    opacity: 0.5;
-    cursor: not-allowed;
-    filter: grayscale(0.6);
-  }
-
-  .btn-ghost[aria-disabled="true"] {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-}
-
 /* The Table tab's status line, which names a filter a hidden column took with it. Always rendered,
    so its live region exists before it first speaks. */
 .mc-columns-status {
@@ -943,12 +962,13 @@
    width rather than the viewport's: the wizard is already narrower than the window on a split
    screen. The `mc-fig` container is the step panel, because a container query cannot restyle the
    container itself. Collapsing the sidebar is an instant reflow, not a transition — every animated
-   frame would re-fit the All tiles or the Single stage. */
+   frame would re-fit the All tiles or the Single stage. The sidebar's width is the resizer's
+   `--mc-sidebar-width`, kept between 18 rem and half the workspace. */
 .mc-fig-workspace {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(300px, 22rem) minmax(0, 1fr);
+  grid-template-columns: clamp(18rem, var(--mc-sidebar-width, 26rem), 50%) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
 
   &.is-collapsed {
@@ -956,7 +976,20 @@
   }
 }
 
+/* In the sidebar's grid cell, hanging off its right edge on the main side, so it never covers the
+   sidebar's scrollbar. */
+.mc-fig-resizer {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+  margin-inline-end: -12px;
+  z-index: 2;
+}
+
+/* Placed, not auto-placed: its resizer shares the cell, and the main area auto-places after both. */
 .mc-fig-sidebar {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1089,19 +1122,6 @@
   padding-top: 6px;
 }
 
-/* The view's own actions at the bar's end: Download all charts, or Copy table and Download table. */
-.mc-fig-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-inline-start: auto;
-
-  .btn-ghost[aria-disabled="true"] {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-}
-
 /* Every panel fills the same box; each scrolls inside its own viewport or, for the table, itself. */
 .mc-fig-panels {
   position: relative;
@@ -1117,6 +1137,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* The toolbar rows wrap on the panel's own width. */
+  container: mc-panel / inline-size;
 
   &:focus-visible {
     outline: 2px solid var(--primary-color);
@@ -1129,7 +1151,11 @@
 .mc-fig-panel--table {
   overflow-y: auto;
   overscroll-behavior: contain;
-  gap: 24px;
+  gap: 12px;
+
+  .mc-section {
+    gap: 12px;
+  }
 }
 
 /* --- The All tab --- */
@@ -1201,13 +1227,43 @@
   height: 100%;
 }
 
-/* Over the tile's top right corner, clear of the figure's title, which starts at the left. */
-.mc-all-open {
+/* Copy, Download and Open over the tile's top right corner, clear of the figure's title, which
+   starts at the left. Shown while the tile is hovered or holds focus, and always on a device without
+   hover; opacity only, so the buttons stay in the tab order and focusing one reveals them. */
+.mc-all-tile-actions {
   position: absolute;
   inset-block-start: 8px;
   inset-inline-end: 8px;
-  margin: 0;
-  background: rgba(15, 15, 15, 0.8);
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+
+  .action-btn {
+    margin: 0;
+    background: rgba(15, 15, 15, 0.8);
+
+    &[aria-disabled="true"] {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
+
+.mc-all-tile:is(:hover, :focus-within) .mc-all-tile-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .mc-all-tile-actions {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mc-all-tile-actions {
+    transition: none;
+  }
 }
 
 .mc-all-refusal {
@@ -1228,14 +1284,20 @@
 
 /* --- The Single chart and the Table preview; the toolbar's groups also lay out the All tab's zoom --- */
 
-/* Figure (or the table's label), zoom and export groups; wraps on a narrow panel, the export group
-   kept at the end. */
+/* Figure (or the table's label), zoom and export groups on one line, the export group at the end;
+   wraps only on a narrow panel. */
 .mc-preview-toolbar {
   flex: none;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px 16px;
+}
+
+@container mc-panel (max-width: 44rem) {
+  .mc-preview-toolbar {
+    flex-wrap: wrap;
+  }
 }
 
 .mc-preview-group {
@@ -1245,10 +1307,10 @@
   gap: 6px;
 }
 
-/* The stage's icon buttons and the view bar's: spaced by their row's gap, and dimmed while they
+/* The toolbars' icon buttons and the step row's: spaced by their row's gap, and dimmed while they
    refuse. */
 .mc-preview-group,
-.mc-fig-actions {
+.mc-wizard-meta {
   .action-btn {
     margin-left: 0;
 
@@ -1265,27 +1327,35 @@
   }
 }
 
-.mc-preview-export {
+/* Each view's export group, at its toolbar row's end. */
+.mc-preview-export,
+.mc-all-export,
+.mc-table-export {
+  flex: none;
+  flex-wrap: nowrap;
   margin-inline-start: auto;
+}
 
-  .btn-gh[aria-disabled="true"] {
-    opacity: 0.5;
-    cursor: not-allowed;
-    filter: grayscale(0.6);
-  }
+/* The zoom groups give way before anything else on the row: the slider shrinks first. */
+.mc-preview-zoom,
+.mc-all-zoom {
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: nowrap;
 }
 
 /* Seven figure titles, the longest of which is a full sentence fragment; bounded against the
-   workspace's width so the select never sets the toolbar's. */
+   panel's width so the select never sets the toolbar's. */
 .mc-preview-figure {
   width: auto;
-  min-width: 200px;
-  max-width: 46cqw;
+  min-width: 12rem;
+  max-width: 32cqw;
+  text-overflow: ellipsis;
 }
 
 .mc-preview-zoom-slider {
-  flex: 1 1 auto;
-  min-width: 80px;
+  flex: 1 1 60px;
+  min-width: 60px;
   max-width: 220px;
   margin: 0;
   accent-color: var(--primary-color);
@@ -1406,5 +1476,10 @@
     max-block-size: 40dvh;
     border-inline-end: none;
     border-bottom: 1px solid var(--border-glass);
+  }
+
+  /* The sidebar is stacked above the views here, so there is no width to adjust. */
+  .mc-fig-resizer {
+    display: none;
   }
 }

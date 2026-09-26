@@ -1,0 +1,59 @@
+/* The host is the whole hit target: a 12 px column with a centred line and grip. Design tokens only. */
+
+:host {
+  position: relative;
+  display: block;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+:host::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 50%;
+  width: 1px;
+  margin-inline-start: -0.5px;
+  background: var(--border-glass);
+}
+
+.pane-resizer-grip {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  width: 4px;
+  height: 40px;
+  margin-block-start: -20px;
+  margin-inline-start: -2px;
+  border-radius: 2px;
+  background: var(--border-glass);
+}
+
+:host(:hover)::before,
+:host(:focus-visible)::before,
+:host(.is-dragging)::before,
+:host(:hover) .pane-resizer-grip,
+:host(:focus-visible) .pane-resizer-grip,
+:host(.is-dragging) .pane-resizer-grip {
+  background: var(--primary-color);
+}
+
+:host(:focus-visible) {
+  outline: 2px solid var(--primary-color);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :host::before,
+  .pane-resizer-grip {
+    transition: background-color 0.15s ease;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host::before,
+  .pane-resizer-grip {
+    transition: none;
+  }
+}

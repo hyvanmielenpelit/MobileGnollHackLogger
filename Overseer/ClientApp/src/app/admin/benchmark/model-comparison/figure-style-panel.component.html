@@ -159,7 +159,8 @@
 </ng-template>
 
 <!-- Number format: decimals for the three measures the family shows, shared with every family that
-     shows the same measure. Each option previews the family's first plotted value. -->
+     shows the same measure. Each row's sample previews the family's first plotted value at the
+     row's chosen decimal count. -->
 <ng-template #numbersSection let-family="family">
   <div class="fsp-section">
     <details class="gh-disclosure gh-disclosure--section" [id]="sectionId(family, 'numbers')"
@@ -171,15 +172,19 @@
           <app-info-tip [tipId]="tipId(family, 'numbers')" subject="Number format">Decimals in value labels, value plates, tooltips and profile ranges. Axis ticks follow their own step. Each measure keeps its setting across figures. Time decimals count in seconds; millisecond displays show at least whole milliseconds. Resetting a figure style leaves number formats as they are.</app-info-tip>
         </div>
         @for (measure of numberRows(family); track measure) {
-          <div class="fsp-number">
+          <div class="fsp-decimals">
             <label [for]="numberControlId(family, measure)">{{ measureNames[measure] }}</label>
-            <select class="gh-input" [id]="numberControlId(family, measure)"
-                    [attr.aria-describedby]="tipId(family, 'numbers')"
-                    (change)="onNumber(measure, $event)">
-              @for (option of numberOptions(measure); track option.value) {
-                <option [value]="option.value" [selected]="option.value === numberValue(measure)">{{ option.label }}</option>
-              }
-            </select>
+            <div class="fsp-decimals-control">
+              <select class="gh-input fsp-decimals-select" [id]="numberControlId(family, measure)"
+                      [attr.aria-describedby]="numberSampleId(family, measure) + ' ' + tipId(family, 'numbers')"
+                      (change)="onNumber(measure, $event)">
+                @for (option of decimalOptions; track option.value) {
+                  <option [value]="option.value" [selected]="option.value === numberValue(measure)">{{ option.label }}</option>
+                }
+              </select>
+              <output class="fsp-decimals-sample" [id]="numberSampleId(family, measure)"
+                      [attr.for]="numberControlId(family, measure)"><span class="visually-hidden">Example: </span>{{ numberSample(measure) }}</output>
+            </div>
           </div>
         }
       </div>

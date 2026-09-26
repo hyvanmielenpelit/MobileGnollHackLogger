@@ -196,8 +196,9 @@ you already read the label, it is noise; drop it.
 | trash | Delete Runs, Delete All Suite Runs | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions | "This runs again" — the circular-arrow convention is universal |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
-| file-with-arrow | Download Markdown Report | "A file arrives on your disk" |
-| archive | Download all figures | "Several files arrive as one archive" |
+| file-with-arrow | Download Markdown Report, Download table | "A file arrives on your disk" |
+| download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
+| download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
 | copy (two rectangles) | Copy figure, Copy the table as Markdown | "Copies to the clipboard" — nothing is saved to disk |
 | layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
 | upload | Import Suite from YAML, Upload Snapshot | A file leaves the user's disk and enters the application; the arrow points out of the tray |
@@ -263,6 +264,17 @@ The download-time column chooser dialog is gone; the Table tab's **Columns** sec
 this view, with a count badge while caveats exist — and **Recompute**, an icon-only `.action-btn`
 with the* rotate *glyph ("runs again"). The Data tab's **Models** table holds a Show and a
 Highlight checkbox per model, each named for its model.*
+
+*Changed 2026-09-26: the model comparison's step 2 toolbars became one row per view, each ending in
+a right-aligned group of icon-only `.action-btn`s. **Single chart**'s Download is icon-only with the*
+download *glyph; **Download all charts** sits only at the end of the **All charts** zoom row, icon-only
+with the new* download-all *glyph, which replaces* archive*; **Download table** is icon-only with*
+file-with-arrow*, beside Copy table on a **Comparison table** row in both table views. Each All-charts
+tile holds Copy, Download and Open in a cluster shown while the tile is hovered or holds focus (and
+always without hover); opacity, never `display`, so Copy and Download stay tab stops. **About** and
+**Recompute** moved to the step tab row, step 2 only; the view bar is the sidebar toggle and the view
+tabs. The Interactive table's lead note became an `app-info-tip` beside its heading, and the settings
+sidebar gained an `app-pane-resizer` (§4d).*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -494,6 +506,40 @@ implementation. It lives in `app/shared/reorderable-list/` and knows nothing abo
   and explained with an `app-info-tip`), small tags, an `itemTemplate` for a richer row body, and a
   non-interactive divider at `dividerIndex`.
 - `@angular/cdk` drag-drop is not used: it offers no keyboard or single-pointer path.
+
+### 4d. Pane resizers: `app-pane-resizer`
+
+**The** splitter for letting a user widen or narrow a side pane — the model comparison's settings
+sidebar uses it. It lives in `app/shared/pane-resizer/` and implements the WAI-ARIA *window
+splitter* pattern on its host element.
+
+```html
+<app-pane-resizer controls="mc-fig-sidebar" label="Resize settings sidebar"
+                  [value]="sidebarWidth" [min]="288" [max]="sidebarWidthMax" [defaultValue]="416"
+                  (valueChange)="onSidebarWidthChange($event)"
+                  (valueCommit)="onSidebarWidthCommit($event)"></app-pane-resizer>
+```
+
+- **ARIA on the host**: `role="separator"`, `aria-orientation="vertical"`, `tabindex="0"`,
+  `aria-controls` (the pane's `id`), `aria-label`, and `aria-valuenow` / `-valuemin` / `-valuemax`
+  as whole CSS pixels with `aria-valuetext` *"<n> pixels"*.
+- **It keeps no copy of the width.** Every emitted value is clamped to `[min, max]`; the parent
+  stores it and passes `value` back. `valueChange` is live (at most once per animation frame while
+  dragging); `valueCommit` fires once, on release or after a key — persist on commit only.
+- **Keyboard**: ArrowLeft / ArrowRight by `step` (16 px), with Shift by `largeStep` (64 px); Home to
+  `min`, End to `max`. Any other key passes through. There is no Enter-to-collapse: a pane that
+  collapses has its own disclosure toggle.
+- **Pointer**: pointer events with `setPointerCapture`, primary button only; double-click resets to
+  `defaultValue`.
+- **Placement**: a 12 px hit area on the **far** side of the controlled pane's edge, so it never
+  covers the pane's own scrollbar; the line and grip turn gold on hover, focus and drag. Hide it
+  where the pane is stacked rather than side by side, and do not render it while the pane is
+  collapsed. The 12 px target is below WCAG 2.5.8's 24 px, accepted because it spans the full
+  height and the keyboard path and the collapse toggle exist.
+- **A `max` measured from the layout** is measured when the handle is grabbed or focused, never in
+  a getter bound during change detection, which would fault in development mode.
+- The question-generation dialog's older splitter (mouse and touch events, no keyboard) has not
+  been migrated to it yet.
 
 ---
 
@@ -945,6 +991,10 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Radio groups inside a section keep their own `<fieldset>` and `<legend>`.
 - [ ] A section reset button sits after `<details>` in a positioned wrapper, outside both the summary
       and the body, and is named *Reset {title} to defaults*.
+
+**Pane resizers**
+- [ ] A user-resizable pane uses `app-pane-resizer` (§4d), named for the pane, with `aria-controls`
+      pointing at it, and the width is persisted on `valueCommit` only.
 
 **Tabs**
 - [ ] Every tab in the row has an icon, or none of them does.

@@ -10,6 +10,9 @@ import {
   FIGURE_SIDEBAR_STORAGE_KEY,
   FIGURE_STYLE_STORAGE_KEY,
   FigureSidebarTab,
+  SIDEBAR_WIDTH_DEFAULT,
+  SIDEBAR_WIDTH_MAX,
+  SIDEBAR_WIDTH_MIN,
   TABLE_COLUMNS_STORAGE_KEY,
   ModelComparisonComponent,
   sidebarTabForView
@@ -1199,32 +1202,77 @@ describe('ModelComparisonComponent', () => {
   // Figure export
   // -------------------------------------------------------------------------------------------
 
-  it('gives every figure tile one control, Open in Single view, and the set one Download all charts', () => {
+  it('gives every figure tile Copy, Download and Open, and the set one icon-only Download all charts', () => {
     render(buildDto(comparableSet(3)), 2);
 
     const tiles = fixture.debugElement.queryAll(By.css('.mc-all-tile'));
     expect(tiles.length).toBe(7);
     for (const tile of tiles) {
-      const actions = tile.queryAll(By.css('button'));
-      expect(actions.length).toBe(1);
-      // An icon-only button has no text, so aria-label is its accessible name — and it has to name
-      // the figure, or seven buttons share one name in a screen reader's control list.
-      expect((actions[0].nativeElement as HTMLElement).getAttribute('aria-label'))
-        .toMatch(/^Open .+ in Single view$/);
-      // The tile itself is the keyboard stop, so the button is not a second one.
+      const title = (tile.nativeElement as HTMLElement).getAttribute('aria-label')!;
+      const actions = tile.queryAll(By.css('.mc-all-tile-actions button'))
+        .map(button => button.nativeElement as HTMLButtonElement);
+      expect(tile.queryAll(By.css('button')).length).toBe(3);
+      expect(actions.map(button => button.classList.contains('mc-all-copy') ? 'copy'
+        : button.classList.contains('mc-all-download') ? 'download'
+          : button.classList.contains('mc-all-open') ? 'open' : '?')).toEqual(['copy', 'download', 'open']);
+      // Icon-only buttons have no text, so aria-label is each one's accessible name — and it has to
+      // name the figure, or seven buttons share one name in a screen reader's control list.
+      expect(actions[0].getAttribute('aria-label')).toBe(`Copy ${title} to the clipboard`);
+      expect(actions[1].getAttribute('aria-label')).toBe(`Download ${title}`);
+      expect(actions[2].getAttribute('aria-label')).toBe(`Open ${title} in Single view`);
+      // The tile itself is the keyboard stop and opens on Enter, so Open is not a second one; Copy
+      // and Download are tab stops, the only keyboard route to them here.
       expect((tile.nativeElement as HTMLElement).getAttribute('tabindex')).toBe('0');
-      expect((actions[0].nativeElement as HTMLElement).getAttribute('tabindex')).toBe('-1');
+      expect(actions[0].hasAttribute('tabindex')).toBeFalse();
+      expect(actions[1].hasAttribute('tabindex')).toBeFalse();
+      expect(actions[2].getAttribute('tabindex')).toBe('-1');
     }
-    // Copying and downloading one figure happen on the Single tab only.
-    expect(fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-download, .mc-all-tile .mc-copy')).length).toBe(0);
 
     const step = fixture.debugElement.query(By.css('#mc-step-panel-2')).nativeElement as HTMLElement;
-    const downloadAll = Array.from(step.querySelectorAll('button'))
-      .filter(button => (button.textContent ?? '').includes('Download all charts'));
+    const downloadAll = Array.from(step.querySelectorAll<HTMLButtonElement>('button[aria-label="Download all charts"]'));
     expect(downloadAll.length).toBe(1);
-    expect(downloadAll[0].closest('.mc-fig-bar')).not.toBeNull();
+    expect(downloadAll[0].closest('#mc-fig-panel-all .mc-all-toolbar')).not.toBeNull();
+    expect(downloadAll[0].closest('.mc-fig-bar')).toBeNull();
+    expect(downloadAll[0].closest('#mc-fig-sidebar')).toBeNull();
+    expect(downloadAll[0].classList).toContain('action-btn');
+    expect(downloadAll[0].textContent?.trim()).toBe('');
+    expect(step.textContent).not.toContain('Download all charts');
     // One image on the clipboard at a time, so there is deliberately no batch copy.
     expect(step.textContent).not.toContain('Copy all figures');
+  });
+
+  it('copies and downloads one figure from its tile without opening it in Single', async () => {
+    render(buildDto(comparableSet(3)), 2);
+    const copy = spyOn(component, 'copyFigure').and.returnValue(Promise.resolve());
+    const download = spyOn(component, 'downloadFigure').and.returnValue(Promise.resolve());
+    const open = spyOn(component, 'openInSingle').and.callThrough();
+
+    const tile = fixture.debugElement.queryAll(By.css('.mc-all-tile'))[1];
+    const cardId = (tile.nativeElement as HTMLElement).getAttribute('data-figure-id');
+    const copyButton = tile.query(By.css('.mc-all-copy')).nativeElement as HTMLButtonElement;
+    const downloadButton = tile.query(By.css('.mc-all-download')).nativeElement as HTMLButtonElement;
+
+    copyButton.click();
+    downloadButton.click();
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(copy.calls.mostRecent().args[0].id).toBe(cardId!);
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(download.calls.mostRecent().args[0].id).toBe(cardId!);
+
+    // Enter on a button is the button's own; the tile opens only on an Enter aimed at itself.
+    for (const button of [copyButton, downloadButton]) {
+      button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }
+    expect(open).not.toHaveBeenCalled();
+    expect(component.figureTab).toBe('all');
+
+    // Each has an interest tooltip, and Download's reads the export settings.
+    for (const button of [copyButton, downloadButton]) {
+      const tipId = button.getAttribute('interestfor')!;
+      expect(button.getAttribute('style') ?? '').toMatch(new RegExp(`anchor-name:\\s*--${tipId}`));
+      expect((fixture.nativeElement.querySelector(`#${tipId}`) as HTMLElement).getAttribute('popover')).toBe('hint');
+    }
+    expect(textOf(`#${downloadButton.getAttribute('interestfor')}`)).toBe(`Download this chart — ${component.exportSummary}`);
   });
 
   it('offers a WebP quality for the figures only while WebP is the chosen format', async () => {
@@ -2338,6 +2386,31 @@ describe('ModelComparisonComponent', () => {
     expect(component.canExport).toBeTrue();
   });
 
+  it('puts the Single chart\'s Copy and Download on the zoom line as icon buttons with tooltips', () => {
+    render(buildDto(comparableSet(3)), 2);
+    openSingle();
+
+    const group = fixture.debugElement.query(By.css('.mc-preview-export')).nativeElement as HTMLElement;
+    const [copy, download] = Array.from(group.querySelectorAll<HTMLButtonElement>('button'));
+    expect(download.classList).toContain('mc-preview-download');
+    expect(copy.classList).toContain('action-btn');
+    expect(download.classList).toContain('action-btn');
+    expect(download.classList).not.toContain('btn-gh');
+    expect(download.textContent?.trim()).toBe('');
+    expect(download.getAttribute('aria-label')).toBe(`Download ${component.previewCard!.title}`);
+    expect(download.hasAttribute('title')).toBeFalse();
+    const tipId = download.getAttribute('interestfor')!;
+    expect(tipId).toBe('mc-tip-fig-download');
+    expect(download.getAttribute('style') ?? '').toMatch(/anchor-name:\s*--mc-tip-fig-download/);
+    const tip = fixture.nativeElement.querySelector('#mc-tip-fig-download') as HTMLElement;
+    expect(tip.getAttribute('popover')).toBe('hint');
+    expect(tip.textContent?.trim()).toBe(`Download this chart — ${component.exportSummary}`);
+
+    const zoom = (fixture.debugElement.query(By.css('.mc-preview-zoom')).nativeElement as HTMLElement).getBoundingClientRect();
+    const box = download.getBoundingClientRect();
+    expect(Math.abs((box.top + box.height / 2) - (zoom.top + zoom.height / 2))).toBeLessThanOrEqual(1);
+  });
+
   it('refuses a bitmap the browser could not allocate, and marks every export control unavailable', () => {
     render(buildDto(comparableSet(3)), 2);
     openSingle();
@@ -2350,21 +2423,34 @@ describe('ModelComparisonComponent', () => {
     expect(component.exportSizeError).toContain('24000 × 24000');
     expect(component.exportSizeError).toContain('16384');
     expect(component.canExport).toBeFalse();
-    // Copy, Download and Download all charts: aria-disabled, so each stays focusable and its reason reachable.
-    const controls = [
-      ...fixture.debugElement.queryAll(By.css('.mc-preview-export button')),
-      fixture.debugElement.query(By.css('.mc-fig-download-all'))
-    ].map(button => button.nativeElement as HTMLButtonElement);
-    expect(controls.length).toBe(3);
+    // Copy and Download: aria-disabled, so each stays focusable and its reason reachable.
+    const controls = fixture.debugElement.queryAll(By.css('.mc-preview-export button'))
+      .map(button => button.nativeElement as HTMLButtonElement);
+    expect(controls.length).toBe(2);
     expect(controls.every(button => button.getAttribute('aria-disabled') === 'true')).toBeTrue();
     expect(controls.every(button => !button.disabled)).toBeTrue();
     expect(component.downloadAllTooltip).toBe(component.exportSizeError);
+    expect(component.downloadFigureTooltip).toBe(component.exportSizeError);
+
+    // The All view's Download all charts and each tile's Copy and Download refuse the same way.
+    showView('all');
+    const allControls = fixture.debugElement
+      .queryAll(By.css('.mc-all-download-all, .mc-all-tile .mc-all-copy, .mc-all-tile .mc-all-download'))
+      .map(button => button.nativeElement as HTMLButtonElement);
+    // The size error replaces the tiles, so only Download all charts is left to refuse.
+    expect(allControls.length).toBeGreaterThanOrEqual(1);
+    expect(allControls.every(button => button.getAttribute('aria-disabled') === 'true')).toBeTrue();
+    expect(allControls.every(button => !button.disabled)).toBeTrue();
 
     component.onExportDensityChange(2);
     refresh();
     expect(component.exportSizeError).toBe('');
     expect(component.canExport).toBeTrue();
-    expect(controls.every(button => button.getAttribute('aria-disabled') === null)).toBeTrue();
+    const enabled = fixture.debugElement
+      .queryAll(By.css('.mc-all-download-all, .mc-all-tile .mc-all-copy, .mc-all-tile .mc-all-download'))
+      .map(button => button.nativeElement as HTMLButtonElement);
+    expect(enabled.length).toBe(1 + 7 * 2);
+    expect(enabled.every(button => button.getAttribute('aria-disabled') === null)).toBeTrue();
   });
 
   it('copies the figure composed at the figure size, as a PNG, without a chart on the page', async () => {
@@ -3581,11 +3667,11 @@ describe('ModelComparisonComponent', () => {
     return { names, load };
   }
 
-  /** The view bar's table actions, present in both table views. */
+  /** The Comparison table row's table actions, present in both table views. */
   function tableActions(): { copy: HTMLButtonElement; download: HTMLButtonElement } {
     return {
-      copy: fixture.debugElement.query(By.css('.mc-fig-actions .mc-table-copy')).nativeElement as HTMLButtonElement,
-      download: fixture.debugElement.query(By.css('.mc-fig-actions .mc-table-download')).nativeElement as HTMLButtonElement
+      copy: fixture.debugElement.query(By.css('.mc-table-export .mc-table-copy')).nativeElement as HTMLButtonElement,
+      download: fixture.debugElement.query(By.css('.mc-table-export .mc-table-download')).nativeElement as HTMLButtonElement
     };
   }
 
@@ -3631,6 +3717,10 @@ describe('ModelComparisonComponent', () => {
     expect(Array.from(select.options).map(option => option.textContent?.trim()).pop()).toBe('Image (PNG or WebP)');
     expect(fixture.debugElement.query(By.css('label[for="mc-table-format"]'))).toBeTruthy();
     expect(textOf('#mc-table-format-hint')).toContain('Numbers stay numbers; a second sheet holds the provenance.');
+    // Settings and the scope line only: Copy table and Download table are on the Comparison table row.
+    expect(fixture.debugElement.query(By.css('#mc-side-table-download'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-side-table-copy'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-side-panel-download .mc-table-scope'))).not.toBeNull();
 
     // The names follow the format select.
     select.value = 'csv';
@@ -3640,8 +3730,8 @@ describe('ModelComparisonComponent', () => {
     expect(component.downloadTableName).toBe('Download the table as CSV');
     expect(tableActions().copy.getAttribute('aria-label')).toBe('Copy the table as CSV');
 
-    // The suite and the pricing basis are in the wizard header; the line under the intro carries
-    // only the computation time.
+    // The suite and the pricing basis are in the wizard header; the meta line carries only the
+    // computation time and the order.
     expect(textOf('.mc-table-computed')).toContain('Computed');
     expect(textOf('.mc-table-computed')).not.toContain('Current catalog');
     expect(component.tableProvenance.conditionSignature).toBe('9c79137965e4');
@@ -3650,14 +3740,16 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('dialog:not(.mc-about-dialog)'))).toBeNull();
   });
 
-  it('puts Copy table and Download table in the view bar of both table views, each with an interest tooltip', () => {
+  it('puts Copy table and Download table on the Comparison table row of both table views, each with an interest tooltip', () => {
     renderTable(buildDto(comparableSet(4)));
 
     const { copy, download } = tableActions();
+    expect(copy.closest('.mc-table-toolbar')).not.toBeNull();
     expect(copy.classList).toContain('action-btn');
     expect(copy.getAttribute('aria-label')).toBe('Copy the table as cells for Excel');
-    expect(download.classList).toContain('btn-ghost');
-    expect(download.textContent?.trim()).toBe('Download table');
+    expect(download.classList).toContain('action-btn');
+    expect(download.getAttribute('aria-label')).toBe(component.downloadTableName);
+    expect(download.textContent?.trim()).toBe('');
     for (const button of [copy, download]) {
       expect(button.getAttribute('type')).toBe('button');
       expect(button.hasAttribute('title')).toBeFalse();
@@ -3670,14 +3762,52 @@ describe('ModelComparisonComponent', () => {
     }
     expect(textOf('#mc-tip-table-copy')).toBe('Copy the table as cells for Excel');
     expect(textOf('#mc-tip-table-download')).toBe('Download the table as Excel (.xlsx)');
-    expect(fixture.debugElement.query(By.css('.mc-fig-download-all'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-all-download-all'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-fig-actions'))).toBeNull();
 
     showView('tablePreview');
-    expect(tableActions().download).toBeTruthy();
+    expect(tableActions().download.closest('#mc-fig-panel-tablePreview .mc-preview-toolbar')).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-fig-actions'))).toBeNull();
 
     showView('all');
-    expect(fixture.debugElement.query(By.css('.mc-fig-actions .mc-table-copy'))).toBeNull();
-    expect(textOf('.mc-fig-actions')).toContain('Download all charts');
+    expect(fixture.debugElement.query(By.css('.mc-table-copy'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-fig-actions'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-all-toolbar .mc-all-download-all'))).not.toBeNull();
+
+    showView('single');
+    expect(fixture.debugElement.query(By.css('.mc-fig-actions'))).toBeNull();
+  });
+
+  it('opens the Interactive table on one compact header row and one meta line', () => {
+    renderTable(buildDto(comparableSet(4)));
+    const panel = fixture.debugElement.query(By.css('#mc-fig-panel-table')).nativeElement as HTMLElement;
+
+    const toolbar = panel.querySelector('.mc-table-toolbar')!;
+    expect(toolbar).not.toBeNull();
+    expect(toolbar.querySelector('#mc-table-heading')?.textContent?.trim()).toBe('Comparison table');
+    const tip = toolbar.querySelector('app-info-tip')!;
+    expect(tip).not.toBeNull();
+    expect(panel.querySelector('#mc-table-about-tip')?.textContent)
+      .toContain('Every entry is listed here, charted or not. Point at a State badge to see why.');
+    expect(panel.querySelector('table.mc-table')?.getAttribute('aria-describedby')).toBe('mc-table-about-tip');
+    expect(toolbar.querySelector('.mc-table-export .mc-table-copy')).not.toBeNull();
+
+    // The removed paragraphs: the lead note is in the tip, the download scope in the Download tab.
+    const visibleText = Array.from(panel.querySelectorAll('p')).map(p => p.textContent ?? '').join(' ');
+    expect(visibleText).not.toContain('Every entry is listed here');
+    expect(panel.textContent).not.toContain('A download holds every row');
+    expect(panel.querySelector('.mc-section-intro')).toBeNull();
+
+    const meta = panel.querySelector('.mc-table-meta')!;
+    expect(meta.querySelector('.mc-table-computed')?.textContent).toContain('Computed');
+    expect(meta.querySelector('.mc-table-order-line')?.getAttribute('role')).toBe('status');
+    expect(meta.querySelector('.mc-table-order-line')?.textContent).toContain('Rows follow the model order');
+
+    headerButton('State').click();
+    fixture.detectChanges();
+    const useModelOrder = meta.querySelector<HTMLButtonElement>('.mc-use-model-order')!;
+    expect(useModelOrder).not.toBeNull();
+    expect(useModelOrder.classList).toContain('gh-filter-clear');
   });
 
   it('names Copy table after what it writes, in every format', () => {
@@ -4476,6 +4606,13 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewView).withContext('it opens at Fit to screen').toBe('fitScreen');
     expect(textOf('#mc-fig-panel-tablePreview .mc-preview-label')).toBe('Comparison table');
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview .mc-preview-export'))).toBeNull();
+    // The row is label, zoom, then the table's own export group at its end.
+    const row = fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview .mc-preview-toolbar')).nativeElement as HTMLElement;
+    expect(Array.from(row.children).filter(child => !child.hasAttribute('popover'))
+      .map(child => child.classList.contains('mc-preview-label') ? 'label'
+      : child.classList.contains('mc-preview-zoom') ? 'zoom'
+        : child.classList.contains('mc-table-export') ? 'export' : child.tagName))
+      .toEqual(['label', 'zoom', 'export']);
     expect(fixture.debugElement.query(By.css('#mc-preview-figure'))).toBeNull();
     // Karma lays the stage out at no size, so the fit is given one, as the Single chart specs do.
     spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
@@ -4746,10 +4883,9 @@ describe('ModelComparisonComponent', () => {
     }
     expect(step.querySelectorAll('[title]').length).toBe(0);
 
-    // The one image button, and only one, is the figure's Download.
-    const primary = Array.from(toolbar.querySelectorAll('.btn-gh'));
-    expect(primary.length).toBe(1);
-    expect(primary[0].textContent!.trim()).toBe('Download');
+    // Every control on the row is an icon button; the figure's Download is one too.
+    expect(toolbar.querySelectorAll('.btn-gh').length).toBe(0);
+    expect(toolbar.querySelector('.mc-preview-download')?.classList).toContain('action-btn');
   });
 
   it('hands the notice to its one toast', async () => {
@@ -4781,7 +4917,7 @@ describe('ModelComparisonComponent', () => {
   }
 
   function storedSidebar(): {
-    version: number; collapsed: boolean; tab: string; view: string;
+    version: number; collapsed: boolean; sidebarWidth: number; tab: string; view: string;
     figureSizeOpen: boolean; tableImageSizeOpen: boolean; imageFormatOpen: boolean;
   } {
     return JSON.parse(localStorage.getItem(FIGURE_SIDEBAR_STORAGE_KEY)!);
@@ -4818,7 +4954,7 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('.mc-fig-workspace.is-collapsed'))).not.toBeNull();
     expect(textOf('#mc-tip-sidebar')).toContain('Show settings');
     expect(storedSidebar()).toEqual({
-      version: 1, collapsed: true, tab: 'data', view: 'all',
+      version: 1, collapsed: true, sidebarWidth: SIDEBAR_WIDTH_DEFAULT, tab: 'data', view: 'all',
       figureSizeOpen: true, tableImageSizeOpen: true, imageFormatOpen: true
     });
 
@@ -4855,7 +4991,7 @@ describe('ModelComparisonComponent', () => {
     openSidebarTab('download');
     showView('table');
     expect(storedSidebar()).toEqual({
-      version: 1, collapsed: false, tab: 'download', view: 'table',
+      version: 1, collapsed: false, sidebarWidth: SIDEBAR_WIDTH_DEFAULT, tab: 'download', view: 'table',
       figureSizeOpen: true, tableImageSizeOpen: true, imageFormatOpen: true
     });
 
@@ -4887,7 +5023,7 @@ describe('ModelComparisonComponent', () => {
     second.destroy();
   });
 
-  it('holds the chart size, the image format and Download all charts in the chart views\' Download tab', () => {
+  it('holds the chart size, the image format and a hint to the download controls in the chart views\' Download tab', () => {
     render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
 
@@ -4907,9 +5043,13 @@ describe('ModelComparisonComponent', () => {
     expect(format.querySelector('#mc-export-format')).not.toBeNull();
     expect(size.compareDocumentPosition(format) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    const downloadAll = panel.querySelector<HTMLButtonElement>('#mc-side-download-all')!;
-    expect(downloadAll.classList).toContain('btn-gh');
-    expect(downloadAll.textContent?.trim()).toBe('Download all charts');
+    // Settings only: the downloads themselves are on the tiles, in Single chart and in All charts.
+    expect(panel.querySelector('#mc-side-download-all')).toBeNull();
+    const downloadButtons = Array.from(panel.querySelectorAll('button'))
+      .filter(button => /download|copy/i.test(`${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`));
+    expect(downloadButtons.length).withContext('no download or copy buttons').toBe(0);
+    expect(panel.querySelector('.mc-download-hint')?.textContent?.trim())
+      .toBe('Download a chart from its tile or from Single chart, or all of them at once from All charts.');
     // The table's formats belong to the table views.
     expect(panel.querySelector('#mc-table-format')).toBeNull();
 
@@ -4995,19 +5135,86 @@ describe('ModelComparisonComponent', () => {
     second.destroy();
   });
 
-  it('centres Download all charts and the sidebar toggle on the view bar', () => {
+  it('centres the sidebar toggle on the view bar, and About and Recompute on the step row', () => {
     render(buildDto(comparableSet(3)), 2);
     expect(component.figureTab).toBe('all');
 
     const box = (selector: string): DOMRect =>
       (fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement).getBoundingClientRect();
+    // Each row's 1 px bottom border is not part of the height the buttons centre on.
+    const centreOf = (row: DOMRect): number => row.top + (row.height - 1) / 2;
     const bar = box('.mc-fig-bar');
-    // The bar's 1 px bottom border is not part of the height the buttons centre on.
-    const barCentre = bar.top + (bar.height - 1) / 2;
-    for (const selector of ['.mc-fig-download-all', '.mc-fig-sidebar-toggle']) {
+    const toggle = box('.mc-fig-sidebar-toggle');
+    expect(Math.abs(toggle.top + toggle.height / 2 - centreOf(bar))).toBeLessThanOrEqual(1);
+
+    const stepRow = box('.mc-wizard-tabbar');
+    for (const selector of ['#mc-about-trigger', '.mc-recompute']) {
       const button = box(selector);
-      expect(Math.abs(button.top + button.height / 2 - barCentre)).withContext(selector).toBeLessThanOrEqual(1);
+      expect(Math.abs(button.top + button.height / 2 - centreOf(stepRow))).withContext(selector).toBeLessThanOrEqual(1);
     }
+  });
+
+  it('puts About and Recompute at the step row\'s end on step 2 only, and leaves the view bar the toggle and the tabs', () => {
+    render(buildDto(comparableSet(3)), 2);
+    for (const selector of ['#mc-about-trigger', '.mc-recompute']) {
+      const button = fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement;
+      expect(button.closest('.mc-wizard-tabbar .mc-wizard-meta')).withContext(selector).not.toBeNull();
+      expect(button.closest('.mc-fig-bar')).withContext(selector).toBeNull();
+      expect(button.closest('[role="tablist"]')).withContext(selector).toBeNull();
+    }
+    const bar = fixture.debugElement.query(By.css('.mc-fig-bar')).nativeElement as HTMLElement;
+    expect(Array.from(bar.children).map(child => child.classList.contains('mc-fig-sidebar-toggle') ? 'toggle'
+      : child.classList.contains('mc-fig-tabs') ? 'tabs' : child.getAttribute('popover') ? 'tooltip' : child.className))
+      .toEqual(['toggle', 'tooltip', 'tabs']);
+
+    component.goToStep(1);
+    fixture.detectChanges();
+    expect(component.comparison).not.toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-about-trigger'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-recompute'))).toBeNull();
+  });
+
+  it('keeps the sidebar width in the sidebar record, clamped, and hands it to the workspace', () => {
+    render(buildDto(comparableSet(3)), 2);
+    const workspace = (): HTMLElement =>
+      fixture.debugElement.query(By.css('.mc-fig-workspace')).nativeElement as HTMLElement;
+    const resizer = (): HTMLElement | null =>
+      fixture.debugElement.query(By.css('app-pane-resizer.mc-fig-resizer'))?.nativeElement ?? null;
+
+    expect(component.sidebarWidth).toBe(SIDEBAR_WIDTH_DEFAULT);
+    expect(workspace().style.getPropertyValue('--mc-sidebar-width')).toBe(`${SIDEBAR_WIDTH_DEFAULT}px`);
+    expect(resizer()?.getAttribute('role')).toBe('separator');
+    expect(resizer()?.getAttribute('aria-controls')).toBe('mc-fig-sidebar');
+    expect(resizer()?.getAttribute('aria-valuenow')).toBe(`${SIDEBAR_WIDTH_DEFAULT}`);
+
+    // A key press is a commit: the width is stored and the workspace takes it.
+    resizer()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+    expect(component.sidebarWidth).toBe(SIDEBAR_WIDTH_DEFAULT + 16);
+    expect(storedSidebar().sidebarWidth).toBe(SIDEBAR_WIDTH_DEFAULT + 16);
+    expect(workspace().style.getPropertyValue('--mc-sidebar-width')).toBe(`${SIDEBAR_WIDTH_DEFAULT + 16}px`);
+
+    const second = secondInstance();
+    expect(second.componentInstance.sidebarWidth).toBe(SIDEBAR_WIDTH_DEFAULT + 16);
+    second.destroy();
+
+    // Stored values are clamped, and anything that is not a finite number is the default.
+    const storedWidth = (width: unknown): number => {
+      localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: false, sidebarWidth: width }));
+      const instance = secondInstance();
+      const read = instance.componentInstance.sidebarWidth;
+      instance.destroy();
+      return read;
+    };
+    expect(storedWidth(10)).toBe(SIDEBAR_WIDTH_MIN);
+    expect(storedWidth(5000)).toBe(SIDEBAR_WIDTH_MAX);
+    expect(storedWidth('wide')).toBe(SIDEBAR_WIDTH_DEFAULT);
+    expect(storedWidth(null)).toBe(SIDEBAR_WIDTH_DEFAULT);
+
+    // No handle while the sidebar is collapsed.
+    sidebarToggle().click();
+    fixture.detectChanges();
+    expect(resizer()).toBeNull();
   });
 
   it('renders no chart directive on step 2, and exports without reading a page canvas', async () => {

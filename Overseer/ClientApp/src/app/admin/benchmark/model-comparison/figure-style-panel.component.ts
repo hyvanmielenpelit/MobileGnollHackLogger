@@ -118,7 +118,7 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
   ]
 };
 
-/** One Number format choice: a decimal count and the family's sample written with it. */
+/** One decimal-count choice: the digit alone. The family's sample is shown beside the select. */
 export interface NumberOption {
   readonly value: number;
   readonly label: string;
@@ -149,10 +149,10 @@ const BACKGROUND_LABELS: Record<FigureBackgroundMode, string> = {
 };
 const PREVIEW_BACKDROP_LABELS: Record<FigurePreviewBackdrop, string> = { checkerboard: 'Checkerboard', color: 'Colour' };
 const FONT_WEIGHT_LABELS: Record<FigureFontWeight, string> = {
-  400: 'Regular 400',
-  500: 'Medium 500',
-  600: 'Semibold 600',
-  700: 'Bold 700'
+  400: 'Regular (400)',
+  500: 'Medium (500)',
+  600: 'Semibold (600)',
+  700: 'Bold (700)'
 };
 
 /** A colour that can follow the theme instead of holding a fixed hex value. */
@@ -267,6 +267,12 @@ export class FigureStylePanelComponent implements OnInit {
   readonly fontOptions = FIGURE_FONTS;
 
   readonly measureNames = MEASURE_NAMES;
+
+  /** 0 to 6 decimals, labelled with the digit alone; each row's sample is shown beside the select. */
+  readonly decimalOptions: readonly NumberOption[] = Array.from(
+    { length: MAX_MEASURE_DECIMALS + 1 },
+    (_, decimals) => ({ value: decimals, label: `${decimals}` })
+  );
 
   /** The caption text each note checkbox adds, quoted verbatim in its tip. */
   readonly meanTimeHint = `Adds, on mean time per question: ${MEAN_TIME_NO_INTERVAL_NOTE}`;
@@ -568,24 +574,21 @@ export class FigureStylePanelComponent implements OnInit {
     ];
   }
 
-  /** 0 to 6 decimals, each labelled with the family's sample written that way: `1 (22.5 s)`. */
-  numberOptions(measure: NumberMeasure): readonly NumberOption[] {
-    const options: NumberOption[] = [];
-    for (let decimals = 0; decimals <= MAX_MEASURE_DECIMALS; decimals += 1) {
-      options.push({
-        value: decimals,
-        label: `${decimals} (${formatMeasureSample(measure, decimals, this.numberSamples[measure])})`
-      });
-    }
-    return options;
-  }
-
   numberValue(measure: NumberMeasure): number {
     return this.figureStyle.numbers[measure];
   }
 
   numberControlId(family: StyleFamily, measure: NumberMeasure): string {
     return `mc-style-${family}-number-${measure}`;
+  }
+
+  /** What the row's `<output>` shows: the family's sample written at the measure's current decimal count. */
+  numberSample(measure: NumberMeasure): string {
+    return formatMeasureSample(measure, this.numberValue(measure), this.numberSamples[measure]);
+  }
+
+  numberSampleId(family: StyleFamily, measure: NumberMeasure): string {
+    return `mc-style-${family}-number-${measure}-sample`;
   }
 
   onNumber(measure: NumberMeasure, event: Event): void {

@@ -147,6 +147,7 @@ import {
 } from './preview-view';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { PaneResizerComponent } from '../../../shared/pane-resizer/pane-resizer.component';
 import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
 import { showReasoningBadge } from '../../../utils/model-badge-format.util';
 import {
@@ -269,11 +270,16 @@ export function sidebarTabForView(tab: FigureSidebarTab, view: FigureViewTab): F
 }
 
 /**
- * Where the sidebar's collapsed state and tab, the view and the Download tab's section open states
- * are kept, per browser, as `{ version: 1, collapsed, tab, view, figureSizeOpen,
+ * Where the sidebar's collapsed state, width and tab, the view and the Download tab's section open
+ * states are kept, per browser, as `{ version: 1, collapsed, sidebarWidth, tab, view, figureSizeOpen,
  * tableImageSizeOpen, imageFormatOpen }`. Read and written in `try/catch`; never required.
  */
 export const FIGURE_SIDEBAR_STORAGE_KEY = 'overseer.modelComparison.figureSidebar';
+
+/** The settings sidebar's width, in CSS px: 26 rem by default, adjustable from 18 rem to 40 rem. */
+export const SIDEBAR_WIDTH_DEFAULT = 416;
+export const SIDEBAR_WIDTH_MIN = 288;
+export const SIDEBAR_WIDTH_MAX = 640;
 
 const FIGURE_SIDEBAR_TABS: readonly FigureSidebarTab[] = ['data', 'theme', 'charts', 'table', 'download'];
 
@@ -289,6 +295,7 @@ const MIGRATED_SIDEBAR_TABS: Readonly<Record<string, FigureSidebarTab>> = {
 /** The stored workspace layout, field by field. */
 interface StoredFigureSidebar {
   readonly collapsed: boolean;
+  readonly sidebarWidth: number;
   readonly tab: FigureSidebarTab;
   readonly view: FigureViewTab;
   readonly figureSizeOpen: boolean;
@@ -299,7 +306,8 @@ interface StoredFigureSidebar {
 /** The stored sidebar state, field by field; the default wherever storage is absent or unreadable. */
 function readStoredFigureSidebar(): StoredFigureSidebar {
   const fallback: StoredFigureSidebar = {
-    collapsed: false, tab: 'data', view: 'all', figureSizeOpen: true, tableImageSizeOpen: true, imageFormatOpen: true
+    collapsed: false, sidebarWidth: SIDEBAR_WIDTH_DEFAULT, tab: 'data', view: 'all',
+    figureSizeOpen: true, tableImageSizeOpen: true, imageFormatOpen: true
   };
   try {
     const raw = localStorage.getItem(FIGURE_SIDEBAR_STORAGE_KEY);
@@ -307,17 +315,21 @@ function readStoredFigureSidebar(): StoredFigureSidebar {
     if (stored === null || typeof stored !== 'object') {
       return fallback;
     }
-    const { collapsed, tab: storedTab, view: storedView, figureSizeOpen, tableImageSizeOpen, imageFormatOpen } =
-      stored as {
-        collapsed?: unknown; tab?: unknown; view?: unknown;
-        figureSizeOpen?: unknown; tableImageSizeOpen?: unknown; imageFormatOpen?: unknown;
-      };
+    const {
+      collapsed, sidebarWidth, tab: storedTab, view: storedView, figureSizeOpen, tableImageSizeOpen, imageFormatOpen
+    } = stored as {
+      collapsed?: unknown; sidebarWidth?: unknown; tab?: unknown; view?: unknown;
+      figureSizeOpen?: unknown; tableImageSizeOpen?: unknown; imageFormatOpen?: unknown;
+    };
     const tab = typeof storedTab === 'string' ? MIGRATED_SIDEBAR_TABS[storedTab] ?? storedTab : storedTab;
     // 'charts' and 'preview' are the All and Single views' earlier stored names.
     const view = storedView === 'charts' ? 'all' : storedView === 'preview' ? 'single' : storedView;
     const flag = (value: unknown, otherwise: boolean): boolean => typeof value === 'boolean' ? value : otherwise;
     return {
       collapsed: flag(collapsed, fallback.collapsed),
+      sidebarWidth: typeof sidebarWidth === 'number' && Number.isFinite(sidebarWidth)
+        ? Math.min(SIDEBAR_WIDTH_MAX, Math.max(SIDEBAR_WIDTH_MIN, Math.round(sidebarWidth)))
+        : fallback.sidebarWidth,
       tab: FIGURE_SIDEBAR_TABS.includes(tab as FigureSidebarTab) ? tab as FigureSidebarTab : fallback.tab,
       view: FIGURE_VIEW_TABS.includes(view as FigureViewTab) ? view as FigureViewTab : fallback.view,
       figureSizeOpen: flag(figureSizeOpen, fallback.figureSizeOpen),
@@ -502,7 +514,7 @@ export interface ComparisonFigureCard {
   imports: [
     CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent,
     FigureStylePanelComponent, ExportSizeSectionComponent, TableSettingsPanelComponent, ReorderableListComponent,
-    InfoTipComponent
+    InfoTipComponent, PaneResizerComponent
   ],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
@@ -1230,7 +1242,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.pricingBasisChange.emit(value);
   }
 
-  /** Recompute, in step 2's view bar. Refused while a request is already in flight. */
+  /** Recompute, in the step tab row on step 2. Refused while a request is already in flight. */
   onRefresh(): void {
     if (this.loading) {
       return;
@@ -1910,9 +1922,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The size and format in one line, for the *Download all charts* tooltip.
+   * The size and format in one line, for the chart Download tooltips.
    *
-   * The view bar carries the settings as a read-out rather than as controls: the size and the
+   * The toolbars carry the settings as a read-out rather than as controls: the size and the
    * format live in the sidebar's Download tab.
    */
   get exportSummary(): string {
@@ -1931,6 +1943,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return this.exportSizeError;
     }
     return `All charts as one archive — ${this.exportSummary}`;
+  }
+
+  /** What a one-chart Download would do now, or why it will not. */
+  get downloadFigureTooltip(): string {
+    if (this.exporting) {
+      return 'An export is running.';
+    }
+    if (this.exportSizeError !== '') {
+      return this.exportSizeError;
+    }
+    return `Download this chart — ${this.exportSummary}`;
   }
 
   /** An out-of-range custom size, named. Empty while the current setting is usable. */
@@ -2442,6 +2465,41 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   sidebarCollapsed = this.storedSidebar.collapsed;
 
+  readonly SIDEBAR_WIDTH_MIN = SIDEBAR_WIDTH_MIN;
+  readonly SIDEBAR_WIDTH_DEFAULT = SIDEBAR_WIDTH_DEFAULT;
+
+  /** The sidebar's width in CSS px, set by its resizer; the grid clamps it to half the workspace. */
+  sidebarWidth = this.storedSidebar.sidebarWidth;
+
+  @ViewChild('figWorkspace') figWorkspace?: ElementRef<HTMLElement>;
+
+  /**
+   * The widest the resizer goes: 40 rem, or half the workspace when that is narrower. Measured when
+   * the handle is grabbed or focused, never inside a change-detection pass that renders from it.
+   */
+  sidebarWidthMax = SIDEBAR_WIDTH_MAX;
+
+  measureSidebarWidthMax(): void {
+    const workspace = this.figWorkspace?.nativeElement.clientWidth ?? 0;
+    this.sidebarWidthMax = workspace > 0
+      ? Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, Math.floor(workspace / 2)))
+      : SIDEBAR_WIDTH_MAX;
+    this.cdr.markForCheck();
+  }
+
+  /** Live while dragging; the All grid and the Single stage refit through their own observers. */
+  onSidebarWidthChange(width: number): void {
+    this.sidebarWidth = width;
+    this.cdr.markForCheck();
+  }
+
+  onSidebarWidthCommit(width: number): void {
+    this.sidebarWidth = width;
+    this.writeStoredSidebar();
+    this.scheduleTableMeasure();
+    this.cdr.markForCheck();
+  }
+
   /** The chosen sidebar tab. `effectiveSidebarTab` is what the current view group shows of it. */
   sidebarTab: FigureSidebarTab = this.storedSidebar.tab;
 
@@ -2645,6 +2703,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({
         version: 1,
         collapsed: this.sidebarCollapsed,
+        sidebarWidth: this.sidebarWidth,
         tab: this.sidebarTab,
         view: this.figureTab,
         figureSizeOpen: this.figureSizeOpen,

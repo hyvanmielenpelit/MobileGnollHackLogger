@@ -39,22 +39,57 @@
     </div>
   }
 
-  <div class="gh-tabs gh-tabs-secondary mc-wizard-steps" role="tablist"
-       aria-label="Model comparison steps">
-    @for (wizardStep of steps; track wizardStep; let i = $index) {
-      <!-- aria-disabled, never disabled: a disabled tab leaves the focus order and hides the fact
-           that the step exists at all. The reason it cannot be opened is the footer's text. -->
-      <button type="button" role="tab" class="gh-tab"
-              [id]="'mc-step-tab-' + wizardStep"
-              [attr.aria-controls]="'mc-step-panel-' + wizardStep"
-              [attr.aria-selected]="step === wizardStep"
-              [attr.aria-disabled]="!isStepReachable(wizardStep)"
-              [attr.aria-describedby]="isStepReachable(wizardStep) ? null : 'mc-next-blocked'"
-              [attr.tabindex]="step === wizardStep ? 0 : -1"
-              (keydown)="onStepKeydown($event, i)"
-              (click)="goToStep(wizardStep)">
-        {{ wizardStep }}. {{ stepTitles[wizardStep] }}
-      </button>
+  <div class="mc-wizard-tabbar">
+    <div class="gh-tabs gh-tabs-secondary mc-wizard-steps" role="tablist"
+         aria-label="Model comparison steps">
+      @for (wizardStep of steps; track wizardStep; let i = $index) {
+        <!-- aria-disabled, never disabled: a disabled tab leaves the focus order and hides the fact
+             that the step exists at all. The reason it cannot be opened is the footer's text. -->
+        <button type="button" role="tab" class="gh-tab"
+                [id]="'mc-step-tab-' + wizardStep"
+                [attr.aria-controls]="'mc-step-panel-' + wizardStep"
+                [attr.aria-selected]="step === wizardStep"
+                [attr.aria-disabled]="!isStepReachable(wizardStep)"
+                [attr.aria-describedby]="isStepReachable(wizardStep) ? null : 'mc-next-blocked'"
+                [attr.tabindex]="step === wizardStep ? 0 : -1"
+                (keydown)="onStepKeydown($event, i)"
+                (click)="goToStep(wizardStep)">
+          {{ wizardStep }}. {{ stepTitles[wizardStep] }}
+        </button>
+      }
+    </div>
+
+    <!-- About and Recompute, on step 2 only: they concern the computed comparison, not the sources. -->
+    @if (step === 2 && comparison) {
+      <div class="mc-wizard-meta">
+        <!-- The badge counts the caveats inside, so they are never silently hidden behind the button. -->
+        <button type="button" class="btn-ghost mc-about-trigger" id="mc-about-trigger" (click)="openAbout()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          About<span class="visually-hidden"> this comparison</span>
+          @if (aboutNoteCount > 0) {
+            <span class="mc-badge mc-about-count">{{ aboutNoteCount }}<span class="visually-hidden"> {{ aboutNoteCount === 1 ? 'note' : 'notes' }}</span></span>
+          }
+        </button>
+        <button type="button" class="action-btn mc-recompute" (click)="onRefresh()"
+                aria-label="Recompute the comparison"
+                [attr.aria-disabled]="loading ? 'true' : null"
+                interestfor="mc-tip-refresh"
+                style="anchor-name: --mc-tip-refresh">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="23 4 23 10 17 10"></polyline>
+            <polyline points="1 20 1 14 7 14"></polyline>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+          </svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" id="mc-tip-refresh"
+             style="position-anchor: --mc-tip-refresh">Recompute this comparison</div>
+      </div>
     }
   </div>
 
@@ -156,7 +191,43 @@
           <p class="visually-hidden" role="status">{{ imageFormatResetStatus }}</p>
         </ng-template>
 
-        <div class="mc-fig-workspace" [class.is-collapsed]="sidebarCollapsed">
+        <!-- Copy table and Download table, at the end of both table views' Comparison table row. Only
+             one table view is on screen at a time, so the ids stay unique. aria-disabled, not
+             disabled, so both stay focusable with the reason in their tooltips; the handlers refuse
+             on their own. -->
+        <ng-template #tableExportGroup>
+          <div class="mc-preview-group mc-table-export" role="group" aria-label="Export the table">
+            <button type="button" class="action-btn mc-table-copy"
+                    [attr.aria-label]="copyTableName"
+                    [attr.aria-disabled]="canExportTable ? null : 'true'"
+                    interestfor="mc-tip-table-copy" style="anchor-name: --mc-tip-table-copy"
+                    (click)="copyTable()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <button type="button" class="action-btn mc-table-download"
+                    [attr.aria-label]="downloadTableName"
+                    [attr.aria-disabled]="canExportTable ? null : 'true'"
+                    interestfor="mc-tip-table-download" style="anchor-name: --mc-tip-table-download"
+                    (click)="downloadTable()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="12" y1="18" x2="12" y2="12"></line>
+                <polyline points="9 15 12 18 15 15"></polyline>
+              </svg>
+            </button>
+          </div>
+          <div popover="hint" class="gh-tooltip" id="mc-tip-table-copy"
+               style="position-anchor: --mc-tip-table-copy">{{ copyTableTooltip }}</div>
+          <div popover="hint" class="gh-tooltip" id="mc-tip-table-download"
+               style="position-anchor: --mc-tip-table-download">{{ downloadTableTooltip }}</div>
+        </ng-template>
+
+        <div #figWorkspace class="mc-fig-workspace" [class.is-collapsed]="sidebarCollapsed"
+             [style.--mc-sidebar-width]="sidebarWidth + 'px'">
 
           <!-- ===================================================================================
                THE SETTINGS SIDEBAR
@@ -164,7 +235,7 @@
                Its tabs follow the view group: Data · Theme · Charts · Download beside the charts,
                Data · Theme · Table · Download beside the table, so no tab holds a setting that does
                not apply to the view it is shown with. Collapsed by its toggle in the view bar,
-               which stays rendered outside it.
+               which stays rendered outside it; resized by the handle on its right edge.
                =================================================================================== -->
           <aside id="mc-fig-sidebar" class="mc-fig-sidebar" aria-label="Comparison settings"
                  [hidden]="sidebarCollapsed">
@@ -496,23 +567,7 @@
                                            (reset)="resetFigureSize()"></app-export-size-section>
                   <ng-container *ngTemplateOutlet="imageFormatSection"></ng-container>
 
-                  <!-- aria-disabled, not disabled, so the tooltip naming the reason stays reachable;
-                       downloadAllFigures() refuses on its own. -->
-                  <div class="mc-download-actions">
-                    <button type="button" class="btn-gh" id="mc-side-download-all"
-                            [attr.aria-disabled]="canExport ? null : 'true'"
-                            interestfor="mc-tip-side-download-all" style="anchor-name: --mc-tip-side-download-all"
-                            (click)="downloadAllFigures()">
-                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <polyline points="21 8 21 21 3 21 3 8"></polyline>
-                        <rect x="1" y="3" width="22" height="5"></rect>
-                        <line x1="10" y1="12" x2="14" y2="12"></line>
-                      </svg>
-                      Download all charts
-                    </button>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-side-download-all"
-                         style="position-anchor: --mc-tip-side-download-all">{{ downloadAllTooltip }}</div>
-                  </div>
+                  <p class="mc-field-hint mc-download-hint">Download a chart from its tile or from Single chart, or all of them at once from All charts.</p>
 
                   @if (previewRefusal) {
                     <p class="mc-export-error" role="alert">{{ previewRefusal }}</p>
@@ -549,37 +604,6 @@
 
                   <p class="mc-table-scope" role="status">{{ tableScopeLine }}</p>
 
-                  <!-- aria-disabled, not disabled, so both stay focusable with the reason in their
-                       tooltips; the handlers refuse on their own. -->
-                  <div class="mc-download-actions">
-                    <button type="button" class="btn-gh" id="mc-side-table-download"
-                            [attr.aria-disabled]="canExportTable ? null : 'true'"
-                            interestfor="mc-tip-side-table-download" style="anchor-name: --mc-tip-side-table-download"
-                            (click)="downloadTable()">
-                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                        <polyline points="14 2 14 8 20 8"></polyline>
-                        <line x1="12" y1="18" x2="12" y2="12"></line>
-                        <polyline points="9 15 12 18 15 15"></polyline>
-                      </svg>
-                      Download table
-                    </button>
-                    <button type="button" class="btn-ghost" id="mc-side-table-copy"
-                            [attr.aria-disabled]="canExportTable ? null : 'true'"
-                            interestfor="mc-tip-side-table-copy" style="anchor-name: --mc-tip-side-table-copy"
-                            (click)="copyTable()">
-                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                      </svg>
-                      Copy table
-                    </button>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-side-table-download"
-                         style="position-anchor: --mc-tip-side-table-download">{{ downloadTableTooltip }}</div>
-                    <div popover="hint" class="gh-tooltip" id="mc-tip-side-table-copy"
-                         style="position-anchor: --mc-tip-side-table-copy">{{ copyTableTooltip }}</div>
-                  </div>
-
                   @if (tableImageLayoutAlert) {
                     <p class="mc-export-error" role="alert">{{ tableImageLayoutAlert }}</p>
                   }
@@ -587,6 +611,17 @@
               </div>
             }
           </aside>
+
+          <!-- In the sidebar's grid cell, hanging off its right edge on the main side, so the
+               sidebar's own scrollbar stays grabbable. -->
+          @if (!sidebarCollapsed) {
+            <app-pane-resizer class="mc-fig-resizer" controls="mc-fig-sidebar" label="Resize settings sidebar"
+                              [value]="sidebarWidth" [min]="SIDEBAR_WIDTH_MIN" [max]="sidebarWidthMax"
+                              [defaultValue]="SIDEBAR_WIDTH_DEFAULT"
+                              (pointerdown)="measureSidebarWidthMax()" (focusin)="measureSidebarWidthMax()"
+                              (valueChange)="onSidebarWidthChange($event)"
+                              (valueCommit)="onSidebarWidthCommit($event)"></app-pane-resizer>
+          }
 
           <div class="mc-fig-main">
             <div class="mc-fig-bar">
@@ -653,82 +688,6 @@
                   </button>
                 }
               </div>
-
-              <!-- About and Recompute show in every view. The view's own actions follow, each with the
-                   same refusal and tooltip read-out as its twin in the Download tab. aria-disabled,
-                   not disabled, so the reason stays reachable. -->
-              <div class="mc-fig-actions">
-                <!-- The badge counts the caveats inside, so they are never silently hidden behind the button. -->
-                <button type="button" class="btn-ghost mc-about-trigger" id="mc-about-trigger" (click)="openAbout()">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                       viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                  </svg>
-                  About<span class="visually-hidden"> this comparison</span>
-                  @if (aboutNoteCount > 0) {
-                    <span class="mc-badge mc-about-count">{{ aboutNoteCount }}<span class="visually-hidden"> {{ aboutNoteCount === 1 ? 'note' : 'notes' }}</span></span>
-                  }
-                </button>
-                <button type="button" class="action-btn mc-recompute" (click)="onRefresh()"
-                        aria-label="Recompute the comparison"
-                        [attr.aria-disabled]="loading ? 'true' : null"
-                        interestfor="mc-tip-refresh"
-                        style="anchor-name: --mc-tip-refresh">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <polyline points="1 20 1 14 7 14"></polyline>
-                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                  </svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" id="mc-tip-refresh"
-                     style="position-anchor: --mc-tip-refresh">Recompute this comparison</div>
-
-                @if (isChartView(effectiveFigureTab)) {
-                  <button type="button" class="btn-ghost mc-fig-download-all"
-                          [attr.aria-disabled]="canExport ? null : 'true'"
-                          interestfor="mc-tip-download-all" style="anchor-name: --mc-tip-download-all"
-                          (click)="downloadAllFigures()">
-                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <polyline points="21 8 21 21 3 21 3 8"></polyline>
-                      <rect x="1" y="3" width="22" height="5"></rect>
-                      <line x1="10" y1="12" x2="14" y2="12"></line>
-                    </svg>
-                    Download all charts
-                  </button>
-                  <div popover="hint" class="gh-tooltip" id="mc-tip-download-all"
-                       style="position-anchor: --mc-tip-download-all">{{ downloadAllTooltip }}</div>
-                } @else {
-                  <button type="button" class="action-btn mc-table-copy"
-                          [attr.aria-label]="copyTableName"
-                          [attr.aria-disabled]="canExportTable ? null : 'true'"
-                          interestfor="mc-tip-table-copy" style="anchor-name: --mc-tip-table-copy"
-                          (click)="copyTable()">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                  </button>
-                  <button type="button" class="btn-ghost mc-table-download"
-                          [attr.aria-disabled]="canExportTable ? null : 'true'"
-                          interestfor="mc-tip-table-download" style="anchor-name: --mc-tip-table-download"
-                          (click)="downloadTable()">
-                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                      <polyline points="14 2 14 8 20 8"></polyline>
-                      <line x1="12" y1="18" x2="12" y2="12"></line>
-                      <polyline points="9 15 12 18 15 15"></polyline>
-                    </svg>
-                    Download table
-                  </button>
-                  <div popover="hint" class="gh-tooltip" id="mc-tip-table-copy"
-                       style="position-anchor: --mc-tip-table-copy">{{ copyTableTooltip }}</div>
-                  <div popover="hint" class="gh-tooltip" id="mc-tip-table-download"
-                       style="position-anchor: --mc-tip-table-download">{{ downloadTableTooltip }}</div>
-                }
-              </div>
             </div>
 
             @if (!showFigures) {
@@ -783,7 +742,27 @@
                         </svg>
                       </button>
                     </div>
+
+                    <!-- The only Download all control. aria-disabled, not disabled, so the tooltip
+                         naming the reason stays reachable; downloadAllFigures() refuses on its own. -->
+                    <div class="mc-preview-group mc-all-export">
+                      <button type="button" class="action-btn mc-all-download-all" aria-label="Download all charts"
+                              [attr.aria-disabled]="canExport ? null : 'true'"
+                              interestfor="mc-tip-download-all" style="anchor-name: --mc-tip-download-all"
+                              (click)="downloadAllFigures()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <line x1="8" y1="3" x2="8" y2="13"></line>
+                          <polyline points="5 10 8 13 11 10"></polyline>
+                          <line x1="16" y1="3" x2="16" y2="13"></line>
+                          <polyline points="13 10 16 13 19 10"></polyline>
+                        </svg>
+                      </button>
+                    </div>
                   </div>
+                  <div popover="hint" class="gh-tooltip" id="mc-tip-download-all"
+                       style="position-anchor: --mc-tip-download-all">{{ downloadAllTooltip }}</div>
                   <div popover="hint" class="gh-tooltip" id="mc-tip-all-zoom-out"
                        style="position-anchor: --mc-tip-all-zoom-out">Zoom out (−)</div>
                   <div popover="hint" class="gh-tooltip" id="mc-tip-all-zoom-in"
@@ -826,18 +805,50 @@
                             @if (allTileRefusals[card.id]; as refusal) {
                               <p class="mc-all-refusal">{{ refusal }}</p>
                             }
-                            <!-- Out of the tab order: the tile itself takes focus and opens on Enter, so a
-                                 second stop per figure would repeat it. -->
-                            <button type="button" class="action-btn mc-all-open" tabindex="-1"
-                                    [attr.aria-label]="'Open ' + card.title + ' in Single view'"
-                                    [attr.interestfor]="tipId('single', card.id)"
-                                    [attr.style]="'anchor-name: --' + tipId('single', card.id)"
-                                    (click)="$event.stopPropagation(); openInSingle(card)">
-                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                                <circle cx="12" cy="12" r="3"></circle>
-                              </svg>
-                            </button>
+                            <!-- Shown while the tile is hovered or holds focus, and always without hover;
+                                 opacity only, so the buttons stay in the tab order. Copy and Download are
+                                 tab stops, the only keyboard route to them here. Open is out of the tab
+                                 order: the tile itself takes focus and opens on Enter. The handlers
+                                 refuse on their own while nothing can be exported. -->
+                            <div class="mc-all-tile-actions">
+                              <button type="button" class="action-btn mc-all-copy"
+                                      [attr.aria-label]="'Copy ' + card.title + ' to the clipboard'"
+                                      [attr.aria-disabled]="canExport ? null : 'true'"
+                                      [attr.interestfor]="tipId('copy', card.id)"
+                                      [attr.style]="'anchor-name: --' + tipId('copy', card.id)"
+                                      (click)="$event.stopPropagation(); copyFigure(card)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                              </button>
+                              <button type="button" class="action-btn mc-all-download"
+                                      [attr.aria-label]="'Download ' + card.title"
+                                      [attr.aria-disabled]="canExport ? null : 'true'"
+                                      [attr.interestfor]="tipId('download', card.id)"
+                                      [attr.style]="'anchor-name: --' + tipId('download', card.id)"
+                                      (click)="$event.stopPropagation(); downloadFigure(card)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                  <polyline points="7 10 12 15 17 10"></polyline>
+                                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                              </button>
+                              <button type="button" class="action-btn mc-all-open" tabindex="-1"
+                                      [attr.aria-label]="'Open ' + card.title + ' in Single view'"
+                                      [attr.interestfor]="tipId('single', card.id)"
+                                      [attr.style]="'anchor-name: --' + tipId('single', card.id)"
+                                      (click)="$event.stopPropagation(); openInSingle(card)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                  <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                              </button>
+                            </div>
+                            <div popover="hint" class="gh-tooltip" [id]="tipId('copy', card.id)"
+                                 [attr.style]="'position-anchor: --' + tipId('copy', card.id)">Copy as an image, with caption and notes</div>
+                            <div popover="hint" class="gh-tooltip" [id]="tipId('download', card.id)"
+                                 [attr.style]="'position-anchor: --' + tipId('download', card.id)">{{ downloadFigureTooltip }}</div>
                             <div popover="hint" class="gh-tooltip" [id]="tipId('single', card.id)"
                                  [attr.style]="'position-anchor: --' + tipId('single', card.id)">Open in Single view</div>
                           </div>
@@ -903,7 +914,7 @@
                         </button>
                       </div>
                     } @else {
-                      <!-- No export group here: the view bar's Copy table and Download table apply. -->
+                      <!-- The Comparison table row: label, zoom, then Copy table and Download table. -->
                       <p class="mc-preview-label">Comparison table</p>
                     }
 
@@ -978,17 +989,20 @@
                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                           </svg>
                         </button>
-                        <button type="button" class="btn-gh btn-gh-small mc-preview-download"
+                        <button type="button" class="action-btn mc-preview-download"
+                                [attr.aria-label]="'Download ' + (previewCard?.title ?? 'figure')"
                                 [attr.aria-disabled]="canExport ? null : 'true'"
+                                interestfor="mc-tip-fig-download" style="anchor-name: --mc-tip-fig-download"
                                 (click)="downloadPreviewedFigure()">
-                          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                             <polyline points="7 10 12 15 17 10"></polyline>
                             <line x1="12" y1="15" x2="12" y2="3"></line>
                           </svg>
-                          Download
                         </button>
                       </div>
+                    } @else {
+                      <ng-container *ngTemplateOutlet="tableExportGroup"></ng-container>
                     }
                   </div>
                   @if (effectiveFigureTab === 'single') {
@@ -998,6 +1012,8 @@
                          style="position-anchor: --mc-tip-fig-next">Next figure</div>
                     <div popover="hint" class="gh-tooltip" id="mc-tip-fig-copy"
                          style="position-anchor: --mc-tip-fig-copy">Copy as an image, with caption and notes</div>
+                    <div popover="hint" class="gh-tooltip" id="mc-tip-fig-download"
+                         style="position-anchor: --mc-tip-fig-download">{{ downloadFigureTooltip }}</div>
                   }
                   <div popover="hint" class="gh-tooltip" id="mc-tip-zoom-out"
                        style="position-anchor: --mc-tip-zoom-out">Zoom out</div>
@@ -1065,36 +1081,33 @@
                 <div class="mc-fig-panel mc-fig-panel--table" role="tabpanel" id="mc-fig-panel-table"
                      aria-labelledby="mc-fig-tab-table" tabindex="0">
                   <section class="mc-section" aria-labelledby="mc-table-heading">
-                    <div class="mc-section-intro">
-                      <h4 id="mc-table-heading" class="mc-section-title">Comparison table</h4>
-                      <p class="section-note">
-                        <strong>Every entry is listed here, charted or not.</strong> Point at a State badge to
-                        see why an entry is or is not charted.
-                      </p>
-                      <p class="section-note">
-                        A download holds every row that passes the filters, across all pages, in the
-                        columns chosen in the Table tab.
-                      </p>
+                    <!-- Sticky, so Copy table and Download table stay reachable while the table scrolls. -->
+                    <div class="mc-preview-toolbar mc-table-toolbar">
+                      <div class="mc-table-title">
+                        <h4 id="mc-table-heading" class="mc-preview-label">Comparison table</h4>
+                        <app-info-tip tipId="mc-table-about-tip" subject="Comparison table">Every entry is listed here, charted or not. Point at a State badge to see why.</app-info-tip>
+                      </div>
+                      <ng-container *ngTemplateOutlet="tableExportGroup"></ng-container>
                     </div>
 
                     <!-- The wizard header carries the suite and the pricing basis, and every export carries
-                         the full provenance; only the computation time is left to state here. -->
-                    <p class="mc-table-computed">{{ tableComputedAtLine }}</p>
-
-                    <!-- No header carries the model order, so no caret shows while it applies: this line
-                         names the order instead. -->
-                    <div class="mc-table-order">
-                      <p class="mc-table-order-line" role="status">
+                         the full provenance; only the computation time is left to state here. No header
+                         carries the model order, so no caret shows while it applies: the order line
+                         names it instead. -->
+                    <p class="mc-table-meta">
+                      <span class="mc-table-computed">{{ tableComputedAtLine }}</span>
+                      <span aria-hidden="true">·</span>
+                      <span class="mc-table-order-line" role="status">
                         @if (tableSortedBy; as sorted) {
                           Rows sorted by {{ sorted.header }}
                         } @else {
                           Rows follow the model order: {{ modelOrderDescription }}
                         }
-                      </p>
+                      </span>
                       @if (tableSortedBy) {
-                        <button type="button" class="btn-ghost mc-use-model-order" (click)="useModelOrder()">Use model order</button>
+                        <button type="button" class="gh-filter-clear mc-use-model-order" (click)="useModelOrder()">Use model order</button>
                       }
-                    </div>
+                    </p>
 
                     @if (entries.length === 0) {
                       <p class="text-muted">Nothing to compare yet.</p>
@@ -1105,7 +1118,7 @@
                         <app-table-pager [state]="entryTable" [rows]="entries" noun="entries"
                                          (changed)="onTableChanged()"></app-table-pager>
                         <div class="gh-datatable-scroll mc-table-scroll">
-                          <table class="gh-table gh-datatable mc-table">
+                          <table class="gh-table gh-datatable mc-table" aria-describedby="mc-table-about-tip">
                             <caption class="visually-hidden">{{ tableCaption }}</caption>
                             <thead>
                               <tr>

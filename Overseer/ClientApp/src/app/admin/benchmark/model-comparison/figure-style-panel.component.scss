@@ -263,6 +263,96 @@
   }
 }
 
+/* One Number format row: label, then a compact decimal-count select and its example value; the
+   control wraps under the label on a narrow sidebar. */
+.fsp-decimals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+
+  > label {
+    flex: 1 1 10rem;
+    font-size: 13px;
+  }
+}
+
+.fsp-decimals-control {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fsp-decimals-select {
+  inline-size: 4.75rem;
+  font-variant-numeric: tabular-nums;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color, #d4af37);
+    outline-offset: 2px;
+  }
+}
+
+/* Customizable select as a progressive enhancement (Chromium/Edge 135+, Safari 27); Firefox keeps
+   the native select and picker. */
+@supports (appearance: base-select) {
+  .fsp-decimals-select,
+  .fsp-decimals-select::picker(select) {
+    appearance: base-select;
+  }
+
+  .fsp-decimals-select::picker(select) {
+    background: rgb(20, 20, 20);
+    border: 1px solid var(--border-glass);
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    min-inline-size: anchor-size(width);
+  }
+
+  .fsp-decimals-select option {
+    padding: 4px 10px;
+    font-variant-numeric: tabular-nums;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(224, 186, 109, 0.15);
+    }
+
+    &:checked,
+    &::checkmark {
+      color: var(--primary-color, #d4af37);
+    }
+  }
+
+  .fsp-decimals-select::picker-icon {
+    color: var(--primary-color, #d4af37);
+    transition: transform 0.15s ease;
+  }
+
+  .fsp-decimals-select:open::picker-icon {
+    transform: rotate(180deg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fsp-decimals-select::picker-icon {
+      transition: none;
+    }
+  }
+}
+
+.fsp-decimals-sample {
+  min-inline-size: 6.5em;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: #d4d4d8;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .checkbox-label input[type="checkbox"]:disabled {
   cursor: not-allowed;
 }

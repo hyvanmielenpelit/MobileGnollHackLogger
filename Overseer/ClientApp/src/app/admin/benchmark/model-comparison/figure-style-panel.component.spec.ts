@@ -488,7 +488,12 @@ describe('FigureStylePanelComponent', () => {
       const described = Array.from(host().querySelectorAll('[aria-describedby]'));
       expect(described.length).withContext(kind).toBeGreaterThan(0);
       for (const element of described) {
-        const id = element.getAttribute('aria-describedby')!;
+        // A decimal select is described by its example value first, then by its tip.
+        const ids = element.getAttribute('aria-describedby')!.split(' ');
+        const id = ids.pop()!;
+        for (const sampleId of ids) {
+          expect(host().querySelector(`#${sampleId}`)?.tagName).withContext(`${kind} ${sampleId}`).toBe('OUTPUT');
+        }
         const tip = host().querySelector(`#${id}`);
         expect(tip?.getAttribute('popover')).withContext(`${kind} ${id}`).toBe('hint');
         expect(tip?.closest('app-info-tip')).withContext(`${kind} ${id}`).not.toBeNull();
@@ -594,6 +599,12 @@ describe('FigureStylePanelComponent', () => {
     return element!;
   }
 
+  function numberSampleEl(family: FigureStylePanelKind, measure: NumberMeasure): HTMLOutputElement {
+    const element = host().querySelector<HTMLOutputElement>(`#mc-style-${family}-number-${measure}-sample`);
+    expect(element).withContext(`${family} ${measure} sample`).not.toBeNull();
+    return element!;
+  }
+
   function numberRowIds(family: FigureStylePanelKind): string[] {
     return Array.from(host().querySelectorAll<HTMLSelectElement>(`#mc-style-${family}-section-numbers select`)).map(s => s.id);
   }
@@ -637,9 +648,10 @@ describe('FigureStylePanelComponent', () => {
       const label = host().querySelector(`label[for="${id}"]`);
       const measure = id.replace('mc-style-profile-number-', '') as NumberMeasure;
       expect(label?.textContent?.trim()).withContext(id).toBe(MEASURE_NAMES[measure]);
-      expect(control(id).getAttribute('aria-describedby')).toBe('mc-style-profile-numbers-tip');
+      expect(control(id).getAttribute('aria-describedby')).toBe(`${id}-sample mc-style-profile-numbers-tip`);
     }
-    expect(hintOf(control('mc-style-profile-number-intelligenceIndex'))).toContain('Resetting a figure style leaves number formats as they are.');
+    expect(host().querySelector('#mc-style-profile-numbers-tip')?.textContent)
+      .toContain('Resetting a figure style leaves number formats as they are.');
   });
 
   it('follows the selected speed and cost measures, and shows each measure\'s own stored setting', () => {
@@ -659,26 +671,47 @@ describe('FigureStylePanelComponent', () => {
     expect(numberSelect('bar', 'meanModelTime').value).toBe('5');
   });
 
-  it('labels each option with its decimal count and the family sample, or the fixed example', () => {
+  it('labels each option with its decimal count and shows the family sample at the chosen count', () => {
     render('bar');
-    const options = (measure: NumberMeasure): string[] =>
+    const optionValues = (measure: NumberMeasure): string[] =>
+      Array.from(numberSelect('bar', measure).options).map(option => option.value);
+    const optionLabels = (measure: NumberMeasure): string[] =>
       Array.from(numberSelect('bar', measure).options).map(option => option.textContent!.trim());
-    expect(options('meanModelTime')).toEqual([
-      '0 (23 s)', '1 (22.5 s)', '2 (22.50 s)', '3 (22.500 s)', '4 (22.5000 s)', '5 (22.50000 s)', '6 (22.500000 s)'
-    ]);
-    expect(Array.from(numberSelect('bar', 'meanModelTime').options).map(option => option.value)).toEqual(['0', '1', '2', '3', '4', '5', '6']);
-    expect(options('suiteCost')[4]).toBe('4 ($0.0761)');
-    expect(options('intelligenceIndex')[0]).toBe('0 (71)');
+    expect(optionValues('meanModelTime')).toEqual(['0', '1', '2', '3', '4', '5', '6']);
+    expect(optionLabels('meanModelTime')).toEqual(['0', '1', '2', '3', '4', '5', '6']);
+
+    // Defaults: meanModelTime at 1 decimal, suiteCost at 4, intelligenceIndex at 0, each on its fixed example.
+    expect(numberSampleEl('bar', 'meanModelTime').textContent?.trim()).toBe('Example: 22.5 s');
+    expect(numberSampleEl('bar', 'suiteCost').textContent?.trim()).toBe('Example: $0.0761');
+    expect(numberSampleEl('bar', 'intelligenceIndex').textContent?.trim()).toBe('Example: 71');
 
     fixture.componentRef.setInput('numberSamples', {
       intelligenceIndex: { value: 71.44 },
       meanModelTime: { value: 850.3, unit: 'ms' },
       suiteCost: { value: 0.0428 }
     });
-    fixture.detectChanges();
-    expect(options('intelligenceIndex')[1]).toBe('1 (71.4)');
-    expect(options('meanModelTime').slice(0, 5)).toEqual(['0 (850 ms)', '1 (850 ms)', '2 (850 ms)', '3 (850 ms)', '4 (850.3 ms)']);
-    expect(options('suiteCost')[2]).toBe('2 ($0.04)');
+    render('bar', withNumbers({ intelligenceIndex: 1, meanModelTime: 4, suiteCost: 2 }));
+    expect(numberSampleEl('bar', 'intelligenceIndex').textContent?.trim()).toBe('Example: 71.4');
+    expect(numberSampleEl('bar', 'meanModelTime').textContent?.trim()).toBe('Example: 850.3 ms');
+    expect(numberSampleEl('bar', 'suiteCost').textContent?.trim()).toBe('Example: $0.04');
+  });
+
+  it('describes the decimal select by its sample first, then the numbers tip; the sample is an output', () => {
+    render('bar');
+    const select = numberSelect('bar', 'meanModelTime');
+    const sampleId = 'mc-style-bar-number-meanModelTime-sample';
+    expect(select.getAttribute('aria-describedby')).toBe(`${sampleId} mc-style-bar-numbers-tip`);
+    expect(numberSampleEl('bar', 'meanModelTime').tagName).toBe('OUTPUT');
+  });
+
+  it('reads the weight radio labels with their numeric value in parentheses', () => {
+    render('bar');
+    const weightLabelText = (value: number): string =>
+      control(`mc-style-bar-axisTitleWeight-${value}`).closest('label')?.textContent?.trim() ?? '';
+    expect(weightLabelText(400)).toBe('Regular (400)');
+    expect(weightLabelText(500)).toBe('Medium (500)');
+    expect(weightLabelText(600)).toBe('Semibold (600)');
+    expect(weightLabelText(700)).toBe('Bold (700)');
   });
 
   it('emits one measure\'s decimals for every family and clears the reset status', () => {

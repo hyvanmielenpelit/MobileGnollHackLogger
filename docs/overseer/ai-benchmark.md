@@ -2898,6 +2898,65 @@ whose entries differ reseeds both from scratch.
 - The admin unticked models under Show, down to fewer than two: *"Charts need at least two models.
   Tick more under Data → Models."*
 
+### Model Comparison: Resizable Sidebar and Compact Toolbars (2026-09-26)
+
+*Every view's actions now sit on that view's own toolbar row, and the view bar is reduced to the
+sidebar toggle and the view tabs.* Display only: nothing here grades anything, and
+`HarnessVersion`, `ScoringMethodVersion`, `CandidateSystemPromptSha256` and `ToolGuidesSha256` do
+not move.
+
+**About and Recompute** moved from the view bar to the right end of the step tab row
+(*1. Sources · 2. Charts & table*), and show on step 2 only. Both are otherwise unchanged.
+
+**Resizable sidebar.** The settings sidebar opens 26 rem wide, enough for its four tabs, and a
+handle on its right edge resizes it between 18 rem and 40 rem (never more than half the
+workspace). The handle is a WAI-ARIA window splitter (`app-pane-resizer`): drag it; or focus it
+and use ArrowLeft / ArrowRight (16 px), Shift with them (64 px), Home and End; double-click resets
+it. The width is remembered per browser as `sidebarWidth` in
+`overseer.modelComparison.figureSidebar`. The handle disappears while the sidebar is collapsed, and
+where the sidebar stacks above the views on a narrow window.
+
+**One toolbar row per view**, each ending in a right-aligned group of icon-only buttons with
+tooltips:
+
+| View | Row |
+|------|-----|
+| All charts | Zoom · **Download all charts** |
+| Single chart | Figure picker · zoom · **Copy** · **Download** |
+| Table preview | *Comparison table* · zoom · **Copy table** · **Download table** |
+| Interactive table | *Comparison table* (i) · **Copy table** · **Download table** |
+
+- **Download all charts** is only on the All charts row. Its glyph is two download arrows into one
+  tray — the one-chart Download glyph doubled — and its tooltip names the archive's size, density
+  and format.
+- **Single chart's Download** is icon-only; its tooltip reads *Download this chart — <size ·
+  density · format>*, or why it will not.
+- **Download table** is icon-only, named and tooltipped after the chosen format (*Download the
+  table as Excel (.xlsx)*), beside Copy table.
+- The rows stay on one line until the panel is under 44 rem wide; the zoom slider shrinks first.
+
+**All-charts tiles** each carry Copy, Download and Open in Single view in their top-right corner,
+shown while the tile is hovered or holds keyboard focus, and always on touch screens. Copy and
+Download are tab stops and do not open the chart in Single; Open stays out of the tab order,
+because Enter on the tile already opens it.
+
+**The sidebar's Download tab holds settings only.** Its *Download all charts*, *Download table*
+and *Copy table* buttons are gone; the chart views' tab says where the chart downloads are, and the
+table views' tab keeps its scope line.
+
+**A compact Interactive table header.** The heading, two paragraphs, the *Computed* line and the
+order line became one row and one line: *Comparison table* with an information tip (*Every entry
+is listed here, charted or not. Point at a State badge to see why.*, also the table's
+description) and the table's Copy and Download at the row's end, sticky while the table scrolls;
+then *Computed … · Rows follow the model order: …*, with a link-style *Use model order* once a
+header sorts the table. The paragraph on what a download holds was removed: the Download tab's
+scope line says it, with the actual counts.
+
+**Number format and weights.** In the Charts tab, each decimal-places choice is a compact select
+of the digits 0–6 with the example value shown beside it rather than inside every option; in
+Chromium browsers the open list is styled in the dark theme. Font weight choices read
+*Regular (400)*, *Medium (500)*, *Semibold (600)* and *Bold (700)*.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that
