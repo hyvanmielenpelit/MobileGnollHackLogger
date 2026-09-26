@@ -386,45 +386,12 @@
         <div class="rubric-check-controls gap-author-controls">
           <div class="form-group">
             <label id="rubricGapAuthorModelLabel">Rubric gap author model</label>
-            <div class="custom-model-selector rubric-gap-author-selector">
-              <button type="button" id="rubricGapAuthorModelTrigger" class="selector-trigger"
-                      (click)="toggleRubricGapAuthorDropdown($event)"
-                      [class.open]="isRubricGapAuthorDropdownOpen"
-                      [attr.aria-expanded]="isRubricGapAuthorDropdownOpen"
-                      aria-haspopup="listbox"
-                      aria-labelledby="rubricGapAuthorModelLabel rubricGapAuthorModelTrigger">
-                <span class="model-name" [class.text-muted]="!selectedRubricGapAuthorModel">{{ selectedRubricGapAuthorModel?.displayName || selectedRubricGapAuthorModel?.modelId || 'Select Model' }}</span>
-                @if (selectedRubricGapAuthorModel?.thinkingLevel) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(selectedRubricGapAuthorModel?.thinkingLevel) }}</span>
-                }
-                @if (showReasoningBadge(selectedRubricGapAuthorModel?.reasoningMode)) {
-                  <span class="reasoning-badge">{{ selectedRubricGapAuthorModel?.reasoningMode }}</span>
-                }
-                @if (selectedRubricGapAuthorModel?.provider) {
-                  <app-provider-badge [provider]="selectedRubricGapAuthorModel?.provider"></app-provider-badge>
-                }
-                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
-              @if (isRubricGapAuthorDropdownOpen) {
-                <div class="selector-dropdown" role="listbox" aria-labelledby="rubricGapAuthorModelLabel">
-                  @if (benchmarkCapableConfigs.length === 0) {
-                    <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled.</div>
-                  }
-                  @for (model of benchmarkCapableConfigs; track model.id) {
-                    <div class="model-option" role="option" tabindex="0"
-                         [attr.aria-selected]="rubricGapAuthorConfigId === model.id"
-                         [class.selected]="rubricGapAuthorConfigId === model.id"
-                         (click)="selectRubricGapAuthorModel(model)">
-                      <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                      @if (model.thinkingLevel) {
-                        <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                      }
-                      <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                    </div>
-                  }
-                </div>
-              }
-            </div>
+            <app-model-picker class="rubric-gap-author-selector"
+                              [options]="benchmarkModelOptions"
+                              [selectedKey]="rubricGapAuthorConfigId"
+                              labelledBy="rubricGapAuthorModelLabel"
+                              emptyHint="No system AI configs with the Benchmark role are enabled."
+                              (selectionChange)="selectRubricGapAuthorModel($event.model)"></app-model-picker>
 
             <label for="rubricGapAuthorInstructions">Instructions to the drafting model</label>
             <textarea id="rubricGapAuthorInstructions" class="gap-author-instructions" rows="3"
@@ -664,8 +631,8 @@
       </p>
 
       <!--
-        The analysis-model selector is the same badge trigger + dropdown the AI Benchmark tab uses
-        for its five model selectors: the thinking level, reasoning mode and parallel-execution
+        The analysis-model selector is the same app-model-picker the AI Benchmark tab uses
+        for its model selectors: the thinking level, reasoning mode and parallel-execution
         mode of the chosen configuration all matter here, and a browser <select> can show none of
         them. The Analyze button sits below the selector's hint rather than beside the selector,
         so it reads as an action on the whole control and not as a peer of the field.
@@ -673,63 +640,14 @@
       <div class="coverage-controls">
         <div class="form-group">
           <label id="coverageModelLabel">Analysis model</label>
-          <div class="custom-model-selector coverage-model-selector">
-            <button type="button" id="coverageModelTrigger" class="selector-trigger"
-                    (click)="toggleCoverageModelDropdown($event)"
-                    [class.open]="isCoverageModelDropdownOpen"
-                    [attr.aria-expanded]="isCoverageModelDropdownOpen"
-                    aria-haspopup="listbox"
-                    aria-labelledby="coverageModelLabel coverageModelTrigger"
-                    aria-describedby="coverageModelHint">
-              <span class="model-name" [class.text-muted]="!selectedCoverageModel">{{ selectedCoverageModel?.displayName || selectedCoverageModel?.modelId || 'Select Model' }}</span>
-              @if (selectedCoverageModel?.thinkingLevel) {
-                <span class="thinking-badge">{{ formatThinkingLevel(selectedCoverageModel?.thinkingLevel) }}</span>
-              }
-              @if (showReasoningBadge(selectedCoverageModel?.reasoningMode)) {
-                <span class="reasoning-badge">{{ selectedCoverageModel?.reasoningMode }}</span>
-              }
-              @if (selectedCoverageModel?.provider) {
-                <app-provider-badge [provider]="selectedCoverageModel?.provider"></app-provider-badge>
-              }
-              @if (selectedCoverageModel?.parallelExecutionMode === 0) {
-                <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-              }
-              @if (selectedCoverageModel?.parallelExecutionMode === 1) {
-                <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-              }
-              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </button>
-            @if (isCoverageModelDropdownOpen) {
-              <div class="selector-dropdown" role="listbox" aria-labelledby="coverageModelLabel">
-                @if (benchmarkCapableConfigs.length === 0) {
-                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
-                }
-                @for (model of benchmarkCapableConfigs; track model.id) {
-                  <div class="model-option" role="option" tabindex="0"
-                       [attr.aria-selected]="coverageModelConfigId === model.id"
-                       [class.selected]="coverageModelConfigId === model.id"
-                       (click)="selectCoverageModel(model)"
-                       (keydown.enter)="selectCoverageModel(model)"
-                       (keydown.space)="selectCoverageModel(model)">
-                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                    @if (model.thinkingLevel) {
-                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                    }
-                    @if (showReasoningBadge(model.reasoningMode)) {
-                      <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                    }
-                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                    @if (model.parallelExecutionMode === 0) {
-                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                    }
-                    @if (model.parallelExecutionMode === 1) {
-                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                    }
-                  </div>
-                }
-              </div>
-            }
-          </div>
+          <app-model-picker class="coverage-model-selector"
+                            [options]="benchmarkModelOptions"
+                            [selectedKey]="coverageModelConfigId"
+                            labelledBy="coverageModelLabel"
+                            describedBy="coverageModelHint"
+                            [showParallel]="true"
+                            emptyHint="No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs."
+                            (selectionChange)="selectCoverageModel($event.model)"></app-model-picker>
           <span id="coverageModelHint" class="form-hint">
             Keep this configuration distinct from the graders': a model that helps author a suite is
             not a neutral reader of answers against it.
@@ -804,45 +722,12 @@
         <div class="rubric-check-controls">
           <div class="form-group">
             <label id="rubricCheckerModelLabel">Rubric checker model</label>
-            <div class="custom-model-selector rubric-checker-selector">
-              <button type="button" id="rubricCheckerModelTrigger" class="selector-trigger"
-                      (click)="toggleRubricCheckerDropdown($event)"
-                      [class.open]="isRubricCheckerDropdownOpen"
-                      [attr.aria-expanded]="isRubricCheckerDropdownOpen"
-                      aria-haspopup="listbox"
-                      aria-labelledby="rubricCheckerModelLabel rubricCheckerModelTrigger">
-                <span class="model-name" [class.text-muted]="!selectedRubricChecker">{{ selectedRubricChecker?.displayName || selectedRubricChecker?.modelId || 'Select Model' }}</span>
-                @if (selectedRubricChecker?.thinkingLevel) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(selectedRubricChecker?.thinkingLevel) }}</span>
-                }
-                @if (showReasoningBadge(selectedRubricChecker?.reasoningMode)) {
-                  <span class="reasoning-badge">{{ selectedRubricChecker?.reasoningMode }}</span>
-                }
-                @if (selectedRubricChecker?.provider) {
-                  <app-provider-badge [provider]="selectedRubricChecker?.provider"></app-provider-badge>
-                }
-                <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
-              @if (isRubricCheckerDropdownOpen) {
-                <div class="selector-dropdown" role="listbox" aria-labelledby="rubricCheckerModelLabel">
-                  @if (benchmarkCapableConfigs.length === 0) {
-                    <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled.</div>
-                  }
-                  @for (model of benchmarkCapableConfigs; track model.id) {
-                    <div class="model-option" role="option" tabindex="0"
-                         [attr.aria-selected]="rubricCheckerConfigId === model.id"
-                         [class.selected]="rubricCheckerConfigId === model.id"
-                         (click)="selectRubricChecker(model)">
-                      <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                      @if (model.thinkingLevel) {
-                        <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                      }
-                      <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                    </div>
-                  }
-                </div>
-              }
-            </div>
+            <app-model-picker class="rubric-checker-selector"
+                              [options]="benchmarkModelOptions"
+                              [selectedKey]="rubricCheckerConfigId"
+                              labelledBy="rubricCheckerModelLabel"
+                              emptyHint="No system AI configs with the Benchmark role are enabled."
+                              (selectionChange)="selectRubricChecker($event.model)"></app-model-picker>
             <span class="form-hint">
               Snapshot: <strong>{{ gameSnapshotName || 'Bound snapshot' }}</strong>. The checker verifies the <strong>BOARD FACTS</strong> section of each question's rubric against this snapshot. That section keeps its fixed name in every stored rubric; it is the list of facts drawn from the game snapshot.
             </span>

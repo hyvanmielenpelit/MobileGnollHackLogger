@@ -33,56 +33,14 @@
 
         <div class="form-group sdg-span-all">
           <label id="sdgModelLabel">Generator model *</label>
-          <div class="custom-model-selector sdg-model-selector">
-            <button type="button" id="sdgModelTrigger" class="selector-trigger"
-                    (click)="toggleModelDropdown($event)"
-                    [class.open]="isModelDropdownOpen"
-                    [attr.aria-expanded]="isModelDropdownOpen"
-                    aria-haspopup="listbox"
-                    aria-labelledby="sdgModelLabel sdgModelTrigger">
-              <span class="model-name" [class.text-muted]="!selectedModel">
-                {{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}
-              </span>
-              @if (selectedModel?.thinkingLevel) {
-                <span class="thinking-badge">{{ formatThinkingLevel(selectedModel?.thinkingLevel) }}</span>
-              }
-              @if (showReasoningBadge(selectedModel?.reasoningMode)) {
-                <span class="reasoning-badge">{{ selectedModel?.reasoningMode }}</span>
-              }
-              @if (selectedModel?.provider) {
-                <app-provider-badge [provider]="selectedModel?.provider"></app-provider-badge>
-              }
-              @if (selectedModel?.effectiveInputPricePerMillion != null) {
-                <span class="price-badge">{{ formatPickerPrice(selectedModel!) }}</span>
-              }
-              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </button>
-
-            @if (isModelDropdownOpen) {
-              <div class="selector-dropdown" role="listbox" aria-labelledby="sdgModelLabel">
-                @if (benchmarkCapableConfigs.length === 0) {
-                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled.</div>
-                }
-                @for (model of benchmarkCapableConfigs; track model.id) {
-                  <div class="model-option" role="option" tabindex="0"
-                       [attr.aria-selected]="modelConfigId === model.id"
-                       [class.selected]="modelConfigId === model.id"
-                       (click)="selectModel(model)"
-                       (keydown.enter)="selectModel(model, $event)"
-                       (keydown.space)="selectModel(model, $event)">
-                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                    @if (model.thinkingLevel) {
-                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                    }
-                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                    @if (model.effectiveInputPricePerMillion != null) {
-                      <span class="price-badge">{{ formatPickerPrice(model) }}</span>
-                    }
-                  </div>
-                }
-              </div>
-            }
-          </div>
+          <app-model-picker class="sdg-model-selector"
+                            [options]="modelOptions"
+                            [selectedKey]="modelConfigId"
+                            triggerId="sdgModelTrigger"
+                            labelledBy="sdgModelLabel"
+                            [showPrice]="true"
+                            emptyHint="No system AI configs with the Benchmark role are enabled."
+                            (selectionChange)="selectModel($event.model)"></app-model-picker>
           <span class="form-hint">A strong reasoning model gives the most useful description.</span>
         </div>
 

@@ -440,7 +440,7 @@ describe('QuestionGenerationDialogComponent', () => {
       buildConfig(9, 'Other', priced)
     ]);
 
-    expect(query('#qgModelTrigger .price-badge')!.textContent!.trim()).toBe('$1.25/$10.00 per 1M');
+    expect(query('#qgModelTrigger .price-badge')!.textContent!.trim()).toBe('price $1.25/$10.00 per 1M');
 
     click('#qgModelTrigger');
 

@@ -533,7 +533,9 @@ When configuring or editing AI models in `AiModelFormComponent` (used across `/m
 
 ## AI Benchmark Configuration Persistence
 
-In the AI Benchmark tab (`/admin` -> AI Benchmark), the settings in the **Configure & Execute Benchmark** card (`.setup-card`) must be remembered across page reloads and tab navigations using `localStorage` under the key `'overseer_admin_benchmark_run_settings'`.
+In the AI Benchmark tab (`/admin` -> AI Benchmark), the settings in the **New Benchmark Run** card (`.setup-card`) must be remembered across page reloads and tab navigations using `localStorage` under the key `'overseer_admin_benchmark_run_settings'`.
+
+The card is three fieldsets, *Test Setup*, *Grading* and *Execution*, on a container-query grid (the `setup` container: one column below 50 rem, two up to 90 rem, three above). Its five pickers are `app-model-picker`s named by `bm<X>ModelLabel` and described by `bm<X>ModelHint`. The field ids and the picker marker classes (`.tested-model-selector` and the like) are stable, and the specs rely on them.
 
 ### 1. Stored Setting Fields (`BenchmarkRunSettings`)
 Whenever modifying or extending the benchmark setup form, ensure the following fields are preserved in `BenchmarkRunSettings`:

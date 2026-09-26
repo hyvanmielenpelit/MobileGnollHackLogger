@@ -1,4 +1,4 @@
-import { Component, EventEmitter, HostListener, Input, OnChanges, OnInit, OnDestroy, Output, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, EventEmitter, Input,OnChanges, OnInit, OnDestroy, Output, SimpleChanges, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
@@ -21,7 +21,7 @@ import {
   RubricGapAuthorDraftDto,
   RubricAdditionAcceptanceDto
 } from './rubric-gap-author.service';
-import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../../../shared/model-picker/model-picker.component';
 
 export type SuiteHealthTab = 'items' | 'gaps' | 'citations' | 'coverage' | 'board-facts';
 
@@ -63,7 +63,7 @@ export type SortDirection = 'asc' | 'desc';
 @Component({
   selector: 'app-benchmark-suite-health',
   standalone: true,
-  imports: [CommonModule, FormsModule, ProviderBadgeComponent],
+  imports: [CommonModule, FormsModule, ModelPickerComponent],
   templateUrl: './suite-health.component.html',
   styleUrls: ['./suite-health.component.scss']
 })
@@ -92,7 +92,6 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   runningRubricCheck = false;
   rubricCheckError: string | null = null;
   rubricCheckerConfigId: number | null = null;
-  isRubricCheckerDropdownOpen = false;
   cancellingRubricCheck = false;
   private rubricCheckPollInterval: any = null;
 
@@ -102,7 +101,6 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   runningRubricGapAuthor = false;
   rubricGapAuthorError: string | null = null;
   rubricGapAuthorConfigId: number | null = null;
-  isRubricGapAuthorDropdownOpen = false;
   cancellingRubricGapAuthor = false;
   rubricGapAuthorInstructions = '';
   private rubricGapAuthorPollInterval: any = null;
@@ -140,8 +138,8 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   coverageError: string | null = null;
   coverageModelConfigId: number | null = null;
 
-  /** Open state of the Coverage analysis-model dropdown. */
-  isCoverageModelDropdownOpen = false;
+  private lastModelOptionsSource: SystemAiConfigDto[] | null = null;
+  private cachedModelOptions: ModelPickerOption<SystemAiConfigDto>[] = [];
 
   private readonly tabOrder: SuiteHealthTab[] = ['items', 'gaps', 'citations', 'coverage', 'board-facts'];
 
@@ -186,16 +184,13 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
     this.gapsError = null;
     this.citationsError = null;
     this.coverageError = null;
-    this.isCoverageModelDropdownOpen = false;
     this.rubricCheckJob = null;
     this.runningRubricCheck = false;
     this.rubricCheckError = null;
-    this.isRubricCheckerDropdownOpen = false;
     this.stopRubricCheckPolling();
     this.rubricGapAuthorJob = null;
     this.runningRubricGapAuthor = false;
     this.rubricGapAuthorError = null;
-    this.isRubricGapAuthorDropdownOpen = false;
     this.rubricGapAuthorInstructions = '';
     this.draftEdits = {};
     this.acceptedDrafts = {};
@@ -206,53 +201,19 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
     this.sortDirection = 'asc';
   }
 
-  /**
-   * Closes the analysis-model dropdown on any click outside it. Scoped by the
-   * `.coverage-model-selector` marker class exactly as the benchmark tab scopes its own
-   * selectors, so a click inside the dropdown does not close it before the option is taken.
-   */
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent): void {
-    const target = event.target as HTMLElement;
-    if (this.isCoverageModelDropdownOpen && !target.closest('.coverage-model-selector')) {
-      this.isCoverageModelDropdownOpen = false;
-      this.cdr.detectChanges();
+  /** Picker options for the three model selectors, rebuilt only when the input array changes. */
+  get benchmarkModelOptions(): ModelPickerOption<SystemAiConfigDto>[] {
+    if (this.benchmarkCapableConfigs !== this.lastModelOptionsSource) {
+      this.lastModelOptionsSource = this.benchmarkCapableConfigs;
+      this.cachedModelOptions = toModelPickerOptions(this.benchmarkCapableConfigs ?? []);
     }
-    if (this.isRubricCheckerDropdownOpen && !target.closest('.rubric-checker-selector')) {
-      this.isRubricCheckerDropdownOpen = false;
-      this.cdr.detectChanges();
-    }
-    if (this.isRubricGapAuthorDropdownOpen && !target.closest('.rubric-gap-author-selector')) {
-      this.isRubricGapAuthorDropdownOpen = false;
-      this.cdr.detectChanges();
-    }
+    return this.cachedModelOptions;
   }
 
-  toggleCoverageModelDropdown(event: Event): void {
-    // Without this the same click reaches onDocumentClick above and closes the dropdown in
-    // the same tick, so the trigger appears not to work at all.
-    event.stopPropagation();
-    this.isCoverageModelDropdownOpen = !this.isCoverageModelDropdownOpen;
-    this.cdr.detectChanges();
-  }
-
-  selectCoverageModel(config: SystemAiConfigDto): void {
+  selectCoverageModel(config: SystemAiConfigDto | null): void {
+    if (!config) return;
     this.coverageModelConfigId = config.id;
-    this.isCoverageModelDropdownOpen = false;
     this.cdr.detectChanges();
-  }
-
-  // Identical to BenchmarkComponent.formatThinkingLevel and .showReasoningBadge, so the two
-  // selectors can never disagree about what they display. If either changes, change both.
-  formatThinkingLevel(level: string | null | undefined): string {
-    if (!level) return 'Default';
-    return level.charAt(0).toUpperCase() + level.slice(1);
-  }
-
-  showReasoningBadge(mode: string | null | undefined): boolean {
-    if (!mode) return false;
-    const lower = mode.toLowerCase();
-    return lower !== 'default' && lower !== 'standard';
   }
 
   selectTab(tab: SuiteHealthTab): void {
@@ -595,24 +556,10 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
     }
   }
 
-  get selectedCoverageModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.coverageModelConfigId);
-  }
-
-  toggleRubricCheckerDropdown(event: Event): void {
-    event.stopPropagation();
-    this.isRubricCheckerDropdownOpen = !this.isRubricCheckerDropdownOpen;
-    this.cdr.detectChanges();
-  }
-
-  selectRubricChecker(config: SystemAiConfigDto): void {
+  selectRubricChecker(config: SystemAiConfigDto | null): void {
+    if (!config) return;
     this.rubricCheckerConfigId = config.id;
-    this.isRubricCheckerDropdownOpen = false;
     this.cdr.detectChanges();
-  }
-
-  get selectedRubricChecker(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.rubricCheckerConfigId);
   }
 
   startRubricCheck(questionIds?: number[]): void {
@@ -695,20 +642,10 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   // polling lifecycle, same cancel path. The acceptance half is what differs, and every difference
   // is there to keep authorship with the operator — see acceptDraft.
 
-  toggleRubricGapAuthorDropdown(event: Event): void {
-    event.stopPropagation();
-    this.isRubricGapAuthorDropdownOpen = !this.isRubricGapAuthorDropdownOpen;
-    this.cdr.detectChanges();
-  }
-
-  selectRubricGapAuthorModel(config: SystemAiConfigDto): void {
+  selectRubricGapAuthorModel(config: SystemAiConfigDto | null): void {
+    if (!config) return;
     this.rubricGapAuthorConfigId = config.id;
-    this.isRubricGapAuthorDropdownOpen = false;
     this.cdr.detectChanges();
-  }
-
-  get selectedRubricGapAuthorModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.rubricGapAuthorConfigId);
   }
 
   startRubricGapAuthor(clusterKeys?: string[]): void {

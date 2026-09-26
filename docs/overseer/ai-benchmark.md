@@ -4451,7 +4451,7 @@ data motion (§ 5).
   — provider and model id, trimmed and case-insensitive (`BenchmarkComplianceGuard.IsSameModel`; *"A
   model under test cannot grade itself…"*). A panel run skips the acknowledgeable same-provider 409 gate
   and records `SameProviderAcknowledged = false`; single-assessor runs keep the gate. The start dialog
-  adds *Co-Assessor (panel member B)* (default *None — single assessor*), shows both refusals as
+  adds *Co-Assessor* (default *None — single assessor*), shows both refusals as
   warnings before Start, and advises — without blocking — when the reference reader or the claim
   verifier shares a provider with the model under test or a panel member. The selection is remembered
   with the other launcher settings.

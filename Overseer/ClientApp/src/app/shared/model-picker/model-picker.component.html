@@ -1,0 +1,85 @@
+<!-- Each badge carries a visually-hidden prefix: a bare MAX or PRO means nothing read aloud. -->
+<ng-template #badges let-m>
+  @if (m.thinkingLevel) {
+    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(m.thinkingLevel) }}</span>
+  }
+  @if (showReasoningBadge(m.reasoningMode)) {
+    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ m.reasoningMode }}</span>
+  }
+  @if (m.provider) {
+    <app-provider-badge [provider]="m.provider"></app-provider-badge>
+  }
+  @if (showPrice && m.effectiveInputPricePerMillion != null) {
+    <span class="price-badge"><span class="visually-hidden">price </span>{{ formatPrice(m) }}</span>
+  }
+  @if (showParallel && m.parallelExecutionMode === 0) {
+    <span class="parallel-badge badge-sequential"><span class="visually-hidden">parallel execution </span>Sequential<span class="visually-hidden">, disabled for this key</span></span>
+  }
+  @if (showParallel && m.parallelExecutionMode === 1) {
+    <span class="parallel-badge badge-on-request"><span class="visually-hidden">parallel execution </span>On request<span class="visually-hidden"> for this key</span></span>
+  }
+</ng-template>
+
+<ng-template #optionRow let-item>
+  <div class="model-option" role="option" [id]="optionId(item.index)"
+       [attr.aria-selected]="isSelected(item.option.key)"
+       [class.is-active]="item.index === activeIndex"
+       (click)="commit(item.index)">
+    <span class="model-name">{{ modelName(item.option.model) }}</span>
+    <ng-container [ngTemplateOutlet]="badges" [ngTemplateOutletContext]="{ $implicit: item.option.model }"></ng-container>
+  </div>
+</ng-template>
+
+@if (!labelledBy && label) {
+  <span class="visually-hidden" [id]="uid + '-label'">{{ label }}</span>
+}
+
+<button #trigger type="button" class="selector-trigger" [id]="triggerIdValue"
+        aria-haspopup="listbox"
+        [attr.aria-expanded]="open"
+        [attr.aria-controls]="open ? listboxId : null"
+        [attr.aria-labelledby]="triggerLabelledBy"
+        [attr.aria-describedby]="describedBy"
+        (click)="toggle()" (keydown)="onTriggerKeydown($event)">
+  @if (selectedModel; as model) {
+    <span class="model-name">{{ modelName(model) }}</span>
+    <ng-container [ngTemplateOutlet]="badges" [ngTemplateOutletContext]="{ $implicit: model }"></ng-container>
+  } @else {
+    <span class="model-name text-muted">{{ noneLabel ?? placeholder }}</span>
+  }
+  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</button>
+
+@if (open) {
+  <div #listbox class="selector-dropdown" role="listbox" tabindex="-1" [id]="listboxId"
+       [attr.aria-labelledby]="labelIdValue"
+       [attr.aria-activedescendant]="activeOptionId"
+       [attr.aria-describedby]="flat.length === 0 && emptyHint ? emptyHintId : null"
+       (keydown)="onListboxKeydown($event)" (focusout)="onFocusOut($event)">
+    @if (flat.length === 0 && emptyHint) {
+      <div class="empty-dropdown-hint" role="none" [id]="emptyHintId">{{ emptyHint }}</div>
+    }
+    @if (hasNoneOption) {
+      <div class="model-option" role="option" [id]="optionId(0)"
+           [attr.aria-selected]="isSelected(null)"
+           [class.is-active]="activeIndex === 0"
+           (click)="commit(0)">
+        <span class="model-name text-muted">{{ noneLabel }}</span>
+      </div>
+    }
+    @for (section of sections; track $index) {
+      @if (section.headingId) {
+        <div role="group" [attr.aria-labelledby]="section.headingId">
+          <div class="model-group-title" role="presentation" [id]="section.headingId">{{ section.group }}</div>
+          @for (item of section.items; track item.option.key) {
+            <ng-container [ngTemplateOutlet]="optionRow" [ngTemplateOutletContext]="{ $implicit: item }"></ng-container>
+          }
+        </div>
+      } @else {
+        @for (item of section.items; track item.option.key) {
+          <ng-container [ngTemplateOutlet]="optionRow" [ngTemplateOutletContext]="{ $implicit: item }"></ng-container>
+        }
+      }
+    }
+  </div>
+}

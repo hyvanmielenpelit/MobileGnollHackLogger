@@ -9,8 +9,9 @@ description: >-
   when a control is a tab rather than a button. Also covers the shared data-table
   layer (TableState, app-sort-header, app-table-pager, .gh-datatable) that gives a
   table paging, column sorting and column filtering, and the rules that keep a
-  paged table honest about selection. Read before adding or restyling any button,
-  icon button, toolbar, tab row, or data table.
+  paged table honest about selection, and the shared model picker (app-model-picker)
+  with its collapsible-listbox keyboard and ARIA contract. Read before adding or
+  restyling any button, icon button, toolbar, tab row, model picker, or data table.
 ---
 
 # Frontend UI Controls: Buttons, Icon Buttons, Tabs, and Data Tables
@@ -551,6 +552,70 @@ splitter* pattern on its host element.
 - The question-generation dialog's older splitter (mouse and touch events, no keyboard) has not
   been migrated to it yet.
 
+### 4e. Model pickers: `app-model-picker`
+
+**The** control for every choice of an AI model — the benchmark launcher and its dialogs, Suite
+Health, question and description generation, the chat composer and the Models page. Never
+hand-roll a `.custom-model-selector` block again: the fifteen copies it replaced had no keyboard
+support and, in the composer, no accessible name. It lives in `app/shared/model-picker/` and
+implements the WAI-ARIA *collapsible listbox* pattern: a `<button aria-haspopup="listbox">` that
+opens a popup `role="listbox"`, which takes focus and tracks the active option with
+`aria-activedescendant`.
+
+```html
+<label id="bmCoAssessorModelLabel">Co-Assessor <span class="field-optional">Optional</span></label>
+<app-model-picker class="co-assessor-model-selector"
+                  labelledBy="bmCoAssessorModelLabel" describedBy="bmCoAssessorModelHint"
+                  noneLabel="None — single assessor" [showPrice]="true"
+                  [options]="benchmarkPickerOptions" [selectedKey]="coAssessorConfigId"
+                  (selectionChange)="selectCoAssessorModel($event.model)"></app-model-picker>
+<span id="bmCoAssessorModelHint" class="form-hint">…</span>
+```
+
+| Input | Meaning |
+|-------|---------|
+| `options` | `ModelPickerOption[]` — `{ key, model, group? }`. Build them with `toModelPickerOptions(models, group?, keyPrefix?)`, from a getter memoized on its source, never a fresh array per change-detection pass |
+| `selectedKey` | The selected option's key, compared with `===`; the host owns it and feeds it back |
+| `noneLabel` | Adds a first option with key `null`; shown muted on the trigger while nothing is selected |
+| `placeholder` / `emptyHint` | Muted trigger text with no selection and no none option; the popup's text when `options` is empty (the listbox's `aria-describedby`) |
+| `labelledBy` / `label` | The visible label's id; `label` only for a picker with no visible label (rendered `visually-hidden`). One of the two is required — development mode warns |
+| `describedBy` | The hint's id, on the trigger's `aria-describedby` |
+| `triggerId` | Only where a host already references the trigger's id |
+| `showPrice` / `showParallel` | The price and parallel-execution badges; thinking level, reasoning mode and provider are always shown |
+| `variant="compact"`, `dropsUp`, `narrowHidesBadges` | The composer and Models page look; `narrowHidesBadges` hides the provider and parallel badges below 992 px |
+
+`selectionChange` emits `{ key, model }` on every committed choice, including re-choosing the
+selected option, so the handler must be idempotent.
+
+- **Keyboard.** On the trigger: Enter, Space and click toggle; ArrowDown (or Alt+ArrowDown) opens
+  on the selected option, else the first; ArrowUp on the selected, else the last. In the list:
+  ArrowUp / ArrowDown by one **without wrapping**, Home / End, PageUp / PageDown by ten; Enter or
+  Space commits, closes and returns focus to the trigger; Tab closes without a change and focus
+  moves on from the trigger; typing a printable character jumps to the next visible name starting
+  with it (a 500 ms buffer, a repeated letter cycles).
+- **Escape** closes the list without a change and returns focus to the trigger, and calls both
+  `preventDefault()` and `stopPropagation()` — the picker is used inside native `<dialog>`s, which
+  must not close on the same key. A second Escape closes the dialog.
+- **Pointer.** A click commits; hover never moves the active option. A `pointerdown` outside the
+  picker, or focus leaving it, closes it without a change. There is no host code for "one open at a
+  time": opening one picker is an outside `pointerdown` for every other.
+- **ARIA drives the styling.** The open trigger is `[aria-expanded="true"]` and the selected option
+  `[aria-selected="true"]` in `styles.scss`, with no parallel class. **`.is-active` is the one
+  exception, and it is unavoidable**: with `aria-activedescendant` the active state lives on the
+  listbox, so the option has no attribute of its own to style from. The keyboard ring is drawn on
+  `.selector-dropdown:focus-visible .model-option.is-active`; the listbox itself has no outline.
+- **Badges** carry `visually-hidden` prefixes (*thinking level*, *reasoning mode*, *price*,
+  *parallel execution*), and no `title` (§4.2): the parallel badge's explanation is visually hidden
+  text. Consecutive options sharing a `group` are a `role="group"` named by its
+  `.model-group-title` heading.
+- **Marker classes** on the host (`class="tested-model-selector"`) are merged with
+  `custom-model-selector`; specs query the trigger as `.<marker> .selector-trigger`. A host
+  stylesheet can size the host element, but a rule reaching into `.selector-trigger` or
+  `.model-option` from a component stylesheet no longer matches — put it in `styles.scss`.
+- The native customizable `<select>` (`appearance: base-select`) is not used until Firefox supports
+  it: its fallback runs the badge texts together and loses the distinctions an administrator
+  chooses by.
+
 ---
 
 ## 5. Tabs
@@ -1005,6 +1070,14 @@ Diff this against your markup before calling button, tab or table work finished.
 **Pane resizers**
 - [ ] A user-resizable pane uses `app-pane-resizer` (§4d), named for the pane, with `aria-controls`
       pointing at it, and the width is persisted on `valueCommit` only.
+
+**Model pickers**
+- [ ] Every model choice is `app-model-picker` (§4e); no hand-rolled `.custom-model-selector` remains.
+- [ ] Each picker has `labelledBy` (a visible label's id) or, with no visible label, `label`; its
+      hint, where there is one, is passed as `describedBy`.
+- [ ] `options` comes from a memoized getter, not a new array on every change-detection pass.
+- [ ] Price and parallel badges are opted into with `showPrice` / `showParallel`, not re-added by hand.
+- [ ] No component stylesheet reaches into `.selector-trigger`, `.selector-dropdown` or `.model-option`.
 
 **Tabs**
 - [ ] Every tab in the row has an icon, or none of them does.

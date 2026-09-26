@@ -594,31 +594,11 @@
 
 // --- Model selector ---
 //
-// .custom-model-selector, .selector-trigger, .selector-dropdown, .model-option, .model-name,
-// .thinking-badge and .reasoning-badge (the form variant, plus the focus ring this component's
-// keyboard-focusable options need) live in styles.scss, shared with the benchmark tab, the
-// question generation workspace and the chat and models pickers' .compact variant.
-
-.parallel-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  white-space: nowrap;
-
-  &.badge-sequential {
-    color: #fbbf24;
-    border: 1px solid #fbbf24;
-    background: rgba(251, 191, 36, 0.15);
-  }
-
-  &.badge-on-request {
-    color: #38bdf8;
-    border: 1px solid #38bdf8;
-    background: rgba(56, 189, 248, 0.15);
-  }
-}
+// The selectors are app-model-picker instances. .custom-model-selector, .selector-trigger,
+// .selector-dropdown, .model-option, .model-name, .thinking-badge, .reasoning-badge and
+// .parallel-badge live in styles.scss, shared with the benchmark tab, the question generation
+// workspace and the chat and models pickers' .compact variant. This file sets only each
+// selector's width through its marker class.
 
 .rubric-check-controls {
   display: flex;

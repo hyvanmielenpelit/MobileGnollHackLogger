@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, Output, EventEmitter, ChangeDetectorRef, HostListener, ViewChild, ElementRef, inject } from '@angular/core';
+import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, Output, EventEmitter, ChangeDetectorRef, ViewChild, ElementRef, inject } from '@angular/core';
 import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -69,7 +69,7 @@ import { BenchmarkCompletionNotificationService, BenchmarkNotificationPermission
 import { BenchmarkBackgroundActivityService } from '../../services/benchmark-background-activity.service';
 import { BenchmarkPollTickerService, BenchmarkPollTickerHandle } from '../../services/benchmark-poll-ticker.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
-import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty, formatPickerPrice } from '../../utils/model-badge-format.util';
+import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty } from '../../utils/model-badge-format.util';
 import { TableState, exactFilter } from '../../shared/data-table/table-state';
 import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
 import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
@@ -87,6 +87,7 @@ import {
   selectionNotices
 } from './model-comparison/model-comparison.models';
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
+import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../../shared/model-picker/model-picker.component';
 import { Observable, Subscription, catchError, firstValueFrom, forkJoin, from, map, of, switchMap } from 'rxjs';
 import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
 import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
@@ -260,7 +261,7 @@ interface BenchmarkRunSettings {
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
     QuestionGenerationDialogComponent, SuiteDescriptionGenerationDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
-    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent,
+    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent
   ],
@@ -467,8 +468,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   get candidateResponseStyleHint(): string {
     return this.candidateVerboseMode
-      ? "The candidate is told to give detailed explanations with background, edge cases and headers. This run will NOT be comparable with concise runs on Completeness, Conciseness or Readability — only Accuracy carries over. Use it to find out whether a completeness gap comes from the prompt or from the model."
-      : "The candidate is told 'Default to 2–5 sentences per response' — the production chat default, and what every run so far has used. Keep it here unless you are deliberately testing the other style.";
+      ? 'Only Accuracy stays comparable with concise runs; use it to tell prompt gaps from model gaps.'
+      : 'Matches the production chat; comparable with earlier runs.';
   }
 
   /**
@@ -487,11 +488,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   lastAssessor: BenchmarkLastAssessorDto | null = null;
 
-  isTestedModelDropdownOpen = false;
-  isAssessorModelDropdownOpen = false;
-  isSecondOpinionModelDropdownOpen = false;
-  isCoAssessorModelDropdownOpen = false;
-  isClaimVerifierModelDropdownOpen = false;
   startingRun = false;
   runErrorMessage: string | null = null;
   sameProviderWarning: SameProviderWarningDto | null = null;
@@ -823,7 +819,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   calibrating = false;
   calibrationErrorMessage: string | null = null;
   calibrationAssessorConfigId: number | null = null;
-  isCalibrationAssessorDropdownOpen = false;
   /** What a panel run's calibration compares against. A single-assessor run sends none. */
   calibrationTarget: BenchmarkCalibrationTarget = 'Assessor';
   readonly calibrationTargetOptions: readonly { value: BenchmarkCalibrationTarget; label: string }[] = [
@@ -845,7 +840,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   retryRunId: number | null = null;
   retryAnswer: BenchmarkRunAnswerDto | null = null;
   retryAssessorConfigId: number | null = null;
-  isRetryAssessorDropdownOpen = false;
   /** The members a panel run's re-assessment re-grades. */
   retryPanelMember: BenchmarkPanelMember = 'Both';
   readonly retryPanelMemberOptions: readonly { value: BenchmarkPanelMember; label: string }[] = [
@@ -878,7 +872,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   // Difficulty Assessor Dialog State
   suiteForDifficultyAssessment: BenchmarkSuiteDto | null = null;
   difficultyAssessorConfigId: number | null = null;
-  isDifficultyAssessorDropdownOpen = false;
   difficultyAssessmentScope: 'suite' | 'unassessed' | 'question' = 'suite';
   questionIdForDifficultyAssessment: number | null = null;
 
@@ -1511,34 +1504,38 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent) {
-    const target = event.target as HTMLElement;
-    if (this.isTestedModelDropdownOpen && !target.closest('.tested-model-selector')) {
-      this.isTestedModelDropdownOpen = false;
-    }
-    if (this.isAssessorModelDropdownOpen && !target.closest('.assessor-model-selector')) {
-      this.isAssessorModelDropdownOpen = false;
-    }
-    if (this.isSecondOpinionModelDropdownOpen && !target.closest('.second-opinion-model-selector')) {
-      this.isSecondOpinionModelDropdownOpen = false;
-    }
-    if (this.isCoAssessorModelDropdownOpen && !target.closest('.co-assessor-model-selector')) {
-      this.isCoAssessorModelDropdownOpen = false;
-    }
-    if (this.isClaimVerifierModelDropdownOpen && !target.closest('.claim-verifier-model-selector')) {
-      this.isClaimVerifierModelDropdownOpen = false;
-    }
-    if (this.isDifficultyAssessorDropdownOpen && !target.closest('.difficulty-assessor-model-selector')) {
-      this.isDifficultyAssessorDropdownOpen = false;
-    }
-    if (this.isRetryAssessorDropdownOpen && !target.closest('.retry-assessor-model-selector')) {
-      this.isRetryAssessorDropdownOpen = false;
-    }
-  }
-
   get benchmarkCapableConfigs(): SystemAiConfigDto[] {
     return this.systemConfigs.filter(c => (c.modelRole & 4) === 4 && c.hasApiKey && c.isEnabled);
+  }
+
+  readonly benchmarkPickerEmptyHint =
+    'No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.';
+
+  private stableCapableConfigs: SystemAiConfigDto[] = [];
+  private benchmarkPickerCache: ModelPickerOption<SystemAiConfigDto>[] = [];
+
+  /**
+   * `benchmarkCapableConfigs` with an identity that changes only when its members or order do, for
+   * child inputs and picker options. The admin page edits and reorders `systemConfigs` in place,
+   * so the source array's identity alone is not a safe key.
+   */
+  get stableBenchmarkCapableConfigs(): SystemAiConfigDto[] {
+    this.refreshCapableConfigs();
+    return this.stableCapableConfigs;
+  }
+
+  get benchmarkPickerOptions(): ModelPickerOption<SystemAiConfigDto>[] {
+    this.refreshCapableConfigs();
+    return this.benchmarkPickerCache;
+  }
+
+  private refreshCapableConfigs(): void {
+    const capable = this.benchmarkCapableConfigs;
+    const cached = this.stableCapableConfigs;
+    if (capable.length !== cached.length || capable.some((config, i) => config !== cached[i])) {
+      this.stableCapableConfigs = capable;
+      this.benchmarkPickerCache = toModelPickerOptions(capable);
+    }
   }
 
   get selectedTestedModel(): SystemAiConfigDto | undefined {
@@ -1667,10 +1664,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   get secondOpinionModeHint(): string {
     if (this.isPanelLaunch) {
-      return 'In a panel run the reference reader grades every answer, blind, so the mode is fixed at All.';
+      return 'In a panel run the mode is fixed at All: the reference reader grades every answer, blind.';
     }
     if (this.secondOpinionModeDisabled) {
-      return 'Select a second opinion assessor first — the mode does nothing without one.';
+      return 'Choose a second opinion model to set a mode.';
     }
     return this.secondOpinionModeOptions.find(o => o.value === this.secondOpinionMode)?.hint ?? '';
   }
@@ -1722,14 +1719,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     });
   }
 
-  get selectedDifficultyAssessorModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.difficultyAssessorConfigId);
-  }
-
-  get selectedRetryAssessorModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.retryAssessorConfigId);
-  }
-
   get retryOriginalAssessorAvailable(): boolean {
     return this.selectedRunDetail?.assessorAvailable === true;
   }
@@ -1738,130 +1727,36 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.retryAssessorConfigId !== this.selectedRunDetail?.assessorModelConfigurationId;
   }
 
-  toggleTestedModelDropdown(event: Event) {
-    event.stopPropagation();
-    this.isTestedModelDropdownOpen = !this.isTestedModelDropdownOpen;
-    if (this.isTestedModelDropdownOpen) {
-      this.isAssessorModelDropdownOpen = false;
-      this.isSecondOpinionModelDropdownOpen = false;
-      this.isCoAssessorModelDropdownOpen = false;
-      this.isClaimVerifierModelDropdownOpen = false;
-      this.isDifficultyAssessorDropdownOpen = false;
-      this.isRetryAssessorDropdownOpen = false;
-    }
-  }
-
-  toggleAssessorModelDropdown(event: Event) {
-    event.stopPropagation();
-    this.isAssessorModelDropdownOpen = !this.isAssessorModelDropdownOpen;
-    if (this.isAssessorModelDropdownOpen) {
-      this.isTestedModelDropdownOpen = false;
-      this.isSecondOpinionModelDropdownOpen = false;
-      this.isCoAssessorModelDropdownOpen = false;
-      this.isClaimVerifierModelDropdownOpen = false;
-      this.isDifficultyAssessorDropdownOpen = false;
-      this.isRetryAssessorDropdownOpen = false;
-    }
-  }
-
-  toggleSecondOpinionModelDropdown(event: Event) {
-    event.stopPropagation();
-    this.isSecondOpinionModelDropdownOpen = !this.isSecondOpinionModelDropdownOpen;
-    if (this.isSecondOpinionModelDropdownOpen) {
-      this.isTestedModelDropdownOpen = false;
-      this.isAssessorModelDropdownOpen = false;
-      this.isCoAssessorModelDropdownOpen = false;
-      this.isClaimVerifierModelDropdownOpen = false;
-      this.isDifficultyAssessorDropdownOpen = false;
-      this.isRetryAssessorDropdownOpen = false;
-    }
-  }
-
-  toggleCoAssessorModelDropdown(event: Event) {
-    event.stopPropagation();
-    this.isCoAssessorModelDropdownOpen = !this.isCoAssessorModelDropdownOpen;
-    if (this.isCoAssessorModelDropdownOpen) {
-      this.isTestedModelDropdownOpen = false;
-      this.isAssessorModelDropdownOpen = false;
-      this.isSecondOpinionModelDropdownOpen = false;
-      this.isClaimVerifierModelDropdownOpen = false;
-      this.isDifficultyAssessorDropdownOpen = false;
-      this.isRetryAssessorDropdownOpen = false;
-    }
-  }
-
-  toggleClaimVerifierModelDropdown(event: Event) {
-    event.stopPropagation();
-    this.isClaimVerifierModelDropdownOpen = !this.isClaimVerifierModelDropdownOpen;
-    if (this.isClaimVerifierModelDropdownOpen) {
-      this.isTestedModelDropdownOpen = false;
-      this.isAssessorModelDropdownOpen = false;
-      this.isSecondOpinionModelDropdownOpen = false;
-      this.isCoAssessorModelDropdownOpen = false;
-      this.isDifficultyAssessorDropdownOpen = false;
-      this.isRetryAssessorDropdownOpen = false;
-    }
-  }
-
-  toggleDifficultyAssessorDropdown(event: Event) {
-    event.stopPropagation();
-    this.isDifficultyAssessorDropdownOpen = !this.isDifficultyAssessorDropdownOpen;
-    if (this.isDifficultyAssessorDropdownOpen) {
-      this.isTestedModelDropdownOpen = false;
-      this.isAssessorModelDropdownOpen = false;
-      this.isSecondOpinionModelDropdownOpen = false;
-      this.isCoAssessorModelDropdownOpen = false;
-      this.isClaimVerifierModelDropdownOpen = false;
-      this.isRetryAssessorDropdownOpen = false;
-    }
-  }
-
-  toggleRetryAssessorDropdown(event: Event) {
-    event.stopPropagation();
-    this.isRetryAssessorDropdownOpen = !this.isRetryAssessorDropdownOpen;
-    if (this.isRetryAssessorDropdownOpen) {
-      this.isTestedModelDropdownOpen = false;
-      this.isAssessorModelDropdownOpen = false;
-      this.isSecondOpinionModelDropdownOpen = false;
-      this.isCoAssessorModelDropdownOpen = false;
-      this.isClaimVerifierModelDropdownOpen = false;
-      this.isDifficultyAssessorDropdownOpen = false;
-    }
-  }
-
-  selectTestedModel(config: SystemAiConfigDto) {
+  selectTestedModel(config: SystemAiConfigDto | null) {
+    if (!config) return;
     this.testedConfigId = config.id;
-    this.isTestedModelDropdownOpen = false;
   }
 
-  selectAssessorModel(config: SystemAiConfigDto) {
+  selectAssessorModel(config: SystemAiConfigDto | null) {
+    if (!config) return;
     this.assessorConfigId = config.id;
-    this.isAssessorModelDropdownOpen = false;
   }
 
   selectSecondOpinionModel(config: SystemAiConfigDto | null) {
     this.secondOpinionConfigId = config?.id ?? null;
-    this.isSecondOpinionModelDropdownOpen = false;
   }
 
   selectCoAssessorModel(config: SystemAiConfigDto | null) {
     this.coAssessorConfigId = config?.id ?? null;
-    this.isCoAssessorModelDropdownOpen = false;
   }
 
   selectClaimVerifierModel(config: SystemAiConfigDto | null) {
     this.claimVerifierConfigId = config?.id ?? null;
-    this.isClaimVerifierModelDropdownOpen = false;
   }
 
-  selectDifficultyAssessorModel(config: SystemAiConfigDto) {
+  selectDifficultyAssessorModel(config: SystemAiConfigDto | null) {
+    if (!config) return;
     this.difficultyAssessorConfigId = config.id;
-    this.isDifficultyAssessorDropdownOpen = false;
   }
 
-  selectRetryAssessorModel(config: SystemAiConfigDto) {
+  selectRetryAssessorModel(config: SystemAiConfigDto | null) {
+    if (!config) return;
     this.retryAssessorConfigId = config.id;
-    this.isRetryAssessorDropdownOpen = false;
   }
 
   formatThinkingLevel(level: string | null | undefined): string {
@@ -1870,10 +1765,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   showReasoningBadge(mode: string | null | undefined): boolean {
     return showReasoningBadge(mode);
-  }
-
-  formatPickerPrice(config: SystemAiConfigDto): string {
-    return formatPickerPrice(config);
   }
 
   /**
@@ -2731,7 +2622,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         ? 'question'
         : (this.suiteIsPartiallyAssessed ? 'unassessed' : 'suite');
       this.questionIdForDifficultyAssessment = question?.id ?? null;
-      this.isDifficultyAssessorDropdownOpen = false;
       this.difficultyAssessorConfigId = this.resolveDefaultDifficultyAssessor(question);
       this.difficultyDialogPhase = 'select';
     }
@@ -2742,7 +2632,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   closeDifficultyAssessorDialog() {
     this.isDifficultyAssessorDialogOpen = false;
     this.difficultyAssessorDialog?.nativeElement.close();
-    this.isDifficultyAssessorDropdownOpen = false;
     if (this.difficultyJobIsTerminal) {
       this.difficultyDialogPhase = 'select';
     }
@@ -2788,7 +2677,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       next: (res) => {
         this.difficultyJobStarting = false;
         this.difficultyDialogPhase = 'progress';
-        this.isDifficultyAssessorDropdownOpen = false;
         this.startDifficultyPolling(res.jobId);
         this.cdr.detectChanges();
         this.difficultyProgressHeading?.nativeElement.focus();
@@ -2798,7 +2686,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (err.status === 409 && err.error) {
           this.difficultyJob = err.error as DifficultyAssessmentJobDto;
           this.difficultyDialogPhase = 'progress';
-          this.isDifficultyAssessorDropdownOpen = false;
           this.startDifficultyPolling(this.difficultyJob.id);
           this.cdr.detectChanges();
           this.difficultyProgressHeading?.nativeElement.focus();
@@ -5682,7 +5569,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.selectedRunDetail = null;
     this.calibrations = [];
     this.calibrationErrorMessage = null;
-    this.isCalibrationAssessorDropdownOpen = false;
     this.runDetailDialog?.nativeElement.close();
   }
 
@@ -5750,7 +5636,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.retryAssessorConfigId = scope === 'claim-verification'
       ? this.resolveRetryClaimVerifier()
       : this.resolveRetryAssessor();
-    this.isRetryAssessorDropdownOpen = false;
     this.retryPanelMember = 'Both';
     this.retryDialog?.nativeElement.showModal();
     this.cdr.detectChanges();
@@ -5761,7 +5646,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.retryRunId = null;
     this.retryAnswer = null;
     this.retryAssessorConfigId = null;
-    this.isRetryAssessorDropdownOpen = false;
     this.retryDialog?.nativeElement.close();
     this.cdr.detectChanges();
   }
@@ -7461,18 +7345,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   // --- Calibration ---
 
-  get selectedCalibrationAssessorModel(): SystemAiConfigDto | undefined {
-    return this.benchmarkCapableConfigs.find(c => c.id === this.calibrationAssessorConfigId);
-  }
-
-  toggleCalibrationAssessorDropdown(event: Event) {
-    event.stopPropagation();
-    this.isCalibrationAssessorDropdownOpen = !this.isCalibrationAssessorDropdownOpen;
-  }
-
-  selectCalibrationAssessorModel(config: SystemAiConfigDto) {
+  selectCalibrationAssessorModel(config: SystemAiConfigDto | null) {
+    if (!config) return;
     this.calibrationAssessorConfigId = config.id;
-    this.isCalibrationAssessorDropdownOpen = false;
   }
 
   loadCalibrations(runId: number): void {

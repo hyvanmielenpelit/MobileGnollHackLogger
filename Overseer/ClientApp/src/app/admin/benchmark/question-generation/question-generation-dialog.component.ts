@@ -4,7 +4,6 @@ import {
   Component,
   ElementRef,
   EventEmitter,
-  HostListener,
   Input,
   NgZone,
   OnChanges,
@@ -31,13 +30,10 @@ import { copyToClipboard } from '../../../utils/clipboard.util';
 import { elapsedMsBetween } from '../../../utils/date.util';
 import {
   formatDifficulty,
-  formatPickerPrice,
-  formatServiceTier,
-  formatThinkingLevel,
-  showReasoningBadge
+  formatServiceTier
 } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../../../shared/model-picker/model-picker.component';
 import { CollapsibleMarkdownComponent } from '../../../shared/collapsible-markdown/collapsible-markdown.component';
 
 /** The display state of one job item; `partial` is a completed item that fell short of its count. */
@@ -65,7 +61,7 @@ export const DEFAULT_QUESTION_GENERATION_INSTRUCTIONS = `Write benchmark questio
 @Component({
   selector: 'app-question-generation-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, ProviderBadgeComponent, CollapsibleMarkdownComponent],
+  imports: [CommonModule, FormsModule, ModelPickerComponent, CollapsibleMarkdownComponent],
   templateUrl: './question-generation-dialog.component.html',
   styleUrls: ['./question-generation-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -95,11 +91,8 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
   @ViewChild('heading', { static: true }) heading?: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog', { static: true }) confirmDialog?: ElementRef<HTMLDialogElement>;
 
-  readonly formatThinkingLevel = formatThinkingLevel;
-  readonly showReasoningBadge = showReasoningBadge;
   readonly formatServiceTier = formatServiceTier;
   readonly formatDifficulty = formatDifficulty;
-  readonly formatPickerPrice = formatPickerPrice;
 
   // --- Setup ---------------------------------------------------------------------------------
   modelConfigId: number | null = null;
@@ -107,7 +100,8 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
   intermediateCount = 6;
   advancedCount = 6;
   instructions = DEFAULT_QUESTION_GENERATION_INSTRUCTIONS;
-  isModelDropdownOpen = false;
+  private lastModelOptionsSource: SystemAiConfigDto[] | null = null;
+  private cachedModelOptions: ModelPickerOption<SystemAiConfigDto>[] = [];
 
   // --- Job -----------------------------------------------------------------------------------
   job: QuestionGenerationJobDto | null = null;
@@ -219,15 +213,6 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
     }
   }
 
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent): void {
-    const target = event.target as HTMLElement | null;
-    if (this.isModelDropdownOpen && !target?.closest('.qg-model-selector')) {
-      this.isModelDropdownOpen = false;
-      this.cdr.markForCheck();
-    }
-  }
-
   // -------------------------------------------------------------------------------------------
   // Dialog lifecycle
   // -------------------------------------------------------------------------------------------
@@ -259,7 +244,6 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
     this.diagnosticsAutoOpened = false;
     this.copiedDiagnostics = false;
     this.diagnosticsCopyFailed = false;
-    this.isModelDropdownOpen = false;
     this.lastCompletionKey = '';
     this.knownRevisions.clear();
     this.questionsLoadedOnce = false;
@@ -299,7 +283,6 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
   private closeDialog(): void {
     this.isOpen = false;
     this.stopPolling();
-    this.isModelDropdownOpen = false;
     if (this.confirmDialog?.nativeElement.open) {
       this.confirmDialog.nativeElement.close();
     }
@@ -320,17 +303,18 @@ export class QuestionGenerationDialogComponent implements OnInit, OnChanges, OnD
   // Model selector
   // -------------------------------------------------------------------------------------------
 
-  toggleModelDropdown(event: Event): void {
-    event.stopPropagation();
-    if (this.setupLocked) return;
-    this.isModelDropdownOpen = !this.isModelDropdownOpen;
-    this.cdr.markForCheck();
+  /** Picker options, rebuilt only when the input array changes. */
+  get modelOptions(): ModelPickerOption<SystemAiConfigDto>[] {
+    if (this.benchmarkCapableConfigs !== this.lastModelOptionsSource) {
+      this.lastModelOptionsSource = this.benchmarkCapableConfigs;
+      this.cachedModelOptions = toModelPickerOptions(this.benchmarkCapableConfigs ?? []);
+    }
+    return this.cachedModelOptions;
   }
 
-  selectModel(config: SystemAiConfigDto, event?: Event): void {
-    event?.preventDefault();
+  selectModel(config: SystemAiConfigDto | null): void {
+    if (!config) return;
     this.modelConfigId = config.id;
-    this.isModelDropdownOpen = false;
     this.cdr.markForCheck();
   }
 

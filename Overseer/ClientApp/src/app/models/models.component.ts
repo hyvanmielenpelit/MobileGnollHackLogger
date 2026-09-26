@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ViewChild, ElementRef, HostListener, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -13,11 +13,12 @@ import {
 } from '../services/settings.service';
 import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
+import { ModelPickerComponent, ModelPickerKey, ModelPickerOption, toModelPickerOptions } from '../shared/model-picker/model-picker.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 
 @Component({
     selector: 'app-models',
-    imports: [FormsModule, RouterModule, AiModelFormComponent, ProviderBadgeComponent],
+    imports: [FormsModule, RouterModule, AiModelFormComponent, ProviderBadgeComponent, ModelPickerComponent],
     templateUrl: './models.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './models.component.scss'
@@ -38,7 +39,6 @@ export class ModelsComponent implements OnInit {
   titleModelSelection: string | null = null;
   savingTitleModel = false;
   savedTitleModelSuccess = false;
-  isTitleDropdownOpen = false;
   titleGenerationEnabled = true;
   
   // Model Picker State
@@ -287,19 +287,6 @@ export class ModelsComponent implements OnInit {
     });
   }
 
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: Event) {
-    const target = event.target as HTMLElement;
-    if (!target.closest('.title-model-selector-wrapper')) {
-      this.isTitleDropdownOpen = false;
-    }
-  }
-
-  toggleTitleDropdown(event: Event) {
-    event.stopPropagation();
-    this.isTitleDropdownOpen = !this.isTitleDropdownOpen;
-  }
-
   toggleTitleGeneration() {
     this.savingTitleModel = true;
     this.savedTitleModelSuccess = false;
@@ -328,7 +315,6 @@ export class ModelsComponent implements OnInit {
       this.titleModelSelection = 'u_' + id;
     }
     
-    this.isTitleDropdownOpen = false;
     this.savingTitleModel = true;
     this.savedTitleModelSuccess = false;
     
@@ -347,26 +333,37 @@ export class ModelsComponent implements OnInit {
     });
   }
 
-  get selectedTitleModel(): UserAiModel | null {
-    if (!this.titleModelSelection) return null;
-    
-    if (this.titleModelSelection.startsWith('u_')) {
-      const id = parseInt(this.titleModelSelection.substring(2));
-      return this.titleUserModels.find(m => m.id === id) || null;
-    } else if (this.titleModelSelection.startsWith('s_')) {
-      const id = parseInt(this.titleModelSelection.substring(2));
-      return this.titleSystemModels.find(m => m.id === id) || null;
+  /** `'u_<id>'` or `'s_<id>'`; `null` is the Default (First Available) option. */
+  selectTitleModelByKey(key: ModelPickerKey | null): void {
+    if (key === null) {
+      this.selectTitleModel(null, false);
+      return;
     }
-    
-    return null;
+    const text = String(key);
+    const id = Number(text.substring(2));
+    if (Number.isNaN(id)) return;
+    if (text.startsWith('s_')) {
+      this.selectTitleModel(id, true);
+    } else if (text.startsWith('u_')) {
+      this.selectTitleModel(id, false);
+    }
   }
 
-  get selectedTitleModelDisplay(): string {
-    const model = this.selectedTitleModel;
-    if (!model) {
-      return 'Default (First Available)';
+  private titleOptionsUserSource: UserAiModel[] | null = null;
+  private titleOptionsSystemSource: UserAiModel[] | null = null;
+  private titleOptionsCache: ModelPickerOption<UserAiModel>[] = [];
+
+  /** Memoized on the two source arrays, which are only ever reassigned, never mutated. */
+  get titleModelOptions(): ModelPickerOption<UserAiModel>[] {
+    if (this.titleOptionsUserSource !== this.titleUserModels || this.titleOptionsSystemSource !== this.titleSystemModels) {
+      this.titleOptionsUserSource = this.titleUserModels;
+      this.titleOptionsSystemSource = this.titleSystemModels;
+      this.titleOptionsCache = [
+        ...toModelPickerOptions(this.titleUserModels, 'Your Models', 'u_'),
+        ...toModelPickerOptions(this.titleSystemModels, 'System Models', 's_')
+      ];
     }
-    return model.displayName || model.modelId;
+    return this.titleOptionsCache;
   }
 
   openModelPicker() {
@@ -531,12 +528,6 @@ export class ModelsComponent implements OnInit {
       return 'None';
     }
     return level.charAt(0).toUpperCase() + level.slice(1);
-  }
-
-  showReasoningBadge(mode: string | null | undefined): boolean {
-    if (!mode) return false;
-    const lower = mode.toLowerCase();
-    return lower !== 'default' && lower !== 'standard';
   }
 
   private formatRate(val: number): string {

@@ -4,7 +4,6 @@ import {
   Component,
   ElementRef,
   EventEmitter,
-  HostListener,
   Input,
   OnChanges,
   OnDestroy,
@@ -25,14 +24,9 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { copyToClipboard } from '../../../utils/clipboard.util';
-import {
-  formatPickerPrice,
-  formatServiceTier,
-  formatThinkingLevel,
-  showReasoningBadge
-} from '../../../utils/model-badge-format.util';
+import { formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../../../shared/model-picker/model-picker.component';
 import { MarkdownPipe } from '../../../chat/markdown.pipe';
 
 /**
@@ -63,7 +57,7 @@ export type SuiteDescriptionResultMode = 'markdown' | 'preview';
 @Component({
   selector: 'app-suite-description-generation-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule, ProviderBadgeComponent, MarkdownPipe],
+  imports: [CommonModule, FormsModule, ModelPickerComponent, MarkdownPipe],
   templateUrl: './suite-description-generation-dialog.component.html',
   styleUrls: ['./suite-description-generation-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -95,17 +89,15 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
   @ViewChild('heading', { static: true }) heading?: ElementRef<HTMLElement>;
   @ViewChild('confirmDialog', { static: true }) confirmDialog?: ElementRef<HTMLDialogElement>;
 
-  readonly formatThinkingLevel = formatThinkingLevel;
-  readonly showReasoningBadge = showReasoningBadge;
   readonly formatServiceTier = formatServiceTier;
-  readonly formatPickerPrice = formatPickerPrice;
 
   // --- Setup ---------------------------------------------------------------------------------
   modelConfigId: number | null = null;
   includeSnapshot = true;
   includeDebugText = false;
   instructions = DEFAULT_SUITE_DESCRIPTION_INSTRUCTIONS;
-  isModelDropdownOpen = false;
+  private lastModelOptionsSource: SystemAiConfigDto[] | null = null;
+  private cachedModelOptions: ModelPickerOption<SystemAiConfigDto>[] = [];
 
   // --- Run -----------------------------------------------------------------------------------
   status: SuiteDescriptionGenerationStatus = 'Idle';
@@ -162,15 +154,6 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
     }
   }
 
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent): void {
-    const target = event.target as HTMLElement | null;
-    if (this.isModelDropdownOpen && !target?.closest('.sdg-model-selector')) {
-      this.isModelDropdownOpen = false;
-      this.cdr.markForCheck();
-    }
-  }
-
   // -------------------------------------------------------------------------------------------
   // Dialog lifecycle
   // -------------------------------------------------------------------------------------------
@@ -195,7 +178,6 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
     this.diagnosticsOpen = false;
     this.copiedDiagnostics = false;
     this.diagnosticsCopyFailed = false;
-    this.isModelDropdownOpen = false;
     this.includeSnapshot = true;
     this.includeDebugText = false;
     this.instructions = DEFAULT_SUITE_DESCRIPTION_INSTRUCTIONS;
@@ -241,7 +223,6 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
     this.isOpen = false;
     this.stopSubscription();
     this.stopTimer();
-    this.isModelDropdownOpen = false;
     if (this.confirmDialog?.nativeElement.open) {
       this.confirmDialog.nativeElement.close();
     }
@@ -299,18 +280,19 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
   // Model selector
   // -------------------------------------------------------------------------------------------
 
-  toggleModelDropdown(event: Event): void {
-    event.stopPropagation();
-    if (this.status === 'Running') return;
-    this.isModelDropdownOpen = !this.isModelDropdownOpen;
-    this.cdr.markForCheck();
+  /** Picker options, rebuilt only when the input array changes. */
+  get modelOptions(): ModelPickerOption<SystemAiConfigDto>[] {
+    if (this.benchmarkCapableConfigs !== this.lastModelOptionsSource) {
+      this.lastModelOptionsSource = this.benchmarkCapableConfigs;
+      this.cachedModelOptions = toModelPickerOptions(this.benchmarkCapableConfigs ?? []);
+    }
+    return this.cachedModelOptions;
   }
 
-  selectModel(config: SystemAiConfigDto, event?: Event): void {
-    event?.preventDefault();
+  selectModel(config: SystemAiConfigDto | null): void {
+    if (!config) return;
     this.modelConfigId = config.id;
     this.storeModelId(config.id);
-    this.isModelDropdownOpen = false;
     this.cdr.markForCheck();
   }
 

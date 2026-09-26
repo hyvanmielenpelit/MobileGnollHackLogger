@@ -372,19 +372,19 @@ to stop if the projection is more than about twice the estimate.
 ### R<n> - <short title> - [V][C][B][M] - Required | Recommended | Optional
 - Answers: <the one question this run settles, in a sentence>
 - Start only after: A<k> ... A<m>, and R<j> if this run depends on its result
-- Where: Admin -> AI Benchmark -> Run Benchmark -> "Configure & Execute Benchmark"
+- Where: Admin -> AI Benchmark -> Run Benchmark -> "New Benchmark Run"
 
 | Launcher field | Set to | Versus run <R> |
 |---|---|---|
 | Benchmark Suite | <name as listed> (<n> questions) | same |
 | Scoring Profile | <name> | same |
 | Model Under Test | <entry as the dropdown prints it, with its thinking-level badge> | same / CHANGED |
-| Assessor Model | ... | same |
-| Second Opinion Assessor (optional) | ... or "None - no second opinion" | same |
+| Response Style | Concise (production default) | same |
+| Assessor | ... | same |
+| Co-Assessor (optional) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |
+| Second Opinion (optional) | ... or "None - no second opinion" | same |
 | Second Opinion Mode | <option label>, or "fixed at All (panel run)" when a co-assessor is set | same |
-| Co-Assessor (panel member B) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |
 | Claim Verifier (optional) | ... or "None - no claim verification" | same |
-| Candidate Response Style | Concise - production default; comparable with previous runs | same |
 | Number of Runs | 1 | |
 
 - Not in the launcher, and must also match: thinking level, service tier, reasoning mode and
@@ -486,7 +486,7 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 | Fact | Source |
 |---|---|
 | Admin tabs; benchmark sub-tabs `Run Benchmark`, `Run History`, `Multi-Run Analysis`, `Manage Suites`, `Scoring Profiles`, `Model Comparison` | `Overseer/ClientApp/src/app/admin/admin.component.ts`, `admin/benchmark/benchmark.component.html` |
-| Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor (panel member B)` field and its panel warnings | `admin/benchmark/benchmark.component.html` |
+| Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor` field and its panel warnings | `admin/benchmark/benchmark.component.html` |
 | Second Opinion Mode option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
 | Launcher refusals and their messages | `Overseer/Services/Benchmarking/BenchmarkRunLauncher.cs` |
 | Delivery-check failure messages | `Overseer/Services/Benchmarking/BenchmarkCandidateRequestProbe.cs`, `BenchmarkGradingRequestProbe.cs` |

@@ -45,7 +45,8 @@ export function formatDifficulty(diff: string | number): string {
  * Formats a model's effective input and output price for the badge next to its name in a
  * model picker, as "$in/$out per 1M". Empty when either price is unknown.
  */
-export function formatPickerPrice(config: SystemAiConfigDto): string {
+export function formatPickerPrice(
+  config: Pick<SystemAiConfigDto, 'effectiveInputPricePerMillion' | 'effectiveOutputPricePerMillion'>): string {
   if (config.effectiveInputPricePerMillion == null || config.effectiveOutputPricePerMillion == null) return '';
   const numberFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const inPrice = numberFormat.format(config.effectiveInputPricePerMillion);

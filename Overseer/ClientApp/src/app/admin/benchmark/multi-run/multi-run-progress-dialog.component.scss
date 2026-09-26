@@ -7,8 +7,8 @@
  * while every other view stayed correct.
  *
  * .progress-heading, .job-progress-block, .run-stat-strip, .job-status-chip, .job-diagnostics,
- * .model-name, .thinking-badge and .reasoning-badge also live in styles.scss now, shared with the
- * run, difficulty and question-generation dialogs. .parallel-badge, .tier-badge and
+ * .model-name, .thinking-badge, .reasoning-badge and .parallel-badge also live in styles.scss,
+ * shared with the run, difficulty and question-generation dialogs. .tier-badge and
  * .second-opinion-mode-badge stay local: no sibling reuses them yet. .provider-badge is defined
  * once, globally, in styles.scss.
  */
@@ -152,28 +152,7 @@
   }
 }
 
-/* .model-name, .thinking-badge and .reasoning-badge live in styles.scss. */
-
-.parallel-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  white-space: nowrap;
-
-  &.badge-sequential {
-    color: #fbbf24;
-    border: 1px solid #fbbf24;
-    background: rgba(251, 191, 36, 0.15);
-  }
-
-  &.badge-on-request {
-    color: #38bdf8;
-    border: 1px solid #38bdf8;
-    background: rgba(56, 189, 248, 0.15);
-  }
-}
+/* .model-name, .thinking-badge, .reasoning-badge and .parallel-badge live in styles.scss. */
 
 /* Configuration, not a capability claim: neutral like .provider-badge so these do not compete
    with the thinking and reasoning badges. */

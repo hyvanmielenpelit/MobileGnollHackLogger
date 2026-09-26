@@ -400,9 +400,12 @@ describe('SuiteHealthComponent', () => {
     const trigger = fixture.nativeElement.querySelector('.coverage-model-selector .selector-trigger') as HTMLElement;
     expect(trigger).withContext('the Coverage tab renders the shared model selector').toBeTruthy();
 
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(trigger.getAttribute('aria-describedby')).toBe('coverageModelHint');
+
     trigger.click();
     fixture.detectChanges();
-    expect(component.isCoverageModelDropdownOpen).toBeTrue();
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
     const options: HTMLElement[] = Array.from(
       fixture.nativeElement.querySelectorAll('.coverage-model-selector .model-option'));
@@ -411,13 +414,14 @@ describe('SuiteHealthComponent', () => {
     options[options.length - 1].click();
     fixture.detectChanges();
 
-    expect(component.isCoverageModelDropdownOpen).toBeFalse();
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(fixture.nativeElement.querySelector('.coverage-model-selector [role="listbox"]')).toBeNull();
     expect(component.coverageModelConfigId)
       .toBe(component.benchmarkCapableConfigs[component.benchmarkCapableConfigs.length - 1].id);
 
     // The badges are what distinguishes this selector from the plain <select> it replaced.
     expect(trigger.querySelector('.provider-badge')?.textContent?.trim()).toBe('Google');
-    expect(trigger.querySelector('.thinking-badge')?.textContent?.trim()).toBe('Low');
+    expect(trigger.querySelector('.thinking-badge')?.textContent?.trim()).toBe('thinking level Low');
   });
 
   it('should move between tabs with the arrow keys', () => {
@@ -746,7 +750,7 @@ describe('SuiteHealthComponent', () => {
 
       trigger.click();
       fixture.detectChanges();
-      expect(component.isRubricGapAuthorDropdownOpen).toBeTrue();
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
 
       const options: HTMLElement[] = Array.from(
         fixture.nativeElement.querySelectorAll('.rubric-gap-author-selector .model-option'));
@@ -755,7 +759,8 @@ describe('SuiteHealthComponent', () => {
       options[1].click();
       fixture.detectChanges();
 
-      expect(component.isRubricGapAuthorDropdownOpen).toBeFalse();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(fixture.nativeElement.querySelector('.rubric-gap-author-selector [role="listbox"]')).toBeNull();
       expect(component.rubricGapAuthorConfigId).toBe(2);
       expect(trigger.querySelector('.provider-badge')?.textContent?.trim()).toBe('Google');
     });

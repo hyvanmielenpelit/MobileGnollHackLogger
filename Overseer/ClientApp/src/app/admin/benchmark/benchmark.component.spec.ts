@@ -1840,12 +1840,12 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   describe('runCountInput layout', () => {
-    it('should render narrow run count input inside claim-verifier-row', () => {
+    it('should render narrow run count input inside the Execution group', () => {
       fixture.detectChanges();
       const input = fixture.nativeElement.querySelector('#runCountInput');
       expect(input).toBeTruthy();
       expect(input.classList.contains('run-count-input')).toBeTrue();
-      expect(input.closest('.claim-verifier-row')).toBeTruthy();
+      expect(input.closest('.setup-group-exec')).toBeTruthy();
     });
   });
 
@@ -4083,42 +4083,84 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Layout regression guards: the three model selectors share one row, and the
+  // Layout regression guards: the launcher's three groups and the fields each holds, and the
   // run-model-strip in the progress dialog shares one column edge between rows.
   // ---------------------------------------------------------------------------
   describe('model selector row layout', () => {
-    it('should place Model Under Test, Assessor Model, and Second Opinion Assessor in one .form-row.three-cols', () => {
+    /** The text of each direct field's first label in one launcher group, whitespace-normalized. */
+    function groupLabels(group: string): string[] {
+      const fieldset = fixture.nativeElement.querySelector(`.setup-group-${group}`) as HTMLElement;
+      return (Array.from(fieldset.querySelectorAll(':scope > .form-group')) as HTMLElement[])
+        .map(g => (g.querySelector('label')?.textContent ?? '').replace(/\s+/g, ' ').trim());
+    }
+
+    it('should lay the launcher out as three setup groups in order', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
 
-      const rows = fixture.nativeElement.querySelectorAll('.form-row.three-cols');
-      expect(rows.length).toBe(1);
-
-      const groups = Array.from(rows[0].querySelectorAll(':scope > .form-group')) as HTMLElement[];
+      const groups = Array.from(
+        fixture.nativeElement.querySelectorAll('.setup-groups > fieldset.setup-group')
+      ) as HTMLElement[];
       expect(groups.length).toBe(3);
-      expect(groups[0].querySelector('label')?.textContent?.trim()).toBe('Model Under Test');
-      expect(groups[1].querySelector('label')?.textContent?.trim()).toBe('Assessor Model');
-      expect(groups[2].querySelector('label')?.textContent?.trim()).toBe('Second Opinion Assessor (optional)');
-
-      // The explanatory hint travels with the second-opinion selector, not loose in the row.
-      // The trigger list moved to the mode dropdown's own hint when that control was added, so
-      // this one describes what the second assessor is for rather than when it fires.
-      const hint = groups[2].querySelector('.form-hint');
-      expect(hint).toBeTruthy();
-      expect(hint!.textContent).toContain('Produces a second, independent verdict');
+      expect(groups.map(g => g.querySelector('legend')?.textContent?.trim()))
+        .toEqual(['Test Setup', 'Grading', 'Execution']);
     });
 
-    it('should place Claim Verifier and Candidate Response Style in .form-row.claim-verifier-row in col 1 and col 2', () => {
+    it('should hold the Test Setup fields in order', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
 
-      const row = fixture.nativeElement.querySelector('.form-row.claim-verifier-row');
-      expect(row).toBeTruthy();
+      const labels = groupLabels('test');
+      expect(labels.length).toBe(4);
+      expect(labels[0]).toMatch(/^Benchmark Suite/);
+      expect(labels[1]).toMatch(/^Scoring Profile/);
+      expect(labels[2]).toMatch(/^Model Under Test/);
+      expect(labels[3]).toMatch(/^Response Style/);
+    });
 
-      const groups = Array.from(row.querySelectorAll(':scope > .form-group')) as HTMLElement[];
-      expect(groups.length).toBe(2);
-      expect(groups[0].querySelector('label')?.textContent?.trim()).toBe('Claim Verifier (optional)');
-      expect(groups[1].querySelector('label')?.textContent?.trim()).toBe('Candidate Response Style');
+    it('should hold the Grading fields in order, with the optional ones tagged', () => {
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+
+      const labels = groupLabels('grading');
+      expect(labels.length).toBe(4);
+      expect(labels[0]).toBe('Assessor');
+      expect(labels[1]).toMatch(/^Co-Assessor/);
+      expect(labels[2]).toMatch(/^Second Opinion/);
+      expect(labels[3]).toMatch(/^Claim Verifier/);
+
+      for (const id of ['bmCoAssessorModelLabel', 'bmSecondOpinionModelLabel', 'bmClaimVerifierModelLabel']) {
+        expect(fixture.nativeElement.querySelector(`#${id} .field-optional`)?.textContent?.trim()).toBe('Optional');
+      }
+      expect(fixture.nativeElement.querySelector('#bmAssessorModelLabel .field-optional')).toBeNull();
+
+      // Second Opinion Mode depends on the second opinion model, so it hangs off that field.
+      const mode = fixture.nativeElement.querySelector('#secondOpinionModeSelect') as HTMLElement;
+      const dependent = mode.closest('.dependent-field') as HTMLElement;
+      expect(dependent).toBeTruthy();
+      expect(dependent.parentElement!.querySelector(':scope > #bmSecondOpinionModelLabel')).toBeTruthy();
+
+      expect(fixture.nativeElement.querySelector('#bmCoAssessorModelHint')?.textContent)
+        .toContain('the score is the mean of the two');
+    });
+
+    it('should name and describe each launcher picker by its own field', () => {
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+
+      const pickers: [string, string][] = [
+        ['tested-model-selector', 'bmTestedModel'],
+        ['assessor-model-selector', 'bmAssessorModel'],
+        ['co-assessor-model-selector', 'bmCoAssessorModel'],
+        ['second-opinion-model-selector', 'bmSecondOpinionModel'],
+        ['claim-verifier-model-selector', 'bmClaimVerifierModel']
+      ];
+      for (const [marker, prefix] of pickers) {
+        const trigger = fixture.nativeElement.querySelector(`.${marker} .selector-trigger`) as HTMLButtonElement;
+        expect(trigger).withContext(marker).toBeTruthy();
+        expect(trigger.getAttribute('aria-labelledby')!.startsWith(`${prefix}Label `)).withContext(marker).toBeTrue();
+        expect(trigger.getAttribute('aria-describedby')).withContext(marker).toBe(`${prefix}Hint`);
+      }
     });
 
     it('should render both dt/dd pairs and keep .run-model-row present in the run-model-strip', () => {
@@ -4284,23 +4326,6 @@ describe('AdminBenchmarkComponent', () => {
       expect(rows.length).toBe(2);
     });
 
-    it('should place the Co-Assessor in its own .form-row.co-assessor-row between the model row and the claim-verifier row', () => {
-      component.activeSubTab = 'run';
-      fixture.detectChanges();
-
-      const rows = fixture.nativeElement.querySelectorAll('.form-row.co-assessor-row');
-      expect(rows.length).toBe(1);
-      const row = rows[0] as HTMLElement;
-      expect(row.classList).not.toContain('three-cols');
-      expect(row.previousElementSibling?.classList).toContain('three-cols');
-      expect(row.nextElementSibling?.classList).toContain('claim-verifier-row');
-
-      const groups = Array.from(row.querySelectorAll(':scope > .form-group')) as HTMLElement[];
-      expect(groups.length).toBe(1);
-      expect(groups[0].querySelector('label')?.textContent?.trim()).toBe('Co-Assessor (panel member B)');
-      expect(groups[0].querySelector('.form-hint')?.textContent).toContain('the published score is the mean of the two');
-    });
-
     it('should add a Co-assessor row after Evaluator and call the second opinion the reference reader in a panel run', () => {
       component.activeRunDetail = {
         id: 42,
@@ -4348,16 +4373,12 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.secondOpinionModeHintOf(3)).toContain('measures grader agreement');
     });
 
-    it('should explain what the Model Under Test and the Assessor Model each do', () => {
+    it('should explain what the Model Under Test and the Assessor each do', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
 
-      const groups = Array.from(
-        fixture.nativeElement.querySelectorAll('.form-row.three-cols > .form-group')
-      ) as HTMLElement[];
-
-      expect(groups[0].querySelector('.form-hint')?.textContent).toContain('The candidate.');
-      expect(groups[1].querySelector('.form-hint')?.textContent)
+      expect(fixture.nativeElement.querySelector('#bmTestedModelHint')?.textContent).toContain('Answers every question');
+      expect(fixture.nativeElement.querySelector('#bmAssessorModelHint')?.textContent)
         .toContain('four BARS dimensions');
     });
 
@@ -4369,11 +4390,11 @@ describe('AdminBenchmarkComponent', () => {
       // no hint at all, and the profile could only ever show the conditional fit advisory.
       const suiteHint = fixture.nativeElement.querySelector('#suiteHint') as HTMLElement | null;
       expect(suiteHint).toBeTruthy();
-      expect(suiteHint!.textContent).toContain('only comparable with other runs of the same');
+      expect(suiteHint!.textContent).toContain('only comparable within one suite');
 
       const profileHint = fixture.nativeElement.querySelector('#profileHint') as HTMLElement | null;
       expect(profileHint).toBeTruthy();
-      expect(profileHint!.textContent).toContain('Turns the four raw dimension grades into the indices');
+      expect(profileHint!.textContent).toContain('Turns the four dimension grades into indices');
     });
 
     it('should say what a second run buys rather than referring to previous behaviour', () => {
@@ -4505,7 +4526,7 @@ describe('AdminBenchmarkComponent', () => {
       // The hard gate that silently produced the 2026-09-03 run's zero second verdicts: the
       // mode is inert without an assessor, so the control says so rather than looking set.
       expect(select!.disabled).toBeTrue();
-      expect(component.secondOpinionModeHint).toContain('Select a second opinion assessor first');
+      expect(component.secondOpinionModeHint).toContain('Choose a second opinion model to set a mode');
       discardPeriodicTasks();
     }));
 
@@ -6051,11 +6072,10 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should default candidateVerboseMode to false and reflect appropriate hint', () => {
       expect(component.candidateVerboseMode).toBe(false);
-      expect(component.candidateResponseStyleHint).toContain('Default to 2–5 sentences per response');
+      expect(component.candidateResponseStyleHint).toContain('production chat');
 
       component.candidateVerboseMode = true;
-      expect(component.candidateResponseStyleHint).toContain('detailed explanations');
-      expect(component.candidateResponseStyleHint).toContain('NOT be comparable');
+      expect(component.candidateResponseStyleHint).toContain('Only Accuracy stays comparable');
     });
 
     it('should include verboseMode in startRun payload', () => {
@@ -7956,7 +7976,8 @@ describe('AdminBenchmarkComponent', () => {
         entries: [{}, {}, {}],
         computedAtUtc: '2026-09-08T10:00:00Z'
       } as any;
-      fixture.detectChanges();
+      // As runComparison does on its response.
+      (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
 
       const state = fixture.nativeElement.querySelector('.mc-launcher .mc-launcher-state');
       expect(state).toBeTruthy();
@@ -8835,8 +8856,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.secondOpinionMode).toBe(3);
       expect(component.secondOpinionModeHint).toContain('fixed at All');
 
-      const label = fixture.nativeElement.querySelector('.form-row.three-cols > .form-group:nth-child(3) > label') as HTMLElement;
-      expect(label.textContent?.trim()).toBe('Second Opinion Assessor (reference reader) (optional)');
+      const label = fixture.nativeElement.querySelector('#bmSecondOpinionModelLabel') as HTMLElement;
+      expect(label.textContent?.replace(/\s+/g, ' ').trim()).toBe('Second Opinion (reference reader) Optional');
 
       // The operator's own override is kept, and returns with a single-assessor run.
       component.coAssessorConfigId = null;
@@ -8851,7 +8872,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(component.showCoAssessorSameProviderAdvisory).toBeTrue();
-      const advisory = fixture.nativeElement.querySelector('.co-assessor-row .co-assessor-advisory') as HTMLElement;
+      const advisory = fixture.nativeElement.querySelector('.setup-group-grading .co-assessor-advisory') as HTMLElement;
       expect(advisory).toBeTruthy();
       expect(advisory.classList).toContain('alert-warning');
       expect(advisory.getAttribute('role')).toBe('note');
@@ -8874,7 +8895,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(component.showCoAssessorCandidateAdvisory).toBeTrue();
-      expect(fixture.nativeElement.querySelector('.co-assessor-row .co-assessor-advisory')?.textContent)
+      expect(fixture.nativeElement.querySelector('.setup-group-grading .co-assessor-advisory')?.textContent)
         .toContain('A panel member is the model under test');
       expect(component.startBenchmarkHint).toContain('Neither panel member may be the model under test');
       expect(component.canStartRun).toBeFalse();

@@ -115,39 +115,85 @@
   flex-wrap: wrap;
 }
 
-.setup-form-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+// Launcher: three fieldsets on named areas, reflowed by the card's own width.
+.setup-groups-container {
+  container: setup / inline-size;
 }
 
-.form-row.two-cols {
+.setup-groups {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "test" "grading" "exec";
+  gap: 1.25rem;
+}
 
-  @media (max-width: 800px) {
-    grid-template-columns: 1fr;
+.setup-group-test    { grid-area: test; }
+.setup-group-grading { grid-area: grading; }
+.setup-group-exec    { grid-area: exec; }
+
+.setup-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.exec-fields,
+.exec-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+@container setup (inline-size >= 50rem) {
+  .setup-groups {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "test grading" "exec exec";
+  }
+
+  .exec-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    align-items: start;
   }
 }
 
-.form-row.three-cols {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+@container setup (inline-size >= 90rem) {
+  .setup-groups {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas: "test grading exec";
+  }
 
-  @media (max-width: 1200px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  @media (max-width: 800px)  { grid-template-columns: 1fr; }
+  .exec-fields {
+    display: flex;
+  }
 }
 
-.form-row.claim-verifier-row,
-.form-row.co-assessor-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+.field-optional {
+  margin-inline-start: 0.5em;
+  padding: 0 0.4em;
+  border: 1px solid #444;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #999;
+  vertical-align: 1px;
+}
 
-  @media (max-width: 1200px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  @media (max-width: 800px)  { grid-template-columns: 1fr; }
+.field-caption {
+  font-size: 13px;
+  font-weight: 500;
+  color: #ccc;
+}
+
+// Depends on the field above it, so it hangs off that field's edge.
+.dependent-field {
+  margin-inline-start: 0.25rem;
+  padding-inline-start: 0.75rem;
+  border-inline-start: 2px solid var(--border-glass);
+}
+
+.completion-signals .btn-gh-small {
+  align-self: flex-start;
 }
 
 .form-grid {
@@ -208,7 +254,7 @@
   border: 1px solid rgba(212, 160, 23, 0.25);
   border-radius: 6px;
   padding: 14px 18px 16px 18px;
-  margin: 4px 0 0 0;
+  margin: 0;
   background: rgba(0, 0, 0, 0.22);
   min-inline-size: 0;
   box-sizing: border-box;
@@ -327,28 +373,7 @@
 
 /* .price-badge lives in styles.scss, in the model selector family. */
 
-/* .reasoning-badge lives in styles.scss, in the model selector family. */
-
-.parallel-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 4px;
-  text-transform: uppercase;
-  white-space: nowrap;
-
-  &.badge-sequential {
-    color: #fbbf24;
-    border: 1px solid #fbbf24;
-    background: rgba(251, 191, 36, 0.15);
-  }
-
-  &.badge-on-request {
-    color: #38bdf8;
-    border: 1px solid #38bdf8;
-    background: rgba(56, 189, 248, 0.15);
-  }
-}
+/* .reasoning-badge and .parallel-badge live in styles.scss, in the model selector family. */
 
 /* Buttons here use the global design system unchanged:
    .btn-gh (the decorative GnollHack image button) with .btn-gh-cancel,
@@ -2412,10 +2437,6 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 }
 
 // Assessor panel. Terse for the same component style budget as above.
-// The co-assessor sits under the Assessor Model column it pairs with, once the rows go multi-column.
-@media (min-width: 801px) {
-  .form-row.co-assessor-row > .form-group { grid-column: 2; }
-}
 .co-assessment-box {
   border-left-color: rgba(74, 222, 128, 0.5);
   display: flex;

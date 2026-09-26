@@ -7,12 +7,13 @@ import { DebugService } from '../services/debug.service';
 import { Router, ActivatedRoute, RouterModule, NavigationEnd, NavigationStart } from '@angular/router';
 import { MarkdownPipe } from './markdown.pipe';
 import { RelativeTimePipe } from './relative-time.pipe';
-import { SettingsService } from '../services/settings.service';
+import { SettingsService, UserAiModel } from '../services/settings.service';
 import { ClientBridgeService } from '../services/client-bridge.service';
 import { setSentryConfidentialSession } from '../utils/sentry-filter.util';
 import { AdminAlertsComponent } from './admin-alerts.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
+import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../shared/model-picker/model-picker.component';
 import { AdminBenchmarkService, AttachedSnapshotInfo } from '../services/admin-benchmark.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import * as signalR from '@microsoft/signalr';
@@ -52,7 +53,7 @@ export interface AttachmentExcerptNotice {
 
 @Component({
     selector: 'app-chat',
-    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent],
+    imports: [CommonModule, FormsModule, RouterModule, MarkdownPipe, RelativeTimePipe, AdminAlertsComponent, TrashModalComponent, ProviderBadgeComponent, ModelPickerComponent],
     styleUrl: './chat.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './chat.component.html'
@@ -449,7 +450,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   userModels: import('../services/settings.service').UserAiModel[] = [];
   systemModels: import('../services/settings.service').UserAiModel[] = [];
   selectedModelKey: string | null = null;
-  isModelDropdownOpen = false;
   singleModelInfo: any = null;
   
   isRenamingTitle = false;
@@ -725,11 +725,23 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
            this.systemModels.find(m => m.id === id);
   }
 
-  toggleModelDropdown(event: Event) {
-    event.stopPropagation();
-    this.isModelDropdownOpen = !this.isModelDropdownOpen;
+  private composerOptionsUserSource: UserAiModel[] | null = null;
+  private composerOptionsSystemSource: UserAiModel[] | null = null;
+  private composerOptionsCache: ModelPickerOption<UserAiModel>[] = [];
+
+  /** Memoized on the two source arrays, which are only ever reassigned, never mutated. */
+  get composerModelOptions(): ModelPickerOption<UserAiModel>[] {
+    if (this.composerOptionsUserSource !== this.userModels || this.composerOptionsSystemSource !== this.systemModels) {
+      this.composerOptionsUserSource = this.userModels;
+      this.composerOptionsSystemSource = this.systemModels;
+      this.composerOptionsCache = [
+        ...toModelPickerOptions(this.userModels, 'Your Models', 'u_'),
+        ...toModelPickerOptions(this.systemModels, 'System Models', 's_')
+      ];
+    }
+    return this.composerOptionsCache;
   }
-  
+
   startRename() {
     this.isRenamingTitle = true;
     this.renameTitleValue = this.currentTitle;
@@ -784,7 +796,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         localStorage.setItem(`overseer_chat_model_session_${this.currentSessionId}`, key);
       }
     }
-    this.isModelDropdownOpen = false;
   }
 
   private findModelByKey(key: string | null): import('../services/settings.service').UserAiModel | undefined {
@@ -848,18 +859,6 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     if (!tier) return '';
     if (tier.toLowerCase() === 'standard_only') return 'Standard Only';
     return tier.charAt(0).toUpperCase() + tier.slice(1);
-  }
-
-
-
-  @HostListener('document:click', ['$event'])
-  onDocumentClick(event: MouseEvent) {
-    if (this.isModelDropdownOpen) {
-      const target = event.target as HTMLElement;
-      if (!target.closest('.custom-model-selector')) {
-        this.isModelDropdownOpen = false;
-      }
-    }
   }
 
   isReporting = false;

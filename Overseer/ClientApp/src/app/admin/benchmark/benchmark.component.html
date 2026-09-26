@@ -174,8 +174,8 @@
       <div class="benchmark-card setup-card">
         <div class="card-header-with-actions">
           <div>
-            <h3>Configure & Execute Benchmark</h3>
-            <p class="text-muted mb-20">Select a question suite, scoring profile, target model, and evaluator model.</p>
+            <h3>New Benchmark Run</h3>
+            <p class="text-muted mb-20">Choose what to test, how it is graded, and how often it runs.</p>
           </div>
         </div>
 
@@ -210,630 +210,405 @@
           </div>
         }
 
-        <div class="setup-form-rows">
-          <!-- Row 1: Suite and Scoring Profile -->
-          <div class="form-row two-cols">
-            <div class="form-group">
-              <div class="label-with-action">
-                <label for="suiteSelect">Benchmark Suite</label>
-                <button type="button" class="link-subtle-btn" (click)="selectSubTab('suites')">Manage suites →</button>
-              </div>
-              <select id="suiteSelect" class="gh-input" [(ngModel)]="selectedSuiteId" (ngModelChange)="onSelectedSuiteChanged()"
-                      aria-describedby="suiteHint">
-                @if (suites.length === 0) {
-                  <option [ngValue]="null" disabled>{{ loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
-                }
-                @for (suite of suites; track suite.id) {
-                  <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
-                }
-              </select>
-              <span id="suiteHint" class="form-hint">
-                The questions and the rubrics they are graded against. Every question in the suite is
-                asked once per run, so a run's indices are only comparable with other runs of the same
-                suite — editing a question starts a new baseline.
-              </span>
-              @if (selectedSuite && !selectedSuite.difficultyFullyAssessed) {
-                <div class="alert alert-warning mt-10" role="alert">
-                  <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                    <line x1="12" y1="9" x2="12" y2="13"></line>
-                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                  </svg>
-                  <div class="alert-content">
-                    <div class="alert-heading">
-                      <strong>{{ difficultyProgressLabel(selectedSuite) }}</strong>
-                    </div>
-                    <div class="alert-body">
-                      Every question must have an assessed difficulty before this suite can be run.
-                    </div>
-                    <div class="alert-actions">
-                      <button type="button" class="alert-action-btn" (click)="openDifficultyAssessorDialog(selectedSuite)">
-                        Assess question difficulty
-                      </button>
-                    </div>
-                  </div>
+        <div class="setup-groups-container">
+          <div class="setup-groups">
+            <fieldset class="gh-fieldset setup-group setup-group-test" aria-describedby="setupTestHint">
+              <legend>Test Setup</legend>
+              <p id="setupTestHint" class="gh-fieldset-hint">What is asked, how it is scored, and which model answers.</p>
+
+              <div class="form-group">
+                <div class="label-with-action">
+                  <label for="suiteSelect">Benchmark Suite</label>
+                  <button type="button" class="link-subtle-btn" (click)="selectSubTab('suites')">Manage suites →</button>
                 </div>
-              }
-            </div>
-
-            <div class="form-group">
-              <div class="label-with-action">
-                <label for="profileSelect">Scoring Profile</label>
-                <button type="button" class="link-subtle-btn" (click)="selectSubTab('profiles')">Manage profiles →</button>
-              </div>
-              <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId"
-                      [attr.aria-describedby]="showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint'">
-                @for (profile of scoringProfiles; track profile.id) {
-                  <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
-                }
-              </select>
-              <span id="profileHint" class="form-hint">
-                Turns the four raw dimension grades into the indices: it sets the dimension weights,
-                the critical-error ceiling, the speed target and the second-opinion thresholds. Runs
-                are only comparable on the indices when they were scored under the same profile.
-              </span>
-              <!--
-                Profile fit. A high/max thinking model measured against a profile tuned for
-                interactive latency scores badly on Speed Index for a reason that has nothing to do
-                with the model being slow for its class, so the mismatch is called out before the
-                run rather than explained afterwards. It carries its own id: it is a second hint in
-                this group, and the one the profile-fit tests are about.
-              -->
-              @if (showProfileFitAdvisory) {
-                <span id="profileFitHint" class="form-hint">
-                  This profile targets interactive latency. A high/max thinking model will score low
-                  on Speed Index against it; consider a Reasoning Agent profile, or read the Speed
-                  Index as advisory.
-                </span>
-              }
-            </div>
-          </div>
-
-          <!-- Row 2: Model Under Test, Assessor Model, and Second Opinion Assessor -->
-          <div class="form-row three-cols">
-            <!-- Model Under Test -->
-            <div class="form-group">
-              <label>Model Under Test</label>
-              <div class="custom-model-selector tested-model-selector">
-                <button type="button" class="selector-trigger" (click)="toggleTestedModelDropdown($event)" [class.open]="isTestedModelDropdownOpen">
-                  <span class="model-name" [class.text-muted]="!selectedTestedModel">{{ selectedTestedModel?.displayName || selectedTestedModel?.modelId || 'Select Model' }}</span>
-                  @if (selectedTestedModel?.thinkingLevel) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(selectedTestedModel?.thinkingLevel) }}</span>
+                <select id="suiteSelect" class="gh-input" [(ngModel)]="selectedSuiteId" (ngModelChange)="onSelectedSuiteChanged()"
+                        aria-describedby="suiteHint">
+                  @if (suites.length === 0) {
+                    <option [ngValue]="null" disabled>{{ loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
                   }
-                  @if (showReasoningBadge(selectedTestedModel?.reasoningMode)) {
-                    <span class="reasoning-badge">{{ selectedTestedModel?.reasoningMode }}</span>
-                  }
-                  @if (selectedTestedModel?.provider) {
-                    <app-provider-badge [provider]="selectedTestedModel?.provider"></app-provider-badge>
-                  }
-                  @if (selectedTestedModel?.effectiveInputPricePerMillion != null) {
-                    <span class="price-badge">{{ formatPickerPrice(selectedTestedModel) }}</span>
-                  }
-                  @if (selectedTestedModel?.parallelExecutionMode === 0) {
-                    <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                  }
-                  @if (selectedTestedModel?.parallelExecutionMode === 1) {
-                    <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                  }
-                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                @if (isTestedModelDropdownOpen) {
-                  <div class="selector-dropdown">
-                    @if (benchmarkCapableConfigs.length === 0) {
-                      <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
-                    }
-                    @for (model of benchmarkCapableConfigs; track model.id) {
-                      <div class="model-option" (click)="selectTestedModel(model)" [class.selected]="testedConfigId === model.id">
-                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                        @if (model.thinkingLevel) {
-                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                        }
-                        @if (showReasoningBadge(model.reasoningMode)) {
-                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                        }
-                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                        @if (model.effectiveInputPricePerMillion != null) {
-                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
-                        }
-                        @if (model.parallelExecutionMode === 0) {
-                          <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                        }
-                        @if (model.parallelExecutionMode === 1) {
-                          <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                        }
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-              <span class="form-hint">
-                The candidate. Every question in the suite is answered by this configuration, and its
-                thinking level, reasoning mode, service tier and parallel tool call setting are
-                snapshotted onto the run and printed in the report.
-                Speed Index is only comparable between runs at the same thinking level.
-              </span>
-            </div>
-
-            <!-- Assessor Model -->
-            <div class="form-group">
-              <label>Assessor Model</label>
-              <div class="custom-model-selector assessor-model-selector">
-                <button type="button" class="selector-trigger" (click)="toggleAssessorModelDropdown($event)" [class.open]="isAssessorModelDropdownOpen">
-                  <span class="model-name" [class.text-muted]="!selectedAssessorModel">{{ selectedAssessorModel?.displayName || selectedAssessorModel?.modelId || 'Select Model' }}</span>
-                  @if (selectedAssessorModel?.thinkingLevel) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(selectedAssessorModel?.thinkingLevel) }}</span>
-                  }
-                  @if (showReasoningBadge(selectedAssessorModel?.reasoningMode)) {
-                    <span class="reasoning-badge">{{ selectedAssessorModel?.reasoningMode }}</span>
-                  }
-                  @if (selectedAssessorModel?.provider) {
-                    <app-provider-badge [provider]="selectedAssessorModel?.provider"></app-provider-badge>
-                  }
-                  @if (selectedAssessorModel?.effectiveInputPricePerMillion != null) {
-                    <span class="price-badge">{{ formatPickerPrice(selectedAssessorModel) }}</span>
-                  }
-                  @if (selectedAssessorModel?.parallelExecutionMode === 0) {
-                    <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                  }
-                  @if (selectedAssessorModel?.parallelExecutionMode === 1) {
-                    <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                  }
-                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                @if (isAssessorModelDropdownOpen) {
-                  <div class="selector-dropdown">
-                    @if (benchmarkCapableConfigs.length === 0) {
-                      <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
-                    }
-                    @for (model of benchmarkCapableConfigs; track model.id) {
-                      <div class="model-option" (click)="selectAssessorModel(model)" [class.selected]="assessorConfigId === model.id">
-                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                        @if (model.thinkingLevel) {
-                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                        }
-                        @if (showReasoningBadge(model.reasoningMode)) {
-                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                        }
-                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                        @if (model.effectiveInputPricePerMillion != null) {
-                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
-                        }
-                        @if (model.parallelExecutionMode === 0) {
-                          <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                        }
-                        @if (model.parallelExecutionMode === 1) {
-                          <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                        }
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-              <span class="form-hint">
-                Grades every answer against its rubric on four BARS dimensions and writes the closing
-                synthesis. It runs pipelined behind each answer, so a slow assessor rarely adds wall
-                time. Picking the same provider as the model under test needs an explicit
-                acknowledgment before the run starts.
-              </span>
-
-              @if (showAssessorChangeAdvisory) {
-                <div class="alert alert-info mt-10" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Assessor differs from this suite's last run</strong></div>
-                    <div class="alert-body">
-                      Run {{ lastAssessor?.runId }} was graded by
-                      <strong>{{ lastAssessor?.assessorModelDisplayNameUsed }}</strong>
-                      ({{ lastAssessor?.assessorModelProviderUsed }}). A suite's runs are comparable
-                      to each other only while the grader is the same one, so this run's Intelligence
-                      Index will not be directly comparable with it.
-                    </div>
-                  </div>
-                </div>
-              }
-            </div>
-
-            <!-- Second Opinion Assessor.
-                 Optional, and off by default: a second opinion spends assessor tokens, and it is
-                 only worth having from a *different* model, so there is no automatic fallback to
-                 the assessor above. Selected here like every other model, never in configuration:
-                 a System AI Config is a database row an administrator manages in this UI. -->
-            <div class="form-group">
-              <label>Second Opinion Assessor{{ isPanelLaunch ? ' (reference reader)' : '' }} (optional)</label>
-              <div class="custom-model-selector second-opinion-model-selector">
-                <button type="button" class="selector-trigger" (click)="toggleSecondOpinionModelDropdown($event)" [class.open]="isSecondOpinionModelDropdownOpen">
-                  <span class="model-name" [class.text-muted]="!selectedSecondOpinionModel">{{ selectedSecondOpinionModel?.displayName || selectedSecondOpinionModel?.modelId || 'None — no second opinion' }}</span>
-                  @if (selectedSecondOpinionModel?.thinkingLevel) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(selectedSecondOpinionModel?.thinkingLevel) }}</span>
-                  }
-                  @if (showReasoningBadge(selectedSecondOpinionModel?.reasoningMode)) {
-                    <span class="reasoning-badge">{{ selectedSecondOpinionModel?.reasoningMode }}</span>
-                  }
-                  @if (selectedSecondOpinionModel?.provider) {
-                    <app-provider-badge [provider]="selectedSecondOpinionModel?.provider"></app-provider-badge>
-                  }
-                  @if (selectedSecondOpinionModel?.effectiveInputPricePerMillion != null) {
-                    <span class="price-badge">{{ formatPickerPrice(selectedSecondOpinionModel) }}</span>
-                  }
-                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                @if (isSecondOpinionModelDropdownOpen) {
-                  <div class="selector-dropdown">
-                    <div class="model-option" (click)="selectSecondOpinionModel(null)" [class.selected]="secondOpinionConfigId === null">
-                      <span class="model-name text-muted">None — no second opinion</span>
-                    </div>
-                    @for (model of benchmarkCapableConfigs; track model.id) {
-                      <div class="model-option" (click)="selectSecondOpinionModel(model)" [class.selected]="secondOpinionConfigId === model.id">
-                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                        @if (model.thinkingLevel) {
-                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                        }
-                        @if (showReasoningBadge(model.reasoningMode)) {
-                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                        }
-                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                        @if (model.effectiveInputPricePerMillion != null) {
-                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
-                        }
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-              <span class="form-hint">
-                Produces a second, independent verdict on the answers the mode below selects. Both
-                verdicts are kept and a disagreement is flagged for review; the first verdict is
-                what scores.
-                @if (selectedSecondOpinionModel && selectedSecondOpinionModel.id === assessorConfigId) {
-                  <strong>This is the same model as the assessor, which will mostly confirm its own verdict.</strong>
-                }
-              </span>
-
-              <!--
-                Second Opinion Mode. Inert without an assessor above, which is the hard gate that
-                silently produced the 2026-09-03 run's zero second verdicts — so the control is
-                disabled with a reason rather than left looking configured. Entries are in
-                coverage order and labelled for what they do, not for their enum names.
-              -->
-              <div class="form-group mt-10">
-                <label for="secondOpinionModeSelect">Second Opinion Mode</label>
-                <select id="secondOpinionModeSelect" class="gh-input"
-                        [(ngModel)]="secondOpinionMode"
-                        [disabled]="secondOpinionModeDisabled"
-                        aria-describedby="secondOpinionModeHint">
-                  @for (option of secondOpinionModeOptions; track option.value) {
-                    <option [ngValue]="option.value">{{ option.label }}</option>
+                  @for (suite of suites; track suite.id) {
+                    <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
                   }
                 </select>
-                <span id="secondOpinionModeHint" class="form-hint">{{ secondOpinionModeHint }}</span>
-              </div>
-
-              @if (showAssessorPairingAdvisory) {
-                <div class="alert alert-info mt-10" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Assessor and second opinion share a provider</strong></div>
-                    <div class="alert-body">
-                      Both graders come from {{ selectedAssessorModel?.provider }}. The second verdict
-                      is a weaker check than a cross-provider one: two models from one family share
-                      training data and failure modes, and can agree for reasons that have nothing to
-                      do with the answer.
-                    </div>
-                  </div>
-                </div>
-              }
-
-              @if (referenceReaderSharedFamilyRoles.length > 0) {
-                <div class="alert alert-info mt-10 reference-reader-family-advisory" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Reference reader shares a provider</strong></div>
-                    <div class="alert-body">
-                      {{ selectedSecondOpinionModel?.provider }} is also the provider of
-                      {{ referenceReaderSharedFamilyRoles.join(' and ') }}. The reference reader is the
-                      neutral anchor the panel's family gap is compared against, so it is best taken
-                      from a family that is neither a candidate nor a panel member.
-                    </div>
-                  </div>
-                </div>
-              }
-            </div>
-          </div>
-
-          <!-- Row 2b: Co-Assessor (panel member B). A row of its own, between the model row and the
-               claim-verifier row, so neither of those rows' column counts changes. -->
-          <div class="form-row co-assessor-row">
-            <div class="form-group">
-              <label>Co-Assessor (panel member B)</label>
-              <div class="custom-model-selector co-assessor-model-selector">
-                <button type="button" class="selector-trigger" (click)="toggleCoAssessorModelDropdown($event)" [class.open]="isCoAssessorModelDropdownOpen">
-                  <span class="model-name" [class.text-muted]="!selectedCoAssessorModel">{{ selectedCoAssessorModel?.displayName || selectedCoAssessorModel?.modelId || 'None — single assessor' }}</span>
-                  @if (selectedCoAssessorModel?.thinkingLevel) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(selectedCoAssessorModel?.thinkingLevel) }}</span>
-                  }
-                  @if (showReasoningBadge(selectedCoAssessorModel?.reasoningMode)) {
-                    <span class="reasoning-badge">{{ selectedCoAssessorModel?.reasoningMode }}</span>
-                  }
-                  @if (selectedCoAssessorModel?.provider) {
-                    <app-provider-badge [provider]="selectedCoAssessorModel?.provider"></app-provider-badge>
-                  }
-                  @if (selectedCoAssessorModel?.effectiveInputPricePerMillion != null) {
-                    <span class="price-badge">{{ formatPickerPrice(selectedCoAssessorModel) }}</span>
-                  }
-                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                @if (isCoAssessorModelDropdownOpen) {
-                  <div class="selector-dropdown">
-                    <div class="model-option" (click)="selectCoAssessorModel(null)" [class.selected]="coAssessorConfigId === null">
-                      <span class="model-name text-muted">None — single assessor</span>
-                    </div>
-                    @for (model of benchmarkCapableConfigs; track model.id) {
-                      <div class="model-option" (click)="selectCoAssessorModel(model)" [class.selected]="coAssessorConfigId === model.id">
-                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                        @if (model.thinkingLevel) {
-                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                        }
-                        @if (showReasoningBadge(model.reasoningMode)) {
-                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                        }
-                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                        @if (model.effectiveInputPricePerMillion != null) {
-                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
-                        }
+                <span id="suiteHint" class="form-hint">
+                  Runs are only comparable within one suite; editing a question starts a new baseline.
+                </span>
+                @if (selectedSuite && !selectedSuite.difficultyFullyAssessed) {
+                  <div class="alert alert-warning mt-10" role="alert">
+                    <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                    <div class="alert-content">
+                      <div class="alert-heading">
+                        <strong>{{ difficultyProgressLabel(selectedSuite) }}</strong>
                       </div>
-                    }
+                      <div class="alert-body">
+                        Every question must have an assessed difficulty before this suite can be run.
+                      </div>
+                      <div class="alert-actions">
+                        <button type="button" class="alert-action-btn" (click)="openDifficultyAssessorDialog(selectedSuite)">
+                          Assess question difficulty
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 }
               </div>
-              <span class="form-hint">
-                Grades every answer beside the assessor; the published score is the mean of the two.
-                Choose a model from a different provider, not one under test.
-              </span>
 
-              <!-- The server's two panel refusals, shown before Start so the run is never sent. -->
-              @if (showCoAssessorSameProviderAdvisory) {
-                <div class="alert alert-warning mt-10 co-assessor-advisory" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Panel members share a provider</strong></div>
-                    <div class="alert-body">
-                      The assessor and the co-assessor both come from {{ selectedCoAssessorModel?.provider }}.
-                      A panel balances two families against each other, so its members must come from
-                      different providers.
-                    </div>
-                  </div>
-                </div>
-              }
-              @if (showCoAssessorCandidateAdvisory) {
-                <div class="alert alert-warning mt-10 co-assessor-advisory" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>A panel member is the model under test</strong></div>
-                    <div class="alert-body">
-                      The model under test would grade its own answers. In a panel run neither member
-                      may be the candidate model; choose an older or other model of the same family.
-                    </div>
-                  </div>
-                </div>
-              }
-            </div>
-          </div>
-
-          <!-- Row 3: Claim Verifier and Candidate Prompt Configuration.
-               Col 1 (under Model Under Test): Claim Verifier (optional) — checks factual claims against
-               game source code and wiki using tools. Advisory: does not alter score.
-               Col 2 (under Assessor Model): Candidate Response Style — controls whether the
-               candidate is instructed to be concise (default, comparable) or detailed. -->
-          <div class="form-row claim-verifier-row">
-            <div class="form-group">
-              <label>Claim Verifier (optional)</label>
-              <div class="custom-model-selector claim-verifier-model-selector">
-                <button type="button" class="selector-trigger" (click)="toggleClaimVerifierModelDropdown($event)" [class.open]="isClaimVerifierModelDropdownOpen">
-                  <span class="model-name" [class.text-muted]="!selectedClaimVerifierModel">{{ selectedClaimVerifierModel?.displayName || selectedClaimVerifierModel?.modelId || 'None — no claim verification' }}</span>
-                  @if (selectedClaimVerifierModel?.thinkingLevel) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(selectedClaimVerifierModel?.thinkingLevel) }}</span>
-                  }
-                  @if (showReasoningBadge(selectedClaimVerifierModel?.reasoningMode)) {
-                    <span class="reasoning-badge">{{ selectedClaimVerifierModel?.reasoningMode }}</span>
-                  }
-                  @if (selectedClaimVerifierModel?.provider) {
-                    <app-provider-badge [provider]="selectedClaimVerifierModel?.provider"></app-provider-badge>
-                  }
-                  @if (selectedClaimVerifierModel?.effectiveInputPricePerMillion != null) {
-                    <span class="price-badge">{{ formatPickerPrice(selectedClaimVerifierModel) }}</span>
-                  }
-                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                @if (isClaimVerifierModelDropdownOpen) {
-                  <div class="selector-dropdown">
-                    <div class="model-option" (click)="selectClaimVerifierModel(null)" [class.selected]="claimVerifierConfigId === null">
-                      <span class="model-name text-muted">None — no claim verification</span>
-                    </div>
-                    @for (model of benchmarkCapableConfigs; track model.id) {
-                      <div class="model-option" (click)="selectClaimVerifierModel(model)" [class.selected]="claimVerifierConfigId === model.id">
-                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                        @if (model.thinkingLevel) {
-                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                        }
-                        @if (showReasoningBadge(model.reasoningMode)) {
-                          <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                        }
-                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                        @if (model.effectiveInputPricePerMillion != null) {
-                          <span class="price-badge">{{ formatPickerPrice(model) }}</span>
-                        }
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-              <span class="form-hint">
-                Checks the individual factual claims the rubric could not settle, against the game's
-                source code and the wiki, using read-only tools. Advisory only: the result is recorded
-                after scoring and changes no index.
-              </span>
-
-              @if (showClaimVerifierCandidateAdvisory) {
-                <div class="alert alert-info mt-10" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Verifier is the candidate under test</strong></div>
-                    <div class="alert-body">
-                      The model under test would be checking its own claims. The tools supply the evidence
-                      rather than the model's memory, so this is not worthless — but it is the weakest available
-                      pairing.
-                    </div>
-                  </div>
-                </div>
-              }
-
-              @if (claimVerifierSharedFamilyRoles.length > 0) {
-                <div class="alert alert-info mt-10 claim-verifier-family-advisory" role="note">
-                  <div class="alert-content">
-                    <div class="alert-heading"><strong>Verifier shares a provider</strong></div>
-                    <div class="alert-body">
-                      {{ selectedClaimVerifierModel?.provider }} is also the provider of
-                      {{ claimVerifierSharedFamilyRoles.join(' and ') }}. The verifier checks both panel
-                      members' charges, so it is best taken from a family that is neither a candidate nor
-                      a panel member.
-                    </div>
-                  </div>
-                </div>
-              }
-            </div>
-
-            <div class="form-group">
-              <label for="candidateResponseStyle">Candidate Response Style</label>
-              <select id="candidateResponseStyle" class="gh-input"
-                      [(ngModel)]="candidateVerboseMode"
-                      aria-describedby="candidateResponseStyleHint">
-                <option [ngValue]="false">Concise — production default; comparable with previous runs</option>
-                <option [ngValue]="true">Detailed — diagnostic; not comparable with previous runs</option>
-              </select>
-              <span id="candidateResponseStyleHint" class="form-hint">{{ candidateResponseStyleHint }}</span>
-
-              <!--
-                The completion sound sits inside this column rather than beside it: the row's own
-                layout guard pins its two direct .form-group children to Claim Verifier and
-                Candidate Response Style, and a third column would displace Number of Runs.
-              -->
-              <label class="gh-checkbox completion-sound-toggle" for="completionSoundInput">
-                <input id="completionSoundInput" type="checkbox" [(ngModel)]="completionSound"
-                       aria-describedby="completionSignalsHint">
-                <span>Play a sound when the run &mdash; or the whole series &mdash; completes</span>
-              </label>
-              <label class="gh-checkbox completion-sound-toggle" for="completionNotificationInput">
-                <input id="completionNotificationInput" type="checkbox" [checked]="completionNotification"
-                       aria-describedby="completionSignalsHint"
-                       (change)="onCompletionNotificationChange($any($event.target).checked)">
-                <span>Show a desktop notification</span>
-              </label>
-              <p class="text-muted completion-signals-status" role="status" aria-live="polite"
-                 [class.is-empty]="!completionSignalsStatusText">{{ completionSignalsStatusText }}</p>
-              <span id="completionSignalsHint" class="form-hint">
-                Armed when you press Start, so the chime can play while this tab is in the background.
-                While the tab is hidden, completion is checked about every 15 seconds; browsers slow
-                background timers further over time, so the signal can arrive up to a minute late.
-              </span>
-              <div class="completion-sound-actions">
-                <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
-              </div>
-            </div>
-
-            <!--
-              Col 3: Number of runs. The max is bound to the live configured MaxRunsPerDay from
-              GET runs/limits and never to a literal, so raising the cap raises this field with it —
-              and a series can never become a way around the spend guard, which is the point of
-              coupling the two. The server re-checks against the same guard; this bound is a courtesy.
-            -->
-            <div>
               <div class="form-group">
-                <label for="runCountInput">Number of Runs</label>
-                <input id="runCountInput" type="number" class="gh-input run-count-input"
-                       min="1"
-                       [attr.max]="maxRunCountPerSeries"
-                       [(ngModel)]="runCount"
-                       aria-describedby="runCountHint">
-                <span id="runCountHint" class="form-hint">
-                  @if (maxRunCountPerSeries != null) {
-                    One run is the default. Set 2 or more — up to {{ maxRunCountPerSeries }} — to
-                    repeat this exact configuration; the runs execute strictly one at a time, never in
-                    parallel, and are grouped into a replicate set. The spread across a set is what
-                    shows whether a score difference is a real change or run-to-run noise.
-                  } @else {
-                    One run is the default. Two or more repeat this exact configuration, strictly one
-                    run at a time, and are grouped into a replicate set; the server bounds the count by
-                    the configured daily run cap.
+                <div class="label-with-action">
+                  <label for="profileSelect">Scoring Profile</label>
+                  <button type="button" class="link-subtle-btn" (click)="selectSubTab('profiles')">Manage profiles →</button>
+                </div>
+                <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId"
+                        [attr.aria-describedby]="showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint'">
+                  @for (profile of scoringProfiles; track profile.id) {
+                    <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
                   }
+                </select>
+                <span id="profileHint" class="form-hint">
+                  Turns the four dimension grades into indices; runs are only comparable under one profile.
+                </span>
+                <!--
+                  Profile fit. A high/max thinking model measured against a profile tuned for
+                  interactive latency scores badly on Speed Index for a reason that has nothing to do
+                  with the model being slow for its class, so the mismatch is called out before the
+                  run rather than explained afterwards. It carries its own id: it is a second hint in
+                  this group, and the one the profile-fit tests are about.
+                -->
+                @if (showProfileFitAdvisory) {
+                  <span id="profileFitHint" class="form-hint">
+                    This profile targets interactive latency. A high/max thinking model will score low
+                    on Speed Index against it; consider a Reasoning Agent profile, or read the Speed
+                    Index as advisory.
+                  </span>
+                }
+              </div>
+
+              <div class="form-group">
+                <label id="bmTestedModelLabel">Model Under Test</label>
+                <app-model-picker class="tested-model-selector"
+                                  labelledBy="bmTestedModelLabel" describedBy="bmTestedModelHint"
+                                  [emptyHint]="benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                                  [options]="benchmarkPickerOptions" [selectedKey]="testedConfigId"
+                                  (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
+                <span id="bmTestedModelHint" class="form-hint">
+                  Answers every question. Speed Index is only comparable at the same thinking level.
                 </span>
               </div>
 
-              @if (isMultiRunRequested) {
-                <div class="form-group mt-10">
-                  <label class="gh-checkbox" for="allowCapWaitInput">
-                    <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="allowCapWait">
-                    <span>Wait when the run cap blocks the next run</span>
-                  </label>
-                  <span class="form-hint">
-                    On a cap denial the series pauses in <strong>Waiting for run cap</strong> and keeps
-                    retrying. Left unchecked, it stops instead, with the reason recorded and a Continue
-                    button. Either way every completed run is kept.
-                  </span>
-                </div>
-              }
-            </div>
-          </div>
+              <div class="form-group">
+                <label for="candidateResponseStyle">Response Style</label>
+                <select id="candidateResponseStyle" class="gh-input"
+                        [(ngModel)]="candidateVerboseMode"
+                        aria-describedby="candidateResponseStyleHint">
+                  <option [ngValue]="false">Concise (production default)</option>
+                  <option [ngValue]="true">Detailed (diagnostic)</option>
+                </select>
+                <span id="candidateResponseStyleHint" class="form-hint">{{ candidateResponseStyleHint }}</span>
+              </div>
+            </fieldset>
 
-          @if (isMultiRunRequested) {
-            <fieldset class="series-projection-fieldset" role="region" aria-labelledby="seriesProjectionLegend">
-              <legend id="seriesProjectionLegend" class="series-projection-legend">
-                <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
-                </svg>
-                <span>Series Projection ({{ effectiveRunCount }} runs)</span>
-              </legend>
+            <fieldset class="gh-fieldset setup-group setup-group-grading" aria-describedby="setupGradingHint">
+              <legend>Grading</legend>
+              <p id="setupGradingHint" class="gh-fieldset-hint">Who grades the answers, and who checks the graders.</p>
 
-              <div class="projection-grid" role="list">
-                <div class="projection-row" role="listitem">
-                  <span class="projection-label">Projected wall time:</span>
-                  @if (projectedSeriesDurationLabel) {
-                    <span class="projection-value"><strong>{{ projectedSeriesDurationLabel }}</strong></span>
-                    <span class="projection-note text-muted">({{ effectiveRunCount }} × this suite's recent mean run duration)</span>
-                  } @else {
-                    <span class="projection-empty text-muted">no completed run of this suite to project from</span>
-                  }
-                </div>
+              <div class="form-group">
+                <label id="bmAssessorModelLabel">Assessor</label>
+                <app-model-picker class="assessor-model-selector"
+                                  labelledBy="bmAssessorModelLabel" describedBy="bmAssessorModelHint"
+                                  [emptyHint]="benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                                  [options]="benchmarkPickerOptions" [selectedKey]="assessorConfigId"
+                                  (selectionChange)="selectAssessorModel($event.model)"></app-model-picker>
+                <span id="bmAssessorModelHint" class="form-hint">
+                  Grades every answer against its rubric on four BARS dimensions and writes the synthesis.
+                </span>
 
-                <div class="projection-row" role="listitem">
-                  <span class="projection-label">Projected cost:</span>
-                  @if (projectedSeriesCostLabel) {
-                    <span class="projection-value"><strong>{{ projectedSeriesCostLabel }}</strong></span>
-                    <span class="projection-note text-muted">({{ effectiveRunCount }} × this suite's recent mean run cost)</span>
-                  } @else {
-                    <span class="projection-empty text-muted">no priced run of this suite to project from</span>
-                  }
-                </div>
-
-                @if (runLimits) {
-                  <div class="projection-row" role="listitem">
-                    <span class="projection-label">Remaining daily headroom:</span>
-                    <span class="projection-value"><strong>{{ runLimits.remainingDailyHeadroom }}</strong> of {{ runLimits.maxRunsPerDay }}</span>
-                    <span class="projection-note text-muted">({{ runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+                @if (showAssessorChangeAdvisory) {
+                  <div class="alert alert-info mt-10" role="note">
+                    <div class="alert-content">
+                      <div class="alert-heading"><strong>Assessor differs from this suite's last run</strong></div>
+                      <div class="alert-body">
+                        Run {{ lastAssessor?.runId }} was graded by
+                        <strong>{{ lastAssessor?.assessorModelDisplayNameUsed }}</strong>
+                        ({{ lastAssessor?.assessorModelProviderUsed }}). A suite's runs are comparable
+                        to each other only while the grader is the same one, so this run's Intelligence
+                        Index will not be directly comparable with it.
+                      </div>
+                    </div>
                   </div>
                 }
               </div>
 
-              @if (seriesExceedsDailyHeadroom) {
-                <div class="alert alert-warning mt-10" role="alert">
-                  <div class="alert-content">
-                    <div class="alert-body">
-                      This series asks for more runs than the rolling 24-hour window currently allows.
-                      @if (allowCapWait) {
-                        It will pause at the cap and continue when the window frees up.
-                      } @else {
-                        It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
-                        completed run and offering a Continue button.
-                      }
+              <div class="form-group">
+                <label id="bmCoAssessorModelLabel">Co-Assessor <span class="field-optional">Optional</span></label>
+                <app-model-picker class="co-assessor-model-selector"
+                                  labelledBy="bmCoAssessorModelLabel" describedBy="bmCoAssessorModelHint"
+                                  noneLabel="None — single assessor" [showPrice]="true"
+                                  [options]="benchmarkPickerOptions" [selectedKey]="coAssessorConfigId"
+                                  (selectionChange)="selectCoAssessorModel($event.model)"></app-model-picker>
+                <span id="bmCoAssessorModelHint" class="form-hint">
+                  Makes a two-member panel: grades beside the assessor, and the score is the mean of the two.
+                </span>
+
+                <!-- The server's two panel refusals, shown before Start so the run is never sent. -->
+                @if (showCoAssessorSameProviderAdvisory) {
+                  <div class="alert alert-warning mt-10 co-assessor-advisory" role="note">
+                    <div class="alert-content">
+                      <div class="alert-heading"><strong>Panel members share a provider</strong></div>
+                      <div class="alert-body">
+                        The assessor and the co-assessor both come from {{ selectedCoAssessorModel?.provider }}.
+                        A panel balances two families against each other, so its members must come from
+                        different providers.
+                      </div>
                     </div>
                   </div>
+                }
+                @if (showCoAssessorCandidateAdvisory) {
+                  <div class="alert alert-warning mt-10 co-assessor-advisory" role="note">
+                    <div class="alert-content">
+                      <div class="alert-heading"><strong>A panel member is the model under test</strong></div>
+                      <div class="alert-body">
+                        The model under test would grade its own answers. In a panel run neither member
+                        may be the candidate model; choose an older or other model of the same family.
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+
+              <!-- Second Opinion Assessor.
+                   Optional, and off by default: a second opinion spends assessor tokens, and it is
+                   only worth having from a *different* model, so there is no automatic fallback to
+                   the assessor above. Selected here like every other model, never in configuration:
+                   a System AI Config is a database row an administrator manages in this UI. -->
+              <div class="form-group">
+                <label id="bmSecondOpinionModelLabel">Second Opinion{{ isPanelLaunch ? ' (reference reader)' : '' }} <span class="field-optional">Optional</span></label>
+                <app-model-picker class="second-opinion-model-selector"
+                                  labelledBy="bmSecondOpinionModelLabel" describedBy="bmSecondOpinionModelHint"
+                                  noneLabel="None — no second opinion" [showPrice]="true"
+                                  [options]="benchmarkPickerOptions" [selectedKey]="secondOpinionConfigId"
+                                  (selectionChange)="selectSecondOpinionModel($event.model)"></app-model-picker>
+                <span id="bmSecondOpinionModelHint" class="form-hint">
+                  An independent second verdict; disagreements are flagged, never scored.
+                  @if (selectedSecondOpinionModel && selectedSecondOpinionModel.id === assessorConfigId) {
+                    <strong>Same model as the assessor: it will mostly confirm its own verdict.</strong>
+                  }
+                </span>
+
+                <!--
+                  Second Opinion Mode. Inert without an assessor above, which is the hard gate that
+                  silently produced the 2026-09-03 run's zero second verdicts — so the control is
+                  disabled with a reason rather than left looking configured. Entries are in
+                  coverage order and labelled for what they do, not for their enum names.
+                -->
+                <div class="form-group dependent-field">
+                  <label for="secondOpinionModeSelect">Second Opinion Mode</label>
+                  <select id="secondOpinionModeSelect" class="gh-input"
+                          [(ngModel)]="secondOpinionMode"
+                          [disabled]="secondOpinionModeDisabled"
+                          aria-describedby="secondOpinionModeHint">
+                    @for (option of secondOpinionModeOptions; track option.value) {
+                      <option [ngValue]="option.value">{{ option.label }}</option>
+                    }
+                  </select>
+                  <span id="secondOpinionModeHint" class="form-hint">{{ secondOpinionModeHint }}</span>
                 </div>
-              }
+
+                @if (showAssessorPairingAdvisory) {
+                  <div class="alert alert-info mt-10" role="note">
+                    <div class="alert-content">
+                      <div class="alert-heading"><strong>Assessor and second opinion share a provider</strong></div>
+                      <div class="alert-body">
+                        Both graders come from {{ selectedAssessorModel?.provider }}. The second verdict
+                        is a weaker check than a cross-provider one: two models from one family share
+                        training data and failure modes, and can agree for reasons that have nothing to
+                        do with the answer.
+                      </div>
+                    </div>
+                  </div>
+                }
+
+                @if (referenceReaderSharedFamilyRoles.length > 0) {
+                  <div class="alert alert-info mt-10 reference-reader-family-advisory" role="note">
+                    <div class="alert-content">
+                      <div class="alert-heading"><strong>Reference reader shares a provider</strong></div>
+                      <div class="alert-body">
+                        {{ selectedSecondOpinionModel?.provider }} is also the provider of
+                        {{ referenceReaderSharedFamilyRoles.join(' and ') }}. The reference reader is the
+                        neutral anchor the panel's family gap is compared against, so it is best taken
+                        from a family that is neither a candidate nor a panel member.
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+
+              <div class="form-group">
+                <label id="bmClaimVerifierModelLabel">Claim Verifier <span class="field-optional">Optional</span></label>
+                <app-model-picker class="claim-verifier-model-selector"
+                                  labelledBy="bmClaimVerifierModelLabel" describedBy="bmClaimVerifierModelHint"
+                                  noneLabel="None — no claim verification" [showPrice]="true"
+                                  [options]="benchmarkPickerOptions" [selectedKey]="claimVerifierConfigId"
+                                  (selectionChange)="selectClaimVerifierModel($event.model)"></app-model-picker>
+                <span id="bmClaimVerifierModelHint" class="form-hint">
+                  Checks disputed claims against the source and the wiki; advisory, changes no score.
+                </span>
+
+                @if (showClaimVerifierCandidateAdvisory) {
+                  <div class="alert alert-info mt-10" role="note">
+                    <div class="alert-content">
+                      <div class="alert-heading"><strong>Verifier is the candidate under test</strong></div>
+                      <div class="alert-body">
+                        The model under test would be checking its own claims. The tools supply the evidence
+                        rather than the model's memory, so this is not worthless — but it is the weakest available
+                        pairing.
+                      </div>
+                    </div>
+                  </div>
+                }
+
+                @if (claimVerifierSharedFamilyRoles.length > 0) {
+                  <div class="alert alert-info mt-10 claim-verifier-family-advisory" role="note">
+                    <div class="alert-content">
+                      <div class="alert-heading"><strong>Verifier shares a provider</strong></div>
+                      <div class="alert-body">
+                        {{ selectedClaimVerifierModel?.provider }} is also the provider of
+                        {{ claimVerifierSharedFamilyRoles.join(' and ') }}. The verifier checks both panel
+                        members' charges, so it is best taken from a family that is neither a candidate nor
+                        a panel member.
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
             </fieldset>
-          }
+
+            <fieldset class="gh-fieldset setup-group setup-group-exec" aria-describedby="setupExecHint">
+              <legend>Execution</legend>
+              <p id="setupExecHint" class="gh-fieldset-hint">How many runs, and how you hear they are done.</p>
+
+              <div class="exec-fields">
+                <!--
+                  Number of runs. The max is bound to the live configured MaxRunsPerDay from
+                  GET runs/limits and never to a literal, so raising the cap raises this field with it —
+                  and a series can never become a way around the spend guard, which is the point of
+                  coupling the two. The server re-checks against the same guard; this bound is a courtesy.
+                -->
+                <div class="exec-runs">
+                  <div class="form-group">
+                    <label for="runCountInput">Number of Runs</label>
+                    <input id="runCountInput" type="number" class="gh-input run-count-input"
+                           min="1"
+                           [attr.max]="maxRunCountPerSeries"
+                           [(ngModel)]="runCount"
+                           aria-describedby="runCountHint">
+                    <span id="runCountHint" class="form-hint">
+                      @if (maxRunCountPerSeries != null) {
+                        Two or more (up to {{ maxRunCountPerSeries }}) run one at a time as a replicate
+                        set, which shows run-to-run noise.
+                      } @else {
+                        Two or more run one at a time as a replicate set, which shows run-to-run noise;
+                        the daily run cap limits the count.
+                      }
+                    </span>
+                  </div>
+
+                  @if (isMultiRunRequested) {
+                    <div class="form-group">
+                      <label class="gh-checkbox" for="allowCapWaitInput">
+                        <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="allowCapWait">
+                        <span>Wait when the run cap blocks the next run</span>
+                      </label>
+                      <span class="form-hint">
+                        Otherwise the series stops at the cap and can be continued; finished runs are always kept.
+                      </span>
+                    </div>
+                  }
+                </div>
+
+                <div class="form-group completion-signals" role="group" aria-labelledby="completionSignalsCaption">
+                  <span class="field-caption" id="completionSignalsCaption">When the run finishes</span>
+                  <label class="gh-checkbox" for="completionSoundInput">
+                    <input id="completionSoundInput" type="checkbox" [(ngModel)]="completionSound"
+                           aria-describedby="completionSignalsHint">
+                    <span>Play a sound when done</span>
+                  </label>
+                  <label class="gh-checkbox" for="completionNotificationInput">
+                    <input id="completionNotificationInput" type="checkbox" [checked]="completionNotification"
+                           aria-describedby="completionSignalsHint"
+                           (change)="onCompletionNotificationChange($any($event.target).checked)">
+                    <span>Show a desktop notification</span>
+                  </label>
+                  <p class="text-muted completion-signals-status" role="status" aria-live="polite"
+                     [class.is-empty]="!completionSignalsStatusText">{{ completionSignalsStatusText }}</p>
+                  <span id="completionSignalsHint" class="form-hint">
+                    Armed at Start; a background tab can signal up to a minute late.
+                  </span>
+                  <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
+                </div>
+
+                @if (isMultiRunRequested) {
+                  <fieldset class="series-projection-fieldset" role="region" aria-labelledby="seriesProjectionLegend">
+                    <legend id="seriesProjectionLegend" class="series-projection-legend">
+                      <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                      </svg>
+                      <span>Series Projection ({{ effectiveRunCount }} runs)</span>
+                    </legend>
+
+                    <div class="projection-grid" role="list">
+                      <div class="projection-row" role="listitem">
+                        <span class="projection-label">Projected wall time:</span>
+                        @if (projectedSeriesDurationLabel) {
+                          <span class="projection-value"><strong>{{ projectedSeriesDurationLabel }}</strong></span>
+                          <span class="projection-note text-muted">({{ effectiveRunCount }} × this suite's recent mean run duration)</span>
+                        } @else {
+                          <span class="projection-empty text-muted">no completed run of this suite to project from</span>
+                        }
+                      </div>
+
+                      <div class="projection-row" role="listitem">
+                        <span class="projection-label">Projected cost:</span>
+                        @if (projectedSeriesCostLabel) {
+                          <span class="projection-value"><strong>{{ projectedSeriesCostLabel }}</strong></span>
+                          <span class="projection-note text-muted">({{ effectiveRunCount }} × this suite's recent mean run cost)</span>
+                        } @else {
+                          <span class="projection-empty text-muted">no priced run of this suite to project from</span>
+                        }
+                      </div>
+
+                      @if (runLimits) {
+                        <div class="projection-row" role="listitem">
+                          <span class="projection-label">Remaining daily headroom:</span>
+                          <span class="projection-value"><strong>{{ runLimits.remainingDailyHeadroom }}</strong> of {{ runLimits.maxRunsPerDay }}</span>
+                          <span class="projection-note text-muted">({{ runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+                        </div>
+                      }
+                    </div>
+
+                    @if (seriesExceedsDailyHeadroom) {
+                      <div class="alert alert-warning mt-10" role="alert">
+                        <div class="alert-content">
+                          <div class="alert-body">
+                            This series asks for more runs than the rolling 24-hour window currently allows.
+                            @if (allowCapWait) {
+                              It will pause at the cap and continue when the window frees up.
+                            } @else {
+                              It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                              completed run and offering a Continue button.
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    }
+                  </fieldset>
+                }
+              </div>
+            </fieldset>
+          </div>
         </div>
 
         <div class="compliance-purpose-box mt-20">
@@ -1615,7 +1390,7 @@
         <app-benchmark-suite-health
           [suiteId]="suiteHealthSuite.id"
           [suiteName]="suiteHealthSuite.name"
-          [benchmarkCapableConfigs]="benchmarkCapableConfigs"
+          [benchmarkCapableConfigs]="stableBenchmarkCapableConfigs"
           [gameSnapshotId]="suiteHealthSuite.gameSnapshotId"
           [gameSnapshotName]="suiteHealthSuite.gameSnapshotName"
           [hasGeneratedQuestions]="suiteHealthSuite.hasGeneratedQuestions"
@@ -2891,29 +2666,11 @@
 
           <div class="flex-row gap-10 align-end">
             <div class="form-group flex-1">
-              <label>Calibration assessor</label>
-              <div class="custom-model-selector calibration-model-selector">
-                <button type="button" class="selector-trigger" (click)="toggleCalibrationAssessorDropdown($event)" [class.open]="isCalibrationAssessorDropdownOpen">
-                  <span class="model-name" [class.text-muted]="!selectedCalibrationAssessorModel">{{ selectedCalibrationAssessorModel?.displayName || selectedCalibrationAssessorModel?.modelId || 'Select a model' }}</span>
-                  @if (selectedCalibrationAssessorModel?.provider) {
-                    <app-provider-badge [provider]="selectedCalibrationAssessorModel?.provider"></app-provider-badge>
-                  }
-                  <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
-                @if (isCalibrationAssessorDropdownOpen) {
-                  <div class="selector-dropdown">
-                    @for (model of benchmarkCapableConfigs; track model.id) {
-                      <div class="model-option" (click)="selectCalibrationAssessorModel(model)" [class.selected]="calibrationAssessorConfigId === model.id">
-                        <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                        @if (model.thinkingLevel) {
-                          <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                        }
-                        <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
+              <label id="bmCalibrationModelLabel">Calibration assessor</label>
+              <app-model-picker class="calibration-model-selector" labelledBy="bmCalibrationModelLabel"
+                                placeholder="Select a model" [emptyHint]="benchmarkPickerEmptyHint"
+                                [options]="benchmarkPickerOptions" [selectedKey]="calibrationAssessorConfigId"
+                                (selectionChange)="selectCalibrationAssessorModel($event.model)"></app-model-picker>
             </div>
             @if (selectedRunDetail.isPanelRun) {
               <div class="form-group">
@@ -3868,53 +3625,11 @@
         }
 
         <div class="form-group mb-15">
-          <label>Assessment Model</label>
-          <div class="custom-model-selector difficulty-assessor-model-selector">
-            <button type="button" class="selector-trigger" (click)="toggleDifficultyAssessorDropdown($event)" [class.open]="isDifficultyAssessorDropdownOpen">
-              <span class="model-name" [class.text-muted]="!selectedDifficultyAssessorModel">{{ selectedDifficultyAssessorModel?.displayName || selectedDifficultyAssessorModel?.modelId || 'Select Model' }}</span>
-              @if (selectedDifficultyAssessorModel?.thinkingLevel) {
-                <span class="thinking-badge">{{ formatThinkingLevel(selectedDifficultyAssessorModel?.thinkingLevel) }}</span>
-              }
-              @if (showReasoningBadge(selectedDifficultyAssessorModel?.reasoningMode)) {
-                <span class="reasoning-badge">{{ selectedDifficultyAssessorModel?.reasoningMode }}</span>
-              }
-              @if (selectedDifficultyAssessorModel?.provider) {
-                <app-provider-badge [provider]="selectedDifficultyAssessorModel?.provider"></app-provider-badge>
-              }
-              @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 0) {
-                <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-              }
-              @if (selectedDifficultyAssessorModel?.parallelExecutionMode === 1) {
-                <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-              }
-              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </button>
-            @if (isDifficultyAssessorDropdownOpen) {
-              <div class="selector-dropdown">
-                @if (benchmarkCapableConfigs.length === 0) {
-                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
-                }
-                @for (model of benchmarkCapableConfigs; track model.id) {
-                  <div class="model-option" (click)="selectDifficultyAssessorModel(model)" [class.selected]="difficultyAssessorConfigId === model.id">
-                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                    @if (model.thinkingLevel) {
-                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                    }
-                    @if (showReasoningBadge(model.reasoningMode)) {
-                      <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                    }
-                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                    @if (model.parallelExecutionMode === 0) {
-                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                    }
-                    @if (model.parallelExecutionMode === 1) {
-                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                    }
-                  </div>
-                }
-              </div>
-            }
-          </div>
+          <label id="bmDifficultyAssessorModelLabel">Assessment Model</label>
+          <app-model-picker class="difficulty-assessor-model-selector" labelledBy="bmDifficultyAssessorModelLabel"
+                            [emptyHint]="benchmarkPickerEmptyHint" [showParallel]="true"
+                            [options]="benchmarkPickerOptions" [selectedKey]="difficultyAssessorConfigId"
+                            (selectionChange)="selectDifficultyAssessorModel($event.model)"></app-model-picker>
         </div>
       }
 
@@ -4105,53 +3820,11 @@
 
       @if (!retryUsesPanelMembers) {
         <div class="form-group mb-15">
-          <label>{{ retryScope === 'claim-verification' ? 'Claim Verifier Model' : 'Assessor Model' }}</label>
-          <div class="custom-model-selector retry-assessor-model-selector">
-            <button type="button" class="selector-trigger" (click)="toggleRetryAssessorDropdown($event)" [class.open]="isRetryAssessorDropdownOpen">
-              <span class="model-name" [class.text-muted]="!selectedRetryAssessorModel">{{ selectedRetryAssessorModel?.displayName || selectedRetryAssessorModel?.modelId || 'Select Model' }}</span>
-              @if (selectedRetryAssessorModel?.thinkingLevel) {
-                <span class="thinking-badge">{{ formatThinkingLevel(selectedRetryAssessorModel?.thinkingLevel) }}</span>
-              }
-              @if (showReasoningBadge(selectedRetryAssessorModel?.reasoningMode)) {
-                <span class="reasoning-badge">{{ selectedRetryAssessorModel?.reasoningMode }}</span>
-              }
-              @if (selectedRetryAssessorModel?.provider) {
-                <app-provider-badge [provider]="selectedRetryAssessorModel?.provider"></app-provider-badge>
-              }
-              @if (selectedRetryAssessorModel?.parallelExecutionMode === 0) {
-                <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-              }
-              @if (selectedRetryAssessorModel?.parallelExecutionMode === 1) {
-                <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-              }
-              <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </button>
-            @if (isRetryAssessorDropdownOpen) {
-              <div class="selector-dropdown">
-                @if (benchmarkCapableConfigs.length === 0) {
-                  <div class="empty-dropdown-hint">No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.</div>
-                }
-                @for (model of benchmarkCapableConfigs; track model.id) {
-                  <div class="model-option" (click)="selectRetryAssessorModel(model)" [class.selected]="retryAssessorConfigId === model.id">
-                    <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                    @if (model.thinkingLevel) {
-                      <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                    }
-                    @if (showReasoningBadge(model.reasoningMode)) {
-                      <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                    }
-                    <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                    @if (model.parallelExecutionMode === 0) {
-                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                    }
-                    @if (model.parallelExecutionMode === 1) {
-                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                    }
-                  </div>
-                }
-              </div>
-            }
-          </div>
+          <label id="bmRetryAssessorModelLabel">{{ retryScope === 'claim-verification' ? 'Claim Verifier Model' : 'Assessor Model' }}</label>
+          <app-model-picker class="retry-assessor-model-selector" labelledBy="bmRetryAssessorModelLabel"
+                            [emptyHint]="benchmarkPickerEmptyHint" [showParallel]="true"
+                            [options]="benchmarkPickerOptions" [selectedKey]="retryAssessorConfigId"
+                            (selectionChange)="selectRetryAssessorModel($event.model)"></app-model-picker>
         </div>
       }
     </div>
@@ -4599,7 +4272,7 @@
 <app-question-generation-dialog
   [suite]="generationSuiteForJob"
   [visible]="generationDialogVisible"
-  [benchmarkCapableConfigs]="benchmarkCapableConfigs"
+  [benchmarkCapableConfigs]="stableBenchmarkCapableConfigs"
   [defaultModelConfigId]="assessorConfigId"
   [overseerBuildVersion]="overseerBuildVersion"
   (closed)="onGenerationDialogClosed($event)"
@@ -4613,7 +4286,7 @@
   [questionCount]="descriptionGenerationSuite?.questionCount ?? 0"
   [gameSnapshotName]="descriptionGenerationSuite?.gameSnapshotName ?? null"
   [visible]="descriptionGenerationVisible"
-  [benchmarkCapableConfigs]="benchmarkCapableConfigs"
+  [benchmarkCapableConfigs]="stableBenchmarkCapableConfigs"
   [defaultModelConfigId]="assessorConfigId"
   [overseerBuildVersion]="overseerBuildVersion"
   (closed)="onDescriptionGenerationClosed()"

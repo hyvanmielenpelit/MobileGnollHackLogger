@@ -667,72 +667,14 @@
         <div class="input-area">
           <div class="input-area-top">
             @if (hasModel) {
-              <div class="custom-model-selector compact drops-up model-selector-wrapper">
-                @if ((userModels.length + systemModels.length) > 1) {
-                  <button class="selector-trigger" (click)="toggleModelDropdown($event)" [class.open]="isModelDropdownOpen">
-                    <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || 'Select Model' }}</span>
-                    @if (selectedModel?.thinkingLevel) {
-                      <span class="thinking-badge">{{ formatThinkingLevel($safeNavigationMigration(selectedModel?.thinkingLevel)) }}</span>
-                    }
-                    @if (showReasoningBadge(selectedModel?.reasoningMode)) {
-                      <span class="reasoning-badge">{{ selectedModel?.reasoningMode }}</span>
-                    }
-                    <app-provider-badge [provider]="selectedModel?.provider"></app-provider-badge>
-                    @if (shouldRenderParallelBadge && selectedModel?.parallelExecutionMode === 0) {
-                      <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                    }
-                    @if (shouldRenderParallelBadge && selectedModel?.parallelExecutionMode === 1) {
-                      <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                    }
-                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                  </button>
-                  @if (isModelDropdownOpen) {
-                    <div class="selector-dropdown">
-                      @if (userModels.length > 0) {
-                        <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">Your Models</div>
-                      }
-                      @for (model of userModels; track model) {
-                        <div class="model-option" (click)="selectModel(model)" [class.selected]="selectedModelKey === ('u_' + model.id)">
-                          <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                          @if (model.thinkingLevel) {
-                            <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                          }
-                          @if (showReasoningBadge(model.reasoningMode)) {
-                            <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                          }
-                          <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                          @if (shouldRenderParallelBadge && model.parallelExecutionMode === 0) {
-                            <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                          }
-                          @if (shouldRenderParallelBadge && model.parallelExecutionMode === 1) {
-                            <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                          }
-                        </div>
-                      }
-                      @if (systemModels.length > 0) {
-                        <div class="model-group-title" style="padding: 4px 10px; font-size: 0.8em; color: var(--gh-gold); background-color: var(--gh-panel-bg); text-transform: uppercase;">System Models</div>
-                      }
-                      @for (model of systemModels; track model) {
-                        <div class="model-option" (click)="selectModel(model)" [class.selected]="selectedModelKey === ('s_' + model.id)">
-                          <span class="model-name">{{ model.displayName || model.modelId }}</span>
-                          @if (model.thinkingLevel) {
-                            <span class="thinking-badge">{{ formatThinkingLevel(model.thinkingLevel) }}</span>
-                          }
-                          @if (showReasoningBadge(model.reasoningMode)) {
-                            <span class="reasoning-badge">{{ model.reasoningMode }}</span>
-                          }
-                          <app-provider-badge [provider]="model.provider"></app-provider-badge>
-                          @if (shouldRenderParallelBadge && model.parallelExecutionMode === 0) {
-                            <span class="parallel-badge badge-sequential" title="Parallel execution is disabled for this key">Sequential</span>
-                          }
-                          @if (shouldRenderParallelBadge && model.parallelExecutionMode === 1) {
-                            <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
-                          }
-                        </div>
-                      }
-                    </div>
-                  }
-                } @else {
+              @if ((userModels.length + systemModels.length) > 1) {
+                <app-model-picker class="model-selector-wrapper" variant="compact" [dropsUp]="true"
+                                  [narrowHidesBadges]="true" label="Chat model"
+                                  [options]="composerModelOptions" [selectedKey]="selectedModelKey"
+                                  [showParallel]="shouldRenderParallelBadge"
+                                  (selectionChange)="selectModel($event.model ?? undefined)"></app-model-picker>
+              } @else {
+                <div class="custom-model-selector compact drops-up model-selector-wrapper">
                   <div class="single-model-display">
                     <span class="model-name">{{ selectedModel?.displayName || selectedModel?.modelId || singleModelInfo?.modelId || 'Model' }}</span>
                     @if (selectedModel?.thinkingLevel || singleModelInfo?.thinkingLevel) {
@@ -749,8 +691,8 @@
                       <span class="parallel-badge badge-on-request" title="Parallel execution is on request for this key">On request</span>
                     }
                   </div>
-                }
-              </div>
+                </div>
+              }
             }
             @if (hasModel && showThoughtsAndTools !== undefined) {
               <div class="vertical-separator"></div>

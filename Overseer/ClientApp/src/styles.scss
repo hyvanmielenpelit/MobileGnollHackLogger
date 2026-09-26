@@ -495,7 +495,10 @@ a:hover {
   .gh-th-sort,
   .gh-sort-caret,
   .gh-page-btn,
-  .gh-filter-toggle {
+  .gh-filter-toggle,
+  .selector-trigger,
+  .selector-trigger .chevron,
+  .model-option {
     transition: none;
   }
   .gh-datatable thead > tr:first-child > th::after {
@@ -3077,7 +3080,10 @@ app-table-pager {
   }
 }
 
-/* Custom model selector: form variant (base), compact variant (.compact), upward placement (.drops-up) */
+/* Custom model selector (app-model-picker): form variant (base), compact variant (.compact),
+   upward placement (.drops-up). The open trigger is styled from aria-expanded and the selected
+   option from aria-selected; .is-active marks the aria-activedescendant option, which has no ARIA
+   attribute of its own to style from. */
 .custom-model-selector {
   position: relative;
   width: 100%;
@@ -3106,7 +3112,7 @@ app-table-pager {
     background: #1a1a1a;
   }
 
-  &.open {
+  &[aria-expanded="true"] {
     border-color: var(--primary-color);
 
     .chevron {
@@ -3147,6 +3153,16 @@ app-table-pager {
     line-height: 1.4;
     font-style: italic;
   }
+
+  /* The listbox holds focus; the ring is drawn on its active option instead. */
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible .model-option.is-active {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
 }
 
 .model-option {
@@ -3158,22 +3174,25 @@ app-table-pager {
   font-size: 13px;
   transition: background-color 0.15s ease;
 
-  &:hover {
+  &:hover,
+  &.is-active {
     background-color: rgba(212, 160, 23, 0.15);
   }
 
-  &.selected {
+  &[aria-selected="true"] {
     background-color: rgba(212, 160, 23, 0.25);
     border-left: 3px solid var(--primary-color);
     padding-left: 9px;
   }
+}
 
-  // The options here are keyboard-focusable (role="option", tabindex="0") in the Suite Health
-  // model selectors, so they need a visible focus ring.
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
+/* A heading over a run of options in a grouped picker (Your Models / System Models). */
+.model-group-title {
+  padding: 4px 10px;
+  font-size: 0.8em;
+  color: var(--gh-gold);
+  background-color: var(--gh-panel-bg);
+  text-transform: uppercase;
 }
 
 .model-name {
@@ -3183,7 +3202,7 @@ app-table-pager {
 }
 
 /* In the trigger, the model name shares the row with the thinking/reasoning/provider
-   badges and the chevron. A narrower grid column (see .form-row.three-cols) must not let
+   badges and the chevron. A narrow grid column (the benchmark launcher's groups) must not let
    a long name push those out — truncate the name instead. The dropdown's own .model-name
    above keeps wrapping off (white-space: nowrap) since the dropdown is free to grow via
    its own width: max-content; max-width: 480px. */
@@ -3214,6 +3233,35 @@ app-table-pager {
   border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
+/* Whether the model's API key may run requests in parallel, in any model picker. */
+.parallel-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+
+  &.badge-sequential {
+    color: #fbbf24;
+    border: 1px solid #fbbf24;
+    background: rgba(251, 191, 36, 0.15);
+  }
+
+  &.badge-on-request {
+    color: #38bdf8;
+    border: 1px solid #38bdf8;
+    background: rgba(56, 189, 248, 0.15);
+  }
+}
+
+/* The chat composer's picker: hides the provider and parallel badges on narrow screens. */
+@media (max-width: 992px) {
+  .custom-model-selector.narrow-hides-badges :is(.provider-badge, .parallel-badge) {
+    display: none;
+  }
+}
+
 /* The chat composer and the models page: a fit-content, glass trigger with a floating
    dropdown. Same markup and behaviour as the base; only the sizing and surfaces differ. */
 .custom-model-selector.compact {
@@ -3237,7 +3285,7 @@ app-table-pager {
       box-shadow: 0 0 8px rgba(212, 175, 55, 0.2);
     }
 
-    &.open {
+    &[aria-expanded="true"] {
       border-color: var(--gh-gold);
       border-bottom-left-radius: 0;
       border-bottom-right-radius: 0;
@@ -3263,18 +3311,29 @@ app-table-pager {
   .model-option {
     font-size: 0.85rem;
 
-    &:hover { background-color: rgba(212, 175, 55, 0.15); }
+    &:hover,
+    &.is-active { background-color: rgba(212, 175, 55, 0.15); }
 
-    &.selected {
+    &[aria-selected="true"] {
       background-color: rgba(212, 175, 55, 0.25);
       border-left: 2px solid var(--gh-gold);
       padding-left: 10px;
     }
   }
 
+  .parallel-badge {
+    font-size: 0.7rem;
+
+    &.badge-on-request {
+      color: #fbbf24;
+      border: 1px dashed #fbbf24;
+      background: rgba(251, 191, 36, 0.1);
+    }
+  }
+
   /* The chat composer sits at the bottom of the viewport, so its list opens upward. */
   &.drops-up {
-    .selector-trigger.open {
+    .selector-trigger[aria-expanded="true"] {
       border-bottom-left-radius: 4px;
       border-bottom-right-radius: 4px;
       border-top-left-radius: 0;
