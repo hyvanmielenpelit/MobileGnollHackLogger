@@ -161,4 +161,25 @@ namespace Overseer.Services.Tools
         public override string Description { get; set; } = "Retrieve the panic log from the client device to diagnose crashes.";
         public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
     }
+
+    public class GetPerformanceReportsTool : ClientToolHandlerBase
+    {
+        public override string ToolName => "get_performance_reports";
+        public override string Description { get; set; } = "Retrieve in-game performance test reports from the client device.";
+        public override ToolCategory Category => ToolCategory.ClientPersistentDataQuery;
+
+        /* Covers the client's default 12000-char read plus its truncation marker,
+           which the client appends after cutting to max_length. The schema and
+           ToolGuides/get_performance_reports.md cap max_length at 15000 so that the
+           marker always fits under this cap. */
+        public override int? MaxResultLengthOverride => 16000;
+
+        public override JsonElement ParameterSchema { get; } = JsonDocument.Parse(@"{
+            ""type"": ""object"",
+            ""properties"": {
+                ""filename"": { ""type"": ""string"", ""description"": ""Filename of a specific report to read (e.g. perftest_20260927_143000.txt). Get filenames from list mode. If omitted, returns a list of the reports on the device, newest first."" },
+                ""max_length"": { ""type"": ""integer"", ""description"": ""Maximum number of characters to return from a report. Defaults to 12000. Use at most 15000."" }
+            }
+        }").RootElement;
+    }
 }

@@ -161,6 +161,20 @@ public class SystemPromptPolicyTests
     }
 
     [Fact]
+    public void ToolGuides_PerformanceReports_ExplainsOldClientErrorsAndTheLengthLimit()
+    {
+        var guideDir = GetGuideDirectory();
+        string guideText = File.ReadAllText(Path.Combine(guideDir, "get_performance_reports.md"));
+
+        // the errors an app without this tool, a very old app, and a browser return
+        Assert.Contains("Unknown tool: get_performance_reports", guideText);
+        Assert.Contains("timed out", guideText);
+        Assert.Contains("Client bridge not available", guideText);
+        // the max_length ceiling that keeps the client's truncation marker under the server cap
+        Assert.Contains("15000", guideText);
+    }
+
+    [Fact]
     public void ToolGuides_MonsterTools_PointAtThePetsSection()
     {
         var guideDir = GetGuideDirectory();

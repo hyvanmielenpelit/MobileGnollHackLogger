@@ -70,6 +70,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     'get_player_dumplogs': 'Reading player dumplogs',
     'get_app_log': 'Reading application log',
     'get_panic_log': 'Reading panic log',
+    'get_performance_reports': 'Reading performance reports',
     'item_lookup': 'Searching Wiki for an item',
     'monster_lookup': 'Searching Wiki for a monster',
     'nethack_wiki_search': 'Searching NetHack Wiki',

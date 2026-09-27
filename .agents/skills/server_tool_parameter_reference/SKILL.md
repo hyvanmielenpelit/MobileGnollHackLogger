@@ -57,10 +57,10 @@ infrastructure (`ToolRegistry.cs`, `ToolDefinition.cs`, `ToolExecutor.cs`, `Tool
 `ToolBatchResultBudget.cs`, `ToolGuardMessages.cs`, `IToolHandler.cs`, `IClientToolBridge.cs`,
 `NullClientToolBridge.cs`, `SignalRClientToolBridge.cs`, `ExternalToolHosts.cs`). The remaining
 21 files define tool handlers: 20 files each implement `IToolHandler` directly (one server tool
-per file), and one file — `ClientToolHandlers.cs` — defines 10 client tool classes deriving from
-the shared `ClientToolHandlerBase`. `Program.cs` registers exactly 30 `IToolHandler`
-implementations (28 consecutive `AddSingleton<IToolHandler, …>` lines plus 2 more for the GitHub
-tools), confirming 20 server + 10 client with none missing and none duplicated.
+per file), and one file — `ClientToolHandlers.cs` — defines 11 client tool classes deriving from
+the shared `ClientToolHandlerBase`. `Program.cs` registers exactly 31 `IToolHandler`
+implementations (29 consecutive `AddSingleton<IToolHandler, …>` lines plus 2 more for the GitHub
+tools), confirming 20 server + 11 client with none missing and none duplicated.
 
 | Tool | Location | Reads | In `Benchmark:AllowedTools`? | Purpose |
 |---|---|---|---|---|
@@ -94,6 +94,7 @@ tools), confirming 20 server + 10 client with none missing and none duplicated.
 | `get_player_dumplogs` | Client | same | **No** | Dumplogs stored on the client device |
 | `get_app_log` | Client | same | **No** | The client application log |
 | `get_panic_log` | Client | same | **No** | The client panic/crash log |
+| `get_performance_reports` | Client | same | **No** | In-game performance test reports on the client device (list, or read one) |
 
 > 🛑 **Client tools cannot appear in a benchmark run, and not primarily because of a network
 > check.** `SignalRClientToolBridge.IsClientConnected` is hardcoded `true` ("We assume true for
@@ -101,7 +102,7 @@ tools), confirming 20 server + 10 client with none missing and none duplicated.
 > `ToolRegistry`'s connection gate never actually excludes anything at that layer. What excludes
 > client tools is that `AgentRunRequest.EnableClientTools` is a plain `bool` that every benchmark
 > call site in `BenchmarkService.cs` leaves unset (defaults to `false`), and separately none of
-> the 10 client tool names appear in `Benchmark:AllowedTools`. In a live chat session with a real
+> the 11 client tool names appear in `Benchmark:AllowedTools`. In a live chat session with a real
 > GnollHack client attached, `EnableClientTools` can be `true` and a call will actually round-trip
 > over SignalR; without a client attached, the request will time out (`TimeoutSeconds`, 15s
 > default, 30s for `refresh_snapshot`) rather than fail fast, because nothing server-side detects
@@ -131,9 +132,9 @@ From `Overseer/appsettings.json`:
 `_defaultAllowedTools` if the key is absent) and passes it as `AllowedToolNames` into
 `ToolRegistry.BuildToolsForRequest`, which filters the function declarations the model even
 sees. A tool outside this list is never offered to the model in a benchmark turn, so it never
-executes — **no benchmark finding may rest on one of these 14 tools' absence**:
+executes — **no benchmark finding may rest on one of these 15 tools' absence**:
 `search_github`, `get_github_repo_info`, `search_server_dumplogs`, `delegate_to_subagent`, and
-all 10 client tools. If a report shows zero calls to any of those, that is expected behavior,
+all 11 client tools. If a report shows zero calls to any of those, that is expected behavior,
 not a routing defect.
 
 ---
@@ -1051,17 +1052,18 @@ the config keys relevant to reading a tool's *output*, and where each is read.
 Per-handler `MaxResultLengthOverride` (`IToolHandler`) is a **floor**, never a ceiling:
 `ToolExecutor` takes `Math.Max(baseMaxLen, handlerMax)`, so an override raises the cap for its own
 tool and cannot lower one, and it touches no other tool and not the shared
-`AiPerformanceSettings:MaxResultLength:Default` that doubles as the live chat setting. Three tools
+`AiPerformanceSettings:MaxResultLength:Default` that doubles as the live chat setting. Four tools
 declare one:
 
 | Tool | Override | Why |
 |---|---|---|
 | `refresh_snapshot` | **60200** | Floors the cap so the client snapshot's tail sections (Discoveries, dungeon overview) are not silently lost to an arbitrary cut — plus headroom for the client's own `[SNAPSHOT TRUNCATED …]` marker. See the comment in `ClientToolHandlers.cs` |
+| `get_performance_reports` | **16000** | Covers the client's default 12000-character read plus its own truncation marker, which the client appends after cutting to `max_length`; the schema and guide cap `max_length` at 15000 so the marker always fits. See the comment in `ClientToolHandlers.cs` |
 | `wiki_search` | **13000**, from harness 18 | The tool's own budget is `Tools:wiki_search:MaxResults` × `PerResultChars` = 5 × 2500 = **12500**, which exceeded the generic 10000 cap, so a full-yield search was **always** truncated mid-article on its last hit. 13000 is that 12500 plus headroom for the per-hit separators. The `max_results` clamp added in the run-37 re-run round (§5) is what keeps a full yield inside this override — an unclamped `max_results: 10` call had stored 13,117 characters, cut mid-result at this override, on run 37 Q4 |
 | `nethack_wiki_search` | **16140**, from the run-36 round (2026-09-11) | `MaxResultLengthOverride` = `Tools:nethack_wiki_search:MaxResults` × (`PerResultChars` + 128) + 500 = 5 × (3000 + 128) + 500 = **16140** at current settings. The 128 is a per-article reserve for `CapArticle`'s own truncation note (`... [Article truncated: showing {shown} of {total} characters. Use nethack_wiki_view for the full article.]`, ≈ 105 characters), which is appended *after* the 3000-character cut — so a full five-article yield of capped articles plus their notes, the separators and the spoiler-free suffix runs to about 15,523 characters, not 15,000, and a floor set at `MaxResults × PerResultChars + 500` (15500) would still have been cut by the generic 10,000→override cap. See `server_benchmark_to_chat_transfer` run-36 entry (T2) for the arithmetic error this corrects |
 
 **Neither was fixed by raising the generic cap, deliberately.** `MaxResultLength` is the cap for
-all 30 tools *and* the live chat default (user-adjustable 1000–100000) *and* `Benchmark:MaxResultLength`,
+all 31 tools *and* the live chat default (user-adjustable 1000–100000) *and* `Benchmark:MaxResultLength`,
 so raising it enlarges every truncated result on every live turn; it would not fix a tool with no
 per-result cap of its own; and every tool result is re-sent to the model on each subsequent round of
 the same question (§ 4), so the extra characters are paid once per remaining round. Lowering

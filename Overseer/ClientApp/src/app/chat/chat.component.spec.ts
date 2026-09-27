@@ -846,6 +846,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(ChatComponent.getToolDisplayName('get_monster_stats')).toBe('Reading monster stats');
       expect(ChatComponent.getToolDisplayName('get_artifact_stats')).toBe('Reading artifact stats');
       expect(ChatComponent.getToolDisplayName('get_app_log')).toBe('Reading application log');
+      expect(ChatComponent.getToolDisplayName('get_performance_reports')).toBe('Reading performance reports');
       expect(ChatComponent.getToolDisplayName('get_full_message_history')).toBe('Reading message history');
     });
 
