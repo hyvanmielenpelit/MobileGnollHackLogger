@@ -88,6 +88,7 @@ import {
 } from './model-comparison/model-comparison.models';
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
 import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../../shared/model-picker/model-picker.component';
+import { InfoTipComponent } from '../../shared/info-tip/info-tip.component';
 import { Observable, Subscription, catchError, firstValueFrom, forkJoin, from, map, of, switchMap } from 'rxjs';
 import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
 import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
@@ -261,7 +262,7 @@ interface BenchmarkRunSettings {
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
     QuestionGenerationDialogComponent, SuiteDescriptionGenerationDialogComponent,
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
-    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent,
+    ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent
   ],
@@ -1670,6 +1671,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       return 'Choose a second opinion model to set a mode.';
     }
     return this.secondOpinionModeOptions.find(o => o.value === this.secondOpinionMode)?.hint ?? '';
+  }
+
+  /** The second opinion is the assessor's own model, so it will mostly confirm its own verdict. */
+  get showSecondOpinionSameModelNote(): boolean {
+    return !!this.selectedSecondOpinionModel && this.selectedSecondOpinionModel.id === this.assessorConfigId;
   }
 
   /**

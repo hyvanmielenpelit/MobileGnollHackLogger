@@ -376,9 +376,9 @@ to stop if the projection is more than about twice the estimate.
 
 | Launcher field | Set to | Versus run <R> |
 |---|---|---|
+| Model Under Test | <entry as the dropdown prints it, with its thinking-level badge> | same / CHANGED |
 | Benchmark Suite | <name as listed> (<n> questions) | same |
 | Scoring Profile | <name> | same |
-| Model Under Test | <entry as the dropdown prints it, with its thinking-level badge> | same / CHANGED |
 | Response Style | Concise (production default) | same |
 | Assessor | ... | same |
 | Co-Assessor (optional) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |
@@ -486,7 +486,7 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 | Fact | Source |
 |---|---|
 | Admin tabs; benchmark sub-tabs `Run Benchmark`, `Run History`, `Multi-Run Analysis`, `Manage Suites`, `Scoring Profiles`, `Model Comparison` | `Overseer/ClientApp/src/app/admin/admin.component.ts`, `admin/benchmark/benchmark.component.html` |
-| Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor` field and its panel warnings | `admin/benchmark/benchmark.component.html` |
+| Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor` field and its panel warnings (field order verified on 2026-09-27: Model Under Test first, above the three fieldsets) | `admin/benchmark/benchmark.component.html` |
 | Second Opinion Mode option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
 | Launcher refusals and their messages | `Overseer/Services/Benchmarking/BenchmarkRunLauncher.cs` |
 | Delivery-check failure messages | `Overseer/Services/Benchmarking/BenchmarkCandidateRequestProbe.cs`, `BenchmarkGradingRequestProbe.cs` |

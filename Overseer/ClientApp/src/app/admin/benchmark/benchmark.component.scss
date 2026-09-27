@@ -115,6 +115,31 @@
   flex-wrap: wrap;
 }
 
+// Launcher: the model under test, in a gold-accented panel above the fieldsets.
+.form-group.setup-primary-field {
+  margin-block-end: 1.25rem;
+  padding: 14px 16px;
+  border: 1px solid var(--border-glass);
+  border: 1px solid color-mix(in srgb, var(--primary-color) 45%, transparent);
+  border-inline-start: 3px solid var(--primary-color);
+  border-radius: 8px;
+  background: rgba(212, 160, 23, 0.05);
+  background: color-mix(in srgb, var(--primary-color) 6%, transparent);
+
+  > label {
+    font-family: "Cinzel", serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--primary-color);
+  }
+
+  > .gh-field-row {
+    max-inline-size: min(100%, 44rem);
+  }
+}
+
 // Launcher: three fieldsets on named areas, reflowed by the card's own width.
 .setup-groups-container {
   container: setup / inline-size;
@@ -190,6 +215,13 @@
   margin-inline-start: 0.25rem;
   padding-inline-start: 0.75rem;
   border-inline-start: 2px solid var(--border-glass);
+}
+
+// A checkbox whose (i) follows its label text rather than the column's right edge.
+.checkbox-with-tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .completion-signals .btn-gh-small {
@@ -2344,29 +2376,6 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .flex-col { display: flex; flex-direction: column; }
 .gap-10 { gap: 10px; }
 .align-items-center { align-items: center; }
-
-.compliance-purpose-box {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  padding: 12px 16px;
-
-  .compliance-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--primary-color);
-    font-size: 13px;
-    margin-bottom: 6px;
-  }
-
-  .compliance-text {
-    margin: 0;
-    font-size: 12px;
-    line-height: 1.5;
-    color: #999;
-  }
-}
 
 .suite-footprint-info {
   font-size: 12px;

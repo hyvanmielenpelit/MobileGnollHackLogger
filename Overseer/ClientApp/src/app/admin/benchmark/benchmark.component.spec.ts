@@ -4111,11 +4111,26 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const labels = groupLabels('test');
-      expect(labels.length).toBe(4);
+      expect(labels.length).toBe(3);
       expect(labels[0]).toMatch(/^Benchmark Suite/);
       expect(labels[1]).toMatch(/^Scoring Profile/);
-      expect(labels[2]).toMatch(/^Model Under Test/);
-      expect(labels[3]).toMatch(/^Response Style/);
+      expect(labels[2]).toMatch(/^Response Style/);
+    });
+
+    it('should lift the Model Under Test into a primary field above the setup groups', () => {
+      component.activeSubTab = 'run';
+      fixture.detectChanges();
+
+      const card = fixture.nativeElement.querySelector('.setup-card') as HTMLElement;
+      const primary = card.querySelector('.setup-primary-field') as HTMLElement;
+      const groups = card.querySelector('.setup-groups-container') as HTMLElement;
+      expect(primary).toBeTruthy();
+      expect(groups).toBeTruthy();
+      expect(primary.compareDocumentPosition(groups) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(primary.closest('fieldset')).toBeNull();
+      expect(primary.querySelector('#bmTestedModelLabel')?.textContent?.trim()).toBe('Model Under Test');
+      expect(primary.querySelector('.tested-model-selector')).toBeTruthy();
+      expect(card.querySelector('fieldset .tested-model-selector')).toBeNull();
     });
 
     it('should hold the Grading fields in order, with the optional ones tagged', () => {
@@ -4420,6 +4435,117 @@ describe('AdminBenchmarkComponent', () => {
       // The regression this wording exists to prevent: "exactly as before" described the
       // pre-multi-run implementation, which tells an operator nothing about the field.
       expect(text).not.toContain('as before');
+    });
+  });
+
+  describe('launcher info buttons and notes', () => {
+    function card(): HTMLElement {
+      return fixture.nativeElement.querySelector('.setup-card') as HTMLElement;
+    }
+
+    beforeEach(() => {
+      component.activeSubTab = 'run';
+    });
+
+    it('should keep each field hint in a click-mode popup beside its control', () => {
+      fixture.detectChanges();
+
+      const hints: [string, string][] = [
+        ['suiteHint', '#suiteSelect'],
+        ['profileHint', '#profileSelect'],
+        ['bmTestedModelHint', '.tested-model-selector'],
+        ['bmAssessorModelHint', '.assessor-model-selector'],
+        ['bmCoAssessorModelHint', '.co-assessor-model-selector'],
+        ['runCountHint', '#runCountInput']
+      ];
+      for (const [id, controlSelector] of hints) {
+        const hint = card().querySelector(`#${id}`) as HTMLElement;
+        expect(hint).withContext(id).toBeTruthy();
+        const popup = hint.closest('.gh-info-popup') as HTMLElement;
+        expect(popup).withContext(id).toBeTruthy();
+        expect(popup.getAttribute('popover')).withContext(id).toBe('auto');
+
+        const tip = popup.closest('app-info-tip') as HTMLElement;
+        const control = card().querySelector(controlSelector) as HTMLElement;
+        expect(control.parentElement!.classList).withContext(id).toContain('gh-field-row');
+        expect(control.nextElementSibling).withContext(id).toBe(tip);
+      }
+    });
+
+    it('should show no compliance box and no fieldset purpose lines', () => {
+      fixture.detectChanges();
+
+      expect(card().querySelector('.compliance-purpose-box')).toBeNull();
+      expect(card().textContent).not.toContain('Evaluation Purpose');
+      expect(card().querySelector('.gh-fieldset-hint')).toBeNull();
+    });
+
+    // Each state is set before the run tab's first render: a second fixture.detectChanges()
+    // does not refresh the launcher's conditional branches in this spec.
+    it('should hide the Response Style note while Concise is selected', () => {
+      component.candidateVerboseMode = false;
+      fixture.detectChanges();
+
+      expect(card().querySelector('#candidateResponseStyleNote')).toBeNull();
+      expect(card().querySelector('#candidateResponseStyle')!.getAttribute('aria-describedby'))
+        .toBe('candidateResponseStyleHint');
+    });
+
+    it('should show the Response Style note while Detailed is selected', () => {
+      component.candidateVerboseMode = true;
+      fixture.detectChanges();
+
+      expect(card().querySelector('#candidateResponseStyleNote')?.textContent).toContain('Only Accuracy stays comparable');
+      expect(card().querySelector('#candidateResponseStyle')!.getAttribute('aria-describedby'))
+        .toBe('candidateResponseStyleHint candidateResponseStyleNote');
+    });
+
+    it('should show the Second Opinion Mode reason while the mode is disabled', () => {
+      component.secondOpinionConfigId = null;
+      fixture.detectChanges();
+
+      expect(card().querySelector('#secondOpinionModeHint')?.textContent).toContain('Choose a second opinion model');
+      expect(card().querySelector('#secondOpinionModeSelect')!.getAttribute('aria-describedby'))
+        .toBe('secondOpinionModeTip secondOpinionModeHint');
+    });
+
+    it('should hide the Second Opinion Mode reason while the mode is enabled', () => {
+      component.secondOpinionConfigId = 1;
+      fixture.detectChanges();
+
+      expect(card().querySelector('#secondOpinionModeHint')).toBeNull();
+      expect(card().querySelector('#secondOpinionModeSelect')!.getAttribute('aria-describedby'))
+        .toBe('secondOpinionModeTip');
+    });
+
+    it('should show no same-model note without a second opinion', () => {
+      component.assessorConfigId = 1;
+      component.secondOpinionConfigId = null;
+      fixture.detectChanges();
+
+      expect(card().querySelector('#bmSecondOpinionSameModelNote')).toBeNull();
+      expect(card().querySelector('.second-opinion-model-selector .selector-trigger')!.getAttribute('aria-describedby'))
+        .toBe('bmSecondOpinionModelHint');
+    });
+
+    it('should show the same-model note when the second opinion is the assessor', () => {
+      component.assessorConfigId = 1;
+      component.secondOpinionConfigId = 1;
+      fixture.detectChanges();
+
+      expect(card().querySelector('#bmSecondOpinionSameModelNote')?.textContent)
+        .toContain('Same model as the assessor');
+      expect(card().querySelector('.second-opinion-model-selector .selector-trigger')!.getAttribute('aria-describedby'))
+        .toBe('bmSecondOpinionModelHint bmSecondOpinionSameModelNote');
+    });
+
+    it('should list every Second Opinion Mode in its popup', () => {
+      fixture.detectChanges();
+
+      const tip = card().querySelector('#secondOpinionModeTip') as HTMLElement;
+      expect(tip.closest('.gh-info-popup')).toBeTruthy();
+      const terms = Array.from(tip.querySelectorAll('dt')).map(dt => (dt.textContent ?? '').trim());
+      expect(terms).toEqual(component.secondOpinionModeOptions.map(o => o.label));
     });
   });
 
@@ -7102,9 +7228,11 @@ describe('AdminBenchmarkComponent', () => {
       expect(getComputedStyle(status).position).toBe('absolute');
       expect(getComputedStyle(status).marginTop).toBe('0px');
       const toggle = fixture.nativeElement.querySelector('label[for="completionNotificationInput"]') as HTMLElement;
-      const hint = fixture.nativeElement.querySelector('#completionSignalsHint') as HTMLElement;
+      const testSound = Array.from(fixture.nativeElement.querySelectorAll('.completion-signals button.btn-gh-small') as NodeListOf<HTMLElement>)
+        .find(b => b.textContent?.trim() === 'Test sound') as HTMLElement;
       expect(toggle.getBoundingClientRect().height).toBeGreaterThan(0);
-      const gap = hint.getBoundingClientRect().top - toggle.getBoundingClientRect().bottom;
+      expect(testSound.getBoundingClientRect().height).toBeGreaterThan(0);
+      const gap = testSound.getBoundingClientRect().top - toggle.getBoundingClientRect().bottom;
       expect(gap).toBeLessThanOrEqual(12);
 
       spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('default'));

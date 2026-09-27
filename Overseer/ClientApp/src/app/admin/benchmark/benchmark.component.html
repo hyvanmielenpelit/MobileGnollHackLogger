@@ -175,7 +175,6 @@
         <div class="card-header-with-actions">
           <div>
             <h3>New Benchmark Run</h3>
-            <p class="text-muted mb-20">Choose what to test, how it is graded, and how often it runs.</p>
           </div>
         </div>
 
@@ -210,29 +209,44 @@
           </div>
         }
 
+        <div class="form-group setup-primary-field">
+          <label id="bmTestedModelLabel">Model Under Test</label>
+          <div class="gh-field-row">
+            <app-model-picker class="tested-model-selector"
+                              labelledBy="bmTestedModelLabel" describedBy="bmTestedModelHint"
+                              [emptyHint]="benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                              [options]="benchmarkPickerOptions" [selectedKey]="testedConfigId"
+                              (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
+            <app-info-tip trigger="click" tipId="bmTestedModelHint" subject="Model Under Test">
+              Answers every question. Speed Index is only comparable at the same thinking level.
+            </app-info-tip>
+          </div>
+        </div>
+
         <div class="setup-groups-container">
           <div class="setup-groups">
-            <fieldset class="gh-fieldset setup-group setup-group-test" aria-describedby="setupTestHint">
+            <fieldset class="gh-fieldset setup-group setup-group-test">
               <legend>Test Setup</legend>
-              <p id="setupTestHint" class="gh-fieldset-hint">What is asked, how it is scored, and which model answers.</p>
 
               <div class="form-group">
                 <div class="label-with-action">
                   <label for="suiteSelect">Benchmark Suite</label>
                   <button type="button" class="link-subtle-btn" (click)="selectSubTab('suites')">Manage suites →</button>
                 </div>
-                <select id="suiteSelect" class="gh-input" [(ngModel)]="selectedSuiteId" (ngModelChange)="onSelectedSuiteChanged()"
-                        aria-describedby="suiteHint">
-                  @if (suites.length === 0) {
-                    <option [ngValue]="null" disabled>{{ loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
-                  }
-                  @for (suite of suites; track suite.id) {
-                    <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
-                  }
-                </select>
-                <span id="suiteHint" class="form-hint">
-                  Runs are only comparable within one suite; editing a question starts a new baseline.
-                </span>
+                <div class="gh-field-row">
+                  <select id="suiteSelect" class="gh-input" [(ngModel)]="selectedSuiteId" (ngModelChange)="onSelectedSuiteChanged()"
+                          aria-describedby="suiteHint">
+                    @if (suites.length === 0) {
+                      <option [ngValue]="null" disabled>{{ loadingSuites ? 'Loading suites...' : 'No suites available' }}</option>
+                    }
+                    @for (suite of suites; track suite.id) {
+                      <option [ngValue]="suite.id">{{ suite.name }} ({{ suite.questionCount }} questions)</option>
+                    }
+                  </select>
+                  <app-info-tip trigger="click" tipId="suiteHint" subject="Benchmark Suite">
+                    Runs are only comparable within one suite; editing a question starts a new baseline.
+                  </app-info-tip>
+                </div>
                 @if (selectedSuite && !selectedSuite.difficultyFullyAssessed) {
                   <div class="alert alert-warning mt-10" role="alert">
                     <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -262,15 +276,17 @@
                   <label for="profileSelect">Scoring Profile</label>
                   <button type="button" class="link-subtle-btn" (click)="selectSubTab('profiles')">Manage profiles →</button>
                 </div>
-                <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId"
-                        [attr.aria-describedby]="showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint'">
-                  @for (profile of scoringProfiles; track profile.id) {
-                    <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
-                  }
-                </select>
-                <span id="profileHint" class="form-hint">
-                  Turns the four dimension grades into indices; runs are only comparable under one profile.
-                </span>
+                <div class="gh-field-row">
+                  <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId"
+                          [attr.aria-describedby]="showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint'">
+                    @for (profile of scoringProfiles; track profile.id) {
+                      <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
+                    }
+                  </select>
+                  <app-info-tip trigger="click" tipId="profileHint" subject="Scoring Profile">
+                    Turns the four dimension grades into indices; runs are only comparable under one profile.
+                  </app-info-tip>
+                </div>
                 <!--
                   Profile fit. A high/max thinking model measured against a profile tuned for
                   interactive latency scores badly on Speed Index for a reason that has nothing to do
@@ -288,43 +304,41 @@
               </div>
 
               <div class="form-group">
-                <label id="bmTestedModelLabel">Model Under Test</label>
-                <app-model-picker class="tested-model-selector"
-                                  labelledBy="bmTestedModelLabel" describedBy="bmTestedModelHint"
-                                  [emptyHint]="benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
-                                  [options]="benchmarkPickerOptions" [selectedKey]="testedConfigId"
-                                  (selectionChange)="selectTestedModel($event.model)"></app-model-picker>
-                <span id="bmTestedModelHint" class="form-hint">
-                  Answers every question. Speed Index is only comparable at the same thinking level.
-                </span>
-              </div>
-
-              <div class="form-group">
                 <label for="candidateResponseStyle">Response Style</label>
-                <select id="candidateResponseStyle" class="gh-input"
-                        [(ngModel)]="candidateVerboseMode"
-                        aria-describedby="candidateResponseStyleHint">
-                  <option [ngValue]="false">Concise (production default)</option>
-                  <option [ngValue]="true">Detailed (diagnostic)</option>
-                </select>
-                <span id="candidateResponseStyleHint" class="form-hint">{{ candidateResponseStyleHint }}</span>
+                <div class="gh-field-row">
+                  <select id="candidateResponseStyle" class="gh-input"
+                          [(ngModel)]="candidateVerboseMode"
+                          [attr.aria-describedby]="candidateVerboseMode ? 'candidateResponseStyleHint candidateResponseStyleNote' : 'candidateResponseStyleHint'">
+                    <option [ngValue]="false">Concise (production default)</option>
+                    <option [ngValue]="true">Detailed (diagnostic)</option>
+                  </select>
+                  <app-info-tip trigger="click" tipId="candidateResponseStyleHint" subject="Response Style">
+                    Concise matches the production chat and stays comparable with earlier runs. Detailed is
+                    diagnostic: only Accuracy stays comparable with concise runs; use it to tell prompt gaps
+                    from model gaps.
+                  </app-info-tip>
+                </div>
+                @if (candidateVerboseMode) {
+                  <span id="candidateResponseStyleNote" class="form-hint">{{ candidateResponseStyleHint }}</span>
+                }
               </div>
             </fieldset>
 
-            <fieldset class="gh-fieldset setup-group setup-group-grading" aria-describedby="setupGradingHint">
+            <fieldset class="gh-fieldset setup-group setup-group-grading">
               <legend>Grading</legend>
-              <p id="setupGradingHint" class="gh-fieldset-hint">Who grades the answers, and who checks the graders.</p>
 
               <div class="form-group">
                 <label id="bmAssessorModelLabel">Assessor</label>
-                <app-model-picker class="assessor-model-selector"
-                                  labelledBy="bmAssessorModelLabel" describedBy="bmAssessorModelHint"
-                                  [emptyHint]="benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
-                                  [options]="benchmarkPickerOptions" [selectedKey]="assessorConfigId"
-                                  (selectionChange)="selectAssessorModel($event.model)"></app-model-picker>
-                <span id="bmAssessorModelHint" class="form-hint">
-                  Grades every answer against its rubric on four BARS dimensions and writes the synthesis.
-                </span>
+                <div class="gh-field-row">
+                  <app-model-picker class="assessor-model-selector"
+                                    labelledBy="bmAssessorModelLabel" describedBy="bmAssessorModelHint"
+                                    [emptyHint]="benchmarkPickerEmptyHint" [showPrice]="true" [showParallel]="true"
+                                    [options]="benchmarkPickerOptions" [selectedKey]="assessorConfigId"
+                                    (selectionChange)="selectAssessorModel($event.model)"></app-model-picker>
+                  <app-info-tip trigger="click" tipId="bmAssessorModelHint" subject="Assessor">
+                    Grades every answer against its rubric on four BARS dimensions and writes the synthesis.
+                  </app-info-tip>
+                </div>
 
                 @if (showAssessorChangeAdvisory) {
                   <div class="alert alert-info mt-10" role="note">
@@ -344,14 +358,16 @@
 
               <div class="form-group">
                 <label id="bmCoAssessorModelLabel">Co-Assessor <span class="field-optional">Optional</span></label>
-                <app-model-picker class="co-assessor-model-selector"
-                                  labelledBy="bmCoAssessorModelLabel" describedBy="bmCoAssessorModelHint"
-                                  noneLabel="None — single assessor" [showPrice]="true"
-                                  [options]="benchmarkPickerOptions" [selectedKey]="coAssessorConfigId"
-                                  (selectionChange)="selectCoAssessorModel($event.model)"></app-model-picker>
-                <span id="bmCoAssessorModelHint" class="form-hint">
-                  Makes a two-member panel: grades beside the assessor, and the score is the mean of the two.
-                </span>
+                <div class="gh-field-row">
+                  <app-model-picker class="co-assessor-model-selector"
+                                    labelledBy="bmCoAssessorModelLabel" describedBy="bmCoAssessorModelHint"
+                                    noneLabel="None — single assessor" [showPrice]="true"
+                                    [options]="benchmarkPickerOptions" [selectedKey]="coAssessorConfigId"
+                                    (selectionChange)="selectCoAssessorModel($event.model)"></app-model-picker>
+                  <app-info-tip trigger="click" tipId="bmCoAssessorModelHint" subject="Co-Assessor">
+                    Makes a two-member panel: grades beside the assessor, and the score is the mean of the two.
+                  </app-info-tip>
+                </div>
 
                 <!-- The server's two panel refusals, shown before Start so the run is never sent. -->
                 @if (showCoAssessorSameProviderAdvisory) {
@@ -386,17 +402,22 @@
                    a System AI Config is a database row an administrator manages in this UI. -->
               <div class="form-group">
                 <label id="bmSecondOpinionModelLabel">Second Opinion{{ isPanelLaunch ? ' (reference reader)' : '' }} <span class="field-optional">Optional</span></label>
-                <app-model-picker class="second-opinion-model-selector"
-                                  labelledBy="bmSecondOpinionModelLabel" describedBy="bmSecondOpinionModelHint"
-                                  noneLabel="None — no second opinion" [showPrice]="true"
-                                  [options]="benchmarkPickerOptions" [selectedKey]="secondOpinionConfigId"
-                                  (selectionChange)="selectSecondOpinionModel($event.model)"></app-model-picker>
-                <span id="bmSecondOpinionModelHint" class="form-hint">
-                  An independent second verdict; disagreements are flagged, never scored.
-                  @if (selectedSecondOpinionModel && selectedSecondOpinionModel.id === assessorConfigId) {
+                <div class="gh-field-row">
+                  <app-model-picker class="second-opinion-model-selector"
+                                    labelledBy="bmSecondOpinionModelLabel"
+                                    [describedBy]="showSecondOpinionSameModelNote ? 'bmSecondOpinionModelHint bmSecondOpinionSameModelNote' : 'bmSecondOpinionModelHint'"
+                                    noneLabel="None — no second opinion" [showPrice]="true"
+                                    [options]="benchmarkPickerOptions" [selectedKey]="secondOpinionConfigId"
+                                    (selectionChange)="selectSecondOpinionModel($event.model)"></app-model-picker>
+                  <app-info-tip trigger="click" tipId="bmSecondOpinionModelHint" subject="Second Opinion">
+                    An independent second verdict; disagreements are flagged, never scored.
+                  </app-info-tip>
+                </div>
+                @if (showSecondOpinionSameModelNote) {
+                  <span id="bmSecondOpinionSameModelNote" class="form-hint">
                     <strong>Same model as the assessor: it will mostly confirm its own verdict.</strong>
-                  }
-                </span>
+                  </span>
+                }
 
                 <!--
                   Second Opinion Mode. Inert without an assessor above, which is the hard gate that
@@ -406,15 +427,27 @@
                 -->
                 <div class="form-group dependent-field">
                   <label for="secondOpinionModeSelect">Second Opinion Mode</label>
-                  <select id="secondOpinionModeSelect" class="gh-input"
-                          [(ngModel)]="secondOpinionMode"
-                          [disabled]="secondOpinionModeDisabled"
-                          aria-describedby="secondOpinionModeHint">
-                    @for (option of secondOpinionModeOptions; track option.value) {
-                      <option [ngValue]="option.value">{{ option.label }}</option>
-                    }
-                  </select>
-                  <span id="secondOpinionModeHint" class="form-hint">{{ secondOpinionModeHint }}</span>
+                  <div class="gh-field-row">
+                    <select id="secondOpinionModeSelect" class="gh-input"
+                            [(ngModel)]="secondOpinionMode"
+                            [disabled]="secondOpinionModeDisabled"
+                            [attr.aria-describedby]="secondOpinionModeDisabled ? 'secondOpinionModeTip secondOpinionModeHint' : 'secondOpinionModeTip'">
+                      @for (option of secondOpinionModeOptions; track option.value) {
+                        <option [ngValue]="option.value">{{ option.label }}</option>
+                      }
+                    </select>
+                    <app-info-tip trigger="click" tipId="secondOpinionModeTip" subject="Second Opinion Mode">
+                      <dl>
+                        @for (option of secondOpinionModeOptions; track option.value) {
+                          <dt>{{ option.label }}</dt>
+                          <dd>{{ option.hint }}</dd>
+                        }
+                      </dl>
+                    </app-info-tip>
+                  </div>
+                  @if (secondOpinionModeDisabled) {
+                    <span id="secondOpinionModeHint" class="form-hint">{{ secondOpinionModeHint }}</span>
+                  }
                 </div>
 
                 @if (showAssessorPairingAdvisory) {
@@ -448,14 +481,16 @@
 
               <div class="form-group">
                 <label id="bmClaimVerifierModelLabel">Claim Verifier <span class="field-optional">Optional</span></label>
-                <app-model-picker class="claim-verifier-model-selector"
-                                  labelledBy="bmClaimVerifierModelLabel" describedBy="bmClaimVerifierModelHint"
-                                  noneLabel="None — no claim verification" [showPrice]="true"
-                                  [options]="benchmarkPickerOptions" [selectedKey]="claimVerifierConfigId"
-                                  (selectionChange)="selectClaimVerifierModel($event.model)"></app-model-picker>
-                <span id="bmClaimVerifierModelHint" class="form-hint">
-                  Checks disputed claims against the source and the wiki; advisory, changes no score.
-                </span>
+                <div class="gh-field-row">
+                  <app-model-picker class="claim-verifier-model-selector"
+                                    labelledBy="bmClaimVerifierModelLabel" describedBy="bmClaimVerifierModelHint"
+                                    noneLabel="None — no claim verification" [showPrice]="true"
+                                    [options]="benchmarkPickerOptions" [selectedKey]="claimVerifierConfigId"
+                                    (selectionChange)="selectClaimVerifierModel($event.model)"></app-model-picker>
+                  <app-info-tip trigger="click" tipId="bmClaimVerifierModelHint" subject="Claim Verifier">
+                    Checks disputed claims against the source and the wiki; advisory, changes no score.
+                  </app-info-tip>
+                </div>
 
                 @if (showClaimVerifierCandidateAdvisory) {
                   <div class="alert alert-info mt-10" role="note">
@@ -486,9 +521,8 @@
               </div>
             </fieldset>
 
-            <fieldset class="gh-fieldset setup-group setup-group-exec" aria-describedby="setupExecHint">
+            <fieldset class="gh-fieldset setup-group setup-group-exec">
               <legend>Execution</legend>
-              <p id="setupExecHint" class="gh-fieldset-hint">How many runs, and how you hear they are done.</p>
 
               <div class="exec-fields">
                 <!--
@@ -500,37 +534,47 @@
                 <div class="exec-runs">
                   <div class="form-group">
                     <label for="runCountInput">Number of Runs</label>
-                    <input id="runCountInput" type="number" class="gh-input run-count-input"
-                           min="1"
-                           [attr.max]="maxRunCountPerSeries"
-                           [(ngModel)]="runCount"
-                           aria-describedby="runCountHint">
-                    <span id="runCountHint" class="form-hint">
-                      @if (maxRunCountPerSeries != null) {
-                        Two or more (up to {{ maxRunCountPerSeries }}) run one at a time as a replicate
-                        set, which shows run-to-run noise.
-                      } @else {
-                        Two or more run one at a time as a replicate set, which shows run-to-run noise;
-                        the daily run cap limits the count.
-                      }
-                    </span>
+                    <div class="gh-field-row">
+                      <input id="runCountInput" type="number" class="gh-input run-count-input"
+                             min="1"
+                             [attr.max]="maxRunCountPerSeries"
+                             [(ngModel)]="runCount"
+                             aria-describedby="runCountHint">
+                      <app-info-tip trigger="click" tipId="runCountHint" subject="Number of Runs">
+                        @if (maxRunCountPerSeries != null) {
+                          Two or more (up to {{ maxRunCountPerSeries }}) run one at a time as a replicate
+                          set, which shows run-to-run noise.
+                        } @else {
+                          Two or more run one at a time as a replicate set, which shows run-to-run noise;
+                          the daily run cap limits the count.
+                        }
+                      </app-info-tip>
+                    </div>
                   </div>
 
                   @if (isMultiRunRequested) {
                     <div class="form-group">
-                      <label class="gh-checkbox" for="allowCapWaitInput">
-                        <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="allowCapWait">
-                        <span>Wait when the run cap blocks the next run</span>
-                      </label>
-                      <span class="form-hint">
-                        Otherwise the series stops at the cap and can be continued; finished runs are always kept.
-                      </span>
+                      <div class="checkbox-with-tip">
+                        <label class="gh-checkbox" for="allowCapWaitInput">
+                          <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="allowCapWait"
+                                 aria-describedby="allowCapWaitHint">
+                          <span>Wait when the run cap blocks the next run</span>
+                        </label>
+                        <app-info-tip trigger="click" tipId="allowCapWaitHint" subject="Wait at the run cap">
+                          Otherwise the series stops at the cap and can be continued; finished runs are always kept.
+                        </app-info-tip>
+                      </div>
                     </div>
                   }
                 </div>
 
                 <div class="form-group completion-signals" role="group" aria-labelledby="completionSignalsCaption">
-                  <span class="field-caption" id="completionSignalsCaption">When the run finishes</span>
+                  <div class="gh-field-row">
+                    <span class="field-caption" id="completionSignalsCaption">When the run finishes</span>
+                    <app-info-tip trigger="click" tipId="completionSignalsHint" subject="Completion signals">
+                      Armed at Start; a background tab can signal up to a minute late.
+                    </app-info-tip>
+                  </div>
                   <label class="gh-checkbox" for="completionSoundInput">
                     <input id="completionSoundInput" type="checkbox" [(ngModel)]="completionSound"
                            aria-describedby="completionSignalsHint">
@@ -544,9 +588,6 @@
                   </label>
                   <p class="text-muted completion-signals-status" role="status" aria-live="polite"
                      [class.is-empty]="!completionSignalsStatusText">{{ completionSignalsStatusText }}</p>
-                  <span id="completionSignalsHint" class="form-hint">
-                    Armed at Start; a background tab can signal up to a minute late.
-                  </span>
                   <button type="button" class="btn-gh btn-gh-small" (click)="testCompletionSound()">Test sound</button>
                 </div>
 
@@ -609,16 +650,6 @@
               </div>
             </fieldset>
           </div>
-        </div>
-
-        <div class="compliance-purpose-box mt-20">
-          <div class="compliance-header">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-            <strong>Evaluation Purpose & Compliance</strong>
-          </div>
-          <p class="compliance-text">
-            Internal evaluation of candidate AI models for the Overseer assistant within GnollHack. Benchmark outputs are third-party generated content used solely for automated capability evaluation and scoring, and are not used for training, fine-tuning, distilling, or developing competing AI models.
-          </p>
         </div>
 
         <div class="form-actions mt-20">

@@ -281,6 +281,12 @@ sidebar gained an `app-pane-resizer` (§4d).*
 buttons were replaced by the row handle's **Move** menu (§4c). The handle is now a focusable button
 named* Move <label>*, with a hint tooltip* Drag, or press for move options*.*
 
+*Changed 2026-09-27: the benchmark launcher's field hints moved behind click-mode info buttons
+(`app-info-tip trigger="click"`, §4b), each at the right end of its control in a `.gh-field-row`.
+Only warnings, advisories, the reason a control is disabled and the reason Start is unavailable stay
+on screen. The fieldsets lost their purpose lines, and the Evaluation Purpose & Compliance box was
+removed.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -491,6 +497,37 @@ that the paragraphs would bury the controls.
   not one added to the tooltip, so §4.2's second rule is not broken.
 - **Short text only.** One or two sentences. Content longer than a multiline tooltip holds, or
   content with interactive steps, belongs in a dialog.
+
+**Click mode: `trigger="click"`.** The default, `trigger="hover"`, is the tooltip above. Choose
+click mode for an explanation the operator asks for, in a form where hovering is not the norm — a
+launcher or a settings form whose hints moved off the page. It holds two or three sentences or a
+short list (a `<dl>` of options, say); a multi-step or interactive explanation still belongs in a
+`<dialog>`.
+
+```html
+<div class="gh-field-row">
+  <select id="profileSelect" class="gh-input" aria-describedby="profileHint">...</select>
+  <app-info-tip trigger="click" tipId="profileHint" subject="Scoring Profile">...</app-info-tip>
+</div>
+```
+
+- **The button toggles a popup** by `popovertarget="{tipId}-popup"`, not `commandfor`: it is
+  Baseline, and the popover polyfill implements it. The button adds `.gh-info-btn--click`
+  (pointer cursor, gold while open).
+- **The popup is `popover="auto"`**, non-modal and light-dismiss: Escape, a click outside it, or a
+  second click on the button closes it. It has **no close button, no `role`** (focus stays on the
+  button and nothing inside is interactive, so `dialog` would promise behavior it lacks) **and no
+  `interestfor`**. It is `.gh-info-popup`, right-aligned under the button, titled by the subject.
+- **The ids**: `{tipId}` is still the element holding the text, so the control's
+  `aria-describedby` contract above is unchanged; the popup is `{tipId}-popup`, labelled by its
+  title `{tipId}-title`, which is outside the description.
+- **`aria-expanded` is bound by hand** from the popup's `toggle` event, because the popover
+  polyfill does not set it. On open the component calls `refreshAnchorPositioning()`.
+- **`.gh-field-row`** (global) puts the (i) at the right end of a select, a picker or an input:
+  a flex row whose first child takes the remaining width. Do not wrap a checkbox label in it —
+  the label would stretch, and with it the checkbox's click target.
+- **Visible text stays visible.** A warning, an advisory, the reason a control is disabled, or a
+  note that changes the decision (a condition that currently holds) is not moved into the popup.
 
 ### 4c. Reorderable lists: `app-reorderable-list`
 
@@ -1060,6 +1097,9 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] A hint moved out of a paragraph is an `app-info-tip` (§4b) named *About {subject}*, with a
       document-unique `tipId`.
 - [ ] The control the hint describes keeps `aria-describedby` pointing at that `tipId`.
+- [ ] A click-mode tip (`trigger="click"`) follows its control in a `.gh-field-row`; its popup has
+      no `role`, no `interestfor` and no close button, and the button's `aria-expanded` follows it.
+- [ ] Warnings, advisories and the reason a control is disabled stay visible, never in a popup.
 - [ ] A long settings panel is a stack of non-exclusive `.gh-disclosure--section` elements (§5b),
       each summary holding text only, its read-out `aria-hidden`.
 - [ ] Section open state lives in `localStorage` behind `try/catch`, with a default when absent.

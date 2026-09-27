@@ -448,6 +448,57 @@ a:hover {
   }
 }
 
+/* The popup of `app-info-tip trigger="click"`: popover="auto", right-aligned under its
+   (i) button, which sits at the right end of the control it explains. */
+.gh-info-popup {
+  inset: auto;
+  margin: 0;
+  top: calc(anchor(bottom) + 6px);
+  right: anchor(right);
+  #{'position-try-fallbacks'}: flip-block, flip-inline;
+  #{'position-try'}: flip-block, flip-inline;
+  inline-size: max-content;
+  max-inline-size: min(22rem, calc(100vw - 32px));
+  background: rgba(20, 20, 20, 0.95);
+  color: #ddd;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  padding: 10px 14px;
+  font-size: 0.85em;
+  line-height: 1.5;
+  white-space: normal;
+  text-align: start;
+}
+
+.gh-info-popup-title {
+  font-family: "Cinzel", serif;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--primary-color);
+  margin-block-end: 4px;
+}
+
+.gh-info-popup-body {
+  dl {
+    margin: 0;
+  }
+
+  dt {
+    color: #fff;
+  }
+
+  dd {
+    margin: 0;
+  }
+
+  dd + dt {
+    margin-block-start: 6px;
+  }
+}
+
 /* Context window usage indicator tooltip */
 #cw-usage-tip {
   bottom: calc(anchor(top) + 8px);
@@ -482,6 +533,9 @@ a:hover {
   .gh-tooltip {
     max-width: calc(100vw - 40px);
     white-space: normal;
+  }
+  .gh-info-popup {
+    max-inline-size: calc(100vw - 40px);
   }
 }
 
@@ -2372,6 +2426,27 @@ app-table-pager {
   svg {
     width: 14px;
     height: 14px;
+  }
+}
+
+/* `app-info-tip trigger="click"`: the button toggles a popup rather than showing a tooltip. */
+.gh-info-btn--click {
+  cursor: pointer;
+
+  &[aria-expanded="true"] {
+    color: var(--primary-color);
+  }
+}
+
+/* A control followed by its (i) button; the control takes the remaining width. */
+.gh-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
 
