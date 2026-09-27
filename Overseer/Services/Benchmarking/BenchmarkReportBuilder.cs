@@ -158,7 +158,7 @@ public static class BenchmarkReportBuilder
             Figure("assessor",
                 a => a.AssessmentStatus == BenchmarkAssessmentStatus.Scored && a.AssessedByModelConfigurationId.HasValue,
                 a => a.AssessorBoardChars),
-            Figure("second opinion", a => a.SecondOpinionQualityScore.HasValue, a => a.SecondOpinionBoardChars),
+            Figure(BenchmarkRunFinalizer.IsPanelRun(run) ? "reference reader" : "second reader", a => a.SecondOpinionQualityScore.HasValue, a => a.SecondOpinionBoardChars),
             Figure("claim verifier", a => !string.IsNullOrWhiteSpace(a.ClaimVerificationJson), a => a.VerifierBoardChars)
         };
     }
@@ -178,7 +178,7 @@ public static class BenchmarkReportBuilder
         var second = figures[1];
         var verifier = figures[2];
         return $"Board delivered — assessor {Inv(assessor.Delivered)} of {Inv(assessor.Total)} graded, "
-            + $"second opinion {Inv(second.Delivered)} of {Inv(second.Total)}, "
+            + $"{second.Role} {Inv(second.Delivered)} of {Inv(second.Total)}, "
             + $"claim verifier {Inv(verifier.Delivered)} of {Inv(verifier.Total)}; "
             + "synthesis: yes; difficulty assessment: digest (no map).";
     }
@@ -1110,6 +1110,10 @@ public static class BenchmarkReportBuilder
         // gated on this, so a single-assessor run renders exactly as it always has.
         bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
 
+        // The non-scoring reader's name: the reference reader in a panel run, the second reader otherwise.
+        string readerName = isPanelRun ? "reference reader" : "second reader";
+        string readerTitle = isPanelRun ? "Reference Reader" : "Second Reader";
+
         // The answer's published score: the panel score in a panel run, member A's otherwise.
         double? IndexQualityOf(BenchmarkRunAnswer a) => BenchmarkScoring.IndexQuality(a, isPanelRun);
 
@@ -1289,12 +1293,12 @@ public static class BenchmarkReportBuilder
         else
         {
             sb.AppendLine(run.SecondOpinionAssessorModelConfigurationId.HasValue
-                ? $"- **Assessor Pairing:** candidate {run.TestedModelSnapshot.Provider}, assessor {run.AssessorModelSnapshot.Provider}, second opinion {run.SecondOpinionAssessorModelSnapshot?.Provider} — {distinctProviders} distinct provider(s)"
-                : $"- **Assessor Pairing:** candidate {run.TestedModelSnapshot.Provider}, assessor {run.AssessorModelSnapshot.Provider} — {distinctProviders} distinct provider(s), no second opinion");
+                ? $"- **Assessor Pairing:** candidate {run.TestedModelSnapshot.Provider}, assessor {run.AssessorModelSnapshot.Provider}, second reader {run.SecondOpinionAssessorModelSnapshot?.Provider} — {distinctProviders} distinct provider(s)"
+                : $"- **Assessor Pairing:** candidate {run.TestedModelSnapshot.Provider}, assessor {run.AssessorModelSnapshot.Provider} — {distinctProviders} distinct provider(s), no second reader");
             if (run.SecondOpinionAssessorModelConfigurationId.HasValue &&
                 string.Equals(run.AssessorModelSnapshot.Provider, run.SecondOpinionAssessorModelSnapshot?.Provider, StringComparison.OrdinalIgnoreCase))
             {
-                sb.AppendLine("  - *The assessor and the second opinion come from the same provider, so the second verdict is a weaker check than a cross-provider one: two models from one family share training data and failure modes, and can agree for reasons that have nothing to do with the answer.*");
+                sb.AppendLine("  - *The assessor and the second reader come from the same provider, so the second verdict is a weaker check than a cross-provider one: two models from one family share training data and failure modes, and can agree for reasons that have nothing to do with the answer.*");
             }
         }
         sb.AppendLine($"- **Candidate System Prompt SHA-256:** {run.CandidateSystemPromptSha256 ?? "not recorded"}");
@@ -1441,7 +1445,7 @@ public static class BenchmarkReportBuilder
 
         // Named whether or not one was used: "no second opinion" is itself a fact about how the
         // run was graded, and a reader comparing two runs needs to know which had one.
-        sb.AppendLine("### Second Opinion Assessor");
+        sb.AppendLine($"### {readerTitle}");
         if (run.SecondOpinionAssessorModelConfigurationId.HasValue)
         {
             sb.AppendLine($"- **Display Name:** {run.SecondOpinionAssessorModelSnapshot.Label()}");
@@ -1474,7 +1478,7 @@ public static class BenchmarkReportBuilder
         }
         else
         {
-            sb.AppendLine("- **None selected.** No answer in this run was re-graded by a second assessor.");
+            sb.AppendLine("- **None selected.** No answer in this run was read by a second reader.");
 
             // What was forgone, stated in the run's own numbers. The 2026-09-03 run produced
             // two critical errors with no second opinion selected — precisely the trigger the
@@ -1510,7 +1514,7 @@ public static class BenchmarkReportBuilder
             int wouldTotal = wouldByTrigger.Sum(g => g.Count());
             if (wouldTotal > 0)
             {
-                sb.AppendLine($"- **{wouldTotal} answer(s) would have been re-graded** under `Flagged` had a second opinion assessor been selected ({string.Join("; ", wouldByTrigger.Select(g => $"{g.Key}: {g.Count()}"))}).");
+                sb.AppendLine($"- **{wouldTotal} answer(s) would have been read by a second reader** under `Flagged`, had one been selected ({string.Join("; ", wouldByTrigger.Select(g => $"{g.Key}: {g.Count()}"))}).");
             }
 
             int answeredForForgone = answers.Count(a => a.Status == BenchmarkAnswerStatus.Ok);
@@ -1545,7 +1549,7 @@ public static class BenchmarkReportBuilder
                  (!string.IsNullOrWhiteSpace(run.SecondOpinionAssessorModelSnapshot?.ModelId) &&
                   string.Equals(run.SecondOpinionAssessorModelSnapshot?.ModelId, run.ClaimVerifierModelSnapshot?.ModelId, StringComparison.OrdinalIgnoreCase))))
             {
-                sb.AppendLine("  - *Same model as the second-opinion assessor. Under blind mode the second reader is given the verification findings, so a refuted claim and a harsh second opinion on the same answer are one finding, not two independent ones.*");
+                sb.AppendLine($"  - *Same model as the {readerName}. Under blind mode the {readerName} is given the verification findings, so a refuted claim and a harsh {readerName} verdict on the same answer are one finding, not two independent ones.*");
             }
         }
         else
@@ -2067,7 +2071,7 @@ public static class BenchmarkReportBuilder
 
             if (PredatesHarnessVersion(run, 15))
             {
-                sb.AppendLine("*Recorded before per-role cost tracking: the second opinion's spend is inside the assessor line, and the final synthesis is not counted at all.*");
+                sb.AppendLine("*Recorded before per-role cost tracking: the second reader's spend is inside the assessor line, and the final synthesis is not counted at all.*");
             }
 
             sb.AppendLine($"- **Candidate Tokens:** {Inv(run.TotalInputTokens, "N0")} in / {Inv(run.TotalOutputTokens, "N0")} out");
@@ -2078,7 +2082,7 @@ public static class BenchmarkReportBuilder
             }
             if (run.TotalSecondOpinionInputTokens > 0 || run.TotalSecondOpinionOutputTokens > 0 || run.SecondOpinionAssessorModelConfigurationId.HasValue)
             {
-                sb.AppendLine($"- **Second Opinion Tokens:** {HarnessCostTokenLine(run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens, run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens)}");
+                sb.AppendLine($"- **{readerTitle} Tokens:** {HarnessCostTokenLine(run.TotalSecondOpinionInputTokens, run.TotalSecondOpinionOutputTokens, run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens)}");
             }
             if (run.TotalClaimVerificationInputTokens > 0 || run.TotalClaimVerificationOutputTokens > 0 || run.ClaimVerifierModelConfigurationId.HasValue)
             {
@@ -2110,7 +2114,7 @@ public static class BenchmarkReportBuilder
             }
             if (run.TotalSecondOpinionDurationMs > 0)
             {
-                sb.AppendLine($"- **Second Opinion Time:** {FormatDuration(run.TotalSecondOpinionDurationMs)} ({Inv(run.TotalSecondOpinionDurationMs, "N0")} ms)");
+                sb.AppendLine($"- **{readerTitle} Time:** {FormatDuration(run.TotalSecondOpinionDurationMs)} ({Inv(run.TotalSecondOpinionDurationMs, "N0")} ms)");
             }
             if (run.TotalClaimVerificationDurationMs > 0)
             {
@@ -2231,7 +2235,7 @@ public static class BenchmarkReportBuilder
 
                 if (hasSecondOpinion && secondOpinionPricing != null)
                 {
-                    sb.AppendLine($"  - Second Opinion ({run.SecondOpinionAssessorModelSnapshot?.ModelId}): ${Inv(secondOpinionTotalCost, "F2")} ({CostParts(roleParts.SecondOpinion, secondOpinionPricing)})");
+                    sb.AppendLine($"  - {readerTitle} ({run.SecondOpinionAssessorModelSnapshot?.ModelId}): ${Inv(secondOpinionTotalCost, "F2")} ({CostParts(roleParts.SecondOpinion, secondOpinionPricing)})");
                 }
 
                 if (hasVerifier && verifierPricing != null)
@@ -2354,7 +2358,7 @@ public static class BenchmarkReportBuilder
                 }
                 if (hasSecondOpinion && secondOpinionPricing != null)
                 {
-                    provenanceParts.Add(FormatProv("second opinion", secondOpinionPricing));
+                    provenanceParts.Add(FormatProv(readerName, secondOpinionPricing));
                 }
                 if (hasVerifier && verifierPricing != null)
                 {
@@ -2374,7 +2378,7 @@ public static class BenchmarkReportBuilder
                 if (candidatePricing == null) missingRoles.Add("candidate");
                 if ((hasAssessor || hasSynthesis) && assessorPricing == null) missingRoles.Add("assessor");
                 if ((hasCoAssessor || hasCoSynthesis) && coAssessorPricing == null) missingRoles.Add("co-assessor");
-                if (hasSecondOpinion && secondOpinionPricing == null) missingRoles.Add("second opinion");
+                if (hasSecondOpinion && secondOpinionPricing == null) missingRoles.Add(readerName);
                 if (hasVerifier && verifierPricing == null) missingRoles.Add("claim verifier");
                 if (missingRoles.Count == 0) missingRoles.Add("participating models");
 
@@ -2412,13 +2416,13 @@ public static class BenchmarkReportBuilder
                 {
                     long excessMs = -measuredOverlapMs;
                     sb.AppendLine(
-                        $"*Measured overlap: the summed stage durations (candidate, assessment, second opinion, claim verification, synthesis) exceed the wall clock by " +
+                        $"*Measured overlap: the summed stage durations (candidate, assessment, {readerName}, claim verification, synthesis) exceed the wall clock by " +
                         $"{FormatDuration(excessMs)} ({Inv(excessMs, "N0")} ms) — grading stages ran concurrently with candidate answering.*");
                 }
                 else
                 {
                     sb.AppendLine(
-                        $"*Measured overlap: wall clock minus the summed stage durations (candidate, assessment, second opinion, claim verification, synthesis) leaves " +
+                        $"*Measured overlap: wall clock minus the summed stage durations (candidate, assessment, {readerName}, claim verification, synthesis) leaves " +
                         $"{FormatDuration(measuredOverlapMs)} ({Inv(measuredOverlapMs, "N0")} ms) unaccounted for by sequential stage time.*");
                 }
             }
@@ -2991,14 +2995,14 @@ public static class BenchmarkReportBuilder
             sb.AppendLine("### Assessor Agreement");
             sb.AppendLine($"- **Mode:** {agreementMode}{ModeGloss(agreementMode)}");
             sb.AppendLine($"- **Coverage:** {run.SecondOpinionGradedAnswerCount} of {answeredForAgreement} answered questions.");
-            sb.AppendLine($"- **Prompt Protocol:** {(run.SecondOpinionBlindUsed ? "Blind — the second assessor received the candidate's answer without seeing the first assessor's scores, comments, or critical error flag." : "Anchored — the second assessor saw the first assessor's verdict and comment.")}");
+            sb.AppendLine($"- **Prompt Protocol:** {(run.SecondOpinionBlindUsed ? "Blind — the second reader received the candidate's answer without seeing the assessor's scores, comments, or critical error flag." : "Anchored — the second reader saw the assessor's verdict and comment.")}");
             if (run.SecondOpinionBlindUsed)
             {
                 sb.AppendLine("  - *Note: Assessor agreement is reported for a **blind** second reader. Blind and anchored agreement figures are not comparable.*");
             }
             else
             {
-                sb.AppendLine("  - *Note: Anchored second opinions exhibit anchoring bias toward the first assessor's verdict and cannot be compared directly with blind second opinions.*");
+                sb.AppendLine("  - *Note: Anchored second readers exhibit anchoring bias toward the first assessor's verdict and cannot be compared directly with blind second readers.*");
             }
             sb.AppendLine(meanAbsDelta.HasValue
                 ? $"- **Mean absolute difference:** {Inv(meanAbsDelta.Value, "F1")} points."
@@ -3107,11 +3111,11 @@ public static class BenchmarkReportBuilder
                 {
                     firstError = firstError.Substring(0, 197) + "...";
                 }
-                sb.AppendLine($"- **Coverage:** 0 of {answeredForAgreement} answered questions. **{secondOpinionFailedAnswers.Count} answer(s) met a trigger but the second-opinion call failed, so grader agreement is not measured for this run.** First error: `{firstError}`.");
+                sb.AppendLine($"- **Coverage:** 0 of {answeredForAgreement} answered questions. **{secondOpinionFailedAnswers.Count} answer(s) met a trigger but the second-reader call failed, so grader agreement is not measured for this run.** First error: `{firstError}`.");
             }
             else
             {
-                sb.AppendLine($"- **Coverage:** 0 of {answeredForAgreement} answered questions. **No answer met a trigger, so no answer was graded twice and grader agreement is not measured for this run.** The second-opinion assessor ({assessorName}) made no calls and appears in the Harness Cost figures only as zero.");
+                sb.AppendLine($"- **Coverage:** 0 of {answeredForAgreement} answered questions. **No answer met a trigger, so no answer was graded twice and grader agreement is not measured for this run.** The second reader ({assessorName}) made no calls and appears in the Harness Cost figures only as zero.");
             }
 
             var scoredOkAnswers = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok && IndexQualityOf(a).HasValue).OrderBy(a => IndexQualityOf(a)!.Value).ToList();
@@ -3981,7 +3985,7 @@ public static class BenchmarkReportBuilder
                     string triggerPart = string.IsNullOrWhiteSpace(a.SecondOpinionTrigger)
                         ? string.Empty
                         : $" (trigger: {TriggerLabel(a.SecondOpinionTrigger)})";
-                    sb.AppendLine($"> - **Second Opinion ({a.SecondOpinionByModelSnapshot.Label()}):** {a.SecondOpinionQualityScore.Value} / 100, critical error {secondCritical} — {agreement} with the first verdict{triggerPart}. Advisory; the first verdict is what scored.");
+                    sb.AppendLine($"> - **Second Reader ({a.SecondOpinionByModelSnapshot.Label()}):** {a.SecondOpinionQualityScore.Value} / 100, critical error {secondCritical} — {agreement} with the first verdict{triggerPart}. Advisory; the first verdict is what scored.");
                 }
                 if (!string.IsNullOrWhiteSpace(a.ClaimVerificationError))
                 {
@@ -4250,7 +4254,7 @@ public static class BenchmarkReportBuilder
                 }
                 if (!string.IsNullOrWhiteSpace(sfa.SecondOpinionError))
                 {
-                    stageErrors.Add($"Second opinion failed: {sfa.SecondOpinionError.Trim()}");
+                    stageErrors.Add($"{(isPanelRun ? "Reference reader" : "Second reader")} failed: {sfa.SecondOpinionError.Trim()}");
                 }
                 sb.AppendLine($"- **Question {sfa.OrderIndex}:** {string.Join("; ", stageErrors)}");
             }
@@ -4371,7 +4375,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine();
             sb.AppendLine(isPanelRun
                 ? $"{disputed.Count} answer(s) carry a reference reader verdict flagged as materially different. Panel member A's verdict and the reader's are shown here, and § 3 has member B's beside them; the panel score is what scored, and the reader is advisory."
-                : $"{disputed.Count} answer(s) were re-graded by a second assessor, which reached a materially different verdict. The first verdict is what scored; these are flagged for a human to settle, and re-assessing from the run detail is the way to do it.");
+                : $"{disputed.Count} answer(s) were read by a second reader, which reached a materially different verdict. The assessor's verdict is what scored; these are flagged for a human to settle, and re-assessing from the run detail is the way to do it.");
             sb.AppendLine();
             foreach (var d in disputed)
             {

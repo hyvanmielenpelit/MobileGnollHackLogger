@@ -80,7 +80,7 @@ describe('BenchmarkCostPanelComponent', () => {
       expect(roleNames()).toEqual([
         'Model under test',
         'Assessor',
-        'Second opinion',
+        'Second reader',
         'Claim verifier',
         'Final synthesis'
       ]);
@@ -148,12 +148,21 @@ describe('BenchmarkCostPanelComponent', () => {
         'Model under test',
         'Assessor',
         'Co-assessor',
-        'Second opinion',
+        'Second reader',
         'Claim verifier',
         'Final synthesis',
         'Co-assessor synthesis'
       ]);
       expect(roleShares().reduce((running, share) => running + share, 0)).toBe(100);
+    });
+
+    it('should name the second-reader line the reference reader in a panel run', () => {
+      fillEveryRole();
+      setInputs({ coAssessor: 1.5, panel: true });
+      fixture.detectChanges();
+
+      expect(roleNames()).toContain('Reference reader');
+      expect(roleNames()).not.toContain('Second reader');
     });
 
     it('should show a zero co-assessor line, since zero is a measurement', () => {

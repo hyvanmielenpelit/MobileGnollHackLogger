@@ -1,0 +1,516 @@
+<dialog #graderGuideDialog class="gh-dialog benchmark-grader-guide-dialog" aria-labelledby="graderGuideTitle" closedby="any"
+        (click)="onDialogClick($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="graderGuideTitle">How the graders work</h3>
+        <p class="dialog-subtitle">Who scores, who checks, which models to use, and how to choose the settings.</p>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close grader guide" (click)="close()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    </div>
+
+    <div #graderGuideBody class="dialog-body grader-guide-body" tabindex="0" aria-labelledby="graderGuideTitle" role="region">
+      <p class="grader-guide-profile-note">{{ profileNote }}</p>
+
+      <!-- 1. The grading roles -->
+      <section class="grader-guide-section">
+        <h4 id="graderGuide-roles">1. The grading roles</h4>
+        <div class="grader-guide-table-wrap">
+          <table class="gh-table" aria-labelledby="graderGuide-roles">
+            <thead>
+              <tr>
+                <th scope="col">Role</th>
+                <th scope="col">Scores?</th>
+                <th scope="col">What it does</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Assessor</strong></td>
+                <td>Yes</td>
+                <td>Grades each answer against its rubric: four dimension levels (accuracy, completeness, conciseness, readability), a quality score and a critical-error flag. In a single-assessor run its verdict is the score</td>
+              </tr>
+              <tr>
+                <td><strong>Co-Assessor</strong></td>
+                <td>Yes</td>
+                <td>Makes the run a <strong>panel</strong>. Grades every answer exactly as the assessor does, blind to it; the published score is the mean of the two. Must come from a different provider than the assessor, and neither may be the model under test</td>
+              </tr>
+              <tr>
+                <td><strong>Second Reader</strong></td>
+                <td>No</td>
+                <td>Single-assessor runs. A different model grades a chosen set of answers again, independently, to check the assessor</td>
+              </tr>
+              <tr>
+                <td><strong>Reference Reader</strong></td>
+                <td>No</td>
+                <td>Panel runs. The same slot, reading every answer, as a third family's check on the panel</td>
+              </tr>
+              <tr>
+                <td><strong>Claim Verifier</strong></td>
+                <td>No</td>
+                <td>When a grader says a fact in an answer is wrong or unverifiable, looks it up in the game source and wiki and rules it true, false or undecided. Shows where a grader was wrong; changes no score</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The run's final summary (synthesis) is written by the assessor, and in a panel run by each member.
+          It uses the same model and needs no choice of its own.
+        </p>
+        <p>
+          Before 2026-09-27 this role was called the <strong>"second opinion"</strong>. Reports exported before then, and
+          the API and database field names, still use that name.
+        </p>
+      </section>
+
+      <!-- 2. The Second Reader -->
+      <!-- The 15-point disagreement threshold mirrors BenchmarkService.SecondOpinionDisagreementPoints. -->
+      <section class="grader-guide-section">
+        <h4 id="graderGuide-second-reader">2. The Second Reader (single-assessor runs)</h4>
+        <p>
+          <strong>What question it answers.</strong> <em>"Would an independent grader reach the same verdict on this
+          answer?"</em> Over a run: <em>"How reliable is our grading?"</em>
+        </p>
+        <p>
+          <strong>When it runs.</strong> In the grading pipeline of each answer, after that answer's assessment and claim
+          check. Which answers it reads is set by <strong>Coverage</strong> (section 3). Under <em>Flagged answers and
+          statistical outliers</em>, a final sweep runs after every answer is scored.
+        </p>
+        <p>
+          <strong>What it sees.</strong> The question, the rubric, the game board when the suite has one, the answer, a
+          summary of the answer's tool use, and the claim verifier's rulings on the answer's claims. With
+          <strong>Blind</strong> on (this profile: <span class="grader-guide-setting" data-setting="blind">{{ blind }}</span>), it does not see the assessor's score, levels, comments,
+          critical-error flag or accusations, so its verdict is a genuinely independent reading. With Blind
+          off, it sees the assessor's verdict and tends to agree with it.
+        </p>
+        <p>
+          <strong>What it checks.</strong> The whole verdict, graded from scratch on the same scale: the four levels, the
+          quality score, and whether the answer contains a critical error.
+        </p>
+        <p><strong>What it produces.</strong></p>
+        <ul>
+          <li>
+            <strong>Per answer:</strong> its own verdict, shown under the assessor's. When the two quality scores differ by
+            more than 15 points, or one finds a critical error and the other does not, the answer is marked
+            <strong>DISPUTED</strong> and listed in the report's <em>Disputed Assessments</em>.
+          </li>
+          <li>
+            <strong>Per run:</strong> <em>Assessor Agreement</em>: the mean absolute and signed difference between the two, the
+            critical-error splits, and how many answers disagree. What this figure means depends on coverage.
+          </li>
+        </ul>
+        <p>
+          <strong>How it affects grading.</strong> <strong>It does not change any score.</strong> The assessor's verdict always counts,
+          so the Intelligence Index, charts and item statistics are the same whatever the second reader says.
+          A DISPUTED mark is a task for you: open the answer, read both verdicts, and if the assessor was
+          wrong, use <strong>Re-assess Question</strong>. A re-assessment is what changes a score.
+        </p>
+        <p>
+          <strong>Cost and time.</strong> One extra grading call for each answer it reads. It runs inside the per-answer
+          pipeline, so it adds little wall time, except the outlier sweep's final stage.
+        </p>
+        <p>
+          <strong>Comparability.</strong> The second reader's model and settings, its coverage, Blind and the minimum
+          sample are part of the run's instrument. Changing them changes no score, but multi-run analysis and
+          Model Comparison count it as an instrument difference. Keep them the same across runs you intend to
+          compare.
+        </p>
+      </section>
+
+      <!-- 3. Choosing coverage -->
+      <section class="grader-guide-section">
+        <h4 id="graderGuide-coverage">3. Choosing coverage (single-assessor runs)</h4>
+        <p>
+          <strong>No coverage setting changes a score.</strong> Coverage decides how much of the grading is checked, and
+          what the agreement figure can tell you.
+        </p>
+        <div class="grader-guide-table-wrap">
+          <table class="gh-table" aria-labelledby="graderGuide-coverage">
+            <thead>
+              <tr>
+                <th scope="col">Coverage</th>
+                <th scope="col">Which answers are read</th>
+                <th scope="col">What the agreement figure means</th>
+                <th scope="col">Cost</th>
+                <th scope="col">Use it when</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Never</strong></td>
+                <td>None</td>
+                <td>No figure and no DISPUTED marks. The report states how many answers a trigger would have picked</td>
+                <td>None</td>
+                <td>Grading cost matters more than any check on the assessor</td>
+              </tr>
+              <tr>
+                <td><strong>Only flagged answers</strong></td>
+                <td>Answers that raised a flag (list below)</td>
+                <td>Agreement on doubtful verdicts only: it says nothing about grading reliability in general, and is empty when the candidate does well</td>
+                <td>Lowest</td>
+                <td>You want a cheap safety net on suspicious verdicts</td>
+              </tr>
+              <tr>
+                <td><strong>Flagged answers and statistical outliers</strong></td>
+                <td>Flagged, plus answers more than <span class="grader-guide-setting" data-setting="delta">{{ delta }}</span> points below the run's median score, found after scoring</td>
+                <td>As above</td>
+                <td>Low; adds a final stage</td>
+                <td>You suspect the assessor is harsh on a few answers without flagging them</td>
+              </tr>
+              <tr>
+                <td><strong>Flagged answers plus a sample</strong></td>
+                <td>Flagged, topped up to <span class="grader-guide-setting" data-setting="sample">{{ sample }}</span> answers with the lowest scores, the same answers every time for the same data</td>
+                <td>As above, plus a small low-score sample, so there is always a figure</td>
+                <td>Low, bounded</td>
+                <td>Routine and diagnostic runs; the Standard profile's default</td>
+              </tr>
+              <tr>
+                <td><strong>Every answer (double grading)</strong> — <em>Recommended</em></td>
+                <td>All</td>
+                <td><strong>Unbiased grading reliability</strong>, the figure to quote. Also catches a confidently wrong verdict that raised no flag, the error every trigger misses</td>
+                <td>One call per answer</td>
+                <td>Runs used to compare or select models</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- The flags and their order mirror BenchmarkService.ResolveSecondOpinionTrigger. -->
+        <p><strong>The flags.</strong> An answer is flagged, in this order, when:</p>
+        <ol class="grader-guide-flags">
+          <li>the assessor found a critical error;</li>
+          <li>the claim verifier refuted one of its claims (needs a claim verifier);</li>
+          <li>the assessor's comment describes a defect its verdict does not reflect;</li>
+          <li>accuracy was docked on the assessor's own knowledge ("not in rubric") or on a claim it could not verify;</li>
+          <li>accuracy was docked with no defect named;</li>
+          <li>an omission was docked as an accuracy error;</li>
+          <li>one dimension collapsed while the others are high, with no reason given;</li>
+          <li>unverifiable claims come with low accuracy;</li>
+          <li>the quality score is below <span class="grader-guide-setting" data-setting="threshold">{{ threshold }}</span>.</li>
+        </ol>
+      </section>
+
+      <!-- 4. Turning the second reader off -->
+      <section class="grader-guide-section">
+        <h4>4. Turning the second reader off</h4>
+        <p>
+          Choosing <strong>None</strong> (or Coverage <em>Never</em>) leaves every score, index and chart exactly as it would
+          otherwise be. You give up:
+        </p>
+        <ul>
+          <li>the DISPUTED marks;</li>
+          <li>the agreement figures;</li>
+          <li>the only check that catches an assessor that is confidently wrong.</li>
+        </ul>
+        <p>
+          The report still counts how many answers would have been read. A run without a second reader differs
+          from one with it in one instrument key.
+        </p>
+      </section>
+
+      <!-- 5. The Reference Reader -->
+      <section class="grader-guide-section">
+        <h4 id="graderGuide-reference-reader">5. The Reference Reader (panel runs)</h4>
+        <p>
+          <strong>Why it changes role.</strong> With a co-assessor, two graders already score every answer, and their
+          agreement is measured (<em>Panel Agreement</em>, <em>MEMBERS DISAGREE</em>). A second reader for agreement would
+          only repeat that.
+        </p>
+        <p>
+          <strong>What question it answers.</strong> <em>"Is the panel balanced between its members' own families?"</em> Models
+          tend to favor answers written by their own family. The panel's average cancels this only if both
+          members favor their own family equally. The reference reader comes from a third family and grades
+          every answer blind. <strong>Model Comparison</strong> then compares:
+        </p>
+        <ul>
+          <li>the gap between two candidate families under the panel;</li>
+          <li>the same gap under the reader (the <em>asymmetry estimate</em>).</li>
+        </ul>
+        <p>It also flags pairs of models that the panel and the reader rank in opposite order.</p>
+        <p>
+          <strong>What else it catches.</strong> An answer is marked DISPUTED when the reader is more than 15 points from
+          the panel score, or disagrees with a critical-error verdict both members share. That is the case of
+          both members being wrong the same way.
+        </p>
+        <p><strong>Coverage.</strong> Always every answer, blind. Not configurable.</p>
+        <p><strong>How it affects grading.</strong> <strong>None.</strong> The panel average is the score.</p>
+        <p>
+          <strong>Choosing the model.</strong> A family that is neither a panel member nor, ideally, a candidate. The same
+          model and settings on every panel run you intend to compare.
+        </p>
+        <p>
+          <strong>Leaving it out.</strong> Scores are unchanged. You lose the balance check, the reader's index,
+          reference-dependent pairs and its DISPUTED marks, and runs with and without it differ in one
+          instrument key.
+        </p>
+        <p>
+          <strong>Limits.</strong> The reader is assumed neutral between the members' families. If it spreads its scores
+          more narrowly than the panel, the balance check absorbs part of the real difference between
+          families. With few questions its intervals are wide, so read it over several suites.
+        </p>
+      </section>
+
+      <!-- 6. The Claim Verifier -->
+      <section class="grader-guide-section">
+        <h4 id="graderGuide-claim-verifier">6. The Claim Verifier</h4>
+        <p>
+          <strong>In one sentence.</strong> When a grader says a fact in an answer is wrong, or that it cannot be sure, the
+          claim verifier looks the fact up in the game's source code and wiki and rules on it: <strong>true</strong>
+          (<em>Supported</em>), <strong>false</strong> (<em>Refuted</em>) or <strong>undecided</strong> (<em>Indeterminate</em>).
+        </p>
+        <p><strong>What question it answers.</strong> <em>"Was the grader right about this fact?"</em></p>
+        <p>
+          <strong>When it runs.</strong> For each answer, right after the grading. It only runs when a grader raised
+          something it could check:
+        </p>
+        <ul>
+          <li>a claim it could not verify;</li>
+          <li>a passage it called a critical error;</li>
+          <li>a fact it used to dock accuracy that is not in the rubric;</li>
+          <li>a sentence it called false.</li>
+        </ul>
+        <p>
+          An answer with no such charge costs nothing. In a panel run it checks both members' charges in one
+          pass.
+        </p>
+        <p>
+          <strong>What it has.</strong> Read-only access to the same game knowledge the chat assistant uses: the GnollHack
+          and NetHack wikis, the knowledge base, the game source code, and the monster, item and artifact
+          data. It also sees the question, the rubric, the game board, the disputed passages and the
+          grader's reasoning. Every ruling must cite where it found the answer. A ruling without a valid
+          citation counts as undecided.
+        </p>
+        <p>
+          <strong>How it affects grading.</strong> <strong>It never changes a score, level or critical-error cap.</strong> What it does
+          is make grading mistakes visible:
+        </p>
+        <ul>
+          <li>
+            <strong>Marks on the answer.</strong>
+            <ul>
+              <li><em>Refuted claim</em>: the answer states something false. The second reader looks at these first.</li>
+              <li><em>Contested critical error</em>: the passage called an error is actually true.</li>
+              <li><em>Contested accuracy deduction</em>: a deduction rested on something false, or docked a true sentence.</li>
+            </ul>
+          </li>
+          <li>
+            <strong>A "what if" score</strong> (single-assessor runs). For a contested answer, the assessor grades once
+            more with the evidence in hand. The report shows how much the index <em>would</em> move. The published
+            score stays as it was.
+          </li>
+          <li>
+            <strong>Report lines</strong> that show how much of the score rests on deductions the evidence does not
+            support, and a <em>Claim Verification Yield</em> line with claims checked, found false, cost per claim,
+            and share of the run's cost.
+          </li>
+          <li><strong>The second or reference reader</strong> sees its rulings.</li>
+          <li>
+            <strong>Panel runs.</strong> An <strong>accusation audit</strong>: how often each member's charges turned out wrong, per
+            candidate family. It is a second check that the panel is fair to both families.
+          </li>
+          <li>
+            <strong>Suite Health.</strong> False facts in answers become suggested knowledge-base topics. True facts
+            missing from a rubric become suggested rubric additions.
+          </li>
+        </ul>
+        <p>
+          <strong>Why use it if it does not change scores?</strong> Because graders get facts wrong too, and without a
+          verifier nobody sees it. The score is quietly too low or too high, and nothing marks the answer. In
+          this benchmark's own history, a verifier-style check has shown that:
+        </p>
+        <ul>
+          <li>3 of 5 published critical errors on one series of runs were the grader's mistake;</li>
+          <li>one assessor called true facts "fabricated" on 7 of 18 answers;</li>
+          <li>another docked statements the source code confirms word for word.</li>
+        </ul>
+        <p>The verifier tells you:</p>
+        <ul>
+          <li><strong>which answers to re-assess</strong>. Re-assessing is what changes a score;</li>
+          <li><strong>which rubrics are missing facts</strong>;</li>
+          <li>
+            <strong>which facts the chat assistant gets wrong</strong>, the most useful input for improving the
+            assistant's knowledge base.
+          </li>
+        </ul>
+        <p>
+          <strong>Its limits.</strong> It is an AI model too, and it is sometimes wrong: dozens of wrong rulings are
+          recorded to date. Treat a ruling as strong evidence for your review, not as the final word.
+        </p>
+        <p>
+          <strong>Cost.</strong> It is usually the <strong>most expensive grading role</strong>, often 40–55&nbsp;% of a run's cost, even on
+          a low-cost model, because each check makes several lookups. A run whose graders raise few charges
+          spends little on it.
+        </p>
+        <p><strong>Use it when:</strong></p>
+        <ul class="grader-guide-use-it">
+          <li>the run will be analyzed, published, or used to choose a model;</li>
+          <li>its findings will feed chat or knowledge-base improvements;</li>
+          <li>it is a panel run (the accusation audit needs it);</li>
+          <li>the suite or its rubrics are new or were just rewritten.</li>
+        </ul>
+        <p><strong>Skip it when:</strong></p>
+        <ul class="grader-guide-skip-it">
+          <li>it is a quick smoke test, or a re-run that checks only speed, cost or a UI change;</li>
+          <li>the suite is large, the budget is tight, and only the score matters.</li>
+        </ul>
+        <p>
+          <strong>Leaving it out.</strong> Scores are unchanged. The report says <em>None selected</em> and counts the claims left
+          unchecked. You lose everything under <em>How it affects grading</em>, and a run without a verifier is
+          counted as a different instrument from one with it.
+        </p>
+      </section>
+
+      <!-- 7. Choosing grader models -->
+      <section class="grader-guide-section">
+        <h4 id="graderGuide-models">7. Choosing grader models</h4>
+        <p>
+          <strong>The principle.</strong> Where the score is decided, use a strong model, but not the provider's most
+          expensive one: grading has not needed the top tier, and it costs several times as much. Where the
+          role only checks, use a fast, low-cost model. Use <strong>medium</strong> thinking or reasoning effort
+          everywhere:
+        </p>
+        <ul>
+          <li>low effort makes careless graders;</li>
+          <li>
+            the highest levels (<em>xhigh</em>, <em>max</em>) have made grading much slower and caused broken, unreadable
+            verdicts, with no gain seen.
+          </li>
+        </ul>
+        <div class="grader-guide-table-wrap">
+          <table class="gh-table grader-guide-models-table" aria-labelledby="graderGuide-models">
+            <thead>
+              <tr>
+                <th scope="col">Role</th>
+                <th scope="col">Model</th>
+                <th scope="col">Not this</th>
+                <th scope="col">Thinking or reasoning effort</th>
+                <th scope="col">Also</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Assessor</strong></td>
+                <td><strong>Claude Opus</strong></td>
+                <td>Claude Fable, about 2.5 times the price</td>
+                <td>Medium</td>
+                <td>Never the model under test</td>
+              </tr>
+              <tr>
+                <td><strong>Co-Assessor</strong></td>
+                <td><strong>GPT Sol</strong></td>
+                <td>GPT Astra, about 5 times the price</td>
+                <td>Medium, the same as the assessor</td>
+                <td>Never the model under test: when the candidate is the newest GPT Sol, use the previous Sol version. A weaker member would make half of every score noisier</td>
+              </tr>
+              <tr>
+                <td><strong>Second Reader</strong></td>
+                <td><strong>Gemini Flash</strong></td>
+                <td>Flash-Lite, a lighter tier not tried for grading</td>
+                <td>Medium</td>
+                <td>If the candidate is a Gemini Flash model, use a different Flash version</td>
+              </tr>
+              <tr>
+                <td><strong>Reference Reader</strong></td>
+                <td><strong>Gemini Flash</strong></td>
+                <td>Flash-Lite</td>
+                <td>Medium</td>
+                <td>Google is the third family beside the two panel members. Use the same model on every run you compare</td>
+              </tr>
+              <tr>
+                <td><strong>Claim Verifier</strong></td>
+                <td><strong>Gemini Flash</strong></td>
+                <td>Flash-Lite</td>
+                <td>Medium; <strong>high</strong> if its rulings are often wrong; never low</td>
+                <td>It must use the lookup tools reliably</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          The final summary uses the assessor's model and effort. Use the current version of each family,
+          kept the same across the runs you compare. Changing a grader's version makes later runs a different
+          instrument.
+        </p>
+        <p>
+          <strong>Why these choices.</strong> In this benchmark the grader has moved the headline score more than the
+          difference between the models being tested: one set of runs scored about 70 under one assessor and
+          97 under a weaker one. A weaker assessor has also missed claims that needed checking, which left the
+          verifier nothing to do. Opus and Sol are strong enough for this; the tier above them costs far more
+          for no gain the benchmark has seen. The checking roles never score, so a cheaper model there changes
+          cost, not results. The verifier is the largest cost of a run, so a low-cost model there saves the
+          most.
+        </p>
+      </section>
+
+      <!-- 8. Recommended settings -->
+      <section class="grader-guide-section">
+        <h4 id="graderGuide-recommended">8. Recommended settings</h4>
+        <div class="grader-guide-table-wrap">
+          <table class="gh-table" aria-labelledby="graderGuide-recommended">
+            <thead>
+              <tr>
+                <th scope="col">Scenario</th>
+                <th scope="col">Graders</th>
+                <th scope="col">Second or Reference Reader</th>
+                <th scope="col">Coverage</th>
+                <th scope="col">Claim Verifier</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Standard: comparing or selecting models (panel)</strong></td>
+                <td>Assessor <strong>Claude Opus</strong> and Co-Assessor <strong>GPT Sol</strong>, both medium; neither is the model under test</td>
+                <td>Reference Reader <strong>Gemini Flash</strong>, medium, on <strong>every</strong> panel run, the same model each time</td>
+                <td>Fixed: every answer, blind</td>
+                <td><strong>Yes</strong>, Gemini Flash, medium</td>
+              </tr>
+              <tr>
+                <td>Single-assessor comparison or model selection</td>
+                <td>Assessor <strong>Claude Opus</strong>, medium</td>
+                <td>Second Reader <strong>Gemini Flash</strong>, medium</td>
+                <td><strong>Every answer</strong>, blind</td>
+                <td><strong>Yes</strong>, Gemini Flash</td>
+              </tr>
+              <tr>
+                <td>Single-assessor routine or diagnostic run (for example checking the chat after a fix)</td>
+                <td>As above</td>
+                <td>Second Reader</td>
+                <td>Flagged answers plus a sample</td>
+                <td>Yes, if the run's findings will be analyzed; otherwise optional</td>
+              </tr>
+              <tr>
+                <td>Quick smoke test, or checking a speed, cost or UI change</td>
+                <td>As above</td>
+                <td>Optional</td>
+                <td>Only flagged answers</td>
+                <td><strong>No</strong></td>
+              </tr>
+              <tr>
+                <td>Large suite on a tight budget, single-assessor</td>
+                <td>As above</td>
+                <td>Second Reader</td>
+                <td>Only flagged answers, or with outliers</td>
+                <td>Optional: it is the largest grading cost</td>
+              </tr>
+              <tr>
+                <td>Trying out a prospective new assessor</td>
+                <td>—</td>
+                <td>Not a reader job: use a <strong>Calibration</strong> or <em>Try another assessor</em> on a stored run</td>
+                <td>—</td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          In every scenario, keep all grader choices the same across the runs you intend to compare: each is
+          part of the run's instrument.
+        </p>
+      </section>
+    </div>
+  </div>
+</dialog>

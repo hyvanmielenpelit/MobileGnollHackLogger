@@ -205,7 +205,7 @@ describe('ComparisonSourcePickerComponent', () => {
         }),
         buildKey({
           name: 'SecondOpinionConfiguration',
-          label: 'Second opinion configuration',
+          label: 'Second reader configuration',
           kind: 'Instrument',
           valueKind: 'List',
           value: '(none)'

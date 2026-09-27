@@ -1742,7 +1742,7 @@ public class BenchmarkServiceTests
         })!;
 
         var attempted = logger.Messages
-            .Select(m => Regex.Match(m, @"answer (\d+): second-opinion assessor"))
+            .Select(m => Regex.Match(m, @"answer (\d+): second reader \d+ unusable"))
             .Where(m => m.Success)
             .Select(m => int.Parse(m.Groups[1].Value))
             .ToList();

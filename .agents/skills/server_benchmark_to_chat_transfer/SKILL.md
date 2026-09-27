@@ -17,6 +17,22 @@ description: >-
 
 # Benchmark to Chat Transfer: Turning Benchmark Findings into Chat Improvements
 
+> *Naming: the Second Reader (single-assessor runs) and Reference Reader (panel runs) were called
+> the "second opinion" before 2026-09-27. Database columns, API fields and code identifiers still
+> use `SecondOpinion*`, as do reports exported before that date and the history sections below.*
+>
+> The run report's headings changed with the name. `### Second Opinion Assessor` is now
+> `### Second Reader` or `### Reference Reader`; `**Second Opinion (model):**` is now
+> `**Second Reader (model):**`; `**Second Opinion Tokens:**` is now `**Second Reader Tokens:**` or
+> `**Reference Reader Tokens:**`. An analysis of a report exported before 2026-09-27 looks for the old
+> headings; re-exporting that run's report produces the new ones. In a multi-run analysis the
+> cost-by-role key is now *Second reader* or *Reference reader*; analyses stored earlier show *Second
+> opinion*, which the view maps to *Second reader* for display. The comparability key's display label
+> is now *Second reader configuration*; its name, `SecondOpinionConfiguration`, is unchanged. The per-run
+> model behaviour notes and the dated history and run tables below keep the old name. Which models and
+> effort each grading role should use is in `docs/overseer/ai-benchmark.md` § 3 *Choosing grader models
+> and effort*.
+
 This skill defines the mandatory protocol for translating empirical findings from the Overseer AI Intelligence Benchmark into concrete improvements to the production chat agent — higher answer quality, reduced latency, and lower token costs — without overfitting the assistant to the benchmark suite.
 
 ---
@@ -160,7 +176,7 @@ Before attributing any score, weakness, or behavior to a model's underlying inte
 - Per-question tool-call budget and tool-iteration budget (see § 7 rung 4)
 - Harness version and scoring method version
 - Scoring profile (weights, level scores, critical-error ceiling)
-- Assessor roster, second-opinion mode, and blind vs. anchored
+- Assessor roster, second-reader coverage, and blind vs. anchored
 - **Provider-side request settings** — prompt caching mode, service tier, thinking level, parallel tool calls. These are part of the measured configuration. The benchmark and live chat run under the same provider settings, always: a setting enabled for benchmark runs only makes every cost, latency and cache figure in a report a measurement of a configuration chat does not have, and a finding that does not transfer. Decided 2026-09-12 (run-40 round) when a benchmark-only Gemini explicit cache was considered and rejected on this ground.
 
 **The Golden Rule of Attribution**: A dimension may be depressed because the prompt instructed the model to answer that way. In run 11, Completeness (83.0) lagged Accuracy (97.7) by 14.7 points because the model obeyed the concise instruction *"Default to 2–5 sentences per response"*. Blaming the model for low completeness without checking `verboseMode` is an attribution error.
@@ -258,7 +274,7 @@ Two runs count as reproduction **only** when they match on all of:
 - The full `BenchmarkCandidatePromptOptions` record, and `parallelMode`
 - Harness version and scoring method version
 - Scoring profile — weights, level scores, critical-error ceiling
-- Assessor roster, second-opinion mode, and **blind vs. anchored**
+- Assessor roster, second-reader coverage, and **blind vs. anchored**
 - Suite item revisions **and** suite assessed difficulties (`SuiteItemRevisions`,
   `SuiteAssessedDifficulties`) — a rubric edit bumps the former without necessarily touching the
   latter, and Assess Difficulty moves the latter with **no** revision bump (H5, run 39): two runs can
@@ -296,7 +312,7 @@ Two runs count as reproduction **only** when they match on all of:
 > unchanged code**, which is exactly the controlled pair bar 2 above accepts in place of two
 > comparable runs — and what makes D5(a) cheap to run.
 
-> 🛑 **The assessor, second-opinion and claim-verifier model configurations are `Instrument`
+> 🛑 **The assessor, second-reader and claim-verifier model configurations are `Instrument`
 > comparability keys too** — `ClaimVerifierConfiguration` among them, in
 > `BenchmarkComparabilityKey.cs` — so a grader-roster change must happen **between series, never
 > between the two halves of a verification pair**, and must be recorded in § 11 like any other
@@ -316,7 +332,7 @@ Below this threshold, findings are logged in the **Model Behaviour Notes** (§ 1
 
 A run with a co-assessor (harness 40 on) is graded by a **two-family panel**: member A (the
 assessor) and member B (the co-assessor), from two providers, both grade every answer blind to each
-other, and the published score is their mean. The second opinion is the **reference reader** — it
+other, and the published score is their mean. The second reader's slot holds the **reference reader** — it
 grades every answer, blind, and never scores. The mechanics and the assumptions are in
 `docs/overseer/ai-benchmark.md` § 3 *The Two-Family Assessor Panel*. Weigh its findings by how many
 independent readers carry them:
@@ -498,7 +514,7 @@ Any implementation plan derived from a benchmark run must replicate this section
 - **Candidate**: model version, thinking level
 - **Prompt options**: the full BenchmarkCandidatePromptOptions record, plus parallelMode
 - **Grading regime**: harness version, scoring method version, scoring profile,
-  assessor roster, second-opinion mode, blind/anchored
+  assessor roster, second-reader coverage, blind/anchored
 - **Instrument SHAs**: commit SHA of Overseer/Services/ChatService.cs; of the
   Overseer/ToolGuides/ tree; HEAD of the knowledge base repository
 - **Quality**: dimensional scores and levels, Intelligence Index with CI, refuted claims

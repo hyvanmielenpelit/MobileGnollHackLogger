@@ -24,6 +24,14 @@ description: >-
 
 # Developer Runbook: Ordered Fix Steps and the Runs That Follow
 
+> *Naming: the Second Reader (single-assessor runs) and Reference Reader (panel runs) were called
+> the "second opinion" before 2026-09-27. Database columns, API fields and code identifiers still
+> use `SecondOpinion*`, as do reports exported before that date and the history sections below.*
+>
+> A run card or report written before that date reads *Second Opinion* and *Second Opinion Mode*
+> where the launcher now shows *Second Reader* or *Reference Reader* and *Coverage*; the settings
+> are the same.
+
 ## 1. Purpose and When It Binds
 
 A benchmark analysis round produces several documents, and each one that needs a human says so
@@ -256,7 +264,7 @@ after any card leaves a coherent result.
 ### Rules for a validating run (V)
 
 - **Same configuration as the motivating run** — suite, scoring profile, model under test,
-  assessor, co-assessor (or none), second-opinion assessor and mode, claim verifier, `Concise`
+  assessor, co-assessor (or none), second reader (or reference reader) and its coverage, claim verifier, `Concise`
   response style. The card
   lists each value and marks it *same as run <R>*.
 - **Predict the comparability tier before the run is made**, from what Part A moves, using the
@@ -266,14 +274,14 @@ after any card leaves a coherent result.
   |---|---|---|
   | Nothing the harness fingerprints | — | Tier A (Replicate) |
   | Only question parallelism, speed calibration or pricing | SpeedAndCost | Tier B |
-  | **Exactly one** of: `HarnessVersion`, `ToolGuidesSha256`, `CandidateSystemPromptSha256`, `KnowledgeBaseHeadSha`, `ScoringMethodVersion`, scoring profile, assessor / second-opinion / claim-verifier configuration, per-question budgets | Instrument | Tier C (compare, never pool) |
+  | **Exactly one** of: `HarnessVersion`, `ToolGuidesSha256`, `CandidateSystemPromptSha256`, `KnowledgeBaseHeadSha`, `ScoringMethodVersion`, scoring profile, assessor / second-reader / claim-verifier configuration, per-question budgets | Instrument | Tier C (compare, never pool) |
   | Two or more of those | Instrument | **NotComparable** |
   | A rubric import (item revisions), a difficulty re-assessment, a new board, another suite | Fundamental | **NotComparable** |
   | Model, thinking level, service tier, parallel mode, response style | Candidate | **NotComparable** |
 
   A co-assessor is part of `AssessorConfiguration`, not a key of its own: adding one, removing one
   or changing either panel member moves that one key. But a panel run forces its reference reader
-  to `All` and blind, so against a single-assessor run whose second opinion was not already the same
+  to `All` and blind, so against a single-assessor run whose second reader was not already the same
   reader in `All` mode, blind, `SecondOpinionConfiguration` moves too, and the pair is
   **NotComparable**.
 
@@ -299,7 +307,7 @@ difference between candidates, so a ranking is sound only when **everything but 
 identical**:
 
 - One suite at one set of item revisions and assessed difficulties, one board, one scoring
-  profile, one assessor or one panel, one second-opinion configuration, one claim verifier, `Concise` style —
+  profile, one assessor or one panel, one second-reader configuration, one claim verifier, `Concise` style —
   and **no Part A action between the first and the last run of the set**. Make the set *after*
   the round's fixes, never straddling them.
 - **Take candidates from what is configured, never from memory**: the System AI Configs with the
@@ -382,14 +390,15 @@ to stop if the projection is more than about twice the estimate.
 | Response Style | Concise (production default) | same |
 | Assessor | ... | same |
 | Co-Assessor (optional) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |
-| Second Opinion (optional) | ... or "None - no second opinion" | same |
-| Second Opinion Mode | <option label>, or "fixed at All (panel run)" when a co-assessor is set | same |
+| Second Reader (optional) | ... or "None — no second reader" | same |
+| Reference Reader (optional, panel run) | ... or "None — no reference reader" | same |
+| Coverage | <option label>; in a panel run the fixed line "Every answer, blind — a third reading. Fixed in a panel run." | same |
 | Claim Verifier (optional) | ... or "None - no claim verification" | same |
 | Number of Runs | 1 | |
 
 - Not in the launcher, and must also match: thinking level, service tier, reasoning mode and
   parallel mode (from the System AI Config behind each dropdown entry: check the badges);
-  Blind Second Opinion (forced on in a panel run) and max parallel questions (from the scoring profile: Admin ->
+  Blind Second Reader (forced on in a panel run) and max parallel questions (from the scoring profile: Admin ->
   AI Benchmark -> Scoring Profiles). Do not edit either between the runs of this round.
 - Predicted comparability with run <R>: <tier>, because <keys> move. <What that means for
   reading the result.>
@@ -411,12 +420,16 @@ Rules for writing a card:
   diff. Field labels and option labels are verbatim (§ 8).
 - **The `Detailed` response style is never proposed for a V or M run** — its own label says it is
   not comparable with previous runs. It appears only as the isolated variable of a C pair.
-- **`Second Opinion Mode` does nothing without a second-opinion assessor**; a card that sets one
-  sets the other.
+- **`Coverage` does nothing without a second reader**; a card that sets one sets the other.
+- **The reader field's label follows the Co-Assessor.** The launcher shows one field, labeled
+  `Second Reader` in a single-assessor run and `Reference Reader` in a panel run; a card lists the
+  row that matches its run, not both.
 - **A card that sets a `Co-Assessor` follows § 4 *Panel roster***, says the run is a panel run,
-  and expects the `Second Opinion Mode` selector to show All, disabled, its hint saying the mode is
-  fixed: the server runs the second opinion as the reference reader, grading every answer, blind. A card for a
-  single-assessor run still lists the field, as "None - single assessor".
+  and expects no Coverage selector, only the fixed line "Every answer, blind — a third reading.
+  Fixed in a panel run.": the server runs the reference reader over every answer, blind. A card
+  for a single-assessor run still lists the Co-Assessor field, as "None - single assessor".
+- **Choosing the grader models and effort** follows `docs/overseer/ai-benchmark.md` § 3 *Choosing
+  grader models and effort*; a card names the configured entries as the dropdowns print them.
 - **Name each run R1, R2, …** and use those names everywhere — in Part A's `Needs`, in the chat
   message, and in the prompt of § 6 — so that "the baseline run" never has to be guessed.
 
@@ -487,7 +500,7 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 |---|---|
 | Admin tabs; benchmark sub-tabs `Run Benchmark`, `Run History`, `Multi-Run Analysis`, `Manage Suites`, `Scoring Profiles`, `Model Comparison` | `Overseer/ClientApp/src/app/admin/admin.component.ts`, `admin/benchmark/benchmark.component.html` |
 | Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor` field and its panel warnings (field order verified on 2026-09-27: Model Under Test first, above the three fieldsets) | `admin/benchmark/benchmark.component.html` |
-| Second Opinion Mode option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
+| Coverage option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
 | Launcher refusals and their messages | `Overseer/Services/Benchmarking/BenchmarkRunLauncher.cs` |
 | Delivery-check failure messages | `Overseer/Services/Benchmarking/BenchmarkCandidateRequestProbe.cs`, `BenchmarkGradingRequestProbe.cs` |
 | Comparability tiers, key categories and their members | `Overseer/Services/Benchmarking/BenchmarkComparabilityKey.cs` |

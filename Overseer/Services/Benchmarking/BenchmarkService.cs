@@ -79,7 +79,7 @@ public class BenchmarkService
 
     /// <summary>Why a trial re-assessment over an existing second opinion was refused on a panel run.</summary>
     public const string PanelTrialReplaceRefusedMessage =
-        "This is a panel run. The existing second opinion is the reference reader's verdict and cannot be replaced by a trial.";
+        "This is a panel run. The existing reference reader verdict cannot be replaced by a trial.";
 
     /// <summary>
     /// What an assessor calibration may compare against: member A's verdicts, member B's, or the
@@ -303,7 +303,7 @@ public class BenchmarkService
     /// <summary>The run's second-opinion assessor, with the settings it was launched with.</summary>
     internal Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveSecondOpinionAsync(
         ApplicationDbContext db, BenchmarkRun run, CancellationToken ct)
-        => ResolveGraderAsync(db, run.SecondOpinionAssessorModelConfigurationId, run.SecondOpinionAssessorModelSnapshot, "The second-opinion assessor configuration was not found.", ct);
+        => ResolveGraderAsync(db, run.SecondOpinionAssessorModelConfigurationId, run.SecondOpinionAssessorModelSnapshot, BenchmarkRunFinalizer.IsPanelRun(run) ? "The reference reader configuration was not found." : "The second reader configuration was not found.", ct);
 
     /// <summary>The run's co-assessor (panel member B), with the settings it was launched with.</summary>
     internal Task<(SystemAiApiConfiguration? Config, string? ApiKey, string? Error)> ResolveCoAssessorAsync(
@@ -3153,7 +3153,7 @@ public class BenchmarkService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex,
-                    "Benchmark run {RunId} answer {OrderIndex}: outlier sweep second opinion failed. The first verdict stands.",
+                    "Benchmark run {RunId} answer {OrderIndex}: outlier sweep second reader failed. The first verdict stands.",
                     run.Id, answer.OrderIndex);
             }
         }
@@ -3264,7 +3264,7 @@ public class BenchmarkService
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex,
-                        "Benchmark run {RunId} answer {OrderIndex}: sample top-up second opinion failed. The first verdict stands.",
+                        "Benchmark run {RunId} answer {OrderIndex}: sample top-up second reader failed. The first verdict stands.",
                         run.Id, selected.OrderIndex);
                 }
                 finally
@@ -5692,7 +5692,7 @@ public class BenchmarkService
             // Disabled or key-less since the run started. Skip: the first verdict stands, and
             // grading with the model that produced it would not be a second opinion.
             _logger.LogWarning(
-                "Benchmark run {RunId} answer {OrderIndex}: second-opinion assessor {ConfigId} unusable ({Error}). The first verdict stands.",
+                "Benchmark run {RunId} answer {OrderIndex}: second reader {ConfigId} unusable ({Error}). The first verdict stands.",
                 run.Id, answer.OrderIndex, run.SecondOpinionAssessorModelConfigurationId.Value, resolveError);
             return;
         }
@@ -5705,7 +5705,7 @@ public class BenchmarkService
         {
             answer.SecondOpinionError = BenchmarkAssessmentFailure.Truncate(ex.Message);
             _logger.LogWarning(
-                "Benchmark run {RunId} answer {OrderIndex}: second opinion unavailable ({Error}). The first verdict stands.",
+                "Benchmark run {RunId} answer {OrderIndex}: second reader unavailable ({Error}). The first verdict stands.",
                 run.Id, answer.OrderIndex, ex.Message);
             await db.SaveChangesAsync(CancellationToken.None);
             return;
@@ -5810,7 +5810,7 @@ public class BenchmarkService
             string? error = null;
             try
             {
-                VerifyPerQuestionGradingDelivery(runRequest, "second opinion", run, answer.OrderIndex);
+                VerifyPerQuestionGradingDelivery(runRequest, "second reader", run, answer.OrderIndex);
                 await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runRequest.Budget, result, opinionCts.Token))
                 {
                     if (evt.Type == "error") error = evt.Data?.ToString();
@@ -5818,7 +5818,7 @@ public class BenchmarkService
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && opinionCts.IsCancellationRequested)
             {
-                error = $"Second opinion timeout exceeded ({timeoutSeconds} s).";
+                error = $"Second reader timeout exceeded ({timeoutSeconds} s).";
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception ex) { error = ex.Message; }
@@ -5842,7 +5842,7 @@ public class BenchmarkService
         if ((!parseResult.Success || parseResult.Result == null) && string.IsNullOrWhiteSpace(terminalError) && retryEnabled)
         {
             _logger.LogWarning(
-                "Benchmark run {RunId} answer {OrderIndex}: second opinion output failed JSON parsing. Retrying once...",
+                "Benchmark run {RunId} answer {OrderIndex}: second reader output failed JSON parsing. Retrying once...",
                 run.Id, answer.OrderIndex);
             runRequest.SeedHistory.Add(new { role = "assistant", content = runResult.FinalText ?? string.Empty });
             runRequest.SeedHistory.Add(new { role = "user", content = $"Your previous response was not valid JSON or could not be parsed: {parseResult.ErrorMessage}. Please output ONLY the raw JSON object according to the schema without any markdown wrapping, code fences, or extra text." });
@@ -5877,7 +5877,7 @@ public class BenchmarkService
             string? failure = parseResult.ErrorMessage ?? terminalError;
             answer.SecondOpinionError = BenchmarkAssessmentFailure.Truncate(AppendSecondOpinionRawHead(failure, lastFinalText));
             _logger.LogWarning(
-                "Benchmark run {RunId} answer {OrderIndex}: second opinion unavailable ({Error}). The first verdict stands.",
+                "Benchmark run {RunId} answer {OrderIndex}: second reader unavailable ({Error}). The first verdict stands.",
                 run.Id, answer.OrderIndex, failure);
             await db.SaveChangesAsync(CancellationToken.None);
             return;
@@ -5940,7 +5940,7 @@ public class BenchmarkService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to record usage for second-opinion assessor call.");
+            _logger.LogWarning(ex, "Failed to record usage for second reader call.");
         }
     }
 

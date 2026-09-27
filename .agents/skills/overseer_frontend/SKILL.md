@@ -247,6 +247,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     a suite card, with a nested `#replaceConfirmDialog` when the suite already has a snapshot.
     Delete Snapshot lives in the snapshot viewer's Delete tab (`#deleteConfirmDialog` in
     `snapshot-viewer.component.html`).
+  - `#graderGuideDialog` (`app-benchmark-grader-guide`, `grader-guide/`): *How the graders work* —
+    the grading roles, second-reader coverage, the reference reader, the claim verifier, choosing
+    grader models and the recommended settings. Opened from the launcher's Grading group and from
+    the scoring profile form (a nested modal over the profile dialog); `open(section?)` scrolls to a
+    section, and a `profile` input fills in that profile's trigger values.
 
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
   Run History → Cross-model comparison, step 1)** — single runs and analysis groups on two
@@ -535,7 +540,7 @@ When configuring or editing AI models in `AiModelFormComponent` (used across `/m
 
 In the AI Benchmark tab (`/admin` -> AI Benchmark), the settings in the **New Benchmark Run** card (`.setup-card`) must be remembered across page reloads and tab navigations using `localStorage` under the key `'overseer_admin_benchmark_run_settings'`.
 
-The card opens with a primary **Model Under Test** field (`.setup-primary-field`, a gold-accented panel outside every fieldset), followed by three fieldsets on a container-query grid (the `setup` container: one column below 50 rem, two up to 90 rem, three above): *Test Setup* holds Benchmark Suite, Scoring Profile and Response Style; *Grading* holds Assessor, Co-Assessor, Second Opinion (with its dependent Second Opinion Mode) and Claim Verifier; *Execution* holds Number of Runs and the completion signals. Its five pickers are `app-model-picker`s named by `bm<X>ModelLabel` and described by `bm<X>ModelHint`. Each field's hint lives in a click-mode `app-info-tip` (`frontend_ui_controls` § 4b) at the right end of its control, keyed by the old hint id (`suiteHint`, `profileHint`, `bmTestedModelHint`, …), so every `aria-describedby` still resolves; only warnings, advisories, disabled-control reasons and the Start hint stay on screen. The field ids and the picker marker classes (`.tested-model-selector` and the like) are stable, and the specs rely on them.
+The card opens with a primary **Model Under Test** field (`.setup-primary-field`, a gold-accented panel outside every fieldset), followed by three fieldsets on a container-query grid (the `setup` container: one column below 50 rem, two up to 90 rem, three above): *Test Setup* holds Benchmark Suite, Scoring Profile and Response Style; *Grading* holds Assessor, Co-Assessor, Second Reader or Reference Reader (with its dependent Coverage) and Claim Verifier, plus the *How the graders work* button that opens the grader guide; *Execution* holds Number of Runs and the completion signals. Its five pickers are `app-model-picker`s named by `bm<X>ModelLabel` and described by `bm<X>ModelHint`. Each field's hint lives in a click-mode `app-info-tip` (`frontend_ui_controls` § 4b) at the right end of its control, keyed by the old hint id (`suiteHint`, `profileHint`, `bmTestedModelHint`, …), so every `aria-describedby` still resolves; only warnings, advisories, disabled-control reasons and the Start hint stay on screen. The field ids and the picker marker classes (`.tested-model-selector` and the like) are stable, and the specs rely on them.
 
 ### 1. Stored Setting Fields (`BenchmarkRunSettings`)
 Whenever modifying or extending the benchmark setup form, ensure the following fields are preserved in `BenchmarkRunSettings`:
@@ -544,8 +549,8 @@ Whenever modifying or extending the benchmark setup form, ensure the following f
 - **`testedConfigId`**: Target/candidate model configuration ID.
 - **`assessorConfigId`**: Evaluator/assessor model configuration ID.
 - **`coAssessorConfigId`**: Co-assessor (panel member B) model configuration ID (or `null` for a single-assessor run). Restored to `null` when the configuration no longer qualifies.
-- **`secondOpinionConfigId`**: Second opinion model configuration ID (or `null`).
-- **`secondOpinionMode`**: Explicit second opinion mode override (or `null` to follow the profile default).
+- **`secondOpinionConfigId`**: Second reader (reference reader in a panel run) model configuration ID (or `null`).
+- **`secondOpinionMode`**: Explicit second-reader coverage override (or `null` to follow the profile default).
 - **`claimVerifierConfigId`**: Claim verifier model configuration ID (or `null`).
 - **`verboseMode`**: Candidate response style (`false` for concise / production default, `true` for detailed / diagnostic).
 - **`runCount`**: Number of runs (`1` for a single run, or `≥ 2` for a replicate multi-run series).

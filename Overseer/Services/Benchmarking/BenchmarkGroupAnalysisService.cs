@@ -31,7 +31,8 @@ public class BenchmarkGroupAnalysisService
 
     public const string CandidateRole = "Candidate";
     public const string AssessorRole = "Assessor";
-    public const string SecondOpinionRole = "Second opinion";
+    public const string SecondOpinionRole = "Second reader";
+    public const string ReferenceReaderRole = "Reference reader";
     public const string ClaimVerifierRole = "Claim verifier";
     public const string SynthesisRole = "Final synthesis";
     public const string CoAssessorRole = "Co-assessor";
@@ -358,7 +359,7 @@ public class BenchmarkGroupAnalysisService
                 run.TotalSecondOpinionCacheReadTokens, run.TotalSecondOpinionCacheCreationTokens);
             if (hasSecondOpinion && pricing.SecondOpinion != null)
             {
-                byRole[SecondOpinionRole] = (double)roleCosts.SecondOpinion;
+                byRole[BenchmarkRunFinalizer.IsPanelRun(run) ? ReferenceReaderRole : SecondOpinionRole] = (double)roleCosts.SecondOpinion;
             }
 
             bool hasVerifier = ModelPricingService.RoleHasTokens(

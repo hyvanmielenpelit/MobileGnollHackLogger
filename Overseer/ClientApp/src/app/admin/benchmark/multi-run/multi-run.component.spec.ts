@@ -832,6 +832,34 @@ describe('MultiRunComponent', () => {
     expect(component.widestCostRole?.role).toBe('claimVerifier');
   });
 
+  it('should show a stored analysis\'s legacy Second opinion cost role as Second reader', () => {
+    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+      result: {
+        ...(buildAnalysis().result as object),
+        cost: {
+          runCount: 2,
+          totalCost: 3,
+          meanCostPerRun: 1.5,
+          costStandardDeviation: 0.1,
+          totalCostByRole: { 'Second opinion': 1, 'Reference reader': 0.5, Assessor: 1.5 },
+          meanCostByRole: { 'Second opinion': 0.5, 'Reference reader': 0.25, Assessor: 0.75 },
+          perRunTotals: [1.4, 1.6]
+        }
+      }
+    })));
+    open();
+    component.openGroup(component.groups[0]);
+    fixture.detectChanges();
+
+    const roleHeaders = Array.from(fixture.nativeElement.querySelectorAll('th[scope="row"]') as NodeListOf<HTMLElement>)
+      .map(th => (th.textContent ?? '').trim());
+    expect(roleHeaders).toContain('Second reader');
+    expect(roleHeaders).toContain('Reference reader');
+    expect(roleHeaders).not.toContain('Second opinion');
+    expect(component.roleLabel('Second opinion')).toBe('Second reader');
+    expect(component.roleLabel('Reference reader')).toBe('Reference reader');
+  });
+
   it('should name the questions asked beside the cost per question', () => {
     const base = buildAnalysis().result as { cost: Record<string, unknown> };
     serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({

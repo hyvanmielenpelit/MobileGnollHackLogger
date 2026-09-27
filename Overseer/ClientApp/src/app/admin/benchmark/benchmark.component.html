@@ -327,6 +327,10 @@
             <fieldset class="gh-fieldset setup-group setup-group-grading">
               <legend>Grading</legend>
 
+              <div class="grader-guide-row">
+                <button type="button" class="btn-ghost grader-guide-btn" (click)="openGraderGuide('roles')">How the graders work</button>
+              </div>
+
               <div class="form-group">
                 <label id="bmAssessorModelLabel">Assessor</label>
                 <div class="gh-field-row">
@@ -336,7 +340,12 @@
                                     [options]="benchmarkPickerOptions" [selectedKey]="assessorConfigId"
                                     (selectionChange)="selectAssessorModel($event.model)"></app-model-picker>
                   <app-info-tip trigger="click" tipId="bmAssessorModelHint" subject="Assessor">
-                    Grades every answer against its rubric on four BARS dimensions and writes the synthesis.
+                    <p>Grades every answer against its rubric on four dimensions and writes the run's summary. In a
+                      single-assessor run its verdict is the score; in a panel it is half of it.</p>
+                    <p><strong>Recommended:</strong> Claude Opus at medium effort. Not Claude Fable: it costs 2.5 times
+                      as much, and grading does not need it. Avoid the highest effort levels: they are slower and fail
+                      more often, with no gain seen in grading.</p>
+                    <p>More: How the graders work.</p>
                   </app-info-tip>
                 </div>
 
@@ -365,7 +374,13 @@
                                     [options]="benchmarkPickerOptions" [selectedKey]="coAssessorConfigId"
                                     (selectionChange)="selectCoAssessorModel($event.model)"></app-model-picker>
                   <app-info-tip trigger="click" tipId="bmCoAssessorModelHint" subject="Co-Assessor">
-                    Makes a two-member panel: grades beside the assessor, and the score is the mean of the two.
+                    <p>Makes a two-member panel: grades every answer beside the assessor, blind to it, and the score
+                      is the mean of the two. Balancing two model families is fairer when candidates from both are
+                      compared.</p>
+                    <p><strong>Recommended:</strong> GPT Sol at medium effort, the OpenAI peer of the assessor. Not GPT
+                      Astra: it costs 5 times as much. Never the model under test itself: when the candidate is the
+                      newest GPT Sol, use the previous Sol version.</p>
+                    <p>More: How the graders work.</p>
                   </app-info-tip>
                 </div>
 
@@ -401,16 +416,31 @@
                    the assessor above. Selected here like every other model, never in configuration:
                    a System AI Config is a database row an administrator manages in this UI. -->
               <div class="form-group">
-                <label id="bmSecondOpinionModelLabel">Second Opinion{{ isPanelLaunch ? ' (reference reader)' : '' }} <span class="field-optional">Optional</span></label>
+                <label id="bmSecondOpinionModelLabel">{{ isPanelLaunch ? 'Reference Reader' : 'Second Reader' }} <span class="field-optional">Optional</span></label>
                 <div class="gh-field-row">
                   <app-model-picker class="second-opinion-model-selector"
                                     labelledBy="bmSecondOpinionModelLabel"
                                     [describedBy]="showSecondOpinionSameModelNote ? 'bmSecondOpinionModelHint bmSecondOpinionSameModelNote' : 'bmSecondOpinionModelHint'"
-                                    noneLabel="None — no second opinion" [showPrice]="true"
+                                    [noneLabel]="isPanelLaunch ? 'None — no reference reader' : 'None — no second reader'" [showPrice]="true"
                                     [options]="benchmarkPickerOptions" [selectedKey]="secondOpinionConfigId"
                                     (selectionChange)="selectSecondOpinionModel($event.model)"></app-model-picker>
-                  <app-info-tip trigger="click" tipId="bmSecondOpinionModelHint" subject="Second Opinion">
-                    An independent second verdict; disagreements are flagged, never scored.
+                  <app-info-tip trigger="click" tipId="bmSecondOpinionModelHint" [subject]="isPanelLaunch ? 'Reference Reader' : 'Second Reader'">
+                    @if (isPanelLaunch) {
+                      <p>A third model grades every answer blind and never scores. It checks that the panel is
+                        balanced between its members' own families (in Model Comparison), and marks answers where
+                        both members may be wrong the same way.</p>
+                      <p><strong>Recommended:</strong> Gemini Flash (not Flash-Lite) at medium effort, the third family
+                        beside the two members. Use the same model on every run you compare.</p>
+                    } @else {
+                      <p>A second model grades answers again, independently and blind to the assessor's verdict. It
+                        never changes a score: when the two differ by more than 15 points or on a critical error, the
+                        answer is marked DISPUTED for you to review, and the run reports how often they agree.
+                        Coverage below sets which answers it reads.</p>
+                      <p><strong>Recommended:</strong> Gemini Flash (not Flash-Lite) at medium effort, a provider
+                        different from the assessor. If the candidate is itself a Gemini Flash model, use a different
+                        Flash version.</p>
+                    }
+                    <p>More: How the graders work.</p>
                   </app-info-tip>
                 </div>
                 @if (showSecondOpinionSameModelNote) {
@@ -425,42 +455,50 @@
                   disabled with a reason rather than left looking configured. Entries are in
                   coverage order and labelled for what they do, not for their enum names.
                 -->
-                <div class="form-group dependent-field">
-                  <label for="secondOpinionModeSelect">Second Opinion Mode</label>
-                  <div class="gh-field-row">
-                    <select id="secondOpinionModeSelect" class="gh-input"
-                            [(ngModel)]="secondOpinionMode"
-                            [disabled]="secondOpinionModeDisabled"
-                            [attr.aria-describedby]="secondOpinionModeDisabled ? 'secondOpinionModeTip secondOpinionModeHint' : 'secondOpinionModeTip'">
-                      @for (option of secondOpinionModeOptions; track option.value) {
-                        <option [ngValue]="option.value">{{ option.label }}</option>
-                      }
-                    </select>
-                    <app-info-tip trigger="click" tipId="secondOpinionModeTip" subject="Second Opinion Mode">
-                      <dl>
-                        @for (option of secondOpinionModeOptions; track option.value) {
-                          <div>
-                            <dt>
-                              <span class="gh-info-term">{{ option.label }}</span>
-                              @if (option.recommended) {
-                                <span class="gh-info-badge">Recommended</span>
-                              }
-                            </dt>
-                            <dd>{{ option.hint }}</dd>
-                          </div>
-                        }
-                      </dl>
-                    </app-info-tip>
+                @if (isPanelLaunch) {
+                  <div class="form-group dependent-field second-opinion-mode-fixed" role="group" aria-labelledby="secondOpinionModeFixedLabel">
+                    <span id="secondOpinionModeFixedLabel" class="field-caption">Coverage</span>
+                    <span class="second-opinion-mode-fixed-value">Every answer, blind — a third reading. Fixed in a panel run.</span>
                   </div>
-                  @if (secondOpinionModeDisabled) {
-                    <span id="secondOpinionModeHint" class="form-hint">{{ secondOpinionModeHint }}</span>
-                  }
-                </div>
+                } @else {
+                  <div class="form-group dependent-field">
+                    <label for="secondOpinionModeSelect">Coverage</label>
+                    <div class="gh-field-row">
+                      <select id="secondOpinionModeSelect" class="gh-input"
+                              [(ngModel)]="secondOpinionMode"
+                              [disabled]="secondOpinionModeDisabled"
+                              [attr.aria-describedby]="secondOpinionModeDisabled ? 'secondOpinionModeTip secondOpinionModeHint' : 'secondOpinionModeTip'">
+                        @for (option of secondOpinionModeOptions; track option.value) {
+                          <option [ngValue]="option.value">{{ option.label }}</option>
+                        }
+                      </select>
+                      <app-info-tip trigger="click" tipId="secondOpinionModeTip" subject="Coverage">
+                        <dl>
+                          @for (option of secondOpinionModeOptions; track option.value) {
+                            <div>
+                              <dt>
+                                <span class="gh-info-term">{{ option.label }}</span>
+                                @if (option.recommended) {
+                                  <span class="gh-info-badge">Recommended</span>
+                                }
+                              </dt>
+                              <dd>{{ option.hint }}</dd>
+                            </div>
+                          }
+                        </dl>
+                        <p class="coverage-tip-footnote">No coverage setting changes a score. More: How the graders work.</p>
+                      </app-info-tip>
+                    </div>
+                    @if (secondOpinionModeDisabled) {
+                      <span id="secondOpinionModeHint" class="form-hint">{{ secondOpinionModeHint }}</span>
+                    }
+                  </div>
+                }
 
                 @if (showAssessorPairingAdvisory) {
                   <div class="alert alert-info mt-10" role="note">
                     <div class="alert-content">
-                      <div class="alert-heading"><strong>Assessor and second opinion share a provider</strong></div>
+                      <div class="alert-heading"><strong>Assessor and second reader share a provider</strong></div>
                       <div class="alert-body">
                         Both graders come from {{ selectedAssessorModel?.provider }}. The second verdict
                         is a weaker check than a cross-provider one: two models from one family share
@@ -495,7 +533,14 @@
                                     [options]="benchmarkPickerOptions" [selectedKey]="claimVerifierConfigId"
                                     (selectionChange)="selectClaimVerifierModel($event.model)"></app-model-picker>
                   <app-info-tip trigger="click" tipId="bmClaimVerifierModelHint" subject="Claim Verifier">
-                    Checks disputed claims against the source and the wiki; advisory, changes no score.
+                    <p>When a grader says a fact in an answer is wrong or unverifiable, the verifier looks it up in the
+                      game source and wiki and rules it true, false or undecided. It never changes a score. It shows
+                      where a grader was wrong, so you know which answers to re-assess, which rubrics miss facts and
+                      which facts the chat gets wrong. Use it on runs you will analyze or use to choose models, and
+                      skip it for quick checks: it is often the most expensive grading role.</p>
+                    <p><strong>Recommended:</strong> Gemini Flash (not Flash-Lite) at medium effort; high if its rulings
+                      are often wrong, never low.</p>
+                    <p>More: How the graders work.</p>
                   </app-info-tip>
                 </div>
 
@@ -1775,7 +1820,7 @@
                   <div>{{ selectedRunDetail.advisoryFlagAnswerCount }} answer(s) carry advisory flags@if (advisoryFlagQuestionNumbers) { <span> (question(s) {{ advisoryFlagQuestionNumbers }})</span> }.</div>
                 }
                 @if (disputedAnswerCount > 0) {
-                  <div>{{ disputedAnswerCount }} answer(s) were re-graded by a second assessor that reached a materially different verdict. The first verdict is what scored.@if (disputeVerificationLabel) { <span> {{ disputeVerificationLabel }}</span> }</div>
+                  <div>{{ disputedAnswerCount }} answer(s) were read by a {{ selectedRunDetail.isPanelRun ? 'reference reader' : 'second reader' }} that reached a materially different verdict. @if (selectedRunDetail.isPanelRun) {The panel score stands.} @else {The assessor's verdict is what scored.}@if (disputeVerificationLabel) { <span> {{ disputeVerificationLabel }}</span> }</div>
                 }
                 @if ((selectedRunDetail.secondOpinionCriticalErrorSplitCount ?? 0) > 0) {
                   <div>
@@ -1847,12 +1892,12 @@
                 }
                 @if (secondOpinionSelectedButUnused && secondOpinionFailedAnswerCount === 0) {
                   <div>
-                    A second-opinion assessor was selected but no answer met a trigger, so nothing was graded twice and grader agreement is not measured for this run.
+                    A second reader was selected but no answer met a trigger, so nothing was graded twice and grader agreement is not measured for this run.
                   </div>
                 }
                 @if (secondOpinionFailedAnswerCount > 0) {
                   <div>
-                    <strong>{{ secondOpinionFailedAnswerCount }} answer(s) met a trigger but the second-opinion call failed</strong>@if (secondOpinionFailedQuestionNumbers) { <span> (question(s) {{ secondOpinionFailedQuestionNumbers }})</span> }, so grader agreement @if (secondOpinionCompletedAnswerCount > 0) {is measured over the {{ secondOpinionCompletedAnswerCount }} answer(s) whose second opinion completed} @else {is not measured for this run}. Advisory; the first verdict stands and no score changed.
+                    <strong>{{ secondOpinionFailedAnswerCount }} answer(s) met a trigger but the second-reader call failed</strong>@if (secondOpinionFailedQuestionNumbers) { <span> (question(s) {{ secondOpinionFailedQuestionNumbers }})</span> }, so grader agreement @if (secondOpinionCompletedAnswerCount > 0) {is measured over the {{ secondOpinionCompletedAnswerCount }} answer(s) whose second reading completed} @else {is not measured for this run}. Advisory; the first verdict stands and no score changed.
                   </div>
                 }
                 @if (reassessedAnswerCount > 0) {
@@ -2088,6 +2133,7 @@
           [candidate]="selectedRunDetail.estimatedCandidateCost ?? null"
           [assessor]="selectedRunDetail.estimatedAssessorCost ?? null"
           [coAssessor]="selectedRunDetail.estimatedCoAssessorCost ?? null"
+          [panel]="!!selectedRunDetail.isPanelRun"
           [secondOpinion]="selectedRunDetail.estimatedSecondOpinionCost ?? null"
           [claimVerifier]="selectedRunDetail.estimatedVerifierCost ?? null"
           [synthesis]="selectedRunDetail.estimatedSynthesisCost ?? null"
@@ -2149,7 +2195,7 @@
                   }
                   @if (ans.secondOpinionDisagreed) {
                     <span class="disputed-badge"
-                          [title]="selectedRunDetail.isPanelRun ? 'The reference reader reached a materially different verdict. It never scores; the panel score stands.' : 'A second assessor reached a materially different verdict. The first verdict is what scored.'">DISPUTED</span>
+                          [title]="selectedRunDetail.isPanelRun ? 'The reference reader reached a materially different verdict. It never scores; the panel score stands.' : 'The second reader reached a materially different verdict. The assessor\'s verdict is what scored.'">DISPUTED</span>
                   }
                   <span class="q-title">{{ ans.questionText }}</span>
                 </div>
@@ -2353,11 +2399,11 @@
                   @if (ans.secondOpinionQualityScore != null) {
                     <div class="second-opinion-box mb-15" [class.is-disputed]="ans.secondOpinionDisagreed">
                       <div>
-                        <strong>{{ selectedRunDetail.isPanelRun ? 'Reference reader' : 'Second opinion' }} ({{ ans.secondOpinionByModelDisplayNameUsed }}):</strong>
+                        <strong>{{ selectedRunDetail.isPanelRun ? 'Reference reader' : 'Second reader' }} ({{ ans.secondOpinionByModelDisplayNameUsed }}):</strong>
                         {{ ans.secondOpinionQualityScore }} / 100, critical error
                         {{ ans.secondOpinionCriticalError ? 'yes' : 'no' }} —
                         {{ ans.secondOpinionDisagreed ? 'disagrees with' : 'agrees with' }} {{ selectedRunDetail.isPanelRun ? 'the panel' : 'the first verdict' }}.
-                        @if (ans.secondOpinionTrigger) {
+                        @if (ans.secondOpinionTrigger && !(selectedRunDetail.isPanelRun && ans.secondOpinionTrigger === 'All')) {
                           <span class="second-opinion-trigger">(trigger: {{ secondOpinionTriggerLabel(ans.secondOpinionTrigger) }})</span>
                         }
                       </div>
@@ -2389,7 +2435,7 @@
                   }
 
                   @if (answerBoardChars(ans); as boardChars) {
-                    <div class="text-muted text-11 mb-15">Board characters sent — assessor / second opinion / verifier: {{ boardChars }}</div>
+                    <div class="text-muted text-11 mb-15">Board characters sent — assessor / second reader / verifier: {{ boardChars }}</div>
                   }
 
                   @if (claimVerificationsOf(ans); as verifications) {
@@ -2676,7 +2722,7 @@
                     @if (canTrialReassess(ans)) {
                       <button type="button" class="btn-gh btn-gh-trial" (click)="openRetryDialog('trial', selectedRunDetail.id, ans)"
                               [disabled]="isRunBusy() || trialReassessingAnswerId === ans.id"
-                              title="Records another assessor's verdict in the second-opinion slot. Changes no score, level, flag or index.">
+                              title="Records another assessor's verdict in the second-reader slot. Changes no score, level, flag or index.">
                         <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6v5l4 9a2 2 0 0 1-1.8 3H6.8A2 2 0 0 1 5 17l4-9V3z"></path><line x1="9" y1="3" x2="15" y2="3"></line></svg>
                         {{ trialReassessingAnswerId === ans.id ? 'Trying...' : 'Try another assessor (does not change the score)' }}
                       </button>
@@ -2904,25 +2950,25 @@
             <span id="critCeilingHint" class="form-hint">The highest quality score an answer may keep when the evaluator flags a <em>critical error</em> &mdash; a confidently asserted falsehood a player would act on to their direct detriment. Applied as a cap after the weighted score is computed: a flagged answer scoring above this value is reduced to it; one already below is left unchanged. Must be between 1 and 100. Default <code>25</code>.</span>
           </div>
           <div class="form-group">
-            <label for="secondOpinionThreshold">Second Opinion Threshold</label>
+            <label for="secondOpinionThreshold">Second Reader Threshold</label>
             <input id="secondOpinionThreshold" type="number" min="0" max="100" class="gh-input" [(ngModel)]="profileForm.secondOpinionQualityThreshold" aria-describedby="secondOpinionThresholdHint">
-            <span id="secondOpinionThresholdHint" class="form-hint">Quality score below which an answer is re-graded by the run's <strong>second opinion assessor</strong>, if one was selected when the run was started. An answer flagged with a critical error is re-graded whatever its score. Both verdicts are kept and a material disagreement is flagged for review; the first verdict is what scores. <code>0</code> disables the score trigger and leaves second opinions to critical errors alone. Must be between 0 and 100. Default <code>50</code>.</span>
+            <span id="secondOpinionThresholdHint" class="form-hint">Flagged coverage also selects an answer whose quality score is below this. The second reader reads it; the assessor's score still counts. <code>0</code> turns the score trigger off and leaves flagging to the other triggers. 0&ndash;100, default <code>50</code>.</span>
           </div>
 
           <div class="form-group">
-            <label for="secondOpinionModeProfile">Second Opinion Mode</label>
+            <label for="secondOpinionModeProfile">Second Reader Coverage</label>
             <select id="secondOpinionModeProfile" class="gh-input" [(ngModel)]="profileForm.secondOpinionMode" aria-describedby="secondOpinionModeProfileHint">
               @for (option of secondOpinionModeOptions; track option.value) {
                 <option [ngValue]="option.value">{{ option.label }}</option>
               }
             </select>
             <span id="secondOpinionModeProfileHint" class="form-hint">
-              The default for runs started with this profile; the start dialog can override it for a
-              single run. <strong>Every answer (double grading)</strong> is recommended: under the
-              trigger-based modes the disagreement rate is conditioned on the first assessor's own
-              uncertainty, so it measures nothing about the instrument. Inert on a run started
-              without a second opinion assessor.
+              Default coverage for single-assessor runs with this profile; the start dialog can
+              override it per run. <strong>Every answer (double grading)</strong> is recommended when
+              runs are used to compare models. A panel run ignores this: its reference reader reads
+              every answer.
             </span>
+            <button type="button" class="btn-ghost grader-guide-btn" (click)="openGraderGuide('coverage', true)">How the graders work</button>
           </div>
 
           <div class="form-group">
@@ -2932,7 +2978,7 @@
                    [disabled]="!outlierDeltaEnabled"
                    aria-describedby="secondOpinionOutlierDeltaHint">
             <span id="secondOpinionOutlierDeltaHint" class="form-hint">
-              Quality points below the run's own median at which an answer is re-graded, under
+              Quality points below the run's own median at which an answer is read by the second reader, under
               <strong>Flagged answers and statistical outliers</strong> only. An absolute threshold
               cannot see an outlier in an otherwise strong run; this can. Must be between 1 and 100.
               Default <code>25</code>.
@@ -2945,10 +2991,10 @@
                 <input type="checkbox" id="profileSecondOpinionBlind" [(ngModel)]="profileForm.secondOpinionBlind" aria-describedby="profileSecondOpinionBlindHint">
                 <span class="gh-slider"></span>
               </div>
-              <span class="ml-10">Blind Second Opinion</span>
+              <span class="ml-10">Blind Second Reader</span>
             </label>
             <span id="profileSecondOpinionBlindHint" class="form-hint mt-10">
-              When enabled, the second assessor grades the answer without seeing the first assessor's rubric matches, deductions, or scores, eliminating anchoring bias. Default <code>true</code>.
+              When enabled, the second reader grades the answer without seeing the assessor's rubric matches, deductions, or scores, eliminating anchoring bias. Always on in a panel run. Default <code>true</code>.
             </span>
           </div>
         </div>
@@ -4004,7 +4050,7 @@
           }
           @if ((activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed) && activeRunDetail.secondOpinionModeUsed !== 0) {
             <div class="run-model-row">
-              <dt>{{ activeRunDetail.isPanelRun ? 'Reference reader' : 'Second opinion assessor' }}</dt>
+              <dt>{{ activeRunDetail.isPanelRun ? 'Reference reader' : 'Second reader' }}</dt>
               <dd>
                 <span class="model-name">{{ activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed }}</span>
                 @if (activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) {
@@ -4020,7 +4066,7 @@
                   <span class="model-name">Endpoint: {{ activeRunDetail.secondOpinionAssessorModelEndpoint }}</span>
                 }
                 @if (formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed)) {
-                  <span class="second-opinion-mode-badge" [title]="secondOpinionModeHintOf(activeRunDetail.secondOpinionModeUsed)">{{ formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed) }}</span>
+                  <span class="second-opinion-mode-badge" [title]="runSecondOpinionModeTitle(activeRunDetail)">{{ runSecondOpinionModeLabel(activeRunDetail) }}</span>
                 }
               </dd>
             </div>
@@ -4146,7 +4192,7 @@
         }
         @if (runShowsSecondOpinionCounter) {
           <div class="run-stat">
-            <dt>{{ activeRunDetail?.isPanelRun ? 'Reference readings' : 'Second opinions' }}</dt>
+            <dt>{{ activeRunDetail?.isPanelRun ? 'Reference readings' : 'Second readings' }}</dt>
             <dd>{{ runSecondOpinionCount | number }}@if (runSecondOpinionInFlightCount > 0) {<span class="run-stat-inflight"> · {{ runSecondOpinionInFlightCount }} in progress</span>}</dd>
           </div>
         }
@@ -4162,6 +4208,7 @@
         [candidate]="activeRunDetail?.estimatedCandidateCost ?? null"
         [assessor]="activeRunDetail?.estimatedAssessorCost ?? null"
         [coAssessor]="activeRunDetail?.estimatedCoAssessorCost ?? null"
+        [panel]="!!activeRunDetail?.isPanelRun"
         [secondOpinion]="activeRunDetail?.estimatedSecondOpinionCost ?? null"
         [claimVerifier]="activeRunDetail?.estimatedVerifierCost ?? null"
         [synthesis]="activeRunDetail?.estimatedSynthesisCost ?? null"
@@ -4305,6 +4352,7 @@
                            (helpRequested)="openSuiteYamlHelp()"
                            (assessRequested)="onWizardAssessRequested($event)"
                            (suiteUpdated)="onWizardSuiteUpdated()" />
+<app-benchmark-grader-guide #graderGuide [profile]="graderGuideProfile" />
 
 <!-- QUESTION GENERATION DIALOG -->
 <app-question-generation-dialog

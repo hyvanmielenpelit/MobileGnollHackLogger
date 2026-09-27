@@ -78,7 +78,7 @@
           </div>
           @if ((run.secondOpinionAssessorModelDisplayNameUsed || run.secondOpinionAssessorModelIdUsed) && run.secondOpinionModeUsed !== 0) {
             <div class="run-model-row">
-              <dt>Second opinion assessor</dt>
+              <dt>{{ run.isPanelRun ? 'Reference reader' : 'Second reader' }}</dt>
               <dd>
                 <span class="model-name">{{ run.secondOpinionAssessorModelDisplayNameUsed || run.secondOpinionAssessorModelIdUsed }}</span>
                 @if (run.secondOpinionAssessorModelThinkingLevelUsed) {

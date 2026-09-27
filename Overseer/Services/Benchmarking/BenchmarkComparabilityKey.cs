@@ -466,7 +466,7 @@ public static class BenchmarkComparabilityKey
                 BenchmarkComparabilityValueKind.List),
 
             SecondOpinionConfigurationKey => Info(name,
-                "Second-opinion configuration",
+                "Second reader configuration",
                 "How and how often a second grader was consulted; a difference changes the "
                 + "adjudication that settled the scores.",
                 BenchmarkComparabilityValueKind.List),

@@ -227,7 +227,7 @@ public class BenchmarkRunLauncher
             {
                 return (BenchmarkRunLaunchResult.Fail(
                     BenchmarkRunLaunchOutcome.Invalid,
-                    "Second opinion assessor configuration is invalid, disabled, missing an API key, or not configured with the Benchmark role."), null);
+                    $"{(request.CoAssessorModelConfigurationId.HasValue ? "Reference reader" : "Second reader")} configuration is invalid, disabled, missing an API key, or not configured with the Benchmark role."), null);
             }
         }
 
@@ -280,7 +280,7 @@ public class BenchmarkRunLauncher
         foreach (var (role, config) in new (string, SystemAiApiConfiguration?)[]
         {
             ("Tested model", testedConfig), ("Assessor", assessorConfig), ("Co-assessor", coAssessorConfig),
-            ("Second opinion assessor", secondOpinionConfig), ("Claim verifier", claimVerifierConfig)
+            (isPanelRun ? "Reference reader" : "Second reader", secondOpinionConfig), ("Claim verifier", claimVerifierConfig)
         })
         {
             if (config == null) continue;

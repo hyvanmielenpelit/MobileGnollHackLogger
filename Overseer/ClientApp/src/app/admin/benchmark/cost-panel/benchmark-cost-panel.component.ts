@@ -93,6 +93,9 @@ export class BenchmarkCostPanelComponent {
   /** The run predates per-role cost tracking, and its role lines cannot be trusted as a split. */
   @Input() legacyRun = false;
 
+  /** A panel run, whose second-opinion slot is the reference reader. */
+  @Input() panel = false;
+
   /** `live` heads the panel *Estimated cost so far*; `final` heads it *Estimated cost*. */
   @Input() variant: 'live' | 'final' = 'final';
 
@@ -103,7 +106,7 @@ export class BenchmarkCostPanelComponent {
     { key: 'candidate', name: 'Model under test' },
     { key: 'assessor', name: 'Assessor' },
     { key: 'coAssessor', name: 'Co-assessor' },
-    { key: 'secondOpinion', name: 'Second opinion' },
+    { key: 'secondOpinion', name: 'Second reader' },
     { key: 'claimVerifier', name: 'Claim verifier' },
     { key: 'synthesis', name: 'Final synthesis' },
     { key: 'coSynthesis', name: 'Co-assessor synthesis' }
@@ -111,6 +114,10 @@ export class BenchmarkCostPanelComponent {
 
   get heading(): string {
     return this.variant === 'live' ? 'Estimated cost so far' : 'Estimated cost';
+  }
+
+  private roleName(role: { key: string; name: string }): string {
+    return role.key === 'secondOpinion' && this.panel ? 'Reference reader' : role.name;
   }
 
   get totalLabel(): string {
@@ -142,7 +149,7 @@ export class BenchmarkCostPanelComponent {
 
     const present = BenchmarkCostPanelComponent.ROLE_ORDER
       .filter(role => this.isFigure(figures[role.key]))
-      .map(role => ({ key: role.key, name: role.name, amount: figures[role.key] as number }));
+      .map(role => ({ key: role.key, name: this.roleName(role), amount: figures[role.key] as number }));
 
     const shares = apportionWholePercentShares(present.map(role => role.amount));
 

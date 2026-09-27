@@ -184,7 +184,7 @@ public class SystemConfigUsageGuard
         var roles = new List<string>();
         if (tested == configId) roles.Add("model under test");
         if (assessor == configId) roles.Add("assessor");
-        if (secondOpinion == configId) roles.Add("second-opinion assessor");
+        if (secondOpinion == configId) roles.Add("second reader or reference reader");
         if (claimVerifier == configId) roles.Add("claim verifier");
         return roles;
     }

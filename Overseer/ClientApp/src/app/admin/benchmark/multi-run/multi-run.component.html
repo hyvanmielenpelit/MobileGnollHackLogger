@@ -1036,7 +1036,7 @@
                     <tbody>
                       @for (row of costRoleRows; track row.role) {
                         <tr>
-                          <th scope="row">{{ row.role }}</th>
+                          <th scope="row">{{ roleLabel(row.role) }}</th>
                           <td class="col-num">{{ formatCost(row.total) }}</td>
                           <td class="col-num">{{ formatCost(row.mean) }}</td>
                           <td class="col-num">{{ formatCost(row.sd) }}</td>
@@ -1057,7 +1057,7 @@
               -->
               @if (widestCostRole; as widest) {
                 <p class="section-note">
-                  <strong>Cost dispersion sits mostly in {{ widest.role }}</strong>
+                  <strong>Cost dispersion sits mostly in {{ roleLabel(widest.role) }}</strong>
                   (SD {{ formatCost(widest.sd) }} across {{ costStats.runCount }} runs). Cost is the
                   least reproducible quantity a replicate set measures, so a cost difference between
                   two groups needs the same spread treatment a quality difference gets.

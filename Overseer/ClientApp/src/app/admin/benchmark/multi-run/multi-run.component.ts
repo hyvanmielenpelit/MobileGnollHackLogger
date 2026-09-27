@@ -328,7 +328,7 @@ export const VARIANCE_DECOMPOSITION_CAVEAT =
   'Run-to-run variance mixes candidate stochasticity with grader stochasticity: each run produces a '
   + 'new answer, which is then graded once. An unstable item may mean the model answers it '
   + 'differently each time, or that the grader scores equivalent answers differently. Separating the '
-  + 'two requires re-grading identical answers — second opinion on every answer, or a re-assessment '
+  + 'two requires re-grading identical answers — a second reading of every answer, or a re-assessment '
   + 'pass over stored answers.';
 
 /** The standing label on per-item differences. Same reason as above: it may never be absent. */
@@ -1030,6 +1030,11 @@ export class MultiRunComponent implements OnInit, OnChanges {
         share: usage.toolFamilyShares?.[family] ?? null
       }))
       .sort((a, b) => b.calls - a.calls);
+  }
+
+  /** A cost role's display name. Analyses stored before 2026-09-27 key the second reader as 'Second opinion'. */
+  roleLabel(role: string): string {
+    return role === 'Second opinion' ? 'Second reader' : role;
   }
 
   /** Cost roles in descending total order, with the dispersion figures beside each. */

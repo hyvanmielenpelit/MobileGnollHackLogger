@@ -1,5 +1,9 @@
 # Overseer AI Intelligence Benchmark Feature
 
+> *Naming: the Second Reader (single-assessor runs) and Reference Reader (panel runs) were called
+> the "second opinion" before 2026-09-27. Database columns, API fields and code identifiers still
+> use `SecondOpinion*`, as do reports exported before that date and the history sections below.*
+
 The AI Intelligence Benchmark subsystem in Overseer provides automated, reproducible evaluation of AI models against domain-specific roguelike game knowledge, spoilers, monster/item stats, and C codebase logic for GnollHack.
 
 **Purpose and priorities.** AI benchmarking serves, in this order of importance: **(1) improving the main AI chat of the Overseer** — the benchmark runs the production chat prompt and the production tools, so it is how the chat is debugged and fixed: that the system and its tools work correctly, that the models perform at maximum efficiency, and that there are no bugs or other problems; **(2) improving the benchmarking system itself**, so that it works rigorously and correctly and its results serve both the chat and a scientific comparison of models; and **(3) the results themselves** — how well different models perform as the Overseer assistant. It therefore has two uses — debugging and improving the chat, and deciding which models the chat should use — and both aim at the best possible AI assistant experience for regular users of the Overseer. § 9.1 *What the Benchmark Tells the Chat* describes the first use in detail.
@@ -30,13 +34,13 @@ The dialog header carries the run number, the suite and the scoring profile. The
 
 It presents the run as **three** stages, which is how `BenchmarkService.ExecuteRunAsync` (and `RunFailedQuestionsAsync` for a re-run) actually sequences the work:
 
-1. **Answering and grading** — every question is answered, in parallel up to `MaxParallelQuestionsUsed`, and each answer is then assessed, its unverified claims checked, and a second opinion taken on it, all before the loop moves on. Most claim checks and most second opinions of a run happen here, not later.
+1. **Answering and grading** — every question is answered, in parallel up to `MaxParallelQuestionsUsed`, and each answer is then assessed, its unverified claims checked, and a second reading taken on it by the second reader (the reference reader in a panel run), all before the loop moves on. Most claim checks and most second readings of a run happen here, not later.
 2. **Follow-up grading passes** — once every answer is graded, a serial tail runs: the remaining claim checks (mainly contested verdicts and critical-error splits), then the outlier sweep or the sample top-up in the modes that have one, then the remaining claim checks again for any split the sweep created.
 3. **Synthesis and scoring** — the holistic report and final indices are produced.
 
-Stage 1 is one stage and not three because the executor pipelines assessment, verification and the second opinion behind each answer inside the same loop, in both the sequential and the parallel branch, so no instant of it belongs to only one of them. (The one exception is a credential collision between the candidate and assessor configurations, which serialises the assessments behind all the answering; that still falls inside stage 1.) Stage 2 is one rail item and not two because the server marks `Verifying` **twice** — before and after the second-opinion pass — so an item per pass would step the rail backwards near the end of a run. In `Flagged` mode with no contested verdicts the tail makes no model call at all and stage 2 may be visible for a single poll or none; that is truthful, and stage 1's counters already carried the work.
+Stage 1 is one stage and not three because the executor pipelines assessment, verification and the second reader behind each answer inside the same loop, in both the sequential and the parallel branch, so no instant of it belongs to only one of them. (The one exception is a credential collision between the candidate and assessor configurations, which serialises the assessments behind all the answering; that still falls inside stage 1.) Stage 2 is one rail item and not two because the server marks `Verifying` **twice** — before and after the second-reader pass — so an item per pass would step the rail backwards near the end of a run. In `Flagged` mode with no contested verdicts the tail makes no model call at all and stage 2 may be visible for a single poll or none; that is truthful, and stage 1's counters already carried the work.
 
-The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there is one, because nothing in the answer rows moves during the tail and no client-side derivation can see it. The derivation is the fallback for a run this process is not executing, or a detail from a server predating the field, and it can only reach stage 1 or stage 3. **Diagnostics** name the pass the rail collapses away: `Stage: 2 of 3 (verifying)` or `2 of 3 (second opinion)`, and `(server)` or `(derived)` for its source. Two determinate progress bars — Answers and Assessments — stay visible throughout, so a full Answers bar during grading does not read as a hang.
+The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there is one, because nothing in the answer rows moves during the tail and no client-side derivation can see it. The derivation is the fallback for a run this process is not executing, or a detail from a server predating the field, and it can only reach stage 1 or stage 3. **Diagnostics** name the pass the rail collapses away: `Stage: 2 of 3 (verifying)` or `2 of 3 (second reader)` (`reference reader` in a panel run), and `(server)` or `(derived)` for its source. Two determinate progress bars — Answers and Assessments — stay visible throughout, so a full Answers bar during grading does not read as a hang.
 
 The per-question list merges the suite's questions (fetched once when the dialog opens) with the run's answers, and distinguishes five states:
 
@@ -44,12 +48,12 @@ The per-question list merges the suite's questions (fetched once when the dialog
 - **Answering** — the request has been sent to the provider and no reply has arrived yet.
 - **Answered / Scored** — an answer row exists.
 - **Verifying** — the claim verifier is re-reading a row that already carries a score.
-- **Second opinion** — the second-opinion assessor is re-grading such a row.
+- **Second reader** (**Reference reader** in a panel run) — the second reader or reference reader is grading such a row again.
 - **During a failed-question re-run**, a scope member reads **Pending** until its request is dispatched, **Answering** while it is in flight, and then its re-executed row's own state; its previous failure chip is not shown while the re-run is running. Under a re-run scope the Elapsed stat reads **Re-run elapsed** and measures the re-run's own span from `RerunStartedAtUtc`, because the run's `CompletedAtUtc` stays fixed across a re-run. `RerunCompletedAtUtc` is cleared when a re-run starts and is ignored while the run's status is Running, so a second re-run's own elapsed stat is never computed against the previous re-run's stale end stamp.
 
 The last two appear **inside stage 1** as well as during the follow-up passes, because that is where most of that work happens. Both come from in-flight sets that the wrapper methods `VerifyAnswerClaimsAsync` and `RunSecondOpinionAsync` set and clear in a `finally`, so every caller marks the row and a throw or a cancel cannot leave it pulsing.
 
-**Claims verified** and **Second opinions** are plain counts in the statistics strip, not progress bars, and each appears only when the run configured that role. Neither has an honest maximum: only an answer whose assessor listed unverified claims is a verification candidate, and only an answer whose trigger fired is a second-opinion candidate, so a bar drawn against the answered count either sits full or never fills. A `· N in progress` suffix shows the in-flight count while the role is reading a row.
+**Claims verified** and **Second readings** (**Reference readings** in a panel run) are plain counts in the statistics strip, not progress bars, and each appears only when the run configured that role. Neither has an honest maximum: only an answer whose assessor listed unverified claims is a verification candidate, and only an answer whose trigger fired is a second-reader candidate, so a bar drawn against the answered count either sits full or never fills. A `· N in progress` suffix shows the in-flight count while the role is reading a row.
 
 The dialog has exactly **one** polling live region — the status line under the Assessments bar, which announces the stage. A second one would announce continuously for the length of the run.
 
@@ -4372,6 +4376,9 @@ data motion (§ 5).
   reader against panel, and a critical-error split counts only where both members agree and the reader
   differs. Its disagreement (`DisagreesWithPanel`) is a gap above 15 points from the panel score, or a
   flag opposite to one both members agree on; a split panel has no agreed flag to disagree with.
+  The role's names, how to choose its settings and its limits as an anchor are in § 3, under
+  **Names**, **Choosing second-reader and reference-reader settings** and **Limits of the reference
+  reader**.
 
 - **One claim verification over the union of both members' charges.** The verifier runs once per
   answer over every charge either member raised — unverified claims, critical-error quotes,
@@ -4511,7 +4518,7 @@ data motion (§ 5).
   companion to it: the difference between the two is how far difficulty weighting moved the headline, and
   a run whose weak answers are its easy ones reads *higher* weighted than unweighted. Both are reported.
 - **Assessor Agreement**: the mean of $|\text{first}(q) - \text{second}(q)|$ over the answers graded
-  twice, stored as `SecondOpinionMeanAbsDelta` beside `SecondOpinionGradedAnswerCount`. A **disagreement**
+  twice, where "first" is the assessor and "second" the second reader, stored as `SecondOpinionMeanAbsDelta` beside `SecondOpinionGradedAnswerCount`. A **disagreement**
   is a gap above **15** quality points, or a split on `criticalError`. Interpretable only together with
   its coverage: an unbiased inter-rater rate requires `SecondOpinionMode = All`. In a panel run "first"
   is the panel score and "second" the reference reader, and a `criticalError` split counts only where
@@ -4573,12 +4580,14 @@ carries the grader's full recorded settings, the output cap its calls actually s
 
 ### The roster today, and why Anthropic is primary
 
-Status as of 2026-09-26, the roster of runs 66 and 67:
+Status as of 2026-09-26, the roster of runs 66 and 67, with the co-assessor of the panel runs from
+2026-09-27:
 
 | Role | Model | Since |
 |---|---|---|
 | **Primary assessor** (scores) | Claude 5.5 Opus @ `medium` | Run 66. Claude 5 Opus @ `medium` graded runs 52–65, and Claude 5 Opus @ `low` runs 39–42 |
-| **Second reader** (advisory, blind) | Gemini 3.8 Flash @ `medium` | Runs 57 and 59; the user's deliberate roster from runs 60 and 61 on |
+| **Co-assessor** (panel member B, scores) | GPT-6 Sol @ `medium` | 2026-09-27, when panels became the standard configuration. A run whose candidate is GPT-6 Sol takes the previous Sol version, GPT-5.6 Sol, which is a different instrument |
+| **Second reader** (advisory, blind), or **reference reader** in a panel run | Gemini 3.8 Flash @ `medium` | Runs 57 and 59; the user's deliberate roster from runs 60 and 61 on |
 | **Claim verifier** (advisory) | Gemini 3.8 Flash @ `medium` | The same |
 | **Candidates** | GPT-5.6 Luna, GPT-6 Luna, GPT-6 Sol, Gemini 3.7 Flash | — |
 
@@ -4586,9 +4595,9 @@ By provider:
 
 | Provider | Role today | Earlier roles |
 |---|---|---|
-| **Anthropic** | Primary assessor; also other benchmark work such as suite authoring | Candidate: Claude 5 Sonnet @ `high` on runs 28–35 and 43, Claude 5 Opus @ `low` on run 44. Second opinion and claim verifier in stage 1 (runs 36–38) |
-| **Google** | Candidate (Gemini 3.7 Flash); second reader and claim verifier (Gemini 3.8 Flash) | Primary assessor (Gemini 3.7 Flash) until the promotion at run 39, and again on run 46 |
-| **OpenAI** | Candidate | Second opinion and claim verifier: GPT-5.6 Luna on runs 28–35 and 52–56, GPT-5.6 Sol on run 39. Primary assessor: GPT-5.6 Sol @ `medium` on runs 43–45. The GPT-5.6 Luna grader roster was retired at runs 60 and 61 and is not to be re-proposed |
+| **Anthropic** | Primary assessor; also other benchmark work such as suite authoring | Candidate: Claude 5 Sonnet @ `high` on runs 28–35 and 43, Claude 5 Opus @ `low` on run 44. Second reader and claim verifier in stage 1 (runs 36–38) |
+| **Google** | Candidate (Gemini 3.7 Flash); second or reference reader and claim verifier (Gemini 3.8 Flash) | Primary assessor (Gemini 3.7 Flash) until the promotion at run 39, and again on run 46 |
+| **OpenAI** | Candidate; co-assessor (GPT-6 Sol) in panel runs from 2026-09-27 | Second reader and claim verifier: GPT-5.6 Luna on runs 28–35 and 52–56, GPT-5.6 Sol on run 39. Primary assessor: GPT-5.6 Sol @ `medium` on runs 43–45. The GPT-5.6 Luna grader roster was retired at runs 60 and 61 and is not to be re-proposed |
 
 **Why Anthropic scores.** The constraint that chose it still holds:
 
@@ -4599,7 +4608,7 @@ By provider:
 
 **What the 2026-09-03 position got wrong.** It recorded Anthropic as *"not planned as a model under
 test"*, and therefore assessor-eligible in every configuration. Anthropic was a candidate on ten runs:
-runs 28–35, graded by Gemini 3.7 Flash @ `high` with GPT-5.6 Luna as second opinion and verifier, and
+runs 28–35, graded by Gemini 3.7 Flash @ `high` with GPT-5.6 Luna as second reader and verifier, and
 runs 43–44, graded by GPT-5.6 Sol @ `medium`. So **no provider is assessor-eligible for all three
 candidate families.** An Anthropic candidate under today's roster trips the same-provider gate — the
 launch returns 409 until the administrator acknowledges the notice, and the acknowledgment is stored in
@@ -4631,7 +4640,7 @@ family preference spans them.
 | **Member A** (assessor) and **member B** (co-assessor) — the only roles that score | Two different providers | Launch refused (400) |
 | | Neither is the model under test: take an older, or otherwise non-candidate, model of each family | Launch refused (400) when provider and model id equal the candidate's |
 | | Fixed across every run you intend to compare | The panel is part of the `AssessorConfiguration` key; the diagnostics refuse runs graded by different panels |
-| **Reference reader** (the second-opinion role) | From a third family, neither a candidate nor a member; grades every answer, blind; never scores | Mode forced to `All` and blind; a start-dialog advisory, not a block, when it shares a provider with the candidate or a member |
+| **Reference reader** (the second reader's slot, stored in the `SecondOpinion*` fields) | From a third family, neither a candidate nor a member; grades every answer, blind; never scores | Mode forced to `All` and blind; a start-dialog advisory, not a block, when it shares a provider with the candidate or a member |
 | **Claim verifier** | From a third family, neither a candidate nor a member; checks the union of both members' charges once; never scores | The same advisory |
 | **Google** models | Non-scoring roles only: reference reader and claim verifier | Roster choice. Nothing in code names a vendor; the report's *Panel Disclosure* states which roles scored |
 
@@ -4660,6 +4669,38 @@ Together they replace the assumption "both families self-prefer equally" with th
 diagnostics' caveats say so. The interaction contrast, GapA − GapB, is the members' **total** same-family
 preference; it does not measure the bias of the panel mean.
 
+**Panels are the standard configuration.** From 2026-09-27, by the user's decision, future benchmark runs
+are panel runs: two assessors from two families score, and the reference reader and the claim verifier
+check them (the models and effort are in **Choosing grader models and effort**). What the reference reader
+contributes then depends on which families are compared:
+
+- **Anthropic candidates against OpenAI ones.** The reference reader's asymmetry estimate, GapPanel − GapRef,
+  is the balance check, as described above.
+- **OpenAI against Google, with no Anthropic candidate.** The panel mean carries about half of member B's
+  OpenAI same-family preference. Member A (Anthropic) is itself neutral between the two families here, so the
+  family gap table's GapB − GapA for that pair estimates that preference directly. The reader's GapRef is
+  not neutral for this pair, because the reader is a Google model.
+
+The reader stays worth selecting on every panel run anyway. It keeps the `SecondOpinionConfiguration` key
+identical across the whole comparison set, including later runs with Anthropic candidates, and it still
+catches answers both members got wrong the same way: a reader more than 15 points from the panel score, or
+opposite to a critical-error verdict both members agree on, marks the answer DISPUTED.
+
+**Limits of the reference reader.** It is an anchor resting on assumptions, and four of them are open:
+
+1. **Neutrality is assumed.** The reader is a Google model, and Gemini 3.7 Flash is a candidate.
+2. **Scale.** If the reader compresses score differences compared with the panel — a lenient reader bunched
+   near the top — GapRef shrinks, and the asymmetry estimate absorbs part of the real capability gap as well
+   as the panel's bias. The Model Comparison caveats say so; compare the reader's index spread with the
+   panel's before reading the estimate.
+3. **Sample size.** About 18 paired questions per suite give wide intervals. The estimate becomes
+   informative over several suites.
+4. **The two anchors are correlated.** The reader and the claim verifier are one model, and the blind reader
+   sees the verifier's rulings.
+
+A slope-corrected asymmetry estimate would address item 2. It is deferred, because it changes a published
+diagnostic.
+
 **The first runs.** Two panel runs under one panel — one OpenAI candidate and one Anthropic candidate —
 produce the whole judge × candidate matrix directly; no preliminary grading phase is needed.
 
@@ -4686,19 +4727,19 @@ pass over the union. The report prices member B's grading and synthesis as their
 
 The 2026-09-03 plan had two stages: stage 1 kept Google as the primary through the remaining
 OpenAI-candidate runs, with Anthropic as a blind second reader to measure it before it scored anything;
-stage 2 promoted Anthropic to primary from the first Google-candidate run and rotated the second opinion
+stage 2 promoted Anthropic to primary from the first Google-candidate run and rotated the second reader
 to whichever of OpenAI and Google was not the candidate, so that every row held three distinct
 providers. What happened:
 
 1. **Stage 1 ran on runs 36–38** — GPT-5.6 Sol candidate, Gemini 3.7 Flash assessor, Claude as second
-   opinion and claim verifier: the first three-provider roster of the plan.
+   reader and claim verifier: the first three-provider roster of the plan.
 2. **The promotion happened on schedule.** Run 39 (2026-09-12), the first Google candidate, was graded
    by Claude 5 Opus @ `low` with GPT-5.6 Sol @ `medium` as second reader and verifier. Claude 5 Opus
    stayed primary at `low` through run 42.
 3. **Runs 43–46 interrupted it deliberately.** The cross-model set included Anthropic candidates, so it
    was graded by GPT-5.6 Sol (runs 43–45) and Gemini 3.7 Flash @ `high` (run 46) — the grader-effect
    example above.
-4. **The rotating second opinion was followed and then replaced.** Runs 52–56 had GPT-5.6 Luna @
+4. **The rotating second reader was followed and then replaced.** Runs 52–56 had GPT-5.6 Luna @
    `xhigh` or `high` as second reader and verifier for Gemini candidates, as stage 2 prescribed. From
    runs 57 and 59 a single fixed second reader and verifier, Gemini 3.8 Flash @ `medium`, grades every
    candidate; from runs 60 and 61 it is the user's deliberate roster, chosen because it is a different
@@ -4716,7 +4757,7 @@ providers. What happened:
   nothing they produce is read by a scoring path, so the bias reaches the agreement metric and the claim
   counts, not the Intelligence Index.
 - **The second reader and the verifier are one model.** The report says so too: under blind mode the
-  second reader receives the verification findings, so a refuted claim and a harsh second opinion on
+  second reader receives the verification findings, so a refuted claim and a harsh second reading on
   the same answer are one finding, not two independent ones.
 
 **What stage 1 bought.** Claude graded answers on this suite beside Gemini before it scored any, so the
@@ -4749,17 +4790,88 @@ cost, a few seconds per answer, fully hidden inside the pipeline — were measur
 assessor and no longer hold: **grading is now most of a run's cost.** On run 66 the candidate was 25%
 of US$2.7247 and the grading roles took the rest, and on runs 62–67 the claim verifier alone took 38–56%
 of each run's cost. Grading has been pipelined per question since the run-31 round, but a slow grader
-can still be the critical path: run 52's second opinion, GPT-5.6 Luna @ `xhigh`, took 21 m 17 s of the
+can still be the critical path: run 52's second reader, GPT-5.6 Luna @ `xhigh`, took 21 m 17 s of the
 run's 23 m 18 s. The advice stands; weigh it against these figures rather than the old ones.
 
-### The second opinion is an independent reader, not an adjudicator
+### Choosing grader models and effort
+
+Every grading role needs a model and a thinking or reasoning effort. The levels the model catalogs
+(`Overseer/Services/ModelCatalogs/*.json`) offer differ by provider — Anthropic `low`–`max`, OpenAI
+`none`–`max`, Google's fast models `low`/`medium`/`high` and some `minimal` — and `medium` exists for all
+three. What the benchmark's record says about each role:
+
+- **Roles that score need a strong model at moderate effort.** This is the rule of **Use the strongest
+  grader in the slot that scores**. The assessor moved from Claude 5 Opus `low` to `medium`, then to Claude
+  5.5 Opus. The grader effect can exceed the spread between candidates: runs 43–46 scored 70 / 68 / 72 under
+  one grader and 97 under a Flash-tier assessor at `high`. That Flash-tier assessor produced the Q1 and Q10
+  grading errors, and flagged 13 unverified claims where a stronger grader flagged 57–63, which starved the
+  verifier.
+- **The co-assessor must be a peer of the assessor.** A panel balances two judges. A weaker member adds its
+  own noise and bias to half of every score, so the panel's balance assumes matched tier and effort.
+- **An advisory reader can be cheaper**, because it never scores. A reader of comparable tier gives the most
+  meaningful agreement figure (**The second reader is an independent reader, not an adjudicator**). A much
+  weaker reader may also compress its scores, which weakens the panel balance check (**Limits of the
+  reference reader**, item 2).
+- **The verifier needs reliable tool use and careful reading**, and dominates cost. An economy tier at
+  `medium` is the cost-sensible default. The verifier errors on run 36 came at `low`. The recorded wrong
+  verdicts are the signal to move up a tier or to `high`.
+- **Very high effort hurts graders.** Run 32 lost 3 of 5 second readings at `max` to JSON parsing, and the
+  stage took 26 m 33 s; the roster moved to `high`. On run 52 a second reader at `xhigh` took 21 m 17 s of a
+  23 m 18 s run. No documented case shows a benefit from `xhigh` or `max` for a grader.
+- **The final synthesis runs on the assessor's configuration** and needs no choice of its own.
+
+**The user's decision (2026-09-27).** Where the score is decided, a strong model, but **not the provider's
+most expensive tier**; for the checking roles, Gemini Flash. In the model catalogs, with list prices per
+1M tokens (input/output) on 2026-09-27:
+
+| Provider | Top tier: **not recommended** for grading | Recommended grading tier | Cheaper tiers |
+|---|---|---|---|
+| Anthropic | Claude Fable ($10/$50) | **Claude Opus** (5.5 Opus $4/$20) | Sonnet |
+| OpenAI | GPT Astra (GPT-6 Astra $10/$50) | **GPT Sol** (GPT-6 Sol $2/$10) | Luna |
+| Google | Gemini Pro | — | **Gemini Flash** (3.8 Flash $0.75/$3.75), Flash-Lite |
+
+The top tiers cost 2.5 times (Fable against Opus) and 5 times (Astra against Sol) as much. Nothing in the
+benchmark's record shows that grading needs them, and the Opus and Sol tiers already carry the documented
+improvements above.
+
+**Recommendations.** They are given by **model family**, not version: a version changes with every
+release, while a family name lasts.
+
+| Role | Model | Effort | Also |
+|---|---|---|---|
+| Assessor | **Claude Opus**, not Claude Fable | `medium` | Not the model under test. In a single-assessor run with an Anthropic candidate, see the provider rule in **The roster today, and why Anthropic is primary** |
+| Co-Assessor | **GPT Sol**, not GPT Astra | `medium` (the same as the assessor) | Never the model under test. When the candidate is the newest GPT Sol, use the previous GPT Sol version |
+| Second Reader | **Gemini Flash** (not Flash-Lite) | `medium` | A different provider from the assessor. When the candidate is a Gemini Flash model, use a different Flash version, and expect the weaker same-family pairing the launcher warns about |
+| Reference Reader | **Gemini Flash** (not Flash-Lite) | `medium` | The same model on every run you compare. Google is the third family beside the Anthropic and OpenAI members |
+| Claim Verifier | **Gemini Flash** (not Flash-Lite) | `medium` (`high` if its rulings are often wrong; never `low`) | The same as the reader. The report already notes that one model in both roles makes their findings correlated |
+
+All roles avoid `xhigh` and `max`. Today's roster already matches — Claude 5.5 Opus, GPT-6 Sol and Gemini
+3.8 Flash, all at `medium` — so no roster change follows.
+
+**Where the recommendations appear.** The launcher's grader info popups and the *How the graders work*
+guide (its section *Choosing grader models*) name the same **families** — Claude Opus, GPT Sol, Gemini
+Flash — and the top tiers not to use, Claude Fable and GPT Astra, with price ratios but no versions or
+prices. The table in **The roster today, and why Anthropic is primary** names the exact versions. The
+project skills name no model or family at all and point here. When a provider renames or re-prices a line,
+this subsection, the roster table, the popups in `benchmark.component.html` and the guide component are
+the places to update.
+
+**Two consequences of the co-assessor rule.**
+
+- GPT-6 Sol has also been a candidate. A run whose candidate is GPT-6 Sol is refused with GPT-6 Sol as
+  co-assessor, and the launcher shows this before Start. Such a run uses the previous Sol version, GPT-5.6
+  Sol ($4/$20), which is a different instrument, so it is not comparable with runs graded by GPT-6 Sol.
+- The co-assessor shares a family with the other OpenAI candidates. That is the panel design; **Panels are
+  the standard configuration** in **The Two-Family Assessor Panel** covers it.
+
+### The second reader is an independent reader, not an adjudicator
 
 | Role | Model choice | Why it does or does not work |
 |---|---|---|
 | **Adjudicator** — meant to be *more right* | A stronger model | **Does not work as designed.** The first verdict stays authoritative for scoring, so the better model's verdict is recorded and then ignored. If you trust a model more, make it the primary assessor |
 | **Independent reader** — meant to detect *fragile verdicts* and measure agreement | Comparable tier, **different provider** | **This is what the feature is for.** Disagreement means two competent, independently-biased readers reached different conclusions |
 
-Stage 1 deliberately placed the *stronger* model in the second-opinion slot, which the table warns
+Stage 1 deliberately placed the *stronger* model in the second-reader slot, which the table warns
 against as a permanent arrangement. That was acceptable because it was temporary and its purpose was
 measurement rather than adjudication — observing the prospective primary before promoting it — and it
 ended with the promotion at run 39.
@@ -4773,13 +4885,55 @@ The Intelligence Index comes from the primary assessor alone, so neither the rot
 its replacement affected it. Changing the second reader moves the `SecondOpinionConfiguration`
 `Instrument` key and starts a new agreement population.
 
-### Blind vs. Anchored Second Opinions
+### Names
 
-From Harness Version 11, the second opinion is **blind by default** (`SecondOpinionBlind = true`). In earlier versions (Harness 4–10), the second reader received the first assessor's score, critical error flag, and full commentary, preceded by the notice that the first verdict was "severe enough".
+Until 2026-09-27 this role was called the **second opinion**. The name suggested an adjudicator whose
+view can prevail, and the role never prevails: the subsection above says so. In a panel run the
+co-assessor is the second grader, so *"second"* was wrong there too. The role now has one name per kind
+of run:
+
+| Run | Name | Why |
+|---|---|---|
+| Single-assessor | **Second Reader** | An independent reading of the same answer that never scores. This document already used "second reader" throughout |
+| Panel | **Reference Reader** | A third, non-scoring reading that anchors the panel. The run view already used this name |
+
+Rejected: *Second Assessor* (confusable with *Co-Assessor*, and implies that it scores); *Auditor* and
+*Adjudicator* (imply an authority the role lacks); one name for both runs (the jobs differ).
+
+**The boundary of the rename.** "Second opinion", in any capitalization or hyphenation, was replaced
+**wherever a person reads it**. Where the run is known, the text says *Reference Reader* for a panel run
+and *Second Reader* otherwise; where no run is known, it says *second reader or reference reader*.
+
+| Renamed | Where |
+|---|---|
+| Admin UI | Every label, hint, popup, notice, badge title, status chip, stage text and cost-panel role in `Overseer/ClientApp/src/app` |
+| Copied diagnostics text | The diagnostics builders in `benchmark.component.ts`, and the *Board delivered — …* line on both ends (`BenchmarkReportBuilder.cs`) |
+| Markdown run report | Every heading and sentence in `BenchmarkReportBuilder.cs`: `### Second Opinion Assessor` is now `### Second Reader` or `### Reference Reader`, `**Second Opinion (model):**` is now `**Second Reader (model):**`, and `**Second Opinion Tokens:**` is now `**Second Reader Tokens:**` or `**Reference Reader Tokens:**` |
+| Multi-run cost role | `BenchmarkGroupAnalysisService.SecondOpinionRole`'s value, *Second reader*, and `ReferenceReaderRole`, *Reference reader*, for panel runs |
+| Server messages reaching the UI | `BenchmarkRunLauncher`, `BenchmarkService`, `AdminBenchmarkController`, `SystemConfigUsageGuard` |
+| Comparability key **label** | The display text is *Second reader configuration*. The key **name** `SecondOpinionConfiguration` stays |
+| Log message templates | The `_logger.Log*` calls in `BenchmarkService.cs` |
+| Documentation and project skills | Current-state text |
+
+| **Not** renamed | Why |
+|---|---|
+| **Text sent to a grading model**: the second-reading prompt in `BenchmarkAssessmentPrompt.BuildSecondOpinionBody` (including `--- SECOND OPINION ---` and *"for a second reading"*) and the synthesis prompt's *second-opinion verdicts* lines | It is what the graders read. Changing it changes their input and moves comparability between runs, which is reserved for a deliberate round. `BenchmarkAssessmentPromptTests` and `PromptSegmentationTests` guard it |
+| Code identifiers: `SecondOpinion*` properties, methods, DTO fields, TypeScript members, element ids, CSS classes | Identifiers are the wire and schema contract. Renaming them would mean an EF Core migration of 35 columns and changes to both API ends, for no reader-visible gain |
+| Database columns, stored enum and trigger values (`All`, `Manual`, the `SecondOpinion` row status, the `secondopinion` stage), `localStorage` keys and fields, the comparability key **name** | Persisted or wire values, which change only in a plan that migrates both ends |
+| Stored rows written before the change: an old `SecondOpinionError` text, a stored multi-run analysis's role key *Second opinion* | History is not rewritten. The multi-run view maps the legacy role key to *Second reader* for display |
+| Code comments | They describe the `SecondOpinion*` identifiers they sit beside |
+| History: the *Harness Version N Updates* sections and dated rounds of this document, and reports exported before the change | Records of what was true at the time. The naming note at the top of this document covers them |
+
+Reports are generated from the database when they are exported, so re-exporting an old run's report uses
+the new names. Only files already exported keep the old wording.
+
+### Blind vs. Anchored Second Readers
+
+From Harness Version 11, the second reader is **blind by default** (`SecondOpinionBlind = true`). In earlier versions (Harness 4–10), the second reader received the first assessor's score, critical error flag, and full commentary, preceded by the notice that the first verdict was "severe enough".
 
 > **Harness 11 Migration Note & Harness 12 Backfill:** While Harness 11 added the `SecondOpinionBlind` property defaulting to `true` in code and the seeder, the original database migration set `defaultValue: false` without backfilling existing rows. Consequently, the existing default scoring profile in production remained anchored, and benchmark run 11 executed anchored. Harness 12 resolved this via migration `20260904214142_AddBenchmarkAgreementDirection`, which explicitly backfilled `SecondOpinionBlind = 1 WHERE IsDefault = 1`. Runs starting from Harness 12 truly grade blind under the default profile.
 
-Anchored second opinions suffer from anchoring bias: models instructed to review an existing score systematically regress toward the anchor rather than evaluating independently. While anchored evaluations can be useful for human-style appeals or error reviews, they do not produce an authentic inter-rater agreement metric. Under blind mode, the second assessor receives only the question, rubric, answer, and any objective claim verification findings, ensuring `SecondOpinionMeanAbsDelta` and `SecondOpinionMeanSignedDelta` represent true inter-rater variation and direction. Agreement statistics between blind and anchored runs are **not comparable**.
+Anchored second readers suffer from anchoring bias: models instructed to review an existing score systematically regress toward the anchor rather than evaluating independently. While anchored evaluations can be useful for human-style appeals or error reviews, they do not produce an authentic inter-rater agreement metric. Under blind mode, the second reader receives only the question, rubric, answer, and any objective claim verification findings, ensuring `SecondOpinionMeanAbsDelta` and `SecondOpinionMeanSignedDelta` represent true inter-rater variation and direction. Agreement statistics between blind and anchored runs are **not comparable**.
 
 ### Grade everything twice
 
@@ -4800,9 +4954,183 @@ Full double grading buys three things selective re-grading cannot:
 **Recommendation: `SecondOpinionMode = All`**, with `Flagged` and `FlaggedAndOutliers` held in reserve for
 a large suite where assessor cost becomes binding.
 
+**In a panel run** the two members are the double grading. Both grade every answer, blind to each other,
+and their agreement is measured by `PanelMeanAbsDelta` and `PanelIntraclassCorrelation`, with *MEMBERS
+DISAGREE* on each answer they split on. The recommendation of `All` above, and the *Recommended* badge on
+*Every answer (double grading)* in the launcher, apply to single-assessor runs. A panel run's reference
+reader reads every answer, blind, whatever the mode, and has a different job (**The Two-Family Assessor
+Panel**).
+
+### Choosing second-reader and reference-reader settings
+
+**No second-reader or reference-reader setting changes any score, index, chart or item statistic.** Each
+setting changes only how much of the grading is checked, what the agreement figures mean, cost, wall time
+and comparability. The launcher's *How the graders work* guide carries the same text in plain language
+(its sections *Choosing coverage*, *Turning the second reader off*, *The Reference Reader* and
+*Recommended settings*), and fills in the selected scoring profile's own threshold, outlier delta, minimum
+sample and Blind setting where this subsection gives the Standard profile's defaults. The two are kept in
+step: a change to the triggers (`BenchmarkService.ResolveSecondOpinionTrigger`) or to the 15-point
+disagreement threshold (`BenchmarkService.SecondOpinionDisagreementPoints`) updates both.
+
+**Coverage in a single-assessor run.** The launcher's *Coverage* setting (`SecondOpinionMode`, defaulted
+from the scoring profile and overridable per run) decides which answers the second reader reads:
+
+| Setting (single-assessor) | Answers read | Agreement figure | Extra cost | Wall time |
+|---|---|---|---|---|
+| *None* or *Never* | none | none; the report states how many answers a trigger would have picked | none | none |
+| *Only flagged answers* | answers that raised a flag (list below) | conditioned on the assessor's own doubts: agreement on suspicious verdicts only. Zero coverage when the candidate does well | lowest | none (runs inside the per-answer pipeline) |
+| *Flagged answers and statistical outliers* | flagged, plus answers more than the profile's outlier delta (default 25) below the run median | conditioned | low | **adds a final stage** after scoring |
+| *Flagged answers plus a sample* | flagged, topped up to the profile's minimum sample (Standard: 4), lowest scores first, deterministically | conditioned plus a low-score sample; always some figure | low, bounded | none |
+| *Every answer (double grading)* | all | **unbiased** inter-rater reliability. Also catches a confidently wrong assessor that raises no flag | one call per answer | small (pipelined) |
+
+*Flagged answers plus a sample* is the Standard profile's default, and *Every answer (double grading)*
+is the recommendation for runs used to compare or select models (**Grade everything twice**). *Blind*
+(a scoring profile setting, on by default) is the only setting that gives true inter-rater agreement:
+anchored readers regress toward the anchor (**Blind vs. Anchored Second Readers**).
+
+**The flags.** An answer is flagged, in this order, when:
+
+1. the assessor found a critical error;
+2. the claim verifier refuted one of its claims (needs a claim verifier);
+3. the assessor's comment describes a defect its verdict does not reflect;
+4. accuracy was docked on the assessor's own knowledge ("not in rubric") or on a claim it could not
+   verify;
+5. accuracy was docked with no defect named;
+6. an omission was docked as an accuracy error;
+7. one dimension collapsed while the others are high, with no reason given;
+8. unverifiable claims come with low accuracy;
+9. the quality score is below the profile's threshold (Standard: 50; 0 turns this trigger off and leaves
+   flagging to the others).
+
+**Turning the second reader off.** Choosing *None*, or coverage *Never*, leaves every score, index and
+chart exactly as it would otherwise be. It gives up the DISPUTED marks, the agreement figures, and the only
+check that catches an assessor that is confidently wrong. The report still counts how many answers would
+have been read, and a run without a second reader differs from one with it in one instrument key,
+`SecondOpinionConfiguration`.
+
+**The reference reader in a panel run.** With a co-assessor, two graders already score every answer and
+their agreement is measured, so a second reader for agreement would only repeat it. The slot becomes the
+reference reader, whose question is whether the panel is balanced between its members' own families. Its
+coverage is fixed: every answer, blind, whatever the mode or the profile says (the launcher shows the fixed
+line *Every answer, blind — a third reading. Fixed in a panel run.* in place of the Coverage selector). It
+never scores. It costs about one extra call per answer; from current list prices (a reader at
+$0.75/$3.75 against members at $4/$20 and $2/$10 per 1M tokens) that is roughly **a tenth of the
+per-answer grading cost**, not yet measured on a real run. Choose a family that is neither a panel member
+nor, ideally, a candidate, and keep the same model and settings on every panel run you intend to compare.
+Selecting *None* changes no score, and gives up:
+
+- the balance check (the asymmetry estimate and the reference-dependent pairs);
+- the reader's index;
+- the reader's DISPUTED marks.
+
+**Recommended settings.**
+
+| Scenario | Graders | Second or Reference Reader | Coverage | Claim Verifier |
+|---|---|---|---|---|
+| **Standard: comparing or selecting models (panel)** | Assessor **Claude Opus** and Co-Assessor **GPT Sol**, both `medium`; neither is the model under test | Reference Reader **Gemini Flash**, `medium`, on **every** panel run, the same model each time | Fixed: every answer, blind | **Yes**, Gemini Flash, `medium` |
+| Single-assessor comparison or model selection | Assessor **Claude Opus**, `medium` | Second Reader **Gemini Flash**, `medium` | **Every answer**, blind | **Yes**, Gemini Flash |
+| Single-assessor routine or diagnostic run (for example checking the chat after a fix) | As above | Second Reader | Flagged answers plus a sample | Yes, if the run's findings will be analyzed; otherwise optional |
+| Quick smoke test, or checking a speed, cost or UI change | As above | Optional | Only flagged answers | **No** |
+| Large suite on a tight budget, single-assessor | As above | Second Reader | Only flagged answers, or with outliers | Optional: it is the largest grading cost |
+| Trying out a prospective new assessor | — | Not a reader job: use a **Calibration** or *Try another assessor* on a stored run | — | — |
+
+In every scenario, keep all grader choices the same across the runs you intend to compare: each is part of
+the run's instrument. The model choices are explained in **Choosing grader models and effort**.
+
+### The claim verifier: what it changes, and when to run it
+
+The claim verifier scores nothing, and it is usually the most expensive grading role, so whether to run it
+is a real choice. This subsection states what it does from the code (line numbers as of 2026-09-27). The
+guide's section *The Claim Verifier* is its plain-language form, and the launcher's Claim Verifier popup
+summarizes it.
+
+**When it runs.** Once per answer, right after the assessor — and in a panel run the co-assessor — has
+graded it, and before the second-reader triggers (`BenchmarkService.cs` ~2482–2515). It runs only when a
+grader raised something checkable (`NeedsClaimVerification` ~7963, `NeedsClaimVerificationOrAccusation`
+~8401):
+
+- an unverified claim;
+- a critical-error quote;
+- an out-of-rubric basis for an accuracy deduction;
+- a sentence the grader accused of being false (`Benchmark:ClaimVerification:AccusedQuotesEnabled`).
+
+**An answer with no charge costs nothing.** A run-level backfill (~3317–3399) also checks contested and
+disputed answers. In a panel run it is one pass over the union of both members' charges, and each item
+records which member raised it.
+
+**What it has.** The read-only game tools of `Benchmark:AllowedTools`: the GnollHack and NetHack wikis,
+the knowledge base, source code search and view, and the monster, item and artifact lookups. Its budget
+is 15 tool calls, 8 iterations, 12 model calls, 300 s and a 16,000-token output cap (`appsettings.json`
+~289–296). It sees:
+
+- the question and rubric, as context only;
+- the game board;
+- the disputed items, with the answer text around each quote;
+- the grader's evidence, as a counter-claim under adjudication;
+- the candidate's own tool calls, as untrusted leads.
+
+**What it outputs.** For each item, *Supported*, *Refuted* or *Indeterminate*, with a citation and a
+basis. A ruling without a citation, or with a dead one, counts as Indeterminate.
+
+**Effect on scores: none.** A rescore recomputes from the stored levels and critical-error flag only
+(`BenchmarkService.cs` ~6972–6989). No path lifts the critical-error cap, and the report calls the role
+*"Advisory throughout"*.
+
+**What it changes around the scores:**
+
+- **Marks on the answer.**
+  - *Refuted claim*: the answer contains a false fact. This is the second-highest second-reader trigger.
+  - *Contested critical error*: the quote the grader called wrong is actually true.
+  - *Contested accuracy deduction*: a deduction rested on something false, or on a sentence that is
+    actually true.
+- **The evidence-informed re-grade** (single-assessor runs only). For a contested answer, the assessor
+  grades once more with the evidence in hand. The result is stored beside the original and shown in the
+  report as how far the index *would* move. It never replaces the score.
+- **Report figures.** The *Evidence-informed* and *Verification-cleared* sensitivity lines, and the *Claim
+  Verification Yield* line (claims checked, supported, refuted, cost per claim, share of run cost).
+- **The blind second reader** (and the reference reader) receives its rulings.
+- **Panel runs.** The **accusation audit**: how often each member's charges were overturned, split by
+  candidate family. It is the panel's second balance check, beside the reference reader.
+- **Suite Health.** Refuted claims become knowledge-base topic candidates. Supported claims outside the
+  rubric become rubric-gap candidates.
+- **Synthesis.** The run synthesis is told what was supported and refuted, so it does not call a true
+  statement a fabrication.
+
+**Why it is worth using.** Graders make factual mistakes, and without a verifier a wrong deduction is
+invisible: the score is quietly too low, and nothing marks it. Documented cases:
+
+- 3 of 5 published critical errors on one series were grader mistakes (runs 28, 31, 35). The blind second
+  reader agreed with one of the false ones.
+- On run 53 the assessor called true facts "fabricated" on 7 of 18 answers.
+- On runs 40 and 41 the assessor docked statements that the source confirmed verbatim, on 7 of 18 and 8 of
+  10 docked questions.
+
+The verifier is what tells the administrator which answers to re-assess, which rubrics are missing facts,
+and which facts the chat assistant gets wrong. The last feeds knowledge-base and chat improvements, the
+benchmark's first purpose.
+
+**Its limits.** It is a model too. 43 wrong verifier verdicts are recorded to date (in the
+`server_benchmark_to_chat_transfer` skill), some of which drove wrong re-grades. A ruling is evidence for a
+human decision, not a verdict.
+
+**Cost.** It is the most expensive grading role on recent runs: 38–56 % of each run's cost on runs 62–67,
+even at economy-tier prices, because each check makes several tool calls. On run 14 it took 67 % and
+refuted nothing.
+
+**Without it.** Scores are unchanged. The report prints *None selected* with the count of unchecked claims.
+Every item listed above is lost, and the `ClaimVerifierConfiguration` instrument key differs.
+
+**When to use it, and when not.**
+
+- **Use it** on runs you will analyze, publish, or use to choose models; on runs whose findings feed chat
+  or knowledge-base fixes; on every panel run (the accusation audit needs it); and on a new suite or
+  rewritten rubrics.
+- **Skip it** on quick smoke tests, re-runs that check a speed, cost or UI change, and large suites on a
+  tight budget where only the score matters.
+
 ### Two gaps the gating does not close
 
-1. **Nothing checks whether the assessor and the second opinion share a provider.** The same-provider
+1. **Nothing checks whether the assessor and the second reader share a provider.** The same-provider
    gate covers *candidate versus assessor* only. The start dialog carries an advisory and the report a
    disclosure. **Advisory, not a block.**
 2. **A suite's assessor changing between runs is advisory too.** The start dialog warns when the selected
@@ -4969,7 +5297,7 @@ Guardrails, all requirements rather than guidance:
   level, and its token cost — as a difficulty rating discloses its assessor. It is not snapshotted
   onto the suite, because the report is not persisted either.
 - **Keep the authoring configuration distinct from both graders'.** Under the staged assessor
-  migration Anthropic occupies the second-opinion slot from the next run onward, so an Anthropic
+  migration Anthropic occupies the second-reader slot from the next run onward, so an Anthropic
   authoring configuration must not be the same one used to grade: a model that helped author a
   suite is not a neutral reader of answers against it.
 
@@ -5017,8 +5345,8 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 - **`BenchmarkScoringProfile`**: Name, `IsDefault`, dimensional weights, `LevelScoresJson`, `CriticalErrorCeiling`, `SpeedTargetMs`, `SpeedDecayK`, `MaxParallelQuestions`, `SecondOpinionQualityThreshold`, `SecondOpinionMode`, `SecondOpinionOutlierDeltaPoints`.
 - **`BenchmarkSuite`**: Unique suite name, description (accepts Markdown, rendered as sanitized HTML), timestamps, and questions.
 - **`BenchmarkQuestion`**: Order index, `ItemRevision` (bumped whenever the question text, band or rubric changes — an edited question is a different item), question text, difficulty tier, `AssessedDifficulty` ($1\text{--}100$), `AssessedDifficultyAtUtc`, expected rubric points, and the assessing model: `AssessedDifficultyModelSnapshotId` (its recorded settings, display name included) and `AssessedDifficultyModelConfigurationId` (attribution only).
-- **`BenchmarkRun`**: The five model roles, each as a settings snapshot (`TestedModelSnapshotId` and `AssessorModelSnapshotId`, required; `CoAssessorModelSnapshotId`, `SecondOpinionAssessorModelSnapshotId` and `ClaimVerifierModelSnapshotId`, null for an absent role) beside an attribution-only `…ModelConfigurationId`, the effective grader output caps (`AssessorEffectiveMaxOutputTokens`, `CoAssessorEffectiveMaxOutputTokens`, `SecondOpinionEffectiveMaxOutputTokens`, `ClaimVerifierEffectiveMaxOutputTokens`), run status, `QualityIndex`, `UnweightedQualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `HarnessVersion`, the instrument fingerprint (`CandidateSystemPromptSha256`, `CandidateSystemPromptText`, `ToolGuidesSha256`) and the corpus fingerprints (`KnowledgeBaseHeadSha`, and from harness 16 `WikiHeadSha` and `SourceCodeHeadSha` — Git HEAD SHAs of the GnollHack wiki and source corpora, where null means "not recorded", never "no corpus"), `DifficultyFallbackUsed` (set when a scored answer carries no assessed difficulty and is therefore weighted by its authored band's fallback — from scoring method 10 that is how an unanswered question is weighted), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, `AnsweredQuestionCount` and `UnansweredQuestionCount` (questions the model failed to answer — not the complement of the former, since a provider error and a question that never ran are neither), the integrity counts (`TransportDefectAnswerCount`, `RecoveredAnswerCount`, `AdvisoryFlagAnswerCount`, `ContestedVerdictAnswerCount`, `ReassessedAnswerCount`), the second-opinion record (`SecondOpinionModeUsed`, `SecondOpinionGradedAnswerCount`, `SecondOpinionMeanAbsDelta`), token accounting, and assessment synthesis.
-- **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, token/duration metrics, the assessor's evidence (`AssessmentEvidenceJson`, `CriticalErrorQuote`, `UnverifiedClaimCount`, `UnverifiedClaimsJson`), the second-opinion verdict and its `SecondOpinionTrigger`, re-assessment provenance (`PreviousQualityScore`, `ReassessedAtUtc`, `ReassessmentCount`), and the snapshot of every model that graded it (`AssessedByModelSnapshotId`, `SecondOpinionByModelSnapshotId`, `ClaimVerificationByModelSnapshotId`, `ReassessedByModelSnapshotId`, `EvidenceInformedByModelSnapshotId`).
+- **`BenchmarkRun`**: The five model roles, each as a settings snapshot (`TestedModelSnapshotId` and `AssessorModelSnapshotId`, required; `CoAssessorModelSnapshotId`, `SecondOpinionAssessorModelSnapshotId` and `ClaimVerifierModelSnapshotId`, null for an absent role) beside an attribution-only `…ModelConfigurationId`, the effective grader output caps (`AssessorEffectiveMaxOutputTokens`, `CoAssessorEffectiveMaxOutputTokens`, `SecondOpinionEffectiveMaxOutputTokens`, `ClaimVerifierEffectiveMaxOutputTokens`), run status, `QualityIndex`, `UnweightedQualityIndex`, `SpeedIndex`, `TotalAnswerDurationMs`, `ScoringProfileId`, `ScoringProfileSnapshotJson`, `ScoringMethodVersion`, `HarnessVersion`, the instrument fingerprint (`CandidateSystemPromptSha256`, `CandidateSystemPromptText`, `ToolGuidesSha256`) and the corpus fingerprints (`KnowledgeBaseHeadSha`, and from harness 16 `WikiHeadSha` and `SourceCodeHeadSha` — Git HEAD SHAs of the GnollHack wiki and source corpora, where null means "not recorded", never "no corpus"), `DifficultyFallbackUsed` (set when a scored answer carries no assessed difficulty and is therefore weighted by its authored band's fallback — from scoring method 10 that is how an unanswered question is weighted), `SpeedMeasurementDegraded`, `MaxParallelQuestionsUsed`, `AnsweredQuestionCount` and `UnansweredQuestionCount` (questions the model failed to answer — not the complement of the former, since a provider error and a question that never ran are neither), the integrity counts (`TransportDefectAnswerCount`, `RecoveredAnswerCount`, `AdvisoryFlagAnswerCount`, `ContestedVerdictAnswerCount`, `ReassessedAnswerCount`), the second-reader record (`SecondOpinionModeUsed`, `SecondOpinionGradedAnswerCount`, `SecondOpinionMeanAbsDelta`), token accounting, and assessment synthesis.
+- **`BenchmarkRunAnswer`**: Order index, question text, sanitized visible answer text, thought text (reasoning), dimensional levels (0–6), dimensional scores, `QualityScore`, `SpeedScore`, `CriticalError`, `AssessedDifficulty`, `AssessmentStatus`, assessor comment, token/duration metrics, the assessor's evidence (`AssessmentEvidenceJson`, `CriticalErrorQuote`, `UnverifiedClaimCount`, `UnverifiedClaimsJson`), the second-reader (or reference-reader) verdict and its `SecondOpinionTrigger`, re-assessment provenance (`PreviousQualityScore`, `ReassessedAtUtc`, `ReassessmentCount`), and the snapshot of every model that graded it (`AssessedByModelSnapshotId`, `SecondOpinionByModelSnapshotId`, `ClaimVerificationByModelSnapshotId`, `ReassessedByModelSnapshotId`, `EvidenceInformedByModelSnapshotId`).
 - **`BenchmarkRunAnswer` termination provenance**: `TerminationReason` describes what the harness loop did (canceled, budget exhausted, iteration limit, completed); `ProviderFinishReason` is the provider's own verbatim reason for ending the response, unmapped. Read together they separate an empty answer the model produced — a normal stop with no text, scored 0 from scoring method 10 — from one a transport defect destroyed, which stays unscored. Null means "not recorded" and never "stopped normally".
 - **`BenchmarkRunAnswer` item identity**: `BenchmarkQuestionId` (nullable FK, `DeleteBehavior.SetNull`) and `ItemRevisionUsed`. The stable link between an answer and the question it answers; before it existed, `OrderIndex` was the only link and a suite reorder silently re-attached every earlier run's answers to the wrong questions. Null means "unlinked" and is excluded from item analysis rather than guessed at.
 - **`BenchmarkRunAnswer` rubric record**: `ExpectedPointsUsed` (nvarchar(max), null) and `ExpectedPointsRecorded` (bit). The rubric the answer is graded against, copied when the answer row is created; every re-grade reads it, never the live question. `ExpectedPointsRecorded = false` means the rubric is not known, and any re-grade of that answer is refused; with it true, a null `ExpectedPointsUsed` means the question had no rubric points.
@@ -5053,12 +5381,12 @@ row per distinct combination of settings ever used, keyed by `Sha256`, never upd
 - **References.** Fourteen foreign keys point here, all `Restrict` and all auto-included: the five run
   roles, the six per-answer graders, the difficulty assessor, the calibration assessor and the rubric
   author. The `…ModelConfigurationId` columns beside them are plain attribution ids, not foreign keys:
-  they keep "the run had a second opinion" and "graded by a different assessor" answerable, and default
+  they keep "the run had a second reader" and "graded by a different assessor" answerable, and default
   the re-run dialogs, but deleting a configuration never touches them.
 
 **A run executes with the settings it recorded.** Launch captures a snapshot for each role and the
 output cap each grader's calls will send (`AssessorEffectiveMaxOutputTokens` and its three siblings,
-harness fallbacks included). Every later model call of the run — candidate, assessor, co-assessor, second opinion,
+harness fallbacks included). Every later model call of the run — candidate, assessor, co-assessor, second or reference reader,
 claim verifier, re-runs and re-assessments — takes its settings **and endpoint** from the role's
 snapshot and only its key from the live configuration (`SystemAiConfigurationSnapshotStore.Bind`). A
 mid-run edit therefore changes nothing. If the live configuration's provider or endpoint no longer
@@ -5088,7 +5416,7 @@ stored version differs is flagged *Comparability definition changed* until re-an
 the candidate keys from the tested snapshot, adds `CandidateEndpoint` (a model-axis key), and gives all
 three grader signatures one shape:
 `provider;model;thinking;reasoningMode;reasoningSummary;serviceTier;maxOutputTokens=<effective cap>;endpoint`,
-the second opinion adding its `mode`, `blind` and `minimumSample`. `parallelMode` left the grader
+the second reader adding its `mode`, `blind` and `minimumSample`. `parallelMode` left the grader
 signature: it shapes only the candidate's system prompt. Runs recorded before version 2 read as a
 different grader instrument from later runs, which is the truth.
 
@@ -5431,7 +5759,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `GET /api/admin/benchmark/runs/{id}`: Full run detail with question answers, compliance purpose statement, and assessment.
 - `GET /api/admin/benchmark/runs/active`: Return `{ runId }` for the run currently executing, or 204 when idle. Lets a client that reloaded mid-run reattach to it; the client then calls `GET .../runs/{id}` for the detail.
 - `POST /api/admin/benchmark/runs/{id}/rescore`: Recompute indices for an existing run against a scoring profile (ungated arithmetic).
-- `POST /api/admin/benchmark/runs/{id}/answers/{answerId}/reassess`: Re-assess a single question's answer (gated by spend caps). `trial: true` records the verdict in the second-opinion slot and changes **no** score, level, flag or index — including the run's `Status` and `CompletedAtUtc`; overwriting an existing automatic second opinion additionally requires `replaceExistingSecondOpinion: true`.
+- `POST /api/admin/benchmark/runs/{id}/answers/{answerId}/reassess`: Re-assess a single question's answer (gated by spend caps). `trial: true` records the verdict in the second-reader slot (the reference-reader slot in a panel run) and changes **no** score, level, flag or index — including the run's `Status` and `CompletedAtUtc`; overwriting an existing automatic second-reader verdict additionally requires `replaceExistingSecondOpinion: true`.
 - `POST /api/admin/benchmark/runs/{id}/calibrate`: Re-grade every answer of a finished run with another assessor and store the agreement statistics only (gated by spend caps). Writes no `BenchmarkRunAnswer` field.
 - `GET /api/admin/benchmark/runs/{id}/calibrations`: List prior calibrations for a run, newest first.
 - `GET /api/admin/benchmark/suites/{id}/last-assessor`: The assessor of the suite's most recent completed run, for the start dialog's assessor-change advisory. Returns an empty object for a suite with no completed run.
@@ -5565,7 +5893,7 @@ score, and all four moved the hash: renaming a profile, promoting a different pr
 or editing a field and reverting it each silently ended a comparable series with nothing in the
 UI saying so. The key now hashes `BenchmarkScoringProfileService.CanonicalSignature`, computed
 only from the profile's *scoring semantics* — the four dimension weights, a normalised
-`LevelScoresJson`, `CriticalErrorCeiling`, the five second-opinion fields, the three speed
+`LevelScoresJson`, `CriticalErrorCeiling`, the five second-reader fields, the three speed
 constants, and `MaxParallelQuestions` — deserialised from the stored snapshot, falling back to a
 hash of the raw blob when the snapshot will not deserialise. The profile id still travels alongside
 this signature in the key, because two profiles with identical scoring semantics are still two

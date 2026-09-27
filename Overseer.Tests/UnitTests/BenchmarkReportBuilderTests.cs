@@ -227,7 +227,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("### Second Opinion Assessor", report);
+        Assert.Contains("### Second Reader", report);
         Assert.Contains("Claude Reviewer", report);
         Assert.Contains("Anthropic", report);
         Assert.DoesNotContain("**None selected.**", report);
@@ -937,7 +937,7 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(
             HarnessV6Run(critical, lowScoring, fine));
 
-        Assert.Contains("**2 answer(s) would have been re-graded**", report);
+        Assert.Contains("**2 answer(s) would have been read by a second reader** under `Flagged`, had one been selected", report);
         Assert.Contains("critical error: 1", report);
         Assert.Contains("below the profile's threshold of 50: 1", report);
     }
@@ -1549,7 +1549,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Assessor Pairing:** candidate OpenAI, assessor Google, second opinion Google — 2 distinct provider(s)", report);
+        Assert.Contains("**Assessor Pairing:** candidate OpenAI, assessor Google, second reader Google — 2 distinct provider(s)", report);
         Assert.Contains("come from the same provider", report);
     }
 
@@ -1870,9 +1870,26 @@ public class BenchmarkReportBuilderTests
         string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1, q2));
 
         Assert.Contains(
-            "Board delivered — assessor 2 of 2 graded, second opinion 1 of 1, claim verifier 1 of 1; synthesis: yes; difficulty assessment: digest (no map).",
+            "Board delivered — assessor 2 of 2 graded, second reader 1 of 1, claim verifier 1 of 1; synthesis: yes; difficulty assessment: digest (no map).",
             report);
         Assert.DoesNotContain("Board Not Delivered", report);
+    }
+
+    [Fact]
+    public void BoardDeliveryLine_NamesTheReferenceReaderInAPanelRun()
+    {
+        var q1 = BoardGradedAnswer(1, 80);
+        q1.SecondOpinionQualityScore = 75;
+        q1.SecondOpinionBoardChars = 12037;
+        q1.ClaimVerificationJson = "[]";
+        q1.VerifierBoardChars = 12037;
+        var run = Harness30BoardRun(q1);
+        run.CoAssessorModelConfigurationId = 9;
+
+        Assert.Equal(
+            "Board delivered — assessor 1 of 1 graded, reference reader 1 of 1, claim verifier 1 of 1; synthesis: yes; difficulty assessment: digest (no map).",
+            BenchmarkReportBuilder.BoardDeliveryLine(run, run.Answers.ToList()));
+        Assert.Equal("reference reader", BenchmarkReportBuilder.BoardDeliveryFigures(run, run.Answers.ToList())[1].Role);
     }
 
     [Fact]
@@ -1884,8 +1901,8 @@ public class BenchmarkReportBuilderTests
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
 
-        Assert.Contains("second opinion 0 of 1", report);
-        Assert.Contains("- **Board Not Delivered (second opinion):** 1 of 1 verdict(s) — Q1", report);
+        Assert.Contains("second reader 0 of 1", report);
+        Assert.Contains("- **Board Not Delivered (second reader):** 1 of 1 verdict(s) — Q1", report);
     }
 
     [Fact]
@@ -2073,7 +2090,7 @@ public class BenchmarkReportBuilderTests
         BenchmarkRunFinalizer.Apply(run, new[] { q1 });
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
-        Assert.Contains("Same model as the second-opinion assessor.", report);
+        Assert.Contains("Same model as the second reader.", report);
     }
 
     [Fact]
@@ -2359,14 +2376,14 @@ public class BenchmarkReportBuilderTests
 
         int candidateAt = report.IndexOf("Candidate (gpt-5.6):", StringComparison.Ordinal);
         int assessorAt = report.IndexOf("Assessor (gemini-3.7-flash):", StringComparison.Ordinal);
-        int secondOpinionAt = report.IndexOf("Second Opinion (gemini-3.7-pro):", StringComparison.Ordinal);
+        int secondOpinionAt = report.IndexOf("Second Reader (gemini-3.7-pro):", StringComparison.Ordinal);
         int verifierAt = report.IndexOf("Claim Verifier (gpt-5-mini):", StringComparison.Ordinal);
         int synthesisAt = report.IndexOf("Synthesis (gemini-3.7-flash):", StringComparison.Ordinal);
         int yieldAt = report.IndexOf("**Claim Verification Yield:**", StringComparison.Ordinal);
 
         Assert.True(candidateAt >= 0 && assessorAt > candidateAt && secondOpinionAt > assessorAt
             && verifierAt > secondOpinionAt && synthesisAt > verifierAt && yieldAt > synthesisAt,
-            "Expected Candidate, Assessor, Second Opinion, Claim Verifier and Synthesis to print contiguously, with the Yield line after all five.");
+            "Expected Candidate, Assessor, Second Reader, Claim Verifier and Synthesis to print contiguously, with the Yield line after all five.");
     }
 
     [Fact]
@@ -2819,7 +2836,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Second Opinion Tokens:** 20,000 in / 2,000 out", report);
+        Assert.Contains("**Second Reader Tokens:** 20,000 in / 2,000 out", report);
         Assert.Contains("**Synthesis Tokens:** 5,000 in / 500 out", report);
         // 100,000 + 50,000 + 20,000 + 10,000 + 5,000 in; 10,000 + 5,000 + 2,000 + 1,000 + 500 out.
         Assert.Contains("**Total Tokens:** 185,000 in / 18,500 out", report);
@@ -2879,11 +2896,11 @@ public class BenchmarkReportBuilderTests
 
         // Dollar figures are sourced from ModelPricingService.ComputeRunRoleCosts, not recomputed
         // here, so the assertions check which lines and models render rather than exact amounts.
-        Assert.Contains("Second Opinion (gemini-3.7-pro):", report);
+        Assert.Contains("Second Reader (gemini-3.7-pro):", report);
         Assert.Contains("Synthesis (gemini-3.7-flash):", report);
         Assert.Contains("- **Grading subtotal:**", report);
         Assert.Contains("of total)", report);
-        Assert.Contains("second opinion catalog (as of 2026-09-05)", report);
+        Assert.Contains("second reader catalog (as of 2026-09-05)", report);
     }
 
     [Fact]
@@ -3052,7 +3069,7 @@ public class BenchmarkReportBuilderTests
 
         var oldReport = BenchmarkReportBuilder.BuildMarkdownReport(old);
         Assert.Contains(
-            "*Recorded before per-role cost tracking: the second opinion's spend is inside the assessor line, and the final synthesis is not counted at all.*",
+            "*Recorded before per-role cost tracking: the second reader's spend is inside the assessor line, and the final synthesis is not counted at all.*",
             oldReport);
 
         var current = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
@@ -4513,6 +4530,24 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void PanelRun_NamesTheNonScoringReaderTheReferenceReader()
+    {
+        var run = PanelReportRun();
+        run.TotalSecondOpinionInputTokens = 40_000;
+        run.TotalSecondOpinionOutputTokens = 4_000;
+        run.TotalSecondOpinionDurationMs = 90_000;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Reference Reader" + Environment.NewLine, report);
+        Assert.Contains("- **Reference Reader Tokens:** 40,000 in / 4,000 out", report);
+        Assert.Contains("- **Reference Reader Time:**", report);
+        Assert.DoesNotContain("### Second Reader", report);
+        Assert.DoesNotContain("Second Reader Tokens", report);
+        Assert.DoesNotContain("second opinion", report, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void PanelRun_ReportsPanelAgreement_AndTheReferenceReaderAgainstThePanel()
     {
         var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
@@ -4633,7 +4668,7 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("Panel Disclosure", report);
         Assert.DoesNotContain("Sensitivity figures:** not computed for a panel run", report);
 
-        Assert.Contains("### Second Opinion Assessor", report);
+        Assert.Contains("### Second Reader", report);
         Assert.Contains("- **Holistic Assessor Score:**", report);
 
         // A single run prints its structured findings under § 6.

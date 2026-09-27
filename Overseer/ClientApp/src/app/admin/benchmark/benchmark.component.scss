@@ -217,6 +217,24 @@
   border-inline-start: 2px solid var(--border-glass);
 }
 
+// A panel run's fixed coverage, shown in place of the Coverage select.
+.second-opinion-mode-fixed-value {
+  font-size: 13px;
+  color: #bbb;
+}
+
+.coverage-tip-footnote {
+  margin-block-start: 8px;
+}
+
+.grader-guide-row {
+  margin-bottom: 15px;
+}
+
+.grader-guide-btn {
+  align-self: flex-start;
+}
+
 // A checkbox whose (i) follows its label text rather than the column's right edge.
 .checkbox-with-tip {
   display: flex;

@@ -3900,7 +3900,7 @@ public class AdminBenchmarkController : ControllerBase
             !(request?.ReplaceExistingSecondOpinion ?? false))
         {
             return Conflict(
-                "This answer already has a second opinion from " +
+                "This answer already has a second-reader verdict from " +
                 $"{answer.SecondOpinionByModelSnapshot.Label() ?? "another assessor"}. " +
                 "Re-send with replaceExistingSecondOpinion to overwrite it.");
         }

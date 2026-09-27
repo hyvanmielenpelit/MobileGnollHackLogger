@@ -57,6 +57,11 @@ import { QuestionGenerationDialogComponent } from './question-generation/questio
 import { SuiteDescriptionGenerationDialogComponent } from './description-generation/suite-description-generation-dialog.component';
 import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './cost-panel/benchmark-cost-panel.component';
 import {
+  BenchmarkGraderGuideComponent,
+  GraderGuideProfile,
+  GraderGuideSection
+} from './grader-guide/benchmark-grader-guide.component';
+import {
   BenchmarkFamilyRelation,
   BenchmarkSynthesisPanelComponent,
   BenchmarkSynthesisView
@@ -264,7 +269,7 @@ interface BenchmarkRunSettings {
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
-    SnapshotSuiteWizardComponent
+    SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -325,6 +330,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
   @ViewChild(QuestionGenerationDialogComponent) generationDialog?: QuestionGenerationDialogComponent;
   @ViewChild('importDefaultSuitesDialog') importDefaultSuitesDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('graderGuide') graderGuide?: BenchmarkGraderGuideComponent;
+
+  /** The scoring profile whose settings the grader guide prints; null prints the Standard defaults. */
+  graderGuideProfile: GraderGuideProfile | null = null;
   @ViewChild('questionYamlImportDialog') questionYamlImportDialog?: QuestionYamlImportDialogComponent;
   @ViewChild('questionYamlHelpDialog') questionYamlHelpDialog?: QuestionYamlHelpDialogComponent;
   @ViewChild('suiteYamlHelpDialog') suiteYamlHelpDialog?: QuestionYamlHelpDialogComponent;
@@ -1665,10 +1674,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   get secondOpinionModeHint(): string {
     if (this.isPanelLaunch) {
-      return 'In a panel run the mode is fixed at All: the reference reader grades every answer, blind.';
+      return 'In a panel run coverage is fixed: the reference reader reads every answer, blind.';
     }
     if (this.secondOpinionModeDisabled) {
-      return 'Choose a second opinion model to set a mode.';
+      return 'Choose a second reader to set its coverage.';
     }
     return this.secondOpinionModeOptions.find(o => o.value === this.secondOpinionMode)?.hint ?? '';
   }
@@ -1851,11 +1860,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (figures.length === 0) {
       return null;
     }
-    const of = (role: string) => {
-      const f = figures.find(x => x.role === role);
+    const of = (...roles: string[]) => {
+      const f = figures.find(x => roles.includes(x.role));
       return f ? `${f.delivered} of ${f.total}` : 'n/a';
     };
-    return `Board delivered — assessor ${of('assessor')} graded, second opinion ${of('second opinion')}, `
+    const reader = run?.isPanelRun ? 'reference reader' : 'second reader';
+    return `Board delivered — assessor ${of('assessor')} graded, ${reader} ${of('second reader', 'reference reader')}, `
       + `claim verifier ${of('claim verifier')}; synthesis: yes; difficulty assessment: digest (no map).`;
   }
 
@@ -2064,6 +2074,31 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return option?.hint ?? '';
   }
 
+  /** The run manifest's coverage badge. A panel run's reference reader always reads every answer, blind. */
+  runSecondOpinionModeLabel(run: BenchmarkRunDetailDto): string {
+    return run.isPanelRun
+      ? 'Every answer, blind (reference reading)'
+      : this.formatSecondOpinionMode(run.secondOpinionModeUsed);
+  }
+
+  runSecondOpinionModeTitle(run: BenchmarkRunDetailDto): string {
+    return run.isPanelRun
+      ? 'A panel run\'s reference reader reads every answer, blind, as a third reading. It never scores.'
+      : this.secondOpinionModeHintOf(run.secondOpinionModeUsed);
+  }
+
+  /** Opens the grader guide, with the values of the profile being edited or the launcher's selected profile. */
+  openGraderGuide(section: GraderGuideSection, fromProfileForm = false): void {
+    // The form does not edit the minimum sample, so the stored profile's value is carried over.
+    this.graderGuideProfile = fromProfileForm
+      ? {
+        ...this.profileForm,
+        secondOpinionMinimumSample: this.scoringProfiles.find(p => p.id === this.editingProfileId)?.secondOpinionMinimumSample
+      }
+      : (this.selectedScoringProfile ?? null);
+    this.graderGuide?.open(section);
+  }
+
   private setDefaultModelSelections() {
     const benchmarkModels = this.benchmarkCapableConfigs;
     if (benchmarkModels.length > 0) {
@@ -2223,7 +2258,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     // errors alone. Mirrors BenchmarkScoringProfileService.ValidateProfile.
     const threshold = this.profileForm.secondOpinionQualityThreshold;
     if (threshold == null || threshold < 0 || threshold > 100) {
-      this.profileValidationErrors.push('Second opinion threshold must be between 0 and 100.');
+      this.profileValidationErrors.push('Second reader threshold must be between 0 and 100.');
       return;
     }
 
@@ -2232,7 +2267,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.profileForm.secondOpinionMode === BenchmarkSecondOpinionMode.FlaggedAndOutliers) {
       const delta = this.profileForm.secondOpinionOutlierDeltaPoints;
       if (delta == null || delta <= 0 || delta > 100) {
-        this.profileValidationErrors.push('Outlier delta must be between 1 and 100 when the second opinion mode is "Flagged answers and statistical outliers".');
+        this.profileValidationErrors.push('Outlier delta must be between 1 and 100 when the second reader coverage is "Flagged answers and statistical outliers".');
         return;
       }
     }
@@ -4208,7 +4243,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         // a re-run, so this needs no wording change under one.
         return `Stage 2 of 3 — Follow-up grading passes: verifying remaining claims. ${this.runVerifiedCount} claims verified so far.`;
       case 'secondopinion':
-        return `Stage 2 of 3 — Follow-up grading passes: second-opinion sweep. ${this.runSecondOpinionCount} second opinions so far.`;
+        return run.isPanelRun
+          ? `Stage 2 of 3 — Follow-up grading passes: reference-reader sweep. ${this.runSecondOpinionCount} reference readings so far.`
+          : `Stage 2 of 3 — Follow-up grading passes: second-reader sweep. ${this.runSecondOpinionCount} second readings so far.`;
       case 'finalizing':
         return scoped
           ? `Stage 3 of 3 — Synthesis and scoring. All ${this.runMeterTotal} re-run answers assessed.`
@@ -4519,7 +4556,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (row.status === 'Pending') return 'Pending';
     if (row.status === 'Answering') return 'Answering';
     if (row.status === 'Verifying') return 'Verifying';
-    if (row.status === 'SecondOpinion') return 'Second opinion';
+    if (row.status === 'SecondOpinion') return this.activeRunDetail?.isPanelRun ? 'Reference reader' : 'Second reader';
     if (row.status === 'ProviderError') return 'Provider Error';
     if (row.status === 'Canceled') return 'Canceled';
     if (row.status !== 'Ok') return row.status;
@@ -4627,12 +4664,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     } else {
       // --- RUN ---
       lines.push('--- RUN ---');
+      const readerName = run.isPanelRun ? 'reference reader' : 'second reader';
       // The rail's stage number, plus the pass the rail collapses away, plus whether the server
       // reported it or the client derived it — the derivation cannot see the follow-up passes at
       // all, so which of the two produced the figure changes how much it is worth.
       const stageNumbers: Record<string, string> = {
         answering: '1 of 3', verifying: '2 of 3 (verifying)',
-        secondopinion: '2 of 3 (second opinion)', finalizing: '3 of 3'
+        secondopinion: `2 of 3 (${readerName})`, finalizing: '3 of 3'
       };
       const stageStr = this.runStage === 'terminal'
         ? 'terminal'
@@ -4697,7 +4735,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       if (run.secondOpinionModeUsed === BenchmarkSecondOpinionMode.FlaggedAndOutliers) {
         secondOpinionParts.push(`outlier delta ${run.scoringProfileSecondOpinionOutlierDeltaPoints ?? 'n/a'}`);
       }
-      lines.push(`Second opinion: ${secondOpinionParts.join(', ')}`);
+      lines.push(`${run.isPanelRun ? 'Reference reader' : 'Second reader'}: ${secondOpinionParts.join(', ')}`);
       lines.push(`Tool call budget: ${run.maxToolCallsPerQuestionUsed ?? 'not recorded'}`);
       const preRunProbe = run.candidateDeliveryVerifiedAtUtc ? `verified at ${run.candidateDeliveryVerifiedAtUtc}` : 'not recorded';
       const reRunProbe = run.rerunCandidateDeliveryVerifiedAtUtc ? `; re-verified before the re-run at ${run.rerunCandidateDeliveryVerifiedAtUtc}` : '';
@@ -4729,7 +4767,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       lines.push(`In flight: ${inFlight.length > 0 ? inFlight.map(i => `Q${i}`).join(', ') : 'none'}`);
       const verifyingNow = run.inFlightVerificationOrderIndexes ?? [];
       const secondOpinionNow = run.inFlightSecondOpinionOrderIndexes ?? [];
-      lines.push(`Verifying now: ${verifyingNow.length > 0 ? verifyingNow.map(i => `Q${i}`).join(', ') : 'none'}; second opinion now: ${secondOpinionNow.length > 0 ? secondOpinionNow.map(i => `Q${i}`).join(', ') : 'none'}`);
+      lines.push(`Verifying now: ${verifyingNow.length > 0 ? verifyingNow.map(i => `Q${i}`).join(', ') : 'none'}; ${readerName} now: ${secondOpinionNow.length > 0 ? secondOpinionNow.map(i => `Q${i}`).join(', ') : 'none'}`);
       // Run-wide figures are the finalizer's once the run is terminal; before that they are stale or
       // absent, so the answer rows are counted instead. The meters' re-run-scoped pair follows.
       const answersVerified = run.answers.filter(a => a.claimVerificationJson != null || a.claimVerificationError != null).length;
@@ -4817,7 +4855,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           : '';
         lines.push(`agreement: ${run.secondOpinionMeanAbsDelta != null ? run.secondOpinionMeanAbsDelta.toFixed(1) + ' mean abs delta' : 'not measured'}${signedDeltaStr} over ${run.secondOpinionGradedAnswerCount ?? 0} of ${run.answeredQuestionCount} answered, disagreements: ${run.secondOpinionDisagreementCount ?? 0}${splitsStr}`);
         if (run.secondOpinionAssessorModelConfigurationId != null && (run.secondOpinionGradedAnswerCount ?? 0) === 0) {
-          lines.push(`second opinion: selected (${run.secondOpinionAssessorModelDisplayNameUsed ?? 'configured'}) but no answer met a trigger — 0 graded`);
+          lines.push(`${readerName}: selected (${run.secondOpinionAssessorModelDisplayNameUsed ?? 'configured'}) but no answer met a trigger — 0 graded`);
         }
         if ((run.secondOpinionGradedAnswerCount ?? 0) > 0 && run.secondOpinionModeUsed !== 3) {
           lines.push('  (coverage selected by trigger — conditioned on the first assessor\'s own uncertainty, not an unbiased agreement rate)');

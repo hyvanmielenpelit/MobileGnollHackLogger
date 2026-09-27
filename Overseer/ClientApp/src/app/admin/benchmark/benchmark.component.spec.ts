@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
+import { ModelPickerComponent } from '../../shared/model-picker/model-picker.component';
 import { of, throwError, Subject } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
@@ -2994,7 +2995,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
-      expect(text).toContain('1 answer(s) were re-graded by a second assessor');
+      expect(text).toContain('1 answer(s) were read by a second reader that reached a materially different verdict. The assessor\'s verdict is what scored.');
       expect(fixture.nativeElement.querySelector('.disputed-badge')).toBeTruthy();
     });
 
@@ -3369,7 +3370,7 @@ describe('AdminBenchmarkComponent', () => {
       const selector = fixture.nativeElement.querySelector('.second-opinion-model-selector') as HTMLElement;
       expect(selector).toBeTruthy();
       // A System AI Config is a database row chosen here, never a value in appsettings.json.
-      expect(selector.textContent).toContain('None — no second opinion');
+      expect(selector.textContent).toContain('None — no second reader');
       expect(component.secondOpinionConfigId).toBeNull();
     });
 
@@ -3400,8 +3401,25 @@ describe('AdminBenchmarkComponent', () => {
       component.saveProfile();
 
       expect(component.profileValidationErrors)
-        .toContain('Second opinion threshold must be between 0 and 100.');
+        .toContain('Second reader threshold must be between 0 and 100.');
       expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
+    });
+
+    it('should label the profile form second-reader fields and open the guide at coverage from it', () => {
+      fixture.detectChanges();
+      const label = (forId: string) =>
+        (fixture.nativeElement.querySelector(`label[for="${forId}"]`) as HTMLElement | null)?.textContent?.trim();
+      expect(label('secondOpinionThreshold')).toBe('Second Reader Threshold');
+      expect(label('secondOpinionModeProfile')).toBe('Second Reader Coverage');
+      const blind = (fixture.nativeElement.querySelector('#profileSecondOpinionBlind') as HTMLElement).closest('label') as HTMLElement;
+      expect(blind.textContent?.trim()).toBe('Blind Second Reader');
+
+      const open = spyOn(component.graderGuide!, 'open');
+      const guideButton = (fixture.nativeElement.querySelector('#secondOpinionModeProfile') as HTMLElement)
+        .closest('.form-group')!.querySelector('.grader-guide-btn') as HTMLButtonElement;
+      expect(guideButton.textContent?.trim()).toBe('How the graders work');
+      guideButton.click();
+      expect(open).toHaveBeenCalledWith('coverage');
     });
 
     it('should badge both models below the header rather than in it', () => {
@@ -3525,7 +3543,7 @@ describe('AdminBenchmarkComponent', () => {
       });
       expect(component.runStage).toBe('secondopinion');
       expect(component.runStageLabel)
-        .toContain('Stage 2 of 3 — Follow-up grading passes: second-opinion sweep');
+        .toContain('Stage 2 of 3 — Follow-up grading passes: second-reader sweep');
 
       component.activeRunDetail = buildCompletedRun({
         status: 'Running', totalQuestionCount: 2, stage: 'Answering', answers
@@ -3629,7 +3647,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(dialog.querySelector('#runAssessmentsProgressBar')).toBeTruthy();
 
       expect(runStatText('Claims verified')).toBe('1 · 1 in progress');
-      expect(runStatText('Second opinions')).toBe('1');
+      expect(runStatText('Second readings')).toBe('1');
     });
 
     it('should show neither counter for a run graded by neither role', () => {
@@ -3643,7 +3661,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(runStatText('Claims verified')).toBeNull();
-      expect(runStatText('Second opinions')).toBeNull();
+      expect(runStatText('Second readings')).toBeNull();
     });
 
     it('should chip a re-graded row as Verifying or Second opinion rather than Scored', () => {
@@ -3665,7 +3683,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runRowChipClass(rows[0])).toBe('status-verifying');
 
       expect(rows[1].status).toBe('SecondOpinion');
-      expect(component.runRowChipLabel(rows[1])).toBe('Second opinion');
+      expect(component.runRowChipLabel(rows[1])).toBe('Second reader');
       expect(component.runRowChipClass(rows[1])).toBe('status-secondopinion');
 
       expect(component.runRowChipLabel(rows[2])).toBe('Scored');
@@ -4141,7 +4159,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(labels.length).toBe(4);
       expect(labels[0]).toBe('Assessor');
       expect(labels[1]).toMatch(/^Co-Assessor/);
-      expect(labels[2]).toMatch(/^Second Opinion/);
+      expect(labels[2]).toMatch(/^Second Reader/);
       expect(labels[3]).toMatch(/^Claim Verifier/);
 
       for (const id of ['bmCoAssessorModelLabel', 'bmSecondOpinionModelLabel', 'bmClaimVerifierModelLabel']) {
@@ -4303,7 +4321,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(dds.length).toBe(3);
       expect(dts[0].textContent?.trim()).toBe('Model under test');
       expect(dts[1].textContent?.trim()).toBe('Evaluator');
-      expect(dts[2].textContent?.trim()).toBe('Second opinion assessor');
+      expect(dts[2].textContent?.trim()).toBe('Second reader');
 
       expect(dds[2].textContent).toContain('Claude Opus 5');
       expect(dds[2].querySelector('.thinking-badge')?.textContent?.trim()).toBe('High');
@@ -4311,7 +4329,7 @@ describe('AdminBenchmarkComponent', () => {
       const modeBadge = dds[2].querySelector('.second-opinion-mode-badge');
       expect(modeBadge).toBeTruthy();
       expect(modeBadge?.textContent?.trim()).toBe('Only flagged answers');
-      expect(modeBadge?.getAttribute('title')).toContain('Critical errors');
+      expect(modeBadge?.getAttribute('title')).toContain('raised a flag');
     });
 
     it('should not render second opinion row if mode is Off (0)', () => {
@@ -4384,8 +4402,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.formatSecondOpinionMode(2)).toBe('Flagged answers and statistical outliers');
       expect(component.formatSecondOpinionMode(3)).toBe('Every answer (double grading)');
 
-      expect(component.secondOpinionModeHintOf(1)).toContain('Critical errors');
-      expect(component.secondOpinionModeHintOf(3)).toContain('measures grader agreement');
+      expect(component.secondOpinionModeHintOf(1)).toContain('raised a flag');
+      expect(component.secondOpinionModeHintOf(3)).toContain('unbiased measure of grading reliability');
     });
 
     it('should explain what the Model Under Test and the Assessor each do', () => {
@@ -4394,7 +4412,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(fixture.nativeElement.querySelector('#bmTestedModelHint')?.textContent).toContain('Answers every question');
       expect(fixture.nativeElement.querySelector('#bmAssessorModelHint')?.textContent)
-        .toContain('four BARS dimensions');
+        .toContain('four dimensions');
     });
 
     it('should describe the benchmark suite and the scoring profile', () => {
@@ -4504,7 +4522,7 @@ describe('AdminBenchmarkComponent', () => {
       component.secondOpinionConfigId = null;
       fixture.detectChanges();
 
-      expect(card().querySelector('#secondOpinionModeHint')?.textContent).toContain('Choose a second opinion model');
+      expect(card().querySelector('#secondOpinionModeHint')?.textContent).toContain('Choose a second reader to set its coverage');
       expect(card().querySelector('#secondOpinionModeSelect')!.getAttribute('aria-describedby'))
         .toBe('secondOpinionModeTip secondOpinionModeHint');
     });
@@ -4539,11 +4557,13 @@ describe('AdminBenchmarkComponent', () => {
         .toBe('bmSecondOpinionModelHint bmSecondOpinionSameModelNote');
     });
 
-    it('should list every Second Opinion Mode in its popup', () => {
+    it('should list every coverage option in its popup', () => {
       fixture.detectChanges();
 
       const tip = card().querySelector('#secondOpinionModeTip') as HTMLElement;
       expect(tip.closest('.gh-info-popup')).toBeTruthy();
+      expect(tip.closest('.gh-info-popup')?.querySelector('.gh-info-popup-title')?.textContent?.trim()).toBe('Coverage');
+      expect(card().querySelector('label[for="secondOpinionModeSelect"]')?.textContent?.trim()).toBe('Coverage');
       const terms = Array.from(tip.querySelectorAll('dt .gh-info-term')).map(t => (t.textContent ?? '').trim());
       expect(terms).toEqual(component.secondOpinionModeOptions.map(o => o.label));
 
@@ -4551,6 +4571,34 @@ describe('AdminBenchmarkComponent', () => {
       expect(badges.length).toBe(1);
       expect(badges[0].closest('dt')?.querySelector('.gh-info-term')?.textContent?.trim())
         .toBe('Every answer (double grading)');
+      expect(tip.textContent).toContain('No coverage setting changes a score');
+    });
+
+    it('should end each grader popup with a recommendation', () => {
+      fixture.detectChanges();
+
+      for (const tipId of ['bmAssessorModelHint', 'bmCoAssessorModelHint', 'bmSecondOpinionModelHint', 'bmClaimVerifierModelHint']) {
+        const tip = card().querySelector(`#${tipId}`) as HTMLElement;
+        expect(Array.from(tip.querySelectorAll('p > strong')).map(s => s.textContent))
+          .withContext(tipId).toContain('Recommended:');
+        expect(tip.textContent).withContext(tipId).toContain('More: How the graders work.');
+      }
+      const reader = card().querySelector('#bmSecondOpinionModelHint') as HTMLElement;
+      expect(reader.textContent).toContain('A second model grades answers again');
+      const verifier = card().querySelector('#bmClaimVerifierModelHint') as HTMLElement;
+      expect(verifier.textContent).not.toContain('advisory, changes no score');
+      expect(verifier.textContent).toContain('It never changes a score');
+    });
+
+    it('should open the grader guide at the roles overview from the Grading group', () => {
+      fixture.detectChanges();
+
+      const open = spyOn(component.graderGuide!, 'open');
+      const button = card().querySelector('.setup-group-grading .grader-guide-btn') as HTMLButtonElement;
+      expect(button.textContent?.trim()).toBe('How the graders work');
+      button.click();
+      expect(open).toHaveBeenCalledWith('roles');
+      expect(component.graderGuideProfile).toBe(component.selectedScoringProfile ?? null);
     });
   });
 
@@ -4657,7 +4705,7 @@ describe('AdminBenchmarkComponent', () => {
       // The hard gate that silently produced the 2026-09-03 run's zero second verdicts: the
       // mode is inert without an assessor, so the control says so rather than looking set.
       expect(select!.disabled).toBeTrue();
-      expect(component.secondOpinionModeHint).toContain('Choose a second opinion model to set a mode');
+      expect(component.secondOpinionModeHint).toContain('Choose a second reader to set its coverage');
       discardPeriodicTasks();
     }));
 
@@ -4667,7 +4715,7 @@ describe('AdminBenchmarkComponent', () => {
       const select = modeSelect();
 
       expect(select!.disabled).toBeFalse();
-      expect(component.secondOpinionModeHint).toContain('measures grader agreement');
+      expect(component.secondOpinionModeHint).toContain('unbiased measure of grading reliability');
       discardPeriodicTasks();
     }));
 
@@ -4964,7 +5012,7 @@ describe('AdminBenchmarkComponent', () => {
       const body = ((heading?.parentElement?.querySelector('.alert-body') as HTMLElement)?.textContent || '')
         .replace(/\s+/g, ' ').trim();
 
-      expect(body).toContain('A second-opinion assessor was selected but no answer met a trigger');
+      expect(body).toContain('A second reader was selected but no answer met a trigger');
       expect(body).toContain('grader agreement is not measured for this run');
     });
 
@@ -5365,19 +5413,19 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('Speed: target 15000 ms, decay k 20');
       // The outlier delta is read only by the FlaggedAndOutliers trigger, so under All it governed
       // nothing and printing it read as a threshold this run applied.
-      expect(text).toContain('Second opinion: mode All, threshold 50');
+      expect(text).toContain('Second reader: mode All, threshold 50');
       expect(text).not.toContain('outlier delta');
     });
 
     it('should print the outlier delta only under the trigger that reads it', () => {
       component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 2 });
       expect(component.runDiagnosticsText)
-        .toContain('Second opinion: mode FlaggedAndOutliers, threshold 50, outlier delta 25');
+        .toContain('Second reader: mode FlaggedAndOutliers, threshold 50, outlier delta 25');
     });
 
     it('should name the mode added after this capture was written', () => {
       component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 4 });
-      expect(component.runDiagnosticsText).toContain('Second opinion: mode FlaggedPlusSample');
+      expect(component.runDiagnosticsText).toContain('Second reader: mode FlaggedPlusSample');
       expect(component.runDiagnosticsText).not.toContain('mode unknown');
     });
 
@@ -5462,15 +5510,38 @@ describe('AdminBenchmarkComponent', () => {
         candidateDeliveryVerifiedAtUtc: '2026-09-18T07:11:00Z',
         boardDelivery: [
           { role: 'assessor', delivered: 18, total: 18, missingQuestions: [] },
-          { role: 'second opinion', delivered: 13, total: 14, missingQuestions: [6] },
+          { role: 'second reader', delivered: 13, total: 14, missingQuestions: [6] },
           { role: 'claim verifier', delivered: 9, total: 9, missingQuestions: [] }
         ]
       });
       const text = component.runDiagnosticsText;
 
       expect(text).toContain('Candidate delivery probe: verified at 2026-09-18T07:11:00Z');
-      expect(text).toContain('Board delivered — assessor 18 of 18 graded, second opinion 13 of 14, claim verifier 9 of 9; synthesis: yes; difficulty assessment: digest (no map).');
-      expect(text).toContain('Board not delivered — second opinion: Q6');
+      expect(text).toContain('Board delivered — assessor 18 of 18 graded, second reader 13 of 14, claim verifier 9 of 9; synthesis: yes; difficulty assessment: digest (no map).');
+      expect(text).toContain('Board not delivered — second reader: Q6');
+    });
+
+    it('should name the reference reader throughout the diagnostics of a panel run', () => {
+      component.activeRunDetail = buildDiagnosticsRun({
+        isPanelRun: true,
+        secondOpinionModeUsed: 3,
+        boardDelivery: [
+          { role: 'assessor', delivered: 18, total: 18, missingQuestions: [] },
+          { role: 'reference reader', delivered: 18, total: 18, missingQuestions: [] },
+          { role: 'claim verifier', delivered: 9, total: 9, missingQuestions: [] }
+        ]
+      });
+      const text = component.runDiagnosticsText;
+
+      expect(text).toContain('Reference reader: mode All');
+      expect(text).toContain('reference reader now:');
+      expect(text).toContain('Board delivered — assessor 18 of 18 graded, reference reader 18 of 18, claim verifier 9 of 9');
+      expect(text).not.toMatch(/second opinion/i);
+      expect(text).not.toContain('second reader');
+
+      component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 3 });
+      expect(component.runDiagnosticsText).toContain('Second reader: mode All');
+      expect(component.runDiagnosticsText).toContain('second reader now:');
     });
 
     it('should append the re-verified stamp when the candidate delivery probe was re-checked before the re-run', () => {
@@ -5925,9 +5996,9 @@ describe('AdminBenchmarkComponent', () => {
       const el: HTMLElement = fixture.nativeElement;
       const text = el.textContent || '';
       expect(text).toContain('Run Integrity Notice');
-      expect(text).toContain('1 answer(s) met a trigger but the second-opinion call failed');
+      expect(text).toContain('1 answer(s) met a trigger but the second-reader call failed');
       expect(text).toContain('(question(s) 7)');
-      expect(text).not.toContain('A second-opinion assessor was selected but no answer met a trigger');
+      expect(text).not.toContain('A second reader was selected but no answer met a trigger');
     });
 
     it('should display no-trigger clause when secondOpinionSelectedButUnused is true and secondOpinionFailedAnswerCount is 0', () => {
@@ -5950,8 +6021,8 @@ describe('AdminBenchmarkComponent', () => {
       const el: HTMLElement = fixture.nativeElement;
       const text = el.textContent || '';
       expect(text).toContain('Run Integrity Notice');
-      expect(text).toContain('A second-opinion assessor was selected but no answer met a trigger');
-      expect(text).not.toContain('second-opinion call failed');
+      expect(text).toContain('A second reader was selected but no answer met a trigger');
+      expect(text).not.toContain('second-reader call failed');
     });
 
     it('should measure agreement over the completed second opinions when some failed but others completed', () => {
@@ -5976,9 +6047,9 @@ describe('AdminBenchmarkComponent', () => {
 
       const el: HTMLElement = fixture.nativeElement;
       const text = el.textContent || '';
-      expect(text).toContain('1 answer(s) met a trigger but the second-opinion call failed');
+      expect(text).toContain('1 answer(s) met a trigger but the second-reader call failed');
       expect(text).toContain('(question(s) 3)');
-      expect(text).toContain('grader agreement is measured over the 3 answer(s) whose second opinion completed');
+      expect(text).toContain('grader agreement is measured over the 3 answer(s) whose second reading completed');
       expect(text).not.toContain('grader agreement is not measured for this run');
     });
   });
@@ -8973,7 +9044,7 @@ describe('AdminBenchmarkComponent', () => {
       dropped.componentInstance.ngOnDestroy();
     });
 
-    it('should fix the reference reader mode at All, disabled, and relabel the second opinion', fakeAsync(() => {
+    it('should fix the reference reader coverage at every answer and name the reference reader', fakeAsync(() => {
       usePanelConfigs();
       component.secondOpinionConfigId = 3;
       component.secondOpinionMode = 1;
@@ -8983,14 +9054,21 @@ describe('AdminBenchmarkComponent', () => {
       tick();
       fixture.detectChanges();
 
-      const select = fixture.nativeElement.querySelector('#secondOpinionModeSelect') as HTMLSelectElement;
-      expect(select.disabled).toBeTrue();
-      expect(select.selectedOptions[0]?.textContent?.trim()).toBe('Every answer (double grading)');
+      // A panel run's coverage is not a choice: a read-only line replaces the select.
+      expect(fixture.nativeElement.querySelector('#secondOpinionModeSelect')).toBeNull();
+      const fixed = fixture.nativeElement.querySelector('.second-opinion-mode-fixed') as HTMLElement;
+      expect(fixed.querySelector('#secondOpinionModeFixedLabel')?.textContent?.trim()).toBe('Coverage');
+      expect(fixed.textContent).toContain('Every answer, blind');
       expect(component.secondOpinionMode).toBe(3);
-      expect(component.secondOpinionModeHint).toContain('fixed at All');
 
       const label = fixture.nativeElement.querySelector('#bmSecondOpinionModelLabel') as HTMLElement;
-      expect(label.textContent?.replace(/\s+/g, ' ').trim()).toBe('Second Opinion (reference reader) Optional');
+      expect(label.textContent?.replace(/\s+/g, ' ').trim()).toBe('Reference Reader Optional');
+      const tip = fixture.nativeElement.querySelector('#bmSecondOpinionModelHint') as HTMLElement;
+      expect(tip.textContent).toContain('A third model grades every answer blind');
+      expect(Array.from(tip.querySelectorAll('p > strong')).map(s => s.textContent)).toContain('Recommended:');
+
+      const picker = fixture.debugElement.query(By.css('.second-opinion-model-selector')).componentInstance as ModelPickerComponent;
+      expect(picker.noneLabel).toBe('None — no reference reader');
 
       // The operator's own override is kept, and returns with a single-assessor run.
       component.coAssessorConfigId = null;
@@ -9221,8 +9299,32 @@ describe('AdminBenchmarkComponent', () => {
       expect(scoreCardText('Assessor Agreement')).toContain('3.0 pts');
       expect(card.querySelector('.co-assessment-box')).toBeNull();
       expect(card.querySelector('.panel-score-chip')).toBeNull();
-      expect((card.querySelector('.second-opinion-box strong') as HTMLElement).textContent).toContain('Second opinion (');
+      expect((card.querySelector('.second-opinion-box strong') as HTMLElement).textContent).toContain('Second reader (');
       expect(fixture.nativeElement.querySelectorAll('app-benchmark-synthesis-panel [role="tab"]').length).toBe(0);
+    });
+
+    it('should omit the All trigger on a reference reading', () => {
+      component.selectedRunDetail = buildPanelRun({ answers: [panelAnswer({ secondOpinionTrigger: 'All' })] });
+      fixture.detectChanges();
+      const card = expandFirstAnswer();
+      expect(card.querySelector('.second-opinion-box')).toBeTruthy();
+      expect(card.querySelector('.second-opinion-trigger')).toBeNull();
+    });
+
+    it('should show a manual trial trigger on a panel run', () => {
+      component.selectedRunDetail = buildPanelRun({ answers: [panelAnswer({ secondOpinionTrigger: 'Manual' })] });
+      fixture.detectChanges();
+      expect(expandFirstAnswer().querySelector('.second-opinion-trigger')?.textContent).toContain('manual trial');
+    });
+
+    it('should label the coverage badge by run type', () => {
+      const panel = buildPanelRun();
+      expect(component.runSecondOpinionModeLabel(panel)).toBe('Every answer, blind (reference reading)');
+      expect(component.runSecondOpinionModeTitle(panel)).toContain('never scores');
+
+      const single = buildPanelRun({ isPanelRun: false, secondOpinionModeUsed: 1 });
+      expect(component.runSecondOpinionModeLabel(single)).toBe('Only flagged answers');
+      expect(component.runSecondOpinionModeTitle(single)).toContain('raised a flag');
     });
 
     it('should show both syntheses as tabs, from one cached list per run object', () => {

@@ -57,28 +57,29 @@ export const BENCHMARK_SECOND_OPINION_MODES: readonly BenchmarkSecondOpinionMode
   {
     value: BenchmarkSecondOpinionMode.Off,
     label: 'Never',
-    hint: 'No second verdict is produced.'
+    hint: 'No second reading. Scores are unchanged; you get no DISPUTED marks and no agreement figure.'
   },
   {
     value: BenchmarkSecondOpinionMode.Flagged,
     label: 'Only flagged answers',
-    hint: 'Critical errors, contested verdicts, unverifiable claims, and scores below the profile threshold.'
+    hint: 'Only answers that raised a flag: a critical error, a refuted claim, a doubtful deduction, or a score below the profile threshold. Cheapest; agreement is measured on doubtful verdicts only.'
   },
   {
     value: BenchmarkSecondOpinionMode.FlaggedAndOutliers,
     label: 'Flagged answers and statistical outliers',
-    hint: "Adds answers far below the run's own median, found after scoring. Adds a stage to the run."
+    hint: "Flagged answers, plus answers far below the run's median, found after scoring. Adds a final stage."
   },
   {
     value: BenchmarkSecondOpinionMode.FlaggedPlusSample,
     label: 'Flagged answers plus a sample',
-    hint: "Flagged answers, topped up to the profile's minimum sample by taking the lowest-scoring "
-      + 'answers first. Deterministic: the same data selects the same answers every run.'
+    hint: "Flagged answers, topped up to the profile's minimum sample with the lowest scores. Always yields some "
+      + "agreement figure; the Standard profile's default."
   },
   {
     value: BenchmarkSecondOpinionMode.All,
     label: 'Every answer (double grading)',
-    hint: 'The only setting that measures grader agreement rather than sampling it.',
+    hint: 'Every answer is read twice. The only unbiased measure of grading reliability, and the only mode that '
+      + 'catches a confidently wrong verdict that raised no flag.',
     recommended: true
   }
 ];
@@ -108,6 +109,8 @@ export interface BenchmarkScoringProfileDto {
   /** Quality points below the run's own median at which an answer is re-graded. FlaggedAndOutliers only. */
   secondOpinionOutlierDeltaPoints: number;
   secondOpinionBlind?: boolean;
+  /** Answers FlaggedPlusSample tops the flagged set up to. */
+  secondOpinionMinimumSample?: number;
   speedTargetMs: number;
   speedDecayK: number;
   speedDifficultyScaling: number;

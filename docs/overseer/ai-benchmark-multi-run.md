@@ -81,7 +81,7 @@ four kinds, and the kind decides what a difference on it costs.
 |---|---|---|
 | **Fundamental** | Suite identity and the answer key — the suite id, and the item revision of every question | The runs answered different questions, or the same questions against a different rubric. Nothing can be paired. **Not comparable** |
 | **Candidate** | Provider, model id, thinking level, reasoning mode and summary, service tier, max output tokens, parallel execution mode, the prompt-options signature | A different subject was measured. **Not comparable** |
-| **Instrument** | `CandidateSystemPromptSha256`, `ToolGuidesSha256`, `KnowledgeBaseHeadSha`, harness version, scoring method version, the scoring profile *and its snapshot*, the assessor / second-opinion / claim-verifier configurations, the per-question budgets | The measuring apparatus moved |
+| **Instrument** | `CandidateSystemPromptSha256`, `ToolGuidesSha256`, `KnowledgeBaseHeadSha`, harness version, scoring method version, the scoring profile *and its snapshot*, the assessor / second-reader / claim-verifier configurations, the per-question budgets | The measuring apparatus moved |
 | **Speed and cost** | Question parallelism (the timing mode) and the pricing snapshot | Speed and cost mix conditions; quality does not |
 
 ### 3.1 The tiers
@@ -117,7 +117,7 @@ definition change only has to bump the constant.
 
 ### 3.3 Composite keys
 
-The assessor, second-opinion and claim-verifier configurations, the scoring profile (id **and**
+The assessor, second-reader and claim-verifier configurations, the scoring profile (id **and**
 snapshot hash), and the per-question budgets are each emitted as **one** composite key rather than as
 several. A single deliberate assessor swap has to count as one instrument difference; emitted
 separately, changing one model would look like four differences and drop a legitimate Tier C set
@@ -306,6 +306,12 @@ token behaviour as well as wall time.
 
 Total across the runs; mean ± sample SD per run; the per-role split (candidate / assessor / claim
 verifier); cost per question; and cost per index point.
+
+The second reader's spend is a role of its own, named *Second reader*, or *Reference reader* for a
+panel run; a set that mixes panel and single-assessor runs shows both. Analyses stored before
+2026-09-27 name it *Second opinion*, which the view maps to *Second reader* for display. The
+comparability key that signs the reader's settings is displayed as *Second reader configuration*;
+its stored name, `SecondOpinionConfiguration`, does not change.
 
 **Cost per question** is the mean cost per run divided by the questions the costed runs asked: their
 answer rows, averaged over the runs whose pricing resolved. Failed, canceled and ungraded answers are
