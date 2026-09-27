@@ -4544,8 +4544,13 @@ describe('AdminBenchmarkComponent', () => {
 
       const tip = card().querySelector('#secondOpinionModeTip') as HTMLElement;
       expect(tip.closest('.gh-info-popup')).toBeTruthy();
-      const terms = Array.from(tip.querySelectorAll('dt')).map(dt => (dt.textContent ?? '').trim());
+      const terms = Array.from(tip.querySelectorAll('dt .gh-info-term')).map(t => (t.textContent ?? '').trim());
       expect(terms).toEqual(component.secondOpinionModeOptions.map(o => o.label));
+
+      const badges = Array.from(tip.querySelectorAll('dt .gh-info-badge'));
+      expect(badges.length).toBe(1);
+      expect(badges[0].closest('dt')?.querySelector('.gh-info-term')?.textContent?.trim())
+        .toBe('Every answer (double grading)');
     });
   });
 

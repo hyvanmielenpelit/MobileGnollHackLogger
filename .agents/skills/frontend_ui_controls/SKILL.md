@@ -518,6 +518,10 @@ short list (a `<dl>` of options, say); a multi-step or interactive explanation s
   second click on the button closes it. It has **no close button, no `role`** (focus stays on the
   button and nothing inside is interactive, so `dialog` would promise behavior it lacks) **and no
   `interestfor`**. It is `.gh-info-popup`, right-aligned under the button, titled by the subject.
+- **A list of options is a `<dl>` with each pair grouped in a `<div>`**, the label in a
+  `<span class="gh-info-term">`; the global styles draw a hairline between groups. A term
+  that needs a status marker (*Recommended*) gets a `<span class="gh-info-badge">` after the
+  label inside its `<dt>` — a word, never a color alone.
 - **The ids**: `{tipId}` is still the element holding the text, so the control's
   `aria-describedby` contract above is unchanged; the popup is `{tipId}-popup`, labelled by its
   title `{tipId}-title`, which is outside the description.

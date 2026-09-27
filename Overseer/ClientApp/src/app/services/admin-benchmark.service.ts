@@ -48,6 +48,8 @@ export interface BenchmarkSecondOpinionModeOption {
   value: BenchmarkSecondOpinionMode;
   label: string;
   hint: string;
+  /** Shown as a "Recommended" badge where the options are explained. */
+  recommended?: boolean;
 }
 
 /** In coverage order, labelled for what they do rather than for their enum names. */
@@ -76,7 +78,8 @@ export const BENCHMARK_SECOND_OPINION_MODES: readonly BenchmarkSecondOpinionMode
   {
     value: BenchmarkSecondOpinionMode.All,
     label: 'Every answer (double grading)',
-    hint: 'Recommended. The only setting that measures grader agreement rather than sampling it.'
+    hint: 'The only setting that measures grader agreement rather than sampling it.',
+    recommended: true
   }
 ];
 

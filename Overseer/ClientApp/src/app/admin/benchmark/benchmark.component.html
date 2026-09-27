@@ -439,8 +439,15 @@
                     <app-info-tip trigger="click" tipId="secondOpinionModeTip" subject="Second Opinion Mode">
                       <dl>
                         @for (option of secondOpinionModeOptions; track option.value) {
-                          <dt>{{ option.label }}</dt>
-                          <dd>{{ option.hint }}</dd>
+                          <div>
+                            <dt>
+                              <span class="gh-info-term">{{ option.label }}</span>
+                              @if (option.recommended) {
+                                <span class="gh-info-badge">Recommended</span>
+                              }
+                            </dt>
+                            <dd>{{ option.hint }}</dd>
+                          </div>
                         }
                       </dl>
                     </app-info-tip>
