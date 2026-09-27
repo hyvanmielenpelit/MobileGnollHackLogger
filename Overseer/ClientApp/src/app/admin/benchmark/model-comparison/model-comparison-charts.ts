@@ -2144,8 +2144,9 @@ function buildScatter(
   });
 
   // The members' own points joined by straight dotted segments, drawn after the marks (the lowest
-  // `order` draws last) so the dots pass through the marks' surface rings. One member draws no line.
-  const frontierDrawn = pareto.path.length >= 2;
+  // `order` draws last) so the dots pass through the marks' surface rings. One member draws no line,
+  // and the style's switch can hide it; fading and the highlight still follow the frontier.
+  const frontierDrawn = style.frontierLine && pareto.path.length >= 2;
   const frontierDatasets = frontierDrawn
     ? [{
         label: PARETO_FRONTIER_LABEL,

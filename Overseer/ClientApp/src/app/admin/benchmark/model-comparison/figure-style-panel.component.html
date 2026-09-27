@@ -405,6 +405,15 @@
             <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'scatter', section: section('scatter', 'marks') }"></ng-container>
             <div class="gh-disclosure-body fsp-section-body">
               <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterMarkControl }"></ng-container>
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="mc-style-scatter-frontierLine" [checked]="scatter.frontierLine"
+                         aria-describedby="mc-style-scatter-frontierLine-tip"
+                         (change)="setScatter('frontierLine', checkedOf($event))">
+                  Show the Pareto frontier line
+                </label>
+                <app-info-tip tipId="mc-style-scatter-frontierLine-tip" subject="the frontier line">Joins the models that nothing else beats on both axes. When one model beats every other on both axes, the frontier is that single point, so there is no line to draw.</app-info-tip>
+              </div>
               <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterFrontierControl }"></ng-container>
             </div>
           </details>

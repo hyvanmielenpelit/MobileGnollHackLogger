@@ -43,6 +43,7 @@ describe('figure-style', () => {
       intervals: true,
       hiddenIntervalsNote: true,
       frontierIntervalsNote: true,
+      frontierLine: true,
       frontierWidthPx: 2,
       labelTextSizePx: 11,
       axisTextSizePx: 11,
@@ -224,7 +225,7 @@ describe('figure-style', () => {
   it('reads a stored style missing any checkbox field as on', () => {
     const everyCheckboxOff = {
       bar: { intervals: false, hiddenIntervalsNote: false, meanTimeNoIntervalNote: false },
-      scatter: { intervals: false, hiddenIntervalsNote: false, frontierIntervalsNote: false }
+      scatter: { intervals: false, hiddenIntervalsNote: false, frontierIntervalsNote: false, frontierLine: false }
     };
     expect(normalizeFigureStyle(everyCheckboxOff).bar.intervals).toBeFalse();
 
@@ -234,7 +235,8 @@ describe('figure-style', () => {
       ['bar', 'meanTimeNoIntervalNote'],
       ['scatter', 'intervals'],
       ['scatter', 'hiddenIntervalsNote'],
-      ['scatter', 'frontierIntervalsNote']
+      ['scatter', 'frontierIntervalsNote'],
+      ['scatter', 'frontierLine']
     ];
     for (const [family, key] of fields) {
       const stored = JSON.parse(JSON.stringify(everyCheckboxOff)) as Record<string, Record<string, unknown>>;
@@ -257,12 +259,13 @@ describe('figure-style', () => {
   it('accepts only real booleans for a checkbox', () => {
     const style = normalizeFigureStyle({
       bar: { intervals: 'false', valueLabels: 0, filledBars: 'true' },
-      scatter: { frontierIntervalsNote: 'false', gridlines: null }
+      scatter: { frontierIntervalsNote: 'false', frontierLine: 'false', gridlines: null }
     });
     expect(style.bar.intervals).toBeTrue();
     expect(style.bar.valueLabels).toBeTrue();
     expect(style.bar.filledBars).toBeFalse();
     expect(style.scatter.frontierIntervalsNote).toBeTrue();
+    expect(style.scatter.frontierLine).toBeTrue();
     expect(style.scatter.gridlines).toBeTrue();
   });
 

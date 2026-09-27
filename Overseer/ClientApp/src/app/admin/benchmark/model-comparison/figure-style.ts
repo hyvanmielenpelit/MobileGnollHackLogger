@@ -116,6 +116,8 @@ export interface ScatterFigureStyle extends FigureChromeStyle {
   readonly hiddenIntervalsNote: boolean;
   /** Caption note: frontier differences within the intervals. */
   readonly frontierIntervalsNote: boolean;
+  /** The dotted Pareto frontier line; drawn only when two or more models are on the frontier. */
+  readonly frontierLine: boolean;
   /** The dotted frontier line's dot diameter. */
   readonly frontierWidthPx: number;
   /** Direct-label name; value lines are this - 1. */
@@ -214,6 +216,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     intervals: true,
     hiddenIntervalsNote: true,
     frontierIntervalsNote: true,
+    frontierLine: true,
     frontierWidthPx: 2,
     labelTextSizePx: 11,
     axisTextSizePx: 11,
@@ -464,6 +467,7 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
     intervals: booleanOr(v['intervals'], d.intervals),
     hiddenIntervalsNote: booleanOr(v['hiddenIntervalsNote'], d.hiddenIntervalsNote),
     frontierIntervalsNote: booleanOr(v['frontierIntervalsNote'], d.frontierIntervalsNote),
+    frontierLine: booleanOr(v['frontierLine'], d.frontierLine),
     frontierWidthPx: numeric('frontierWidthPx'),
     labelTextSizePx: numeric('labelTextSizePx'),
     axisTextSizePx,

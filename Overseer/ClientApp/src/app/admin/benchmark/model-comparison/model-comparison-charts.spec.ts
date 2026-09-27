@@ -1210,6 +1210,34 @@ describe('model-comparison-charts', () => {
       expect(spec.chrome.highlight).toBe('Best trade-offs: slow, mid, fast');
     });
 
+    it('hides the frontier line and its key item on request, and keeps the fading and the highlight', () => {
+      const entries = [
+        makeEntry({ key: 'slow', provider: 'google', intelligenceIndex: 90, ttftP50Ms: 500 }),
+        makeEntry({ key: 'mid', provider: 'anthropic', intelligenceIndex: 60, ttftP50Ms: 300 }),
+        makeEntry({ key: 'beaten', provider: 'openai', intelligenceIndex: 50, ttftP50Ms: 400 }),
+        makeEntry({ key: 'fast', provider: 'openai', intelligenceIndex: 30, ttftP50Ms: 100 }),
+      ];
+      const build = (frontierLine: boolean) => buildQualitySpeedScatter(entries, {
+        ...BASE_FIGURE_OPTIONS,
+        glyphs: buildIdentityGlyphs(entries),
+        speedMeasure: 'ttftP50',
+        style: { ...DEFAULT_FIGURE_STYLE, scatter: { ...DEFAULT_FIGURE_STYLE.scatter, frontierLine } },
+      });
+      const shown = build(true);
+      const hidden = build(false);
+
+      expect(datasetsOf(shown.config).some((d) => d['label'] === 'Pareto frontier')).toBeTrue();
+      expect(shown.chrome.key.map((item) => item.glyph)).toContain('frontier');
+
+      expect(datasetsOf(hidden.config).some((d) => d['label'] === 'Pareto frontier')).toBeFalse();
+      expect(datasetsOf(hidden.config).length).toBe(entries.length);
+      expect(hidden.chrome.key.map((item) => item.glyph)).not.toContain('frontier');
+      expect(hidden.chrome.key.map((item) => item.glyph)).toContain('faded');
+      expect(datasetsOf(hidden.config)[2]['backgroundColor']).toBe(datasetsOf(shown.config)[2]['backgroundColor']);
+      expect(hidden.chrome.highlight).toBe(shown.chrome.highlight);
+      expect(hidden.summary).toEqual(shown.summary);
+    });
+
     it('fades a model another beats on both axes', () => {
       const entries = [
         makeEntry({ key: 'best', provider: 'google', intelligenceIndex: 80, ttftP50Ms: 200 }),

@@ -2940,6 +2940,24 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
+  it('drops the frontier line and its key item from the scatter cards on request, keeping the highlight', () => {
+    render(buildDto(comparableSet(3)), 2);
+    const hasLine = (card: ComparisonFigureCard): boolean =>
+      card.data.datasets.some(dataset => dataset.label === 'Pareto frontier');
+    const index = component.scatterCards.findIndex(hasLine);
+    expect(index).withContext('a scatter with a drawn frontier').toBeGreaterThanOrEqual(0);
+    const card = (): ComparisonFigureCard => component.scatterCards[index];
+    const highlight = card().chrome.highlight;
+    expect(card().chrome.key.map(item => item.glyph)).toContain('frontier');
+
+    openStyleTab(card());
+    withStyleDebounce(() => setChecked(styleControl('mc-style-scatter-frontierLine'), false));
+
+    expect(component.scatterCards.some(hasLine)).toBeFalse();
+    expect(card().chrome.key.map(item => item.glyph)).not.toContain('frontier');
+    expect(card().chrome.highlight).toBe(highlight);
+  });
+
   it('reads the badge off the exam the runs were asked, with no left-out note for a revised rubric', () => {
     // A fully scored 18-question exam, whatever the suite holds now.
     render(buildDto(comparableSet(2)), 2);

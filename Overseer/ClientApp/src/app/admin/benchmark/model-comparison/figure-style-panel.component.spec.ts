@@ -315,6 +315,35 @@ describe('FigureStylePanelComponent', () => {
     expect(host().querySelector('#mc-style-scatter-dominatedShading')).toBeNull();
   });
 
+  it('switches the frontier line and grays its width while it is off', () => {
+    const readout = (): string =>
+      host().querySelector('#mc-style-scatter-section-marks > summary .gh-disclosure-summary-value')!.textContent!.trim();
+    const reset = (): HTMLButtonElement =>
+      host().querySelector<HTMLButtonElement>('#mc-style-scatter-section-marks-reset')!;
+
+    render('scatter');
+    const line = control('mc-style-scatter-frontierLine');
+    const width = control('mc-style-scatter-frontierWidthPx');
+    expect(line.closest('#mc-style-scatter-section-marks')).not.toBeNull();
+    expect(line.compareDocumentPosition(width) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(line.checked).toBeTrue();
+    expect(width.disabled).toBeFalse();
+    expect(hintOf(line)).toContain('no line to draw');
+    expect(readout()).toBe('marks 6 px · frontier 2 px');
+    expect(reset().getAttribute('aria-disabled')).toBe('true');
+
+    setChecked(line, false);
+    expect(emitted[0].scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, frontierLine: false });
+    acceptLast();
+    expect(control('mc-style-scatter-frontierLine').checked).toBeFalse();
+    expect(control('mc-style-scatter-frontierWidthPx').disabled).toBeTrue();
+    expect(readout()).toBe('marks 6 px · no frontier line');
+    expect(reset().getAttribute('aria-disabled')).toBeNull();
+
+    reset().click();
+    expect(emitted[emitted.length - 1].scatter.frontierLine).toBeTrue();
+  });
+
   it('keeps the mean-time note enabled whatever the uncertainty bars, and switches it alone', () => {
     render('bar');
     expect(control('mc-style-bar-meanTimeNoIntervalNote').disabled).toBeFalse();
