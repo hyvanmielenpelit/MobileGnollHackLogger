@@ -217,6 +217,19 @@ To find specific popups, look in the corresponding component's `.html` template:
 
 - **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — not an exhaustive
   list of this component's dialogs, only the ones recorded here so far:
+  - `#runProgressDialog`: the run progress dialog, **full-screen** (`gh-dialog-fullscreen`, no
+    component sizing of its own). Its content wrapper is an inline-size container (`run-progress`)
+    and its body holds two sections: `section.run-progress-overview` (everything but the questions,
+    in order, `#runProgressHeading` first and still the focus target) and
+    `section.run-progress-questions` (`aria-labelledby="runProgressQuestionsTitle"`, `tabindex="0"`
+    with a visible focus ring, *Questions* and a count, then the question list). Narrow is the
+    default — one column, the body scrolls. From `60rem` of content width the body is a grid,
+    `minmax(0, 3fr) minmax(22rem, 2fr)`, and each section scrolls on its own
+    (`overscroll-behavior: contain`, `scrollbar-gutter: stable`). **Keep the overview a block
+    container**: the cost panel relies on margin collapse. Keep exactly one polling live region. A
+    scored row shows its published score (panel score in a panel run) before its chip, named by a
+    visually hidden *Score* word, not `aria-label`. The roster and banner say **Assessor** (never
+    *Evaluator*); a panel run's banner says *Assessors*.
   - `#importDefaultSuitesDialog`: Import Default Suites (Manage Suites tab) — a multi-select
     catalog of the default suite files under `Overseer/Data/DefaultSuites/`, opened by the
     toolbar's Import Default Suites button (from harness 24).
@@ -349,7 +362,27 @@ To find specific popups, look in the corresponding component's `.html` template:
     listed here…*, also the table's `aria-describedby`), **Copy table** and **Download table**,
     sticky while the table scrolls, then one meta line *Computed … · Rows follow the model order: …*
     with a link-style *Use model order* once a header sorts it. Copy table's and Download table's
-    names follow the format. The rows stay on one line until the panel is under 44 rem wide.
+    names follow the format. The rows stay on one line until the panel is under 44 rem wide: the
+    Single chart's Previous / picker / Next group (`.mc-preview-figure-group`) never shrinks or
+    wraps, the zoom group is the only one that shrinks (its slider first), and the zoom read-out is
+    as wide as its text. Under 44 rem the figure group takes a line of its own and zoom and export
+    share the next.
+  - **Color means provider** in every figure, the key and the table glyphs:
+    `figure-theme.ts` `providerHue` maps Google, Anthropic and OpenAI to the theme's validated
+    three-hue palette (in that order) and any other provider to `deEmphasisStroke`. Never give a
+    model its own hue — no four- or five-hue set passes the colorblind validator on all pairs — and
+    never color by list position or by measure; names travel in direct labels, and the key lists the
+    providers present. The Highlight emphasis (gold, the rest gray) still overrides color. Scatter
+    marks are circles; the table glyph is a circle in `.mc-glyph-provider-*`.
+  - **Trade-off scatters**: the Pareto frontier is a dotted line (`borderDash [0, 6]`, round caps)
+    through the frontier models' own points only — no staircase, no extension to the edges, no
+    line for a one-member frontier; dominated models are faded to 35 %, never shaded as a region.
+    Direct labels (model names, with a surface halo) are on by default and inline values off.
+  - **Model profiles are small multiples**: one tile per model on shared scales (intelligence
+    linear over the plotted intervals, speed and cost inverted log), the model in its provider's
+    hue over gray context lines, a dotted *Ideal* line, values on the points. `buildProfilePlot`
+    returns `tiles` and `columns`, and `renderTiledPlotOffscreen` stitches the tiles into the one
+    plot every view, download and copy uses. Do not go back to one overlay chart.
   - **All-charts tiles** each carry **Copy**, **Download** and **Open in Single view** top-right,
     shown while the tile is hovered or holds focus and always on devices without hover (opacity
     only). Copy and Download are tab stops; Open is not, since Enter on the tile opens it.

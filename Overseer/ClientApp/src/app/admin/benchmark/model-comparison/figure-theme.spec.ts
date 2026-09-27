@@ -9,13 +9,18 @@ import {
 import { OVERSEER_DEFAULT_FONT_STACK } from './figure-fonts';
 import { DEFAULT_APPEARANCE_STYLE, FigureAppearanceStyle } from './figure-style';
 import {
+  FADED_MARK_ALPHA,
   TABLE_SHADING_ALPHA,
   appearanceWarnings,
   contrastRatio,
   mixHex,
+  providerDisplayName,
+  providerHue,
+  providerKey,
   resolveFigureTheme,
   tableBandColor,
-  themeBackground
+  themeBackground,
+  withAlpha
 } from './figure-theme';
 import {
   ACCENT,
@@ -23,8 +28,7 @@ import {
   CHART_INK,
   CHART_SURFACE,
   DE_EMPHASIS_FILL,
-  DE_EMPHASIS_STROKE,
-  DOMINATED_REGION_FILL
+  DE_EMPHASIS_STROKE
 } from './model-comparison-charts';
 
 describe('figure-theme', () => {
@@ -42,7 +46,6 @@ describe('figure-theme', () => {
     expect(theme.chrome.muted).toBe(FIGURE_MUTED_COLOR);
     expect(theme.chrome.rule).toBe(FIGURE_RULE_COLOR);
     expect(theme.chrome.keyInk).toBe('#c3c2b7');
-    expect(theme.chrome.dominatedKeyFill).toBe('rgba(255, 255, 255, 0.12)');
     expect(theme.chrome.direction).toEqual({
       border: 'rgba(224, 186, 109, 0.55)', fill: 'rgba(224, 186, 109, 0.1)', ink: FIGURE_TITLE_COLOR
     });
@@ -64,7 +67,6 @@ describe('figure-theme', () => {
     expect(theme.chart.accent).toBe(ACCENT);
     expect(theme.chart.deEmphasisFill).toBe(DE_EMPHASIS_FILL);
     expect(theme.chart.deEmphasisStroke).toBe(DE_EMPHASIS_STROKE);
-    expect(theme.chart.dominatedRegionFill).toBe(DOMINATED_REGION_FILL);
     expect(theme.chart.categorical).toEqual([...CATEGORICAL_PALETTE_DARK]);
 
     expect(theme.fonts).toEqual({
@@ -200,6 +202,34 @@ describe('figure-theme', () => {
     it('grows stronger level by level', () => {
       expect(TABLE_SHADING_ALPHA.light).toBeLessThan(TABLE_SHADING_ALPHA.medium);
       expect(TABLE_SHADING_ALPHA.medium).toBeLessThan(TABLE_SHADING_ALPHA.strong);
+    });
+  });
+
+  describe('provider colors', () => {
+    it('maps Google, Anthropic and OpenAI onto the palette in order, and anything else to the gray', () => {
+      const dark = resolveFigureTheme();
+      expect(['google', 'anthropic', 'openai'].map((provider) => providerHue(provider, dark)))
+        .toEqual([...CATEGORICAL_PALETTE_DARK]);
+      expect(providerHue('OpenAI', dark)).toBe(CATEGORICAL_PALETTE_DARK[2]);
+      expect(providerHue('mistral', dark)).toBe(DE_EMPHASIS_STROKE);
+      expect(providerHue(undefined, dark)).toBe(DE_EMPHASIS_STROKE);
+
+      const light = resolveFigureTheme(appearance({ theme: 'light' }));
+      expect(['google', 'anthropic', 'openai'].map((provider) => providerHue(provider, light)))
+        .toEqual(['#2a78d6', '#eb6834', '#18a070']);
+    });
+
+    it('names the provider for the key', () => {
+      expect([' Google ', 'anthropic', 'OPENAI', 'xai', null].map(providerKey))
+        .toEqual(['google', 'anthropic', 'openai', 'other', 'other']);
+      expect(['google', 'anthropic', 'openai', 'xai'].map(providerDisplayName))
+        .toEqual(['Google', 'Anthropic', 'OpenAI', 'Other']);
+    });
+
+    it('fades a color to an opacity, and leaves a keyword alone', () => {
+      expect(withAlpha('#d95926', FADED_MARK_ALPHA)).toBe('rgba(217, 89, 38, 0.35)');
+      expect(withAlpha('rgba(137, 135, 129, 0.45)', 0.5)).toBe('rgba(137, 135, 129, 0.225)');
+      expect(withAlpha('transparent', 0.35)).toBe('transparent');
     });
   });
 });

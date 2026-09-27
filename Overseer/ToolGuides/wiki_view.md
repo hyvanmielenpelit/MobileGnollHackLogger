@@ -22,5 +22,6 @@ Leading emoji and other symbols in a heading are ignored when a `section` is mat
 `section: "Elbereth"` finds `## 🔮 Elbereth`; an exact heading match is preferred over a
 normalised one. A `section` that still matches no heading is **not** an error and does not cost you
 the result: the marker line `[Section '...' not found in article. Headings: ...]` lists the
-article's headings as written, so one can be copied straight back in, and the whole article follows
-it.
+article's headings as written, so one can be copied straight back in, and the article follows it —
+only its start when the whole would exceed the result cap, with the marker saying how much is shown,
+so ask again with one of the listed headings rather than for the full article.

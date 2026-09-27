@@ -57,7 +57,7 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing article parameter" });
             }
 
-            string? fetched = _wikiService.GetArticle(article, section, out bool isDisambiguation);
+            string? fetched = _wikiService.GetArticle(article, section, out bool isDisambiguation, out bool sectionMissed);
 
             if (isDisambiguation)
             {
@@ -78,6 +78,10 @@ namespace Overseer.Services.Tools
             if (string.IsNullOrWhiteSpace(section) && content.Length > articleBudget)
             {
                 content = PrependTooLongNotice(content, articleBudget);
+            }
+            else if (sectionMissed)
+            {
+                content = MarkdownSectionExtractor.CapSectionMiss(content, articleBudget, ToolName) ?? content;
             }
 
             content += spoilerFreeSuffix;
@@ -120,19 +124,7 @@ namespace Overseer.Services.Tools
             string headingsText = headings.Count > 0 ? string.Join("; ", headings) : "(none)";
             headingsText = FitHeadingsToNoticeCap(articleLength, maxResultLength, headingsText);
 
-            int shown = 0;
-            for (int i = 0; i < 4; i++)
-            {
-                string probe = ComposeNotice(articleLength, shown, headingsText);
-                int candidate = Math.Max(0, maxResultLength - probe.Length - 1);
-                if (candidate == shown)
-                {
-                    break;
-                }
-                shown = candidate;
-            }
-
-            return (ComposeNotice(articleLength, shown, headingsText), shown);
+            return MarkdownSectionExtractor.FitShownCount(shown => ComposeNotice(articleLength, shown, headingsText), maxResultLength);
         }
 
         /// <summary>
@@ -175,7 +167,9 @@ namespace Overseer.Services.Tools
         /// article whose body is empty. A section no heading matches does <b>not</b> reach here:
         /// <see cref="WikiService.GetArticle(string, string?)"/> answers that case itself with an
         /// explanatory <c>[Section '…' not found in article. Returning full text.]</c> line followed
-        /// by the whole article, which tells the model what happened and still gives it the content.
+        /// by the whole article, which tells the model what happened and still gives it the content;
+        /// over the result cap, <see cref="MarkdownSectionExtractor.CapSectionMiss"/> keeps the line
+        /// and the article's opening characters instead.
         /// A disambiguation payload does not reach here either — the caller returns it before this
         /// check — and it would not be seen as empty in any case, being a single line with no
         /// newline to have a body after.
@@ -204,8 +198,8 @@ namespace Overseer.Services.Tools
                 if (!string.IsNullOrWhiteSpace(section))
                 {
                     // It was the article that missed, not the heading: a heading that matches
-                    // nothing returns the whole article instead, so re-spelling the section is
-                    // not the recovery here.
+                    // nothing returns the article instead, so re-spelling the section is not the
+                    // recovery here.
                     sb.Append(" (the article itself, so section='").Append(section).Append("' was never reached)");
                 }
 

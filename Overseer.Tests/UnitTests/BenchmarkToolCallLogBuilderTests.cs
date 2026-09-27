@@ -330,6 +330,15 @@ public class BenchmarkToolCallLogBuilderTests
                     ArgsText = "{}",
                     Result = "The Holy Grail heals.",
                     ResultLengthChars = 21
+                },
+                new BenchmarkRunAnswerToolCall
+                {
+                    SortOrder = 3,
+                    Name = "wiki_view",
+                    Status = "completed",
+                    ArgsText = "{}",
+                    Result = "[Section 'Invoking' not found in article. Returning full text.]\n\nThe Holy Grail heals.",
+                    ResultLengthChars = 86
                 }
             }
         };
@@ -341,5 +350,6 @@ public class BenchmarkToolCallLogBuilderTests
         Assert.Contains("| 0 | N/A | `wiki_search` | completed | N/A | N/A | 42 | no | no | miss |", markdown);
         Assert.Contains("| 1 | N/A | `wiki_search` | completed | N/A | N/A | 4,096 | no | no | unavailable |", markdown);
         Assert.Contains("| 2 | N/A | `wiki_view` | completed | N/A | N/A | 21 | no | no |  |", markdown);
+        Assert.Contains("| 3 | N/A | `wiki_view` | completed | N/A | N/A | 86 | no | no | section miss |", markdown);
     }
 }

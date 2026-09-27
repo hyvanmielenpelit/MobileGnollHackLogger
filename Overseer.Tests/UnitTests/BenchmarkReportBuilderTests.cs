@@ -1883,13 +1883,33 @@ public class BenchmarkReportBuilderTests
         q1.SecondOpinionBoardChars = 12037;
         q1.ClaimVerificationJson = "[]";
         q1.VerifierBoardChars = 12037;
+        q1.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+        q1.CoAssessorBoardChars = 12037;
         var run = Harness30BoardRun(q1);
         run.CoAssessorModelConfigurationId = 9;
 
         Assert.Equal(
-            "Board delivered — assessor 1 of 1 graded, reference reader 1 of 1, claim verifier 1 of 1; synthesis: yes; difficulty assessment: digest (no map).",
+            "Board delivered — assessor 1 of 1 graded, co-assessor 1 of 1, reference reader 1 of 1, claim verifier 1 of 1; synthesis: yes; difficulty assessment: digest (no map).",
             BenchmarkReportBuilder.BoardDeliveryLine(run, run.Answers.ToList()));
-        Assert.Equal("reference reader", BenchmarkReportBuilder.BoardDeliveryFigures(run, run.Answers.ToList())[1].Role);
+        var figures = BenchmarkReportBuilder.BoardDeliveryFigures(run, run.Answers.ToList());
+        Assert.Equal(new[] { "assessor", "co-assessor", "reference reader", "claim verifier" }, figures.Select(f => f.Role));
+    }
+
+    [Fact]
+    public void BoardDelivery_NamesAMemberBVerdictGradedWithoutTheBoard_InAPanelRun()
+    {
+        var q1 = BoardGradedAnswer(1, 80);
+        q1.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+        q1.CoAssessorBoardChars = 0;
+        var q2 = BoardGradedAnswer(2, 70);
+        q2.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+        q2.CoAssessorBoardChars = 12037;
+        var run = Harness30BoardRun(q1, q2);
+        run.CoAssessorModelConfigurationId = 9;
+
+        Assert.Contains("co-assessor 1 of 2", BenchmarkReportBuilder.BoardDeliveryLine(run, run.Answers.ToList()));
+        var coAssessor = BenchmarkReportBuilder.BoardDeliveryFigures(run, run.Answers.ToList()).Single(f => f.Role == "co-assessor");
+        Assert.Equal(new[] { 1 }, coAssessor.MissingQuestions);
     }
 
     [Fact]
@@ -4545,6 +4565,12 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("### Second Reader", report);
         Assert.DoesNotContain("Second Reader Tokens", report);
         Assert.DoesNotContain("second opinion", report, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("second reader", report, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("second-reader", report, StringComparison.OrdinalIgnoreCase);
+
+        var verified = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+        Assert.DoesNotContain("second reader", verified, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("second-reader", verified, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -4618,8 +4644,8 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("### 6.2 Panel Member B: Claude Judge (Anthropic)", report);
         Assert.Contains("Member B's reading of the run.", report);
         Assert.Contains("### 6.3 Where the Readers Agree and Disagree (computed)", report);
-        Assert.Contains("| Convergent |", report);
-        Assert.Contains("| Member B only |", report);
+        Assert.Contains("| weakness · accuracy | Q2 | Q2 misstates the item weight. | The weight in Q2 is wrong. | Convergent |", report);
+        Assert.Contains("| strength · tool use | — | — | Consistent source lookups. | Member B only |", report);
 
         int sixOne = report.IndexOf("### 6.1 Panel Member A:", StringComparison.Ordinal);
         int sixTwo = report.IndexOf("### 6.2 Panel Member B:", StringComparison.Ordinal);
@@ -4675,5 +4701,303 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**Strengths**", report);
         Assert.Contains("**Weaknesses**", report);
         Assert.Contains("- The weight in Q2 is wrong.", report);
+    }
+
+    // --- Panel report: attribution, member B's figures, the reference reader ------------------------
+
+    /// <summary>Rewrites member B's stored record on one answer.</summary>
+    private static void EditMemberB(BenchmarkRunAnswer answer, Action<BenchmarkCoAssessmentRecord> edit)
+    {
+        var record = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!;
+        record.Flags ??= new BenchmarkCoAssessmentFlags();
+        edit(record);
+        answer.CoAssessmentJson = record.Serialize();
+    }
+
+    /// <summary>
+    /// Q3's verification record: four of the answer's own claims (two raised by member A alone, one
+    /// suspected false; one by member B alone; one by both) and two accused sentences, one per member.
+    /// </summary>
+    private const string PanelVerificationJson =
+        "["
+        + "{\"claimIndex\":0,\"claim\":\"The long sword weighs 40.\",\"verdict\":\"Supported\",\"citation\":\"src/objects.c:120\",\"basis\":\"src/objects.c:120\",\"roles\":[\"unverifiedClaim\"],\"raisedBy\":[\"A\"]},"
+        + "{\"claimIndex\":1,\"claim\":\"Excalibur needs level 5.\",\"verdict\":\"Refuted\",\"citation\":\"src/fountain.c:88\",\"basis\":\"The level check is 5 or more, not exactly 5.\",\"roles\":[\"unverifiedClaim\"],\"raisedBy\":[\"B\"]},"
+        + "{\"claimIndex\":2,\"claim\":\"Dipping takes one turn.\",\"verdict\":\"Indeterminate\",\"citation\":null,\"basis\":null,\"roles\":[\"unverifiedClaim\"],\"raisedBy\":[\"A\",\"B\"]},"
+        + "{\"claimIndex\":3,\"claim\":\"Wielding it is free.\",\"verdict\":\"Refuted\",\"citation\":\"src/wield.c:40\",\"basis\":\"src/wield.c:40\",\"roles\":[\"unverifiedClaim\"],\"raisedBy\":[\"A\"],\"suspectedFalse\":true},"
+        + "{\"claimIndex\":4,\"claim\":\"The sword is silver.\",\"verdict\":\"Supported\",\"citation\":\"src/objects.c:121\",\"basis\":\"src/objects.c:121\",\"roles\":[\"accusedQuote\"],\"raisedBy\":[\"B\"]},"
+        + "{\"claimIndex\":5,\"claim\":\"It auto-identifies.\",\"verdict\":\"Refuted\",\"citation\":\"src/o_init.c:12\",\"basis\":\"src/o_init.c:12\",\"roles\":[\"accusedQuote\"],\"raisedBy\":[\"A\"]}"
+        + "]";
+
+    /// <summary>
+    /// <see cref="PanelReportRun"/> with what its reports need beyond the scores: an Anthropic
+    /// candidate that reports no reasoning tokens; member A's dimension points (level 5, 87 on every
+    /// dimension) beside member B's levels 4/5/6/5; member B's flags on Q2 (contested verdict,
+    /// out-of-scope, FORM-only) and Q3 (contested accuracy deduction, which member A carries too);
+    /// member A's out-of-scope marker on Q2; Q3's verification record with <c>raisedBy</c>; a
+    /// reference-reader dispute on Q2 with a comment; a claim verifier; and a board every role received.
+    /// </summary>
+    private static BenchmarkRun PanelReportRunWithVerification()
+    {
+        var run = PanelReportRun();
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-candidate", displayName: "Claude Candidate");
+        run.ClaimVerifierModelConfigurationId = 12;
+        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-verifier", displayName: "Gemini Verifier");
+        run.GameSnapshotSha256Used = "8f8c4778d449";
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { HasGameSnapshot = true }.ToCanonicalJson();
+
+        foreach (var a in run.Answers)
+        {
+            a.AccuracyScore = 87;
+            a.CompletenessScore = 87;
+            a.ConcisenessScore = 87;
+            a.ReadabilityScore = 87;
+            a.ReasoningTokens = 0;
+            a.UnverifiedClaimCount = 0;
+            a.AssessedByModelConfigurationId = 1;
+            a.AssessorBoardChars = 12037;
+            a.CoAssessorBoardChars = 12037;
+            a.SecondOpinionBoardChars = 12037;
+        }
+
+        var q2 = run.Answers.Single(a => a.OrderIndex == 2);
+        q2.CompletenessOutOfScope = true;
+        q2.SecondOpinionDisagreed = true;
+        q2.SecondOpinionJson = "{\"comment\":\"The weight is right after all.\"}";
+        EditMemberB(q2, r =>
+        {
+            r.Flags!.ContestedVerdict = true;
+            r.Flags.CompletenessOutOfScope = true;
+            r.Flags.ReadabilityFormOnly = true;
+        });
+
+        var q3 = run.Answers.Single(a => a.OrderIndex == 3);
+        q3.UnverifiedClaimCount = 3;
+        q3.ClaimVerificationJson = PanelVerificationJson;
+        q3.ClaimsSupportedCount = 1;
+        q3.ClaimsRefutedCount = 2;
+        q3.ClaimsIndeterminateCount = 1;
+        q3.VerifierBoardChars = 12037;
+        q3.AnswerFlags |= (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
+        EditMemberB(q3, r => r.Flags!.ContestedAccuracyDeduction = true);
+
+        return run;
+    }
+
+    [Fact]
+    public void MemberPhrase_NamesTheRaisingMembers_AndIsNullWithoutRaisedBy()
+    {
+        var item = new BenchmarkClaimVerification(0, "x", BenchmarkClaimVerdict.Supported, "src/a.c:1", null);
+
+        Assert.Null(BenchmarkReportBuilder.MemberPhrase(item));
+        Assert.Equal("member A", BenchmarkReportBuilder.MemberPhrase(item with { RaisedBy = new[] { "A" } }));
+        Assert.Equal("member B", BenchmarkReportBuilder.MemberPhrase(item with { RaisedBy = new[] { "B" } }));
+        Assert.Equal("both members", BenchmarkReportBuilder.MemberPhrase(item with { RaisedBy = new[] { "A", "B" } }));
+    }
+
+    [Fact]
+    public void PanelRun_AttributesEachChargeToTheMemberThatRaisedIt()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("> - **Supported accusation:** a sentence member B charged as false was checked by the claim verifier and **supported** — \"The sword is silver.\"", report);
+        Assert.Contains("> - **Accused sentence, refuted:** a sentence member A charged as false was checked by the claim verifier and returned **refuted** — \"It auto-identifies.\"", report);
+        Assert.Contains("> - **Accused sentences checked:** 2 (A 1, B 1, both 0) — supported 1, refuted 1, indeterminate 0", report);
+        Assert.Contains("> - **Suspected false by the panel:** 1 (A 1, B 0, both 0) — refuted 1 (the verifier sided with the member)", report);
+        Assert.Contains("- **Q3:** \"Wielding it is free.\" *(suspected false by member A)*", report);
+        Assert.DoesNotContain("the assessor charged as false", report);
+    }
+
+    [Fact]
+    public void PanelRun_SplitsTheRunTotalsPerMember()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("- **Accused Sentences Checked:** 2 (A 1, B 1, both 0) across 1 answer(s) (Q3) — supported 1, refuted 1, indeterminate 0.", report);
+        Assert.Contains("- **Suspected False by the Panel:** 1 (A 1, B 0, both 0) across 1 answer(s) (Q3) — refuted 1 (the verifier sided with the member)", report);
+        Assert.Contains("- **Supported Accusations:** 1 (A 0, B 1, both 0) (Q3)", report);
+        Assert.Contains("  - **Q3:** a sentence member B charged as false was checked by the claim verifier and **supported** — \"The sword is silver.\" (src/objects.c:121).", report);
+        Assert.DoesNotContain("Suspected False by the Assessor", report);
+    }
+
+    [Fact]
+    public void PanelRun_CountsTheUnionOfClaims_WithTheSplitByMember()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("- **Unverified Claims:** 4 across 1 answer(s) (Q3) — verified: 1 supported, 2 refuted, 1 indeterminate (member A 2, member B 1, both 1)", report);
+        Assert.DoesNotContain("- **Unverified Claims:** 3 across", report);
+    }
+
+    [Fact]
+    public void RefutedClaims_PrintTheBasisOnlyWhenItDiffersFromTheCitation()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("  - **Citation:** src/wield.c:40", report);
+        Assert.DoesNotContain("  - **Basis:** src/wield.c:40", report);
+        Assert.Contains("  - **Citation:** src/fountain.c:88", report);
+        Assert.Contains("  - **Basis:** The level check is 5 or more, not exactly 5.", report);
+    }
+
+    [Fact]
+    public void PanelRun_ExplainsEachMembersContestedDeduction_ByTheItemsThatMemberRaised()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        // Member A's flag is not explained by member B's supported accusation.
+        Assert.Contains("- **Contested Accuracy Deductions:** A 1, B 1 — member A — cause not recorded: Q3; member B — a sentence the assessor quoted as false was supported: Q3.", report);
+        Assert.Contains("contested accuracy deductions: A 1, B 1", report);
+    }
+
+    [Fact]
+    public void PanelRun_PrintsMemberBsAdvisoryFlagsBesideMemberAs()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("contested verdicts: A 0, B 1", report);
+        Assert.Contains("unevidenced deductions: A 0, B 0", report);
+        Assert.Contains("dimension outliers: A 0, B 0", report);
+        Assert.Contains("- **Out-of-scope completeness deductions:** A 1 (Q2), B 1 (Q2)", report);
+        Assert.Contains("- **Rubric format suggestions not followed:** A 0 (none), B 1 (Q2)", report);
+    }
+
+    [Fact]
+    public void PanelRun_PrintsDimensionalAveragesForEachMemberAndThePanel()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("| Reader | Accuracy (55%) | Completeness (25%) | Conciseness (10%) | Readability (10%) |", report);
+        Assert.Contains("| Member A | 87.0 / 100 (level 5.0) | 87.0 / 100 (level 5.0) | 87.0 / 100 (level 5.0) | 87.0 / 100 (level 5.0) |", report);
+        Assert.Contains("| Member B | 72.0 / 100 (level 4.0) | 87.0 / 100 (level 5.0) | 100.0 / 100 (level 6.0) | 87.0 / 100 (level 5.0) |", report);
+        Assert.Contains("| Panel | 79.5 / 100 (level 4.5) | 87.0 / 100 (level 5.0) | 93.5 / 100 (level 5.5) | 87.0 / 100 (level 5.0) |", report);
+        Assert.DoesNotContain("- **Accuracy (Weight 55%):**", report);
+    }
+
+    [Fact]
+    public void PanelRun_ReadsTheResponseStyleConflictOnThePanelAverages()
+    {
+        // Member A alone: Completeness 55 against Accuracy 87, a conflict. Member B's Completeness
+        // of 100 lifts the panel's to 77.5 beside an Accuracy of 79.5: no conflict.
+        var run = PanelReportRunWithVerification();
+        foreach (var a in run.Answers)
+        {
+            a.CompletenessLevel = 3;
+            a.CompletenessScore = 55;
+            EditMemberB(a, r => r.CompletenessLevel = 6);
+        }
+        Assert.True(BenchmarkChatTransfer.HasResponseStyleConflict(run, run.Answers.ToList(), out _));
+        Assert.DoesNotContain("Response-style conflict", BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        // Member B's Completeness of 35 leaves the panel's at 45, 34.5 below its Accuracy.
+        foreach (var a in run.Answers)
+        {
+            EditMemberB(a, r => r.CompletenessLevel = 2);
+        }
+        Assert.Contains("Completeness is the weakest dimension by 34.5 points", BenchmarkReportBuilder.BuildMarkdownReport(run));
+    }
+
+    [Fact]
+    public void PanelRun_ComparesThePanelScoreWithTheReferenceReader_UnderDisputedAssessments()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("The panel score and the reference reader's are shown here", report);
+        Assert.Contains("- **Question 2:** panel 75 / 100 (A 60, B 90; critical error A no, B no) vs reference reader 70 / 100 (critical error no, Gemini Reader)", report);
+        Assert.Contains("  - Reference reader: The weight is right after all.", report);
+        Assert.DoesNotContain("first 60 / 100", report);
+    }
+
+    [Fact]
+    public void PanelRun_CountsACapFromEitherMember_UnderCriticalErrors()
+    {
+        var run = PanelReportRun();
+        run.Answers.Single(a => a.OrderIndex == 5).CoAssessmentCriticalError = true;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Critical Errors:** 1 applied (question(s) 5) — flagged by member A on 0, member B on 1 — 1 disputed by the reference reader (question(s) 5)", report);
+        Assert.Contains("The **Critical Errors** count under Results Summary is the number to read", report);
+    }
+
+    [Fact]
+    public void PanelRun_WithoutACriticalError_NamesNoCriticalErrorsLine()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        Assert.DoesNotContain("- **Critical Errors:**", report);
+        Assert.DoesNotContain("The **Critical Errors** count", report);
+        Assert.Contains("Neither panel member nor the reference reader recorded a critical error on this run.", report);
+    }
+
+    [Fact]
+    public void PanelRun_HeadsMemberAsBlockAsThePanelMember()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        Assert.Contains("### Assessor (Panel Member A)", report);
+        Assert.DoesNotContain("### Assessment Model", report);
+    }
+
+    [Fact]
+    public void PanelRun_NamesTheCoAssessorInTheBoardDeliveryLine()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("Board delivered — assessor 5 of 5 graded, co-assessor 5 of 5, reference reader 5 of 5, claim verifier 1 of 1; synthesis: yes; difficulty assessment: digest (no map).", report);
+        Assert.DoesNotContain("Board Not Delivered", report);
+    }
+
+    [Fact]
+    public void PanelRun_ReportsReasoningTokensAsNotReported_ForAnAnthropicCandidate()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("- **Of Which Reasoning Tokens:** n/a *(not reported separately by this provider; thinking is counted in output tokens)*", report);
+        Assert.DoesNotContain(", Reasoning=", report);
+    }
+
+    [Fact]
+    public void PanelRun_ComplianceTermsNameEveryGradingRole()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRunWithVerification());
+
+        Assert.Contains("evaluated by **GPT Judge** (OpenAI) and **Claude Judge** (Anthropic); reference reader **Gemini Reader** (Google); claim verifier **Gemini Verifier** (Google) are third-party content", report);
+    }
+
+    [Fact]
+    public void PanelRun_MeasuredOverlap_CountsTheSlowerMemberAndBothSyntheses()
+    {
+        var run = PanelReportRun();
+        run.MaxParallelQuestionsUsed = 1;
+        run.TotalAnswerDurationMs = 50_000;
+        run.TotalAssessmentDurationMs = 20_000;
+        run.TotalCoAssessmentDurationMs = 30_000;
+        run.TotalSecondOpinionDurationMs = 10_000;
+        run.TotalSynthesisDurationMs = 5_000;
+        run.TotalCoSynthesisDurationMs = 7_000;
+        run.TotalDurationMs = 110_000;
+        foreach (var a in run.Answers)
+        {
+            a.AssessmentDurationMs = 4_000;
+            a.CoAssessmentDurationMs = 6_000;
+        }
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // 110,000 − (50,000 + 5 × 6,000 + 10,000 + 5,000 + 7,000) = 8,000.
+        Assert.Contains("*Measured overlap: wall clock minus the summed stage durations (candidate, assessment (the slower member per answer), reference reader, claim verification, synthesis, co-synthesis) leaves ", report);
+        Assert.Contains("(8,000 ms) unaccounted for by sequential stage time.*", report);
+    }
+
+    [Fact]
+    public void PanelRun_MarksAStrengthAndAWeaknessOnOneQuestionAsConflicting()
+    {
+        var run = PanelReportRun();
+        run.AssessmentJson = "{\"overallScore\":72,\"findings\":[{\"kind\":\"strength\",\"category\":\"accuracy\",\"questions\":[4],\"text\":\"Q4 is exact.\"}]}";
+        run.CoAssessorSynthesisJson = "{\"overallScore\":78,\"findings\":[{\"kind\":\"weakness\",\"category\":\"accuracy\",\"questions\":[4,5],\"text\":\"Q4 and Q5 misstate the damage.\"}]}";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("| strength (A) vs weakness (B) · accuracy | Q4, Q5 | Q4 is exact. | Q4 and Q5 misstate the damage. | Conflicting |", report);
     }
 }

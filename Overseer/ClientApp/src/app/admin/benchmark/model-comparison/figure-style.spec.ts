@@ -43,7 +43,6 @@ describe('figure-style', () => {
       intervals: true,
       hiddenIntervalsNote: true,
       frontierIntervalsNote: true,
-      dominatedShading: true,
       frontierWidthPx: 2,
       labelTextSizePx: 11,
       axisTextSizePx: 11,
@@ -209,10 +208,10 @@ describe('figure-style', () => {
       version: 1,
       extra: true,
       bar: { gapPercent: 10, orientation: 'sideways', gridlines: false, colour: 'red' },
-      scatter: { legendPosition: 'top', markRadiusPx: 9, dominatedShading: false }
+      scatter: { legendPosition: 'top', markRadiusPx: 9, frontierIntervalsNote: false }
     });
     expect(style.bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10, gridlines: false });
-    expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 9, dominatedShading: false });
+    expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 9, frontierIntervalsNote: false });
     expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile', 'numbers', 'appearance', 'table']);
     expect('colour' in style.bar).toBeFalse();
   });
@@ -225,7 +224,7 @@ describe('figure-style', () => {
   it('reads a stored style missing any checkbox field as on', () => {
     const everyCheckboxOff = {
       bar: { intervals: false, hiddenIntervalsNote: false, meanTimeNoIntervalNote: false },
-      scatter: { intervals: false, hiddenIntervalsNote: false, frontierIntervalsNote: false, dominatedShading: false }
+      scatter: { intervals: false, hiddenIntervalsNote: false, frontierIntervalsNote: false }
     };
     expect(normalizeFigureStyle(everyCheckboxOff).bar.intervals).toBeFalse();
 
@@ -235,8 +234,7 @@ describe('figure-style', () => {
       ['bar', 'meanTimeNoIntervalNote'],
       ['scatter', 'intervals'],
       ['scatter', 'hiddenIntervalsNote'],
-      ['scatter', 'frontierIntervalsNote'],
-      ['scatter', 'dominatedShading']
+      ['scatter', 'frontierIntervalsNote']
     ];
     for (const [family, key] of fields) {
       const stored = JSON.parse(JSON.stringify(everyCheckboxOff)) as Record<string, Record<string, unknown>>;
@@ -259,13 +257,22 @@ describe('figure-style', () => {
   it('accepts only real booleans for a checkbox', () => {
     const style = normalizeFigureStyle({
       bar: { intervals: 'false', valueLabels: 0, filledBars: 'true' },
-      scatter: { dominatedShading: 'false', gridlines: null }
+      scatter: { frontierIntervalsNote: 'false', gridlines: null }
     });
     expect(style.bar.intervals).toBeTrue();
     expect(style.bar.valueLabels).toBeTrue();
     expect(style.bar.filledBars).toBeFalse();
-    expect(style.scatter.dominatedShading).toBeTrue();
+    expect(style.scatter.frontierIntervalsNote).toBeTrue();
     expect(style.scatter.gridlines).toBeTrue();
+  });
+
+  it('drops a stored dominatedShading quietly, and loads the rest of the style', () => {
+    const style = normalizeFigureStyle({
+      version: 1,
+      scatter: { dominatedShading: false, markRadiusPx: 8, frontierWidthPx: 3 }
+    });
+    expect('dominatedShading' in style.scatter).toBeFalse();
+    expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 8, frontierWidthPx: 3 });
   });
 
   it('keeps the n = 1 marker when set and reads anything but a boolean as shown', () => {

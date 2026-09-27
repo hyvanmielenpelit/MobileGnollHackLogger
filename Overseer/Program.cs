@@ -142,6 +142,7 @@ builder.Services.AddSingleton<SourceCodeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SourceCodeService>());
 builder.Services.AddSingleton<NetHackSourceCodeService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<NetHackSourceCodeService>());
+builder.Services.AddSingleton(sp => SourceLivenessIndex.ForSourceCodeService(sp.GetRequiredService<SourceCodeService>(), builder.Configuration, sp.GetRequiredService<ILogger<SourceLivenessIndex>>()));
 
 
 builder.Services.AddSingleton<CryptoService>();

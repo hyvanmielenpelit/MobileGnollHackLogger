@@ -19,7 +19,6 @@ export interface ResolvedChromeColors {
   readonly muted: string;
   readonly rule: string;
   readonly keyInk: string;
-  readonly dominatedKeyFill: string;
   /** The Better badge. */
   readonly direction: { readonly border: string; readonly fill: string; readonly ink: string };
   readonly badge: Record<FigureBadgeTone, { readonly border: string; readonly fill: string; readonly text: string }>;
@@ -36,7 +35,7 @@ export interface ResolvedChartColors {
   readonly accent: string;
   readonly deEmphasisFill: string;
   readonly deEmphasisStroke: string;
-  readonly dominatedRegionFill: string;
+  /** The validated three-hue palette; {@link providerHue} maps Google, Anthropic and OpenAI onto it in that order. */
   readonly categorical: readonly [string, string, string];
 }
 
@@ -88,7 +87,6 @@ const DARK_THEME: ThemeBase = {
     muted: DARK_MUTED,
     rule: '#2a2a2a',
     keyInk: '#c3c2b7',
-    dominatedKeyFill: 'rgba(255, 255, 255, 0.12)',
     direction: { border: 'rgba(224, 186, 109, 0.55)', fill: 'rgba(224, 186, 109, 0.1)', ink: DARK_TITLE },
     badge: {
       neutral: { border: 'rgba(255, 255, 255, 0.25)', fill: 'rgba(255, 255, 255, 0.04)', text: DARK_TITLE },
@@ -109,7 +107,6 @@ const DARK_THEME: ThemeBase = {
     accent: '#e0ba6d',
     deEmphasisFill: 'rgba(137, 135, 129, 0.45)',
     deEmphasisStroke: '#898781',
-    dominatedRegionFill: 'rgba(255, 255, 255, 0.04)',
     categorical: ['#3987e5', '#d95926', '#199e70'],
   },
 };
@@ -126,7 +123,6 @@ const LIGHT_THEME: ThemeBase = {
     muted: LIGHT_MUTED,
     rule: '#e1e0d9',
     keyInk: '#52514e',
-    dominatedKeyFill: 'rgba(11, 11, 11, 0.10)',
     direction: { border: 'rgba(154, 107, 18, 0.55)', fill: 'rgba(154, 107, 18, 0.08)', ink: LIGHT_TITLE },
     badge: {
       neutral: { border: 'rgba(11, 11, 11, 0.25)', fill: 'rgba(11, 11, 11, 0.03)', text: LIGHT_TITLE },
@@ -147,10 +143,69 @@ const LIGHT_THEME: ThemeBase = {
     accent: '#9a6b12',
     deEmphasisFill: 'rgba(107, 106, 102, 0.35)',
     deEmphasisStroke: '#898781',
-    dominatedRegionFill: 'rgba(11, 11, 11, 0.04)',
     categorical: ['#2a78d6', '#eb6834', '#18a070'],
   },
 };
+
+/** The opacity of a faded mark: a trade-off model another model beats on both axes. */
+export const FADED_MARK_ALPHA = 0.35;
+
+/** The providers the figures color, in palette order. Any other provider draws in the neutral gray. */
+export const COLORED_PROVIDERS = ['google', 'anthropic', 'openai'] as const;
+
+/** A colored provider, or `other` for any provider the palette has no slot for. */
+export type ProviderKey = (typeof COLORED_PROVIDERS)[number] | 'other';
+
+/** Display names for the provider key. */
+const PROVIDER_NAMES: Readonly<Record<ProviderKey, string>> = {
+  google: 'Google',
+  anthropic: 'Anthropic',
+  openai: 'OpenAI',
+  other: 'Other',
+};
+
+/** The provider, lower-cased and trimmed, as a {@link ProviderKey}. */
+export function providerKey(provider: string | null | undefined): ProviderKey {
+  const normalized = (provider ?? '').trim().toLowerCase();
+  return (COLORED_PROVIDERS as readonly string[]).includes(normalized) ? (normalized as ProviderKey) : 'other';
+}
+
+/**
+ * A provider's hue in the theme: Google, Anthropic and OpenAI take the validated palette's three
+ * slots in that order; any other provider, or none, takes the de-emphasis gray.
+ */
+export function providerHue(provider: string | null | undefined, theme: Pick<ResolvedFigureTheme, 'chart'>): string {
+  return providerPaletteHue(provider, theme.chart.categorical, theme.chart.deEmphasisStroke);
+}
+
+/** {@link providerHue} over an explicit palette and gray. */
+export function providerPaletteHue(provider: string | null | undefined, palette: readonly string[], other: string): string {
+  const key = providerKey(provider);
+  const slot = key === 'other' ? -1 : COLORED_PROVIDERS.indexOf(key);
+  return slot < 0 || slot >= palette.length ? other : palette[slot];
+}
+
+/** The provider's display name for the key: `OpenAI`, `Anthropic`, `Google`, otherwise `Other`. */
+export function providerDisplayName(provider: string | null | undefined): string {
+  return PROVIDER_NAMES[providerKey(provider)];
+}
+
+/**
+ * A color at `alpha` opacity: a `#rrggbb` hex becomes `rgba(…)`, and an `rgba(…)` has its alpha
+ * multiplied. Anything else, `transparent` included, is returned as it is.
+ */
+export function withAlpha(color: string, alpha: number): string {
+  const hex = parseHex(color);
+  if (hex) {
+    return `rgba(${hex[0]}, ${hex[1]}, ${hex[2]}, ${alpha})`;
+  }
+  const rgba = /^rgba\(\s*(\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\s*\)$/i.exec(color);
+  if (rgba) {
+    const faded = Math.round(parseFloat(rgba[4]) * alpha * 1000) / 1000;
+    return `rgba(${rgba[1]}, ${rgba[2]}, ${rgba[3]}, ${faded})`;
+  }
+  return color;
+}
 
 function themeBase(name: FigureThemeName): ThemeBase {
   return name === 'light' ? LIGHT_THEME : DARK_THEME;

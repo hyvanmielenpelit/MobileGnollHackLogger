@@ -421,7 +421,8 @@ Wielding a lit torch increases visibility in dark areas.
     /// ExtractMarkdownSection returns an explanatory "[Section '...' not found in article.
     /// Returning full text.]" line followed by the whole article, so the model is told what
     /// happened and still gets the content. BuildMissContent is never reached, which is why it
-    /// carries no section-mismatch branch.
+    /// carries no section-mismatch branch. This article is under the result cap; the over-cap case
+    /// is <see cref="WikiViewTool_SectionMissOnAnOverCapArticle_EndsAtTheCapWithoutTruncatedSuffix"/>.
     /// </summary>
     [Fact]
     public async Task WikiViewTool_SectionNotFoundOnExistingArticle_ReturnsTheWholeArticleWithAnExplanatoryLine()
@@ -439,6 +440,53 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.Contains("Returning full text", result.Content);
         // The article body, not a miss payload: this path is not a miss at all.
         Assert.DoesNotContain("No wiki article matched", result.Content);
+        // Under the cap the whole article follows, to its last line.
+        Assert.Contains("fight them one at a time.", result.Content);
+        Assert.DoesNotContain("Showing the first", result.Content);
+    }
+
+    /// <summary>
+    /// Over the result cap, the section-miss marker line keeps its heading list, says how much of
+    /// the article follows, and points back at a heading; the header, the line, one newline and the
+    /// article's opening characters land at exactly the cap, so ToolExecutor never appends its own
+    /// "[Truncated: …]" suffix and cuts the article's tail with no pointer back into it.
+    /// </summary>
+    [Fact]
+    public async Task WikiViewTool_SectionMissOnAnOverCapArticle_EndsAtTheCapWithoutTruncatedSuffix()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiViewTool(service);
+
+        var ctx = Context();
+        ctx.MaxResultLength = 300;
+        var jsonParams = JsonDocument.Parse("{\"article\": \"Gnoll\", \"section\": \"TotallyMissingSection\"}").RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, ctx, CancellationToken.None);
+
+        Assert.True(result.Success);
+        string content = result.Content!;
+        Assert.Equal(ctx.MaxResultLength, content.Length);
+        Assert.DoesNotContain("[Truncated:", content);
+        Assert.DoesNotContain("Returning full text", content);
+
+        string[] lines = content.Split('\n');
+        Assert.StartsWith("--- ", lines[0]);
+        Assert.EndsWith("Gnoll.md ---", lines[0]);
+
+        string marker = lines[1];
+        Assert.StartsWith("[Section 'TotallyMissingSection' not found in article. Headings: Strategy. Showing the first ", marker);
+        Assert.EndsWith(" characters; call wiki_view again with one of the headings above as section.]", marker);
+
+        var counts = System.Text.RegularExpressions.Regex.Match(marker, @"Showing the first (\d+) of (\d+) characters");
+        Assert.True(counts.Success, marker);
+        int shown = int.Parse(counts.Groups[1].Value);
+        int articleLength = int.Parse(counts.Groups[2].Value);
+        Assert.True(shown > 0 && shown < articleLength, marker);
+
+        // Exactly the shown count follows the marker line, from the article's first character.
+        string shownText = content.Substring(lines[0].Length + 1 + marker.Length + 1);
+        Assert.Equal(shown, shownText.Length);
+        Assert.StartsWith("Gnoll is one of the most common early monsters", shownText);
     }
 
     /// <summary>

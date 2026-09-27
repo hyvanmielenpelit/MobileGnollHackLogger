@@ -116,8 +116,7 @@ export interface ScatterFigureStyle extends FigureChromeStyle {
   readonly hiddenIntervalsNote: boolean;
   /** Caption note: frontier differences within the intervals. */
   readonly frontierIntervalsNote: boolean;
-  /** The region the frontier beats on both axes. */
-  readonly dominatedShading: boolean;
+  /** The dotted frontier line's dot diameter. */
   readonly frontierWidthPx: number;
   /** Direct-label name; value lines are this - 1. */
   readonly labelTextSizePx: number;
@@ -215,7 +214,6 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     intervals: true,
     hiddenIntervalsNote: true,
     frontierIntervalsNote: true,
-    dominatedShading: true,
     frontierWidthPx: 2,
     labelTextSizePx: 11,
     axisTextSizePx: 11,
@@ -453,6 +451,7 @@ function normalizeBar(value: unknown): BarFigureStyle {
   };
 }
 
+/** A stored key this style no longer has, such as `dominatedShading`, is dropped without a word. */
 function normalizeScatter(value: unknown): ScatterFigureStyle {
   const d = DEFAULT_FIGURE_STYLE.scatter;
   const v = isRecord(value) ? value : {};
@@ -465,7 +464,6 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
     intervals: booleanOr(v['intervals'], d.intervals),
     hiddenIntervalsNote: booleanOr(v['hiddenIntervalsNote'], d.hiddenIntervalsNote),
     frontierIntervalsNote: booleanOr(v['frontierIntervalsNote'], d.frontierIntervalsNote),
-    dominatedShading: booleanOr(v['dominatedShading'], d.dominatedShading),
     frontierWidthPx: numeric('frontierWidthPx'),
     labelTextSizePx: numeric('labelTextSizePx'),
     axisTextSizePx,

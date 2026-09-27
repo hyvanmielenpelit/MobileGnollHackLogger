@@ -3502,9 +3502,7 @@ public class BenchmarkService
         expectedPoints ??= BenchmarkRunExamRecord.Rubric(answer);
 
         var allowedTools = _configuration.GetSection("Benchmark:AllowedTools").Get<List<string>>() ?? _defaultAllowedTools;
-        int toolCallBudget = _configuration.GetValue<int>("Benchmark:ClaimVerification:ToolCallBudget", 15);
-        int toolIterations = _configuration.GetValue<int>("Benchmark:ClaimVerification:ToolIterations", 8);
-        int totalModelCalls = _configuration.GetValue<int>("Benchmark:ClaimVerification:TotalModelCalls", 12);
+        var (toolCallBudget, toolIterations, totalModelCalls) = ResolveClaimVerificationBudget(_configuration, manifest.Count);
         int maxOutputTokens = run.ClaimVerifierEffectiveMaxOutputTokens ?? ClaimVerifierOutputCap;
         int timeoutSeconds = _configuration.GetValue<int>("Benchmark:ClaimVerification:TimeoutSeconds", 300);
         int maxResultLength = _configuration.GetValue<int>("Benchmark:MaxResultLength", 10000);
@@ -4815,6 +4813,38 @@ public class BenchmarkService
         {
             return false;
         }
+    }
+
+    internal const int DefaultClaimVerificationToolCallBudget = 15;
+    internal const int DefaultClaimVerificationToolIterations = 8;
+    internal const int DefaultClaimVerificationTotalModelCalls = 12;
+
+    /// <summary>
+    /// The claim verifier's limits for a manifest of <paramref name="manifestCount"/> items. The tool
+    /// call budget is <c>Benchmark:ClaimVerification:ToolCallBudget</c> (15 when unset or not
+    /// positive) plus <c>ToolCallBudgetPerItem</c> (default 0) per item, capped at
+    /// <c>ToolCallBudgetMax</c> (default the base budget) and never below the base budget. The tool
+    /// iterations are the configured <c>ToolIterations</c> or half the budget, rounded up, whichever
+    /// is larger; the model calls the configured <c>TotalModelCalls</c> or the iterations plus four,
+    /// whichever is larger.
+    /// </summary>
+    internal static (int ToolCallBudget, int ToolIterations, int TotalModelCalls) ResolveClaimVerificationBudget(
+        IConfiguration configuration,
+        int manifestCount)
+    {
+        int floor = configuration.GetValue<int>("Benchmark:ClaimVerification:ToolCallBudget", DefaultClaimVerificationToolCallBudget);
+        if (floor <= 0) floor = DefaultClaimVerificationToolCallBudget;
+        int perItem = Math.Max(0, configuration.GetValue<int>("Benchmark:ClaimVerification:ToolCallBudgetPerItem", 0));
+        int cap = configuration.GetValue<int>("Benchmark:ClaimVerification:ToolCallBudgetMax", floor);
+
+        long scaled = floor + (long)perItem * Math.Max(0, manifestCount);
+        int budget = (int)Math.Clamp(scaled, floor, Math.Max(floor, cap));
+
+        int configuredIterations = configuration.GetValue<int>("Benchmark:ClaimVerification:ToolIterations", DefaultClaimVerificationToolIterations);
+        int configuredModelCalls = configuration.GetValue<int>("Benchmark:ClaimVerification:TotalModelCalls", DefaultClaimVerificationTotalModelCalls);
+        int toolIterations = Math.Max(configuredIterations, (budget + 1) / 2);
+        int totalModelCalls = Math.Max(configuredModelCalls, toolIterations + 4);
+        return (budget, toolIterations, totalModelCalls);
     }
 
     internal static AgentRunRequest BuildClaimVerificationRequest(
@@ -8109,7 +8139,9 @@ public class BenchmarkService
 
     /// <summary>
     /// Whether the verifier refuted the out-of-rubric basis itself: the statement the Accuracy
-    /// deduction rests on is false. Supported and Indeterminate both return false.
+    /// deduction rests on is false. Supported and Indeterminate both return false. Matched by
+    /// verbatim text, then as the same item (<see cref="SameItem"/>), which is how a panel member's
+    /// basis finds the item it was merged into.
     /// </summary>
     internal static bool OutOfRubricBasisWasRefuted(
         IReadOnlyList<BenchmarkClaimVerification>? verifications,
@@ -8121,6 +8153,7 @@ public class BenchmarkService
         string trimmed = basis.Trim();
         var match = verifications.FirstOrDefault(
             v => string.Equals(v.Claim?.Trim(), trimmed, StringComparison.Ordinal));
+        match ??= verifications.FirstOrDefault(v => SameItem(v.Claim, trimmed));
 
         return match != null && match.EffectiveVerdict == BenchmarkClaimVerdict.Refuted;
     }
@@ -8166,7 +8199,9 @@ public class BenchmarkService
     /// Whether the verifier supported the critical-error quote itself. Matched by the index the
     /// quote was submitted at — <see cref="BenchmarkClaimVerificationParser"/> emits one
     /// verification per submitted claim, in submission order, with the submitted text echoed back —
-    /// and by verbatim text as a fallback, so a reordered response is still read correctly.
+    /// and by verbatim text as a fallback, so a reordered response is still read correctly, then as
+    /// the same item (<see cref="SameItem"/>), which is how a panel member's quote finds the item it
+    /// was merged into.
     /// </summary>
     internal static bool CriticalErrorQuoteWasSupported(
         IReadOnlyList<BenchmarkClaimVerification>? verifications,
@@ -8181,6 +8216,7 @@ public class BenchmarkService
             v => v.ClaimIndex == 0 && string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal));
         match ??= verifications.FirstOrDefault(
             v => string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal));
+        match ??= verifications.FirstOrDefault(v => SameItem(v.Claim, quote));
 
         return match != null && match.EffectiveVerdict == BenchmarkClaimVerdict.Supported;
     }
@@ -9228,17 +9264,47 @@ public class BenchmarkService
         return items;
     }
 
+    private static readonly Regex ItemListMarkerRegex = new(
+        @"^(?:[-*+•]|\d{1,3}[.)])\s+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex ItemBoldLabelRegex = new(
+        @"^\*\*[^*\n]{1,80}?(?::\*\*|\*\*\s*:)\s*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex ItemMarkupRegex = new(@"[*_`]", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The key under which two copies of one union-manifest item are the same item: the trimmed text
+    /// without a leading list marker or a leading bold label (<c>**Label:**</c>, <c>**Label**:</c>),
+    /// without <c>*</c>, <c>_</c> and backticks, whitespace collapsed. Keys compare ignoring case
+    /// (<see cref="SameItem"/>).
+    /// </summary>
+    internal static string ItemKey(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        string key = ItemListMarkerRegex.Replace(text.Trim(), string.Empty).TrimStart();
+        key = ItemBoldLabelRegex.Replace(key, string.Empty);
+        key = ItemMarkupRegex.Replace(key, string.Empty);
+        return string.Join(' ', key.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    /// <summary>Whether two texts are the same item under <see cref="ItemKey"/>, ignoring case; false when either key is empty.</summary>
+    internal static bool SameItem(string? x, string? y)
+    {
+        string keyX = ItemKey(x);
+        return keyX.Length > 0 && string.Equals(keyX, ItemKey(y), StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// A panel run's submission manifest: every scored member's items once, each recording in
     /// <see cref="ClaimSubmission.RaisedBy"/> which members raised it.
     ///
     /// Unverified claims come first, member A's then member B's new ones, a claim both raised listed
-    /// once (whitespace-collapsed, ignoring case) and suspected-false when either member recorded it
-    /// so. Member A's critical-error quote keeps the single-assessor placement: first, unless it equals
-    /// a listed claim, whose place it takes. Member B's distinct quote follows A's, or takes that rule
-    /// when A raised none. The out-of-rubric bases follow the quotes, A's before B's. Roles are
-    /// assigned by text match, as <see cref="BuildClaimManifest"/> assigns them. Assessor statements
-    /// and accused sentences follow in member order under <see cref="BuildClaimManifest"/>'s rules; an
+    /// once (the same <see cref="ItemKey"/>) and suspected-false when either member recorded it so.
+    /// Member A's critical-error quote keeps the single-assessor placement: first, unless it is the
+    /// same item as a listed claim, whose place it takes. Member B's distinct quote follows A's, or
+    /// takes that rule when A raised none. The out-of-rubric bases follow the quotes, A's before B's.
+    /// A quote or basis that is the same item as a listed text is submitted as that text. Roles are
+    /// assigned by item match. Assessor statements and accused sentences follow in member order under
+    /// <see cref="BuildClaimManifest"/>'s rules, matched to listed items by <see cref="ItemKey"/>; an
     /// accused sentence another member also charged adds its fragments and charge to the item.
     /// </summary>
     internal static List<ClaimSubmission> BuildUnionClaimManifest(
@@ -9246,18 +9312,16 @@ public class BenchmarkService
         string? answerText)
     {
         var ordered = contributions.OrderBy(c => c.Member).ToList();
-        var raisedBy = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+        var raisedBy = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
         void Raise(string text, BenchmarkPanelMember member)
         {
-            string key = text.Trim();
+            string key = ItemKey(text);
             if (!raisedBy.TryGetValue(key, out var members))
             {
                 raisedBy[key] = members = new SortedSet<string>(StringComparer.Ordinal);
             }
             members.Add(BenchmarkVerdictView.LabelOf(member));
         }
-        static string ClaimKey(string text)
-            => string.Join(' ', text.Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
         var suspected = new Dictionary<string, (string Entry, string? Reason)>(StringComparer.Ordinal);
         var texts = new List<string>();
@@ -9274,7 +9338,7 @@ public class BenchmarkService
                     text = sentence;
                 }
 
-                string key = ClaimKey(text);
+                string key = ItemKey(text);
                 if (textByKey.TryGetValue(key, out string? listed))
                 {
                     text = listed;
@@ -9294,23 +9358,26 @@ public class BenchmarkService
         }
 
         string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
+        // A quote or basis that is the same item as a listed text is submitted as that text.
+        string? Listed(string? s) => s == null ? null : Trimmed(texts.FirstOrDefault(t => SameItem(t, s)) ?? s);
         var byMember = ordered.ToDictionary(c => c.Member);
-        string? quoteA = byMember.TryGetValue(BenchmarkPanelMember.A, out var a) ? Trimmed(a.CriticalErrorQuote) : null;
-        string? quoteB = byMember.TryGetValue(BenchmarkPanelMember.B, out var b) ? Trimmed(b.CriticalErrorQuote) : null;
-        string? basisA = a != null ? Trimmed(a.OutOfRubricBasis) : null;
-        string? basisB = b != null ? Trimmed(b.OutOfRubricBasis) : null;
-        if (quoteB != null && string.Equals(quoteB, quoteA, StringComparison.Ordinal)) quoteB = null;
-        if (basisB != null && string.Equals(basisB, basisA, StringComparison.Ordinal)) basisB = null;
+        string? quoteA = byMember.TryGetValue(BenchmarkPanelMember.A, out var a) ? Listed(Trimmed(a.CriticalErrorQuote)) : null;
+        string? quoteB = byMember.TryGetValue(BenchmarkPanelMember.B, out var b) ? Listed(Trimmed(b.CriticalErrorQuote)) : null;
+        if (quoteB != null && SameItem(quoteB, quoteA)) quoteB = null;
 
         if (quoteA != null)
         {
             texts = WithCriticalErrorQuoteFirst(texts, quoteA);
         }
-        if (quoteB != null && !texts.Any(t => string.Equals(t, quoteB, StringComparison.Ordinal)))
+        if (quoteB != null && !texts.Any(t => SameItem(t, quoteB)))
         {
-            int after = quoteA != null ? texts.FindIndex(t => string.Equals(t, quoteA, StringComparison.Ordinal)) + 1 : 0;
+            int after = quoteA != null ? texts.FindIndex(t => SameItem(t, quoteA)) + 1 : 0;
             texts.Insert(Math.Clamp(after, 0, texts.Count), quoteB);
         }
+
+        string? basisA = a != null ? Listed(Trimmed(a.OutOfRubricBasis)) : null;
+        string? basisB = b != null ? Listed(Trimmed(b.OutOfRubricBasis)) : null;
+        if (basisB != null && SameItem(basisB, basisA)) basisB = null;
 
         int quoteCount = (quoteA != null ? 1 : 0) + (quoteB != null ? 1 : 0);
         if (basisA != null)
@@ -9320,7 +9387,7 @@ public class BenchmarkService
         if (basisB != null)
         {
             int after = basisA != null
-                ? texts.FindIndex(t => string.Equals(t.Trim(), basisA, StringComparison.Ordinal)) + 1
+                ? texts.FindIndex(t => SameItem(t, basisA)) + 1
                 : quoteCount;
             texts = WithOutOfRubricBasis(texts, basisB, after);
         }
@@ -9329,12 +9396,12 @@ public class BenchmarkService
         if (quoteB != null) Raise(quoteB, BenchmarkPanelMember.B);
         if (basisA != null) Raise(basisA, BenchmarkPanelMember.A);
         if (basisB != null) Raise(basisB, BenchmarkPanelMember.B);
-        // A member whose quote equals the other's raised it too.
-        if (b != null && quoteA != null && string.Equals(Trimmed(b.CriticalErrorQuote), quoteA, StringComparison.Ordinal)) Raise(quoteA, BenchmarkPanelMember.B);
-        if (b != null && basisA != null && string.Equals(Trimmed(b.OutOfRubricBasis), basisA, StringComparison.Ordinal)) Raise(basisA, BenchmarkPanelMember.B);
+        // A member whose quote is the same item as the other's raised it too.
+        if (b != null && quoteA != null && SameItem(b.CriticalErrorQuote, quoteA)) Raise(quoteA, BenchmarkPanelMember.B);
+        if (b != null && basisA != null && SameItem(b.OutOfRubricBasis, basisA)) Raise(basisA, BenchmarkPanelMember.B);
 
         IReadOnlyList<string>? RaisedList(string text)
-            => raisedBy.TryGetValue(text.Trim(), out var members) ? members.ToList() : null;
+            => raisedBy.TryGetValue(ItemKey(text), out var members) ? members.ToList() : null;
 
         var quotes = new[] { quoteA, quoteB }.Where(q => q != null).ToList();
         var bases = new[] { basisA, basisB }.Where(q => q != null).ToList();
@@ -9343,11 +9410,11 @@ public class BenchmarkService
         {
             string trimmed = text.Trim();
             var itemRoles = new List<string>();
-            if (quotes.Any(q => string.Equals(trimmed, q, StringComparison.Ordinal)))
+            if (quotes.Any(q => SameItem(trimmed, q)))
             {
                 itemRoles.Add(BenchmarkClaimRoles.CriticalErrorQuote);
             }
-            if (bases.Any(q => string.Equals(trimmed, q, StringComparison.Ordinal)))
+            if (bases.Any(q => SameItem(trimmed, q)))
             {
                 itemRoles.Add(BenchmarkClaimRoles.OutOfRubricBasis);
             }
@@ -9380,7 +9447,7 @@ public class BenchmarkService
                 string trimmed = statement.Trim();
                 if (trimmed.Length == 0) continue;
 
-                int existing = items.FindIndex(i => string.Equals(i.Text.Trim(), trimmed, StringComparison.OrdinalIgnoreCase));
+                int existing = items.FindIndex(i => SameItem(i.Text, trimmed));
                 if (existing >= 0)
                 {
                     if (items[existing].Roles.Contains(BenchmarkClaimRoles.AssessorStatement))
@@ -9389,7 +9456,8 @@ public class BenchmarkService
                     }
                     continue;
                 }
-                if (bases.Any(basis => trimmed.Contains(basis!, StringComparison.OrdinalIgnoreCase))) continue;
+                if (bases.Any(basis => ItemKey(basis) is { Length: > 0 } basisKey
+                    && ItemKey(trimmed).Contains(basisKey, StringComparison.OrdinalIgnoreCase))) continue;
 
                 items.Add(new ClaimSubmission(trimmed, new List<string> { BenchmarkClaimRoles.AssessorStatement }, null)
                 {
@@ -9403,7 +9471,7 @@ public class BenchmarkService
             foreach (var accused in contribution.AccusedQuotes ?? Array.Empty<AccusedQuote>())
             {
                 string trimmed = accused.Text.Trim();
-                int existing = items.FindIndex(i => string.Equals(i.Text.Trim(), trimmed, StringComparison.Ordinal));
+                int existing = items.FindIndex(i => SameItem(i.Text, trimmed));
                 if (existing >= 0)
                 {
                     var item = items[existing];

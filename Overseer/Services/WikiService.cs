@@ -489,7 +489,19 @@ public class WikiService : IDisposable
     /// </summary>
     public string? GetArticle(string articleName, string? section, out bool isDisambiguation)
     {
+        return GetArticle(articleName, section, out isDisambiguation, out _);
+    }
+
+    /// <summary>
+    /// <see cref="GetArticle(string, string?, out bool)"/>, also reporting through
+    /// <paramref name="sectionMissed"/> whether <paramref name="section"/> matched no heading of the
+    /// resolved article, so the returned text carries the section-miss marker line and the whole
+    /// article.
+    /// </summary>
+    public string? GetArticle(string articleName, string? section, out bool isDisambiguation, out bool sectionMissed)
+    {
         isDisambiguation = false;
+        sectionMissed = false;
 
         IndexSearcher? searcher;
         Analyzer? analyzer;
@@ -510,7 +522,7 @@ public class WikiService : IDisposable
             var pathHits = searcher.Search(new TermQuery(new Term("relpathlower", normalized.ToLowerInvariant())), 1);
             if (pathHits.TotalHits > 0)
             {
-                return RenderArticle(searcher.Doc(pathHits.ScoreDocs[0].Doc), section);
+                return RenderArticle(searcher.Doc(pathHits.ScoreDocs[0].Doc), section, out sectionMissed);
             }
         }
 
@@ -561,12 +573,12 @@ public class WikiService : IDisposable
 
         if (titleMatches.Count > 0)
         {
-            return RenderArticle(titleMatches[0], section);
+            return RenderArticle(titleMatches[0], section, out sectionMissed);
         }
 
         // No indexed title equals the request: the best-scoring article stands, with no relevance
         // floor, so a garbled or invented name still yields something rather than a miss.
-        return RenderArticle(searcher.Doc(hits.ScoreDocs[0].Doc), section);
+        return RenderArticle(searcher.Doc(hits.ScoreDocs[0].Doc), section, out sectionMissed);
     }
 
     /// <summary>
@@ -714,16 +726,18 @@ public class WikiService : IDisposable
 
     /// <summary>
     /// The article's text under a <c>--- Races/Gnoll.md ---</c> header, so the caller can see
-    /// which of several same-titled articles it received.
+    /// which of several same-titled articles it received. <paramref name="sectionMissed"/> reports
+    /// a <paramref name="section"/> that matched no heading.
     /// </summary>
-    private string RenderArticle(Document doc, string? section)
+    private string RenderArticle(Document doc, string? section, out bool sectionMissed)
     {
         string label = doc.Get("relfile") ?? doc.Get("filename");
         string content = doc.Get("content");
+        sectionMissed = false;
 
         if (!string.IsNullOrWhiteSpace(section))
         {
-            content = MarkdownSectionExtractor.Extract(content, section);
+            content = MarkdownSectionExtractor.Extract(content, section, out sectionMissed);
         }
 
         return $"--- {label} ---\n{content}";

@@ -155,7 +155,7 @@
             <div class="pulse-indicator" aria-hidden="true"></div>
             <div>
               <h4>Benchmark Run in Progress (Run #{{ activeRunDetail.id }})</h4>
-              <p class="text-muted">Suite: {{ activeRunDetail.suiteName }} | Model: {{ activeRunDetail.testedModelDisplayNameUsed }} | Evaluator: {{ activeRunDetail.assessorModelDisplayNameUsed }}{{ activeRunDetail.isPanelRun ? ' + ' + activeRunDetail.coAssessorModelDisplayNameUsed : '' }}</p>
+              <p class="text-muted">Suite: {{ activeRunDetail.suiteName }} | Model: {{ activeRunDetail.testedModelDisplayNameUsed }} | {{ activeRunDetail.isPanelRun ? 'Assessors' : 'Assessor' }}: {{ activeRunDetail.assessorModelDisplayNameUsed }}{{ activeRunDetail.isPanelRun ? ' + ' + activeRunDetail.coAssessorModelDisplayNameUsed : '' }}</p>
             </div>
           </div>
           <div class="banner-progress" role="status">
@@ -2463,7 +2463,7 @@
                                   {{ v.verdict }}
                                 </span>
                                 <span class="claim-text">“{{ v.claim }}”</span>
-                                @for (label of claimRoleLabels(v.roles); track label) {
+                                @for (label of claimRoleLabels(v.roles, v.raisedBy); track label) {
                                   <span class="claim-role-label text-muted text-11">({{ label }})</span>
                                 }
                               </div>
@@ -2877,7 +2877,7 @@
       <fieldset class="form-section">
         <legend>Dimension weights</legend>
         <div class="form-help-block">
-          The evaluator rates each answer 0&ndash;6 on four dimensions. Each level is converted to points through the level score table below, then combined into one quality score as a weighted <strong>geometric</strong> mean:
+          The assessor rates each answer 0&ndash;6 on four dimensions. Each level is converted to points through the level score table below, then combined into one quality score as a weighted <strong>geometric</strong> mean:
           <code>Quality = Acc<sup>wAcc</sup> &times; Comp<sup>wComp</sup> &times; Conc<sup>wConc</sup> &times; Read<sup>wRead</sup></code>, clamped to 1&ndash;100.
           Because the mean is geometric, a near-zero score on any one dimension drags the whole result down &mdash; a weight cannot fully compensate for a collapsed dimension.
           <strong>The four weights must sum to exactly 1.0</strong>; the profile is rejected on save otherwise.
@@ -2947,7 +2947,7 @@
           <div class="form-group">
             <label for="critCeiling">Critical Error Ceiling</label>
             <input id="critCeiling" type="number" min="1" max="100" class="gh-input" [(ngModel)]="profileForm.criticalErrorCeiling" aria-describedby="critCeilingHint">
-            <span id="critCeilingHint" class="form-hint">The highest quality score an answer may keep when the evaluator flags a <em>critical error</em> &mdash; a confidently asserted falsehood a player would act on to their direct detriment. Applied as a cap after the weighted score is computed: a flagged answer scoring above this value is reduced to it; one already below is left unchanged. Must be between 1 and 100. Default <code>25</code>.</span>
+            <span id="critCeilingHint" class="form-hint">The highest quality score an answer may keep when the assessor flags a <em>critical error</em> &mdash; a confidently asserted falsehood a player would act on to their direct detriment. Applied as a cap after the weighted score is computed: a flagged answer scoring above this value is reduced to it; one already below is left unchanged. Must be between 1 and 100. Default <code>25</code>.</span>
           </div>
           <div class="form-group">
             <label for="secondOpinionThreshold">Second Reader Threshold</label>
@@ -3479,7 +3479,7 @@
         <app-markdown-editor
           inputId="qExpectedInput"
           label="Expected Answer Criteria (Optional)"
-          hint="Key facts, formulas, or mechanics the AI evaluator should look for when scoring the answer. Markdown supported: bold, lists, tables."
+          hint="Key facts, formulas, or mechanics the AI assessor should look for when scoring the answer. Markdown supported: bold, lists, tables."
           [placeholder]="expectedPointsPlaceholder"
           [minRows]="10"
           [fill]="true"
@@ -3930,10 +3930,10 @@
 </dialog>
 
 <!-- BENCHMARK RUN PROGRESS DIALOG -->
-<dialog #runProgressDialog class="gh-dialog benchmark-run-progress-dialog"
+<dialog #runProgressDialog class="gh-dialog gh-dialog-fullscreen benchmark-run-progress-dialog"
         aria-labelledby="runProgressDialogTitle"
         (cancel)="closeRunProgressDialog()">
-  <div class="dialog-content flex-col">
+  <div class="dialog-content flex-col run-progress-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
         <h3 id="runProgressDialogTitle">Benchmark Run #{{ activeRunDetail?.id ?? activeRunId }}</h3>
@@ -3950,350 +3950,367 @@
         </svg>
       </button>
     </div>
-    <div class="dialog-body">
-      @if (runErrorMessage) {
-        <div class="alert alert-danger mb-15" role="alert" aria-live="assertive">
-          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="8" x2="12" y2="12"></line>
-            <line x1="12" y1="16" x2="12.01" y2="16"></line>
-          </svg>
-          <div class="alert-content">
-            <div class="alert-body">{{ runErrorMessage }}</div>
+    <!-- Two sections: the overview, and the question list. Wide (a container query on
+         .run-progress-content), they sit side by side and each scrolls on its own; narrow, they
+         stack and the body scrolls as one. -->
+    <div class="dialog-body run-progress-body">
+      <section class="run-progress-overview">
+        @if (runErrorMessage) {
+          <div class="alert alert-danger mb-15" role="alert" aria-live="assertive">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-body">{{ runErrorMessage }}</div>
+            </div>
           </div>
-        </div>
-      }
-      @if (completionSoundStatus) {
-        <p class="text-muted" role="status">{{ completionSoundStatus }}</p>
-      }
-      <h4 #runProgressHeading tabindex="-1" class="progress-heading">
-        @if (activeRunDetail) {
-          {{ activeRunDetail.suiteName }}
-        } @else {
-          Starting benchmark run…
         }
-      </h4>
+        @if (completionSoundStatus) {
+          <p class="text-muted" role="status">{{ completionSoundStatus }}</p>
+        }
+        <h4 #runProgressHeading tabindex="-1" class="progress-heading">
+          @if (activeRunDetail) {
+            {{ activeRunDetail.suiteName }}
+          } @else {
+            Starting benchmark run…
+          }
+        </h4>
 
-      <!-- The models, badged exactly as the selectors in the tab badge them, so the
-           configuration under test is legible without opening the report. -->
-      @if (activeRunDetail) {
-        <dl class="run-model-strip">
-          <div class="run-model-row">
-            <dt>Model under test</dt>
-            <dd>
-              <span class="model-name">{{ activeRunDetail.testedModelDisplayNameUsed || activeRunDetail.testedModelIdUsed }}</span>
-              @if (activeRunDetail.testedModelThinkingLevelUsed) {
-                <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.testedModelThinkingLevelUsed) }}</span>
-              }
-              @if (showReasoningBadge(activeRunDetail.testedModelReasoningModeUsed)) {
-                <span class="reasoning-badge">{{ activeRunDetail.testedModelReasoningModeUsed }}</span>
-              }
-              @if (activeRunDetail.testedModelProviderUsed) {
-                <app-provider-badge [provider]="activeRunDetail.testedModelProviderUsed"></app-provider-badge>
-              }
-              @if (activeRunDetail.testedModelServiceTierUsed) {
-                <span class="tier-badge" title="Requested service tier">{{ formatServiceTier(activeRunDetail.testedModelServiceTierUsed) }}</span>
-              }
-              @if (activeRunDetail.testedModelParallelExecutionModeUsed === 0) {
-                <span class="parallel-badge badge-sequential" title="Parallel tool calls are disabled for this key">Sequential</span>
-              }
-              @if (activeRunDetail.testedModelParallelExecutionModeUsed === 1) {
-                <span class="parallel-badge badge-on-request" title="Parallel tool calls are on request for this key">On request</span>
-              }
-            </dd>
+        <!-- The models, badged exactly as the selectors in the tab badge them, so the
+             configuration under test is legible without opening the report. -->
+        @if (activeRunDetail) {
+          <dl class="run-model-strip">
+            <div class="run-model-row">
+              <dt>Model under test</dt>
+              <dd>
+                <span class="model-name">{{ activeRunDetail.testedModelDisplayNameUsed || activeRunDetail.testedModelIdUsed }}</span>
+                @if (activeRunDetail.testedModelThinkingLevelUsed) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.testedModelThinkingLevelUsed) }}</span>
+                }
+                @if (showReasoningBadge(activeRunDetail.testedModelReasoningModeUsed)) {
+                  <span class="reasoning-badge">{{ activeRunDetail.testedModelReasoningModeUsed }}</span>
+                }
+                @if (activeRunDetail.testedModelProviderUsed) {
+                  <app-provider-badge [provider]="activeRunDetail.testedModelProviderUsed"></app-provider-badge>
+                }
+                @if (activeRunDetail.testedModelServiceTierUsed) {
+                  <span class="tier-badge" title="Requested service tier">{{ formatServiceTier(activeRunDetail.testedModelServiceTierUsed) }}</span>
+                }
+                @if (activeRunDetail.testedModelParallelExecutionModeUsed === 0) {
+                  <span class="parallel-badge badge-sequential" title="Parallel tool calls are disabled for this key">Sequential</span>
+                }
+                @if (activeRunDetail.testedModelParallelExecutionModeUsed === 1) {
+                  <span class="parallel-badge badge-on-request" title="Parallel tool calls are on request for this key">On request</span>
+                }
+              </dd>
+            </div>
+            @if (activeRunDetail.testedModelEndpoint && activeRunDetail.testedModelEndpoint !== 'official') {
+              <div class="run-model-row">
+                <dt>Endpoint</dt>
+                <dd>
+                  <span class="model-name">{{ activeRunDetail.testedModelEndpoint }}</span>
+                </dd>
+              </div>
+            }
+            <div class="run-model-row">
+              <dt>Assessor</dt>
+              <dd>
+                <span class="model-name">{{ activeRunDetail.assessorModelDisplayNameUsed || activeRunDetail.assessorModelIdUsed }}</span>
+                @if (activeRunDetail.assessorModelThinkingLevelUsed) {
+                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.assessorModelThinkingLevelUsed) }}</span>
+                }
+                @if (showReasoningBadge(activeRunDetail.assessorModelReasoningModeUsed)) {
+                  <span class="reasoning-badge">{{ activeRunDetail.assessorModelReasoningModeUsed }}</span>
+                }
+                @if (activeRunDetail.assessorModelProviderUsed) {
+                  <app-provider-badge [provider]="activeRunDetail.assessorModelProviderUsed"></app-provider-badge>
+                }
+                @if (activeRunDetail.assessorModelEndpoint && activeRunDetail.assessorModelEndpoint !== 'official') {
+                  <span class="model-name">Endpoint: {{ activeRunDetail.assessorModelEndpoint }}</span>
+                }
+              </dd>
+            </div>
+            @if (activeRunDetail.isPanelRun) {
+              <div class="run-model-row">
+                <dt>Co-assessor</dt>
+                <dd>
+                  <span class="model-name">{{ activeRunDetail.coAssessorModelDisplayNameUsed || activeRunDetail.coAssessorModelIdUsed }}</span>
+                  @if (activeRunDetail.coAssessorModelThinkingLevelUsed) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.coAssessorModelThinkingLevelUsed) }}</span>
+                  }
+                  @if (showReasoningBadge(activeRunDetail.coAssessorModelReasoningModeUsed)) {
+                    <span class="reasoning-badge">{{ activeRunDetail.coAssessorModelReasoningModeUsed }}</span>
+                  }
+                  @if (activeRunDetail.coAssessorModelProviderUsed) {
+                    <app-provider-badge [provider]="activeRunDetail.coAssessorModelProviderUsed"></app-provider-badge>
+                  }
+                  @if (activeRunDetail.coAssessorModelEndpoint && activeRunDetail.coAssessorModelEndpoint !== 'official') {
+                    <span class="model-name">Endpoint: {{ activeRunDetail.coAssessorModelEndpoint }}</span>
+                  }
+                </dd>
+              </div>
+            }
+            @if ((activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed) && activeRunDetail.secondOpinionModeUsed !== 0) {
+              <div class="run-model-row">
+                <dt>{{ activeRunDetail.isPanelRun ? 'Reference reader' : 'Second reader' }}</dt>
+                <dd>
+                  <span class="model-name">{{ activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed }}</span>
+                  @if (activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
+                  }
+                  @if (showReasoningBadge(activeRunDetail.secondOpinionAssessorModelReasoningModeUsed)) {
+                    <span class="reasoning-badge">{{ activeRunDetail.secondOpinionAssessorModelReasoningModeUsed }}</span>
+                  }
+                  @if (activeRunDetail.secondOpinionAssessorModelProviderUsed) {
+                    <app-provider-badge [provider]="activeRunDetail.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
+                  }
+                  @if (activeRunDetail.secondOpinionAssessorModelEndpoint && activeRunDetail.secondOpinionAssessorModelEndpoint !== 'official') {
+                    <span class="model-name">Endpoint: {{ activeRunDetail.secondOpinionAssessorModelEndpoint }}</span>
+                  }
+                  @if (formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed)) {
+                    <span class="second-opinion-mode-badge" [title]="runSecondOpinionModeTitle(activeRunDetail)">{{ runSecondOpinionModeLabel(activeRunDetail) }}</span>
+                  }
+                </dd>
+              </div>
+            }
+            @if (activeRunDetail.claimVerifierDisplayNameUsed || activeRunDetail.claimVerifierModelIdUsed) {
+              <div class="run-model-row">
+                <dt>Claim verifier</dt>
+                <dd>
+                  <span class="model-name">{{ activeRunDetail.claimVerifierDisplayNameUsed || activeRunDetail.claimVerifierModelIdUsed }}</span>
+                  @if (activeRunDetail.claimVerifierThinkingLevelUsed) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.claimVerifierThinkingLevelUsed) }}</span>
+                  }
+                  @if (showReasoningBadge(activeRunDetail.claimVerifierReasoningModeUsed)) {
+                    <span class="reasoning-badge">{{ activeRunDetail.claimVerifierReasoningModeUsed }}</span>
+                  }
+                  @if (activeRunDetail.claimVerifierProviderUsed) {
+                    <app-provider-badge [provider]="activeRunDetail.claimVerifierProviderUsed"></app-provider-badge>
+                  }
+                  @if (activeRunDetail.claimVerifierModelEndpoint && activeRunDetail.claimVerifierModelEndpoint !== 'official') {
+                    <span class="model-name">Endpoint: {{ activeRunDetail.claimVerifierModelEndpoint }}</span>
+                  }
+                </dd>
+              </div>
+            }
+            @if (candidatePromptSummaryOf(activeRunDetail); as promptSummary) {
+              <div class="run-model-row">
+                <dt>Chat prompt</dt>
+                <dd>
+                  <span class="model-name">{{ promptSummary }}</span>
+                </dd>
+              </div>
+            }
+          </dl>
+        }
+
+        <!-- Stage rail: three stages. Stage 1 is everything the answering loop does — answer,
+             assess, then check that answer's claims and take a second opinion on it. Stage 2 is
+             the serial tail of run-level passes that follows every answer being graded, and both
+             of the server's middle stages map to it because the server marks Verifying again
+             after the second-opinion pass; an item each would step the rail backwards. Which pass
+             is running is in the status line and the diagnostics. -->
+        <ol class="run-stage-rail" aria-label="Run stages">
+          <li class="run-stage" [class.is-current]="runRailStage === 1" [class.is-done]="runRailStage > 1"
+              [attr.aria-current]="runRailStage === 1 ? 'step' : null">
+            <span class="run-stage-index" aria-hidden="true">1</span>
+            <span class="run-stage-name">Answering and grading</span>
+          </li>
+          <li class="run-stage" [class.is-current]="runRailStage === 2" [class.is-done]="runRailStage > 2"
+              [attr.aria-current]="runRailStage === 2 ? 'step' : null">
+            <span class="run-stage-index" aria-hidden="true">2</span>
+            <span class="run-stage-name">Follow-up grading passes</span>
+          </li>
+          <li class="run-stage" [class.is-current]="runRailStage === 3"
+              [attr.aria-current]="runRailStage === 3 ? 'step' : null">
+            <span class="run-stage-index" aria-hidden="true">3</span>
+            <span class="run-stage-name">Synthesis and scoring</span>
+          </li>
+        </ol>
+
+        @if (runHasRerunScope) {
+          <p class="rerun-scope-badge">
+            Re-running {{ effectiveRerunScope.length }} failed
+            {{ effectiveRerunScope.length === 1 ? 'question' : 'questions' }}. Every question of
+            the suite is listed under <strong>Questions</strong>; the re-run ones are marked.
+          </p>
+        }
+
+        <div class="job-progress-block">
+          <label class="progress-label" for="runAnswersProgressBar">Answers</label>
+          @if (runMeterTotal > 0) {
+            <progress id="runAnswersProgressBar" class="job-progress"
+                      [value]="runMeterAnswered" [max]="runMeterTotal"></progress>
+          } @else {
+            <progress id="runAnswersProgressBar" class="job-progress"></progress>
+          }
+        </div>
+
+        <div class="job-progress-block">
+          <label class="progress-label" for="runAssessmentsProgressBar">Assessments</label>
+          @if (runMeterTotal > 0) {
+            <progress id="runAssessmentsProgressBar" class="job-progress"
+                      [value]="runMeterScored" [max]="runMeterTotal"></progress>
+          } @else {
+            <progress id="runAssessmentsProgressBar" class="job-progress"></progress>
+          }
+          <!-- The dialog's only polling live region: one announcement per stage change. A second
+               one would announce continuously for the length of the run. -->
+          <p class="progress-status" role="status" aria-live="polite">{{ runStageLabel }}</p>
+        </div>
+
+        <dl class="run-stat-strip">
+          <div class="run-stat">
+            <dt>{{ runElapsedIsRerun ? 'Re-run elapsed' : 'Elapsed' }}</dt>
+            <dd>{{ runElapsedLabel }}</dd>
           </div>
-          @if (activeRunDetail.testedModelEndpoint && activeRunDetail.testedModelEndpoint !== 'official') {
-            <div class="run-model-row">
-              <dt>Endpoint</dt>
-              <dd>
-                <span class="model-name">{{ activeRunDetail.testedModelEndpoint }}</span>
-              </dd>
-            </div>
-          }
-          <div class="run-model-row">
-            <dt>Evaluator</dt>
-            <dd>
-              <span class="model-name">{{ activeRunDetail.assessorModelDisplayNameUsed || activeRunDetail.assessorModelIdUsed }}</span>
-              @if (activeRunDetail.assessorModelThinkingLevelUsed) {
-                <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.assessorModelThinkingLevelUsed) }}</span>
-              }
-              @if (showReasoningBadge(activeRunDetail.assessorModelReasoningModeUsed)) {
-                <span class="reasoning-badge">{{ activeRunDetail.assessorModelReasoningModeUsed }}</span>
-              }
-              @if (activeRunDetail.assessorModelProviderUsed) {
-                <app-provider-badge [provider]="activeRunDetail.assessorModelProviderUsed"></app-provider-badge>
-              }
-              @if (activeRunDetail.assessorModelEndpoint && activeRunDetail.assessorModelEndpoint !== 'official') {
-                <span class="model-name">Endpoint: {{ activeRunDetail.assessorModelEndpoint }}</span>
-              }
-            </dd>
+          <div class="run-stat">
+            <dt>Avg. answer</dt>
+            <dd>{{ runAverageAnswerDurationLabel }}</dd>
           </div>
-          @if (activeRunDetail.isPanelRun) {
-            <div class="run-model-row">
-              <dt>Co-assessor</dt>
-              <dd>
-                <span class="model-name">{{ activeRunDetail.coAssessorModelDisplayNameUsed || activeRunDetail.coAssessorModelIdUsed }}</span>
-                @if (activeRunDetail.coAssessorModelThinkingLevelUsed) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.coAssessorModelThinkingLevelUsed) }}</span>
-                }
-                @if (showReasoningBadge(activeRunDetail.coAssessorModelReasoningModeUsed)) {
-                  <span class="reasoning-badge">{{ activeRunDetail.coAssessorModelReasoningModeUsed }}</span>
-                }
-                @if (activeRunDetail.coAssessorModelProviderUsed) {
-                  <app-provider-badge [provider]="activeRunDetail.coAssessorModelProviderUsed"></app-provider-badge>
-                }
-                @if (activeRunDetail.coAssessorModelEndpoint && activeRunDetail.coAssessorModelEndpoint !== 'official') {
-                  <span class="model-name">Endpoint: {{ activeRunDetail.coAssessorModelEndpoint }}</span>
-                }
-              </dd>
+          <div class="run-stat">
+            <dt>Input tokens</dt>
+            <dd>{{ (activeRunDetail?.totalInputTokens ?? 0) | number }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Output tokens</dt>
+            <dd>{{ (activeRunDetail?.totalOutputTokens ?? 0) | number }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Cache read</dt>
+            <dd>{{ (activeRunDetail?.totalCacheReadTokens ?? 0) | number }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Cache creation</dt>
+            <dd>{{ runCacheCreationUnreported ? 'n/a' : ((activeRunDetail?.totalCacheCreationTokens ?? 0) | number) }}</dd>
+          </div>
+          <!-- Counts, not bars: only answers with unverified claims or a fired trigger are
+               candidates, so neither number has an honest maximum to fill against. -->
+          @if (runShowsClaimVerifierCounter) {
+            <div class="run-stat">
+              <dt>Claims verified</dt>
+              <dd>{{ runVerifiedCount | number }}@if (runVerifyingCount > 0) {<span class="run-stat-inflight"> · {{ runVerifyingCount }} in progress</span>}</dd>
             </div>
           }
-          @if ((activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed) && activeRunDetail.secondOpinionModeUsed !== 0) {
-            <div class="run-model-row">
-              <dt>{{ activeRunDetail.isPanelRun ? 'Reference reader' : 'Second reader' }}</dt>
-              <dd>
-                <span class="model-name">{{ activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed }}</span>
-                @if (activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
-                }
-                @if (showReasoningBadge(activeRunDetail.secondOpinionAssessorModelReasoningModeUsed)) {
-                  <span class="reasoning-badge">{{ activeRunDetail.secondOpinionAssessorModelReasoningModeUsed }}</span>
-                }
-                @if (activeRunDetail.secondOpinionAssessorModelProviderUsed) {
-                  <app-provider-badge [provider]="activeRunDetail.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
-                }
-                @if (activeRunDetail.secondOpinionAssessorModelEndpoint && activeRunDetail.secondOpinionAssessorModelEndpoint !== 'official') {
-                  <span class="model-name">Endpoint: {{ activeRunDetail.secondOpinionAssessorModelEndpoint }}</span>
-                }
-                @if (formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed)) {
-                  <span class="second-opinion-mode-badge" [title]="runSecondOpinionModeTitle(activeRunDetail)">{{ runSecondOpinionModeLabel(activeRunDetail) }}</span>
-                }
-              </dd>
-            </div>
-          }
-          @if (activeRunDetail.claimVerifierDisplayNameUsed || activeRunDetail.claimVerifierModelIdUsed) {
-            <div class="run-model-row">
-              <dt>Claim verifier</dt>
-              <dd>
-                <span class="model-name">{{ activeRunDetail.claimVerifierDisplayNameUsed || activeRunDetail.claimVerifierModelIdUsed }}</span>
-                @if (activeRunDetail.claimVerifierThinkingLevelUsed) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.claimVerifierThinkingLevelUsed) }}</span>
-                }
-                @if (showReasoningBadge(activeRunDetail.claimVerifierReasoningModeUsed)) {
-                  <span class="reasoning-badge">{{ activeRunDetail.claimVerifierReasoningModeUsed }}</span>
-                }
-                @if (activeRunDetail.claimVerifierProviderUsed) {
-                  <app-provider-badge [provider]="activeRunDetail.claimVerifierProviderUsed"></app-provider-badge>
-                }
-                @if (activeRunDetail.claimVerifierModelEndpoint && activeRunDetail.claimVerifierModelEndpoint !== 'official') {
-                  <span class="model-name">Endpoint: {{ activeRunDetail.claimVerifierModelEndpoint }}</span>
-                }
-              </dd>
-            </div>
-          }
-          @if (candidatePromptSummaryOf(activeRunDetail); as promptSummary) {
-            <div class="run-model-row">
-              <dt>Chat prompt</dt>
-              <dd>
-                <span class="model-name">{{ promptSummary }}</span>
-              </dd>
+          @if (runShowsSecondOpinionCounter) {
+            <div class="run-stat">
+              <dt>{{ activeRunDetail?.isPanelRun ? 'Reference readings' : 'Second readings' }}</dt>
+              <dd>{{ runSecondOpinionCount | number }}@if (runSecondOpinionInFlightCount > 0) {<span class="run-stat-inflight"> · {{ runSecondOpinionInFlightCount }} in progress</span>}</dd>
             </div>
           }
         </dl>
-      }
 
-      <!-- Stage rail: three stages. Stage 1 is everything the answering loop does — answer,
-           assess, then check that answer's claims and take a second opinion on it. Stage 2 is
-           the serial tail of run-level passes that follows every answer being graded, and both
-           of the server's middle stages map to it because the server marks Verifying again
-           after the second-opinion pass; an item each would step the rail backwards. Which pass
-           is running is in the status line and the diagnostics. -->
-      <ol class="run-stage-rail" aria-label="Run stages">
-        <li class="run-stage" [class.is-current]="runRailStage === 1" [class.is-done]="runRailStage > 1"
-            [attr.aria-current]="runRailStage === 1 ? 'step' : null">
-          <span class="run-stage-index" aria-hidden="true">1</span>
-          <span class="run-stage-name">Answering and grading</span>
-        </li>
-        <li class="run-stage" [class.is-current]="runRailStage === 2" [class.is-done]="runRailStage > 2"
-            [attr.aria-current]="runRailStage === 2 ? 'step' : null">
-          <span class="run-stage-index" aria-hidden="true">2</span>
-          <span class="run-stage-name">Follow-up grading passes</span>
-        </li>
-        <li class="run-stage" [class.is-current]="runRailStage === 3"
-            [attr.aria-current]="runRailStage === 3 ? 'step' : null">
-          <span class="run-stage-index" aria-hidden="true">3</span>
-          <span class="run-stage-name">Synthesis and scoring</span>
-        </li>
-      </ol>
+        <!--
+          The per-role split, from the same server-side figures the finished-run dialog shows, so a
+          run's live cost and its final cost are one number computed once.
+        -->
+        <app-benchmark-cost-panel
+          variant="live"
+          [total]="activeRunDetail?.estimatedCost ?? null"
+          [candidate]="activeRunDetail?.estimatedCandidateCost ?? null"
+          [assessor]="activeRunDetail?.estimatedAssessorCost ?? null"
+          [coAssessor]="activeRunDetail?.estimatedCoAssessorCost ?? null"
+          [panel]="!!activeRunDetail?.isPanelRun"
+          [secondOpinion]="activeRunDetail?.estimatedSecondOpinionCost ?? null"
+          [claimVerifier]="activeRunDetail?.estimatedVerifierCost ?? null"
+          [synthesis]="activeRunDetail?.estimatedSynthesisCost ?? null"
+          [coSynthesis]="activeRunDetail?.estimatedCoSynthesisCost ?? null"
+          [grading]="activeRunDetail?.estimatedGradingCost ?? null"
+          [pricingSource]="activeRunDetail?.pricingSource ?? null"
+          [pricingIncomplete]="activeRunDetail?.pricingIncomplete ?? false"
+          [legacyRun]="isLegacyCostRun(activeRunDetail)"></app-benchmark-cost-panel>
 
-      @if (runHasRerunScope) {
-        <p class="rerun-scope-badge">
-          Re-running {{ effectiveRerunScope.length }} failed
-          {{ effectiveRerunScope.length === 1 ? 'question' : 'questions' }}. Every question of
-          the suite is listed below; the ones being re-run are marked.
-        </p>
-      }
-
-      <div class="job-progress-block">
-        <label class="progress-label" for="runAnswersProgressBar">Answers</label>
-        @if (runMeterTotal > 0) {
-          <progress id="runAnswersProgressBar" class="job-progress"
-                    [value]="runMeterAnswered" [max]="runMeterTotal"></progress>
-        } @else {
-          <progress id="runAnswersProgressBar" class="job-progress"></progress>
-        }
-      </div>
-
-      <div class="job-progress-block">
-        <label class="progress-label" for="runAssessmentsProgressBar">Assessments</label>
-        @if (runMeterTotal > 0) {
-          <progress id="runAssessmentsProgressBar" class="job-progress"
-                    [value]="runMeterScored" [max]="runMeterTotal"></progress>
-        } @else {
-          <progress id="runAssessmentsProgressBar" class="job-progress"></progress>
-        }
-        <!-- The dialog's only polling live region: one announcement per stage change. A second
-             one would announce continuously for the length of the run. -->
-        <p class="progress-status" role="status" aria-live="polite">{{ runStageLabel }}</p>
-      </div>
-
-      <dl class="run-stat-strip">
-        <div class="run-stat">
-          <dt>{{ runElapsedIsRerun ? 'Re-run elapsed' : 'Elapsed' }}</dt>
-          <dd>{{ runElapsedLabel }}</dd>
-        </div>
-        <div class="run-stat">
-          <dt>Avg. answer</dt>
-          <dd>{{ runAverageAnswerDurationLabel }}</dd>
-        </div>
-        <div class="run-stat">
-          <dt>Input tokens</dt>
-          <dd>{{ (activeRunDetail?.totalInputTokens ?? 0) | number }}</dd>
-        </div>
-        <div class="run-stat">
-          <dt>Output tokens</dt>
-          <dd>{{ (activeRunDetail?.totalOutputTokens ?? 0) | number }}</dd>
-        </div>
-        <div class="run-stat">
-          <dt>Cache read</dt>
-          <dd>{{ (activeRunDetail?.totalCacheReadTokens ?? 0) | number }}</dd>
-        </div>
-        <div class="run-stat">
-          <dt>Cache creation</dt>
-          <dd>{{ runCacheCreationUnreported ? 'n/a' : ((activeRunDetail?.totalCacheCreationTokens ?? 0) | number) }}</dd>
-        </div>
-        <!-- Counts, not bars: only answers with unverified claims or a fired trigger are
-             candidates, so neither number has an honest maximum to fill against. -->
-        @if (runShowsClaimVerifierCounter) {
-          <div class="run-stat">
-            <dt>Claims verified</dt>
-            <dd>{{ runVerifiedCount | number }}@if (runVerifyingCount > 0) {<span class="run-stat-inflight"> · {{ runVerifyingCount }} in progress</span>}</dd>
-          </div>
-        }
-        @if (runShowsSecondOpinionCounter) {
-          <div class="run-stat">
-            <dt>{{ activeRunDetail?.isPanelRun ? 'Reference readings' : 'Second readings' }}</dt>
-            <dd>{{ runSecondOpinionCount | number }}@if (runSecondOpinionInFlightCount > 0) {<span class="run-stat-inflight"> · {{ runSecondOpinionInFlightCount }} in progress</span>}</dd>
-          </div>
-        }
-      </dl>
-
-      <!--
-        The per-role split, from the same server-side figures the finished-run dialog shows, so a
-        run's live cost and its final cost are one number computed once.
-      -->
-      <app-benchmark-cost-panel
-        variant="live"
-        [total]="activeRunDetail?.estimatedCost ?? null"
-        [candidate]="activeRunDetail?.estimatedCandidateCost ?? null"
-        [assessor]="activeRunDetail?.estimatedAssessorCost ?? null"
-        [coAssessor]="activeRunDetail?.estimatedCoAssessorCost ?? null"
-        [panel]="!!activeRunDetail?.isPanelRun"
-        [secondOpinion]="activeRunDetail?.estimatedSecondOpinionCost ?? null"
-        [claimVerifier]="activeRunDetail?.estimatedVerifierCost ?? null"
-        [synthesis]="activeRunDetail?.estimatedSynthesisCost ?? null"
-        [coSynthesis]="activeRunDetail?.estimatedCoSynthesisCost ?? null"
-        [grading]="activeRunDetail?.estimatedGradingCost ?? null"
-        [pricingSource]="activeRunDetail?.pricingSource ?? null"
-        [pricingIncomplete]="activeRunDetail?.pricingIncomplete ?? false"
-        [legacyRun]="isLegacyCostRun(activeRunDetail)"></app-benchmark-cost-panel>
-
-      <ul class="job-item-list run-question-list">
-        @for (row of runProgressRows; track row.orderIndex) {
-          <li class="job-item-row" [class.is-rerun-scope]="isRerunScope(row)">
-            <span class="job-item-index">Q{{ row.orderIndex }}</span>
-            <span class="job-item-excerpt">{{ row.questionText }}</span>
-            @if (isRerunScope(row)) {
-              <span class="job-item-rerun-marker" title="Being re-run">re-run</span>
+        @if (!rerunLaunchPending && (runMeterFailed > 0 || (runIsTerminal && activeRunDetail?.errorMessage))) {
+          <div class="alert alert-danger mt-15" role="alert">
+            @if (runMeterFailed > 0) {
+              {{ runMeterFailed }} question(s) failed during this run.
             }
-            <span class="job-status-chip" [class]="runRowChipClass(row)">{{ runRowChipLabel(row) }}</span>
-          </li>
+            @if (activeRunDetail?.errorMessage) {
+              {{ activeRunDetail?.errorMessage }}
+            }
+          </div>
         }
-      </ul>
 
-      @if (!rerunLaunchPending && (runMeterFailed > 0 || (runIsTerminal && activeRunDetail?.errorMessage))) {
-        <div class="alert alert-danger mt-15" role="alert">
-          @if (runMeterFailed > 0) {
-            {{ runMeterFailed }} question(s) failed during this run.
-          }
-          @if (activeRunDetail?.errorMessage) {
-            {{ activeRunDetail?.errorMessage }}
-          }
-        </div>
-      }
-
-      <details class="job-diagnostics mt-15">
-        <summary>
-          Diagnostics
-          @if (runFailedAnswerCount > 0) {
-            <span class="job-diagnostics-count">{{ runFailedAnswerCount }} failed</span>
-          }
-        </summary>
-        <div class="diagnostics-toolbar">
-          <button type="button" class="action-btn"
-                  aria-label="Copy benchmark run diagnostics"
-                  interestfor="tip-copy-run-diagnostics"
-                  style="anchor-name: --tip-copy-run-diagnostics"
-                  (click)="copyRunDiagnostics()">
-            @if (copiedRunDiagnostics) {
+        <details class="job-diagnostics mt-15">
+          <summary>
+            Diagnostics
+            @if (runFailedAnswerCount > 0) {
+              <span class="job-diagnostics-count">{{ runFailedAnswerCount }} failed</span>
+            }
+          </summary>
+          <div class="diagnostics-toolbar">
+            <button type="button" class="action-btn"
+                    aria-label="Copy benchmark run diagnostics"
+                    interestfor="tip-copy-run-diagnostics"
+                    style="anchor-name: --tip-copy-run-diagnostics"
+                    (click)="copyRunDiagnostics()">
+              @if (copiedRunDiagnostics) {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+              } @else {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                     viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              }
+            </button>
+            <div popover="hint" class="gh-tooltip" id="tip-copy-run-diagnostics"
+                 style="position-anchor: --tip-copy-run-diagnostics">Copy diagnostics</div>
+            <button type="button" class="action-btn"
+                    aria-label="Download benchmark run diagnostics as a text file"
+                    interestfor="tip-download-run-diagnostics"
+                    style="anchor-name: --tip-download-run-diagnostics"
+                    (click)="downloadRunDiagnostics()">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
                    viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <polyline points="20 6 9 17 4 12"></polyline>
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="12" y1="18" x2="12" y2="12"></line>
+                <polyline points="9 15 12 18 15 15"></polyline>
               </svg>
-            } @else {
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                   viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-            }
-          </button>
-          <div popover="hint" class="gh-tooltip" id="tip-copy-run-diagnostics"
-               style="position-anchor: --tip-copy-run-diagnostics">Copy diagnostics</div>
-          <button type="button" class="action-btn"
-                  aria-label="Download benchmark run diagnostics as a text file"
-                  interestfor="tip-download-run-diagnostics"
-                  style="anchor-name: --tip-download-run-diagnostics"
-                  (click)="downloadRunDiagnostics()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="12" y1="18" x2="12" y2="12"></line>
-              <polyline points="9 15 12 18 15 15"></polyline>
-            </svg>
-          </button>
-          <div popover="hint" class="gh-tooltip" id="tip-download-run-diagnostics"
-               style="position-anchor: --tip-download-run-diagnostics">Download diagnostics</div>
-          <p class="diagnostics-copy-status" role="status" aria-live="polite">
-            {{ runDiagnosticsCopyStatus }}
-          </p>
-        </div>
-        <pre tabindex="0"><code>{{ runDiagnosticsText }}</code></pre>
-      </details>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="tip-download-run-diagnostics"
+                 style="position-anchor: --tip-download-run-diagnostics">Download diagnostics</div>
+            <p class="diagnostics-copy-status" role="status" aria-live="polite">
+              {{ runDiagnosticsCopyStatus }}
+            </p>
+          </div>
+          <pre tabindex="0"><code>{{ runDiagnosticsText }}</code></pre>
+        </details>
+      </section>
+
+      <!-- Focusable so a keyboard user can scroll it once it scrolls on its own. -->
+      <section class="run-progress-questions" tabindex="0" aria-labelledby="runProgressQuestionsTitle">
+        <h4 id="runProgressQuestionsTitle" class="run-progress-questions-title">
+          Questions <span class="run-progress-questions-count">{{ runProgressRows.length }}</span>
+        </h4>
+        <ul class="job-item-list run-question-list">
+          @for (row of runProgressRows; track row.orderIndex) {
+            <li class="job-item-row" [class.is-rerun-scope]="isRerunScope(row)">
+              <span class="job-item-index">Q{{ row.orderIndex }}</span>
+              <span class="job-item-excerpt">{{ row.questionText }}</span>
+              @if (isRerunScope(row)) {
+                <span class="job-item-rerun-marker" title="Being re-run">re-run</span>
+              }
+              @let score = runRowScore(row);
+              @if (score != null) {
+                <!-- The hidden word, not aria-label, names it: aria-label is prohibited on a
+                     generic span and is ignored by some screen readers there. -->
+                <span class="job-item-score"><span class="visually-hidden">Score </span>{{ score | number:'1.0-1' }}</span>
+              }
+              <span class="job-status-chip" [class]="runRowChipClass(row)">{{ runRowChipLabel(row) }}</span>
+            </li>
+          }
+        </ul>
+      </section>
     </div>
     <div class="dialog-footer">
       @if (!runIsTerminal) {

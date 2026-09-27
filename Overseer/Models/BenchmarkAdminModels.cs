@@ -1340,18 +1340,19 @@ public class BenchmarkSynthesisFindingDto
 }
 
 /// <summary>
-/// One row of the computed agreement between the two panel members' synthesis findings, keyed by
-/// kind, category and question.
+/// One row of the computed agreement between the two panel members' synthesis findings, matched on
+/// kind, category and overlapping questions.
 /// </summary>
 public class BenchmarkSynthesisConvergenceRowDto
 {
+    /// <summary>Member A's kind on a <c>Conflicting</c> row, where member B raised the opposite one.</summary>
     public string Kind { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
 
-    /// <summary>Null for a run-wide finding.</summary>
-    public int? Question { get; set; }
+    /// <summary>The questions the row's findings name, ascending; empty for a run-wide finding.</summary>
+    public int[] Questions { get; set; } = Array.Empty<int>();
 
-    /// <summary><c>Convergent</c>, <c>MemberAOnly</c> or <c>MemberBOnly</c>.</summary>
+    /// <summary><c>Convergent</c>, <c>MemberAOnly</c>, <c>MemberBOnly</c> or <c>Conflicting</c>.</summary>
     public string Status { get; set; } = string.Empty;
 
     public string? MemberAText { get; set; }

@@ -1219,6 +1219,54 @@ public class BenchmarkServiceTests
     }
 
     [Fact]
+    public void BuildClaimVerificationRequest_ScalesTheBudgetWithTheManifest_UpToTheCap()
+    {
+        static IConfiguration Config(params (string Key, string Value)[] values)
+            => new ConfigurationBuilder()
+                .AddInMemoryCollection(values.ToDictionary(v => "Benchmark:ClaimVerification:" + v.Key, v => (string?)v.Value))
+                .Build();
+
+        var scaled = Config(("ToolCallBudget", "15"), ("ToolCallBudgetPerItem", "1"), ("ToolCallBudgetMax", "30"),
+            ("ToolIterations", "8"), ("TotalModelCalls", "12"));
+
+        // The base budget with no items; one call per item above it; the cap past fifteen items.
+        Assert.Equal((15, 8, 12), BenchmarkService.ResolveClaimVerificationBudget(scaled, 0));
+        Assert.Equal((20, 10, 14), BenchmarkService.ResolveClaimVerificationBudget(scaled, 5));
+        Assert.Equal((30, 15, 19), BenchmarkService.ResolveClaimVerificationBudget(scaled, 16));
+        Assert.Equal((30, 15, 19), BenchmarkService.ResolveClaimVerificationBudget(scaled, 40));
+
+        // No per-item setting keeps the fixed limits, whatever the manifest.
+        var fixedBudget = Config(("ToolCallBudget", "15"), ("ToolIterations", "8"), ("TotalModelCalls", "12"));
+        Assert.Equal((15, 8, 12), BenchmarkService.ResolveClaimVerificationBudget(fixedBudget, 16));
+
+        // Unset or non-positive base budget is 15; a cap below the base never lowers it.
+        Assert.Equal((15, 8, 12), BenchmarkService.ResolveClaimVerificationBudget(Config(), 16));
+        Assert.Equal((15, 8, 12), BenchmarkService.ResolveClaimVerificationBudget(Config(("ToolCallBudget", "0")), 3));
+        Assert.Equal((15, 8, 12), BenchmarkService.ResolveClaimVerificationBudget(
+            Config(("ToolCallBudgetPerItem", "1"), ("ToolCallBudgetMax", "10")), 16));
+
+        var (toolCallBudget, toolIterations, totalModelCalls) = BenchmarkService.ResolveClaimVerificationBudget(scaled, 16);
+        var request = BenchmarkService.BuildClaimVerificationRequest(
+            new SystemAiApiConfiguration { Id = 5, Provider = "OpenAI", ModelId = "gpt-4o", DisplayName = "Verifier" },
+            "api-key-test",
+            Overseer.Services.Providers.AiEndpointDescriptor.Official,
+            "test prompt",
+            new List<string> { "repo_search" },
+            maxOutputTokens: 1024,
+            toolIterations: toolIterations,
+            totalModelCalls: totalModelCalls,
+            toolCallBudget: toolCallBudget,
+            maxResultLength: 2048,
+            runId: 7,
+            orderIndex: 3,
+            startedByUserId: "user-3");
+
+        Assert.Equal(30, request.ToolExecutionContext.MaxCallsPerSession);
+        Assert.Equal(15, request.MaxToolIterations);
+        Assert.Equal(19, request.Budget!.MaxTotalModelCalls);
+    }
+
+    [Fact]
     public void Truncate_ClaimVerificationLength_FitsColumn()
     {
         var longError = new string('x', 2000);

@@ -98,7 +98,7 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
   ],
   scatter: [
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
-    { name: 'marks', title: 'Marks and frontier', keys: ['markRadiusPx', 'frontierWidthPx', 'dominatedShading'] },
+    { name: 'marks', title: 'Marks and frontier', keys: ['markRadiusPx', 'frontierWidthPx'] },
     { name: 'labels', title: 'Labels and legend', keys: ['labelTextSizePx', 'legendPosition', 'thinkingLevelBreak'] },
     NUMBERS_SECTION,
     { name: 'axes', title: 'Axes', keys: ['axisTextSizePx', 'axisTitleSizePx', 'gridlines', 'axisTitleWeight', 'plotFrame'] },
@@ -161,8 +161,8 @@ type AppearanceColorKey = 'backgroundColor' | 'previewBackdropColor' | NullableA
 const NULLABLE_APPEARANCE_COLOR_KEYS: readonly NullableAppearanceColorKey[] = ['headingColor', 'textColor', 'borderColor'];
 
 /** Equal to the page's initial `scatterDirectLabels` and `scatterInlineValues`. */
-const DEFAULT_DIRECT_LABELS = false;
-const DEFAULT_INLINE_VALUES = true;
+const DEFAULT_DIRECT_LABELS = true;
+const DEFAULT_INLINE_VALUES = false;
 
 /** Equal field values; a badge list compares element by element, as the wizard keeps it in order. */
 function sameStyleValue(a: unknown, b: unknown): boolean {
@@ -818,8 +818,7 @@ export class FigureStylePanelComponent implements OnInit {
       case 'marks':
         return [
           `marks ${scatter.markRadiusPx} px`,
-          `frontier ${scatter.frontierWidthPx} px`,
-          scatter.dominatedShading ? 'shaded' : 'unshaded'
+          `frontier ${scatter.frontierWidthPx} px`
         ].join(' · ');
       case 'labels': {
         const plates = [...(this.directLabels ? ['names'] : []), ...(this.inlineValues ? ['values'] : [])];

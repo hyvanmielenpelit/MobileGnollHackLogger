@@ -229,6 +229,31 @@ public class WikiViewToolHeadingsTests : IDisposable
     }
 
     [Fact]
+    public async Task WikiViewTool_SectionMissOnAnArticleLongerThanCap_CapsTheMarkerAndOpeningAtExactlyTheCap()
+    {
+        using var service = new WikiService(BuildConfig());
+        await service.InitializationTask;
+        var tool = new WikiViewTool(service);
+
+        var ctx = Context();
+        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { article = "LongArticle", section = "Nope" })).RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, ctx, CancellationToken.None);
+
+        Assert.True(result.Success);
+        string content = result.Content!;
+
+        Assert.StartsWith(
+            "--- LongArticle.md ---\n[Section 'Nope' not found in article. Headings: Introduction; Special Sacrifices; Conclusion. Showing the first ",
+            content);
+        Assert.Contains(
+            $" of {17840 - "--- LongArticle.md ---\n".Length} characters; call wiki_view again with one of the headings above as section.]\nLongArticle exists purely",
+            content);
+        Assert.DoesNotContain("[Article is", content);
+        Assert.DoesNotContain("[Truncated:", content);
+        Assert.Equal(ctx.MaxResultLength, content.Length);
+    }
+
+    [Fact]
     public async Task WikiViewTool_HeadingListLongerThanNoticeCap_IsTruncatedWithAnEllipsis()
     {
         using var service = new WikiService(BuildConfig());

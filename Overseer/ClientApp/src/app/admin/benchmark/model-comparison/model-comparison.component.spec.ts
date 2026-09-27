@@ -433,6 +433,33 @@ describe('ModelComparisonComponent', () => {
     expect(badges).toEqual(['pro']);
   });
 
+  it("marks every row with its provider's color, as a circle", () => {
+    const entries = comparableSet(3);
+    entries[1] = { ...entries[1], provider: 'Anthropic' };
+    entries[2] = { ...entries[2], provider: 'xAI' };
+    renderTable(buildDto(entries));
+
+    const glyphOf = (source: string): HTMLElement => tableRowOf(source).querySelector('.mc-glyph') as HTMLElement;
+    expect(glyphOf('Run 1').classList).toContain('mc-glyph-provider-google');
+    expect(glyphOf('Run 2').classList).toContain('mc-glyph-provider-anthropic');
+    expect(glyphOf('Run 3').classList).toContain('mc-glyph-provider-other');
+    expect(getComputedStyle(glyphOf('Run 1')).borderRadius).toBe('50%');
+    expect(getComputedStyle(glyphOf('Run 1')).backgroundColor).toBe('rgb(57, 135, 229)');
+    expect(glyphOf('Run 1').getAttribute('style')).toBeNull();
+  });
+
+  it("names the Pareto frontier and the faded models in a trade-off chart's accessible name", () => {
+    const entries = comparableSet(3).map((entry, index) => ({ ...entry, modelDisplayName: `Model ${index + 1}` }));
+    render(buildDto(entries), 2);
+
+    // One shared mean time: the strongest model beats the other two on both axes.
+    const label = component.scatterCards[0].ariaLabel;
+    expect(label).toContain('Pareto frontier: Model 3 (medium). Faded: ');
+    expect(label).toContain('Model 1 (medium)');
+    expect(label).toContain('Model 2 (medium)');
+    expect(label.endsWith('Values for every entry are in the comparison table below.')).toBeTrue();
+  });
+
   it('keeps an excluded entry in the table even though no figure can draw it', () => {
     renderTable(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]));
 
@@ -529,47 +556,45 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
   }
 
-  it('swaps the scatter legends for direct labels when the toggle is ticked, and back', () => {
+  it('names the scatter marks directly by default, and swaps back to legends when the toggle is unticked', () => {
     render(buildDto(comparableSet(3)), 2);
 
-    // The values toggle is on by default, so the plugin is already registered; what the names
-    // toggle changes is the legend and whether a block carries a name.
-    expect(scatterLegendDisplays()).toEqual([true, true, true]);
-    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
-    expect(scatterBlocks()!.every(b => b.name === undefined)).toBeTrue();
-
-    const toggle = scatterToggle(0);
-    expect(toggle).withContext('the toggle sits in the Charts tab, under Trade-offs').toBeTruthy();
-    tick(toggle, true);
-
+    // Color means provider, so the names on the marks identify the models; no legend repeats them.
     expect(component.scatterDirectLabels).toBeTrue();
     expect(scatterLegendDisplays()).toEqual([false, false, false]);
     expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
     expect(scatterBlocks()!.every(b => typeof b.name === 'string')).toBeTrue();
 
+    const toggle = scatterToggle(0);
+    expect(toggle).withContext('the toggle sits in the Charts tab, under Trade-offs').toBeTruthy();
     tick(toggle, false);
 
+    expect(component.scatterDirectLabels).toBeFalse();
     expect(scatterLegendDisplays()).toEqual([true, true, true]);
-    expect(scatterBlocks()!.every(b => b.name === undefined)).toBeTrue();
+    // Neither toggle on: no plugin at all, and the legend names the marks.
+    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeFalse();
+
+    tick(toggle, true);
+
+    expect(scatterLegendDisplays()).toEqual([false, false, false]);
+    expect(scatterBlocks()!.every(b => typeof b.name === 'string')).toBeTrue();
   });
 
-  it('draws the marks\' values by default and drops the plugin when they are turned off', () => {
+  it('labels the marks with names only by default, and adds their values when asked', () => {
     render(buildDto(comparableSet(3)), 2);
 
-    expect(component.scatterInlineValues).toBeTrue();
-    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
+    expect(component.scatterInlineValues).toBeFalse();
     const blocks = scatterBlocks()!;
     expect(blocks.length).toBe(3);
-    expect(blocks[0].values.length).toBe(2);
-    expect(blocks[0].name).toBeUndefined();
+    expect(blocks.every(b => b.values.length === 0)).toBeTrue();
+    expect(typeof blocks[0].name).toBe('string');
     expect(blocks[0].hue).toBeTruthy();
 
-    tick(scatterToggle(1), false);
+    tick(scatterToggle(1), true);
 
-    expect(component.scatterInlineValues).toBeFalse();
-    // Neither toggle on: no plugin at all, and the legend still names the marks.
-    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeFalse();
-    expect(scatterLegendDisplays()).toEqual([true, true, true]);
+    expect(component.scatterInlineValues).toBeTrue();
+    expect(scatterBlocks()![0].values.length).toBe(2);
+    expect(scatterLegendDisplays()).toEqual([false, false, false]);
   });
 
   it('renders all six figures from three entries upward', () => {
@@ -681,7 +706,9 @@ describe('ModelComparisonComponent', () => {
     expect(modelDatasets(figures.qualitySpeed)).toBe(3);
     expect(modelDatasets(figures.qualityCost)).toBe(3);
     expect(modelDatasets(figures.speedCost)).toBe(3);
-    expect(figures.profile.config.data.datasets.length).toBe(3);
+    // One profile tile per model, each drawing its own line, the Ideal line and the other two.
+    expect(figures.profile.tiles.length).toBe(3);
+    expect(figures.profile.tiles.every(tile => tile.data.datasets.length === 4)).toBeTrue();
     expect(textOf('.mc-notices')).toContain('Model 2');
   });
 
@@ -2563,15 +2590,15 @@ describe('ModelComparisonComponent', () => {
     expect(named.checked).toBe(component.scatterDirectLabels);
     expect(valued.checked).toBe(component.scatterInlineValues);
 
-    setChecked(named, true);
-    expect(component.scatterDirectLabels).toBeTrue();
-    expect(styleControl('mc-style-scatter-directLabels').checked).toBeTrue();
-    expect(scatterLegendDisplays()).toEqual([false, false, false]);
+    setChecked(named, false);
+    expect(component.scatterDirectLabels).toBeFalse();
+    expect(styleControl('mc-style-scatter-directLabels').checked).toBeFalse();
+    expect(scatterLegendDisplays()).toEqual([true, true, true]);
 
-    setChecked(styleControl('mc-style-scatter-inlineValues'), false);
-    expect(component.scatterInlineValues).toBeFalse();
-    expect(styleControl('mc-style-scatter-inlineValues').checked).toBeFalse();
-    expect(scatterBlocks()!.every(b => b.values.length === 0)).toBeTrue();
+    setChecked(styleControl('mc-style-scatter-inlineValues'), true);
+    expect(component.scatterInlineValues).toBeTrue();
+    expect(styleControl('mc-style-scatter-inlineValues').checked).toBeTrue();
+    expect(scatterBlocks()!.every(b => b.values.length === 2)).toBeTrue();
   });
 
   it('fills single-run bars from the Charts tab, persists it, and keeps no second copy of the control', () => {
@@ -2610,7 +2637,7 @@ describe('ModelComparisonComponent', () => {
       jasmine.clock().tick(200);
       renderPreview.calls.reset();
 
-      setChecked(styleControl('mc-style-scatter-inlineValues'), false);
+      setChecked(styleControl('mc-style-scatter-inlineValues'), true);
       expect(renderPreview).not.toHaveBeenCalled();
       jasmine.clock().tick(200);
       expect(renderPreview).toHaveBeenCalled();
@@ -3042,7 +3069,7 @@ describe('ModelComparisonComponent', () => {
     expect(styleControl('mc-style-bar-number-intelligenceIndex')).toBeTruthy();
   });
 
-  it('refreshes the profile ranges and the figures after a number change, once the style debounce passes', () => {
+  it('refreshes the profile descriptions and the figures after a number change, once the style debounce passes', () => {
     render(buildDto(comparableSet(3)), 2);
     const minLabel = (): string => component.profileAxes!.axes[0].minLabel;
     expect(minLabel()).toMatch(/^\d+$/);
@@ -3059,7 +3086,10 @@ describe('ModelComparisonComponent', () => {
       jasmine.clock().tick(150);
       refresh();
       expect(minLabel()).toMatch(/^\d+\.\d{2}$/);
-      expect(textOf('.mc-axis-ends')).toContain(minLabel());
+      // One entry per model: its values, in the new decimals, and its weakest axis.
+      expect(textOf('.mc-axis-ends')).toContain(`intelligence ${minLabel()}`);
+      expect(fixture.debugElement.queryAll(By.css('.mc-axis-ends li')).length).toBe(3);
+      expect(textOf('.mc-axis-ends')).toContain('weakest axis:');
     } finally {
       jasmine.clock().uninstall();
     }
@@ -5187,6 +5217,41 @@ describe('ModelComparisonComponent', () => {
     // Every control on the row is an icon button; the figure's Download is one too.
     expect(toolbar.querySelectorAll('.btn-gh').length).toBe(0);
     expect(toolbar.querySelector('.mc-preview-download')?.classList).toContain('action-btn');
+  });
+
+  it('keeps Previous, the figure picker and Next on one line down to the 44rem panel width', () => {
+    render(buildDto(comparableSet(3)), 2);
+    openSingle();
+
+    const panel = fixture.debugElement.query(By.css('.mc-fig-panel')).nativeElement as HTMLElement;
+    // 45rem of content: the container query measures the panel inside its padding.
+    panel.style.boxSizing = 'content-box';
+    panel.style.right = 'auto';
+    panel.style.width = '45rem';
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const button = (name: string): HTMLElement => host.querySelector(`button[aria-label="${name}"]`) as HTMLElement;
+    const middle = (element: Element): number => {
+      const rect = element.getBoundingClientRect();
+      return rect.top + rect.height / 2;
+    };
+    const previous = button('Previous figure');
+    const next = button('Next figure');
+    const figureGroup = host.querySelector('.mc-preview-figure-group') as HTMLElement;
+    const zoom = host.querySelector('.mc-preview-zoom') as HTMLElement;
+
+    expect(figureGroup).not.toBeNull();
+    expect(getComputedStyle(figureGroup).flexWrap).toBe('nowrap');
+    expect(getComputedStyle(figureGroup).flexShrink).toBe('0');
+    expect(previous.offsetTop).toBe(next.offsetTop);
+    expect(Math.abs(previous.getBoundingClientRect().top - next.getBoundingClientRect().top)).toBeLessThanOrEqual(1);
+    // The zoom group shares their line: the only group on the row that shrinks.
+    expect(Math.abs(middle(zoom) - middle(next))).toBeLessThanOrEqual(1);
+    expect(getComputedStyle(zoom).flexShrink).toBe('1');
+    // The read-out is as wide as its text, never reserving room for the longest one.
+    const value = host.querySelector('.mc-preview-zoom-value') as HTMLElement;
+    expect(getComputedStyle(value).whiteSpace).toBe('nowrap');
   });
 
   it('hands the notice to its one toast', async () => {

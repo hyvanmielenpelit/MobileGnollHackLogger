@@ -1,5 +1,6 @@
 namespace Overseer.Tests.UnitTests;
 
+using System;
 using Overseer.Services.Tools;
 using Xunit;
 
@@ -242,5 +243,50 @@ public class SourceCompiledOutNoteTests
             + ">>> 8: int real_function(void)\n";
 
         Assert.Null(SourceCompiledOutNote.ForSearchMatches(content, path => SingleBlockFile));
+    }
+
+    private const string ReachabilityNote =
+        "[Not reachable: real_function() has no live call site in the indexed source, so the game never runs it.]";
+
+    [Fact]
+    public void FunctionDefinitionTool_PlacesTheReachabilityNoteAfterTheCompiledOutNote_AheadOfTheTruncationNotice()
+    {
+        string content = "--- src/spell.c:L1-L11 (real_function, 11 lines) ---\n"
+            + "line 1\n"
+            + "#if 0\n"
+            + "\n[Output truncated at line 2 of 11. Call again with start_line=3 (file line 4) to continue.]";
+
+        string withCompiledOut = GetFunctionDefinitionTool.InsertCompiledOutNote(content, path => SingleBlockFile, 100000);
+        string result = GetFunctionDefinitionTool.InsertReachabilityNote(withCompiledOut, ReachabilityNote, 100000);
+
+        int compiledOutAt = result.IndexOf("[Not compiled:", StringComparison.Ordinal);
+        int reachableAt = result.IndexOf("[Not reachable:", StringComparison.Ordinal);
+        int noticeAt = result.IndexOf("[Output truncated at line 2", StringComparison.Ordinal);
+        Assert.True(compiledOutAt > 0);
+        Assert.True(reachableAt > compiledOutAt);
+        Assert.True(noticeAt > reachableAt);
+    }
+
+    [Fact]
+    public void FunctionDefinitionTool_PutsTheReachabilityNoteFirst_WhenTheBodyFillsTheBudget()
+    {
+        string content = "--- src/spell.c:L8-L11 (real_function, 4 lines) ---\n"
+            + "int real_function(void)\n"
+            + "{\n"
+            + "    return 1;\n"
+            + "}";
+
+        string result = GetFunctionDefinitionTool.InsertReachabilityNote(content, ReachabilityNote, content.Length);
+
+        Assert.StartsWith(ReachabilityNote, result);
+        Assert.Contains("    return 1;", result);
+    }
+
+    [Fact]
+    public void FunctionDefinitionTool_NoReachabilityNote_LeavesTheContentUnchanged()
+    {
+        const string content = "--- src/spell.c:L8-L11 (real_function, 4 lines) ---\nint real_function(void)";
+
+        Assert.Same(content, GetFunctionDefinitionTool.InsertReachabilityNote(content, null, 100000));
     }
 }

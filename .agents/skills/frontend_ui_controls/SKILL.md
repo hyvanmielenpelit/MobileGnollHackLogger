@@ -287,6 +287,13 @@ Only warnings, advisories, the reason a control is disabled and the reason Start
 on screen. The fieldsets lost their purpose lines, and the Evaluation Purpose & Compliance box was
 removed.*
 
+*Changed 2026-09-27 (runs 68–72 round): the model comparison's **Single chart** toolbar keeps
+Previous, the figure picker and Next together — `.mc-preview-figure-group` never shrinks or wraps, so
+Next can no longer drop under the picker — and the zoom group is the only group on the row that
+shrinks, its slider giving way first; the zoom read-out is as wide as its text rather than reserving
+room for its longest value. Under 44 rem the row wraps with the figure group on its own line and the
+zoom and export groups sharing the next.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |

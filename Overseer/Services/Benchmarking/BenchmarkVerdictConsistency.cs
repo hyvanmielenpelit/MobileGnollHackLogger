@@ -478,12 +478,31 @@ public static class BenchmarkVerdictConsistency
     // widens the existing "never (?:mentions|states)" alternative to the passive and past-participle
     // forms an assessor reaches for when the missing fact, not the answer, is the sentence's subject
     // ("the combat-difficulty axis is never stated"); "is not stated" catches the same passive shape
-    // without "never" at all.
+    // without "never" at all, "are not stated" its plural. "without noting / mentioning / stating /
+    // listing / naming" is the adverbial form: the answer is right "without noting the prerequisite".
+    // Read only through NamesAnOmission, which first removes RubricSubjectClauseRegex's clauses.
     private static readonly Regex OmissionRegex = new(
         @"\bomit|\bomission|does not (?:mention|include|state|list|cover|address|provide)|fails? to (?:mention|include|state|list|identify|note|cover|address|provide)|missing|no mention of|never (?:mentions|states)|leaves out|does not name"
         + @"|never\s+(?:stated|states|mentioned)"
-        + @"|is\s+not\s+stated",
+        + @"|(?:is|are)\s+not\s+stated"
+        + @"|without\s+(?:noting|mentioning|stating|listing|naming)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    // Clauses whose subject is the rubric, not the answer: "a detail which the rubric does not
+    // mention", "the duration is not stated in the rubric". They say what the rubric leaves out, so
+    // their "does not mention" or "is not stated" names no omission of the answer.
+    private static readonly Regex RubricSubjectClauseRegex = new(
+        @"\b(?:which|that|what|as)\s+the\s+rubric\s+(?:does\s+not|doesn't|did\s+not)\s+\w+"
+        + @"|\b(?:is|are)\s+not\s+(?:stated|mentioned|listed)\s+(?:in|by)\s+the\s+rubric\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when <paramref name="text"/> describes something the answer did not say
+    /// (<see cref="OmissionRegex"/>), once the clauses that describe what the rubric does not say
+    /// (<see cref="RubricSubjectClauseRegex"/>) are removed.
+    /// </summary>
+    private static bool NamesAnOmission(string text)
+        => OmissionRegex.IsMatch(RubricSubjectClauseRegex.Replace(text, " "));
 
     // "X rather than Y" / "X instead of Y" describes a SUBSTITUTION: the answer stated X, and X is not
     // what GnollHack does. That is an accuracy defect, correctly charged, and must not be reclassified
@@ -513,7 +532,7 @@ public static class BenchmarkVerdictConsistency
             return false;
         }
 
-        return OmissionRegex.IsMatch(accuracyEvidence)
+        return NamesAnOmission(accuracyEvidence)
             && !FalsehoodRegex.IsMatch(accuracyEvidence)
             && !SubstitutionRegex.IsMatch(accuracyEvidence);
     }
@@ -575,7 +594,7 @@ public static class BenchmarkVerdictConsistency
         bool NamesTheDefect(string? text) => !string.IsNullOrWhiteSpace(text) && (collapsed switch
         {
             0 => DefectRegex.IsMatch(text) || FalsehoodRegex.IsMatch(text),
-            1 => DefectRegex.IsMatch(text) || OmissionRegex.IsMatch(text),
+            1 => DefectRegex.IsMatch(text) || NamesAnOmission(text),
             2 => Regex.IsMatch(text, concisenessDefects, options),
             _ => Regex.IsMatch(text, readabilityDefects, options)
         });
@@ -763,7 +782,7 @@ public static class BenchmarkVerdictConsistency
 
         return DefectDenialRegex.IsMatch(evidence!)
             && !HasUndeniedFalsehood(evidence!)
-            && !OmissionRegex.IsMatch(evidence!)
+            && !NamesAnOmission(evidence!)
             && !ConcessionRegex.IsMatch(evidence!);
     }
 

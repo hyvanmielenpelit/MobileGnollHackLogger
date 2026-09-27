@@ -32,6 +32,7 @@ import {
   measureFigureChrome,
   previewLayoutFor,
   renderPlotOffscreen,
+  renderTiledPlotOffscreen,
   resolveFigureLayout,
   webpEncoderQuality
 } from './figure-export';
@@ -499,6 +500,34 @@ describe('figure-export', () => {
       expect(hiddenLarge.height).toBe(hidden.height);
     });
 
+    it('draws every key glyph, a provider dot in its own color, and measures the height exactly', () => {
+      const fills: string[] = [];
+      const realFill = CanvasRenderingContext2D.prototype.fill;
+      spyOn(CanvasRenderingContext2D.prototype, 'fill').and.callFake(function (this: CanvasRenderingContext2D, ...args: any[]) {
+        fills.push(String(this.fillStyle));
+        return (realFill as any).apply(this, args);
+      } as any);
+      const canvas = sourceCanvas();
+      const figure = request({
+        canvas,
+        chrome: figureChrome({
+          key: [
+            { glyph: 'solid', text: 'Mean of 2+ runs' },
+            { glyph: 'interval', text: '95 % interval' },
+            { glyph: 'frontier', text: 'Pareto frontier' },
+            { glyph: 'faded', text: 'Faded: another model is better on both axes' },
+            { glyph: 'provider', text: 'Anthropic', color: '#d95926' },
+            { glyph: 'ideal', text: 'Ideal: best on every axis', color: '#e0ba6d' },
+            { glyph: 'other', text: 'Other models' }
+          ]
+        })
+      });
+      const measured = measureFigureChrome(figure, 400);
+      const composed = composeFigureImage({ ...figure, density: 1 });
+      expect(composed.height).toBe(measured.height + sourceSize.height);
+      expect(fills).toContain('#d95926');
+    });
+
     it('measures exactly the height the composition draws at larger caption sizes', () => {
       const canvas = sourceCanvas();
       const figure = request({
@@ -934,7 +963,7 @@ describe('figure-export', () => {
       expect(plot!.style.height).toBe('380px');
     });
 
-    it('breaks a cost panel\'s value-axis title by its own layout length, never by the density, and leaves the spec alone', async () => {
+    it('breaks a total-cost panel\'s value-axis title by its own layout length, never by the density, and leaves the spec alone', async () => {
       const entry = (key: string, runCost: number): ModelComparisonEntry => ({
         key, label: `Model ${key}`, runCount: 2,
         intelligenceIndex: 70, intelligenceIndexCi95HalfWidth: 3,
@@ -951,7 +980,7 @@ describe('figure-export', () => {
       };
       const spec = buildSmallMultiples(entries, {
         context, glyphs: buildIdentityGlyphs(entries), reducedMotion: true,
-        speedMeasure: 'meanModelTime', costMeasure: 'candidateSuite', orientation: 'vertical', style: DEFAULT_FIGURE_STYLE
+        speedMeasure: 'meanModelTime', costMeasure: 'totalRun', orientation: 'vertical', style: DEFAULT_FIGURE_STYLE
       }).cost;
       const sourceTitle = (spec.config.options!.scales!['y'] as unknown as { title: { text: unknown } }).title;
       const sourceText = JSON.parse(JSON.stringify(sourceTitle.text));
@@ -973,8 +1002,9 @@ describe('figure-export', () => {
         }
       );
 
-      const broken = ['Candidate cost of one suite run', '(USD, 18 questions asked)'];
-      const unbroken = ['Candidate cost of one suite run (USD, 18 questions asked)'];
+      // The candidate suite cost title is always two lines; the total run cost title decides at fit.
+      const broken = ['Total run cost including grading roles', '(USD)'];
+      const unbroken = ['Total run cost including grading roles (USD)'];
       for (const density of [1, 2]) {
         expect(await render(200, density)).withContext(`short at ${density}`).not.toBeNull();
         expect(await render(700, density)).withContext(`tall at ${density}`).not.toBeNull();
@@ -987,6 +1017,67 @@ describe('figure-export', () => {
       expect(seen[2]).toEqual(seen[0]);
       expect(seen[3]).toEqual(seen[1]);
       expect(sourceTitle.text).toEqual(sourceText);
+    });
+  });
+
+  describe('renderTiledPlotOffscreen', () => {
+    beforeAll(() => {
+      Chart.register(...APP_CHART_REGISTRABLES);
+    });
+
+    const layout: FigureExportLayout = {
+      layoutWidth: 960,
+      layoutHeight: 540,
+      plotWidth: 920,
+      plotHeight: 380,
+      density: 2,
+      pixelWidth: 1920,
+      pixelHeight: 1080
+    };
+
+    function tile(): OffscreenPlotConfig {
+      return { type: 'line', data: { labels: ['A', 'B', 'C'], datasets: [{ data: [0.2, 0.8, 0.5] }] } };
+    }
+
+    it('stitches the tiles into one plot of the layout\'s own box, each rendered on its own', async () => {
+      const sizes: { width: number; height: number }[] = [];
+      const observer: Plugin = {
+        id: 'tileObserver',
+        afterDraw: (chart: Chart) => {
+          sizes.push({ width: chart.width, height: chart.height });
+        }
+      };
+      const tiles = Array.from({ length: 5 }, () => ({ ...tile(), plugins: [observer] }));
+      const plot = await renderTiledPlotOffscreen(tiles, 3, layout, 10);
+
+      expect(plot).not.toBeNull();
+      expect(plot!.width).toBe(1840);
+      expect(plot!.height).toBe(760);
+      expect(plot!.style.width).toBe('920px');
+      expect(plot!.style.height).toBe('380px');
+      // Three columns and two rows, 10 px apart.
+      expect(sizes.length).toBe(5);
+      expect(sizes[0]).toEqual({ width: Math.floor((920 - 20) / 3), height: Math.floor((380 - 10) / 2) });
+      expect(sizes.every(size => size.width === sizes[0].width && size.height === sizes[0].height)).toBeTrue();
+    });
+
+    it('composes the stitched plot like any other, with the chrome measured exactly', async () => {
+      const plot = await renderTiledPlotOffscreen([tile(), tile()], 2, layout);
+      const composed = composeFigureImage({ ...request({ canvas: plot! }), density: 1 });
+      const measured = measureFigureChrome(request({ canvas: plot! }), 920);
+      expect(composed.height).toBe(measured.height + 380);
+    });
+
+    it('refuses without tiles or room, and when a tile fails', async () => {
+      expect(await renderTiledPlotOffscreen([], 3, layout)).toBeNull();
+      expect(await renderTiledPlotOffscreen([tile()], 1, { ...layout, plotHeight: 0 })).toBeNull();
+      const failing: Plugin = {
+        id: 'failingTile',
+        beforeInit: () => {
+          throw new Error('tile failed');
+        }
+      };
+      expect(await renderTiledPlotOffscreen([tile(), { ...tile(), plugins: [failing] }], 2, layout)).toBeNull();
     });
   });
 

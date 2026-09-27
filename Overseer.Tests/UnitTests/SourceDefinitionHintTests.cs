@@ -163,4 +163,37 @@ public class SourceDefinitionHintTests
         Assert.True(noticeAt > hintAt);
         Assert.True(result.IndexOf("477:         }", StringComparison.Ordinal) < hintAt);
     }
+
+    private const string LearnReachabilityNote =
+        "[Not reachable: learn() has no live call site in the indexed source, so the game never runs it.]";
+
+    [Fact]
+    public void ViewTool_PlacesTheReachabilityNoteAfterTheHint_AheadOfTheTruncationNotice()
+    {
+        string truncated = LearnView + "[Output truncated at line 7 of 80 requested (file line 477). Call again with start_line=478 to continue.]" + Environment.NewLine;
+
+        string result = SourceCodeViewTool.InsertReachabilityNote(
+            SourceCodeViewTool.InsertDefinitionHint(truncated, "gnollhack"), LearnReachabilityNote);
+
+        int hintAt = result.IndexOf("[Definition: learn()", StringComparison.Ordinal);
+        int reachableAt = result.IndexOf("[Not reachable: learn()", StringComparison.Ordinal);
+        int noticeAt = result.IndexOf("[Output truncated at line 7", StringComparison.Ordinal);
+        Assert.True(hintAt > 0);
+        Assert.True(reachableAt > hintAt);
+        Assert.True(noticeAt > reachableAt);
+    }
+
+    [Fact]
+    public void SearchTool_AppendsTheReachabilityNoteAfterAResultThatFits_AndPutsItFirstWhenTheResultWouldBeCut()
+    {
+        string appended = SourceCodeSearchTool.AppendReachabilityNote(StudyBookSearch, LearnReachabilityNote, 10000);
+        Assert.StartsWith(StudyBookSearch, appended);
+        Assert.EndsWith(LearnReachabilityNote, appended);
+
+        string prepended = SourceCodeSearchTool.AppendReachabilityNote(StudyBookSearch, LearnReachabilityNote, StudyBookSearch.Length);
+        Assert.StartsWith(LearnReachabilityNote, prepended);
+        Assert.EndsWith(StudyBookSearch, prepended);
+
+        Assert.Same(StudyBookSearch, SourceCodeSearchTool.AppendReachabilityNote(StudyBookSearch, null, 10000));
+    }
 }

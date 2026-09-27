@@ -16,6 +16,7 @@ namespace Overseer.Services.Tools
         private readonly int _maxResultLength;
         private readonly int _defaultMaxResults;
         private readonly int _defaultContextLines;
+        private readonly SourceLivenessIndex? _livenessIndex;
 
         public string ToolName => "source_code_search";
         public string Description { get; set; } = "Search the GnollHack or NetHack C source code for functions, macros, constants, or game mechanic implementations.";
@@ -24,11 +25,12 @@ namespace Overseer.Services.Tools
 
         public JsonElement ParameterSchema { get; }
 
-        public SourceCodeSearchTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService, IConfiguration configuration)
+        public SourceCodeSearchTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService, IConfiguration configuration, SourceLivenessIndex? livenessIndex = null)
         {
             _sourceCodeService = sourceCodeService;
             _netHackService = netHackService;
-            
+            _livenessIndex = livenessIndex;
+
             if (!int.TryParse(configuration["MaxSourceResultLength"], out _maxResultLength))
             {
                 _maxResultLength = 100000;
@@ -171,8 +173,10 @@ namespace Overseer.Services.Tools
 
             if (!filenamesOnly)
             {
+                string? reachability = SourceReachabilityNote.ForSearchMatches(content, service is NetHackSourceCodeService ? null : _livenessIndex);
                 content = AppendDefinitionHint(content, service is NetHackSourceCodeService ? "nethack" : "gnollhack", context.MaxResultLength);
                 content = AppendCompiledOutNote(content, service.GetIndexedLines, context.MaxResultLength);
+                content = AppendReachabilityNote(content, reachability, context.MaxResultLength);
             }
 
             if (context.SpoilerFreeMode)
@@ -207,6 +211,21 @@ namespace Overseer.Services.Tools
         internal static string AppendCompiledOutNote(string content, Func<string, string[]?> lineLookup, int maxResultLength)
         {
             string? note = SourceCompiledOutNote.ForSearchMatches(content, lineLookup);
+            if (note == null) return content;
+
+            int cap = maxResultLength > 0 ? maxResultLength : int.MaxValue;
+            return (long)content.Length + 2 + note.Length <= cap
+                ? content + "\n\n" + note
+                : note + "\n\n" + content;
+        }
+
+        /// <summary>
+        /// Adds the <see cref="SourceReachabilityNote"/> line after the result, or before it when the
+        /// result would otherwise push the note past the <paramref name="maxResultLength"/> cut that
+        /// ToolExecutor applies.
+        /// </summary>
+        internal static string AppendReachabilityNote(string content, string? note, int maxResultLength)
+        {
             if (note == null) return content;
 
             int cap = maxResultLength > 0 ? maxResultLength : int.MaxValue;

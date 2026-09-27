@@ -1865,7 +1865,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       return f ? `${f.delivered} of ${f.total}` : 'n/a';
     };
     const reader = run?.isPanelRun ? 'reference reader' : 'second reader';
-    return `Board delivered — assessor ${of('assessor')} graded, ${reader} ${of('second reader', 'reference reader')}, `
+    const coAssessor = run?.isPanelRun ? `co-assessor ${of('co-assessor')}, ` : '';
+    return `Board delivered — assessor ${of('assessor')} graded, ${coAssessor}${reader} ${of('second reader', 'reference reader')}, `
       + `claim verifier ${of('claim verifier')}; synthesis: yes; difficulty assessment: digest (no map).`;
   }
 
@@ -1883,6 +1884,77 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
     const fmt = (v: number | null | undefined) => (v == null ? '-' : `${v}`);
     return `${fmt(ans.assessorBoardChars)}/${fmt(ans.secondOpinionBoardChars)}/${fmt(ans.verifierBoardChars)}`;
+  }
+
+  /**
+   * A panel run's per-answer board figures as `A/B/reader/verifier`: member A, member B, the
+   * reference reader and the claim verifier. Null when none was recorded.
+   */
+  panelAnswerBoardChars(ans: BenchmarkRunAnswerDto): string | null {
+    const figures = [ans.assessorBoardChars, ans.coAssessorBoardChars, ans.secondOpinionBoardChars, ans.verifierBoardChars];
+    if (figures.every(v => v == null)) {
+      return null;
+    }
+    return figures.map(v => (v == null ? '-' : `${v}`)).join('/');
+  }
+
+  /** The panel's agreement figures for the diagnostics capture, `n/a` where one is not recorded. */
+  private panelDiagnosticsLine(run: BenchmarkRunDetailDto): string {
+    const signed = run.panelMeanSignedDelta;
+    const signedStr = signed == null
+      ? 'n/a'
+      : `${signed > 0 ? '+' : signed < 0 ? '−' : ''}${Math.abs(signed).toFixed(1)}`;
+    return `panel: A-alone ${run.assessorOnlyQualityIndex ?? 'n/a'}, B-alone ${run.coAssessorOnlyQualityIndex ?? 'n/a'}, `
+      + `mean |B−A| ${run.panelMeanAbsDelta != null ? run.panelMeanAbsDelta.toFixed(1) : 'n/a'}, mean B−A ${signedStr}, `
+      + `ICC ${run.panelIntraclassCorrelation != null ? run.panelIntraclassCorrelation.toFixed(2) : 'n/a'}, `
+      + `disagreements ${run.panelDisagreementCount ?? 0}, critical-error splits ${run.panelCriticalErrorSplitCount ?? 0}`;
+  }
+
+  /** Member B's advisory flags, counted per answer from `coAssessmentJson.flags`. */
+  private memberBFlagsLine(run: BenchmarkRunDetailDto): string {
+    type Flags = NonNullable<BenchmarkCoAssessmentRecord['flags']>;
+    const count = (flag: keyof Flags) =>
+      run.answers.filter(a => this.coAssessmentOf(a)?.flags?.[flag] === true).length;
+    return `member B flags: contested verdicts: ${count('contestedVerdict')}, unevidenced deductions: ${count('unevidencedDeduction')}, `
+      + `omission as accuracy: ${count('omissionAsAccuracy')}, out-of-rubric accuracy: ${count('outOfRubricAccuracy')}, `
+      + `dimension outliers: ${count('dimensionOutlier')}, completeness out of scope: ${count('completenessOutOfScope')}, `
+      + `readability form only: ${count('readabilityFormOnly')}, contested critical errors: ${count('contestedCriticalError')}, `
+      + `contested accuracy deductions: ${count('contestedAccuracyDeduction')}`;
+  }
+
+  /**
+   * A panel run's unverified claims: the union of both members' ordinary claims as the verifier
+   * received them (`claimVerificationJson`), split by who raised each one. Without any verified
+   * answer there is no union, so each member's own recorded count is printed instead.
+   */
+  private panelUnverifiedClaimsLabel(run: BenchmarkRunDetailDto): string {
+    let union = 0;
+    let onlyA = 0;
+    let onlyB = 0;
+    let both = 0;
+    let unattributed = 0;
+    let anyVerified = false;
+    for (const answer of run.answers) {
+      if (!answer.claimVerificationJson) continue;
+      anyVerified = true;
+      for (const v of this.claimVerificationsOf(answer)) {
+        if (!v || !AdminBenchmarkComponent.isOrdinaryClaim(v)) continue;
+        union++;
+        switch (this.claimMemberPhrase(v.raisedBy)) {
+          case 'member A': onlyA++; break;
+          case 'member B': onlyB++; break;
+          case 'both members': both++; break;
+          default: unattributed++; break;
+        }
+      }
+    }
+    if (!anyVerified) {
+      const recordedA = run.answers.reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0);
+      const recordedB = run.answers.reduce((sum, a) => sum + (this.coAssessmentOf(a)?.unverifiedClaims?.length ?? 0), 0);
+      return `not verified (member A ${recordedA}, member B ${recordedB} recorded)`;
+    }
+    const rest = unattributed > 0 ? `, unattributed ${unattributed}` : '';
+    return `${union} (member A ${onlyA}, member B ${onlyB}, both ${both}${rest})`;
   }
 
   /** The `withdrawn` list of an evidence-informed re-grade; empty when absent or malformed. */
@@ -4566,6 +4638,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return 'Answered';
   }
 
+  /**
+   * The published score of a scored row: the panel score in a panel run, else the quality score.
+   * Null while the row is unscored, queued or being answered, and in a panel run until both
+   * members have scored.
+   */
+  runRowScore(row: BenchmarkRunProgressRow): number | null {
+    const ans = row.answer;
+    if (!ans || row.status === 'Pending' || row.status === 'Answering' || row.assessmentStatus !== 'Scored') {
+      return null;
+    }
+    const score = this.activeRunDetail?.isPanelRun ? ans.panelQualityScore : ans.qualityScore;
+    return score ?? null;
+  }
+
   runRowChipClass(row: BenchmarkRunProgressRow): string {
     if (row.status === 'Pending') return 'status-pending';
     if (row.status === 'Answering') return 'status-answering';
@@ -4708,10 +4794,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
       // The third role, named whether or not one was used: "no second opinion" is itself a fact
       // about how the run was graded, and the capture used to omit it entirely.
+      // A panel run's third role is the non-scoring reference reader.
+      const readerLabel = run.isPanelRun ? 'Reference reader: ' : 'Second:   ';
       if (run.secondOpinionAssessorModelConfigurationId != null) {
-        lines.push(`Second:   ${run.secondOpinionAssessorModelDisplayNameUsed} (${run.secondOpinionAssessorModelProviderUsed} / ${run.secondOpinionAssessorModelIdUsed}), thinking: ${run.secondOpinionAssessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.secondOpinionAssessorModelReasoningModeUsed ?? 'default'}`);
+        lines.push(`${readerLabel}${run.secondOpinionAssessorModelDisplayNameUsed} (${run.secondOpinionAssessorModelProviderUsed} / ${run.secondOpinionAssessorModelIdUsed}), thinking: ${run.secondOpinionAssessorModelThinkingLevelUsed ?? 'default'}, reasoning: ${run.secondOpinionAssessorModelReasoningModeUsed ?? 'default'}`);
       } else {
-        lines.push('Second:   none selected');
+        lines.push(`${readerLabel}none selected`);
       }
       if (run.claimVerifierModelConfigurationId != null) {
         lines.push(`Verifier: ${run.claimVerifierDisplayNameUsed} (${run.claimVerifierProviderUsed} / ${run.claimVerifierModelIdUsed}), thinking: ${run.claimVerifierThinkingLevelUsed ?? 'default'}, reasoning: ${run.claimVerifierReasoningModeUsed ?? 'default'}`);
@@ -4775,7 +4863,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       const verifiedRunWide = this.runIsTerminal ? (run.claimVerifiedAnswerCount ?? answersVerified) : answersVerified;
       const secondGradedRunWide = this.runIsTerminal ? (run.secondOpinionGradedAnswerCount ?? answersSecondGraded) : answersSecondGraded;
       const scopedPair = this.runHasRerunScope ? ` (re-run scope: ${this.runVerifiedCount}, ${this.runSecondOpinionCount})` : '';
-      lines.push(`Answers with verified claims: ${verifiedRunWide}, second-graded ${secondGradedRunWide}${scopedPair}`);
+      lines.push(`Answers with verified claims: ${verifiedRunWide}, ${run.isPanelRun ? 'reference-read' : 'second-graded'} ${secondGradedRunWide}${scopedPair}`);
       if (this.runHasRerunScope) {
         const scopeLabel = this.runIsTerminal ? 'Failed-question re-run covered' : 'Failed-question re-run in progress over';
         lines.push(`${scopeLabel}: ${this.effectiveRerunScope.map(i => `Q${i}`).join(', ')}`);
@@ -4816,8 +4904,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         // `computed` is the superseded ComputedScore column, which current runs never write:
         // printing "computed: n/a" on every capture read as a missing value rather than a
         // retired one, so it appears only where a historical run actually has it.
+        // A panel run has two holistic scores, one per member's own synthesis.
         const scoreParts = [
-          `holistic: ${run.finalScore ?? 'n/a'}`,
+          run.isPanelRun
+            ? `holistic: A ${run.finalScore ?? 'n/a'}, B ${run.coAssessorFinalScore ?? 'n/a'}`
+            : `holistic: ${run.finalScore ?? 'n/a'}`,
           `quality index: ${run.qualityIndex ?? 'n/a'}`,
           `unweighted mean: ${run.unweightedQualityIndex ?? 'not recorded'}`,
           `raw quality index: ${run.rawQualityIndex ?? 'n/a'}`,
@@ -4827,6 +4918,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           scoreParts.splice(1, 0, `computed (superseded): ${run.computedScore}`);
         }
         lines.push(scoreParts.join(', '));
+        if (run.isPanelRun) {
+          lines.push(this.panelDiagnosticsLine(run));
+        }
         lines.push('');
 
         // --- INTEGRITY ---
@@ -4842,10 +4936,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         lines.push(`clean: ${clean}, transport defects: ${run.transportDefectAnswerCount ?? 0}, recovered: ${run.recoveredAnswerCount ?? 0}, harness limits: ${run.toolStarvedAnswerCount ?? 0} (sums to ${run.totalQuestionCount})`);
         // A null contested-accuracy-deduction count is a run before harness 20: not recorded, never 0.
         lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, dimension outliers: ${run.dimensionOutlierAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
+        // The run-level counts above are member A's; member B's come from its own record.
+        if (run.isPanelRun) {
+          lines.push(this.memberBFlagsLine(run));
+        }
         // Computed from `run`, not from the run-detail getters: this capture describes the
         // *active* run, and those getters read whichever run the detail dialog has open.
         const criticalHere = run.answers.filter(a => a.criticalError).map(a => a.orderIndex);
-        const unverifiedHere = run.answers.reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0);
+        const unverifiedHere = run.isPanelRun
+          ? this.panelUnverifiedClaimsLabel(run)
+          : `${run.answers.reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0)}`;
         lines.push(`critical errors: ${criticalHere.length}${criticalHere.length > 0 ? ` (${criticalHere.map(i => 'Q' + i).join(', ')})` : ''}, unverified claims: ${unverifiedHere}`);
         const signedDeltaStr = run.secondOpinionMeanSignedDelta != null
           ? `, ${run.secondOpinionMeanSignedDelta > 0 ? '+' : run.secondOpinionMeanSignedDelta < 0 ? '−' : ''}${Math.abs(run.secondOpinionMeanSignedDelta).toFixed(1)} mean signed delta`
@@ -4853,7 +4953,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         const splitsStr = (run.secondOpinionCriticalErrorSplitCount ?? 0) > 0
           ? `, critical-error splits: ${run.secondOpinionCriticalErrorSplitCount}`
           : '';
-        lines.push(`agreement: ${run.secondOpinionMeanAbsDelta != null ? run.secondOpinionMeanAbsDelta.toFixed(1) + ' mean abs delta' : 'not measured'}${signedDeltaStr} over ${run.secondOpinionGradedAnswerCount ?? 0} of ${run.answeredQuestionCount} answered, disagreements: ${run.secondOpinionDisagreementCount ?? 0}${splitsStr}`);
+        // In a panel run the reference reader is compared with the panel score.
+        lines.push(`${run.isPanelRun ? 'reference reader vs panel' : 'agreement'}: ${run.secondOpinionMeanAbsDelta != null ? run.secondOpinionMeanAbsDelta.toFixed(1) + ' mean abs delta' : 'not measured'}${signedDeltaStr} over ${run.secondOpinionGradedAnswerCount ?? 0} of ${run.answeredQuestionCount} answered, disagreements: ${run.secondOpinionDisagreementCount ?? 0}${splitsStr}`);
         if (run.secondOpinionAssessorModelConfigurationId != null && (run.secondOpinionGradedAnswerCount ?? 0) === 0) {
           lines.push(`${readerName}: selected (${run.secondOpinionAssessorModelDisplayNameUsed ?? 'configured'}) but no answer met a trigger — 0 graded`);
         }
@@ -4971,7 +5072,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       // --- FLAGS ---
       lines.push('--- FLAGS ---');
       const purposePresent = !!run.purposeStatementUsed;
-      lines.push(`difficultyFallbackUsed=${run.difficultyFallbackUsed}, speedMeasurementDegraded=${run.speedMeasurementDegraded}, assessmentParseFailed=${run.assessmentParseFailed}, sameProviderAcknowledged=${run.sameProviderAcknowledged ?? false}, purposeStatement present=${purposePresent}`);
+      // The launcher skips the same-provider gate for a panel run, so its stored false means nothing.
+      const sameProvider = run.isPanelRun ? 'n/a (panel run)' : `${run.sameProviderAcknowledged ?? false}`;
+      lines.push(`difficultyFallbackUsed=${run.difficultyFallbackUsed}, speedMeasurementDegraded=${run.speedMeasurementDegraded}, assessmentParseFailed=${run.assessmentParseFailed}, sameProviderAcknowledged=${sameProvider}, purposeStatement present=${purposePresent}`);
       lines.push('');
     }
 
@@ -5063,7 +5166,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (ans.cacheCreationInputTokens != null) parts.push(`cacheC=${ans.cacheCreationInputTokens}`);
         if (ans.actualServiceTierUsed) parts.push(`tier=${ans.actualServiceTierUsed}`);
         if (ans.httpStatusCode != null) parts.push(`http=${ans.httpStatusCode}`);
+        // score=, quality= and levels= are member A's in a panel run; panel=, b= and bLevels= follow.
         if (ans.score != null) parts.push(`score=${ans.score}`);
+        if (run.isPanelRun) {
+          parts.push(`panel=${ans.panelQualityScore ?? 'n/a'}`, `b=${ans.coAssessmentQualityScore ?? 'n/a'}`);
+          const co = this.coAssessmentOf(ans);
+          if (co?.accuracyLevel != null) {
+            parts.push(`bLevels=${co.accuracyLevel}/${co.completenessLevel ?? '?'}/${co.concisenessLevel ?? '?'}/${co.readabilityLevel ?? '?'}`);
+          }
+        }
 
         // Everything below is already on the DTO; the capture simply did not print it, which is
         // why an old diagnostics file could not reconstruct why any answer scored what it did.
@@ -5088,7 +5199,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (ans.secondOpinionQualityScore != null) {
           parts.push(`secondOpinion=${ans.secondOpinionQualityScore}/${ans.secondOpinionTrigger ?? 'unknown'}${ans.secondOpinionDisagreed ? ' disagreed' : ''}`);
         }
-        const boardChars = this.answerBoardChars(ans);
+        const boardChars = run.isPanelRun ? this.panelAnswerBoardChars(ans) : this.answerBoardChars(ans);
         if (boardChars) parts.push(`boardChars=${boardChars}`);
         if (ans.evidenceInformedQualityScore != null) {
           parts.push(`evidenceInformed=${ans.evidenceInformedQualityScore}${ans.evidenceInformedCriticalError ? ' critical' : ''} withdrew=${this.evidenceInformedWithdrawn(ans).length}`);
@@ -7338,7 +7449,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * The per-claim verifications for this answer. Empty on a malformed or absent blob. `roles` is
    * set by the harness from harness 31 and absent on an older record.
    */
-  claimVerificationsOf(answer: BenchmarkRunAnswerDto): { claimIndex?: number; claim: string; verdict: string; citation?: string | null; basis?: string | null; roles?: string[] }[] {
+  claimVerificationsOf(answer: BenchmarkRunAnswerDto): { claimIndex?: number; claim: string; verdict: string; citation?: string | null; basis?: string | null; roles?: string[]; raisedBy?: string[] | null }[] {
     if (!answer.claimVerificationJson) return [];
     try {
       const parsed = JSON.parse(answer.claimVerificationJson);
@@ -7351,15 +7462,39 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /**
    * One label per advisory role an entry was submitted for: the assessor's critical-error quote,
    * its out-of-rubric basis, or a sentence it charged as false. None for an ordinary claim or a
-   * record without roles.
+   * record without roles. In a panel run `raisedBy` names the member who submitted it.
    */
-  claimRoleLabels(roles: string[] | null | undefined): string[] {
+  claimRoleLabels(roles: string[] | null | undefined, raisedBy?: string[] | null): string[] {
     if (!Array.isArray(roles)) return [];
+    const member = this.claimMemberPhrase(raisedBy);
     const labels: string[] = [];
-    if (roles.includes('criticalErrorQuote')) labels.push('critical-error quote');
-    if (roles.includes('outOfRubricBasis')) labels.push('out-of-rubric basis');
-    if (roles.includes('accusedQuote')) labels.push('sentence the assessor charged as false');
+    if (roles.includes('criticalErrorQuote')) labels.push(member ? `critical-error quote from ${member}` : 'critical-error quote');
+    if (roles.includes('outOfRubricBasis')) labels.push(member ? `out-of-rubric basis from ${member}` : 'out-of-rubric basis');
+    if (roles.includes('accusedQuote')) labels.push(`sentence ${member ?? 'the assessor'} charged as false`);
     return labels;
+  }
+
+  /**
+   * Who submitted a claim-verification entry, from its `raisedBy`: `member A`, `member B` or
+   * `both members`. Null without one, as in a single-assessor run or a record before harness 40.
+   */
+  claimMemberPhrase(raisedBy: string[] | null | undefined): string | null {
+    if (!Array.isArray(raisedBy)) return null;
+    const members = new Set(raisedBy.map(m => (typeof m === 'string' ? m.trim().toUpperCase() : '')));
+    const a = members.has('A');
+    const b = members.has('B');
+    if (a && b) return 'both members';
+    if (a) return 'member A';
+    if (b) return 'member B';
+    return null;
+  }
+
+  /**
+   * A claim of the answer's own: a record without roles, or one carrying `unverifiedClaim`.
+   * Mirrors `BenchmarkClaimRoles.IsOrdinaryClaim` on the server.
+   */
+  static isOrdinaryClaim(verification: { roles?: string[] | null }): boolean {
+    return verification.roles == null || (Array.isArray(verification.roles) && verification.roles.includes('unverifiedClaim'));
   }
 
   /** Whether any entry was sent to check the assessor rather than the answer. */

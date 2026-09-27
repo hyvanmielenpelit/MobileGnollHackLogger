@@ -48,8 +48,9 @@ describe('BenchmarkSynthesisPanelComponent', () => {
   });
 
   const convergence: BenchmarkSynthesisConvergenceRowDto[] = [
-    { kind: 'strength', category: 'accuracy', question: 1, status: 'Convergent', memberAText: 'Cites the source.', memberBText: 'Grounded in source.' },
-    { kind: 'weakness', category: 'critical_error', question: null, status: 'MemberAOnly', memberAText: 'Invents a spell.', memberBText: null }
+    { kind: 'strength', category: 'accuracy', questions: [1, 4], status: 'Convergent', memberAText: 'Cites the source.', memberBText: 'Grounded in source.' },
+    { kind: 'weakness', category: 'critical_error', questions: [], status: 'MemberAOnly', memberAText: 'Invents a spell.', memberBText: null },
+    { kind: 'strength', category: 'completeness', questions: [2], status: 'Conflicting', memberAText: 'Covers every case.', memberBText: 'Skips the prerequisite.' }
   ];
 
   function tabs(): HTMLButtonElement[] {
@@ -215,14 +216,36 @@ describe('BenchmarkSynthesisPanelComponent', () => {
       const shown = panel()!;
       expect(shown.tagName.toLowerCase()).not.toBe('table');
       expect(shown.querySelector('.convergence-summary')!.textContent)
-        .toContain('1 convergent, 1 raised by member A only, 0 by member B only.');
+        .toContain('1 convergent, 1 raised by member A only, 0 by member B only, 1 where the members disagree.');
 
       const rows = Array.from(shown.querySelectorAll('.convergence-table tbody tr'));
-      expect(rows.length).toBe(2);
+      expect(rows.length).toBe(3);
       const first = Array.from(rows[0].querySelectorAll('td')).map(td => td.textContent!.trim());
-      expect(first).toEqual(['Strength', 'accuracy', 'Q1', 'Both members', 'Cites the source.', 'Grounded in source.']);
+      expect(first).toEqual(['Strength', 'accuracy', 'Q1, Q4', 'Both members', 'Cites the source.', 'Grounded in source.']);
       const second = Array.from(rows[1].querySelectorAll('td')).map(td => td.textContent!.trim());
       expect(second).toEqual(['Weakness', 'critical error', 'Run-wide', 'Member A only', 'Invents a spell.', '—']);
+    });
+
+    it('should mark a conflicting row with both kinds and its own status class', () => {
+      tabs()[2].click();
+      fixture.detectChanges();
+
+      const row = panel()!.querySelectorAll('.convergence-table tbody tr')[2];
+      const cells = Array.from(row.querySelectorAll('td')).map(td => td.textContent!.trim());
+      expect(cells).toEqual([
+        'Strength (A) / Weakness (B)', 'completeness', 'Q2', 'Members disagree', 'Covers every case.', 'Skips the prerequisite.'
+      ]);
+      const status = row.querySelector('.convergence-status')!;
+      expect(status.classList).toContain('convergence-conflicting');
+    });
+
+    it('should leave the disagreement count out of the summary when no row conflicts', () => {
+      setInputs({ convergence: convergence.filter(r => r.status !== 'Conflicting') });
+      tabs()[2].click();
+      fixture.detectChanges();
+
+      expect(panel()!.querySelector('.convergence-summary')!.textContent!.trim())
+        .toBe('1 convergent, 1 raised by member A only, 0 by member B only.');
     });
 
     it('should say so when no agreement was computed', () => {

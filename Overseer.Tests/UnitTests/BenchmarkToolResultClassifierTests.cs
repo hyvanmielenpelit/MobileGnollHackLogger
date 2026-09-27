@@ -142,7 +142,6 @@ public class BenchmarkToolResultClassifierTests
     [Theory]
     [InlineData("wiki_view", "Several wiki articles are titled 'Grail': Grail (item), Grail (quest). Showing the first.")]
     [InlineData("nethack_wiki_view", "[No NetHack wiki article titled 'Grail'. Showing 'Holy Grail'.]\n\nThe Holy Grail is ...")]
-    [InlineData("wiki_view", "[Section 'Invoking' not found in article. Returning full text.]\n\nThe Holy Grail ...")]
     [InlineData("get_function_definition", "[No function named 'SPELLTOOL' in the indexed GnollHack source; showing the macro definition instead.]\n#define SPELLTOOL(...)")]
     [InlineData("source_code_search", "[Note: No exact case match found. Falling back to case-insensitive search.]\n\nsrc/zap.c:120: explode(...)")]
     [InlineData("source_code_search", "[Note: Regex search failed. Falling back to literal text search.]\n\nsrc/zap.c:120: explode(...)")]
@@ -153,6 +152,37 @@ public class BenchmarkToolResultClassifierTests
         var facets = BenchmarkToolResultClassifier.Classify(Succeeded(tool, result));
 
         Assert.False(facets.NotFound);
+        Assert.Equal(string.Empty, BenchmarkToolResultClassifier.Note(facets));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Section misses: the article was found, the requested section was not.
+    // ---------------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("wiki_view", "[Section 'Invoking' not found in article. Returning full text.]\n\nThe Holy Grail ...")]
+    [InlineData("wiki_view", "--- Artifacts/The Holy Grail.md ---\n[Section 'Invoking' not found in article. Headings: History. Returning full text.]\n\nThe Holy Grail ...")]
+    [InlineData("wiki_view", "--- Artifacts/The Holy Grail.md ---\n[Section 'Invoking' not found in article. Headings: History. Showing the first 40 of 9000 characters; call wiki_view again with one of the headings above as section.]\nThe Holy Grail ...")]
+    [InlineData("nethack_wiki_view", "--- Holy Grail ---\n[Section 'Invoking' not found in article. Headings: History. Returning full text.]\n\nThe Holy Grail ...")]
+    [InlineData("nethack_wiki_view", "[No NetHack wiki article titled 'Grail'. Showing 'Holy Grail'.]\n--- Holy Grail ---\n[Section 'Invoking' not found in article. Headings: History. Showing the first 40 of 9000 characters; call nethack_wiki_view again with one of the headings above as section.]\nThe Holy Grail ...")]
+    public void Classify_SectionMissMarker_IsASectionMiss_NotAMiss(string tool, string result)
+    {
+        var facets = BenchmarkToolResultClassifier.Classify(Succeeded(tool, result));
+
+        Assert.True(facets.SectionMiss);
+        Assert.False(facets.NotFound);
+        Assert.Equal("section miss", BenchmarkToolResultClassifier.Note(facets));
+    }
+
+    [Theory]
+    [InlineData("wiki_search", "[Section 'Invoking' not found in article. Returning full text.]\n\nThe Holy Grail ...")]
+    [InlineData("wiki_view", "--- Help.md ---\nA wiki_view reply may open [Section 'X' not found in article. Returning full text.]")]
+    [InlineData("wiki_view", "--- Artifacts/The Holy Grail.md ---\n## Invoking\nThe Holy Grail ...")]
+    public void Classify_SectionMissMarker_ElsewhereThanTheStartOfAWikiViewResult_IsNotASectionMiss(string tool, string result)
+    {
+        var facets = BenchmarkToolResultClassifier.Classify(Succeeded(tool, result));
+
+        Assert.False(facets.SectionMiss);
         Assert.Equal(string.Empty, BenchmarkToolResultClassifier.Note(facets));
     }
 
@@ -419,6 +449,36 @@ public class BenchmarkToolResultClassifierTests
         Assert.Equal(1, summary.RecordCut);
         Assert.Equal(1, summary.Partial);
         Assert.Equal(1, summary.ContentError);
+        Assert.Equal(0, summary.SectionMiss);
+        Assert.Empty(summary.SectionMissByTool);
+    }
+
+    [Fact]
+    public void Summarize_SectionMisses_AreCountedApartFromMisses_ByToolLargestFirst()
+    {
+        const string wikiMiss = "--- Artifacts/The Holy Grail.md ---\n[Section 'Invoking' not found in article. Headings: History. Returning full text.]\n\nThe Holy Grail ...";
+        const string netHackMiss = "--- Holy Grail ---\n[Section 'Invoking' not found in article. Headings: History. Returning full text.]\n\nThe Holy Grail ...";
+
+        var rows = new[]
+        {
+            Succeeded("wiki_view", wikiMiss),                                                  // section miss
+            Succeeded("nethack_wiki_view", netHackMiss),                                       // section miss
+            Succeeded("nethack_wiki_view", netHackMiss),                                       // section miss
+            Succeeded("wiki_view", "No wiki article matched 'Grail'."),                         // miss
+            Succeeded("wiki_view", "--- Artifacts/The Holy Grail.md ---\n## History\ntext"),   // hit
+            Succeeded("wiki_view", null, resultLengthChars: 4096),                             // unavailable
+            Failed("wiki_view", "Tool execution timed out after 30 seconds.")                  // failed
+        };
+
+        var summary = BenchmarkToolResultClassifier.Summarize(rows);
+
+        Assert.Equal(5, summary.InspectableSuccessful);
+        Assert.Equal(3, summary.SectionMiss);
+        Assert.Equal(
+            new[] { new KeyValuePair<string, int>("nethack_wiki_view", 2), new KeyValuePair<string, int>("wiki_view", 1) },
+            summary.SectionMissByTool.ToArray());
+        Assert.Equal(1, summary.NotFound);
+        Assert.Equal("wiki_view", Assert.Single(summary.NotFoundByTool).Key);
     }
 
     [Fact]
@@ -430,5 +490,7 @@ public class BenchmarkToolResultClassifierTests
         Assert.Equal(0, summary.NotFound);
         Assert.Empty(summary.NotFoundByTool);
         Assert.Equal(0, summary.ModelVisibleCut);
+        Assert.Equal(0, summary.SectionMiss);
+        Assert.Empty(summary.SectionMissByTool);
     }
 }

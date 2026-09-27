@@ -637,6 +637,33 @@ public class BenchmarkVerdictConsistencyTests
             accuracyEvidence: evidence));
     }
 
+    [Theory]
+    // A clause whose subject is the rubric says what the rubric leaves out, not what the answer did.
+    [InlineData("The answer adds a 50-turn cooldown, which the rubric does not state, so level 6 is withheld.")]
+    [InlineData("The stated cooldown is a figure that the rubric does not include; held below 6 on precision.")]
+    [InlineData("The corpse weight is not stated in the rubric, so the answer's figure could not be confirmed.")]
+    [InlineData("The resistance chances are not stated by the rubric and remain unconfirmed.")]
+    public void IsOmissionGroundedAccuracyDeduction_RubricSubjectClause_DoesNotFlag(string evidence)
+    {
+        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence));
+    }
+
+    [Theory]
+    // "without noting" and the plural "are not stated" name what the answer left out.
+    [InlineData("The answer is correct without noting the altar prerequisite.")]
+    [InlineData("It gives the spell's effect without mentioning the level requirement.")]
+    [InlineData("The durations are not stated.")]
+    // A rubric-subject clause is removed, and the answer's own omission beside it still counts.
+    [InlineData("The turn count, which the rubric does not state, is fine, but the answer omits the timeout.")]
+    public void IsOmissionGroundedAccuracyDeduction_WithoutNotingAndPluralNotStated_Flags(string evidence)
+    {
+        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: 5,
+            accuracyEvidence: evidence));
+    }
+
     /// <summary>
     /// The 2026-09-06 run's synthesis, close to verbatim. It made two claims the same report's own
     /// verdicts contradicted: that the weaknesses were omissions rather than factual errors, and

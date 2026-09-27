@@ -21,7 +21,7 @@ The benchmark framework consists of:
   - **Readability** (Weight: 10%)
 - **Critical Error Ceiling**: If an answer contains critical hallucinations, dangerous commands, or complete fabrications, its overall Quality Score is hard-capped at the critical error ceiling (default: 25).
 - **Logarithmic Speed Decay**: Response speed is graded relative to a target latency (default: 5,000 ms) using $Speed = \text{clamp}(100 - k \cdot \log_2(\text{DurationMs} / \text{TargetMs}), 1, 100)$.
-- **Pipelined Evaluation & Concurrency Control**: Evaluator assessments are pipelined concurrently with candidate answer generation when candidate and assessor models use separate API keys, while safely serializing when sharing a rate-limit semaphore permit.
+- **Pipelined Evaluation & Concurrency Control**: Assessments are pipelined concurrently with candidate answer generation when candidate and assessor models use separate API keys, while safely serializing when sharing a rate-limit semaphore permit.
 - **Provider Error Isolation**: Distinguishes between genuine model errors (wrong answers, hallucinations) and transient API infrastructure failures (HTTP 429 rate limits, 503 service unavailable, 529 overload). Provider errors are excluded from scores and denominators.
 - **Configurable Scoring Profiles**: Entities defining weights, level-to-score mappings, critical error ceilings, speed target latencies, decay factors, and maximum parallel questions.
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
@@ -30,7 +30,9 @@ The benchmark framework consists of:
 
 Starting a run opens a modal progress dialog, reachable again at any time from the **Show Progress** button on the active-run banner.
 
-The dialog header carries the run number, the suite and the scoring profile. The two models are **not** in the header: they appear directly below it in a badge strip, badged exactly as the model selectors in the AI Benchmark tab badge them — thinking level, reasoning mode, provider, requested service tier, and parallel tool calls — so the configuration under test is legible without opening the report.
+The dialog header carries the run number, the suite and the scoring profile. The models are **not** in the header: they appear directly below it in a roster (*Model under test*, *Assessor*, and in a panel run *Co-assessor* and *Reference reader*), badged exactly as the model selectors in the AI Benchmark tab badge them — thinking level, reasoning mode, provider, requested service tier, and parallel tool calls — so the configuration under test is legible without opening the report. The active-run banner names the grader as *Assessor:*, or *Assessors:* in a panel run.
+
+**Layout.** The dialog is full-screen (`gh-dialog-fullscreen`). Its body holds two sections: the **overview** — alerts, heading, roster, stage rail, progress bars, statistics, cost panel, failed-questions alert and diagnostics, in that order — and **Questions**, the per-question list under a heading with its count. The content wrapper is an inline-size container (`run-progress`): below `60rem` of dialog content width the two sections stack in one column and the body scrolls as a whole; at `60rem` and wider the body is a two-column grid (`minmax(0, 3fr) minmax(22rem, 2fr)`) in which each section scrolls on its own, with `overscroll-behavior: contain` and a stable scrollbar gutter. The Questions section is focusable (`tabindex="0"`, with a visible focus ring) so a keyboard user can scroll it. The overview stays a block container, because the cost panel relies on margin collapse. A scored question row shows its published score beside its status chip — the panel score in a panel run (once both members have scored), otherwise the quality score — in tabular figures.
 
 It presents the run as **three** stages, which is how `BenchmarkService.ExecuteRunAsync` (and `RunFailedQuestionsAsync` for a re-run) actually sequences the work:
 
@@ -1177,6 +1179,11 @@ The whole article still follows it, so the documented contract — a section tha
 not a miss — is kept; the line only adds information. This is run 30's deferred **N3** in its
 non-breaking form. `nethack_wiki_view` is **not** changed and still matches exact titles only.
 
+> **Extended in the Harness Version 41 round**: on an article longer than the result cap, the line ends
+> *"Showing the first M of N characters; call wiki_view again with one of the headings above as
+> section."* and only the start of the article follows, landing at exactly the cap — in `wiki_view` and
+> `nethack_wiki_view` alike. See § *Harness Version 41 Updates*.
+
 #### The monster-page template in the guides (T2)
 
 `monster_lookup.md` warned about "the difficulty number" without naming the label the model actually
@@ -1291,6 +1298,10 @@ indexer kept.
 
 The dialog's question list (`.run-question-list`) no longer has its own height cap and scroller; the
 dialog body is the only scroller. `.job-item-list` keeps its `20rem` scroller everywhere else.
+
+> **Refined in the Harness Version 41 round**: this holds for the dialog's narrow, one-column layout.
+> From `60rem` of dialog content width the list sits in its own right-hand *Questions* column, which
+> scrolls on its own while the overview column stays in view — see § 1, **Run Progress Dialog**.
 
 #### What was deliberately not done
 
@@ -2946,6 +2957,10 @@ tooltips:
 - **Download table** is icon-only, named and tooltipped after the chosen format (*Download the
   table as Excel (.xlsx)*), beside Copy table.
 - The rows stay on one line until the panel is under 44 rem wide; the zoom slider shrinks first.
+  The Single chart's Previous, figure picker and Next form one group that never shrinks or wraps
+  (`.mc-preview-figure-group`), the zoom group is the only group that shrinks, and its read-out is as
+  wide as its text. Under 44 rem the row wraps with the figure group on its own line and zoom and
+  export together on the next (2026-09-27; before then *Next* could wrap under the picker).
 
 **All-charts tiles** each carry Copy, Download and Open in Single view in their top-right corner,
 shown while the tile is hovered or holds keyboard focus, and always on touch screens. Copy and
@@ -2968,6 +2983,56 @@ scope line says it, with the actual counts.
 of the digits 0–6 with the example value shown beside it rather than inside every option; in
 Chromium browsers the open list is styled in the dark theme. Font weight choices read
 *Regular (400)*, *Medium (500)*, *Semibold (600)* and *Bold (700)*.
+
+### Model Comparison: Provider Colors, a Dotted Frontier and Profile Small Multiples (2026-09-27)
+
+Part of the harness-41 round; nothing a run records changes, so this moves no key.
+
+**Color means provider.** Every chart, the key and the table glyphs color a model by its provider,
+using the existing validated three-hue palette: Google blue, Anthropic orange, OpenAI green (dark
+`#3987e5` / `#d95926` / `#199e70`, light `#2a78d6` / `#eb6834` / `#18a070`); any other provider is the
+neutral gray. `figure-theme.ts` `providerHue` maps them. Model names are carried by direct labels, and
+the key lists the providers present. Scatter marks are circles; the table's glyph is a circle in the
+provider's color (`.mc-glyph-provider-*`). The Highlight emphasis still overrides color. The P1 bar
+panels, which colored by measure, color by provider too. The palette passes the dataviz validator on
+all pairs in both themes (worst colorblind ΔE 9.4 dark, 8.7 light); four- and five-hue sets failed, so
+per-model hues are not used on scatters.
+
+**Trade-off charts (S1–S3).**
+
+- **The Pareto frontier** is a dotted line (`borderDash [0, 6]` with round caps, `inkSecondary`, drawn
+  over the marks) through the frontier models' own points, least to most favorable x — straight
+  segments, with no staircase corners and no extension to the plot edges. A one-member frontier draws
+  no line, and the highlight reads *"{model} is best on both axes"*.
+- **Dominated models are faded**: drawn at 35 % opacity (fill, ring and whiskers) with their labels in
+  muted ink; the key reads *Faded: another model is better on both axes*. The shaded dominated region
+  and its style option (`dominatedShading`) are gone — a straight frontier would put non-dominated
+  area under the shading — and a stored style carrying the option loads without it.
+- **Labels are model names** by default (`scatterDirectLabels` on, `inlineValues` off), drawn as text
+  with a 3 px surface halo and a 2 px provider-hue rule; values stay in the tooltip and the table.
+- The accessible name adds *Pareto frontier: …* and *Faded: …*.
+
+Artificial Analysis's shaded "most attractive quadrant" was considered and rejected: its thresholds
+would be an arbitrary cut of five to eight plotted models, and the frontier already carries the
+message.
+
+**Model profiles (P2) are small multiples.** One tile per plotted model (up to 8), in entry order, in
+`n ≤ 3 ? n : n ≤ 4 ? 2 : n ≤ 6 ? 3 : 4` columns. Each tile plots Intelligence, Speed and Cost on
+shared scales where up is better: intelligence linear over the union of the plotted 95 % intervals (at
+least 20 points wide, inside 0–100), speed and cost on inverted log scales over [best / 1.25,
+worst × 1.25]. The tile's model is drawn in its provider's hue (2.5 px, markers with a surface ring,
+its three values printed on the points, its intelligence interval as a whisker); every other model is
+a thin gray context line; a dotted *Ideal* line marks the best value on every axis. The highlight reads
+*No model is best on every axis.* when that is true. The notes say the speed and cost axes are log
+scales and give each axis's real range, and the tile descriptions (`.mc-axis-ends`) give one line per
+model ending in its weakest axis. Highlight emphasis outlines the selected models' tiles in gold.
+`figure-export.ts` `renderTiledPlotOffscreen` renders each tile and stitches them into one plot, which
+the All tiles, the Single stage, Download, Copy and the zip all use. The rejected alternative — one
+overlay chart with provider colors and end labels — would have drawn four crossing green lines for a set
+of four OpenAI models.
+
+**P1 extras.** The cost panel's axis title is two lines, *Candidate cost per suite run* / *(USD, N
+questions)*, so the export no longer clips it; the Intelligence bars keep their 95 % whiskers.
 
 ### Harness Version 29 Updates
 
@@ -3355,7 +3420,8 @@ everything new is stored inside existing JSON columns.
   before the batch budget and the turn limit apply, so those two cuts never reach a stored row, and
   the report says *not recorded* rather than print a zero. The report's per-question tool table and the
   tool-call log gain a `Note` column with a fixed vocabulary: `miss`, `cut`, `record cut`, `partial`,
-  `content error`, `unavailable`.
+  `content error`, `unavailable`. (Harness 41 adds `section miss`, for a `wiki_view` or
+  `nethack_wiki_view` result that opens with the section-miss marker, and a *Section not found* line.)
 
 - **Grading prompt (H3b, H5).** Beside the critical-error quote rule: *"Quote the sentence that commits
   the error the clause names. When the clause is about advice or an implication, quote the advice, not
@@ -4504,6 +4570,105 @@ data motion (§ 5).
   single-assessor run already used the same reader in `All` mode, blind; the consequences are in § 3.
   Two panel runs under the same panel and reader differ in neither.
 
+### Harness Version 41 Updates
+
+The runs 68–72 round (2026-09-27), the first set graded by the two-family panel. The report, the
+diagnostics, the detectors and the verifier's notes are made honest about the panel, and two tool
+corrections reach the production chat. `HarnessVersion` moves to **"41"**, and `ToolGuidesSha256` moves
+(five guide sentences). `ScoringMethodVersion` stays **12**; `CandidateSystemPromptSha256`, the chat
+system prompt and `_policy.md` do not move. No EF Core migration: every new figure is computed at render
+time from stored columns and JSON.
+
+**Report and diagnostics (panel runs only; a single-assessor report is unchanged).**
+
+- **Charges are attributed by member.** Every per-answer charge line — an accusation, an assessor
+  statement, a suspected-false claim, a refuted claim — names *member A*, *member B* or *both members*
+  from the verification item's `raisedBy`. The run totals for accused sentences, suspected-false claims
+  and supported accusations print as *"A n, B m, both k"*, where A and B count items that member raised
+  alone. Member A's contested-deduction causes read only the items member A raised.
+- **Claim counts are the union.** *Unverified Claims* counts the union of ordinary claims in
+  `ClaimVerificationJson` with its verdicts, followed by *(member A n, member B m, both k)*, instead of
+  summing member A's `UnverifiedClaimCount`.
+- **Per-member and panel figures.** *Dimensional Score Averages* is a table of member A, member B and the
+  panel (member B's points from `CoAssessmentJson` levels through the run's level scores). The FORM-only
+  and out-of-scope counts, the out-of-rubric accuracy deductions, the advisory flags and the contested
+  counts print as *"A n, B m"*; run-level stored counts stay member A's. The response-style conflict note
+  is read on the panel averages.
+- **Reference-reader wording.** *Disputed Assessments* compares the panel score (with each member's score
+  and critical-error flag) against the reference reader. *Critical Errors* counts a cap from either
+  member and names the members that flagged it, and the lines that point at it print only when it
+  prints. Every "second reader" phrase in a panel report reads "reference reader", and member A's block
+  is headed `### Assessor (Panel Member A)`.
+- **Board delivery and overlap.** The delivery line gains a `co-assessor` figure and looks every role up
+  by name. *Measured overlap* sums, per answer, the slower of the two members' assessment times, plus
+  the co-synthesis duration, and names both stages.
+- **Agreement (§ 6.3 and the Agreement tab).** `BenchmarkSynthesisConvergence` makes **one row per
+  finding**, carrying all its questions (`Questions`, printed *Q1, Q4*), instead of one row per question.
+  Findings of the two members that share kind and category and whose question sets overlap (or are both
+  run-wide) are one `Convergent` row. A strength of one member and a weakness of the other in the same
+  category on overlapping questions, neither with a same-kind match, is **`Conflicting`** (*Members
+  disagree*). The DTO field `BenchmarkSynthesisConvergenceRowDto.Question` became `Questions` (`int[]`);
+  the client is its only consumer.
+- **Other report lines.** *Refuted Claims* prints *Basis:* only when it differs from *Citation:*. An
+  Anthropic candidate's reasoning tokens print *n/a* (thinking is counted in output tokens) and the
+  per-question `, Reasoning=0` is dropped. The provider-terms line names the reference reader and the
+  claim verifier after the two members. The Tool Usage Profile prints *Section not found: N* by tool.
+- **Diagnostics capture (Copy diagnostics).** A panel run prints *Reference reader:* for the second model
+  and `reference-read N`; `holistic: A x, B y`; a `panel:` line with both member-alone indices, mean
+  |B−A|, mean B−A, ICC, disagreements and critical-error splits; `reference reader vs panel:` for the
+  agreement line; member B's flag counts; the union claim count with the per-member split; per question
+  `panel=`, `b=`, `bLevels=` and `boardChars=A/B/reader/verifier`; and
+  `sameProviderAcknowledged=n/a (panel run)`. `score=` and `levels=` are member A's.
+
+**Verification and detectors (all runs).**
+
+- **Label-insensitive union manifest (H12).** `BenchmarkService.ItemKey` strips a list marker, a leading
+  bold label (`**Label:**`), emphasis and code-span marks and extra whitespace, and compares ignoring
+  case. The union manifest, the member-text comparisons and the contested-flag checks
+  (`CriticalErrorQuoteWasSupported`, `OutOfRubricBasisWasRefuted`) use it, so a member-B copy of member
+  A's item is one item raised by both and keeps member B's contested flag. The single-assessor manifest
+  is unchanged.
+- **Omission detector (H8).** Clauses whose subject is the rubric (*"which the rubric does not state"*,
+  *"not stated in the rubric"*) are removed before matching, and *"without noting / mentioning /
+  stating / listing / naming"* and *"are not stated"* count as an omission.
+- **Verifier budget (H14).** The claim verifier's tool budget is `ToolCallBudget` (≤ 0 → 15) plus
+  `Benchmark:ClaimVerification:ToolCallBudgetPerItem` per manifest item, capped at `ToolCallBudgetMax`
+  and never below the base; its tool iterations are at least half the budget and its model calls at
+  least the iterations plus four. `Overseer/appsettings.json` sets `ToolCallBudgetPerItem: 1` and
+  `ToolCallBudgetMax: 30`, so the budget is 15 + 1 per item, at most 30. The figure the verifier prompt
+  prints moves with it in every run. Setting `ToolCallBudgetPerItem` to 0 restores the fixed budget.
+- **Citation notes (H9–H11).** The macro-definition note covers only a `#define`'s name and its
+  parameter list (to the row closing it), not the macro's body. A prose line reference — *"src/x.c at
+  line 156"*, *"lines 10–20"*, *"L5"* — counts as a line citation, and a free-standing *line N* is
+  attributed to the one source file named when the text names exactly one and no board or wiki. A cited
+  line or range whose every line is blank or a comment gets *"cited line … is blank or a comment"* (or
+  *"cited lines … are blank or comments"*) and counts as Indeterminate. A function called only inside an
+  `#if 0` region now has no live call site.
+
+**Chat and benchmark alike (the production tools).**
+
+- **`wiki_view` section miss on an over-cap article (T1).** When the requested section is not in an
+  article longer than the result cap, `wiki_view` and `nethack_wiki_view` keep the marker line — the
+  headings list — and end it *"Showing the first M of N characters; call wiki_view again with one of the
+  headings above as section."*, followed by the start of the article, landing at exactly the cap with no
+  `[Truncated:` suffix. Under the cap the result is unchanged (*"Returning full text."*). The benchmark
+  classifier records the facet `SectionMiss` and the note `section miss`.
+- **`[Not reachable: …]` (T2).** `get_function_definition`, `source_code_view` and `source_code_search`
+  add *"[Not reachable: name() has no live call site in the indexed source, so the game never runs
+  it.]"* when a result shows the column-0 definition of a GnollHack function with no live reference, at
+  most once per result and never for the NetHack repository. Liveness comes from `SourceLivenessIndex`,
+  a singleton shared with the citation check: a call or a value reference (a function pointer) outside
+  comments, string literals and `#if 0` regions and outside the function's own definition, prototypes
+  and `#define`s, searched over `src/`, `include/` and `win/win32/xpl/` and — as references only — the
+  port sources under `win/` and `sys/`, so a window-procedure table or a platform `main` counts as a
+  caller. The index is rebuilt when the repository's root or HEAD moves, and each name is memoized. On
+  the 2026-09-27 GnollHack HEAD it flags 121 of about 6,100 column-0 definitions in `src/`; a warm lookup
+  takes well under 1 ms, and a view or search result checks at most five definitions. A function reached
+  only through a macro that builds its name would be flagged wrongly.
+
+**Comparability.** `HarnessVersion` and `ToolGuidesSha256` both move, so a run after this round is two
+Instrument keys from runs 68–72 and is NotComparable with them.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
@@ -4585,17 +4750,17 @@ Status as of 2026-09-26, the roster of runs 66 and 67, with the co-assessor of t
 
 | Role | Model | Since |
 |---|---|---|
-| **Primary assessor** (scores) | Claude 5.5 Opus @ `medium` | Run 66. Claude 5 Opus @ `medium` graded runs 52–65, and Claude 5 Opus @ `low` runs 39–42 |
-| **Co-assessor** (panel member B, scores) | GPT-6 Sol @ `medium` | 2026-09-27, when panels became the standard configuration. A run whose candidate is GPT-6 Sol takes the previous Sol version, GPT-5.6 Sol, which is a different instrument |
+| **Primary assessor** (scores) | Claude 5.5 Opus @ `medium` | Run 66. Claude 5 Opus @ `medium` graded runs 52–65 and, as panel member A, runs 68–72, whose set included Claude 5.5 Opus as a candidate; Claude 5 Opus @ `low` graded runs 39–42 |
+| **Co-assessor** (panel member B, scores) | GPT-6 Sol @ `medium` | 2026-09-27, when panels became the standard configuration. A set whose candidates include GPT-6 Sol takes the previous Sol version, GPT-5.6 Sol, for every run of the set, as runs 68–72 did; it is a different instrument |
 | **Second reader** (advisory, blind), or **reference reader** in a panel run | Gemini 3.8 Flash @ `medium` | Runs 57 and 59; the user's deliberate roster from runs 60 and 61 on |
 | **Claim verifier** (advisory) | Gemini 3.8 Flash @ `medium` | The same |
-| **Candidates** | GPT-5.6 Luna, GPT-6 Luna, GPT-6 Sol, Gemini 3.7 Flash | — |
+| **Candidates** | GPT-5.6 Luna, GPT-6 Luna, GPT-6 Sol, GPT-6 Astra, Claude 5.5 Opus, Gemini 3.7 Flash | — |
 
 By provider:
 
 | Provider | Role today | Earlier roles |
 |---|---|---|
-| **Anthropic** | Primary assessor; also other benchmark work such as suite authoring | Candidate: Claude 5 Sonnet @ `high` on runs 28–35 and 43, Claude 5 Opus @ `low` on run 44. Second reader and claim verifier in stage 1 (runs 36–38) |
+| **Anthropic** | Primary assessor (panel member A); candidate in panel runs (Claude 5.5 Opus on run 68); also other benchmark work such as suite authoring | Candidate: Claude 5 Sonnet @ `high` on runs 28–35 and 43, Claude 5 Opus @ `low` on run 44. Second reader and claim verifier in stage 1 (runs 36–38) |
 | **Google** | Candidate (Gemini 3.7 Flash); second or reference reader and claim verifier (Gemini 3.8 Flash) | Primary assessor (Gemini 3.7 Flash) until the promotion at run 39, and again on run 46 |
 | **OpenAI** | Candidate; co-assessor (GPT-6 Sol) in panel runs from 2026-09-27 | Second reader and claim verifier: GPT-5.6 Luna on runs 28–35 and 52–56, GPT-5.6 Sol on run 39. Primary assessor: GPT-5.6 Sol @ `medium` on runs 43–45. The GPT-5.6 Luna grader roster was retired at runs 60 and 61 and is not to be re-proposed |
 
@@ -4603,8 +4768,9 @@ By provider:
 
 - **OpenAI and Google** are both candidate providers, so neither can be the permanent primary: same-family
   self-preference bias would land on the grader whose verdict *scores*.
-- **Anthropic** has not been a candidate since run 44 (2026-09-12), so it is the only provider eligible
-  for every current candidate.
+- **Anthropic** was not a candidate from run 44 (2026-09-12) until run 68 (2026-09-27), so it was the
+  only provider eligible for every candidate of that period. An Anthropic candidate is now graded by the
+  two-family panel below.
 
 **What the 2026-09-03 position got wrong.** It recorded Anthropic as *"not planned as a model under
 test"*, and therefore assessor-eligible in every configuration. Anthropic was a candidate on ten runs:
@@ -4839,14 +5005,16 @@ release, while a family name lasts.
 
 | Role | Model | Effort | Also |
 |---|---|---|---|
-| Assessor | **Claude Opus**, not Claude Fable | `medium` | Not the model under test. In a single-assessor run with an Anthropic candidate, see the provider rule in **The roster today, and why Anthropic is primary** |
-| Co-Assessor | **GPT Sol**, not GPT Astra | `medium` (the same as the assessor) | Never the model under test. When the candidate is the newest GPT Sol, use the previous GPT Sol version |
+| Assessor | **Claude Opus**, not Claude Fable | `medium` | Not the model under test. When a set's candidates include the newest Claude Opus, use the previous Claude Opus version for every run of the set. In a single-assessor run with an Anthropic candidate, see the provider rule in **The roster today, and why Anthropic is primary** |
+| Co-Assessor | **GPT Sol**, not GPT Astra | `medium` (the same as the assessor) | Never the model under test. When a set's candidates include the newest GPT Sol, use the previous GPT Sol version for every run of the set |
 | Second Reader | **Gemini Flash** (not Flash-Lite) | `medium` | A different provider from the assessor. When the candidate is a Gemini Flash model, use a different Flash version, and expect the weaker same-family pairing the launcher warns about |
 | Reference Reader | **Gemini Flash** (not Flash-Lite) | `medium` | The same model on every run you compare. Google is the third family beside the Anthropic and OpenAI members |
 | Claim Verifier | **Gemini Flash** (not Flash-Lite) | `medium` (`high` if its rulings are often wrong; never `low`) | The same as the reader. The report already notes that one model in both roles makes their findings correlated |
 
-All roles avoid `xhigh` and `max`. Today's roster already matches — Claude 5.5 Opus, GPT-6 Sol and Gemini
-3.8 Flash, all at `medium` — so no roster change follows.
+All roles avoid `xhigh` and `max`. Today's roster matches — Claude 5.5 Opus, GPT-6 Sol and Gemini 3.8
+Flash, all at `medium` — for a set whose candidates include neither Claude 5.5 Opus nor GPT-6 Sol. A set
+that includes either takes the previous version of **both** members, Claude 5 Opus and GPT-5.6 Sol, for
+every run of the set, so the whole set shares one panel; runs 68–72 were graded that way.
 
 **Where the recommendations appear.** The launcher's grader info popups and the *How the graders work*
 guide (its section *Choosing grader models*) name the same **families** — Claude Opus, GPT Sol, Gemini
@@ -5841,7 +6009,7 @@ Compliance review must be revisited if:
 ## 8. Thinking Level Configuration & Output Limits
 
 - **Pin Explicit Thinking Levels**: Benchmark and assessor System AI Configurations should pin an explicit **Thinking Level** (e.g. `high`, `medium`, or `none`). Leaving it on `Default` makes a run's reasoning behavior depend on the model and on `AnthropicSettings:ExplicitDefaultEffort`, which can compromise run-to-run comparability over time.
-- **Assessor Token Limits (`AssessorMaxOutputTokens`)**: Evaluator and assessor completions share their `max_tokens` budget with internal reasoning/thinking output. The default fallback limit (`Benchmark:AssessorMaxOutputTokens`) is set to `32000` to prevent assessor evaluation JSON completions from being prematurely truncated when thinking is enabled. Individual assessor configurations can override this fallback using their per-configuration `MaxOutputTokens` setting.
+- **Assessor Token Limits (`AssessorMaxOutputTokens`)**: Assessor completions share their `max_tokens` budget with internal reasoning/thinking output. The default fallback limit (`Benchmark:AssessorMaxOutputTokens`) is set to `32000` to prevent assessor evaluation JSON completions from being prematurely truncated when thinking is enabled. Individual assessor configurations can override this fallback using their per-configuration `MaxOutputTokens` setting.
 
 ---
 

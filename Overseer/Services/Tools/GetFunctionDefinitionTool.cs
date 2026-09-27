@@ -8,11 +8,13 @@ namespace Overseer.Services.Tools
     {
         private readonly SourceCodeService _sourceCodeService;
         private readonly NetHackSourceCodeService _netHackService;
+        private readonly SourceLivenessIndex? _livenessIndex;
 
-        public GetFunctionDefinitionTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService)
+        public GetFunctionDefinitionTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService, SourceLivenessIndex? livenessIndex = null)
         {
             _sourceCodeService = sourceCodeService;
             _netHackService = netHackService;
+            _livenessIndex = livenessIndex;
         }
 
         public string ToolName => "get_function_definition";
@@ -97,6 +99,7 @@ namespace Overseer.Services.Tools
             }
 
             var result = service.GetFunctionBody(name, kind, startLine);
+            var livenessIndex = repository == "gnollhack" ? _livenessIndex : null;
 
             if (result.StartsWith(SourceMissContentBuilder.MissPrefix, StringComparison.Ordinal))
             {
@@ -108,7 +111,9 @@ namespace Overseer.Services.Tools
                     if (!anyResult.StartsWith(SourceMissContentBuilder.MissPrefix, StringComparison.Ordinal))
                     {
                         string note = $"[No {kind} named '{name}' in the indexed {repository} source; showing the {DescribeHitKind(anyResult, name)} definition instead.]\n";
+                        string? hitReachability = SourceReachabilityNote.ForFunctionDefinitionResult(anyResult, livenessIndex);
                         string hitContent = InsertCompiledOutNote(anyResult, service.GetIndexedLines, context.MaxResultLength);
+                        hitContent = InsertReachabilityNote(hitContent, hitReachability, context.MaxResultLength);
                         return Task.FromResult(new ToolResult { Success = true, Content = note + hitContent });
                     }
                 }
@@ -117,12 +122,42 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = true, Content = result });
             }
 
+            string? reachability = SourceReachabilityNote.ForFunctionDefinitionResult(result, livenessIndex);
             result = InsertCompiledOutNote(result, service.GetIndexedLines, context.MaxResultLength);
+            result = InsertReachabilityNote(result, reachability, context.MaxResultLength);
             return Task.FromResult(new ToolResult { Success = true, Content = result });
         }
 
         /// <summary>Characters held back from the whole-line budget for the compiled-out note and its line breaks.</summary>
         internal const int CompiledOutNoteReserve = SourceCompiledOutNote.MaxLength + 8;
+
+        /// <summary>Characters held back from the whole-line budget for the reachability note and its line breaks.</summary>
+        internal const int ReachabilityNoteReserve = SourceReachabilityNote.MaxLength + 8;
+
+        /// <summary>
+        /// Adds the <see cref="SourceReachabilityNote"/> line after the body and any compiled-out note,
+        /// ahead of its <c>[Output truncated at line …]</c> notice when there is one. Placed first,
+        /// ahead of the body, when the body already fills the result budget, so ToolExecutor's
+        /// character cut cannot remove it.
+        /// </summary>
+        internal static string InsertReachabilityNote(string content, string? note, int maxResultLength)
+        {
+            if (note == null) return content;
+
+            string nl = Environment.NewLine;
+            string body = content.TrimEnd();
+            int cap = maxResultLength > 0 ? maxResultLength : int.MaxValue;
+
+            if ((long)body.Length + ReachabilityNoteReserve > cap)
+            {
+                return note + nl + nl + body + nl;
+            }
+
+            int notice = body.LastIndexOf("\n[Output truncated at line ", StringComparison.Ordinal);
+            return notice >= 0
+                ? body.Substring(0, notice).TrimEnd() + nl + nl + note + nl + body.Substring(notice + 1) + nl
+                : body + nl + nl + note + nl;
+        }
 
         /// <summary>
         /// Adds the <see cref="SourceCompiledOutNote"/> line after the body, ahead of its

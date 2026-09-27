@@ -318,6 +318,76 @@ The innerbody has the actual detail.
         Assert.Equal(BodyAfterHeader(gnollHack!), BodyAfterHeader(netHack!));
     }
 
+    [Fact]
+    public void Extract_ReportsWhetherTheSectionMissed()
+    {
+        const string article = "Intro.\n\n## Strategy\nstrategybody\n";
+
+        string hit = MarkdownSectionExtractor.Extract(article, "Strategy", out bool hitMissed);
+        string miss = MarkdownSectionExtractor.Extract(article, "Nope", out bool missMissed);
+
+        Assert.False(hitMissed);
+        Assert.Contains("strategybody", hit);
+        Assert.True(missMissed);
+        Assert.Equal(MarkdownSectionExtractor.Extract(article, "Nope"), miss);
+        Assert.StartsWith("[Section 'Nope' not found in article. Headings: Strategy. Returning full text.]\n\n", miss);
+    }
+
+    /// <summary>
+    /// The nethack_wiki_view twin of wiki_view's over-cap section miss: the marker line keeps its
+    /// heading list and names this tool, the result lands at exactly the cap with no "[Truncated: …]"
+    /// suffix, and a resolution line, when the request was not the exact title, is kept ahead of the
+    /// header inside the same cap.
+    /// </summary>
+    [Theory]
+    [InlineData("Runewords", false, 320)]
+    [InlineData("Runewords Elbereth", true, 400)]
+    public async Task NetHackWikiViewTool_SectionMissOnAnOverCapArticle_EndsAtTheCapWithoutTruncatedSuffix(string article, bool expectResolutionLine, int cap)
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new List<KeyValuePair<string, string?>> { new("NetHackWikiPath", _tempDir) })
+            .Build();
+        using var service = new NetHackWikiService(config);
+        await service.InitializationTask;
+        var tool = new NetHackWikiViewTool(service);
+
+        var ctx = Context();
+        ctx.MaxResultLength = cap;
+        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { article, section = "Nope" })).RootElement;
+        var result = await tool.ExecuteAsync(jsonParams, ctx, CancellationToken.None);
+
+        Assert.True(result.Success);
+        string content = result.Content!;
+        Assert.Equal(ctx.MaxResultLength, content.Length);
+        Assert.DoesNotContain("[Truncated:", content);
+        Assert.DoesNotContain("Returning full text", content);
+
+        var lines = new List<string>(content.Split('\n'));
+        if (expectResolutionLine)
+        {
+            Assert.StartsWith("[No NetHack wiki article titled 'Runewords Elbereth'. Showing 'Runewords'.", lines[0]);
+            lines.RemoveAt(0);
+        }
+
+        Assert.Equal("--- Runewords ---", lines[0]);
+
+        string marker = lines[1];
+        Assert.StartsWith("[Section 'Nope' not found in article. Headings: 🔮 Elbereth; ✨ Gilthoniel. Showing the first ", marker);
+        Assert.EndsWith(" characters; call nethack_wiki_view again with one of the headings above as section.]", marker);
+
+        var counts = System.Text.RegularExpressions.Regex.Match(marker, @"Showing the first (\d+) of (\d+) characters");
+        Assert.True(counts.Success, marker);
+        int shown = int.Parse(counts.Groups[1].Value);
+        int articleLength = int.Parse(counts.Groups[2].Value);
+        Assert.True(shown > 0 && shown < articleLength, marker);
+
+        // Exactly the shown count follows the marker line, from the article's first character.
+        string shownText = content.Substring(content.IndexOf(marker, StringComparison.Ordinal) + marker.Length + 1);
+        Assert.Equal(shown, shownText.Length);
+        const string opening = "Runewords are combinations of runes";
+        Assert.StartsWith(opening.Substring(0, Math.Min(shown, opening.Length)), shownText);
+    }
+
     // The two services label an article differently (path form vs. title); the text below the
     // header line is what the extractor produced.
     private static string BodyAfterHeader(string result) => result.Substring(result.IndexOf('\n') + 1);

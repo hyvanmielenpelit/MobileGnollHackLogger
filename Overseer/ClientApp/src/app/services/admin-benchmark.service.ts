@@ -1099,16 +1099,16 @@ export interface BenchmarkSynthesisFindingDto {
 }
 
 /**
- * One row of the computed agreement between the two panel members' synthesis findings, keyed by
- * kind, category and question.
+ * One row of the computed agreement between the two panel members' synthesis findings, matched on
+ * kind, category and overlapping questions.
  */
 export interface BenchmarkSynthesisConvergenceRowDto {
+  /** Member A's kind on a `Conflicting` row, where member B raised the opposite one. */
   kind: string;
   category: string;
-  /** Null for a run-wide finding. */
-  question: number | null;
-  /** `Convergent`, `MemberAOnly` or `MemberBOnly`. */
-  status: string;
+  /** The questions the row's findings name, ascending; empty for a run-wide finding. */
+  questions: number[];
+  status: 'Convergent' | 'MemberAOnly' | 'MemberBOnly' | 'Conflicting';
   memberAText: string | null;
   memberBText: string | null;
 }

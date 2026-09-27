@@ -2039,22 +2039,82 @@
   }
 }
 
+/* The run progress dialog is full-screen: its size, inset, entry transition and reduced-motion
+   block come from .gh-dialog-fullscreen in styles.scss. The body holds two sections, the
+   overview and the question list. Narrow, they stack and the body scrolls as one; from 60rem of
+   dialog width they sit side by side and each scrolls on its own. The size container is the
+   content column around the body, because a container query styles only the container's
+   descendants and the body itself is what becomes the grid. */
 .gh-dialog.benchmark-run-progress-dialog {
-  width: min(900px, 94vw);
-  max-width: min(900px, 94vw);
-  height: calc(100dvh - 16px);
-  max-height: calc(100dvh - 16px);
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
-  background: rgba(20, 20, 20, 0.98);
-}
+  .run-progress-content {
+    container: run-progress / inline-size;
+  }
 
-/* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
-@media (max-width: 600px) {
-  .gh-dialog.benchmark-run-progress-dialog {
-    height: calc(100dvh - 8px);
-    max-height: calc(100dvh - 8px);
+  /* A block container, not flex or grid: the cost panel relies on margin collapse. */
+  .run-progress-overview {
+    display: block;
+    min-inline-size: 0;
+  }
+
+  .run-progress-questions {
+    min-inline-size: 0;
+    border-radius: 6px;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+    }
+  }
+
+  .run-progress-questions-title {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #aaa;
+  }
+
+  .run-progress-questions-count {
+    font-variant-numeric: tabular-nums;
+    color: #888;
+    font-weight: 400;
+  }
+
+  /* The published score, before the status chip, aligned as a column. */
+  .job-item-score {
+    flex-shrink: 0;
+    min-inline-size: 3.5ch;
+    text-align: end;
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #ddd;
+  }
+
+  @container run-progress (inline-size >= 60rem) {
+    .run-progress-body {
+      display: grid;
+      grid-template-columns: minmax(0, 3fr) minmax(22rem, 2fr);
+      grid-template-rows: minmax(0, 1fr);
+      gap: 24px;
+      overflow: hidden;
+    }
+
+    .run-progress-overview,
+    .run-progress-questions {
+      overflow-y: auto;
+      min-block-size: 0;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+    }
+
+    .run-question-list {
+      margin-block-end: 0;
+    }
   }
 }
 
@@ -2252,12 +2312,10 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 
 .gh-dialog.benchmark-questions-dialog[open],
 .gh-dialog.benchmark-run-detail-dialog[open],
-.gh-dialog.benchmark-run-progress-dialog[open],
 .gh-dialog.benchmark-scoring-profiles-dialog[open],
 .gh-dialog.benchmark-form-dialog[open],
 .gh-dialog.benchmark-questions-dialog:modal,
 .gh-dialog.benchmark-run-detail-dialog:modal,
-.gh-dialog.benchmark-run-progress-dialog:modal,
 .gh-dialog.benchmark-scoring-profiles-dialog:modal,
 .gh-dialog.benchmark-form-dialog:modal {
   display: flex;

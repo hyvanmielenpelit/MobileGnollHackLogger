@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using MobileGnollHackLogger.Data;
+using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Xunit;
 
@@ -337,7 +338,11 @@ public class BenchmarkCitationLivenessCheckTests
                 "    OBJECT(OBJ(name, desc), prob, delay, level, \\",                    // 5
                 "           mgc, dir, color)",                                           // 6
                 "SPELL(\"dig\", \"parchment\", P_MATTER_SPELL, 20, 6, 5, 1, RAY, HI_PAPER),", // 7
-                "#undef SPELL"                                                           // 8
+                "#undef SPELL",                                                          // 8
+                "#define WAND(name, typ, \\",                                             // 9
+                "             prob, cost, \\",                                           // 10
+                "             nodir) \\",                                                // 11
+                "    OBJECT(name, typ, prob, cost, nodir)"                               // 12
             },
             ["include/objclass.h"] = new[]
             {
@@ -354,9 +359,12 @@ public class BenchmarkCitationLivenessCheckTests
 
     [Theory]
     [InlineData("src/objects.c:3", "cited line src/objects.c:3 is only the definition of macro SPELL")]
+    // The continuation line that closes SPELL's parameter list.
     [InlineData("src/objects.c:4", "cited line src/objects.c:4 is only the definition of macro SPELL")]
-    [InlineData("src/objects.c:6", "cited line src/objects.c:6 is only the definition of macro SPELL")]
-    [InlineData("include/objclass.h:5", "cited line include/objclass.h:5 is only the definition of macro objects_delay")]
+    // WAND's parameter list runs over three lines: a middle one and the closing one.
+    [InlineData("src/objects.c:10", "cited line src/objects.c:10 is only the definition of macro WAND")]
+    [InlineData("src/objects.c:11", "cited line src/objects.c:11 is only the definition of macro WAND")]
+    [InlineData("include/objclass.h:4", "cited line include/objclass.h:4 is only the definition of macro objects_delay")]
     [InlineData("include/objclass.h:6", "cited line include/objclass.h:6 is only the definition of macro MAXSPELL")]
     public void ASingleLineInsideAMultiLineDefineHeader_GetsTheMacroDefinitionNote(string citation, string expected)
     {
@@ -364,6 +372,11 @@ public class BenchmarkCitationLivenessCheckTests
     }
 
     [Theory]
+    // Body lines of a function-like macro, after its parameter list closed.
+    [InlineData("src/objects.c:5")]
+    [InlineData("src/objects.c:6")]
+    [InlineData("src/objects.c:12")]
+    [InlineData("include/objclass.h:5")]
     // The line after the header: the first line not ending in "\" closed it at line 6.
     [InlineData("src/objects.c:7")]
     // A range is never noted.
@@ -404,7 +417,7 @@ public class BenchmarkCitationLivenessCheckTests
     [Fact]
     public void CommentsAndLiterals_AreBlankedInPlace_AcrossLines()
     {
-        var stripped = BenchmarkCitationLivenessCheck.StripCommentsAndLiterals(new[]
+        var stripped = SourceLivenessIndex.StripCommentsAndLiterals(new[]
         {
             "a(); /* b(",
             "c( */ d(); // e(",
@@ -421,5 +434,91 @@ public class BenchmarkCitationLivenessCheckTests
         Assert.DoesNotContain("g(", stripped[2]);
         Assert.DoesNotContain("h", stripped[2]);
         Assert.Equal("c( */ d(); // e(".Length, stripped[1].Length);
+    }
+
+    [Theory]
+    // A line in prose after the file reads as src/<file>:<line>, so no lineless note.
+    [InlineData("src/matcomps.c (in function foo) at line 156", "cited file src/matcomps.c is not in the indexed source")]
+    [InlineData("src/priest.c, in priest_talk, at line 10", "cited function priest_talk has no live call site")]
+    [InlineData("src/priest.c L10", "cited function priest_talk has no live call site")]
+    [InlineData("src/priest.c lines 10-11", "cited function priest_talk has no live call site")]
+    // One source file named: a free-standing line anywhere is attributed to it.
+    [InlineData("priest_talk at line 10 of src/priest.c", "cited function priest_talk has no live call site")]
+    // Two source files named: a free-standing line is attributed to neither.
+    [InlineData("line 10 of src/priest.c or src/sounds.c", "cited file src/priest.c without a line")]
+    public void AProseLineReference_IsReadAsAFileLine(string citation, string expected)
+    {
+        Assert.Equal(expected, Check().NoteFor(citation));
+    }
+
+    [Fact]
+    public void AProseLineRange_IsARange()
+    {
+        // A single line 12 is only percent_success's definition line; the range 12 to 40 reaches
+        // into its body, and percent_success has a live caller.
+        Assert.Equal(
+            "cited line src/spell.c:12 is only the definition line of percent_success",
+            SpellCheck().NoteFor("src/spell.c line 12"));
+        Assert.Null(SpellCheck().NoteFor("src/spell.c lines 12 to 40"));
+    }
+
+    [Fact]
+    public void AProseLineNextToABoardLine_IsNotTakenForASourceLine()
+    {
+        Assert.Equal("cited file src/priest.c without a line", Check().NoteFor("src/priest.c; board line 10"));
+    }
+
+    private static BenchmarkCitationLivenessCheck BlankLineCheck()
+    {
+        var corpus = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["src/blank.c"] = new[]
+            {
+                "/* blank.c */",                   // 1
+                "",                                // 2
+                "int",                             // 3
+                "blank_helper(void)",              // 4
+                "{",                               // 5
+                "    /* nothing here */",          // 6
+                "",                                // 7
+                "    return 0;",                   // 8
+                "}",                               // 9
+                "",                                // 10
+                "void",                            // 11
+                "use_it(void)",                    // 12
+                "{",                               // 13
+                "    blank_helper();",             // 14
+                "}"                                // 15
+            }
+        };
+        return new BenchmarkCitationLivenessCheck(() => corpus);
+    }
+
+    [Theory]
+    [InlineData("src/blank.c:1", "cited line src/blank.c:1 is blank or a comment")]
+    [InlineData("src/blank.c:2", "cited line src/blank.c:2 is blank or a comment")]
+    [InlineData("src/blank.c:6-7", "cited lines src/blank.c:6-7 are blank or comments")]
+    public void ABlankOrCommentOnlyCitedLine_GetsTheBlankLineNote(string citation, string expected)
+    {
+        Assert.Equal(expected, BlankLineCheck().NoteFor(citation));
+    }
+
+    [Fact]
+    public void ARangeWithOneCodeLine_GetsNoBlankLineNote()
+    {
+        // Line 8 is code inside blank_helper, which use_it calls.
+        Assert.Null(BlankLineCheck().NoteFor("src/blank.c:6-8"));
+    }
+
+    [Fact]
+    public void TheBlankLineNote_DemotesTheVerdictForCounting()
+    {
+        var verification = new BenchmarkClaimVerification(0, "Claim.", BenchmarkClaimVerdict.Supported, "src/blank.c:7", "Basis.");
+
+        var annotated = Assert.Single(BlankLineCheck().Annotate(new[] { verification }));
+
+        Assert.Equal("cited line src/blank.c:7 is blank or a comment", annotated.CitationNote);
+        Assert.Equal(BenchmarkClaimVerdict.Supported, annotated.Verdict);
+        Assert.Equal(BenchmarkClaimVerdict.Indeterminate, annotated.EffectiveVerdict);
     }
 }

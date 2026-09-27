@@ -591,8 +591,27 @@ public static class BenchmarkAssessmentPrompt
     ///     every synthesis gains a structured findings array. The evidence-informed re-grade does not
     ///     run in a panel run. Single-assessor runs grade exactly as under 39 apart from the findings
     ///     schema. ScoringMethodVersion stays 12 and CandidateSystemPromptSha256 does not move.
+    /// v41: the omission detector sets aside clauses whose subject is the rubric ("which the rubric
+    ///     does not state", "not stated in the rubric") and reads "without noting / mentioning /
+    ///     stating / listing / naming" and "are not stated" as an omission. The macro-definition
+    ///     citation note covers only a #define's name and parameter list, not its body; a prose line
+    ///     reference ("src/x.c at line 156") counts as a line citation; a cited line or range that is
+    ///     blank or only a comment carries a citation note and counts as Indeterminate. A panel's
+    ///     union manifest merges copies of one item that differ only in a list marker, a bold label,
+    ///     emphasis, code spans or case, and a member's quote or basis finds the merged item, so its
+    ///     contested flag stands. The verifier's tool budget grows by
+    ///     Benchmark:ClaimVerification:ToolCallBudgetPerItem per manifest item up to ToolCallBudgetMax,
+    ///     with its iterations and model calls scaled to match. The report and diagnostics are
+    ///     panel-aware: charges attributed by member, union and per-member claim counts, per-member
+    ///     and panel dimension averages, reference-reader wording, the co-assessor's board delivery,
+    ///     measured overlap with the co-assessment, and one agreement row per finding with a
+    ///     Conflicting status. Chat and benchmark alike: a wiki_view section miss on an over-cap
+    ///     article lists the headings and shows the start of the article up to the cap, and the source
+    ///     tools add a [Not reachable: …] line for a function definition with no live call site; the
+    ///     five tool guides that describe these move ToolGuidesSha256. ScoringMethodVersion stays 12
+    ///     and CandidateSystemPromptSha256 does not move.
     /// </summary>
-    public const string HarnessVersion = "40";
+    public const string HarnessVersion = "41";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

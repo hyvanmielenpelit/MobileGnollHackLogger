@@ -21,3 +21,5 @@ WARNING: Reading item appearance strings in `src/objects.c` shows pre-shuffle co
 If the output is truncated, the tool's notice names the last file line shown and the `start_line` to continue from. Prefer requests of 150 lines or fewer; a continuation is a dependent call, never part of the original batch.
 
 A result may end with a `[Not compiled: …]` line naming lines that sit inside `#if 0`; they are not part of the game.
+
+A `[Not reachable: …]` line means nothing in the game calls that function; do not base an answer on it.

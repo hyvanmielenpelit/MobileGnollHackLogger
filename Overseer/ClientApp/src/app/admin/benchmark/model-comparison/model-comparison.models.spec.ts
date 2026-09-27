@@ -663,6 +663,11 @@ describe('toChartEntries labels', () => {
   it('does not repeat a level the server label already carries', () => {
     expect(chartEntry({ label: 'X (low)', modelDisplayName: 'X', thinkingLevel: 'low' }).label).toBe('X (low)');
   });
+
+  it('keeps the provider, lower-cased, for the provider colors', () => {
+    expect(chartEntry({ provider: 'OpenAI' }).provider).toBe('openai');
+    expect(chartEntry({ provider: ' Anthropic ' }).provider).toBe('anthropic');
+  });
 });
 
 describe('toChartEntries candidate run cost', () => {

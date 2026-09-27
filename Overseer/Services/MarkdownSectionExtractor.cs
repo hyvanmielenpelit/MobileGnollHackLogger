@@ -16,6 +16,15 @@ internal static class MarkdownSectionExtractor
     // The bound the section-miss marker line's heading list is truncated at.
     internal const int SectionMissHeadingListMaxChars = 600;
 
+    /// <summary>The section-miss marker line's opening, up to the requested section's name.</summary>
+    internal const string SectionMissMarkerOpening = "[Section '";
+
+    /// <summary>The section-miss marker line's ending when the whole article follows it.</summary>
+    internal const string SectionMissFullTextEnding = " Returning full text.]";
+
+    /// <summary>What separates the section-miss marker line from the whole article after it.</summary>
+    internal const string SectionMissSeparator = "\n\n";
+
     /// <summary>
     /// The breadcrumb separator <c>wiki_search</c>'s snippet header joins heading levels with
     /// (<c>A › B</c>), so a <c>section</c> argument copied from that header carries it too.
@@ -38,6 +47,17 @@ internal static class MarkdownSectionExtractor
     /// </summary>
     public static string Extract(string content, string section)
     {
+        return Extract(content, section, out _);
+    }
+
+    /// <summary>
+    /// <see cref="Extract(string, string)"/>, also reporting through
+    /// <paramref name="sectionMissed"/> whether no heading matched, so the returned text is the
+    /// section-miss marker line followed by the whole article.
+    /// </summary>
+    public static string Extract(string content, string section, out bool sectionMissed)
+    {
+        sectionMissed = false;
         var lines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
         var headings = ParseHeadings(lines);
 
@@ -54,7 +74,8 @@ internal static class MarkdownSectionExtractor
 
         if (selected < 0)
         {
-            return $"[Section '{section}' not found in article.{BuildHeadingListFragment(Headings(content))} Returning full text.]\n\n{content}";
+            sectionMissed = true;
+            return $"{SectionMissMarkerOpening}{section}' not found in article.{BuildHeadingListFragment(Headings(content))}{SectionMissFullTextEnding}{SectionMissSeparator}{content}";
         }
 
         int sectionLevel = headings[selected].Level;
@@ -220,5 +241,79 @@ internal static class MarkdownSectionExtractor
         }
 
         return $" Headings: {list}.";
+    }
+
+    /// <summary>
+    /// A section-miss result — <paramref name="rendered"/>: any text before the marker line (an
+    /// article header), the marker line, a blank line, then the whole article — cut to
+    /// <paramref name="budget"/> characters. The text before the marker and the marker's heading
+    /// list are kept; the marker's "Returning full text." ending becomes how many of the article's
+    /// characters are shown and a pointer to call <paramref name="toolName"/> again with one of the
+    /// headings; one newline then the article's opening characters fill the rest, so the result
+    /// lands at exactly the budget. Null when <paramref name="rendered"/> is within the budget or
+    /// carries no marker line of this form.
+    /// </summary>
+    internal static string? CapSectionMiss(string rendered, int budget, string toolName)
+    {
+        if (rendered.Length <= budget)
+        {
+            return null;
+        }
+
+        int markerStart = rendered.IndexOf(SectionMissMarkerOpening, StringComparison.Ordinal);
+        if (markerStart < 0)
+        {
+            return null;
+        }
+
+        string terminator = SectionMissFullTextEnding + SectionMissSeparator;
+        int endingStart = rendered.IndexOf(terminator, markerStart, StringComparison.Ordinal);
+        if (endingStart < 0)
+        {
+            return null;
+        }
+
+        string prefix = rendered.Substring(0, markerStart);
+        string markerHead = rendered.Substring(markerStart, endingStart - markerStart);
+        string article = rendered.Substring(endingStart + terminator.Length);
+        bool hasHeadings = Headings(article).Count > 0;
+
+        string ComposeMarker(int shown) => hasHeadings
+            ? $"{markerHead} Showing the first {shown} of {article.Length} characters; call {toolName} again with one of the headings above as section.]"
+            : $"{markerHead} Showing the first {shown} of {article.Length} characters.]";
+
+        var (marker, shownCount) = FitShownCount(ComposeMarker, budget - prefix.Length);
+
+        // Only a marker grown past the text it replaced can leave room for more than the article.
+        if (shownCount > article.Length)
+        {
+            shownCount = article.Length;
+            marker = ComposeMarker(shownCount);
+        }
+
+        return prefix + marker + "\n" + article.Substring(0, shownCount);
+    }
+
+    /// <summary>
+    /// A line naming its own shown-count, and that count, found by fixed point so the line, one
+    /// newline and the shown characters total exactly <paramref name="budget"/>: growing the count
+    /// by a digit can grow the line itself, so the count is recomputed from the line's length until
+    /// it stops moving.
+    /// </summary>
+    internal static (string Line, int Shown) FitShownCount(Func<int, string> composeLine, int budget)
+    {
+        int shown = 0;
+        for (int i = 0; i < 4; i++)
+        {
+            string probe = composeLine(shown);
+            int candidate = Math.Max(0, budget - probe.Length - 1);
+            if (candidate == shown)
+            {
+                break;
+            }
+            shown = candidate;
+        }
+
+        return (composeLine(shown), shown);
     }
 }

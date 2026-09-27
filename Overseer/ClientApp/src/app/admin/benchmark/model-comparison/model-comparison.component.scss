@@ -60,15 +60,22 @@
   border-radius: 50%;
 }
 
-/* The shape half of the identity glyph, matching the chart core's point styles. */
-.mc-glyph-rectRot {
-  border-radius: 1px;
-  transform: rotate(45deg);
+/* The provider's color, as every chart marks the model: the dark palette's Google, Anthropic and
+   OpenAI hues (`figure-theme.ts`), and the neutral gray for any other provider. */
+.mc-glyph-provider-google {
+  background-color: #3987e5;
 }
 
-.mc-glyph-triangle {
-  border-radius: 0;
-  clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+.mc-glyph-provider-anthropic {
+  background-color: #d95926;
+}
+
+.mc-glyph-provider-openai {
+  background-color: #199e70;
+}
+
+.mc-glyph-provider-other {
+  background-color: #898781;
 }
 
 /* ==========================================================================
@@ -1431,6 +1438,11 @@
   .mc-preview-toolbar {
     flex-wrap: wrap;
   }
+
+  /* The figure picker takes the first line, so zoom and export always share the second. */
+  .mc-preview-toolbar .mc-preview-figure-group {
+    flex-basis: 100%;
+  }
 }
 
 .mc-preview-group {
@@ -1460,6 +1472,13 @@
   }
 }
 
+/* The Single chart's Previous, figure picker and Next: never shrinks and never wraps, so Next stays
+   beside the picker. */
+.mc-preview-figure-group {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
 /* Each view's export group, at its toolbar row's end. */
 .mc-preview-export,
 .mc-all-export,
@@ -1469,10 +1488,10 @@
   margin-inline-start: auto;
 }
 
-/* The zoom groups give way before anything else on the row: the slider shrinks first. */
+/* The zoom groups are the only groups on the row that shrink: the slider gives way first. */
 .mc-preview-zoom,
 .mc-all-zoom {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-width: 0;
   flex-wrap: nowrap;
 }
@@ -1499,9 +1518,10 @@
   }
 }
 
-/* Wide enough for "800% · Fit to screen" without the row reflowing as the zoom changes. */
+/* As wide as its text, never less than "800%"; in Fit mode the slider shrinks to make room. */
 .mc-preview-zoom-value {
-  min-width: 9.5em;
+  min-inline-size: 4.5em;
+  white-space: nowrap;
   text-align: left;
 }
 

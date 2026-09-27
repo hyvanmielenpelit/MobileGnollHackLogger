@@ -232,6 +232,17 @@ public class NetHackWikiService : IDisposable
     /// </summary>
     public (string? Content, string? ResolvedTitle, IReadOnlyList<string> Candidates) GetArticleResolved(string articleName, string? section = null)
     {
+        return GetArticleResolved(articleName, section, out _);
+    }
+
+    /// <summary>
+    /// <see cref="GetArticleResolved(string, string?)"/>, also reporting through
+    /// <paramref name="sectionMissed"/> whether <paramref name="section"/> matched no heading of the
+    /// resolved article, so Content carries the section-miss marker line and the whole article.
+    /// </summary>
+    public (string? Content, string? ResolvedTitle, IReadOnlyList<string> Candidates) GetArticleResolved(string articleName, string? section, out bool sectionMissed)
+    {
+        sectionMissed = false;
         IndexSearcher? searcher;
         Analyzer? analyzer;
         lock (_swapLock)
@@ -311,7 +322,7 @@ public class NetHackWikiService : IDisposable
 
         if (!string.IsNullOrWhiteSpace(section))
         {
-            content = MarkdownSectionExtractor.Extract(content, section);
+            content = MarkdownSectionExtractor.Extract(content, section, out sectionMissed);
         }
 
         return ($"--- {title} ---\n{content}", title, candidates);

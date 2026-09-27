@@ -308,13 +308,11 @@ describe('FigureStylePanelComponent', () => {
     expect(emitted[emitted.length - 1].bar.hiddenIntervalsNote).toBeTrue();
   });
 
-  it('switches the frontier note and the shading', () => {
+  it('switches the frontier note, and offers no shading control', () => {
     render('scatter');
     setChecked(control('mc-style-scatter-frontierIntervalsNote'), false);
     expect(emitted[0].scatter.frontierIntervalsNote).toBeFalse();
-    setChecked(control('mc-style-scatter-dominatedShading'), false);
-    expect(emitted[1].scatter.dominatedShading).toBeFalse();
-    expect(emitted[1].scatter.frontierIntervalsNote).toBeTrue();
+    expect(host().querySelector('#mc-style-scatter-dominatedShading')).toBeNull();
   });
 
   it('keeps the mean-time note enabled whatever the uncertainty bars, and switches it alone', () => {
@@ -337,10 +335,10 @@ describe('FigureStylePanelComponent', () => {
     expect(hintOf(control('mc-style-scatter-frontierIntervalsNote'))).toContain(FRONTIER_UNCERTAINTY_NOTE);
   });
 
-  it('resets only its own half, intervals, shading and notes included', () => {
+  it('resets only its own half, intervals and notes included', () => {
     const changed: FigureStyle = {
       bar: { ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 5, intervals: false, hiddenIntervalsNote: false, meanTimeNoIntervalNote: false },
-      scatter: { ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 12, intervals: false, dominatedShading: false, frontierIntervalsNote: false },
+      scatter: { ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 12, intervals: false, frontierIntervalsNote: false },
       profile: DEFAULT_FIGURE_STYLE.profile,
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
@@ -570,7 +568,9 @@ describe('FigureStylePanelComponent', () => {
 
   it('gives every section a named reset button with a tooltip, disabled at defaults', () => {
     for (const kind of ['bar', 'scatter', 'profile'] as const) {
-      fixture.componentRef.setInput('inlineValues', kind === 'scatter');
+      // The page's defaults: names on the marks, no values.
+      fixture.componentRef.setInput('directLabels', kind === 'scatter');
+      fixture.componentRef.setInput('inlineValues', false);
       render(kind);
       const sections = Array.from(host().querySelectorAll('.fsp-section'));
       expect(sections.length).withContext(kind).toBe(FIGURE_STYLE_SECTIONS[kind].length);
@@ -905,15 +905,16 @@ describe('FigureStylePanelComponent', () => {
     const valued: boolean[] = [];
     fixture.componentInstance.directLabelsChange.subscribe(on => named.push(on));
     fixture.componentInstance.inlineValuesChange.subscribe(on => valued.push(on));
-    fixture.componentRef.setInput('directLabels', true);
-    fixture.componentRef.setInput('inlineValues', false);
+    fixture.componentRef.setInput('directLabels', false);
+    fixture.componentRef.setInput('inlineValues', true);
     render('scatter');
     const labels = resetButton('mc-style-scatter-section-labels-reset');
     expect(labels.getAttribute('aria-disabled')).toBeNull();
 
+    // The defaults: names on the marks, values in the tooltip and the table.
     labels.click();
-    expect(named).toEqual([false]);
-    expect(valued).toEqual([true]);
+    expect(named).toEqual([true]);
+    expect(valued).toEqual([false]);
     expect(emitted.length).withContext('the style fields were already at defaults').toBe(0);
   });
 
@@ -938,16 +939,16 @@ describe('FigureStylePanelComponent', () => {
     const valued: boolean[] = [];
     fixture.componentInstance.directLabelsChange.subscribe(on => named.push(on));
     fixture.componentInstance.inlineValuesChange.subscribe(on => valued.push(on));
-    fixture.componentRef.setInput('directLabels', true);
-    fixture.componentRef.setInput('inlineValues', false);
-    render('scatter');
-    (host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement).click();
-    expect(named).toEqual([false]);
-    expect(valued).toEqual([true]);
-    expect(emitted[0].scatter).toEqual(DEFAULT_FIGURE_STYLE.scatter);
-
     fixture.componentRef.setInput('directLabels', false);
     fixture.componentRef.setInput('inlineValues', true);
+    render('scatter');
+    (host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement).click();
+    expect(named).toEqual([true]);
+    expect(valued).toEqual([false]);
+    expect(emitted[0].scatter).toEqual(DEFAULT_FIGURE_STYLE.scatter);
+
+    fixture.componentRef.setInput('directLabels', true);
+    fixture.componentRef.setInput('inlineValues', false);
     fixture.detectChanges();
     (host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement).click();
     expect(named.length).withContext('no toggle emission at its default').toBe(1);

@@ -64,25 +64,30 @@ namespace Overseer.Services.Tools
                 return Task.FromResult(new ToolResult { Success = false, ErrorMessage = "Missing article parameter" });
             }
 
-            var (content, resolvedTitle, candidates) = _netHackWikiService.GetArticleResolved(article, section);
+            var (content, resolvedTitle, candidates) = _netHackWikiService.GetArticleResolved(article, section, out bool sectionMissed);
 
             if (string.IsNullOrWhiteSpace(content))
             {
                 return Task.FromResult(new ToolResult { Success = true, Content = BuildMissContent(article, candidates) });
             }
 
-            if (resolvedTitle != null && !string.Equals(NormalizeForComparison(article), NormalizeForComparison(resolvedTitle), StringComparison.Ordinal))
+            string resolutionPrefix = resolvedTitle != null && !string.Equals(NormalizeForComparison(article), NormalizeForComparison(resolvedTitle), StringComparison.Ordinal)
+                ? BuildResolutionLine(article, resolvedTitle, candidates) + "\n"
+                : string.Empty;
+            string spoilerFreeSuffix = context.SpoilerFreeMode ? SpoilerFreeSuffix : string.Empty;
+
+            if (sectionMissed)
             {
-                content = BuildResolutionLine(article, resolvedTitle, candidates) + "\n" + content;
+                int articleBudget = context.MaxResultLength - spoilerFreeSuffix.Length - resolutionPrefix.Length;
+                content = MarkdownSectionExtractor.CapSectionMiss(content, articleBudget, ToolName) ?? content;
             }
 
-            if (context.SpoilerFreeMode)
-            {
-                content += "\n\n[SPOILER-FREE MODE ACTIVE: Review the spoiler_policy before sharing this information. Only share mechanics, not unrevealed content.]";
-            }
+            content = resolutionPrefix + content + spoilerFreeSuffix;
 
             return Task.FromResult(new ToolResult { Success = true, Content = content });
         }
+
+        private const string SpoilerFreeSuffix = "\n\n[SPOILER-FREE MODE ACTIVE: Review the spoiler_policy before sharing this information. Only share mechanics, not unrevealed content.]";
 
         private const int ResolutionLineMaxChars = 600;
         private const int MaxOtherCandidates = 4;

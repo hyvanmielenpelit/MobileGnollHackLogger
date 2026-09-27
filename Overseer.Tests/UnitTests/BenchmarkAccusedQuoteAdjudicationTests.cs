@@ -880,6 +880,79 @@ public class BenchmarkAccusedQuoteAdjudicationTests
     }
 
     [Fact]
+    public void UnionManifest_ALabeledAndAnUnlabeledCopy_AreOneItemRaisedByBoth()
+    {
+        const string labeled = "- **Healing:** Applying it heals 1000 hit points and restores 500 mana.";
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { labeled, Spelltool }),
+            Contribution(BenchmarkPanelMember.B, new[] { Heals, "`the grail of healing` is a *spelltool*." })
+        }, AnswerText);
+
+        // The list marker, the bold label, emphasis, code spans and case do not make a second item.
+        Assert.Equal(new[] { labeled, Spelltool }, manifest.Select(m => m.Text));
+        Assert.All(manifest, m => Assert.Equal(new[] { BenchmarkClaimRoles.UnverifiedClaim }, m.Roles));
+        Assert.All(manifest, m => Assert.Equal(new[] { "A", "B" }, m.RaisedBy));
+    }
+
+    [Fact]
+    public void PanelOutcome_BsLabeledQuoteMergedIntoAsClaim_KeepsBsContestedFlag()
+    {
+        const string labeledQuote = "**Charges:** It has no charges and never runs out.";
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool, NoCharges }),
+            Contribution(BenchmarkPanelMember.B, quote: labeledQuote)
+        }, AnswerText);
+
+        Assert.Equal(new[] { Spelltool, NoCharges }, manifest.Select(m => m.Text));
+        Assert.Equal(new[] { BenchmarkClaimRoles.CriticalErrorQuote }, manifest[1].Roles);
+        Assert.Equal(new[] { "A", "B" }, manifest[1].RaisedBy);
+
+        var verifications = BenchmarkService.StampRoles(new[]
+        {
+            new BenchmarkClaimVerification(0, Spelltool, BenchmarkClaimVerdict.Supported, "src/objects.c:10", "True."),
+            new BenchmarkClaimVerification(1, NoCharges, BenchmarkClaimVerdict.Supported, "src/objects.c:2889", "It has no charges.")
+        }, manifest);
+
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerText = AnswerText,
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            AccuracyLevel = 5,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = 80,
+            CriticalError = false,
+            CoAssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            CoAssessmentQualityScore = 25,
+            CoAssessmentCriticalError = true,
+            CoAssessmentJson = new BenchmarkCoAssessmentRecord
+            {
+                AccuracyLevel = 2,
+                CompletenessLevel = 4,
+                ConcisenessLevel = 5,
+                ReadabilityLevel = 5,
+                CriticalError = true,
+                CriticalErrorQuote = labeledQuote,
+                QualityScore = 25,
+                Flags = new BenchmarkCoAssessmentFlags()
+            }.Serialize()
+        };
+
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer, verifications, BenchmarkVerdictView.FromPrimary(answer), BenchmarkVerdictView.FromCoAssessment(answer));
+
+        // Member B's quote is the item member A listed without the label; the verifier supported it.
+        var record = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!;
+        Assert.True(record.Flags!.ContestedCriticalError);
+        Assert.False(((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedCriticalError));
+        Assert.True(BenchmarkService.CriticalErrorQuoteWasSupported(verifications, labeledQuote));
+    }
+
+    [Fact]
     public void UnionManifest_ASentenceBothMembersCharged_UnionsTheFragmentsAndTheCharges()
     {
         var manifest = BenchmarkService.BuildUnionClaimManifest(new[]

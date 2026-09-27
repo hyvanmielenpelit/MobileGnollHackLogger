@@ -37,8 +37,17 @@ export interface FigureDirection {
 export type FigureNoteTone = 'info' | 'warning';
 export interface FigureNote { readonly text: string; readonly tone: FigureNoteTone; }
 
-export type FigureKeyGlyph = 'hollow' | 'solid' | 'frontier' | 'dominated' | 'interval';
-export interface FigureKeyItem { readonly glyph: FigureKeyGlyph; readonly text: string; }
+/**
+ * `frontier` and `ideal` are dotted lines, `faded` a see-through mark, `provider` a dot in the item's
+ * `color`, and `other` a thin gray line.
+ */
+export type FigureKeyGlyph = 'hollow' | 'solid' | 'frontier' | 'faded' | 'interval' | 'provider' | 'ideal' | 'other';
+export interface FigureKeyItem {
+  readonly glyph: FigureKeyGlyph;
+  readonly text: string;
+  /** The glyph's own color: a provider's hue, or the ideal line's accent. Absent: the key ink. */
+  readonly color?: string;
+}
 
 /** Everything a figure shows besides its plot, identical on screen and in an export. */
 export interface FigureChrome {

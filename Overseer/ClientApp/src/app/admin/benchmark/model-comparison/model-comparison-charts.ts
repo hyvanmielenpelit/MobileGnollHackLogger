@@ -1,7 +1,8 @@
 /**
- * Chart core for the cross-model benchmark comparison view: the palette, the per-model identity
- * glyphs, the measure definitions, the Pareto-frontier computation, the error-bar, dominated-region
- * and direct-label plugins and the configurations for the six figures (S1-S3 scatters, P1's three linked panels, P2's profile plot).
+ * Chart core for the cross-model benchmark comparison view: the palette and its provider colors, the
+ * per-model identity glyphs, the measure definitions, the Pareto-frontier computation, the error-bar,
+ * direct-label and profile-tile plugins and the configurations for the six figures (S1-S3 scatters,
+ * P1's three linked panels, P2's small-multiples model profiles).
  *
  * The module is pure TypeScript: it constructs no components, touches no DOM node and imports
  * nothing from Angular, so its spec runs without a TestBed fixture. The one browser API it reaches
@@ -19,8 +20,16 @@ import { pricingBadge, pricingNote, questionsBadge, runsBadge, visibleBadges } f
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type { AxisTitleBreak, FigureFontWeight, FigureStyle, ScatterFigureStyle } from './figure-style';
-import { resolveFigureTheme } from './figure-theme';
-import type { ResolvedFigureTheme } from './figure-theme';
+import {
+  FADED_MARK_ALPHA,
+  providerDisplayName,
+  providerHue,
+  providerKey,
+  providerPaletteHue,
+  resolveFigureTheme,
+  withAlpha,
+} from './figure-theme';
+import type { ProviderKey, ResolvedFigureTheme } from './figure-theme';
 import { DEFAULT_MEASURE_DECIMALS, costNumberMeasure, formatMeasure, speedNumberMeasure } from './measure-format';
 import type { NumberFormatStyle, NumberMeasure, NumberSamples } from './measure-format';
 
@@ -46,6 +55,11 @@ export interface ModelComparisonEntry {
   readonly name?: string;
   /** Lower-case thinking level, or null/absent when the entry has none. */
   readonly thinkingLevel?: string | null;
+  /**
+   * Lower-case provider (`openai`, `anthropic`, `google`), which colors every mark of the entry.
+   * Absent or unknown: the neutral gray.
+   */
+  readonly provider?: string;
   /** R - the number of runs behind the entry. R = 1 draws hollow marks and carries no cost SD. */
   readonly runCount: number;
 
@@ -146,15 +160,14 @@ export function modelLabelLines(entry: ModelComparisonEntry, breakThinkingLevel:
 export const CHART_SURFACE = '#0b0b0b';
 
 /**
- * The categorical series hues, in fixed order, assigned in sequence and never cycled past three.
- * There are two palettes, one per theme, each selected for its own ground rather than one flipped
- * into the other: the dark one for the dark export ground `#181818`, the light one for white,
- * PowerPoint's default slide.
+ * The categorical series hues, one per colored provider: Google, Anthropic, OpenAI, in that order
+ * (`providerHue` in `figure-theme.ts`). There are two palettes, one per theme, each selected for its
+ * own ground rather than one flipped into the other: the dark one for the dark export ground
+ * `#181818`, the light one for white, PowerPoint's default slide.
  *
- * Three, not eight, because every figure that uses hue for identity here is an all-pairs form -
- * a scatter, where any two marks can end up side by side - and an all-pairs palette caps at three
- * slots. The eight models are separated instead by a hue x shape composite (see
- * {@link IDENTITY_SHAPES}), which is the documented treatment past the three-hue ceiling.
+ * Three, because every figure that uses hue here includes an all-pairs form - a scatter, where any
+ * two marks can end up side by side - and an all-pairs palette caps at three slots. Color therefore
+ * means provider, and model names are carried by direct labels.
  *
  * Validate both with, from the dataviz skill's base directory:
  *   node scripts/validate_palette.js "#3987e5,#d95926,#199e70" --mode dark --surface "#181818" --pairs all
@@ -236,30 +249,37 @@ function unlessDefault<K extends string>(key: K, value: string, fallback: string
 // Identity glyphs
 // ---------------------------------------------------------------------------------------------
 
-/** Chart.js point styles used as the shape half of the identity glyph. */
+/** Chart.js point styles kept as the shape half of the identity glyph. Chart marks are always circles. */
 export const IDENTITY_SHAPES = ['circle', 'rectRot', 'triangle'] as const;
 export type IdentityShape = (typeof IDENTITY_SHAPES)[number];
 
-/** A model's identity: the same hue and shape in every figure that uses glyphs, and in the table. */
+/**
+ * A model's identity outside the plot: its provider's hue and a shape by position. The table draws
+ * the provider's color as a circle; the charts color every mark by provider and name it directly.
+ */
 export interface IdentityGlyph {
   readonly hue: string;
   readonly shape: IdentityShape;
+  /** The provider the hue comes from, as the table's color class names it. */
+  readonly provider: ProviderKey;
 }
 
-/** The hard ceiling on plotted entries. Three hues x three shapes yields nine distinct glyphs. */
+/** The hard ceiling on plotted entries. */
 export const MAX_PLOTTED_ENTRIES = 8;
 
 /**
  * Assigns each plottable entry its identity glyph, in the order the service returned them.
  *
- * The order deliberately does not depend on the current sort or the current filter selection, so a
- * reader who has learned a model's glyph keeps it: filtering a model out never repaints the
+ * The hue is the provider's slot in `palette`, the theme's categorical set (Google, Anthropic,
+ * OpenAI), or `otherHue` for any other provider. The shape follows the order, which deliberately
+ * does not depend on the current sort or filter, so filtering a model out never reshapes the
  * survivors. Excluded entries take no glyph - they are never plotted, and their table row carries
- * the differing comparability keys instead. The hues come from `palette`, the theme's categorical set.
+ * the differing comparability keys instead.
  */
 export function buildIdentityGlyphs(
   entries: readonly ModelComparisonEntry[],
   palette: readonly string[] = CATEGORICAL_PALETTE_DARK,
+  otherHue: string = DE_EMPHASIS_STROKE,
 ): Map<string, IdentityGlyph> {
   const glyphs = new Map<string, IdentityGlyph>();
   let slot = 0;
@@ -268,17 +288,18 @@ export function buildIdentityGlyphs(
       continue;
     }
     glyphs.set(entry.key, {
-      hue: palette[slot % palette.length],
-      shape: IDENTITY_SHAPES[Math.floor(slot / palette.length) % IDENTITY_SHAPES.length],
+      hue: providerPaletteHue(entry.provider, palette, otherHue),
+      shape: IDENTITY_SHAPES[slot % IDENTITY_SHAPES.length],
+      provider: providerKey(entry.provider),
     });
     slot += 1;
   }
   return glyphs;
 }
 
-const FALLBACK_GLYPH: IdentityGlyph = { hue: CATEGORICAL_PALETTE_DARK[0], shape: IDENTITY_SHAPES[0] };
+const FALLBACK_GLYPH: IdentityGlyph = { hue: DE_EMPHASIS_STROKE, shape: IDENTITY_SHAPES[0], provider: 'other' };
 
-/** Looks a glyph up by entry key, falling back to the dark palette's slot one rather than throwing inside a render. */
+/** Looks a glyph up by entry key, falling back to the neutral gray rather than throwing inside a render. */
 export function glyphFor(glyphs: ReadonlyMap<string, IdentityGlyph>, key: string): IdentityGlyph {
   return glyphs.get(key) ?? FALLBACK_GLYPH;
 }
@@ -559,6 +580,8 @@ export interface ErrorBarPoint extends Point {
   readonly xErrHigh?: number;
   readonly yErrLow?: number;
   readonly yErrHigh?: number;
+  /** The whiskers' opacity, 0-1: a faded mark's whiskers fade with it. Absent: 1. */
+  readonly alpha?: number;
 }
 
 /** Half-width of an error-bar cap, in pixels. */
@@ -609,6 +632,7 @@ export const errorBarPlugin: Plugin = {
         if (!isErrorBarPoint(raw)) {
           return;
         }
+        ctx.globalAlpha = raw.alpha ?? 1;
         if (yScale && (raw.yErrLow !== undefined || raw.yErrHigh !== undefined)) {
           const low = pixelForBound(yScale, raw.y, -(raw.yErrLow ?? 0));
           const high = pixelForBound(yScale, raw.y, raw.yErrHigh ?? 0);
@@ -689,23 +713,16 @@ export interface PlotPoint {
 export interface ParetoResult {
   /** The non-dominated set, ordered from the least favourable x to the most favourable. */
   readonly frontier: readonly ParetoCandidate[];
-  /** The staircase bounding the dominated region, ready to draw as a polyline. */
-  readonly steps: readonly PlotPoint[];
   /**
-   * The staircase extended to the axis ends: from the worst-x edge at the first member's y, through
-   * every step, down to the worst-y edge at the last member's x. Empty without bounds or members.
+   * The line through the members' own points, in the same order, ready to draw as straight
+   * segments. No staircase and no extension to the plot edges: the line claims only what some
+   * model achieved. Fewer than two points draw no line.
    */
-  readonly boundary: readonly PlotPoint[];
-}
-
-/** The axis-domain ends on the unfavourable side of each axis. */
-export interface ParetoBounds {
-  readonly xWorst: number;
-  readonly yWorst: number;
+  readonly path: readonly PlotPoint[];
 }
 
 /**
- * The non-dominated set and its step function.
+ * The non-dominated set and the line through it.
  *
  * This replaces the trend line a scatter of eight heterogeneous models invites. A regression over
  * eight points of different families is a statistical claim the data cannot support; the frontier is
@@ -715,7 +732,6 @@ export function computeParetoFrontier(
   candidates: readonly ParetoCandidate[],
   xBetter: BetterDirection,
   yBetter: BetterDirection,
-  bounds?: ParetoBounds,
 ): ParetoResult {
   // Work in maximisation space so one dominance test covers all four corner orientations.
   const u = (c: ParetoCandidate): number => (xBetter === 'higher' ? c.x : -c.x);
@@ -732,99 +748,22 @@ export function computeParetoFrontier(
     }),
   );
 
-  // Along the frontier v falls as u rises, so ordering by u gives the staircase its reading order.
+  // Along the frontier v falls as u rises, so ordering by u gives the line its reading order.
   const ordered = [...frontier].sort((a, b) => (u(a) - u(b)) || a.key.localeCompare(b.key));
 
-  const steps: PlotPoint[] = [];
-  const push = (point: PlotPoint): void => {
-    const last = steps[steps.length - 1];
-    if (!last || last.x !== point.x || last.y !== point.y) {
-      steps.push(point);
-    }
-  };
-  for (let i = 0; i < ordered.length; i += 1) {
-    const current = ordered[i];
-    if (i > 0) {
-      // The riser sits at the previous point's x, not the current one's: the staircase may only
-      // claim what some model actually achieved, and no model reaches the previous y at the
-      // better x. Putting the riser on the other side would draw a corner nothing occupies.
-      push({ x: ordered[i - 1].x, y: current.y });
-    }
-    push({ x: current.x, y: current.y });
-  }
-
-  // `ordered` runs from the least favourable x to the most favourable, so the first member closes
-  // the region against the worst-x edge and the last against the worst-y edge. A one-member
-  // frontier becomes an L through that model.
-  const boundary: PlotPoint[] = [];
-  if (bounds && ordered.length > 0) {
-    const first = ordered[0];
-    const last = ordered[ordered.length - 1];
-    for (const point of [{ x: bounds.xWorst, y: first.y }, ...steps, { x: last.x, y: bounds.yWorst }]) {
-      const previous = boundary[boundary.length - 1];
-      if (!previous || previous.x !== point.x || previous.y !== point.y) {
-        boundary.push(point);
-      }
+  const path: PlotPoint[] = [];
+  for (const member of ordered) {
+    const last = path[path.length - 1];
+    if (!last || last.x !== member.x || last.y !== member.y) {
+      path.push({ x: member.x, y: member.y });
     }
   }
 
-  return { frontier: ordered, steps, boundary };
+  return { frontier: ordered, path };
 }
 
-/** The dark theme's dominated-region fill: faint enough that marks and gridlines read straight through it. */
-export const DOMINATED_REGION_FILL = 'rgba(255, 255, 255, 0.04)';
-
-/** What the dominated-region plugin reads off the chart options. */
-export interface DominatedRegionPluginOptions {
-  /** Defaults to {@link DOMINATED_REGION_FILL}. */
-  readonly fill?: string;
-}
-
-/**
- * Shades the region every frontier member beats on both axes. The polygon is the frontier dataset's
- * own boundary closed through the worst corner, which is the first vertex's x and the last vertex's
- * y, so the shading always matches the drawn line. It runs before the datasets draw, so every mark
- * and whisker sits on top of it.
- */
-export const dominatedRegionPlugin: Plugin = {
-  id: 'overseerDominatedRegion',
-  beforeDatasetsDraw(chart, _args, pluginOptions): void {
-    const ctx = chart.ctx;
-    const area = chart.chartArea;
-    if (!ctx || !area) {
-      return;
-    }
-    const index = chart.data.datasets.findIndex((dataset) => dataset.label === PARETO_FRONTIER_LABEL);
-    if (index < 0) {
-      return;
-    }
-    const meta = chart.getDatasetMeta(index);
-    if (meta.hidden) {
-      return;
-    }
-    const vertices = meta.data
-      .filter((element) => Number.isFinite(element.x) && Number.isFinite(element.y))
-      .map((element) => ({ x: element.x, y: element.y }));
-    if (vertices.length < 2) {
-      return;
-    }
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
-    ctx.clip();
-    ctx.beginPath();
-    ctx.moveTo(vertices[0].x, vertices[0].y);
-    for (let i = 1; i < vertices.length; i += 1) {
-      ctx.lineTo(vertices[i].x, vertices[i].y);
-    }
-    ctx.lineTo(vertices[0].x, vertices[vertices.length - 1].y);
-    ctx.closePath();
-    ctx.fillStyle = (pluginOptions as unknown as DominatedRegionPluginOptions | undefined)?.fill ?? DOMINATED_REGION_FILL;
-    ctx.fill();
-    ctx.restore();
-  },
-};
+/** The frontier's dash pattern: zero-length dashes with round caps, so the line is a row of dots. */
+export const FRONTIER_DASH: readonly number[] = [0, 6];
 
 /** What the plot-frame plugin reads off the chart options. */
 export interface PlotFramePluginOptions {
@@ -869,12 +808,6 @@ function errorBarOptions(theme: ResolvedFigureTheme) {
   return options.color === undefined ? {} : { [errorBarPlugin.id]: options };
 }
 
-/** The dominated-region plugin's options entry where the theme's fill is not the dark default. */
-function dominatedRegionOptions(theme: ResolvedFigureTheme) {
-  const options: DominatedRegionPluginOptions = unlessDefault('fill', theme.chart.dominatedRegionFill, DOMINATED_REGION_FILL);
-  return options.fill === undefined ? {} : { [dominatedRegionPlugin.id]: options };
-}
-
 // ---------------------------------------------------------------------------------------------
 // Figure plumbing
 // ---------------------------------------------------------------------------------------------
@@ -904,6 +837,11 @@ export interface ChartSpec<
   readonly preferredCorner?: PreferredCorner;
   readonly config: ChartConfiguration<TType, TData, TLabel>;
   readonly plugins: Plugin[];
+  /**
+   * Sentences the figure's accessible name adds to its chrome summary, such as `Pareto frontier:
+   * A, B` and `Faded: C`. Absent: none.
+   */
+  readonly summary?: readonly string[];
 }
 
 /** Options every figure builder takes. */
@@ -1158,6 +1096,9 @@ const DIRECT_LABEL_PAD_Y = 2;
 
 /** How much of the surface the backing plate keeps, so a gridline behind the text stays subdued. */
 const DIRECT_LABEL_PLATE_ALPHA = 0.85;
+
+/** The surface-colored halo around a name-only label's text, in pixels on each side of a glyph. */
+const DIRECT_LABEL_HALO_PX = 3;
 
 /** Between the measure column and the value column. */
 const DIRECT_LABEL_COLUMN_GAP = 8;
@@ -1481,13 +1422,18 @@ export interface DirectLabelValue {
   readonly text: string;
 }
 
-/** What one mark's plate carries. A block with neither a name nor values draws nothing. */
+/**
+ * What one mark's label carries. A block with neither a name nor values draws nothing. A name alone
+ * draws as text with a surface halo; a block with values draws on a backing plate.
+ */
 export interface DirectLabelBlock {
   /** The model's name, one line or several; absent when the legend names the marks. */
   readonly name?: string | readonly string[];
   readonly values: readonly DirectLabelValue[];
-  /** The mark's glyph hue, drawn as the plate's left rule. */
+  /** The mark's provider hue, drawn as the label's left rule. */
   readonly hue: string;
+  /** A faded mark's label: its name in muted ink. */
+  readonly muted?: boolean;
 }
 
 function directLabelNameLines(name: string | readonly string[] | undefined): readonly string[] {
@@ -1626,8 +1572,9 @@ function whiskerRects(
 }
 
 /**
- * The frontier staircase as pixel vertices, or nothing when the figure carries no frontier. It sits
- * at the index straight after the labelled model datasets, which is where `buildScatter` pushes it.
+ * The frontier line as pixel vertices - the members' own points - or nothing when the figure carries
+ * no frontier. It sits at the index straight after the labelled model datasets, which is where
+ * `buildScatter` pushes it.
  */
 function frontierPolylines(chart: Chart, frontierIndex: number): { x: number; y: number }[][] {
   if (chart.data.datasets[frontierIndex]?.label !== PARETO_FRONTIER_LABEL) {
@@ -1644,8 +1591,8 @@ function frontierPolylines(chart: Chart, frontierIndex: number): { x: number; y:
 }
 
 /**
- * Names every mark on the canvas, on a leader line, with the legend switched off, and carries the
- * mark's own values when the figure asks for them.
+ * Names every mark on the canvas, on a leader line when the label is displaced, with the legend
+ * switched off, and carries the mark's own values when the figure asks for them.
  *
  * It draws rather than delegating to `chartjs-plugin-datalabels`, which places a label at a fixed
  * offset with no knowledge of its neighbours — two models close together got two names on top of
@@ -1723,13 +1670,17 @@ export const directLabelPlugin: Plugin = {
         continue;
       }
       const accented = box.key === highlighted;
-      // A backing plate, so a label crossing a gridline stays readable without an outline halo.
-      ctx.globalAlpha = DIRECT_LABEL_PLATE_ALPHA;
-      ctx.fillStyle = surface;
-      ctx.fillRect(box.x, box.y, box.width, box.height);
-      ctx.globalAlpha = 1;
+      // A name alone is text with a surface halo; a label carrying values keeps a backing plate, so
+      // its two columns read as a table over any gridline.
+      const haloed = plate.block.values.length === 0;
+      if (!haloed) {
+        ctx.globalAlpha = DIRECT_LABEL_PLATE_ALPHA;
+        ctx.fillStyle = surface;
+        ctx.fillRect(box.x, box.y, box.width, box.height);
+        ctx.globalAlpha = 1;
+      }
 
-      // The hue rule ties the plate to its mark, which in legend mode is its only identity.
+      // The hue rule ties the label to its mark and names its provider.
       ctx.fillStyle = accented ? accent : plate.block.hue;
       ctx.fillRect(box.x, box.y, DIRECT_LABEL_RULE_WIDTH, box.height);
 
@@ -1741,9 +1692,17 @@ export const directLabelPlugin: Plugin = {
       if (nameLines.length > 0) {
         ctx.font = text.nameFont;
         ctx.textAlign = 'left';
-        ctx.fillStyle = accented ? accent : ink;
+        const nameInk = accented ? accent : plate.block.muted ? muted : ink;
         for (const line of nameLines) {
-          ctx.fillText(line, textLeft, lineTop + text.nameLineHeight / 2);
+          const middle = lineTop + text.nameLineHeight / 2;
+          if (haloed) {
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = DIRECT_LABEL_HALO_PX * 2;
+            ctx.strokeStyle = surface;
+            ctx.strokeText(line, textLeft, middle);
+          }
+          ctx.fillStyle = nameInk;
+          ctx.fillText(line, textLeft, middle);
           lineTop += text.nameLineHeight;
         }
       }
@@ -2071,7 +2030,7 @@ export const FRONTIER_UNCERTAINTY_NOTE =
 function directLabelBlock(
   entry: ModelComparisonEntry,
   axes: readonly (readonly [ScatterAxisSpec, (value: number) => string])[],
-  options: { glyphs: ReadonlyMap<string, IdentityGlyph>; named: boolean; valued: boolean; breakThinkingLevel: boolean },
+  options: { hue: string; muted: boolean; named: boolean; valued: boolean; breakThinkingLevel: boolean },
 ): DirectLabelBlock {
   const values: DirectLabelValue[] = [];
   if (options.valued) {
@@ -2085,8 +2044,27 @@ function directLabelBlock(
   return {
     name: options.named ? modelLabelLines(entry, options.breakThinkingLevel) : undefined,
     values,
-    hue: glyphFor(options.glyphs, entry.key).hue,
+    hue: options.hue,
+    ...(options.muted ? { muted: true } : {}),
   };
+}
+
+/**
+ * One key item per provider among `entries`, in order of first appearance: its dot in the provider's
+ * hue and its name. Empty for no entries.
+ */
+function providerKeyItems(entries: readonly ModelComparisonEntry[], theme: ResolvedFigureTheme): FigureKeyItem[] {
+  const seen = new Set<ProviderKey>();
+  const items: FigureKeyItem[] = [];
+  for (const entry of entries) {
+    const key = providerKey(entry.provider);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    items.push({ glyph: 'provider', text: providerDisplayName(key), color: providerHue(key, theme) });
+  }
+  return items;
 }
 
 /**
@@ -2115,36 +2093,19 @@ function buildScatter(
   options: FigureOptions,
   extraNotices: readonly string[],
 ): ChartSpec<'scatter', ErrorBarPoint[]> {
-  const { context, glyphs, reducedMotion, highlightedKey } = options;
+  const { context, reducedMotion, highlightedKey } = options;
   const style = (options.style ?? DEFAULT_FIGURE_STYLE).scatter;
   const theme = themeOf(options);
   const directLabels = options.directLabels ?? false;
   const inlineValues = options.inlineValues ?? false;
-  // One plugin carries both: names and values share a plate, and so share its placement.
+  // One plugin carries both: names and values share a label, and so share its placement.
   const annotate = directLabels || inlineValues;
   const radii = scatterPointRadii(style.markRadiusPx);
-
-  const datasets = plotted.map((entry) => {
-    const glyph = glyphFor(glyphs, entry.key);
-    const highlighted = highlightedKey === entry.key;
-    // R = 1 draws hollow; R >= 2 draws solid with a surface ring so overlapping marks stay legible.
-    const hollow = entry.runCount === 1;
-    return {
-      label: entry.label,
-      data: [scatterPoint(entry, xAxis, yAxis)],
-      pointStyle: glyph.shape,
-      backgroundColor: hollow ? 'transparent' : glyph.hue,
-      borderColor: highlighted ? theme.chart.accent : hollow ? glyph.hue : theme.chart.surface,
-      borderWidth: 2,
-      ...radii,
-      showLine: false,
-    };
-  });
 
   const axisStyle = scatterAxisStyle(style, theme);
   const xResolved = resolveAxis(xAxis, plotted, axisStyle);
   const yResolved = resolveAxis(yAxis, plotted, axisStyle);
-  // Plates and tooltips write each value in its axis's unit, to the measure's decimal setting.
+  // Labels and tooltips write each value in its axis's unit, to the measure's decimal setting.
   const numbers = (options.style ?? DEFAULT_FIGURE_STYLE).numbers;
   const formatX = (value: number): string => formatMeasure(value, xAxis.measure, numbers[xAxis.measure], xResolved.unit);
   const formatY = (value: number): string => formatMeasure(value, yAxis.measure, numbers[yAxis.measure], yResolved.unit);
@@ -2155,27 +2116,54 @@ function buildScatter(
     measured.map((e) => ({ key: e.key, x: xAxis.value(e), y: yAxis.value(e) })),
     xAxis.better,
     yAxis.better,
-    {
-      xWorst: xAxis.better === 'lower' ? xResolved.max : xResolved.min,
-      yWorst: yAxis.better === 'higher' ? yResolved.min : yResolved.max,
-    },
   );
-  // Drawn whenever the frontier has a member: a lone member draws an L to the two worst edges.
-  const frontierDrawn = pareto.boundary.length >= 2;
-  if (frontierDrawn) {
-    datasets.push({
-      label: PARETO_FRONTIER_LABEL,
-      data: pareto.boundary.map((p) => ({ x: p.x, y: p.y })),
-      pointStyle: 'circle',
-      backgroundColor: 'transparent',
-      borderColor: theme.chart.inkSecondary,
-      borderWidth: style.frontierWidthPx,
-      radius: 0,
-      hoverRadius: 0,
-      hitRadius: 0,
-      showLine: true,
-    });
-  }
+  const frontierKeys = new Set(pareto.frontier.map((member) => member.key));
+  // A measured model the frontier excludes: another model is better on both axes.
+  const isFaded = (entry: ModelComparisonEntry): boolean =>
+    isMeasured(entry, xAxis, yAxis) && !frontierKeys.has(entry.key);
+
+  const modelDatasets = plotted.map((entry) => {
+    const hue = providerHue(entry.provider, theme);
+    const highlighted = highlightedKey === entry.key;
+    const faded = isFaded(entry);
+    // R = 1 draws hollow; R >= 2 draws solid with a surface ring so overlapping marks stay legible.
+    const hollow = entry.runCount === 1;
+    const fill = hollow ? 'transparent' : hue;
+    const border = highlighted ? theme.chart.accent : hollow ? hue : theme.chart.surface;
+    const point = scatterPoint(entry, xAxis, yAxis);
+    return {
+      label: entry.label,
+      data: [faded ? { ...point, alpha: FADED_MARK_ALPHA } : point],
+      pointStyle: 'circle' as const,
+      backgroundColor: faded ? withAlpha(fill, FADED_MARK_ALPHA) : fill,
+      borderColor: faded && !highlighted ? withAlpha(border, FADED_MARK_ALPHA) : border,
+      borderWidth: 2,
+      ...radii,
+      showLine: false,
+    };
+  });
+
+  // The members' own points joined by straight dotted segments, drawn after the marks (the lowest
+  // `order` draws last) so the dots pass through the marks' surface rings. One member draws no line.
+  const frontierDrawn = pareto.path.length >= 2;
+  const frontierDatasets = frontierDrawn
+    ? [{
+        label: PARETO_FRONTIER_LABEL,
+        data: pareto.path.map((p): ErrorBarPoint => ({ x: p.x, y: p.y })),
+        pointStyle: 'circle' as const,
+        backgroundColor: 'transparent',
+        borderColor: theme.chart.inkSecondary,
+        borderWidth: style.frontierWidthPx,
+        borderDash: [...FRONTIER_DASH],
+        borderCapStyle: 'round' as const,
+        radius: 0,
+        hoverRadius: 0,
+        hitRadius: 0,
+        showLine: true,
+        order: -1,
+      }]
+    : [];
+  const datasets = [...modelDatasets, ...frontierDatasets];
 
   const preferredCorner: PreferredCorner = {
     x: xAxis.better === 'lower' ? 'left' : 'right',
@@ -2220,7 +2208,7 @@ function buildScatter(
         },
         tooltip: {
           ...TOOLTIP_STYLE,
-          // The frontier's step vertices sit on a model's own coordinates, so nearest-without-
+          // The frontier's vertices sit on the members' own coordinates, so nearest-without-
           // intersect would list the annotation beside the model it was derived from.
           filter: (item) => item.datasetIndex < plotted.length,
           callbacks: {
@@ -2246,7 +2234,8 @@ function buildScatter(
           ? {
               [directLabelPlugin.id]: {
                 blocks: plotted.map((entry) => directLabelBlock(entry, [[xAxis, formatX], [yAxis, formatY]], {
-                  glyphs,
+                  hue: providerHue(entry.provider, theme),
+                  muted: isFaded(entry),
                   named: directLabels,
                   valued: inlineValues,
                   breakThinkingLevel: style.thinkingLevelBreak,
@@ -2254,14 +2243,13 @@ function buildScatter(
                 highlightedIndex: highlightedIndex < 0 ? undefined : highlightedIndex,
                 fontSizePx: style.labelTextSizePx,
                 markRadiusPx: style.markRadiusPx,
-                // A hidden whisker must not push a plate away from empty space.
+                // A hidden whisker must not push a label away from empty space.
                 avoidWhiskers: style.intervals,
                 ...directLabelThemeOptions(theme),
               } satisfies DirectLabelPluginOptions,
             }
           : {}),
         ...(style.intervals ? errorBarOptions(theme) : {}),
-        ...(style.dominatedShading ? dominatedRegionOptions(theme) : {}),
         ...plotFrameOptions(theme, style.plotFrame),
       },
     },
@@ -2289,21 +2277,23 @@ function buildScatter(
   }
   if (frontierDrawn) {
     key.push({ glyph: 'frontier', text: 'Pareto frontier: models nothing beats on both axes' });
-    if (style.dominatedShading) {
-      key.push({ glyph: 'dominated', text: 'Shaded: beaten on both axes' });
-    }
   }
+  const faded = measured.filter(isFaded);
+  if (faded.length > 0) {
+    key.push({ glyph: 'faded', text: 'Faded: another model is better on both axes' });
+  }
+  key.push(...providerKeyItems(measured, theme));
 
   const labels = new Map(measured.map((entry): [string, string] => [entry.key, entry.label]));
   const frontierLabels = pareto.frontier.map((member) => labels.get(member.key) ?? member.key);
   const highlight = frontierLabels.length === 0
     ? ''
-    : `${frontierLabels.length === 1 ? 'Best trade-off' : 'Best trade-offs'}: ${frontierLabels.join(', ')}`;
+    : frontierLabels.length === 1
+      ? `${frontierLabels[0]} is best on both axes`
+      : `Best trade-offs: ${frontierLabels.join(', ')}`;
 
-  const frontierKeys = new Set(pareto.frontier.map((member) => member.key));
   const frontierEntries = measured.filter((entry) => frontierKeys.has(entry.key));
-  const withinIntervals = measured
-    .filter((entry) => !frontierKeys.has(entry.key))
+  const withinIntervals = faded
     .some((dominated) => frontierEntries.some((member) => intervalsOverlap(dominated, member, [xAxis, yAxis])));
 
   const notes: FigureNote[] = [
@@ -2326,18 +2316,23 @@ function buildScatter(
     notes,
   };
 
+  const summary = [
+    ...(frontierLabels.length > 0 ? [`Pareto frontier: ${frontierLabels.join(', ')}`] : []),
+    ...(faded.length > 0 ? [`Faded: ${faded.map((entry) => entry.label).join(', ')}`] : []),
+  ];
+
   return {
     id,
     title,
     chrome,
     preferredCorner,
     config,
-    // The shading goes under everything; a leader line draws over a whisker rather than under it.
+    // A leader line draws over a whisker rather than under it.
     plugins: withPlotFrame([
-      ...(style.dominatedShading ? [dominatedRegionPlugin] : []),
       ...(style.intervals ? [errorBarPlugin] : []),
       ...(annotate ? [directLabelPlugin] : []),
     ], style.plotFrame),
+    summary,
   };
 }
 
@@ -2449,7 +2444,6 @@ function buildPanel(
   title: string,
   plotted: readonly ModelComparisonEntry[],
   categoryLabels: readonly PanelCategoryLabel[],
-  panelHue: string,
   axisTitleText: string,
   better: BetterDirection,
   axisMax: number | undefined,
@@ -2461,6 +2455,8 @@ function buildPanel(
   options: SmallMultiplesOptions,
   notes: readonly FigureNote[],
   costPanel: boolean,
+  /** Breaks the value-axis title at its final parenthetical unless the style says never. */
+  breakAxisTitle = false,
 ): ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel> {
   const { context, reducedMotion, highlightedKey, selectedKeys, orientation } = options;
   const style = (options.style ?? DEFAULT_FIGURE_STYLE).bar;
@@ -2475,19 +2471,19 @@ function buildPanel(
     barPoint(index, values[index] ?? 0, errLows[index], errHighs[index], orientation),
   );
 
-  // A panel is one hue for every bar. Bars are never ramped by value: darker-where-bigger would
-  // re-encode the length the bar already shows and fail the categorical checks by construction.
-  // Identity here is axis position and label, so the hue is free to mark the measure instead.
+  // A bar wears its model's provider hue, as the marks of every other figure do. Bars are never
+  // ramped by value: darker-where-bigger would re-encode the length the bar already shows. The
+  // Highlight emphasis overrides the hue with the accent and the gray.
   const hollow = (entry: ModelComparisonEntry): boolean => entry.runCount === 1 && !style.filledBars;
   const fills = plotted.map((entry) => {
     if (!hasEmphasis) {
-      return hollow(entry) ? 'transparent' : panelHue;
+      return hollow(entry) ? 'transparent' : providerHue(entry.provider, theme);
     }
     return emphasised.has(entry.key) ? (hollow(entry) ? 'transparent' : theme.chart.accent) : theme.chart.deEmphasisFill;
   });
   const strokes = plotted.map((entry) => {
     if (!hasEmphasis) {
-      return panelHue;
+      return providerHue(entry.provider, theme);
     }
     return emphasised.has(entry.key) ? theme.chart.accent : theme.chart.deEmphasisStroke;
   });
@@ -2530,7 +2526,13 @@ function buildPanel(
     beginAtZero: true,
     min: 0,
     max: axisMax,
-    ...valueAxisTitle(axisTitleText, directionShown ? undefined : better, style.axisTitleBreak, style.axisTitleSizePx, titleFont),
+    ...valueAxisTitle(
+      axisTitleText,
+      directionShown ? undefined : better,
+      breakAxisTitle && style.axisTitleBreak !== 'never' ? 'always' : style.axisTitleBreak,
+      style.axisTitleSizePx,
+      titleFont,
+    ),
     grid: gridOptions(style.gridlines, theme),
     border: { color: theme.chart.baseline },
     // The tick decimals follow Chart.js's own step, read off the first two ticks. The unit is the
@@ -2628,7 +2630,7 @@ function buildPanel(
     ], style.hiddenBadges),
     ...(directionShown ? { direction } : {}),
     detail: costPanel ? pricingNote(context.pricingBasis) : '',
-    key: [],
+    key: providerKeyItems(plotted, theme),
     highlight: '',
     notes: panelNotes,
   };
@@ -2666,7 +2668,6 @@ export function buildSmallMultiples(
 ): SmallMultiplesFigure {
   const { context, speedMeasure, costMeasure } = options;
   const barStyle = (options.style ?? DEFAULT_FIGURE_STYLE).bar;
-  const hues = themeOf(options).chart.categorical;
 
   const qualityValues = plotted.map((e) => e.intelligenceIndex);
   const qualityErr = plotted.map((e) => e.intelligenceIndexCi95HalfWidth);
@@ -2742,11 +2743,12 @@ export function buildSmallMultiples(
         : speedMeasure === 'totalModelTime'
           ? `Total time for the suite (${speedUnit})`
           : `Time to first token, median (${speedUnit})`;
+  // Two lines on the axis, the parenthetical under the head, so the title is never clipped.
   const costTitle =
     costMeasure === 'candidateSuite'
       ? context.questionsAskedPerRun != null
-        ? `Candidate cost of one suite run (USD, ${formatQuestionsAsked(context.questionsAskedPerRun)} asked)`
-        : 'Candidate cost of one suite run (USD)'
+        ? `Candidate cost per suite run (USD, ${formatQuestionsAsked(context.questionsAskedPerRun)})`
+        : 'Candidate cost per suite run (USD)'
       : 'Total run cost including grading roles (USD)';
 
   // One label list for all three panels. A two-line tick block on one panel alone would shrink
@@ -2766,7 +2768,6 @@ export function buildSmallMultiples(
       'Intelligence',
       plotted,
       categoryLabels,
-      hues[0],
       'Intelligence Index (0-100)',
       'higher',
       100,
@@ -2784,7 +2785,6 @@ export function buildSmallMultiples(
       'Speed',
       plotted,
       categoryLabels,
-      hues[1],
       speedTitle,
       speedLowerIsBetter(speedMeasure) ? 'lower' : 'higher',
       speedMeasure === 'speedIndex' ? 100 : undefined,
@@ -2802,7 +2802,6 @@ export function buildSmallMultiples(
       'Cost',
       plotted,
       categoryLabels,
-      hues[2],
       costTitle,
       'lower',
       undefined,
@@ -2814,6 +2813,7 @@ export function buildSmallMultiples(
       options,
       warningNotes(degradedNotices(plotted, ['cost'])),
       true,
+      costMeasure === 'candidateSuite',
     ),
     order: plotted.map((e) => e.key),
     notices: [],
@@ -2821,62 +2821,90 @@ export function buildSmallMultiples(
 }
 
 // ---------------------------------------------------------------------------------------------
-// P2: the normalized profile plot
+// P2: the model profiles, as small multiples
 // ---------------------------------------------------------------------------------------------
 
 export type ProfileAxisId = 'quality' | 'speed' | 'cost';
 
-/** The axis order is fixed. A reorder control would change which crossings show without changing
- *  the data, which invites reading a pattern that is an artifact of the control. */
+/** The axis order is fixed. A reorder control would change which dips show without changing the
+ *  data, which invites reading a pattern that is an artifact of the control. */
 export const PROFILE_AXIS_ORDER: readonly ProfileAxisId[] = ['quality', 'speed', 'cost'];
+
+/** The narrowest index domain a profile axis spans, in index points. */
+export const PROFILE_INDEX_MIN_SPAN = 20;
+
+/** How far a log domain reaches past the best and the worst value, as a ratio. */
+export const PROFILE_LOG_PADDING = 1.25;
 
 export interface ProfileAxis {
   readonly id: ProfileAxisId;
   readonly title: string;
-  /** Real minimum across the plotted set, printed at the axis end so the shape stays anchored. */
+  /** Real minimum across the plotted set. */
   readonly min: number;
   readonly max: number;
   readonly minLabel: string;
   readonly maxLabel: string;
-  /** True when the raw measure improves downwards, so normalization inverts it. */
+  /** True when the raw measure improves downwards, so the scale inverts it. */
   readonly lowerIsBetter: boolean;
+  /** Log for times and costs, where equal steps are equal ratios; linear for the indices. */
+  readonly scale: 'linear' | 'log';
+  /** The shared domain, in the measure's own units. Its better end is 1 on every tile, its worse end 0. */
+  readonly domainMin: number;
+  readonly domainMax: number;
+  /** The measure's name inside a sentence: `intelligence`, `model time`, `cost`. */
+  readonly noun: string;
+  /** What follows a value in a sentence, such as ` per suite run`; empty for most axes. */
+  readonly suffix: string;
 }
 
 export interface ProfileRow {
   readonly key: string;
   readonly label: string;
-  /** Normalized 0-1 values in {@link PROFILE_AXIS_ORDER}, oriented so 1 is always better. */
+  /**
+   * Values on the shared scales in {@link PROFILE_AXIS_ORDER}, oriented so 1 is always the better
+   * end. NaN where the model has no value.
+   */
   readonly values: readonly number[];
-  /** The real values behind them, for the tooltip. */
+  /** The real values behind them, for the printed values and the tooltip. */
   readonly raw: readonly number[];
+}
+
+/** One model's accessible description: its three values and its weakest axis. */
+export interface ProfileDescription {
+  readonly key: string;
+  readonly text: string;
 }
 
 export interface ProfileNormalization {
   readonly axes: readonly ProfileAxis[];
   readonly rows: readonly ProfileRow[];
+  /** One sentence per model, in entry order, e.g. `GPT-6 Astra (medium): intelligence 84, model time 15.5 s, cost $0.140 per suite run; weakest axis: cost`. */
+  readonly descriptions: readonly ProfileDescription[];
 }
 
 /**
- * Min-max normalizes each axis independently and orients every one so that up is better.
+ * Puts every model on three shared scales, oriented so that up is better on each.
  *
- * Inverting cost - and TTFT, when that is the speed measure - is the one reversed direction this
- * view permits: a normalized axis carries no absolute meaning to invert, and consistent orientation
- * is what makes a crossing read as a trade-off rather than as an axis pointing the other way. The
- * scatters, whose axes carry real units, keep their natural direction.
+ * Intelligence is linear over the union of the plotted models' 95 % intervals, at least
+ * {@link PROFILE_INDEX_MIN_SPAN} points wide and inside 0-100, so a small spread inside overlapping
+ * intervals never spans the whole axis. Times and costs are logarithmic over
+ * [best / {@link PROFILE_LOG_PADDING}, worst x {@link PROFILE_LOG_PADDING}] and inverted, so faster
+ * and cheaper are up and equal steps are equal ratios. The Speed Index, when it is the speed
+ * measure, is an index and takes the intelligence rule without the intervals.
  */
 export function normalizeProfile(
   plotted: readonly ModelComparisonEntry[],
   options: ProfileNormalizationOptions,
 ): ProfileNormalization {
-  const { axes, rows } = prepareProfile(plotted, options);
-  return { axes, rows };
+  const { axes, rows, descriptions } = prepareProfile(plotted, options);
+  return { axes, rows, descriptions };
 }
 
 export interface ProfileNormalizationOptions {
   readonly context: ModelComparisonContext;
   readonly speedMeasure: SpeedMeasure;
   readonly costMeasure: CostMeasure;
-  /** Decimals of the range labels and the tooltip. Defaults to {@link DEFAULT_MEASURE_DECIMALS}. */
+  /** Decimals of the printed values, the ranges and the tooltip. Defaults to {@link DEFAULT_MEASURE_DECIMALS}. */
   readonly numbers?: NumberFormatStyle;
 }
 
@@ -2901,7 +2929,48 @@ function profileTimeUnit(plotted: readonly ModelComparisonEntry[], options: Prof
   return timeUnitFor(raw.length > 0 ? Math.max(...raw) : 0);
 }
 
-/** The normalization, plus each axis's value formatter, in {@link PROFILE_AXIS_ORDER}. */
+/** An index domain over the given extents: inside 0-100 and at least {@link PROFILE_INDEX_MIN_SPAN} wide. */
+export function profileIndexDomain(lows: readonly number[], highs: readonly number[]): [number, number] {
+  const finiteLows = lows.filter((v) => Number.isFinite(v));
+  const finiteHighs = highs.filter((v) => Number.isFinite(v));
+  let low = finiteLows.length > 0 ? Math.max(0, Math.min(...finiteLows)) : 0;
+  let high = finiteHighs.length > 0 ? Math.min(100, Math.max(...finiteHighs)) : 100;
+  if (high - low < PROFILE_INDEX_MIN_SPAN) {
+    const middle = (low + high) / 2;
+    low = Math.max(0, Math.min(100 - PROFILE_INDEX_MIN_SPAN, middle - PROFILE_INDEX_MIN_SPAN / 2));
+    high = low + PROFILE_INDEX_MIN_SPAN;
+  }
+  return [low, high];
+}
+
+/** A log domain from the best value / {@link PROFILE_LOG_PADDING} to the worst x it; [1, 1] with no positive value. */
+export function profileRatioDomain(values: readonly number[]): [number, number] {
+  const positive = values.filter((v) => Number.isFinite(v) && v > 0);
+  if (positive.length === 0) {
+    return [1, 1];
+  }
+  return [Math.min(...positive) / PROFILE_LOG_PADDING, Math.max(...positive) * PROFILE_LOG_PADDING];
+}
+
+/** A raw value's height on its axis's shared scale: 0 at the worse end, 1 at the better, NaN when unmeasured. */
+function profileHeight(axis: Pick<ProfileAxis, 'scale' | 'lowerIsBetter' | 'domainMin' | 'domainMax'>, value: number): number {
+  if (!Number.isFinite(value)) {
+    return Number.NaN;
+  }
+  let t: number;
+  if (axis.scale === 'log') {
+    const span = Math.log(axis.domainMax) - Math.log(axis.domainMin);
+    // A collapsed axis has no ordering to show, so every model sits mid-axis.
+    t = span === 0 ? 0.5 : value <= 0 ? 0 : (Math.log(value) - Math.log(axis.domainMin)) / span;
+  } else {
+    const span = axis.domainMax - axis.domainMin;
+    t = span === 0 ? 0.5 : (value - axis.domainMin) / span;
+  }
+  const oriented = axis.lowerIsBetter ? 1 - t : t;
+  return Math.min(1, Math.max(0, oriented));
+}
+
+/** The shared scales, each model's heights and descriptions, and each axis's value formatter. */
 function prepareProfile(
   plotted: readonly ModelComparisonEntry[],
   options: ProfileNormalizationOptions,
@@ -2912,36 +2981,72 @@ function prepareProfile(
   const speedKey = speedNumberMeasure(speedMeasure);
   const costKey = costNumberMeasure(costMeasure);
   const timeUnit = profileTimeUnit(plotted, options);
+  const speedIsIndex = speedMeasure === 'speedIndex';
 
-  const axisMeta: Record<ProfileAxisId, { title: string; lowerIsBetter: boolean; format: (v: number) => string }> = {
+  const axisMeta: Record<ProfileAxisId, {
+    title: string;
+    noun: string;
+    suffix: string;
+    lowerIsBetter: boolean;
+    scale: 'linear' | 'log';
+    format: (v: number) => string;
+  }> = {
     quality: {
       title: 'Intelligence',
+      noun: 'intelligence',
+      suffix: '',
       lowerIsBetter: false,
+      scale: 'linear',
       format: (v) => formatMeasure(v, 'intelligenceIndex', numbers.intelligenceIndex),
     },
     speed: {
-      title: speedMeasure === 'speedIndex'
+      title: speedIsIndex
         ? 'Speed Index'
         : speedMeasure === 'meanModelTime'
           ? 'Speed (mean model time)'
           : speedMeasure === 'totalModelTime'
             ? 'Speed (total model time)'
             : 'Speed (TTFT P50)',
+      noun: speedIsIndex
+        ? 'Speed Index'
+        : speedMeasure === 'meanModelTime'
+          ? 'model time'
+          : speedMeasure === 'totalModelTime'
+            ? 'total model time'
+            : 'time to first token',
+      suffix: '',
       lowerIsBetter: speedLowerIsBetter(speedMeasure),
+      scale: speedIsIndex ? 'linear' : 'log',
       format: (v) => formatMeasure(v, speedKey, numbers[speedKey], timeUnit),
     },
     cost: {
       title: costMeasure === 'candidateSuite' ? 'Cost (candidate, suite)' : 'Cost (total run)',
+      noun: 'cost',
+      suffix: costMeasure === 'candidateSuite' ? ' per suite run' : ' per run, all roles',
       lowerIsBetter: true,
+      scale: 'log',
       format: (v) => formatMeasure(v, costKey, numbers[costKey]),
     },
   };
 
-  const axes = PROFILE_AXIS_ORDER.map((id) => {
+  const axes: ProfileAxis[] = PROFILE_AXIS_ORDER.map((id) => {
     const meta = axisMeta[id];
     const values = plotted.map((e) => rawFor(id, e));
-    const min = values.length > 0 ? Math.min(...values) : 0;
-    const max = values.length > 0 ? Math.max(...values) : 0;
+    const finite = values.filter((v) => Number.isFinite(v));
+    const min = finite.length > 0 ? Math.min(...finite) : 0;
+    const max = finite.length > 0 ? Math.max(...finite) : 0;
+    let domain: [number, number];
+    if (meta.scale === 'log') {
+      domain = profileRatioDomain(values);
+    } else if (id === 'quality') {
+      const halfWidth = (e: ModelComparisonEntry): number => drawnWhisker(e.intelligenceIndexCi95HalfWidth);
+      domain = profileIndexDomain(
+        plotted.map((e) => e.intelligenceIndex - halfWidth(e)),
+        plotted.map((e) => e.intelligenceIndex + halfWidth(e)),
+      );
+    } else {
+      domain = profileIndexDomain(values, values);
+    }
     return {
       id,
       title: meta.title,
@@ -2950,41 +3055,206 @@ function prepareProfile(
       minLabel: meta.format(min),
       maxLabel: meta.format(max),
       lowerIsBetter: meta.lowerIsBetter,
+      scale: meta.scale,
+      domainMin: domain[0],
+      domainMax: domain[1],
+      noun: meta.noun,
+      suffix: meta.suffix,
     };
   });
 
-  const rows = plotted.map((entry) => {
+  const rows: ProfileRow[] = plotted.map((entry) => {
     const raw = PROFILE_AXIS_ORDER.map((id) => rawFor(id, entry));
-    const values = axes.map((axis, i) => {
-      const span = axis.max - axis.min;
-      // A collapsed axis has no ordering to show, so every model sits mid-axis rather than at an
-      // end that would read as "best" or "worst".
-      const t = span === 0 ? 0.5 : (raw[i] - axis.min) / span;
-      return axis.lowerIsBetter ? 1 - t : t;
-    });
-    return { key: entry.key, label: entry.label, values, raw };
+    return { key: entry.key, label: entry.label, values: axes.map((axis, i) => profileHeight(axis, raw[i])), raw };
   });
 
-  return { axes, rows, formats: PROFILE_AXIS_ORDER.map((id) => axisMeta[id].format) };
+  const formats = PROFILE_AXIS_ORDER.map((id) => axisMeta[id].format);
+  const descriptions: ProfileDescription[] = rows.map((row) => {
+    const parts: string[] = [];
+    axes.forEach((axis, i) => {
+      if (Number.isFinite(row.raw[i])) {
+        parts.push(`${axis.noun} ${formats[i](row.raw[i])}${axis.suffix}`);
+      }
+    });
+    let weakest = -1;
+    row.values.forEach((value, i) => {
+      if (Number.isFinite(value) && (weakest < 0 || value < row.values[weakest])) {
+        weakest = i;
+      }
+    });
+    const tail = weakest < 0 ? '' : `; weakest axis: ${axes[weakest].noun}`;
+    return { key: row.key, text: `${row.label}: ${parts.join(', ')}${tail}` };
+  });
+
+  return { axes, rows, descriptions, formats };
 }
+
+/** The tile grid's column count for `n` tiles: one row up to three, then two, three or four columns. */
+export function profileColumns(n: number): number {
+  if (n <= 3) {
+    return Math.max(1, n);
+  }
+  return n <= 4 ? 2 : n <= 6 ? 3 : 4;
+}
+
+/** The label of every tile's dotted line at y = 1, and the key item it is named by. */
+export const PROFILE_IDEAL_LABEL = 'Ideal';
+
+/** The tile's title band and the room above it for the printed values, in pixels. */
+const PROFILE_TILE_TITLE_BAND = 20;
+const PROFILE_TILE_VALUE_ROOM = 16;
+
+/** The model's own markers, and the surface ring around them. */
+const PROFILE_MARKER_RADIUS = 4;
+const PROFILE_MARKER_RING = 2;
+
+/** What the profile-tile plugin reads off a tile's options. */
+export interface ProfileTilePluginOptions {
+  /** The model's display name, in the ink. */
+  readonly title: string;
+  /** The provider hue of the dot before the title. */
+  readonly dotColor: string;
+  /** The model's printed value at each axis, or null where it has none. */
+  readonly values: readonly (string | null)[];
+  /** Printed beside the dotted line at y = 1; set on the first tile only. */
+  readonly idealLabel?: string;
+  /** A Highlight-emphasised model's tile is outlined in this color. */
+  readonly outlineColor?: string;
+  readonly inkColor: string;
+  readonly valueColor: string;
+  readonly mutedColor: string;
+  readonly fontFamily: string;
+  readonly titleWeight: FigureFontWeight;
+  readonly fontSizePx: number;
+}
+
+/** The title ellipsized to `width` pixels in the context's current font. */
+function fitText(ctx: CanvasRenderingContext2D, text: string, width: number): string {
+  if (ctx.measureText(text).width <= width) {
+    return text;
+  }
+  let fitted = text;
+  while (fitted.length > 1 && ctx.measureText(`${fitted}…`).width > width) {
+    fitted = fitted.slice(0, -1);
+  }
+  return `${fitted}…`;
+}
+
+/**
+ * Draws a profile tile's own text: the title with its provider dot, the model's values on its three
+ * points (above the interval where the point carries one), the *Ideal* label in the first tile, and
+ * the gold outline of an emphasised model. Text never wears the series color.
+ */
+export const profileTilePlugin: Plugin = {
+  id: 'overseerProfileTile',
+  afterDatasetsDraw(chart, _args, pluginOptions): void {
+    const options = pluginOptions as unknown as ProfileTilePluginOptions | undefined;
+    const ctx = chart.ctx;
+    const area = chart.chartArea;
+    if (!ctx || !area || !options || typeof options.title !== 'string') {
+      return;
+    }
+    const size = options.fontSizePx;
+    ctx.save();
+
+    // The title band: the provider dot, then the name in the ink.
+    const bandMiddle = PROFILE_TILE_TITLE_BAND / 2;
+    ctx.fillStyle = options.dotColor;
+    ctx.beginPath();
+    ctx.arc(8, bandMiddle, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = `${options.titleWeight} ${size + 1}px ${options.fontFamily}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = options.inkColor;
+    ctx.fillText(fitText(ctx, options.title, Math.max(0, chart.width - 24)), 18, bandMiddle);
+
+    const yScale = chart.scales['y'];
+    // The model's own values, above each point and above its whisker's cap.
+    const meta = chart.getDatasetMeta(0);
+    ctx.font = `${size}px ${options.fontFamily}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = options.valueColor;
+    meta.data.forEach((element, index) => {
+      const text = options.values[index];
+      if (!text || !Number.isFinite(element.x) || !Number.isFinite(element.y)) {
+        return;
+      }
+      let top = element.y - PROFILE_MARKER_RADIUS - PROFILE_MARKER_RING - 2;
+      const raw = chart.data.datasets[0]?.data[index];
+      if (yScale && isErrorBarPoint(raw) && raw.yErrHigh !== undefined) {
+        const whiskerTop = yScale.getPixelForValue(raw.y + raw.yErrHigh) - 3;
+        if (Number.isFinite(whiskerTop)) {
+          top = Math.min(top, whiskerTop);
+        }
+      }
+      ctx.fillText(text, element.x, Math.max(top, PROFILE_TILE_TITLE_BAND + size + 2));
+    });
+
+    if (options.idealLabel && yScale) {
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = options.mutedColor;
+      ctx.fillText(options.idealLabel, area.left + 2, yScale.getPixelForValue(1) - 3);
+    }
+
+    if (options.outlineColor) {
+      ctx.strokeStyle = options.outlineColor;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, chart.width - 2, chart.height - 2);
+    }
+    ctx.restore();
+  },
+};
 
 export interface ProfileOptions extends FigureOptions {
   readonly speedMeasure: SpeedMeasure;
   readonly costMeasure: CostMeasure;
 }
 
+/** A profile tile's datum: the model's own points carry their interval; the context lines are plain heights. */
+export type ProfileDatum = number | null | ErrorBarPoint;
+
+/** One tile: a line chart over the three axes, with a category label per axis. */
+export type ProfileTileConfig = ChartConfiguration<'line', ProfileDatum[], string | string[]>;
+
+/** P2 as drawn: one tile per plotted model, laid out `columns` wide, and the chrome around the grid. */
+export interface ProfileFigure {
+  readonly id: string;
+  readonly title: string;
+  readonly chrome: FigureChrome;
+  /** One line chart per plotted model, in entry order. */
+  readonly tiles: readonly ProfileTileConfig[];
+  /** The plugins every tile draws with; each tile's own options carry what differs. */
+  readonly plugins: Plugin[];
+  readonly columns: number;
+  /** One sentence per model for the figure's description. */
+  readonly descriptions: readonly ProfileDescription[];
+}
+
+/** The better end of an axis across the plotted set, or NaN with no value. */
+function bestRaw(axis: ProfileAxis, rows: readonly ProfileRow[], index: number): number {
+  const finite = rows.map((row) => row.raw[index]).filter((v) => Number.isFinite(v));
+  if (finite.length === 0) {
+    return Number.NaN;
+  }
+  return axis.lowerIsBetter ? Math.min(...finite) : Math.max(...finite);
+}
+
 /**
- * P2 — one polyline per model across three normalized axes, the companion that shows a trade-off as
- * a crossing rather than as two rankings held in the head.
+ * P2 — model profiles as small multiples: one tile per model, its three-axis profile in its
+ * provider's hue over every other model in thin gray, on scales every tile shares, under a dotted
+ * *Ideal* line at the better end of every axis. Each tile's dip away from that line is what the
+ * model gives up; no model is best everywhere is the point the figure shows.
  *
- * It carries no error bars, deliberately: a normalized axis cannot express an interval honestly, so
- * this is explicitly a shape view and P1 above it remains the figure that carries the units.
+ * The model's own values are printed on its points and its intelligence carries its 95 % interval.
  */
 export function buildProfilePlot(
   plotted: readonly ModelComparisonEntry[],
   options: ProfileOptions,
-): ChartSpec<'line', (number | null)[], string> {
-  const { context, glyphs, reducedMotion, highlightedKey, selectedKeys } = options;
+): ProfileFigure {
+  const { context, reducedMotion, highlightedKey, selectedKeys } = options;
   const theme = themeOf(options);
   const normalization = prepareProfile(plotted, {
     context,
@@ -2992,97 +3262,181 @@ export function buildProfilePlot(
     costMeasure: options.costMeasure,
     numbers: (options.style ?? DEFAULT_FIGURE_STYLE).numbers,
   });
+  const { axes, rows, formats } = normalization;
 
   const emphasised = new Set<string>(selectedKeys ?? []);
   if (highlightedKey) {
     emphasised.add(highlightedKey);
   }
-  const hasEmphasis = emphasised.size > 0;
-  // Eight equally coloured polylines is the failure this form is notorious for. Emphasis is the
-  // remedy; categorical hues are only legible here when at most three models are selected.
-  const categoricalEmphasis = hasEmphasis && emphasised.size <= theme.chart.categorical.length;
 
-  const datasets = normalization.rows.map((row) => {
-    const glyph = glyphFor(glyphs, row.key);
-    const isEmphasised = emphasised.has(row.key);
-    const colour = !hasEmphasis
-      ? theme.chart.deEmphasisStroke
-      : isEmphasised
-        ? categoricalEmphasis
-          ? glyph.hue
-          : theme.chart.accent
-        : theme.chart.deEmphasisStroke;
-    return {
+  const qualityAxis = axes[0];
+  const qualitySpan = qualityAxis.domainMax - qualityAxis.domainMin;
+  const axisLabels: (string | string[])[] = axes.map((axis) => {
+    const split = splitAxisTitle(axis.title);
+    return split ? [...split] : axis.title;
+  });
+  const fontFamily = theme.fonts.chartStack ?? LATO_STACK;
+  const tickSize = 10;
+
+  const tiles: ProfileTileConfig[] = plotted.map((entry, tileIndex) => {
+    const row = rows[tileIndex];
+    const hue = providerHue(entry.provider, theme);
+    const halfWidth = drawnWhisker(entry.intelligenceIndexCi95HalfWidth);
+    const ownPoints: ErrorBarPoint[] = row.values.map((value, i) => ({
+      x: i,
+      y: value,
+      ...(i === 0 && halfWidth > 0 && qualitySpan > 0
+        ? { yErrLow: halfWidth / qualitySpan, yErrHigh: halfWidth / qualitySpan }
+        : {}),
+    }));
+    const own = {
       label: row.label,
-      data: [...row.values],
-      borderColor: colour,
-      backgroundColor: colour,
-      borderWidth: isEmphasised ? 3 : 2,
-      pointStyle: glyph.shape,
-      pointRadius: POINT_RADIUS - 2,
-      pointHoverRadius: POINT_HOVER_RADIUS - 2,
+      data: ownPoints,
+      borderColor: hue,
+      backgroundColor: hue,
+      borderWidth: 2.5,
+      pointRadius: PROFILE_MARKER_RADIUS,
+      pointHoverRadius: PROFILE_MARKER_RADIUS + 1,
       pointHitRadius: POINT_HIT_RADIUS,
+      pointBackgroundColor: hue,
       pointBorderColor: theme.chart.surface,
-      pointBorderWidth: 2,
+      pointBorderWidth: PROFILE_MARKER_RING,
       borderCapStyle: 'round' as const,
       borderJoinStyle: 'round' as const,
       fill: false,
       tension: 0,
+      order: 0,
     };
-  });
+    const ideal = {
+      label: PROFILE_IDEAL_LABEL,
+      data: axes.map(() => 1),
+      borderColor: theme.chart.accent,
+      backgroundColor: theme.chart.accent,
+      borderWidth: 2,
+      borderDash: [...FRONTIER_DASH],
+      borderCapStyle: 'round' as const,
+      pointRadius: 0,
+      pointHoverRadius: 0,
+      pointHitRadius: 0,
+      fill: false,
+      tension: 0,
+      order: 1,
+    };
+    const others = rows
+      .filter((other) => other.key !== row.key)
+      .map((other) => ({
+        label: other.label,
+        data: other.values.map((value): number | null => (Number.isFinite(value) ? value : null)),
+        borderColor: theme.chart.deEmphasisStroke,
+        backgroundColor: theme.chart.deEmphasisStroke,
+        borderWidth: 1,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        pointHitRadius: 0,
+        fill: false,
+        tension: 0,
+        order: 2,
+      }));
 
-  const config: ChartConfiguration<'line', (number | null)[], string> = {
-    type: 'line',
-    data: {
-      labels: normalization.axes.map((a) => a.title),
-      datasets,
-    },
-    options: {
-      ...baseOptions(reducedMotion),
-      scales: {
-        x: {
-          type: 'category',
-          grid: gridOptions(true, theme),
-          border: { color: theme.chart.baseline },
-          ticks: { ...tickOptions(11, theme), color: theme.chart.inkSecondary },
+    const tileOptions: ProfileTilePluginOptions = {
+      title: entry.label,
+      dotColor: hue,
+      values: row.raw.map((value, i) => (Number.isFinite(value) ? formats[i](value) : null)),
+      ...(tileIndex === 0 ? { idealLabel: PROFILE_IDEAL_LABEL } : {}),
+      ...(emphasised.has(entry.key) ? { outlineColor: theme.chart.accent } : {}),
+      inkColor: theme.chart.inkPrimary,
+      valueColor: theme.chart.inkSecondary,
+      mutedColor: theme.chart.inkMuted,
+      fontFamily,
+      titleWeight: theme.fonts.headingWeight,
+      fontSizePx: 11,
+    };
+
+    const datasets = [own, ideal, ...others];
+    const config: ProfileTileConfig = {
+      type: 'line',
+      data: { labels: axisLabels, datasets },
+      options: {
+        ...baseOptions(reducedMotion),
+        layout: {
+          padding: { top: PROFILE_TILE_TITLE_BAND + PROFILE_TILE_VALUE_ROOM, right: 6, bottom: 2, left: 6 },
         },
-        y: {
-          type: 'linear',
-          min: 0,
-          max: 1,
-          // The profile has no axis title weight of its own, so its title stays at 400.
-          title: axisTitle(['Normalized, 0-1', 'up is better on every axis'], undefined, 12, { theme }),
-          grid: gridOptions(true, theme),
-          border: { color: theme.chart.baseline },
-          // The tick values carry no absolute meaning, so only the two ends are labelled.
-          ticks: { ...tickOptions(11, theme), callback: (value) => (Number(value) === 0 || Number(value) === 1 ? String(value) : '') },
-        },
-      },
-      plugins: {
-        legend: {
-          display: true,
-          position: 'bottom',
-          labels: { color: theme.chart.inkSecondary, usePointStyle: true, ...legendFont(theme) },
-        },
-        tooltip: {
-          ...TOOLTIP_STYLE,
-          callbacks: {
-            // Real values, not the normalized ones: the plot is a shape, the tooltip is the record.
-            label: (item) => {
-              const row = normalization.rows[item.datasetIndex];
-              const axis = normalization.axes[item.dataIndex];
-              const format = normalization.formats[item.dataIndex];
-              if (!row || !axis || !format) {
-                return '';
-              }
-              return `${row.label} — ${axis.title}: ${format(row.raw[item.dataIndex])}`;
-            },
+        scales: {
+          x: {
+            type: 'category',
+            // Half a category of room at each end, so the end points and their values are not cut.
+            offset: true,
+            // One vertical rule through each axis, not between them.
+            grid: { ...gridOptions(true, theme), offset: false },
+            border: { display: false },
+            ticks: { ...tickOptions(tickSize, theme), color: theme.chart.inkSecondary, maxRotation: 0, autoSkip: false },
+          },
+          y: {
+            type: 'linear',
+            // A little past 0 and 1, so a marker at either end is drawn whole.
+            min: -0.08,
+            max: 1.08,
+            display: false,
           },
         },
-        datalabels: { display: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            ...TOOLTIP_STYLE,
+            filter: (item) => item.datasetIndex === 0,
+            callbacks: {
+              // Real values, not the heights: the plot is a shape, the tooltip is the record.
+              label: (item) => {
+                const axis = axes[item.dataIndex];
+                const format = formats[item.dataIndex];
+                const value = row.raw[item.dataIndex];
+                if (!axis || !format || !Number.isFinite(value)) {
+                  return '';
+                }
+                return `${row.label} — ${axis.title}: ${format(value)}`;
+              },
+            },
+          },
+          datalabels: { display: false },
+          ...errorBarOptions(theme),
+          ...({ [profileTilePlugin.id]: tileOptions }),
+        },
       },
-    },
-  };
+    };
+    return config;
+  });
+
+  // The profile's highlight: the model that is best on every axis, which is rarely any.
+  const best = axes.map((axis, i) => bestRaw(axis, rows, i));
+  const bestEverywhere = rows.find((row) =>
+    row.raw.every((value, i) => Number.isFinite(value) && Number.isFinite(best[i]) && value === best[i]));
+  const highlight = rows.length === 0
+    ? ''
+    : bestEverywhere
+      ? `${bestEverywhere.label} is best on every axis.`
+      : 'No model is best on every axis.';
+
+  const key: FigureKeyItem[] = [
+    { glyph: 'ideal', text: 'Ideal: best on every axis', color: theme.chart.accent },
+    ...(rows.length > 1 ? [{ glyph: 'other', text: 'Other models' } satisfies FigureKeyItem] : []),
+    ...(plotted.some((entry) => drawnWhisker(entry.intelligenceIndexCi95HalfWidth) > 0)
+      ? [{ glyph: 'interval', text: '95 % interval' } satisfies FigureKeyItem]
+      : []),
+    ...providerKeyItems(plotted, theme),
+  ];
+
+  const logNote = options.speedMeasure === 'speedIndex'
+    ? 'Cost uses a log scale: equal steps are equal ratios.'
+    : 'Speed and cost use log scales: equal steps are equal ratios.';
+  const ranges = axes
+    .filter((axis) => rows.some((row) => Number.isFinite(row.raw[PROFILE_AXIS_ORDER.indexOf(axis.id)])))
+    .map((axis, i) => {
+      const noun = i === 0 ? axis.noun.charAt(0).toUpperCase() + axis.noun.slice(1) : axis.noun;
+      return axis.minLabel === axis.maxLabel
+        ? `${noun} ${axis.minLabel}${axis.suffix}`
+        : `${noun} ${axis.minLabel}–${axis.maxLabel}${axis.suffix}`;
+    })
+    .join(' · ');
 
   const title = 'Model profiles';
   const chrome: FigureChrome = {
@@ -3092,16 +3446,12 @@ export function buildProfilePlot(
       (options.style ?? DEFAULT_FIGURE_STYLE).profile.hiddenBadges,
     ),
     detail: pricingNote(context.pricingBasis),
-    key: [],
-    highlight: '',
+    key,
+    highlight,
     notes: [
       ...warningNotes(degradedNotices(plotted, ['speed', 'cost'])),
-      {
-        text:
-          'Normalized view: compare shapes and crossings, not values. Up is better on every axis; ' +
-          'real ranges are listed below the plot.',
-        tone: 'info',
-      },
+      { text: logNote, tone: 'info' },
+      ...(ranges === '' ? [] : [{ text: ranges, tone: 'info' } satisfies FigureNote]),
     ],
   };
 
@@ -3109,9 +3459,10 @@ export function buildProfilePlot(
     id: 'p2-profile',
     title,
     chrome,
-    config,
-    // No error-bar plugin here, by design.
-    plugins: [],
+    tiles,
+    plugins: [errorBarPlugin, profileTilePlugin],
+    columns: profileColumns(tiles.length),
+    descriptions: normalization.descriptions,
   };
 }
 
@@ -3126,7 +3477,7 @@ export interface ComparisonFigureSet {
   readonly qualityCost: ChartSpec<'scatter', ErrorBarPoint[]>;
   readonly speedCost: ChartSpec<'scatter', ErrorBarPoint[]>;
   readonly smallMultiples: SmallMultiplesFigure;
-  readonly profile: ChartSpec<'line', (number | null)[], string>;
+  readonly profile: ProfileFigure;
 }
 
 export interface FigureSetOptions {
@@ -3166,7 +3517,7 @@ export function buildComparisonFigures(
   const reducedMotion = options.reducedMotion ?? false;
   const theme = options.theme ?? resolveFigureTheme(options.style?.appearance);
 
-  const glyphs = buildIdentityGlyphs(options.glyphSource ?? entries, theme.chart.categorical);
+  const glyphs = buildIdentityGlyphs(options.glyphSource ?? entries, theme.chart.categorical, theme.chart.deEmphasisStroke);
   const selection = selectPlottedEntries(entries, sort, speedMeasure, costMeasure, context);
 
   const figureOptions: FigureOptions = {

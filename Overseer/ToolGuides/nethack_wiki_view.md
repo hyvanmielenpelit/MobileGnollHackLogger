@@ -5,7 +5,8 @@ a specific section.
 Use the `section` parameter to retrieve only a specific section heading (e.g., "Strategy",
 "Generation", "Variants") to reduce response size. A section request may be the heading's
 exact text, its text without a leading symbol, or a phrase that appears in exactly one heading.
-When no heading matches, the reply names every heading in the article.
+When no heading matches, the reply names every heading in the article and then shows the article,
+only its start when the whole would exceed the result cap, so call again with one of those headings.
 
 If you don't know the exact article title, use nethack_wiki_search first to find relevant
 articles, then use this tool to read the full content.

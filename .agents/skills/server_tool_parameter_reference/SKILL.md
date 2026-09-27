@@ -202,6 +202,32 @@ file of either repository:
   the miss payload and never with `filenames_only: true` — and places it first when the result would
   push it past `ToolExecutor`'s cap, as the definition pointer does.
 
+**The reachability note, from harness 41 (the runs 68–72 round, 2026-09-27).** For the **GnollHack
+repository only**, the same three tools add at most one line
+*"[Not reachable: <name>() has no live call site in the indexed source, so the game never runs it.]"*
+(at most 300 characters, built by `Overseer/Services/Tools/SourceReachabilityNote.cs`) when the result
+shows the column-0 definition of a function that `SourceLivenessIndex.IsLive` reports as false:
+
+- **`get_function_definition`**: the definition must be among the first five rows of the result's range
+  and carry the header's name; the note follows the body and any `[Not compiled: …]` line, ahead of a
+  truncation notice, and goes first when the body plus 308 characters would pass the cap. A "start_line
+  is outside this definition" error result gets none.
+- **`source_code_view`**: checks the numbered lines shown (at most five distinct definitions) and holds
+  308 more characters back from its excerpt budget; the note follows the hint and `[Not compiled: …]`.
+- **`source_code_search`**: checks `>>>`-marked lines only (at most five definitions), and appends the
+  note or puts it first when appending would pass the cap.
+
+`SourceLivenessIndex` (a singleton, `Overseer/Services/SourceLivenessIndex.cs`, shared with the
+benchmark's citation liveness check) counts a `name(` call or a value reference (a function pointer
+passed or stored) outside comments, string and character literals and `#if 0` regions, and outside
+the function's own definition, its prototypes and a `#define` of it. It searches the source indexer's
+C files (`src/`, `include/`, `win/win32/xpl/`, the indexer's exclusions and size limit) and, **as
+references only**, the port sources under `win/` and `sys/` (`.c`, `.h`, `.cpp`, `.m`, `.mm`), so a
+window-procedure table or a platform `main` is a caller. It rebuilds when the repository root or HEAD
+moves, memoizes each name, and returns null — no note — while the index is not ready or on any
+failure. A function reached only through a macro that builds its name gets a wrong note. On the
+2026-09-27 HEAD it flags 121 of about 6,100 column-0 definitions in `src/`.
+
 A region is opened only by a literal `#if 0` (whitespace-tolerant, `# if 0` included) and ends at its
 matching `#endif`, `#else` or `#elif`; nesting is tracked across every `#if`, `#ifdef` and `#ifndef`,
 and the scan starts at the top of the file, so a range that begins inside a region is recognised. No
@@ -627,6 +653,23 @@ be copied straight back, `; `-separated and capped at 600 characters with a trai
 An article with no headings at all keeps the original
 `[Section 'X' not found in article. Returning full text.]`. A run recorded before the run-33 round
 carries that original line on every `nethack_wiki_view` section miss, whatever the article.
+
+**A section miss on an article longer than the cap is capped, from the runs 68–72 round (harness
+41).** When the section missed and the rendered result (the `--- <path> ---` header, the marker line
+and the article) is longer than `MaxResultLength` — less the spoiler-free suffix, and for
+`nethack_wiki_view` less its `[No NetHack wiki article titled …]` resolution line — the marker line keeps
+its heading list and ends differently:
+
+```
+[Section 'X' not found in article. Headings: …. Showing the first M of N characters; call wiki_view again with one of the headings above as section.]
+```
+
+(`nethack_wiki_view` names itself; an article with no headings ends *"Showing the first M of N
+characters.]"*). One newline and the article's first `M` characters follow, `M` fitted by the same
+fixed point as the headings line below so the result lands at exactly the cap, with **no** `[Truncated:`
+suffix; `N` is the article's length without its header. Under the cap nothing changes. The benchmark
+classifier's facet `SectionMiss` matches the marker (after an optional resolution line and header) on
+either tool, and the tool-call log notes it `section miss` — never `miss`, because the article exists.
 
 **A `wiki_view` without a `section` whose rendered article is longer than the cap begins with a
 headings line, from the runs 66 and 67 round (harness 39).** When the rendered article (its

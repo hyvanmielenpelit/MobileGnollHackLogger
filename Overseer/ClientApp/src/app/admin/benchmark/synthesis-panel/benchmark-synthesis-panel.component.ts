@@ -139,11 +139,27 @@ export class BenchmarkSynthesisPanelComponent {
     return (questions ?? []).map(q => `Q${q}`).join(', ');
   }
 
+  /** A conflicting row names both kinds, member A's first: `Strength (A) / Weakness (B)`. */
+  rowKindLabel(row: BenchmarkSynthesisConvergenceRowDto): string {
+    if (row.status !== 'Conflicting') {
+      return this.kindLabel(row.kind);
+    }
+    const k = (row.kind ?? '').toLowerCase();
+    const opposite = k === 'strength' ? 'weakness' : k === 'weakness' ? 'strength' : row.kind;
+    return `${this.kindLabel(row.kind)} (A) / ${this.kindLabel(opposite)} (B)`;
+  }
+
+  /** `Q1, Q4`, or `Run-wide` when the row names no question. */
+  rowQuestionsLabel(row: BenchmarkSynthesisConvergenceRowDto): string {
+    return (row.questions ?? []).length > 0 ? this.questionsLabel(row.questions) : 'Run-wide';
+  }
+
   statusLabel(status: string | null | undefined): string {
     switch (status) {
       case 'Convergent': return 'Both members';
       case 'MemberAOnly': return 'Member A only';
       case 'MemberBOnly': return 'Member B only';
+      case 'Conflicting': return 'Members disagree';
       default: return status ?? '';
     }
   }
@@ -153,6 +169,7 @@ export class BenchmarkSynthesisPanelComponent {
       case 'Convergent': return 'convergence-both';
       case 'MemberAOnly': return 'convergence-a';
       case 'MemberBOnly': return 'convergence-b';
+      case 'Conflicting': return 'convergence-conflicting';
       default: return '';
     }
   }
@@ -163,7 +180,9 @@ export class BenchmarkSynthesisPanelComponent {
       return '';
     }
     const count = (status: string) => rows.filter(r => r.status === status).length;
+    const conflicting = count('Conflicting');
     return `${count('Convergent')} convergent, ${count('MemberAOnly')} raised by member A only, `
-      + `${count('MemberBOnly')} by member B only.`;
+      + `${count('MemberBOnly')} by member B only`
+      + (conflicting > 0 ? `, ${conflicting} where the members disagree.` : '.');
   }
 }

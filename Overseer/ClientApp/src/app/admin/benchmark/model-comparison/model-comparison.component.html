@@ -310,8 +310,8 @@
                           </td>
                           <th scope="row" class="mc-models-name">
                             @if (glyph(row.key); as g) {
-                              <span [class]="'mc-glyph mc-glyph-' + g.shape"
-                                    [style.background-color]="g.hue" aria-hidden="true"></span>
+                              <span [class]="'mc-glyph mc-glyph-provider-' + g.provider"
+                                    aria-hidden="true"></span>
                             }
                             <span class="mc-model-label">{{ row.name }}</span>
                             @if (row.thinkingLevel) {
@@ -455,8 +455,8 @@
                     <ng-template #customOrderItem let-item>
                       @if (customOrderEntry(item.key); as entry) {
                         @if (glyph(entry.key); as g) {
-                          <span [class]="'mc-glyph mc-glyph-' + g.shape"
-                                [style.background-color]="g.hue" aria-hidden="true"></span>
+                          <span [class]="'mc-glyph mc-glyph-provider-' + g.provider"
+                                aria-hidden="true"></span>
                         }
                         <span class="mc-model-label">{{ entry.modelDisplayName || entry.label }}</span>
                         @if (entry.thinkingLevel) {
@@ -857,18 +857,15 @@
                     }
                   </div>
 
-                  <!-- The profile's real axis endpoints, which the normalized plot does not print, as the
-                       profile tile's description. -->
+                  <!-- The profile tile's description: one entry per model, its three values and its
+                       weakest axis. -->
                   @if (profileCard; as profile) {
                     @if (profileAxes) {
-                      <dl class="mc-axis-ends visually-hidden" [id]="profile.id + '-axis-ends'">
-                        @for (axis of profileAxes.axes; track axis.id) {
-                          <div>
-                            <dt>{{ axis.title }}</dt>
-                            <dd>{{ axis.minLabel }} to {{ axis.maxLabel }}{{ axis.lowerIsBetter ? ' (inverted: lower is better)' : '' }}</dd>
-                          </div>
+                      <ul class="mc-axis-ends visually-hidden" [id]="profile.id + '-axis-ends'">
+                        @for (line of profileAxes.descriptions; track line.key) {
+                          <li>{{ line.text }}</li>
                         }
-                      </dl>
+                      </ul>
                     }
                   }
                   <p id="mc-all-hint" class="visually-hidden">Every figure as it downloads. Plus and minus zoom
@@ -889,7 +886,7 @@
                        slider's. Zoom and position are this view's alone and never reach an export. -->
                   <div class="mc-preview-toolbar">
                     @if (effectiveFigureTab === 'single') {
-                      <div class="mc-preview-group" role="group" aria-label="Figure">
+                      <div class="mc-preview-group mc-preview-figure-group" role="group" aria-label="Figure">
                         <button type="button" class="action-btn" aria-label="Previous figure"
                                 interestfor="mc-tip-fig-prev" style="anchor-name: --mc-tip-fig-prev"
                                 (click)="previewPrevious()">
@@ -1183,8 +1180,8 @@
                                           <div class="mc-model-cell">
                                             <div class="mc-model-row">
                                               @if (glyph(entry.key); as g) {
-                                                <span [class]="'mc-glyph mc-glyph-' + g.shape"
-                                                      [style.background-color]="g.hue" aria-hidden="true"></span>
+                                                <span [class]="'mc-glyph mc-glyph-provider-' + g.provider"
+                                                      aria-hidden="true"></span>
                                               }
                                               <span class="mc-model-name">{{ entry.modelDisplayName || entry.label }}</span>
                                               @if (entry.thinkingLevel && !isColumnShown('thinkingLevel')) {

@@ -2779,6 +2779,151 @@ describe('AdminBenchmarkComponent', () => {
       component.closeRunProgressDialog();
     });
 
+    it('should open the run progress dialog full-screen', () => {
+      fixture.detectChanges();
+      const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog') as HTMLElement;
+      expect(dialog).toBeTruthy();
+      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBeTrue();
+    });
+
+    it('should put the question list in its own section and everything else before it', () => {
+      component.activeRunDetail = buildRun({
+        status: 'Completed',
+        completedAtUtc: '2026-09-02T00:05:00Z',
+        answers: [buildAnswer(1), buildAnswer(2)]
+      });
+      fixture.detectChanges();
+
+      const body = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-body') as HTMLElement;
+      const sections = Array.from(body.children) as HTMLElement[];
+      expect(sections.map(s => s.tagName)).toEqual(['SECTION', 'SECTION']);
+      const [overview, questions] = sections;
+      expect(overview.classList.contains('run-progress-overview')).toBeTrue();
+      expect(questions.classList.contains('run-progress-questions')).toBeTrue();
+
+      // The overview keeps everything but the question list, in its order.
+      for (const selector of ['.progress-heading', '.run-model-strip', '.run-stage-rail', '.job-progress-block',
+        '.run-stat-strip', 'app-benchmark-cost-panel', '.job-diagnostics']) {
+        expect(overview.querySelector(selector)).withContext(selector).toBeTruthy();
+      }
+      expect(overview.querySelector('.run-question-list')).toBeNull();
+      expect(overview.querySelector('[role="status"][aria-live="polite"].progress-status')).toBeTruthy();
+
+      // The heading stays the first focusable element of the body and the focus target.
+      expect(body.querySelector('[tabindex]')?.classList.contains('progress-heading')).toBeTrue();
+
+      expect(questions.getAttribute('aria-labelledby')).toBe('runProgressQuestionsTitle');
+      expect(questions.getAttribute('tabindex')).toBe('0');
+      const title = questions.querySelector('h4#runProgressQuestionsTitle') as HTMLElement;
+      expect(title.textContent?.replace(/\s+/g, ' ').trim()).toBe('Questions 2');
+      expect(questions.querySelectorAll('.run-question-list .job-item-row').length).toBe(2);
+    });
+
+    describe('layout by width', () => {
+      let dialog: HTMLDialogElement;
+
+      function openAtWidth(width: string): HTMLElement {
+        component.activeRunDetail = buildRun({ answers: [buildAnswer(1), buildAnswer(2)] });
+        fixture.detectChanges();
+        dialog = component.runProgressDialog.nativeElement as HTMLDialogElement;
+        dialog.style.width = width;
+        dialog.style.maxWidth = width;
+        dialog.showModal();
+        return dialog.querySelector('.dialog-body') as HTMLElement;
+      }
+
+      afterEach(() => {
+        if (dialog?.open) dialog.close();
+        dialog?.style.removeProperty('width');
+        dialog?.style.removeProperty('max-width');
+      });
+
+      it('should lay the dialog out in two columns when the body is wide', () => {
+        const body = openAtWidth('1400px');
+
+        const style = getComputedStyle(body);
+        expect(style.display).toBe('grid');
+        expect(style.gridTemplateColumns.trim().split(/\s+/).length).toBe(2);
+        const questions = body.querySelector('.run-progress-questions') as HTMLElement;
+        expect(getComputedStyle(questions).overflowY).toBe('auto');
+        expect(getComputedStyle(body.querySelector('.run-progress-overview') as HTMLElement).overflowY).toBe('auto');
+      });
+
+      it('should keep one column when narrow', () => {
+        const body = openAtWidth('700px');
+
+        const style = getComputedStyle(body);
+        expect(style.display).not.toBe('grid');
+        expect(style.overflowY).toBe('auto');
+        const questions = body.querySelector('.run-progress-questions') as HTMLElement;
+        expect(getComputedStyle(questions).overflowY).toBe('visible');
+      });
+    });
+
+    it('should show the published score on a scored question row', () => {
+      component.activeRunDetail = buildRun({
+        answers: [
+          buildAnswer(1, { qualityScore: 83 }),
+          buildAnswer(2, { assessmentStatus: 'Pending', qualityScore: null })
+        ]
+      });
+      fixture.detectChanges();
+
+      const rows = Array.from(fixture.nativeElement.querySelectorAll('.run-question-list .job-item-row')) as HTMLElement[];
+      const score = rows[0].querySelector('.job-item-score') as HTMLElement;
+      expect(score.textContent?.trim()).toBe('Score 83');
+      expect(score.querySelector('.visually-hidden')?.textContent).toBe('Score ');
+      // Before the status chip.
+      expect(score.nextElementSibling?.classList.contains('job-status-chip')).toBeTrue();
+      expect(rows[1].querySelector('.job-item-score')).toBeNull();
+    });
+
+    it('should show the panel score on a panel run\'s question row, and none until both members have scored', () => {
+      component.activeRunDetail = buildRun({
+        isPanelRun: true,
+        answers: [
+          buildAnswer(1, { qualityScore: 90, panelQualityScore: 82.5 }),
+          buildAnswer(2, { qualityScore: 70, panelQualityScore: null })
+        ]
+      });
+      fixture.detectChanges();
+
+      const panelRows = Array.from(fixture.nativeElement.querySelectorAll('.run-question-list .job-item-row')) as HTMLElement[];
+      expect(panelRows[0].querySelector('.job-item-score')?.textContent?.trim()).toBe('Score 82.5');
+      expect(panelRows[1].querySelector('.job-item-score')).toBeNull();
+    });
+
+    it('should point the re-run badge at the Questions column', () => {
+      component.rerunScopeOrderIndexes = [2];
+      component.activeRunDetail = buildRun({ answers: [buildAnswer(1), buildAnswer(2)] });
+      fixture.detectChanges();
+
+      const badge = fixture.nativeElement.querySelector('.rerun-scope-badge') as HTMLElement;
+      expect(badge.textContent?.replace(/\s+/g, ' ')).toContain('Every question of the suite is listed under Questions; the re-run ones are marked.');
+      expect(badge.querySelector('strong')?.textContent).toBe('Questions');
+    });
+
+    it('should name the assessor in the active run banner', () => {
+      component.activeSubTab = 'run';
+      component.activeRunDetail = buildRun({ answers: [] });
+      fixture.detectChanges();
+      const bannerText = ((fixture.nativeElement.querySelector('.active-run-banner') as HTMLElement).textContent || '')
+        .replace(/\s+/g, ' ');
+
+      expect(bannerText).toContain('Assessor: Test Assessor');
+      expect(bannerText).not.toContain('Evaluator');
+    });
+
+    it('should name both assessors of a panel in the active run banner', () => {
+      component.activeSubTab = 'run';
+      component.activeRunDetail = buildRun({ answers: [], isPanelRun: true, coAssessorModelDisplayNameUsed: 'Co Assessor' });
+      fixture.detectChanges();
+      const bannerText = ((fixture.nativeElement.querySelector('.active-run-banner') as HTMLElement).textContent || '')
+        .replace(/\s+/g, ' ');
+
+      expect(bannerText).toContain('Assessors: Test Assessor + Co Assessor');
+    });
+
     it('should give benchmark dialog content no padding of its own', () => {
       spyOn(component.runProgressDialog.nativeElement, 'showModal');
       spyOn(component.runProgressDialog.nativeElement, 'close');
@@ -3444,6 +3589,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(subtitle.textContent).toContain('Default Suite');
       expect(subtitle.textContent).not.toContain('Model:');
       expect(subtitle.textContent).not.toContain('Evaluator:');
+      expect(subtitle.textContent).not.toContain('Assessor:');
     });
 
     it('should render Cancel Run as a text-only button', () => {
@@ -4226,7 +4372,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(dds.length).toBe(2);
       expect(dts[0].textContent?.trim()).toBe('Model under test');
       expect(dds[0].textContent).toContain('Gemini 3.7 Flash');
-      expect(dts[1].textContent?.trim()).toBe('Evaluator');
+      expect(dts[1].textContent?.trim()).toBe('Assessor');
       expect(dds[1].textContent).toContain('GPT-5.6 Luna');
 
       // The alignment itself comes from the grid CSS (max-content / minmax(0, 1fr)),
@@ -4286,7 +4432,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(dds[endpointIndex].textContent).toContain('custom (contoso.example; fingerprint ab12cd34)');
     });
 
-    it('should render second opinion assessor row under Evaluator with selected mode when configured', () => {
+    it('should render second opinion assessor row under Assessor with selected mode when configured', () => {
       component.activeRunDetail = {
         id: 42,
         status: 'Running',
@@ -4320,7 +4466,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(dts.length).toBe(3);
       expect(dds.length).toBe(3);
       expect(dts[0].textContent?.trim()).toBe('Model under test');
-      expect(dts[1].textContent?.trim()).toBe('Evaluator');
+      expect(dts[1].textContent?.trim()).toBe('Assessor');
       expect(dts[2].textContent?.trim()).toBe('Second reader');
 
       expect(dds[2].textContent).toContain('Claude Opus 5');
@@ -4359,7 +4505,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(rows.length).toBe(2);
     });
 
-    it('should add a Co-assessor row after Evaluator and call the second opinion the reference reader in a panel run', () => {
+    it('should add a Co-assessor row after Assessor and call the second opinion the reference reader in a panel run', () => {
       component.activeRunDetail = {
         id: 42,
         status: 'Running',
@@ -4388,7 +4534,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const strip = fixture.nativeElement.querySelector('.run-model-strip');
       const dts = Array.from(strip.querySelectorAll('dt')) as HTMLElement[];
-      expect(dts.map(dt => dt.textContent?.trim())).toEqual(['Model under test', 'Evaluator', 'Co-assessor', 'Reference reader']);
+      expect(dts.map(dt => dt.textContent?.trim())).toEqual(['Model under test', 'Assessor', 'Co-assessor', 'Reference reader']);
 
       const dds = strip.querySelectorAll('dd');
       expect(dds[2].textContent).toContain('Claude Opus 4');
@@ -5079,6 +5225,27 @@ describe('AdminBenchmarkComponent', () => {
       expect(box.querySelector('.claim-roles-note')).toBeTruthy();
     });
 
+    it('should name the panel member who submitted each checked entry', () => {
+      const box = renderClaimVerifications(JSON.stringify([
+        { claimIndex: 0, claim: 'Quoted as critical', verdict: 'Supported', citation: 'src/a.c', basis: 'True.', roles: ['criticalErrorQuote'], raisedBy: ['A'] },
+        { claimIndex: 1, claim: 'Charged as false', verdict: 'Supported', citation: 'src/b.c', basis: 'True.', roles: ['accusedQuote'], raisedBy: ['B'] },
+        { claimIndex: 2, claim: 'Basis', verdict: 'Refuted', citation: 'src/c.c', basis: 'False.', roles: ['outOfRubricBasis'], raisedBy: ['A', 'B'] },
+        { claimIndex: 3, claim: 'Own claim', verdict: 'Indeterminate', citation: null, basis: 'Unknown.', roles: ['unverifiedClaim'], raisedBy: ['A'] }
+      ]));
+
+      const items: HTMLElement[] = Array.from(box.querySelectorAll('.claim-verification-item'));
+      const labelsOf = (item: HTMLElement) =>
+        Array.from(item.querySelectorAll('.claim-role-label')).map(l => (l.textContent || '').trim());
+      expect(labelsOf(items[0])).toEqual(['(critical-error quote from member A)']);
+      expect(labelsOf(items[1])).toEqual(['(sentence member B charged as false)']);
+      expect(labelsOf(items[2])).toEqual(['(out-of-rubric basis from both members)']);
+      expect(labelsOf(items[3])).toEqual([]);
+
+      // Without raisedBy, a single-assessor run's labels are unchanged.
+      expect(component.claimRoleLabels(['criticalErrorQuote', 'outOfRubricBasis', 'accusedQuote']))
+        .toEqual(['critical-error quote', 'out-of-rubric basis', 'sentence the assessor charged as false']);
+    });
+
     it('should render a legacy verification record without roles and without labels', () => {
       const box = renderClaimVerifications(JSON.stringify([
         { claimIndex: 0, claim: 'Claim 1', verdict: 'Supported', citation: 'src/a.c', basis: 'Valid.' }
@@ -5527,21 +5694,109 @@ describe('AdminBenchmarkComponent', () => {
         secondOpinionModeUsed: 3,
         boardDelivery: [
           { role: 'assessor', delivered: 18, total: 18, missingQuestions: [] },
+          { role: 'co-assessor', delivered: 18, total: 18, missingQuestions: [] },
           { role: 'reference reader', delivered: 18, total: 18, missingQuestions: [] },
           { role: 'claim verifier', delivered: 9, total: 9, missingQuestions: [] }
         ]
       });
       const text = component.runDiagnosticsText;
 
+      expect(text).toContain('Reference reader: Claude Opus 5 (Anthropic / claude-opus-5)');
+      expect(text).not.toContain('Second:');
       expect(text).toContain('Reference reader: mode All');
       expect(text).toContain('reference reader now:');
-      expect(text).toContain('Board delivered — assessor 18 of 18 graded, reference reader 18 of 18, claim verifier 9 of 9');
+      expect(text).toContain('Answers with verified claims: 0, reference-read 2');
+      expect(text).not.toContain('second-graded');
+      expect(text).toContain('reference reader vs panel: 4.3 mean abs delta');
+      expect(text).not.toMatch(/^agreement:/m);
+      expect(text).toContain('sameProviderAcknowledged=n/a (panel run)');
+      expect(text).toContain('Board delivered — assessor 18 of 18 graded, co-assessor 18 of 18, reference reader 18 of 18, claim verifier 9 of 9');
       expect(text).not.toMatch(/second opinion/i);
       expect(text).not.toContain('second reader');
 
       component.activeRunDetail = buildDiagnosticsRun({ secondOpinionModeUsed: 3 });
-      expect(component.runDiagnosticsText).toContain('Second reader: mode All');
-      expect(component.runDiagnosticsText).toContain('second reader now:');
+      const single = component.runDiagnosticsText;
+      expect(single).toContain('Second reader: mode All');
+      expect(single).toContain('second reader now:');
+      expect(single).toContain('Second:   Claude Opus 5');
+      expect(single).toContain('Answers with verified claims: 0, second-graded 2');
+      expect(single).toContain('agreement: 4.3 mean abs delta');
+      expect(single).toContain('sameProviderAcknowledged=false');
+    });
+
+    it('should print the panel line and member B\'s per-question figures', () => {
+      const run = buildDiagnosticsRun({
+        isPanelRun: true,
+        coAssessorFinalScore: 88,
+        assessorOnlyQualityIndex: 93,
+        coAssessorOnlyQualityIndex: 90,
+        panelMeanAbsDelta: 6.2,
+        panelMeanSignedDelta: -3.5,
+        panelIntraclassCorrelation: 0.8123,
+        panelDisagreementCount: 1,
+        panelCriticalErrorSplitCount: 0
+      });
+      run.answers[0] = {
+        ...run.answers[0],
+        panelQualityScore: 72.5,
+        coAssessmentQualityScore: 85,
+        coAssessmentJson: JSON.stringify({
+          accuracyLevel: 5, completenessLevel: 4, concisenessLevel: 6, readabilityLevel: 5,
+          unverifiedClaims: ['x'],
+          flags: { contestedVerdict: true, readabilityFormOnly: true }
+        }),
+        assessorBoardChars: 12037,
+        coAssessorBoardChars: 12040,
+        secondOpinionBoardChars: null,
+        verifierBoardChars: 900,
+        claimVerificationJson: JSON.stringify([
+          { claimIndex: 0, claim: 'c1', verdict: 'Supported', roles: ['unverifiedClaim'], raisedBy: ['A'] },
+          { claimIndex: 1, claim: 'c2', verdict: 'Refuted', roles: ['unverifiedClaim'], raisedBy: ['A', 'B'] },
+          { claimIndex: 2, claim: 'c3', verdict: 'Indeterminate', roles: ['unverifiedClaim'], raisedBy: ['B'] },
+          { claimIndex: 3, claim: 'c4', verdict: 'Supported', roles: ['accusedQuote'], raisedBy: ['B'] }
+        ])
+      };
+      run.answers[1] = {
+        ...run.answers[1],
+        panelQualityScore: 98,
+        coAssessmentQualityScore: 97,
+        coAssessmentJson: JSON.stringify({ flags: { contestedVerdict: true } })
+      };
+      component.activeRunDetail = run;
+      const text = component.runDiagnosticsText;
+      const lines = text.split('\n');
+
+      expect(text).toContain('holistic: A 91, B 88, quality index: 94');
+      expect(text).toContain('panel: A-alone 93, B-alone 90, mean |B−A| 6.2, mean B−A −3.5, ICC 0.81, disagreements 1, critical-error splits 0');
+      const advisory = lines.findIndex(l => l.startsWith('advisory flags:'));
+      expect(lines[advisory + 1]).toBe('member B flags: contested verdicts: 2, unevidenced deductions: 0, omission as accuracy: 0, '
+        + 'out-of-rubric accuracy: 0, dimension outliers: 0, completeness out of scope: 0, readability form only: 1, '
+        + 'contested critical errors: 0, contested accuracy deductions: 0');
+      // The union of both members' ordinary claims; the accused sentence is not one.
+      expect(text).toContain('unverified claims: 3 (member A 1, member B 1, both 1)');
+
+      const q1 = lines.find(l => l.startsWith('[Q1]'))!;
+      expect(q1).toContain('panel=72.5 b=85 bLevels=5/4/6/5 band=');
+      expect(q1).toContain('levels=3/4/5/6');
+      expect(q1).toContain('boardChars=12037/12040/-/900');
+      const q2 = lines.find(l => l.startsWith('[Q2]'))!;
+      expect(q2).toContain('panel=98 b=97 band=');
+      expect(q2).not.toContain('bLevels=');
+      expect(q2).not.toContain('boardChars=');
+
+      // Without a verified answer there is no union: each member's recorded count instead.
+      run.answers[0] = { ...run.answers[0], claimVerificationJson: null };
+      component.activeRunDetail = { ...run };
+      expect(component.runDiagnosticsText).toContain('unverified claims: not verified (member A 2, member B 1 recorded)');
+
+      // A single-assessor capture carries none of it.
+      component.activeRunDetail = buildDiagnosticsRun();
+      const single = component.runDiagnosticsText;
+      expect(single).toContain('holistic: 91, quality index: 94');
+      expect(single).not.toContain('panel:');
+      expect(single).not.toContain('member B flags');
+      expect(single).not.toContain('panel=');
+      expect(single).toContain('unverified claims: 2');
     });
 
     it('should append the re-verified stamp when the candidate delivery probe was re-checked before the re-run', () => {

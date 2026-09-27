@@ -12,6 +12,7 @@ namespace Overseer.Services.Tools
         private readonly SourceCodeService _sourceCodeService;
         private readonly NetHackSourceCodeService _netHackService;
         private readonly int _defaultLineCount;
+        private readonly SourceLivenessIndex? _livenessIndex;
 
         public string ToolName => "source_code_view";
         public string Description { get; set; } = "View a section of a GnollHack or NetHack source code file by line range.";
@@ -20,10 +21,11 @@ namespace Overseer.Services.Tools
 
         public JsonElement ParameterSchema { get; }
 
-        public SourceCodeViewTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService, IConfiguration configuration)
+        public SourceCodeViewTool(SourceCodeService sourceCodeService, NetHackSourceCodeService netHackService, IConfiguration configuration, SourceLivenessIndex? livenessIndex = null)
         {
             _sourceCodeService = sourceCodeService;
             _netHackService = netHackService;
+            _livenessIndex = livenessIndex;
             _defaultLineCount = configuration.GetValue<int>("Tools:source_code_view:LineCount", 50);
 
             ParameterSchema = JsonDocument.Parse(@"
@@ -136,15 +138,17 @@ namespace Overseer.Services.Tools
             }
 
             // The excerpt stops one whole line ahead of the cap ToolExecutor applies afterwards, so
-            // the result ends on a line boundary rather than mid-line; the definition pointer's and
-            // the compiled-out note's room is held back from that budget.
+            // the result ends on a line boundary rather than mid-line; the definition pointer's, the
+            // compiled-out note's and the reachability note's room is held back from that budget.
             int maxChars = context.MaxResultLength > 0
-                ? Math.Max(1, context.MaxResultLength - DefinitionHintReserve - CompiledOutNoteReserve)
+                ? Math.Max(1, context.MaxResultLength - DefinitionHintReserve - CompiledOutNoteReserve - ReachabilityNoteReserve)
                 : 0;
 
             var content = service.GetFileExcerpt(file, startLine, lineCount, searchTerm, maxChars: maxChars);
+            string? reachability = SourceReachabilityNote.ForViewResult(content, service is NetHackSourceCodeService ? null : _livenessIndex);
             content = InsertDefinitionHint(content, service is NetHackSourceCodeService ? "nethack" : "gnollhack");
             content = InsertCompiledOutNote(content, service.GetIndexedLines);
+            content = InsertReachabilityNote(content, reachability);
 
             if (context.SpoilerFreeMode)
             {
@@ -159,6 +163,9 @@ namespace Overseer.Services.Tools
 
         /// <summary>Characters held back from the excerpt budget for the compiled-out note and its line breaks.</summary>
         internal const int CompiledOutNoteReserve = SourceCompiledOutNote.MaxLength + 8;
+
+        /// <summary>Characters held back from the excerpt budget for the reachability note and its line breaks.</summary>
+        internal const int ReachabilityNoteReserve = SourceReachabilityNote.MaxLength + 8;
 
         /// <summary>
         /// Adds the <see cref="SourceDefinitionHint"/> pointer after the excerpt's last line, ahead of
@@ -184,6 +191,22 @@ namespace Overseer.Services.Tools
         internal static string InsertCompiledOutNote(string content, Func<string, string[]?> lineLookup)
         {
             string? note = SourceCompiledOutNote.ForViewResult(content, lineLookup);
+            if (note == null) return content;
+
+            string nl = Environment.NewLine;
+            string body = content.TrimEnd();
+            int notice = body.LastIndexOf("\n[Output truncated at line ", StringComparison.Ordinal);
+            return notice >= 0
+                ? body.Substring(0, notice).TrimEnd() + nl + nl + note + nl + body.Substring(notice + 1) + nl
+                : body + nl + nl + note + nl;
+        }
+
+        /// <summary>
+        /// Adds the <see cref="SourceReachabilityNote"/> line after the excerpt's last line and any
+        /// other note, ahead of its <c>[Output truncated at line …]</c> notice when there is one.
+        /// </summary>
+        internal static string InsertReachabilityNote(string content, string? note)
+        {
             if (note == null) return content;
 
             string nl = Environment.NewLine;

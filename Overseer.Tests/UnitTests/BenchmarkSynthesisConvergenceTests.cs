@@ -8,7 +8,7 @@ using Xunit;
 
 /// <summary>
 /// The computed agreement between the two panel members' structured synthesis findings: matched on
-/// kind, category and question, never on prose.
+/// kind, category and overlapping questions, never on prose, one row per finding.
 /// </summary>
 public class BenchmarkSynthesisConvergenceTests
 {
@@ -27,7 +27,7 @@ public class BenchmarkSynthesisConvergenceTests
         var row = Assert.Single(rows);
         Assert.Equal("weakness", row.Kind);
         Assert.Equal("accuracy", row.Category);
-        Assert.Equal(3, row.Question);
+        Assert.Equal(new[] { 3 }, row.Questions);
         Assert.Equal(BenchmarkConvergenceStatus.Convergent, row.Status);
         Assert.Equal("Q3 misstates the damage roll.", row.MemberAText);
         Assert.Equal("The damage figure in Q3 is wrong.", row.MemberBText);
@@ -42,12 +42,12 @@ public class BenchmarkSynthesisConvergenceTests
 
         Assert.Equal(2, rows.Count);
 
-        var onlyB = rows.Single(r => r.Question == 5);
+        var onlyB = rows.Single(r => r.Questions.Contains(5));
         Assert.Equal(BenchmarkConvergenceStatus.MemberBOnly, onlyB.Status);
         Assert.Null(onlyB.MemberAText);
         Assert.Equal("Q5 omits the prerequisite.", onlyB.MemberBText);
 
-        var onlyA = rows.Single(r => r.Question == 2);
+        var onlyA = rows.Single(r => r.Questions.Contains(2));
         Assert.Equal(BenchmarkConvergenceStatus.MemberAOnly, onlyA.Status);
         Assert.Equal("Searched the source before answering.", onlyA.MemberAText);
         Assert.Null(onlyA.MemberBText);
@@ -73,7 +73,7 @@ public class BenchmarkSynthesisConvergenceTests
             new[] { Finding("weakness", "conciseness", "Verbose across the run.") });
 
         var row = Assert.Single(rows);
-        Assert.Null(row.Question);
+        Assert.Empty(row.Questions);
         Assert.Equal(BenchmarkConvergenceStatus.Convergent, row.Status);
     }
 
@@ -85,21 +85,87 @@ public class BenchmarkSynthesisConvergenceTests
             new[] { Finding("weakness", "readability", "Q4 is a wall of text.", 4) });
 
         Assert.Equal(2, rows.Count);
-        Assert.Equal(BenchmarkConvergenceStatus.MemberAOnly, rows.Single(r => r.Question == null).Status);
-        Assert.Equal(BenchmarkConvergenceStatus.MemberBOnly, rows.Single(r => r.Question == 4).Status);
+        Assert.Equal(BenchmarkConvergenceStatus.MemberAOnly, rows.Single(r => r.Questions.Count == 0).Status);
+        Assert.Equal(BenchmarkConvergenceStatus.MemberBOnly, rows.Single(r => r.Questions.Contains(4)).Status);
     }
 
     [Fact]
-    public void AFindingNamingSeveralQuestions_BecomesOneRowPerQuestion()
+    public void AFindingNamingSeveralQuestions_IsOneRowCarryingAllItsQuestions()
     {
         var rows = BenchmarkSynthesisConvergence.Compute(
             new[] { Finding("weakness", "critical_error", "Fabricated item properties.", 7, 2, 7) },
             new[] { Finding("weakness", "critical_error", "Invented a spell effect.", 2) });
 
-        Assert.Equal(new int?[] { 2, 7 }, rows.Select(r => r.Question));
-        Assert.Equal(BenchmarkConvergenceStatus.Convergent, rows[0].Status);
-        Assert.Equal(BenchmarkConvergenceStatus.MemberAOnly, rows[1].Status);
-        Assert.Equal("Fabricated item properties.", rows[1].MemberAText);
+        var row = Assert.Single(rows);
+        Assert.Equal(new[] { 2, 7 }, row.Questions);
+        Assert.Equal(BenchmarkConvergenceStatus.Convergent, row.Status);
+        Assert.Equal("Fabricated item properties.", row.MemberAText);
+        Assert.Equal("Invented a spell effect.", row.MemberBText);
+    }
+
+    [Fact]
+    public void FindingsLinkedThroughOverlappingQuestions_AreOneRow()
+    {
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[]
+            {
+                Finding("weakness", "accuracy", "Wrong on Q1 and Q2.", 1, 2),
+                Finding("weakness", "accuracy", "Wrong on Q3.", 3)
+            },
+            new[] { Finding("weakness", "accuracy", "Errors in Q2 and Q3.", 2, 3) });
+
+        var row = Assert.Single(rows);
+        Assert.Equal(new[] { 1, 2, 3 }, row.Questions);
+        Assert.Equal(BenchmarkConvergenceStatus.Convergent, row.Status);
+        Assert.Equal("Wrong on Q1 and Q2. / Wrong on Q3.", row.MemberAText);
+        Assert.Equal("Errors in Q2 and Q3.", row.MemberBText);
+    }
+
+    [Fact]
+    public void AStrengthAndAWeaknessOnTheSameQuestion_AreConflicting()
+    {
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[] { Finding("strength", "accuracy", "Q3 gets the damage right.", 3) },
+            new[] { Finding("weakness", "accuracy", "Q3 and Q4 misstate the damage.", 3, 4) });
+
+        var row = Assert.Single(rows);
+        Assert.Equal(BenchmarkConvergenceStatus.Conflicting, row.Status);
+        Assert.Equal("strength", row.Kind);
+        Assert.Equal("weakness", BenchmarkSynthesisConvergence.OppositeKind(row.Kind));
+        Assert.Equal("accuracy", row.Category);
+        Assert.Equal(new[] { 3, 4 }, row.Questions);
+        Assert.Equal("Q3 gets the damage right.", row.MemberAText);
+        Assert.Equal("Q3 and Q4 misstate the damage.", row.MemberBText);
+    }
+
+    [Fact]
+    public void AnOppositeKindFinding_WhoseCounterpartHasASameKindMatch_IsNotConflicting()
+    {
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[] { Finding("strength", "accuracy", "A praises Q3.", 3) },
+            new[]
+            {
+                Finding("strength", "accuracy", "B praises Q3.", 3),
+                Finding("weakness", "accuracy", "B faults Q3.", 3)
+            });
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(BenchmarkConvergenceStatus.Convergent, rows.Single(r => r.Kind == "strength").Status);
+        var weakness = rows.Single(r => r.Kind == "weakness");
+        Assert.Equal(BenchmarkConvergenceStatus.MemberBOnly, weakness.Status);
+        Assert.Equal("B faults Q3.", weakness.MemberBText);
+    }
+
+    [Fact]
+    public void OppositeKindsInDifferentCategories_AreNotConflicting()
+    {
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[] { Finding("strength", "accuracy", "Accurate Q3.", 3) },
+            new[] { Finding("weakness", "readability", "Dense Q3.", 3) });
+
+        Assert.Equal(
+            new[] { BenchmarkConvergenceStatus.MemberBOnly, BenchmarkConvergenceStatus.MemberAOnly },
+            rows.Select(r => r.Status));
     }
 
     [Fact]
@@ -120,7 +186,7 @@ public class BenchmarkSynthesisConvergenceTests
     }
 
     [Fact]
-    public void Rows_AreOrderedByKindThenSchemaCategoryThenQuestion_WithTheRunWideRowFirst()
+    public void Rows_AreOrderedByFirstQuestionThenKindThenSchemaCategory_WithRunWideRowsFirst()
     {
         var a = new[]
         {
@@ -142,16 +208,16 @@ public class BenchmarkSynthesisConvergenceTests
         Assert.Equal(
             new[]
             {
-                ("weakness", "accuracy", (int?)null),
-                ("weakness", "accuracy", (int?)3),
-                ("weakness", "accuracy", (int?)9),
-                ("weakness", "completeness", (int?)1),
-                ("weakness", "tool_use", (int?)2),
-                ("weakness", "other", (int?)null),
-                ("strength", "accuracy", (int?)1),
-                ("strength", "readability", (int?)null)
+                ("weakness", "accuracy", ""),
+                ("weakness", "other", ""),
+                ("strength", "readability", ""),
+                ("weakness", "completeness", "1"),
+                ("strength", "accuracy", "1"),
+                ("weakness", "tool_use", "2"),
+                ("weakness", "accuracy", "3"),
+                ("weakness", "accuracy", "9")
             },
-            rows.Select(r => (r.Kind, r.Category, r.Question)));
+            rows.Select(r => (r.Kind, r.Category, string.Join(",", r.Questions))));
     }
 
     [Fact]

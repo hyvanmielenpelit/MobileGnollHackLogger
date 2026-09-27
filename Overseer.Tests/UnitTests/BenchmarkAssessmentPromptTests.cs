@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsForty()
+    public void HarnessVersion_IsFortyOne()
     {
-        Assert.Equal("40", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("41", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -793,18 +793,19 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs40_ScoringMethodIs12()
+    public void Versions_HarnessIs41_ScoringMethodIs12()
     {
-        Assert.Equal("40", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("41", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 40 keeps scoring method 12: the per-verdict grading rules do not change. It adds the
-        // two-family assessor panel — a co-assessor grades every answer beside the assessor with the
-        // identical prompt, the published per-answer score is the mean of the two, the second opinion
-        // becomes the reference reader, the claim verifier checks the union of both members' charges
-        // with raisedBy provenance, and each member writes its own synthesis. Every synthesis gains a
-        // structured findings array. Single-assessor runs grade exactly as under 39 apart from that
-        // schema, and a panel run is separated by the co-assessor fields appended to the assessor
-        // comparability key rather than by a scoring method bump.
+        // Harness 41 keeps scoring method 12: the per-verdict grading rules do not change. It changes
+        // what the flags and the verifier read around them: the omission detector sets aside
+        // rubric-subject clauses and reads "without noting" and "are not stated"; the citation notes
+        // limit the macro note to a #define's parameter list, read prose line references, and mark a
+        // blank or comment-only cited line; the union manifest merges label- and markup-only copies of
+        // one item, so a member's contested flag stands; the verifier's tool budget scales with the
+        // manifest. The tools gain a capped wiki_view section miss and a [Not reachable: …] line, which
+        // move ToolGuidesSha256, and the report and diagnostics become panel-aware. No answer flag is
+        // added, and the assessor prompt is unchanged.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

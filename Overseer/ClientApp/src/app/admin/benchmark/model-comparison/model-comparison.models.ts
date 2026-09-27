@@ -1252,6 +1252,7 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
   return dto.entries.map(entry => ({
     key: entry.key,
     ...chartLabel(entry),
+    provider: (entry.provider ?? '').trim().toLowerCase(),
     runCount: entry.runCount,
 
     intelligenceIndex: entry.quality?.pointEstimate ?? UNMEASURED,

@@ -74,6 +74,7 @@ import {
   ModelSort,
   ModelSortKey,
   P1_STACK_BREAKPOINT_PX,
+  ProfileFigure,
   ProfileNormalization,
   ReducedMotionWatcher,
   SortDirection,
@@ -111,6 +112,7 @@ import {
   FigureExportRequest,
   FigureExportResolution,
   FigureExportResult,
+  OffscreenPlotConfig,
   PreviewStage,
   WEBP_QUALITY_OPTIONS,
   WebpQuality,
@@ -125,6 +127,7 @@ import {
   figureExportFilename,
   previewLayoutFor,
   renderPlotOffscreen,
+  renderTiledPlotOffscreen,
   resolveFigureLayout,
   saveFigureBlob
 } from './figure-export';
@@ -489,6 +492,11 @@ export interface ComparisonFigureCard {
   readonly data: ChartConfiguration['data'];
   readonly options: ChartConfiguration['options'];
   readonly plugins: Plugin[];
+  /**
+   * A small-multiples figure's tiles, rendered each on its own and stitched `columns` wide into the
+   * plot. Present on the profile only; `type`, `data` and `options` are then the first tile's.
+   */
+  readonly tiles?: { readonly configs: readonly OffscreenPlotConfig[]; readonly columns: number };
 }
 
 /**
@@ -674,14 +682,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * Names every scatter mark on the canvas instead of in the legend below it.
    *
-   * Off by default: a reader who wants the names on the marks asks for them, and the plugin behind
-   * it places them without collisions — which the automatic rule this replaced, direct-labelling
-   * at four or more models from a fixed offset, never did.
+   * On by default: color means provider, so the name beside a mark is what identifies the model.
+   * The plugin behind it places the names without collisions.
    */
-  scatterDirectLabels = false;
+  scatterDirectLabels = true;
 
-  /** Draws each scatter mark's two measured values beside it, so an exported figure states them. */
-  scatterInlineValues = true;
+  /**
+   * Draws each scatter mark's two measured values beside it. Off by default: the values are in the
+   * tooltip and the table, and a label is the model's name.
+   */
+  scatterInlineValues = false;
 
   /** Bar and trade-off styling, the theme and the table image's layout, applied to the page and to every export alike. */
   figureStyle: FigureStyle = DEFAULT_FIGURE_STYLE;
@@ -717,7 +727,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   };
   orientation: BarOrientation = 'vertical';
 
-  /** The profile's axis endpoints, printed beside P2 so its normalized heights stay anchored. */
+  /** The profile's shared scales and one description per model, the profile tile's `aria-describedby`. */
   profileAxes: ProfileNormalization | null = null;
 
   /** What each family's Number format options preview on; replaced only by a rebuild. */
@@ -1777,9 +1787,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return [this.toCard(panels.quality), this.toCard(panels.speed), this.toCard(panels.cost)];
   }
 
-  /** P2 — the normalized profile, suppressed below three entries. */
+  /** P2 — the model profiles, one tile per model, suppressed below three entries. */
   get profileCard(): ComparisonFigureCard | null {
-    return this.figures && this.showProfile ? this.toCard(this.figures.profile) : null;
+    return this.figures && this.showProfile ? this.toProfileCard(this.figures.profile) : null;
   }
 
   /** S1-S3 — the three scatters, which render from two entries upward. */
@@ -1797,6 +1807,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     chrome: FigureChrome;
     config: { type: string; data: unknown; options?: unknown };
     plugins: Plugin[];
+    summary?: readonly string[];
   }): ComparisonFigureCard {
     return {
       id: spec.id,
@@ -1807,6 +1818,28 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       data: spec.config.data as ChartConfiguration['data'],
       options: spec.config.options as ChartConfiguration['options'],
       plugins: spec.plugins
+    };
+  }
+
+  /** The profile's card: every tile with the shared plugins, stitched `columns` wide when composed. */
+  private toProfileCard(profile: ProfileFigure): ComparisonFigureCard {
+    const configs: OffscreenPlotConfig[] = profile.tiles.map(tile => ({
+      type: tile.type as ChartType,
+      data: tile.data as unknown as ChartConfiguration['data'],
+      options: tile.options as unknown as ChartConfiguration['options'],
+      plugins: profile.plugins
+    }));
+    const first = configs[0];
+    return {
+      id: profile.id,
+      title: profile.title,
+      chrome: profile.chrome,
+      ariaLabel: this.chartAriaLabel(profile),
+      type: 'line',
+      data: first ? first.data : { datasets: [] },
+      options: first?.options,
+      plugins: profile.plugins,
+      tiles: { configs, columns: profile.columns }
     };
   }
 
@@ -2323,10 +2356,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     format: FigureExportFormat = this.exportFormat
   ): Promise<HTMLCanvasElement | null> {
     await this.loadFigureFont();
-    const plot = await renderPlotOffscreen(
-      { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
-      layout
-    );
+    const plot = card.tiles
+      ? await renderTiledPlotOffscreen(card.tiles.configs, card.tiles.columns, layout)
+      : await renderPlotOffscreen(
+        { type: card.type, data: card.data, options: card.options, plugins: card.plugins },
+        layout
+      );
     return plot ? composeFigureImage({ ...chrome, canvas: plot, format, layout }) : null;
   }
 
@@ -4726,12 +4761,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * The canvas is a `role="img"` summary and nothing more — the table below carries the values, so
    * this says what the picture shows rather than trying to enumerate it.
    */
-  chartAriaLabel(spec: { chrome: FigureChrome } | null | undefined): string {
+  chartAriaLabel(spec: { chrome: FigureChrome; summary?: readonly string[] } | null | undefined): string {
     if (!spec) {
       return '';
     }
     const chrome = spec.chrome;
-    return `${chrome.title}: ${figureSummary(chrome)}. Values for every entry are in the comparison table below.`;
+    const summary = (spec.summary ?? []).map(sentence => ` ${sentence}.`).join('');
+    return `${chrome.title}: ${figureSummary(chrome)}.${summary} Values for every entry are in the comparison table below.`;
   }
 
   /** An entry key made safe for a DOM id or an anchor name: keys carry a `run:12` style colon. */
@@ -4831,7 +4867,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * with them the model order the table and the Custom list read.
    *
    * The glyph source is the whole payload rather than the current slice, so deselecting a model
-   * never repaints the survivors — a reader who has learned a model's hue and shape keeps it.
+   * never reshapes the survivors; the hue is the provider's and never moves.
    */
   private rebuild(): void {
     this.entries = this.comparison?.entries ?? [];

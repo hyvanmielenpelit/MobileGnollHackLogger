@@ -38,7 +38,7 @@
             } @else {
               <p class="synthesis-meta">
                 Computed by the server from the two members' structured findings, matched on kind,
-                category and question. Neither member saw the other's synthesis.
+                category and overlapping questions. Neither member saw the other's synthesis.
               </p>
               @if (convergence && convergence.length > 0) {
                 <p class="convergence-summary">{{ convergenceSummary }}</p>
@@ -49,7 +49,7 @@
                       <tr>
                         <th scope="col">Finding</th>
                         <th scope="col">Category</th>
-                        <th scope="col">Question</th>
+                        <th scope="col">Questions</th>
                         <th scope="col">Raised by</th>
                         <th scope="col">Member A</th>
                         <th scope="col">Member B</th>
@@ -58,9 +58,9 @@
                     <tbody>
                       @for (row of convergence; track $index) {
                         <tr>
-                          <td>{{ kindLabel(row.kind) }}</td>
+                          <td>{{ rowKindLabel(row) }}</td>
                           <td>{{ categoryLabel(row.category) }}</td>
-                          <td>{{ row.question != null ? 'Q' + row.question : 'Run-wide' }}</td>
+                          <td>{{ rowQuestionsLabel(row) }}</td>
                           <td><span class="convergence-status" [class]="statusClass(row.status)">{{ statusLabel(row.status) }}</span></td>
                           <td>{{ row.memberAText ?? '—' }}</td>
                           <td>{{ row.memberBText ?? '—' }}</td>

@@ -38,7 +38,7 @@ import type {
   FigureNoteTone
 } from './figure-chrome';
 import { figureDirectionRotation } from './figure-chrome';
-import { resolveFigureTheme } from './figure-theme';
+import { FADED_MARK_ALPHA, resolveFigureTheme } from './figure-theme';
 import type { ResolvedChromeColors, ResolvedFigureBorder, ResolvedFigureTheme } from './figure-theme';
 import {
   PREVIEW_MAX_ZOOM,
@@ -349,7 +349,9 @@ const KEY_GLYPH_TEXT_GAP = 6;
 const KEY_ITEM_GAP = 16;
 const KEY_ROW_HEIGHT = Math.round(KEY_TEXT_SIZE * 1.4);
 const KEY_FRONTIER_LENGTH = 14;
-const KEY_DOMINATED_SIDE = 10;
+/** The dotted glyphs' dot diameter and the distance between dot centres. */
+const KEY_DOT_WIDTH = 2;
+const KEY_DOT_GAP = 4;
 
 /** The highlight line under the key row. */
 const HIGHLIGHT_SIZE = 12;
@@ -378,9 +380,8 @@ export const FIGURE_BODY_COLOR = '#d4d4d8';
 export const FIGURE_MUTED_COLOR = '#a1a1aa';
 export const FIGURE_RULE_COLOR = '#2a2a2a';
 
-/** The dark theme's key glyph ink, and the dominated glyph's fill. */
+/** The dark theme's key glyph ink. */
 export const FIGURE_KEY_INK = '#c3c2b7';
-export const FIGURE_DOMINATED_FILL = 'rgba(255, 255, 255, 0.12)';
 
 /**
  * The dark theme's badge pill colours by tone: border, fill, then text. The composer draws with
@@ -812,6 +813,63 @@ export async function renderPlotOffscreen(
     chart?.destroy();
     container.remove();
   }
+}
+
+/** The gap between two tiles of a tiled plot, in layout px. */
+export const PLOT_TILE_GAP_PX = 12;
+
+/**
+ * Renders a small-multiples plot: each tile with {@link renderPlotOffscreen} in its own cell of a
+ * `columns`-wide grid inside `layout`'s plot box, stitched into one canvas that
+ * {@link composeFigureImage} takes as the plot. The tiles share the box equally, `gapPx` apart, in
+ * reading order.
+ *
+ * Null where there is no tile, the cells would be empty, or any tile fails to render.
+ */
+export async function renderTiledPlotOffscreen(
+  tiles: readonly OffscreenPlotConfig[],
+  columns: number,
+  layout: FigureExportLayout,
+  gapPx: number = PLOT_TILE_GAP_PX
+): Promise<HTMLCanvasElement | null> {
+  if (tiles.length === 0 || layout.plotWidth <= 0 || layout.plotHeight <= 0) {
+    return null;
+  }
+  const cols = Math.max(1, Math.min(Math.floor(columns) || 1, tiles.length));
+  const rows = Math.ceil(tiles.length / cols);
+  const tileWidth = Math.floor((layout.plotWidth - gapPx * (cols - 1)) / cols);
+  const tileHeight = Math.floor((layout.plotHeight - gapPx * (rows - 1)) / rows);
+  if (tileWidth <= 0 || tileHeight <= 0) {
+    return null;
+  }
+
+  const density = layout.density;
+  const target = document.createElement('canvas');
+  target.width = Math.round(layout.plotWidth * density);
+  target.height = Math.round(layout.plotHeight * density);
+  target.style.width = `${layout.plotWidth}px`;
+  target.style.height = `${layout.plotHeight}px`;
+  const context = target.getContext('2d');
+
+  const tileLayout: FigureExportLayout = { ...layout, plotWidth: tileWidth, plotHeight: tileHeight };
+  for (let index = 0; index < tiles.length; index += 1) {
+    const plot = await renderPlotOffscreen(tiles[index], tileLayout);
+    if (!plot) {
+      return null;
+    }
+    const column = index % cols;
+    const row = Math.floor(index / cols);
+    if (context && plot.width > 0 && plot.height > 0) {
+      context.drawImage(
+        plot,
+        Math.round(column * (tileWidth + gapPx) * density),
+        Math.round(row * (tileHeight + gapPx) * density),
+        Math.round(tileWidth * density),
+        Math.round(tileHeight * density)
+      );
+    }
+  }
+  return target;
 }
 
 /**
@@ -1464,7 +1522,7 @@ function drawKeyRows(
   for (const row of rows) {
     let cursorX = x;
     for (const { item, width } of row.items) {
-      drawKeyGlyph(context, item.glyph, cursorX, cursorY, KEY_GLYPH_SIZE, paint.colors);
+      drawKeyGlyph(context, item.glyph, cursorX, cursorY, KEY_GLYPH_SIZE, paint.colors, item.color);
       context.font = fontOf(KEY_TEXT_SIZE, '400', paint.stack);
       context.fillStyle = paint.colors.body;
       context.fillText(item.text, cursorX + KEY_GLYPH_SIZE + KEY_GLYPH_TEXT_GAP, cursorY);
@@ -1475,14 +1533,19 @@ function drawKeyRows(
   return cursorY - LINE_GAP;
 }
 
-/** One key glyph in its `size` × `size` slot: a hollow or solid circle, a frontier, a dominated square, or a whisker. */
+/**
+ * One key glyph in its `size` × `size` slot: a hollow or solid circle, a dotted frontier or ideal
+ * line, a faded circle, a provider's dot, a thin gray line for the other models, or a whisker.
+ * `color` paints the provider dot and the ideal line; the rest draw in the key ink.
+ */
 function drawKeyGlyph(
   context: CanvasRenderingContext2D,
   glyph: FigureKeyGlyph,
   x: number,
   y: number,
   size: number,
-  colors: ResolvedChromeColors
+  colors: ResolvedChromeColors,
+  color?: string
 ): void {
   const mid = y + size / 2;
   const ink = colors.keyInk;
@@ -1500,25 +1563,45 @@ function drawKeyGlyph(
       context.arc(x + size / 2, mid, size / 2, 0, Math.PI * 2);
       context.fill();
       break;
-    case 'frontier': {
+    case 'frontier':
+    case 'ideal': {
+      // Zero-length dashes with round caps: a row of dots, as the plot draws the line.
       const overhang = (KEY_FRONTIER_LENGTH - size) / 2;
-      context.strokeStyle = ink;
+      context.save();
+      context.strokeStyle = glyph === 'ideal' ? color ?? ink : ink;
+      context.lineWidth = KEY_DOT_WIDTH;
+      context.lineCap = 'round';
+      context.setLineDash([0, KEY_DOT_GAP]);
+      context.beginPath();
+      context.moveTo(x - overhang + KEY_DOT_WIDTH / 2, mid);
+      context.lineTo(x + size + overhang - KEY_DOT_WIDTH / 2, mid);
+      context.stroke();
+      context.restore();
+      break;
+    }
+    case 'faded':
+      context.save();
+      context.globalAlpha = FADED_MARK_ALPHA;
+      context.fillStyle = ink;
+      context.beginPath();
+      context.arc(x + size / 2, mid, size / 2, 0, Math.PI * 2);
+      context.fill();
+      context.restore();
+      break;
+    case 'provider':
+      context.fillStyle = color ?? ink;
+      context.beginPath();
+      context.arc(x + size / 2, mid, size / 2 - 1, 0, Math.PI * 2);
+      context.fill();
+      break;
+    case 'other': {
+      const overhang = (KEY_FRONTIER_LENGTH - size) / 2;
+      context.strokeStyle = colors.muted;
       context.lineWidth = 1;
       context.beginPath();
       context.moveTo(x - overhang, mid);
       context.lineTo(x + size + overhang, mid);
       context.stroke();
-      break;
-    }
-    case 'dominated': {
-      const side = KEY_DOMINATED_SIDE;
-      const top = mid - side / 2;
-      const left = x + (size - side) / 2;
-      context.fillStyle = colors.dominatedKeyFill;
-      context.fillRect(left, top, side, side);
-      context.strokeStyle = ink;
-      context.lineWidth = 1;
-      context.strokeRect(left + 0.5, top + 0.5, side - 1, side - 1);
       break;
     }
     case 'interval': {

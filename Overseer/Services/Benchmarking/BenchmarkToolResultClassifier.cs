@@ -38,6 +38,10 @@ public enum BenchmarkToolModelVisibleCut
 /// <param name="RecordCut">The harness's storage cap cut the stored record, not what the model saw.</param>
 /// <param name="Partial">The tool's own continuation or per-article truncation notice.</param>
 /// <param name="ContentError">An error returned as successful content, or stats JSON that does not parse.</param>
+/// <param name="SectionMiss">
+/// A <c>wiki_view</c> or <c>nethack_wiki_view</c> result opening with the section-miss marker line:
+/// the article was found, but the requested section matched none of its headings.
+/// </param>
 public sealed record BenchmarkToolResultFacets(
     BenchmarkToolCallOutcome Outcome,
     bool PayloadUnavailable,
@@ -45,7 +49,8 @@ public sealed record BenchmarkToolResultFacets(
     BenchmarkToolModelVisibleCut ModelVisibleCut,
     bool RecordCut,
     bool Partial,
-    bool ContentError)
+    bool ContentError,
+    bool SectionMiss)
 {
     /// <summary>A successful call whose payload is still stored, so it can be read as a hit or a miss.</summary>
     public bool IsInspectableSuccess => Outcome == BenchmarkToolCallOutcome.Succeeded && !PayloadUnavailable;
@@ -66,6 +71,8 @@ public sealed record BenchmarkToolResultFacets(
 /// <param name="RecordCut">Rows whose stored record was cut.</param>
 /// <param name="Partial">Rows carrying a tool's own partial-result notice.</param>
 /// <param name="ContentError">Rows carrying an error as successful content.</param>
+/// <param name="SectionMiss">Section-miss results among <paramref name="InspectableSuccessful"/>.</param>
+/// <param name="SectionMissByTool">The same count by tool name, largest first, then by name.</param>
 public sealed record BenchmarkToolResultSummary(
     int InspectableSuccessful,
     int NotFound,
@@ -78,7 +85,9 @@ public sealed record BenchmarkToolResultSummary(
     int TurnLimit,
     int RecordCut,
     int Partial,
-    int ContentError)
+    int ContentError,
+    int SectionMiss,
+    IReadOnlyList<KeyValuePair<string, int>> SectionMissByTool)
 {
     /// <summary>Rows cut before the model saw them, at any layer.</summary>
     public int ModelVisibleCut => PerToolCap + BatchBudget + TurnLimit;
@@ -103,6 +112,7 @@ public static class BenchmarkToolResultClassifier
 {
     /// <summary>Note vocabulary, in the order <see cref="Note(BenchmarkToolResultFacets)"/> writes it.</summary>
     public const string NoteMiss = "miss";
+    public const string NoteSectionMiss = "section miss";
     public const string NoteCut = "cut";
     public const string NoteRecordCut = "record cut";
     public const string NotePartial = "partial";
@@ -215,6 +225,23 @@ public static class BenchmarkToolResultClassifier
 
     private const string WikiViewTool = "wiki_view";
 
+    /// <summary>The tools whose section request can miss on a found article.</summary>
+    private static readonly HashSet<string> SectionMissTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "wiki_view",
+        "nethack_wiki_view"
+    };
+
+    /// <summary>
+    /// <c>MarkdownSectionExtractor</c>'s section-miss marker line, at the start of the result: after
+    /// <c>NetHackWikiViewTool</c>'s optional resolution line and the optional
+    /// <c>--- … ---</c> article header. Matches the marker whether it ends "Returning full text." or
+    /// names the characters shown on an over-cap article.
+    /// </summary>
+    private static readonly Regex SectionMissRegex = new(
+        @"^(?:\[No NetHack wiki article titled [^\n]*\n)?(?:---[^\n]*---\r?\n)?\[Section '[^\n]*?' not found in article\.",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     /// <summary><c>SourceCodeService.SearchFiles</c>' hidden-match-group notice.</summary>
     private static readonly Regex HiddenMatchGroupsRegex = new(
         @"\[\.\.\. \d+ additional match groups in this file hidden \.\.\.\]",
@@ -240,6 +267,7 @@ public static class BenchmarkToolResultClassifier
         bool notFound = false;
         bool partial = false;
         bool contentError = false;
+        bool sectionMiss = false;
         var cut = BenchmarkToolModelVisibleCut.None;
 
         if (outcome == BenchmarkToolCallOutcome.Failed)
@@ -283,23 +311,26 @@ public static class BenchmarkToolResultClassifier
                 partial = ContainsAny(result, PartialMarkers)
                     || HiddenMatchGroupsRegex.IsMatch(result)
                     || (string.Equals(tool, WikiViewTool, StringComparison.OrdinalIgnoreCase) && WikiViewTooLongNoticeRegex.IsMatch(head));
+
+                sectionMiss = SectionMissTools.Contains(tool) && SectionMissRegex.IsMatch(head);
             }
         }
 
-        return new BenchmarkToolResultFacets(outcome, unavailable, notFound, cut, recordCut, partial, contentError);
+        return new BenchmarkToolResultFacets(outcome, unavailable, notFound, cut, recordCut, partial, contentError, sectionMiss);
     }
 
     /// <summary>
-    /// The facets as the fixed <c>Note</c> vocabulary — <c>miss</c>, <c>cut</c>, <c>record cut</c>,
-    /// <c>partial</c>, <c>content error</c>, <c>unavailable</c> — joined by <c>", "</c>, or the empty
-    /// string when none applies. Nothing in it needs Markdown escaping.
+    /// The facets as the fixed <c>Note</c> vocabulary — <c>miss</c>, <c>section miss</c>, <c>cut</c>,
+    /// <c>record cut</c>, <c>partial</c>, <c>content error</c>, <c>unavailable</c> — joined by
+    /// <c>", "</c>, or the empty string when none applies. Nothing in it needs Markdown escaping.
     /// </summary>
     public static string Note(BenchmarkToolResultFacets facets)
     {
         ArgumentNullException.ThrowIfNull(facets);
 
-        var parts = new List<string>(6);
+        var parts = new List<string>(7);
         if (facets.NotFound) parts.Add(NoteMiss);
+        if (facets.SectionMiss) parts.Add(NoteSectionMiss);
         if (facets.ModelVisibleCut != BenchmarkToolModelVisibleCut.None) parts.Add(NoteCut);
         if (facets.RecordCut) parts.Add(NoteRecordCut);
         if (facets.Partial) parts.Add(NotePartial);
@@ -333,6 +364,7 @@ public static class BenchmarkToolResultClassifier
             .Where(c => c.Facets.Outcome == BenchmarkToolCallOutcome.Failed && c.Facets.NotFound)
             .Select(c => c.Row)
             .ToList();
+        var sectionMisses = inspectable.Where(c => c.Facets.SectionMiss).Select(c => c.Row).ToList();
 
         return new BenchmarkToolResultSummary(
             InspectableSuccessful: inspectable.Count,
@@ -346,7 +378,9 @@ public static class BenchmarkToolResultClassifier
             TurnLimit: classified.Count(c => c.Facets.ModelVisibleCut == BenchmarkToolModelVisibleCut.TurnLimit),
             RecordCut: classified.Count(c => c.Facets.RecordCut),
             Partial: classified.Count(c => c.Facets.Partial),
-            ContentError: classified.Count(c => c.Facets.ContentError));
+            ContentError: classified.Count(c => c.Facets.ContentError),
+            SectionMiss: sectionMisses.Count,
+            SectionMissByTool: ByTool(sectionMisses));
     }
 
     /// <summary>

@@ -2,9 +2,7 @@ namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 
 /// <summary>
@@ -13,9 +11,9 @@ using System.Text.RegularExpressions;
 /// definition whose parameter list is followed by a body, so a macro-table row such as
 /// <c>SCROLL(…),</c> is no function — has no <c>name(</c> call and no value reference to
 /// <c>name</c> (a function pointer passed or stored) in the indexed GnollHack source outside its own
-/// definition, a prototype, a <c>#define</c> and comments. Such a verification is read as
-/// Indeterminate for every flag and count (<see cref="BenchmarkClaimVerification.EffectiveVerdict"/>);
-/// its stored verdict is not touched.
+/// definition, a prototype, a <c>#define</c>, comments and <c>#if 0</c> regions. Such a verification
+/// is read as Indeterminate for every flag and count
+/// (<see cref="BenchmarkClaimVerification.EffectiveVerdict"/>); its stored verdict is not touched.
 ///
 /// A function reached only through a macro that builds its name also has no reference, so the
 /// note never argues the opposite verdict — it only withdraws the cited code as evidence. A citation
@@ -33,18 +31,27 @@ using System.Text.RegularExpressions;
 /// reaches inside the body.
 ///
 /// A single-line, unranged reference to a <c>src/*.c</c> or <c>include/*.h</c> line inside a
-/// <c>#define</c> header — the <c>#define</c> line or one of its backslash-continued lines, up to
-/// and including the first line that does not end in <c>\</c> — gets a note naming the macro, the
-/// same way. An <c>include/*.h</c> reference is checked for nothing else.
+/// <c>#define</c> header — the <c>#define</c> line, or for a function-like macro one of the
+/// backslash-continued lines up to the one closing its parameter list — gets a note naming the
+/// macro, the same way. A line of the macro's body falls through to the other checks. An
+/// <c>include/*.h</c> reference is checked for nothing else.
+///
+/// A reference whose cited line, or every line of its cited range, is blank once comments are
+/// removed gets a note saying so.
+///
+/// A line written in prose after the file — <c>src/x.c at line 12</c>, <c>src/x.c lines 10-20</c>,
+/// <c>src/x.c L12</c> within 40 characters with no other file between — is read as
+/// <c>src/x.c:12</c>; so is a free-standing <c>line 12</c> when the citation names exactly one
+/// source file.
 ///
 /// A verification that already carries a note keeps it.
 ///
-/// Pure over the corpus it is given; any failure yields no note.
+/// Liveness, definitions and comment stripping come from <see cref="SourceLivenessIndex"/>. Pure
+/// over the corpus it is given; any failure yields no note.
 /// </summary>
 public sealed class BenchmarkCitationLivenessCheck
 {
-    private readonly Func<IReadOnlyDictionary<string, IReadOnlyList<string>>> _corpus;
-    private CorpusView? _view;
+    private readonly SourceLivenessIndex _index;
 
     /// <param name="corpus">
     /// The indexed GnollHack source: repository-relative, forward-slashed path to the file's lines.
@@ -52,12 +59,21 @@ public sealed class BenchmarkCitationLivenessCheck
     /// </param>
     public BenchmarkCitationLivenessCheck(Func<IReadOnlyDictionary<string, IReadOnlyList<string>>> corpus)
     {
-        _corpus = corpus ?? throw new ArgumentNullException(nameof(corpus));
+        _index = new SourceLivenessIndex(corpus ?? throw new ArgumentNullException(nameof(corpus)));
+    }
+
+    private BenchmarkCitationLivenessCheck(SourceLivenessIndex index)
+    {
+        _index = index;
     }
 
     /// <summary>A check over the GnollHack repository <paramref name="sourceCode"/> indexes, read from disk.</summary>
     public static BenchmarkCitationLivenessCheck ForSourceCodeService(SourceCodeService sourceCode, int maxFileSizeKB)
-        => new(new SourceCodeServiceCorpus(sourceCode, maxFileSizeKB).Load);
+        => new(SourceLivenessIndex.ForSourceCodeService(sourceCode, maxFileSizeKB));
+
+    /// <summary>A check over the corpus <paramref name="index"/> reads.</summary>
+    public static BenchmarkCitationLivenessCheck ForLivenessIndex(SourceLivenessIndex index)
+        => new(index ?? throw new ArgumentNullException(nameof(index)));
 
     public static string NoteText(string functionName) => $"cited function {functionName} has no live call site";
 
@@ -70,6 +86,12 @@ public sealed class BenchmarkCitationLivenessCheck
 
     public static string MacroDefinitionNoteText(string path, int line, string macroName)
         => $"cited line {path}:{line} is only the definition of macro {macroName}";
+
+    public static string BlankLineNoteText(string path, int line)
+        => $"cited line {path}:{line} is blank or a comment";
+
+    public static string BlankRangeNoteText(string path, int firstLine, int lastLine)
+        => $"cited lines {path}:{firstLine}-{lastLine} are blank or comments";
 
     /// <summary>A <c>src/*.c</c> or <c>include/*.h</c> line or line range; group 1 is the path.</summary>
     private static readonly Regex SourceReferenceRegex = new(
@@ -85,26 +107,36 @@ public sealed class BenchmarkCitationLivenessCheck
         @"(?<![\w/.-])((?:src|include)/[\w./-]+?\.(?:c|h))\b(?!\s*:\s*\d)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// A line in prose: <c>at line 12</c>, <c>lines 10-20</c>, <c>L12</c>, <c>line 10 to 20</c>. The
+    /// line is group <c>first</c>, a range end group <c>last</c>.
+    /// </summary>
+    private const string ProseLinePattern =
+        @"\b(?i:(?:at|on|in|near|around)\s+)?(?:(?i:lines?)\s*|L)(?<first>\d+)(?:\s*(?:-|–|(?i:to|through))\s*(?<last>\d+))?\b";
+
+    /// <summary>
+    /// A source file followed within 40 characters, with no other file and no <c>board</c> or
+    /// <c>wiki</c> between, by a <see cref="ProseLinePattern"/> line; group 1 is the path,
+    /// <c>gap</c> the text between.
+    /// </summary>
+    private static readonly Regex ProseLineReferenceRegex = new(
+        @"(?<![\w/.-])(src/[\w./-]+?\.c|include/[\w./-]+?\.h)\b(?!\s*:\s*\d)"
+            + @"(?<gap>(?:(?!(?:[\w-]+/)+[\w.-]*\.(?:c|h)\b|\b[\w-]+\.(?:c|h)\b|\b(?i:board|wiki)\b)[^\r\n]){0,40}?)"
+            + ProseLinePattern,
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex FreeLineReferenceRegex = new(
+        ProseLinePattern, RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly Regex BoardOrWikiRegex = new(
+        @"\b(?:board|wiki)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private static readonly Regex OtherEvidenceRegex = new(
         @"\bwiki\s*:|\bboard\s*:", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex OtherReferenceRegex = new(
         @"\bwiki\s*:|\bboard\s*:|[\w-]+/[\w./-]*\.(?:c|h|txt|des|md|cs)\b|\b[\w-]+\.(?:c|h)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    /// <summary>
-    /// A column-0 function definition line as the source indexer recognises one: <c>name(</c> at the
-    /// start of the line, or type tokens and <c>name(</c> on one line; neither ending in <c>;</c>.
-    /// </summary>
-    private static readonly Regex BareDefinitionRegex = new(@"^([A-Za-z_]\w*)\s*\(", RegexOptions.Compiled);
-    private static readonly Regex TypedDefinitionRegex = new(
-        @"^(?!(?:extern|return|else|if|while|for|switch|case|goto|sizeof)\b)(?:[A-Za-z_]\w*\s+|\*\s*)+\**([A-Za-z_]\w*)\s*\((?!.*;\s*$)",
-        RegexOptions.Compiled);
-
-    private static readonly HashSet<string> Keywords = new(StringComparer.Ordinal)
-    {
-        "if", "while", "for", "switch", "return", "sizeof", "else", "case", "goto", "do", "defined"
-    };
 
     /// <summary>The verifications with <see cref="BenchmarkClaimVerification.CitationNote"/> set where it applies.</summary>
     public List<BenchmarkClaimVerification> Annotate(IReadOnlyList<BenchmarkClaimVerification> verifications)
@@ -143,6 +175,7 @@ public sealed class BenchmarkCitationLivenessCheck
 
         string text = citation.Replace('\\', '/');
         if (text.Contains("nethack", StringComparison.OrdinalIgnoreCase)) return null;
+        text = NormalizeProseLineReferences(text);
 
         var references = SourceReferenceRegex.Matches(text).Cast<Match>().ToList();
         if (references.Count == 0)
@@ -154,7 +187,7 @@ public sealed class BenchmarkCitationLivenessCheck
         }
         if (OtherReferenceRegex.IsMatch(SourceReferenceRegex.Replace(text, " "))) return null;
 
-        var view = View();
+        var view = _index.GetView();
         var notes = new List<string>();
         foreach (var reference in references)
         {
@@ -169,6 +202,25 @@ public sealed class BenchmarkCitationLivenessCheck
                 string missingNote = MissingFileNoteText(path);
                 if (!notes.Contains(missingNote, StringComparer.Ordinal)) notes.Add(missingNote);
                 continue;
+            }
+
+            if (line >= 1 && line <= lines.Length)
+            {
+                int lastLine = hasRange && int.TryParse(reference.Groups[3].Value, out int rangeEnd) ? rangeEnd : line;
+                lastLine = Math.Min(Math.Max(lastLine, line), lines.Length);
+
+                bool blank = true;
+                for (int row = line - 1; row < lastLine && blank; row++)
+                {
+                    blank = string.IsNullOrWhiteSpace(lines[row]);
+                }
+
+                if (blank)
+                {
+                    string blankNote = lastLine > line ? BlankRangeNoteText(path, line, lastLine) : BlankLineNoteText(path, line);
+                    if (!notes.Contains(blankNote, StringComparer.Ordinal)) notes.Add(blankNote);
+                    continue;
+                }
             }
 
             if (!hasRange && line >= 1 && line <= lines.Length)
@@ -186,7 +238,7 @@ public sealed class BenchmarkCitationLivenessCheck
 
             if (!hasRange && line >= 1 && line <= lines.Length)
             {
-                string? definitionName = DefinitionNameAt(lines, line - 1, lines[line - 1]);
+                string? definitionName = SourceLivenessIndex.DefinitionNameAt(lines, line - 1, lines[line - 1]);
                 if (definitionName != null)
                 {
                     string definitionNote = DefinitionLineNoteText(path, line, definitionName);
@@ -195,8 +247,8 @@ public sealed class BenchmarkCitationLivenessCheck
                 }
             }
 
-            string? name = EnclosingFunction(view, path, line);
-            if (name == null || HasLiveCallSite(view, name)) return null;
+            string? name = SourceLivenessIndex.EnclosingFunction(view, path, line);
+            if (name == null || view.IsLive(name)) return null;
             string functionNote = NoteText(name);
             if (!notes.Contains(functionNote, StringComparer.Ordinal)) notes.Add(functionNote);
         }
@@ -205,336 +257,100 @@ public sealed class BenchmarkCitationLivenessCheck
     }
 
     /// <summary>
-    /// The function whose body holds <paramref name="line"/> (1-based): the nearest column-0
-    /// definition line at or above it, provided no column-0 closing brace lies between.
+    /// <paramref name="text"/> with prose line references rewritten as <c>path:N</c> or
+    /// <c>path:N-M</c>: a <see cref="ProseLineReferenceRegex"/> match keeps the text between the file
+    /// and its line after the reference; otherwise, when no <c>path:N</c> reference results, the
+    /// text names exactly one lineless source file, holds exactly one prose line and mentions no
+    /// board or wiki, that line is removed and given to every mention of the file.
     /// </summary>
-    private static string? EnclosingFunction(CorpusView view, string path, int line)
+    internal static string NormalizeProseLineReferences(string text)
     {
-        if (!view.Stripped.TryGetValue(path, out var lines)) return null;
-        if (line < 1 || line > lines.Length) return null;
+        string result = ProseLineReferenceRegex.Replace(
+            text, m => FormatReference(m.Groups[1].Value, m.Groups["first"].Value, m.Groups["last"]) + m.Groups["gap"].Value);
+        if (SourceReferenceRegex.IsMatch(result) || BoardOrWikiRegex.IsMatch(result)) return result;
 
-        for (int i = line - 1; i >= 0; i--)
-        {
-            string current = lines[i];
-            if (i < line - 1 && current.StartsWith('}')) return null;
-            if (current.TrimEnd().EndsWith(';')) continue;
+        var files = LinelessSourceFileRegex.Matches(result).Cast<Match>()
+            .Select(m => m.Groups[1].Value).Distinct(StringComparer.Ordinal).ToList();
+        if (files.Count != 1) return result;
 
-            string? name = DefinitionNameAt(lines, i, current);
-            if (name != null) return name;
-        }
+        string blanked = LinelessSourceFileRegex.Replace(result, m => new string(' ', m.Length));
+        var lines = FreeLineReferenceRegex.Matches(blanked);
+        if (lines.Count != 1) return result;
 
-        return null;
+        var free = lines[0];
+        string reference = FormatReference(files[0], free.Groups["first"].Value, free.Groups["last"]);
+        return LinelessSourceFileRegex.Replace(result.Remove(free.Index, free.Length), _ => reference);
     }
 
-    /// <summary>
-    /// <paramref name="current"/> (line <paramref name="row"/>, 0-based) as a column-0 function
-    /// definition: its name, when <see cref="BareDefinitionRegex"/> or <see cref="TypedDefinitionRegex"/>
-    /// matches, the name is not a <see cref="Keywords"/> entry, and <see cref="OpensABody"/> holds for
-    /// it; null otherwise.
-    /// </summary>
-    private static string? DefinitionNameAt(string[] lines, int row, string current)
-    {
-        var bare = BareDefinitionRegex.Match(current);
-        if (bare.Success && !Keywords.Contains(bare.Groups[1].Value) && OpensABody(lines, row, bare.Groups[1].Index + bare.Groups[1].Length))
-        {
-            return bare.Groups[1].Value;
-        }
-
-        var typed = TypedDefinitionRegex.Match(current);
-        if (typed.Success && !Keywords.Contains(typed.Groups[1].Value) && OpensABody(lines, row, typed.Groups[1].Index + typed.Groups[1].Length))
-        {
-            return typed.Groups[1].Value;
-        }
-
-        return null;
-    }
+    private static string FormatReference(string path, string first, Group last)
+        => last.Success ? $"{path}:{first}-{last.Value}" : $"{path}:{first}";
 
     /// <summary>
     /// The name of the macro whose <c>#define</c> header holds line <paramref name="row"/> (0-based):
-    /// the line is a <c>#define</c> line, or every line from one up to it ends in <c>\</c>. Null
-    /// otherwise.
+    /// the <c>#define</c> line itself, or — when every line from it up to <paramref name="row"/> ends
+    /// in <c>\</c> — a line no later than <see cref="ParameterListEnd"/>. Null otherwise, including on
+    /// a line of the macro's body.
     /// </summary>
     private static string? MacroDefinedAt(string[] lines, int row)
     {
+        int definitionRow = -1;
         var define = DefineRegex.Match(lines[row]);
-        if (define.Success) return define.Groups[1].Value;
-
-        int first = Math.Max(0, row - MaxMacroHeaderLines);
-        for (int i = row - 1; i >= first; i--)
+        if (define.Success)
         {
-            if (!lines[i].TrimEnd().EndsWith('\\')) return null;
-
-            define = DefineRegex.Match(lines[i]);
-            if (define.Success) return define.Groups[1].Value;
+            definitionRow = row;
         }
-
-        return null;
-    }
-
-    private const int MaxParameterListLines = 40;
-
-    /// <summary>
-    /// Whether the parameter list opening at or after <paramref name="column"/> of line
-    /// <paramref name="row"/> closes within 40 lines and is followed by <c>{</c>, directly or after
-    /// K&amp;R parameter declarations (lines ending in <c>;</c>). A macro invocation in a data table
-    /// (<c>SCROLL(…),</c>) and a call statement are no function.
-    /// </summary>
-    private static bool OpensABody(string[] lines, int row, int column)
-    {
-        int last = Math.Min(lines.Length - 1, row + MaxParameterListLines);
-        int depth = 0;
-        bool opened = false;
-        for (int r = row; r <= last; r++)
+        else
         {
-            string text = lines[r];
-            for (int c = r == row ? column : 0; c < text.Length; c++)
+            int first = Math.Max(0, row - MaxMacroHeaderLines);
+            for (int i = row - 1; i >= first; i--)
             {
-                char ch = text[c];
-                if (ch == '(')
+                if (!lines[i].TrimEnd().EndsWith('\\')) return null;
+
+                define = DefineRegex.Match(lines[i]);
+                if (define.Success)
                 {
-                    depth++;
-                    opened = true;
-                }
-                else if (ch == ')' && opened)
-                {
-                    depth--;
-                    if (depth == 0) return FollowedByBody(lines, r, c + 1, last);
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private static bool FollowedByBody(string[] lines, int row, int column, int last)
-    {
-        string rest = lines[row].Substring(column).Trim();
-        if (rest.Length > 0) return rest.StartsWith('{');
-
-        for (int r = row + 1; r <= last; r++)
-        {
-            string text = lines[r].Trim();
-            if (text.Length == 0) continue;
-            if (text.StartsWith('{')) return true;
-            if (!text.EndsWith(';') || lines[r].StartsWith('}')) return false;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Whether <paramref name="name"/> is referenced outside comments and string literals: as a call,
-    /// <c>name(</c>, on a line that is neither a definition of it, a prototype of it, nor a
-    /// <c>#define</c> of it; or as a value, the whole token not followed by <c>(</c> (a function
-    /// pointer passed or stored), on a line that is not a <c>#define</c> of it.
-    /// </summary>
-    private static bool HasLiveCallSite(CorpusView view, string name)
-    {
-        string escaped = Regex.Escape(name);
-        var call = new Regex($@"(?<![\w.])(?<!->){escaped}\s*\(", RegexOptions.CultureInvariant);
-        var bareDefinition = new Regex($@"^{escaped}\s*\(", RegexOptions.CultureInvariant);
-        var typedDefinition = new Regex(
-            $@"^(?!(?:extern|return|else|if|while|for|switch|case|goto|sizeof)\b)(?:[A-Za-z_]\w*\s+|\*\s*)+\**{escaped}\s*\((?!.*;\s*$)",
-            RegexOptions.CultureInvariant);
-        var prototype = new Regex(
-            $@"^\s*(?!(?:return|else|if|while|for|switch|case|goto|sizeof|do)\b)(?:[A-Za-z_]\w*\s+|\*\s*)+\**{escaped}\s*\(",
-            RegexOptions.CultureInvariant);
-        var define = new Regex($@"^\s*#\s*define\s+{escaped}\b", RegexOptions.CultureInvariant);
-        var valueReference = new Regex($@"(?<![\w.])(?<!->){escaped}(?!\w)(?!\s*\()", RegexOptions.CultureInvariant);
-
-        foreach (var file in view.Stripped.Values)
-        {
-            foreach (string line in file)
-            {
-                if (!line.Contains(name, StringComparison.Ordinal)) continue;
-                if (valueReference.IsMatch(line) && !define.IsMatch(line)) return true;
-                if (!call.IsMatch(line)) continue;
-                if (define.IsMatch(line)) continue;
-                if (bareDefinition.IsMatch(line) && !line.TrimEnd().EndsWith(';')) continue;
-                if (typedDefinition.IsMatch(line)) continue;
-                if (line.TrimEnd().EndsWith(';') && prototype.IsMatch(line)) continue;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private CorpusView View()
-    {
-        var corpus = _corpus();
-        var view = _view;
-        if (view != null && ReferenceEquals(view.Source, corpus)) return view;
-
-        var stripped = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (path, lines) in corpus)
-        {
-            string key = path.Replace('\\', '/');
-            if (key.EndsWith(".c", StringComparison.OrdinalIgnoreCase) || key.EndsWith(".h", StringComparison.OrdinalIgnoreCase))
-            {
-                stripped[key] = StripCommentsAndLiterals(lines);
-            }
-        }
-
-        view = new CorpusView(corpus, stripped);
-        _view = view;
-        return view;
-    }
-
-    private sealed record CorpusView(object Source, IReadOnlyDictionary<string, string[]> Stripped);
-
-    /// <summary>
-    /// The lines with <c>//</c> and <c>/* */</c> comments and string and character literals blanked
-    /// to spaces, so every column and line keeps its position. A block comment carries across lines.
-    /// </summary>
-    internal static string[] StripCommentsAndLiterals(IReadOnlyList<string> lines)
-    {
-        var result = new string[lines.Count];
-        bool inBlock = false;
-        for (int n = 0; n < lines.Count; n++)
-        {
-            string line = lines[n] ?? string.Empty;
-            var sb = new StringBuilder(line.Length);
-            int i = 0;
-            while (i < line.Length)
-            {
-                char c = line[i];
-                if (inBlock)
-                {
-                    if (c == '*' && i + 1 < line.Length && line[i + 1] == '/')
-                    {
-                        inBlock = false;
-                        sb.Append("  ");
-                        i += 2;
-                    }
-                    else
-                    {
-                        sb.Append(' ');
-                        i++;
-                    }
-                    continue;
-                }
-
-                if (c == '/' && i + 1 < line.Length && line[i + 1] == '*')
-                {
-                    inBlock = true;
-                    sb.Append("  ");
-                    i += 2;
-                    continue;
-                }
-
-                if (c == '/' && i + 1 < line.Length && line[i + 1] == '/')
-                {
-                    sb.Append(' ', line.Length - i);
+                    definitionRow = i;
                     break;
                 }
-
-                if (c is '"' or '\'')
-                {
-                    sb.Append(c);
-                    i++;
-                    while (i < line.Length && line[i] != c)
-                    {
-                        if (line[i] == '\\' && i + 1 < line.Length)
-                        {
-                            sb.Append("  ");
-                            i += 2;
-                            continue;
-                        }
-                        sb.Append(' ');
-                        i++;
-                    }
-                    if (i < line.Length)
-                    {
-                        sb.Append(c);
-                        i++;
-                    }
-                    continue;
-                }
-
-                sb.Append(c);
-                i++;
             }
-
-            result[n] = sb.ToString();
         }
 
-        return result;
+        if (definitionRow < 0) return null;
+        return row <= ParameterListEnd(lines, definitionRow, define) ? define.Groups[1].Value : null;
     }
 
     /// <summary>
-    /// The GnollHack repository <see cref="SourceCodeService"/> indexes, read from its path under the
-    /// indexer's directory, extension and size rules (C sources and headers only), and cached until
-    /// the repository's HEAD moves. Throws while the service has not finished indexing.
+    /// The row holding the closing <c>)</c> of a function-like macro's parameter list — the
+    /// character right after the name is <c>(</c> — scanning forward over backslash-continued rows;
+    /// <paramref name="definitionRow"/> for an object-like macro.
     /// </summary>
-    private sealed class SourceCodeServiceCorpus
+    private static int ParameterListEnd(string[] lines, int definitionRow, Match define)
     {
-        private static readonly string[] TargetDirectories = { "src", "include", "win/win32/xpl" };
-        private static readonly HashSet<string> ExcludedFiles = new(StringComparer.OrdinalIgnoreCase) { "vis_tab.c", "vis_tab.h", "date.h" };
+        int column = define.Groups[1].Index + define.Groups[1].Length;
+        string first = lines[definitionRow];
+        if (column >= first.Length || first[column] != '(') return definitionRow;
 
-        private readonly SourceCodeService _sourceCode;
-        private readonly long _maxFileBytes;
-        private readonly object _gate = new();
-        private string? _cachedKey;
-        private IReadOnlyDictionary<string, IReadOnlyList<string>>? _cached;
-
-        public SourceCodeServiceCorpus(SourceCodeService sourceCode, int maxFileSizeKB)
+        int last = Math.Min(lines.Length - 1, definitionRow + MaxMacroHeaderLines);
+        int depth = 0;
+        for (int r = definitionRow; r <= last; r++)
         {
-            _sourceCode = sourceCode;
-            _maxFileBytes = (long)maxFileSizeKB * 1024;
+            string text = lines[r];
+            for (int c = r == definitionRow ? column : 0; c < text.Length; c++)
+            {
+                if (text[c] == '(')
+                {
+                    depth++;
+                }
+                else if (text[c] == ')')
+                {
+                    depth--;
+                    if (depth == 0) return r;
+                }
+            }
+
+            if (!text.TrimEnd().EndsWith('\\')) return r;
         }
 
-        public IReadOnlyDictionary<string, IReadOnlyList<string>> Load()
-        {
-            if (!_sourceCode.IsIndexingComplete)
-            {
-                throw new InvalidOperationException("The GnollHack source index is not ready.");
-            }
-
-            string root = _sourceCode.SourceCodePath;
-            if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
-            {
-                throw new DirectoryNotFoundException("The GnollHack source repository is not reachable.");
-            }
-
-            string key = root + "|" + (GitHelper.GetGitHeadSha(root) ?? string.Empty);
-            lock (_gate)
-            {
-                if (_cached != null && string.Equals(_cachedKey, key, StringComparison.Ordinal))
-                {
-                    return _cached;
-                }
-
-                var files = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-                foreach (string dir in TargetDirectories)
-                {
-                    string full = Path.Combine(root, dir.Replace('/', Path.DirectorySeparatorChar));
-                    if (!Directory.Exists(full)) continue;
-
-                    foreach (string file in Directory.GetFiles(full, "*.*", SearchOption.AllDirectories))
-                    {
-                        string relative = Path.GetRelativePath(root, file).Replace('\\', '/');
-                        if (relative.Split('/').Any(s => s.StartsWith(".", StringComparison.Ordinal)
-                                || string.Equals(s, "bin", StringComparison.OrdinalIgnoreCase)
-                                || string.Equals(s, "obj", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            continue;
-                        }
-
-                        var info = new FileInfo(file);
-                        string ext = info.Extension.ToLowerInvariant();
-                        if (ext != ".c" && ext != ".h") continue;
-                        if (ExcludedFiles.Contains(info.Name)) continue;
-                        if (info.Length > _maxFileBytes) continue;
-
-                        files[relative] = File.ReadAllLines(file);
-                    }
-                }
-
-                _cached = files;
-                _cachedKey = key;
-                return files;
-            }
-        }
+        return last;
     }
 }

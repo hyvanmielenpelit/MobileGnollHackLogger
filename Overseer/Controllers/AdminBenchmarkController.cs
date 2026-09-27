@@ -2851,7 +2851,7 @@ public class AdminBenchmarkController : ControllerBase
                     {
                         Kind = r.Kind,
                         Category = r.Category,
-                        Question = r.Question,
+                        Questions = r.Questions.ToArray(),
                         Status = r.Status.ToString(),
                         MemberAText = r.MemberAText,
                         MemberBText = r.MemberBText

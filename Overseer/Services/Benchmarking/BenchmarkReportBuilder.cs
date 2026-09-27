@@ -136,8 +136,8 @@ public static class BenchmarkReportBuilder
     /// <summary>
     /// Board delivery per grading role, from the per-answer board-character columns. A role's total
     /// is every answer carrying that role's verdict or a recorded board figure, so a verdict whose
-    /// prompt carried no board counts against it. Empty for a run before harness 30, which recorded
-    /// none of this.
+    /// prompt carried no board counts against it. A panel run adds member B as <c>co-assessor</c>.
+    /// Empty for a run before harness 30, which recorded none of this.
     /// </summary>
     internal static IReadOnlyList<BoardDeliveryFigure> BoardDeliveryFigures(BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
     {
@@ -153,19 +153,25 @@ public static class BenchmarkReportBuilder
             return new BoardDeliveryFigure(role, population.Count - missing.Count, population.Count, missing);
         }
 
-        return new[]
+        bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        var figures = new List<BoardDeliveryFigure>
         {
             Figure("assessor",
                 a => a.AssessmentStatus == BenchmarkAssessmentStatus.Scored && a.AssessedByModelConfigurationId.HasValue,
-                a => a.AssessorBoardChars),
-            Figure(BenchmarkRunFinalizer.IsPanelRun(run) ? "reference reader" : "second reader", a => a.SecondOpinionQualityScore.HasValue, a => a.SecondOpinionBoardChars),
-            Figure("claim verifier", a => !string.IsNullOrWhiteSpace(a.ClaimVerificationJson), a => a.VerifierBoardChars)
+                a => a.AssessorBoardChars)
         };
+        if (isPanelRun)
+        {
+            figures.Add(Figure("co-assessor", a => a.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored, a => a.CoAssessorBoardChars));
+        }
+        figures.Add(Figure(isPanelRun ? "reference reader" : "second reader", a => a.SecondOpinionQualityScore.HasValue, a => a.SecondOpinionBoardChars));
+        figures.Add(Figure("claim verifier", a => !string.IsNullOrWhiteSpace(a.ClaimVerificationJson), a => a.VerifierBoardChars));
+        return figures;
     }
 
     /// <summary>
     /// The Delivery manifest's per-role line on a board suite: <c>Board delivered — assessor N of M
-    /// graded, …</c>. Null when the run has no board or predates harness 30.
+    /// graded, …</c>, each role looked up by name. Null when the run has no board or predates harness 30.
     /// </summary>
     internal static string? BoardDeliveryLine(BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
     {
@@ -174,11 +180,17 @@ public static class BenchmarkReportBuilder
         var figures = BoardDeliveryFigures(run, answers);
         if (figures.Count == 0) return null;
 
-        var assessor = figures[0];
-        var second = figures[1];
-        var verifier = figures[2];
+        BoardDeliveryFigure? Role(string role) => figures.FirstOrDefault(f => f.Role == role);
+        var assessor = Role("assessor")!;
+        var coAssessor = Role("co-assessor");
+        var reader = Role("reference reader") ?? Role("second reader")!;
+        var verifier = Role("claim verifier")!;
+        string coAssessorPart = coAssessor != null
+            ? $"co-assessor {Inv(coAssessor.Delivered)} of {Inv(coAssessor.Total)}, "
+            : string.Empty;
         return $"Board delivered — assessor {Inv(assessor.Delivered)} of {Inv(assessor.Total)} graded, "
-            + $"{second.Role} {Inv(second.Delivered)} of {Inv(second.Total)}, "
+            + coAssessorPart
+            + $"{reader.Role} {Inv(reader.Delivered)} of {Inv(reader.Total)}, "
             + $"claim verifier {Inv(verifier.Delivered)} of {Inv(verifier.Total)}; "
             + "synthesis: yes; difficulty assessment: digest (no map).";
     }
@@ -441,6 +453,49 @@ public static class BenchmarkReportBuilder
             .Where(v => v.SuspectedFalse == true)
             .ToList();
 
+    /// <summary>
+    /// The panel member(s) that submitted an item: <c>member A</c>, <c>member B</c> or <c>both
+    /// members</c>. Null when <see cref="BenchmarkClaimVerification.RaisedBy"/> is null (a
+    /// single-assessor run or a record before harness 40), where the report says "the assessor".
+    /// </summary>
+    internal static string? MemberPhrase(BenchmarkClaimVerification v)
+    {
+        if (v.RaisedBy == null) return null;
+        bool a = v.RaisedBy.Contains("A");
+        bool b = v.RaisedBy.Contains("B");
+        return a && b ? "both members" : a ? "member A" : b ? "member B" : null;
+    }
+
+    /// <summary>Who charged or quoted an item, as a sentence subject: the member phrase, else "the assessor".</summary>
+    private static string ChargedBy(BenchmarkClaimVerification v) => MemberPhrase(v) ?? "the assessor";
+
+    /// <summary>The possessive of <see cref="ChargedBy"/>: "member A's", "both members'" or "the assessor's".</summary>
+    private static string ChargedByPossessive(BenchmarkClaimVerification v) => MemberPhrase(v) switch
+    {
+        null => "the assessor's",
+        "both members" => "both members'",
+        string phrase => phrase + "'s"
+    };
+
+    /// <summary>
+    /// A panel run's split of items by the member(s) that raised them, <c>A n, B m, both k</c>: A and B
+    /// count the items that member raised alone, and an item without <c>raisedBy</c> counts as both.
+    /// </summary>
+    internal static string MemberSplitText(IEnumerable<BenchmarkClaimVerification> items, string labelA = "A", string labelB = "B")
+    {
+        int onlyA = 0, onlyB = 0, both = 0;
+        foreach (var v in items)
+        {
+            switch (MemberPhrase(v))
+            {
+                case "member A": onlyA++; break;
+                case "member B": onlyB++; break;
+                default: both++; break;
+            }
+        }
+        return $"{labelA} {onlyA}, {labelB} {onlyB}, both {both}";
+    }
+
     /// <summary>Verifications by the verdict the harness reads (<see cref="BenchmarkClaimVerification.EffectiveVerdict"/>): supported, refuted, indeterminate.</summary>
     internal static (int Supported, int Refuted, int Indeterminate) VerdictCounts(IEnumerable<BenchmarkClaimVerification> verifications)
     {
@@ -485,9 +540,11 @@ public static class BenchmarkReportBuilder
     /// its verification items by role: the out-of-rubric basis refuted, an accused sentence supported,
     /// a statement of the assessor's own evidence refuted, or a <c>Suspected false:</c> sentence the
     /// Accuracy evidence docks supported, in any combination. A record stored without roles, or one
-    /// where none is found, yields <see cref="CauseNotRecorded"/> alone.
+    /// where none is found, yields <see cref="CauseNotRecorded"/> alone. With a panel
+    /// <paramref name="member"/>, only the items that member raised are read, against that member's
+    /// own verdict.
     /// </summary>
-    private static List<string> ContestedDeductionCauses(BenchmarkRunAnswer answer)
+    private static List<string> ContestedDeductionCauses(BenchmarkRunAnswer answer, BenchmarkPanelMember? member = null)
     {
         var verifications = ClaimVerificationsOf(answer);
         var causes = new List<string>();
@@ -497,20 +554,27 @@ public static class BenchmarkReportBuilder
             return causes;
         }
 
-        if (verifications!.Any(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.OutOfRubricBasis)
+        var raised = member.HasValue ? BenchmarkService.RaisedByMembers(verifications, member.Value) : verifications!;
+        var dockedSuspicions = member.HasValue
+            ? (BenchmarkVerdictView.For(answer, member.Value) is BenchmarkVerdictView view
+                ? BenchmarkService.SupportedDockedSuspicions(view, verifications, member.Value)
+                : new List<BenchmarkClaimVerification>())
+            : BenchmarkService.SupportedDockedSuspicions(answer, verifications);
+
+        if (raised.Any(v => BenchmarkClaimRoles.HasRole(v, BenchmarkClaimRoles.OutOfRubricBasis)
             && v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
         {
             causes.Add(BasisRefutedCause);
         }
-        if (BenchmarkService.SupportedAccusations(verifications).Count > 0)
+        if (BenchmarkService.SupportedAccusations(raised).Count > 0)
         {
             causes.Add(AccusationSupportedCause);
         }
-        if (BenchmarkService.RefutedAssessorStatements(verifications).Count > 0)
+        if (BenchmarkService.RefutedAssessorStatements(raised).Count > 0)
         {
             causes.Add(AssessorStatementRefutedCause);
         }
-        if (BenchmarkService.SupportedDockedSuspicions(answer, verifications).Count > 0)
+        if (dockedSuspicions.Count > 0)
         {
             causes.Add(DockedSuspicionSupportedCause);
         }
@@ -1047,6 +1111,10 @@ public static class BenchmarkReportBuilder
         return string.Equals(first.Trim(), second.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>The candidate is an Anthropic model, whose usage reports no separate reasoning-token count.</summary>
+    private static bool IsAnthropicCandidate(BenchmarkRun run)
+        => string.Equals(run.TestedModelSnapshot.Provider?.Trim(), "Anthropic", StringComparison.OrdinalIgnoreCase);
+
     /// <summary><c>same-family</c> when a grader shares the candidate's provider, otherwise <c>cross-family</c>.</summary>
     private static string FamilyRelation(string? candidateProvider, string? graderProvider)
         => IsSameFamily(candidateProvider, graderProvider) ? "same-family" : "cross-family";
@@ -1409,7 +1477,7 @@ public static class BenchmarkReportBuilder
         }
         sb.AppendLine();
 
-        sb.AppendLine("### Assessment Model");
+        sb.AppendLine(isPanelRun ? "### Assessor (Panel Member A)" : "### Assessment Model");
         sb.AppendLine($"- **Display Name:** {run.AssessorModelSnapshot.Label()}");
         sb.AppendLine($"- **Provider:** {run.AssessorModelSnapshot.Provider}");
         sb.AppendLine($"- **Model ID:** {run.AssessorModelSnapshot.ModelId}");
@@ -1475,6 +1543,11 @@ public static class BenchmarkReportBuilder
                         ? $"; and, after scoring, any answer more than {scoringConstants.SecondOpinionOutlierDeltaPoints} points below the run's median."
                         : "."));
             }
+        }
+        else if (isPanelRun)
+        {
+            // Both members grade every answer, so no trigger-selected reading was forgone.
+            sb.AppendLine("- **None selected.** No answer in this run was read by a reference reader.");
         }
         else
         {
@@ -1644,6 +1717,31 @@ public static class BenchmarkReportBuilder
             string memberBIndexText = run.CoAssessorOnlyQualityIndex.HasValue ? $"{run.CoAssessorOnlyQualityIndex.Value} / 100" : "not recorded";
             sb.AppendLine($"- **Panel:** mean of both members' per-answer quality. Member A alone: {memberAIndexText}. Member B alone: {memberBIndexText}. Reference reader (advisory): {readerIndexText}.");
         }
+        // A critical error caps Quality at 25 (see BenchmarkScoring), which the Raw/Intelligence
+        // Index pair below already shows as a point delta — but that delta is diluted by every
+        // *other* answer's difficulty weight, so a single hallucinated answer can move the index
+        // by as little as one point (see the "How to read these" note under Final Indices). The
+        // Critical Errors line gives the reader the actual count instead of asking them to infer it
+        // from a small index shift.
+        // "Applied" means the cap actually fired (CriticalError == true), independent of whether
+        // anyone disputed it — a run whose every cap is disputed must still say 2, not 0, or the
+        // reader cannot tell a capped-and-unchallenged answer from a capped-and-contested one. In a
+        // panel run a cap from either member lowers the panel score, so either member's counts.
+        bool CapApplied(BenchmarkRunAnswer a) => a.CriticalError || (isPanelRun && a.CoAssessmentCriticalError == true);
+        var appliedCriticalAnswers = answers.Where(CapApplied).OrderBy(a => a.OrderIndex).ToList();
+
+        // Split direction matters: an applied cap the second reader disagreed with is a different
+        // claim from a critical error the second reader raised on its own initiative.
+        var disputedBySecondReader = appliedCriticalAnswers
+            .Where(a => a.SecondOpinionCriticalError == false)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        var raisedOnlyBySecondReader = answers
+            .Where(a => !CapApplied(a) && a.SecondOpinionCriticalError == true)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        bool criticalErrorsLinePrints = appliedCriticalAnswers.Count > 0 || disputedBySecondReader.Count > 0 || raisedOnlyBySecondReader.Count > 0;
+
         if (se.HasValue && run.QualityIndex.HasValue)
         {
             sb.AppendLine("*This reflects finite item-sampling uncertainty — how much the index would move under a different draw of questions of the same difficulty profile. Two runs whose intervals overlap are statistically indistinguishable on this suite.*");
@@ -1655,7 +1753,10 @@ public static class BenchmarkReportBuilder
             if (cappedCount > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine($"> ⚠️ **The interval is inflated by {cappedCount} capped answer(s).** A critical-error cap replaces a score with 25, and that deviation enters the variance weighted by the item's assessed difficulty *squared*, so most of this width is those answers rather than question sampling. Read the **Critical Errors** count below for that failure mode; do not read the width as noise.");
+                string criticalErrorsPointer = !isPanelRun || criticalErrorsLinePrints
+                    ? "Read the **Critical Errors** count below for that failure mode; do"
+                    : "Do";
+                sb.AppendLine($"> ⚠️ **The interval is inflated by {cappedCount} capped answer(s).** A critical-error cap replaces a score with 25, and that deviation enters the variance weighted by the item's assessed difficulty *squared*, so most of this width is those answers rather than question sampling. {criticalErrorsPointer} not read the width as noise.");
             }
             sb.AppendLine();
         }
@@ -1681,28 +1782,6 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Unweighted Quality Mean:** {unweightedMean.Value} / 100 — difficulty weighting moved the index by **{(weightingDelta > 0 ? "+" : string.Empty)}{Inv(weightingDelta)}** points. The Intelligence Index weights each answer by its assessed difficulty, so a run whose weak answers are its easy ones reads higher than its plain average.");
             sb.AppendLine();
         }
-
-        // A critical error caps Quality at 25 (see BenchmarkScoring), which the Raw/Intelligence
-        // Index pair above already shows as a point delta — but that delta is diluted by every
-        // *other* answer's difficulty weight, so a single hallucinated answer can move the index
-        // by as little as one point (see the "How to read these" note under Final Indices). The
-        // headline below gives the reader the actual count instead of asking them to infer it
-        // from a small index shift.
-        // "Applied" means the cap actually fired (CriticalError == true), independent of whether
-        // anyone disputed it — a run whose every cap is disputed must still say 2, not 0, or the
-        // reader cannot tell a capped-and-unchallenged answer from a capped-and-contested one.
-        var appliedCriticalAnswers = answers.Where(a => a.CriticalError).OrderBy(a => a.OrderIndex).ToList();
-
-        // Split direction matters: an applied cap the second reader disagreed with is a different
-        // claim from a critical error the second reader raised on its own initiative.
-        var disputedBySecondReader = appliedCriticalAnswers
-            .Where(a => a.SecondOpinionCriticalError.HasValue && a.SecondOpinionCriticalError.Value != a.CriticalError)
-            .OrderBy(a => a.OrderIndex)
-            .ToList();
-        var raisedOnlyBySecondReader = answers
-            .Where(a => !a.CriticalError && a.SecondOpinionCriticalError == true)
-            .OrderBy(a => a.OrderIndex)
-            .ToList();
 
         // ContestedCriticalError is set only for a critical-error adjudication (CriticalError ==
         // true, see BenchmarkService.IsCriticalErrorAdjudication) whose quote the claim verifier
@@ -1753,13 +1832,19 @@ public static class BenchmarkReportBuilder
             {
                 criticalErrorsLine.Append($" (question(s) {string.Join(", ", appliedCriticalAnswers.Select(a => a.OrderIndex))})");
             }
+            if (isPanelRun && appliedCriticalAnswers.Count > 0)
+            {
+                int byA = appliedCriticalAnswers.Count(a => a.CriticalError);
+                int byB = appliedCriticalAnswers.Count(a => a.CoAssessmentCriticalError == true);
+                criticalErrorsLine.Append($" — flagged by member A on {byA}, member B on {byB}");
+            }
             if (disputedBySecondReader.Count > 0)
             {
-                criticalErrorsLine.Append($" — {disputedBySecondReader.Count} disputed by the second reader (question(s) {string.Join(", ", disputedBySecondReader.Select(a => a.OrderIndex))})");
+                criticalErrorsLine.Append($" — {disputedBySecondReader.Count} disputed by the {readerName} (question(s) {string.Join(", ", disputedBySecondReader.Select(a => a.OrderIndex))})");
             }
             if (raisedOnlyBySecondReader.Count > 0)
             {
-                criticalErrorsLine.Append($"; {raisedOnlyBySecondReader.Count} raised only by the second reader (question(s) {string.Join(", ", raisedOnlyBySecondReader.Select(a => a.OrderIndex))})");
+                criticalErrorsLine.Append($"; {raisedOnlyBySecondReader.Count} raised only by the {readerName} (question(s) {string.Join(", ", raisedOnlyBySecondReader.Select(a => a.OrderIndex))})");
             }
             if (verifierSupportedQuoteAnswers.Count > 0)
             {
@@ -1991,7 +2076,13 @@ public static class BenchmarkReportBuilder
 
         sb.AppendLine($"- **Total Input Tokens:** {Inv(run.TotalInputTokens, "N0")}");
         sb.AppendLine($"- **Total Output Tokens:** {Inv(run.TotalOutputTokens, "N0")}");
-        if (answers.Any(a => a.ReasoningTokens.HasValue))
+        // Anthropic reports no separate thinking count: its zero is "not reported", not "no thinking".
+        bool reasoningUnreported = IsAnthropicCandidate(run);
+        if (reasoningUnreported)
+        {
+            sb.AppendLine("- **Of Which Reasoning Tokens:** n/a *(not reported separately by this provider; thinking is counted in output tokens)*");
+        }
+        else if (answers.Any(a => a.ReasoningTokens.HasValue))
         {
             long reasoningTotal = answers.Sum(a => (long)(a.ReasoningTokens ?? 0));
             int unrecorded = answers.Count(a => !a.ReasoningTokens.HasValue);
@@ -2409,20 +2500,30 @@ public static class BenchmarkReportBuilder
             }
             else
             {
-                long summedStageDurations = run.TotalAnswerDurationMs + run.TotalAssessmentDurationMs +
-                    run.TotalSecondOpinionDurationMs + run.TotalClaimVerificationDurationMs + run.TotalSynthesisDurationMs;
+                // In a panel run the two members grade each answer concurrently, so an answer's
+                // assessment stage lasts as long as the slower member; the two syntheses run one
+                // after the other, so both count.
+                long assessmentStageMs = isPanelRun
+                    ? answers.Sum(a => Math.Max(a.AssessmentDurationMs ?? 0L, a.CoAssessmentDurationMs ?? 0L))
+                    : run.TotalAssessmentDurationMs;
+                long summedStageDurations = run.TotalAnswerDurationMs + assessmentStageMs +
+                    run.TotalSecondOpinionDurationMs + run.TotalClaimVerificationDurationMs + run.TotalSynthesisDurationMs +
+                    (isPanelRun ? run.TotalCoSynthesisDurationMs : 0L);
+                string stageList = isPanelRun
+                    ? $"candidate, assessment (the slower member per answer), {readerName}, claim verification, synthesis, co-synthesis"
+                    : $"candidate, assessment, {readerName}, claim verification, synthesis";
                 long measuredOverlapMs = run.TotalDurationMs - summedStageDurations;
                 if (measuredOverlapMs < 0)
                 {
                     long excessMs = -measuredOverlapMs;
                     sb.AppendLine(
-                        $"*Measured overlap: the summed stage durations (candidate, assessment, {readerName}, claim verification, synthesis) exceed the wall clock by " +
+                        $"*Measured overlap: the summed stage durations ({stageList}) exceed the wall clock by " +
                         $"{FormatDuration(excessMs)} ({Inv(excessMs, "N0")} ms) — grading stages ran concurrently with candidate answering.*");
                 }
                 else
                 {
                     sb.AppendLine(
-                        $"*Measured overlap: wall clock minus the summed stage durations (candidate, assessment, {readerName}, claim verification, synthesis) leaves " +
+                        $"*Measured overlap: wall clock minus the summed stage durations ({stageList}) leaves " +
                         $"{FormatDuration(measuredOverlapMs)} ({Inv(measuredOverlapMs, "N0")} ms) unaccounted for by sequential stage time.*");
                 }
             }
@@ -2464,6 +2565,22 @@ public static class BenchmarkReportBuilder
         int outOfRubricAccuracyCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction));
         int answerFramingOpenerCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.AnswerFramingOpener));
         int providerErrorCount = answers.Count(BenchmarkRunFinalizer.HasTerminalFailure);
+
+        // Member B's advisory flags, read from its record. The counts above and the run's stored
+        // counts are member A's; a panel run prints the two side by side as "A n, B m".
+        var memberBFlagsByAnswer = isPanelRun
+            ? answers
+                .Select(a => (Answer: a, Flags: BenchmarkCoAssessmentRecord.Parse(a.CoAssessmentJson)?.Flags))
+                .Where(x => x.Flags != null)
+                .Select(x => (x.Answer, Flags: x.Flags!))
+                .ToList()
+            : new List<(BenchmarkRunAnswer Answer, BenchmarkCoAssessmentFlags Flags)>();
+        List<BenchmarkRunAnswer> MemberBFlagged(Func<BenchmarkCoAssessmentFlags, bool> flag)
+            => memberBFlagsByAnswer.Where(x => flag(x.Flags)).Select(x => x.Answer).OrderBy(a => a.OrderIndex).ToList();
+        string FlagFigure(string memberAFigure, Func<BenchmarkCoAssessmentFlags, bool> flag)
+            => isPanelRun ? $"A {memberAFigure}, B {Inv(MemberBFlagged(flag).Count)}" : memberAFigure;
+        int memberBContestedCriticalErrorCount = MemberBFlagged(f => f.ContestedCriticalError).Count;
+        int memberBContestedAccuracyDeductionCount = MemberBFlagged(f => f.ContestedAccuracyDeduction).Count;
 
         int transportDefectCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
         int recoveredCount = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
@@ -2556,7 +2673,7 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {contestedCount}, unevidenced deductions: {unevidencedCount}, omissions as accuracy: {omissionCount}, refuted claims: {refutedCount}, contested critical errors: {contestedCriticalErrorCount}, out-of-rubric accuracy deductions: {outOfRubricAccuracyCount}, contested accuracy deductions: {contestedAccuracyDeductionFigure}, dimension outliers: {dimensionOutlierCount}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {FlagFigure(Inv(contestedCount), f => f.ContestedVerdict)}, unevidenced deductions: {FlagFigure(Inv(unevidencedCount), f => f.UnevidencedDeduction)}, omissions as accuracy: {FlagFigure(Inv(omissionCount), f => f.OmissionAsAccuracy)}, refuted claims: {refutedCount}, contested critical errors: {FlagFigure(Inv(contestedCriticalErrorCount), f => f.ContestedCriticalError)}, out-of-rubric accuracy deductions: {FlagFigure(Inv(outOfRubricAccuracyCount), f => f.OutOfRubricAccuracy)}, contested accuracy deductions: {FlagFigure(contestedAccuracyDeductionFigure, f => f.ContestedAccuracyDeduction)}, dimension outliers: {FlagFigure(Inv(dimensionOutlierCount), f => f.DimensionOutlier)}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
 
         // The Accuracy-specific share of the generic unevidenced-deduction flag, which is shared
         // by dimensions. Read from the stored evidence, so a run graded before the rule existed
@@ -2582,39 +2699,62 @@ public static class BenchmarkReportBuilder
             // production chat would have sent — the defect is in the live prompt, not in this harness.
             sb.AppendLine($"- **Answer-Framing Openers:** {run.AnswerFramingOpenerAnswerCount} ({string.Join(", ", answerFramingOpenerAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *the opening text was **not** removed. It violates the answer-opening rule in `Overseer/ToolGuides/_policy.md` and reaches production chat unmodified.*");
         }
-        if (contestedCriticalErrorCount > 0)
+        if (contestedCriticalErrorCount > 0 || memberBContestedCriticalErrorCount > 0)
         {
             var contestedCriticalErrorAnswers = answers
                 .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedCriticalError))
+                .Concat(MemberBFlagged(f => f.ContestedCriticalError))
+                .DistinctBy(a => a.OrderIndex)
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
             string secondReaderDisputeNote = disputedBySecondReader.Count > 0
-                ? " — counts quotes the claim verifier supported; second-reader disputes are counted on the Critical Errors line."
+                ? $" — counts quotes the claim verifier supported; {(isPanelRun ? "reference-reader" : "second-reader")} disputes are counted on the Critical Errors line."
                 : string.Empty;
-            sb.AppendLine($"- **Contested Critical Errors:** {contestedCriticalErrorCount} (question(s) {string.Join(", ", contestedCriticalErrorAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported** as a standalone sentence; the error may lie in its context, so read the verdict's basis before treating the critical error as overturned. Advisory: the cap stands and no index moved; re-assess from the run detail.{secondReaderDisputeNote}");
+            string contestedCriticalErrorFigure = isPanelRun
+                ? $"A {contestedCriticalErrorCount}, B {memberBContestedCriticalErrorCount}"
+                : Inv(contestedCriticalErrorCount);
+            sb.AppendLine($"- **Contested Critical Errors:** {contestedCriticalErrorFigure} (question(s) {string.Join(", ", contestedCriticalErrorAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported** as a standalone sentence; the error may lie in its context, so read the verdict's basis before treating the critical error as overturned. Advisory: the cap stands and no index moved; re-assess from the run detail.{secondReaderDisputeNote}");
         }
-        if (contestedAccuracyDeductionCount > 0)
+        if (contestedAccuracyDeductionCount > 0 || memberBContestedAccuracyDeductionCount > 0)
         {
             var contestedAccuracyDeductionAnswers = answers
                 .Where(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction))
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
-            // An answer with both causes is listed under both.
+            // An answer with both causes is listed under both. In a panel run each member's flag is
+            // explained by the items that member raised.
             var byCause = contestedAccuracyDeductionAnswers
-                .SelectMany(a => ContestedDeductionCauses(a).Select(cause => (Cause: cause, Answer: a)))
+                .SelectMany(a => ContestedDeductionCauses(a, isPanelRun ? BenchmarkPanelMember.A : (BenchmarkPanelMember?)null).Select(cause => (Cause: cause, Answer: a)))
                 .ToList();
-            var causeParts = new[] { BasisRefutedCause, AccusationSupportedCause, AssessorStatementRefutedCause, DockedSuspicionSupportedCause, CauseNotRecorded }
-                .Select(cause => (Cause: cause, Answers: byCause.Where(x => x.Cause == cause).Select(x => $"Q{x.Answer.OrderIndex}").ToList()))
-                .Where(p => p.Answers.Count > 0)
-                .Select(p => $"{p.Cause}: {string.Join(", ", p.Answers)}");
+            var byCauseB = MemberBFlagged(f => f.ContestedAccuracyDeduction)
+                .SelectMany(a => ContestedDeductionCauses(a, BenchmarkPanelMember.B).Select(cause => (Cause: cause, Answer: a)))
+                .ToList();
+            IEnumerable<string> CauseParts(List<(string Cause, BenchmarkRunAnswer Answer)> causes)
+                => new[] { BasisRefutedCause, AccusationSupportedCause, AssessorStatementRefutedCause, DockedSuspicionSupportedCause, CauseNotRecorded }
+                    .Select(cause => (Cause: cause, Answers: causes.Where(x => x.Cause == cause).Select(x => $"Q{x.Answer.OrderIndex}").ToList()))
+                    .Where(p => p.Answers.Count > 0)
+                    .Select(p => $"{p.Cause}: {string.Join(", ", p.Answers)}");
+            var causeParts = CauseParts(byCause);
+            var allCauses = byCause.Concat(byCauseB).ToList();
             // The third cause is named only where it occurs, so a report without one reads as before.
-            string assessorStatementClause = byCause.Any(x => x.Cause == AssessorStatementRefutedCause)
-                ? ", or a statement of the assessor's own accuracy evidence was **refuted**"
+            string charger = isPanelRun ? "a panel member" : "the assessor";
+            string assessorStatementClause = allCauses.Any(x => x.Cause == AssessorStatementRefutedCause)
+                ? (isPanelRun ? ", or a statement of a panel member's own accuracy evidence was **refuted**" : ", or a statement of the assessor's own accuracy evidence was **refuted**")
                 : string.Empty;
-            string dockedSuspicionClause = byCause.Any(x => x.Cause == DockedSuspicionSupportedCause)
-                ? ", or a sentence the assessor reported as suspected false and docked Accuracy for was **supported**"
+            string dockedSuspicionClause = allCauses.Any(x => x.Cause == DockedSuspicionSupportedCause)
+                ? $", or a sentence {charger} reported as suspected false and docked Accuracy for was **supported**"
                 : string.Empty;
-            sb.AppendLine($"- **Contested Accuracy Deductions:** {contestedAccuracyDeductionCount} — {string.Join("; ", causeParts)}. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence the assessor quoted as false was **supported**{assessorStatementClause}{dockedSuspicionClause}. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
+            string causesText = isPanelRun
+                ? string.Join("; ", new[]
+                    {
+                        byCause.Count > 0 ? $"member A — {string.Join("; ", causeParts)}" : null,
+                        byCauseB.Count > 0 ? $"member B — {string.Join("; ", CauseParts(byCauseB))}" : null
+                    }.Where(p => p != null))
+                : string.Join("; ", causeParts);
+            string countText = isPanelRun
+                ? $"A {contestedAccuracyDeductionCount}, B {memberBContestedAccuracyDeductionCount}"
+                : Inv(contestedAccuracyDeductionCount);
+            sb.AppendLine($"- **Contested Accuracy Deductions:** {countText} — {causesText}. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence {charger} quoted as false was **supported**{assessorStatementClause}{dockedSuspicionClause}. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
         }
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
@@ -2681,8 +2821,17 @@ public static class BenchmarkReportBuilder
             .ToList();
         var suspectedFalseTotals = VerdictCounts(suspectedFalseByAnswer.SelectMany(x => x.Claims));
         int suspectedFalseRunCount = suspectedFalseByAnswer.Sum(x => x.Claims.Count);
+        // A panel run counts the answers' own claims from the verifier's record, once each however
+        // many members raised them; member A's claim-count column holds member A's alone.
+        var panelClaimsByAnswer = isPanelRun
+            ? answers
+                .Select(a => (Answer: a, Claims: (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>()).Where(BenchmarkClaimRoles.IsOrdinaryClaim).ToList()))
+                .Where(x => x.Claims.Count > 0)
+                .ToList()
+            : new List<(BenchmarkRunAnswer Answer, List<BenchmarkClaimVerification> Claims)>();
+        int panelClaimCount = panelClaimsByAnswer.Sum(x => x.Claims.Count);
 
-        if (!claimsRecorded || unverifiedTotal > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0 || accusedRunCount > 0 || assessorStatementRunCount > 0)
+        if (!claimsRecorded || unverifiedTotal > 0 || panelClaimCount > 0 || contestedAnswers.Count > 0 || omissionAnswers.Count > 0 || dimensionOutlierAnswers.Count > 0 || refutedAnswers.Count > 0 || verificationFailedAnswers.Count > 0 || notCheckedAnswers.Count > 0 || supportedAccusations.Count > 0 || accusedRunCount > 0 || assessorStatementRunCount > 0)
         {
             sb.AppendLine("### Assessor Findings");
             if (!claimsRecorded)
@@ -2690,6 +2839,22 @@ public static class BenchmarkReportBuilder
                 sb.AppendLine(PredatesHarnessVersion(run, UnverifiedClaimsHarnessVersion)
                     ? $"- **Unverified Claims:** not recorded — this run predates harness version {UnverifiedClaimsHarnessVersion}, which added the field."
                     : "- **Unverified Claims:** not recorded — no answer carries a claim count, so no assessment reached the stage that records it.");
+            }
+            else if (panelClaimCount > 0)
+            {
+                var panelClaimTotals = VerdictCounts(panelClaimsByAnswer.SelectMany(x => x.Claims));
+                sb.AppendLine($"- **Unverified Claims:** {panelClaimCount} across {panelClaimsByAnswer.Count} answer(s) ({string.Join(", ", panelClaimsByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — verified: {panelClaimTotals.Supported} supported, {panelClaimTotals.Refuted} refuted, {panelClaimTotals.Indeterminate} indeterminate ({MemberSplitText(panelClaimsByAnswer.SelectMany(x => x.Claims), "member A", "member B")}) — *claims a panel member could neither confirm nor refute against the rubric, each counted once however many members raised it. Advisory: from harness version 7 these do not reduce Accuracy.*");
+
+                if (verificationClearedAnswers.Count > 0)
+                {
+                    sb.AppendLine($"- **Verification-cleared Accuracy deductions (member A):** {verificationClearedAnswers.Count} ({string.Join(", ", verificationClearedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — Accuracy was docked citing only claims the rubric did not cover, and every such claim the verifier later checked was supported. Advisory; this is the instrument's share of the Accuracy shortfall, as OUT-OF-SCOPE is of Completeness.");
+                }
+
+                if (verificationFailedAnswers.Count > 0)
+                {
+                    string firstError = BenchmarkAssessmentFailure.Truncate(verificationFailedAnswers[0].ClaimVerificationError, 200) ?? string.Empty;
+                    sb.AppendLine($"- **Claim Verification Failed:** {verificationFailedAnswers.Count} answer(s) ({string.Join(", ", verificationFailedAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the verifier was configured but returned no verdict. First error: `{firstError}`.");
+                }
             }
             else if (unverifiedTotal > 0)
             {
@@ -2735,26 +2900,34 @@ public static class BenchmarkReportBuilder
             }
             if (dimensionOutlierAnswers.Count > 0)
             {
-                sb.AppendLine($"- **Dimension Outliers:** {dimensionOutlierAnswers.Count} ({string.Join(", ", dimensionOutlierAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *one dimension at level ≤ 1 beside three at ≥ 3 with no defect of that kind named. Advisory; routed to a second reader.*");
+                sb.AppendLine($"- **Dimension Outliers:** {dimensionOutlierAnswers.Count} ({string.Join(", ", dimensionOutlierAnswers.Select(a => $"Q{a.OrderIndex}"))}) — *one dimension at level ≤ 1 beside three at ≥ 3 with no defect of that kind named. Advisory; routed to {(isPanelRun ? "the reference reader" : "a second reader")}.*");
             }
             if (accusedRunCount > 0)
             {
-                sb.AppendLine($"- **Accused Sentences Checked:** {accusedRunCount} across {accusedByAnswer.Count} answer(s) ({string.Join(", ", accusedByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — supported {accusedRunTotals.Supported}, refuted {accusedRunTotals.Refuted}, indeterminate {accusedRunTotals.Indeterminate}. *Sentences the assessor quoted as false when it docked Accuracy, sent to the claim verifier; counted apart from the answers' own claims.*");
+                sb.AppendLine(isPanelRun
+                    ? $"- **Accused Sentences Checked:** {accusedRunCount} ({MemberSplitText(accusedByAnswer.SelectMany(x => x.Accused))}) across {accusedByAnswer.Count} answer(s) ({string.Join(", ", accusedByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — supported {accusedRunTotals.Supported}, refuted {accusedRunTotals.Refuted}, indeterminate {accusedRunTotals.Indeterminate}. *Sentences a panel member quoted as false when it docked Accuracy, sent to the claim verifier; counted apart from the answers' own claims.*"
+                    : $"- **Accused Sentences Checked:** {accusedRunCount} across {accusedByAnswer.Count} answer(s) ({string.Join(", ", accusedByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — supported {accusedRunTotals.Supported}, refuted {accusedRunTotals.Refuted}, indeterminate {accusedRunTotals.Indeterminate}. *Sentences the assessor quoted as false when it docked Accuracy, sent to the claim verifier; counted apart from the answers' own claims.*");
             }
             if (assessorStatementRunCount > 0)
             {
                 sb.AppendLine($"- **Assessor Statements Checked:** {assessorStatementRunCount} across {assessorStatementsByAnswer.Count} answer(s) ({string.Join(", ", assessorStatementsByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — supported {assessorStatementTotals.Supported}, refuted {assessorStatementTotals.Refuted}, indeterminate {assessorStatementTotals.Indeterminate}. *Sentences of the assessor's own accuracy evidence, sent to the claim verifier on a contested answer. A refuted one means the **assessor** was wrong; none is counted as a claim of the answer.*");
             }
-            if (suspectedFalseRunCount > 0)
+            if (suspectedFalseRunCount > 0 && isPanelRun)
+            {
+                sb.AppendLine($"- **Suspected False by the Panel:** {suspectedFalseRunCount} ({MemberSplitText(suspectedFalseByAnswer.SelectMany(x => x.Claims))}) across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the verifier sided with the member), supported {suspectedFalseTotals.Supported} (the verifier sided with the answer), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences a panel member believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
+            }
+            else if (suspectedFalseRunCount > 0)
             {
                 sb.AppendLine($"- **Suspected False by the Assessor:** {suspectedFalseRunCount} across {suspectedFalseByAnswer.Count} answer(s) ({string.Join(", ", suspectedFalseByAnswer.Select(x => $"Q{x.Answer.OrderIndex}"))}) — refuted {suspectedFalseTotals.Refuted} (the verifier sided with the assessor), supported {suspectedFalseTotals.Supported} (the verifier sided with the answer), indeterminate {suspectedFalseTotals.Indeterminate}. *Answer sentences the assessor believed false from its own knowledge, which neither the rubric nor the board settles; under scoring method 12 they lower no level and are checked by the claim verifier instead. Included in the unverified claims above.*");
             }
             if (supportedAccusations.Count > 0)
             {
-                sb.AppendLine($"- **Supported Accusations:** {supportedAccusations.Count} ({string.Join(", ", supportedAccusations.Select(s => $"Q{s.Answer.OrderIndex}").Distinct())}) — *a sentence the assessor quoted when it docked Accuracy was checked by the claim verifier and supported. The harness finds only accusations the assessor quoted, so this is a bounded count. Advisory; the deduction stands and no score moves.*");
+                sb.AppendLine(isPanelRun
+                    ? $"- **Supported Accusations:** {supportedAccusations.Count} ({MemberSplitText(supportedAccusations.Select(s => s.Verification))}) ({string.Join(", ", supportedAccusations.Select(s => $"Q{s.Answer.OrderIndex}").Distinct())}) — *a sentence a panel member quoted when it docked Accuracy was checked by the claim verifier and supported. The harness finds only accusations a member quoted, so this is a bounded count. Advisory; the deduction stands and no score moves.*"
+                    : $"- **Supported Accusations:** {supportedAccusations.Count} ({string.Join(", ", supportedAccusations.Select(s => $"Q{s.Answer.OrderIndex}").Distinct())}) — *a sentence the assessor quoted when it docked Accuracy was checked by the claim verifier and supported. The harness finds only accusations the assessor quoted, so this is a bounded count. Advisory; the deduction stands and no score moves.*");
                 foreach (var (ans, v) in supportedAccusations)
                 {
-                    sb.AppendLine($"  - **Q{ans.OrderIndex}:** a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"{v.Claim}\" ({v.Citation}).");
+                    sb.AppendLine($"  - **Q{ans.OrderIndex}:** a sentence {ChargedBy(v)} charged as false was checked by the claim verifier and **supported** — \"{v.Claim}\" ({v.Citation}).");
                 }
             }
             if (refutedAnswers.Count > 0)
@@ -2777,13 +2950,15 @@ public static class BenchmarkReportBuilder
                             foreach (var v in BenchmarkService.OrdinaryClaimVerifications(vers, ans)
                                          .Where(x => x.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
                             {
-                                string suspectedTag = v.SuspectedFalse == true ? " *(suspected false by the assessor)*" : string.Empty;
+                                string suspectedTag = v.SuspectedFalse == true ? $" *(suspected false by {ChargedBy(v)})*" : string.Empty;
                                 sb.AppendLine($"- **Q{ans.OrderIndex}:** \"{v.Claim}\"{suspectedTag}");
                                 if (!string.IsNullOrWhiteSpace(v.Citation))
                                 {
                                     sb.AppendLine($"  - **Citation:** {v.Citation}");
                                 }
-                                if (!string.IsNullOrWhiteSpace(v.Basis))
+                                // A basis that only repeats the citation adds nothing.
+                                if (!string.IsNullOrWhiteSpace(v.Basis)
+                                    && !string.Equals(v.Basis.Trim(), v.Citation?.Trim(), StringComparison.Ordinal))
                                 {
                                     sb.AppendLine($"  - **Basis:** {v.Basis}");
                                 }
@@ -3154,13 +3329,77 @@ public static class BenchmarkReportBuilder
             sb.AppendLine();
         }
 
+        // Member B's verdict record on each graded answer of a panel run; empty otherwise.
+        var memberBRecords = isPanelRun
+            ? scoredAnswers
+                .Where(a => a.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored)
+                .Select(a => (Answer: a, Record: BenchmarkCoAssessmentRecord.Parse(a.CoAssessmentJson)))
+                .Where(x => x.Record != null)
+                .Select(x => (x.Answer, Record: x.Record!))
+                .ToList()
+            : new List<(BenchmarkRunAnswer Answer, BenchmarkCoAssessmentRecord Record)>();
+        static string QuestionList(IEnumerable<BenchmarkRunAnswer> list)
+        {
+            var named = list.OrderBy(a => a.OrderIndex).Select(a => $"Q{a.OrderIndex}").ToList();
+            return named.Count > 0 ? string.Join(", ", named) : "none";
+        }
+
+        // Response-style conflict inputs: the four dimension averages the note reads.
+        double? styleAccuracy = null, styleCompleteness = null, styleConciseness = null, styleReadability = null;
+
         if (scoredAnswers.Count > 0)
         {
             sb.AppendLine("### Dimensional Score Averages");
-            sb.AppendLine($"- **Accuracy (Weight 55%):** {Inv(scoredAnswers.Average(a => a.AccuracyScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.AccuracyLevel ?? 0), "F1")} / 6)");
-            sb.AppendLine($"- **Completeness (Weight 25%):** {Inv(scoredAnswers.Average(a => a.CompletenessScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.CompletenessLevel ?? 0), "F1")} / 6)");
-            sb.AppendLine($"- **Conciseness (Weight 10%):** {Inv(scoredAnswers.Average(a => a.ConcisenessScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.ConcisenessLevel ?? 0), "F1")} / 6)");
-            sb.AppendLine($"- **Readability (Weight 10%):** {Inv(scoredAnswers.Average(a => a.ReadabilityScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.ReadabilityLevel ?? 0), "F1")} / 6)");
+            if (isPanelRun)
+            {
+                // One row per member and a panel row, the mean of the two members' averages. Member
+                // B's points are its levels on this run's level table, as member A's are.
+                var levelScores = scoringConstants.LevelScores;
+                var bLevels = memberBRecords
+                    .Where(x => x.Record.AccuracyLevel.HasValue && x.Record.CompletenessLevel.HasValue
+                                && x.Record.ConcisenessLevel.HasValue && x.Record.ReadabilityLevel.HasValue)
+                    .Select(x => x.Record)
+                    .ToList();
+                var dimensions = new (string Name, Func<BenchmarkRunAnswer, int?> ScoreA, Func<BenchmarkRunAnswer, int?> LevelA, Func<BenchmarkCoAssessmentRecord, int> LevelB)[]
+                {
+                    ("Accuracy (55%)", a => a.AccuracyScore, a => a.AccuracyLevel, r => r.AccuracyLevel!.Value),
+                    ("Completeness (25%)", a => a.CompletenessScore, a => a.CompletenessLevel, r => r.CompletenessLevel!.Value),
+                    ("Conciseness (10%)", a => a.ConcisenessScore, a => a.ConcisenessLevel, r => r.ConcisenessLevel!.Value),
+                    ("Readability (10%)", a => a.ReadabilityScore, a => a.ReadabilityLevel, r => r.ReadabilityLevel!.Value)
+                };
+                var rowA = dimensions.Select(d => (Points: scoredAnswers.Average(a => d.ScoreA(a) ?? 0), Level: scoredAnswers.Average(a => d.LevelA(a) ?? 0))).ToList();
+                var rowB = bLevels.Count > 0
+                    ? dimensions.Select(d => (Points: bLevels.Average(r => (double)BenchmarkScoring.Score(d.LevelB(r), levelScores)), Level: bLevels.Average(r => (double)d.LevelB(r)))).ToList()
+                    : null;
+                static string Cell((double Points, double Level) v) => $"{Inv(v.Points, "F1")} / 100 (level {Inv(v.Level, "F1")})";
+
+                sb.AppendLine($"| Reader | {string.Join(" | ", dimensions.Select(d => d.Name))} |");
+                sb.AppendLine($"|--------|{string.Concat(dimensions.Select(_ => "---|"))}");
+                sb.AppendLine($"| Member A | {string.Join(" | ", rowA.Select(Cell))} |");
+                if (rowB != null)
+                {
+                    var rowPanel = rowA.Zip(rowB, (x, y) => (Points: (x.Points + y.Points) / 2.0, Level: (x.Level + y.Level) / 2.0)).ToList();
+                    sb.AppendLine($"| Member B | {string.Join(" | ", rowB.Select(Cell))} |");
+                    sb.AppendLine($"| Panel | {string.Join(" | ", rowPanel.Select(Cell))} |");
+                    styleAccuracy = rowPanel[0].Points;
+                    styleCompleteness = rowPanel[1].Points;
+                    styleConciseness = rowPanel[2].Points;
+                    styleReadability = rowPanel[3].Points;
+                }
+                else
+                {
+                    sb.AppendLine($"| Member B | {string.Join(" | ", dimensions.Select(_ => "not recorded"))} |");
+                }
+                sb.AppendLine();
+                sb.AppendLine($"*Over the {scoredAnswers.Count} answer(s) carrying a panel score; member B's row over the {bLevels.Count} of them whose record carries all four levels. The panel row is the mean of the two members' rows.*");
+            }
+            else
+            {
+                sb.AppendLine($"- **Accuracy (Weight 55%):** {Inv(scoredAnswers.Average(a => a.AccuracyScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.AccuracyLevel ?? 0), "F1")} / 6)");
+                sb.AppendLine($"- **Completeness (Weight 25%):** {Inv(scoredAnswers.Average(a => a.CompletenessScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.CompletenessLevel ?? 0), "F1")} / 6)");
+                sb.AppendLine($"- **Conciseness (Weight 10%):** {Inv(scoredAnswers.Average(a => a.ConcisenessScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.ConcisenessLevel ?? 0), "F1")} / 6)");
+                sb.AppendLine($"- **Readability (Weight 10%):** {Inv(scoredAnswers.Average(a => a.ReadabilityScore ?? 0), "F1")} / 100 (Avg Level: {Inv(scoredAnswers.Average(a => a.ReadabilityLevel ?? 0), "F1")} / 6)");
+            }
 
             // The instrument's own share of the Accuracy→Completeness gap, as a measured figure.
             // Scoring method v8 tells the assessor that the question defines the scope and that a
@@ -3172,7 +3411,26 @@ public static class BenchmarkReportBuilder
             var outOfScopeAnswers = scoredAnswers.Where(a => a.CompletenessOutOfScope)
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
-            if (outOfScopeAnswers.Count > 0)
+            // Member B's markers are read from its record and counted on the same terms.
+            var outOfScopeB = memberBRecords.Where(x => x.Record.Flags?.CompletenessOutOfScope == true).ToList();
+            var formOnlyB = memberBRecords.Where(x => x.Record.Flags?.ReadabilityFormOnly == true).ToList();
+            if (isPanelRun && (outOfScopeAnswers.Count > 0 || outOfScopeB.Count > 0))
+            {
+                sb.AppendLine($"- **Out-of-scope completeness deductions:** A {outOfScopeAnswers.Count} ({QuestionList(outOfScopeAnswers)}), B {outOfScopeB.Count} ({QuestionList(outOfScopeB.Select(x => x.Answer))})");
+                sb.AppendLine($"  - These are rubric points a panel member itself placed outside what the question asked, recorded under the `OUT-OF-SCOPE:` marker; the instruction is not to deduct for them. They are the instrument's share of the Accuracy→Completeness gap: the part of that gap the rubric caused rather than the answer.");
+                var onlyA = outOfScopeAnswers
+                    .Where(a => BenchmarkVerdictConsistency.IsOutOfScopeOnlyDeduction(a.CompletenessLevel ?? 0, ReadEvidence(a).Completeness))
+                    .ToList();
+                var onlyB = outOfScopeB
+                    .Where(x => BenchmarkVerdictConsistency.IsOutOfScopeOnlyDeduction(x.Record.CompletenessLevel ?? 0, x.Record.CompletenessEvidence))
+                    .Select(x => x.Answer)
+                    .ToList();
+                if (onlyA.Count > 0 || onlyB.Count > 0)
+                {
+                    sb.AppendLine($"  - **A {onlyA.Count}, B {onlyB.Count}** of them sit beside a Completeness level below 6 with no in-scope defect named (A: {QuestionList(onlyA)}; B: {QuestionList(onlyB)}) — the instruction was not followed there; those verdicts carry the `UnevidencedDeduction` flag.");
+                }
+            }
+            else if (outOfScopeAnswers.Count > 0)
             {
                 string questionList = string.Join(", ", outOfScopeAnswers.Select(a => $"Q{a.OrderIndex}"));
                 sb.AppendLine($"- **Out-of-scope completeness deductions:** {outOfScopeAnswers.Count} ({questionList})");
@@ -3198,7 +3456,23 @@ public static class BenchmarkReportBuilder
             var formOnlyAnswers = scoredAnswers.Where(a => a.ReadabilityFormOnly)
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
-            if (formOnlyAnswers.Count > 0)
+            if (isPanelRun && (formOnlyAnswers.Count > 0 || formOnlyB.Count > 0))
+            {
+                sb.AppendLine($"- **Rubric format suggestions not followed:** A {formOnlyAnswers.Count} ({QuestionList(formOnlyAnswers)}), B {formOnlyB.Count} ({QuestionList(formOnlyB.Select(x => x.Answer))})");
+                sb.AppendLine($"  - These are rubric FORM criteria naming a presentation the answer did not adopt, recorded under the `FORM:` marker; the instruction is not to deduct for them. Readability is graded on its level anchors alone, so this is the rubric's share of the Readability shortfall rather than the answer's.");
+                var deductedA = formOnlyAnswers
+                    .Where(a => BenchmarkVerdictConsistency.IsFormOnlyDeduction(a.ReadabilityLevel ?? 0, ReadEvidence(a).Readability, a.ReadabilityFormOnly))
+                    .ToList();
+                var deductedB = formOnlyB
+                    .Where(x => BenchmarkVerdictConsistency.IsFormOnlyDeduction(x.Record.ReadabilityLevel ?? 0, x.Record.ReadabilityEvidence, true))
+                    .Select(x => x.Answer)
+                    .ToList();
+                if (deductedA.Count > 0 || deductedB.Count > 0)
+                {
+                    sb.AppendLine($"  - **A {deductedA.Count}, B {deductedB.Count}** of them sit beside a Readability level below 6 with no defect named (A: {QuestionList(deductedA)}; B: {QuestionList(deductedB)}) — the instruction was not followed there.");
+                }
+            }
+            else if (formOnlyAnswers.Count > 0)
             {
                 string questionList = string.Join(", ", formOnlyAnswers.Select(a => $"Q{a.OrderIndex}"));
                 sb.AppendLine($"- **Rubric format suggestions not followed:** {formOnlyAnswers.Count} ({questionList})");
@@ -3229,7 +3503,13 @@ public static class BenchmarkReportBuilder
                 .Where(a => (((BenchmarkAnswerFlags)a.AnswerFlags) & BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction) != 0)
                 .OrderBy(a => a.OrderIndex)
                 .ToList();
-            if (outOfRubricAccuracyAnswers.Count > 0)
+            var outOfRubricAccuracyB = memberBRecords.Where(x => x.Record.Flags?.OutOfRubricAccuracy == true).Select(x => x.Answer).ToList();
+            if (isPanelRun && (outOfRubricAccuracyAnswers.Count > 0 || outOfRubricAccuracyB.Count > 0))
+            {
+                sb.AppendLine($"- **Out-of-rubric Accuracy deductions:** A {run.OutOfRubricAccuracyAnswerCount} ({QuestionList(outOfRubricAccuracyAnswers)}), B {outOfRubricAccuracyB.Count} ({QuestionList(outOfRubricAccuracyB)})");
+                sb.AppendLine($"  - These are {BenchmarkVerdictConsistency.OutOfRubricAccuracyDeductionDescription(run.ScoringMethodVersion)}");
+            }
+            else if (outOfRubricAccuracyAnswers.Count > 0)
             {
                 string questionList = string.Join(", ", outOfRubricAccuracyAnswers.Select(a => $"Q{a.OrderIndex}"));
                 sb.AppendLine($"- **Out-of-rubric Accuracy deductions:** {run.OutOfRubricAccuracyAnswerCount} ({questionList})");
@@ -3237,7 +3517,19 @@ public static class BenchmarkReportBuilder
             }
 
             sb.AppendLine();
-            if (BenchmarkChatTransfer.HasResponseStyleConflict(run, scoredAnswers, out double gap))
+            // A panel run reads the conflict on the panel's averages, not on member A's alone.
+            double gap = 0.0;
+            bool styleConflict = isPanelRun
+                ? styleAccuracy.HasValue && styleCompleteness.HasValue
+                    && BenchmarkChatTransfer.HasResponseStyleConflict(
+                        BenchmarkCandidatePromptOptions.FromJson(run.CandidatePromptOptionsJson).VerboseMode,
+                        styleAccuracy, styleCompleteness, styleConciseness, styleReadability)
+                : BenchmarkChatTransfer.HasResponseStyleConflict(run, scoredAnswers, out gap);
+            if (isPanelRun && styleConflict)
+            {
+                gap = styleAccuracy!.Value - styleCompleteness!.Value;
+            }
+            if (styleConflict)
             {
                 sb.AppendLine($"> **Response-style conflict.** This run graded a candidate instructed to *\"Default to 2–5 sentences per response\"* (`verboseMode: false`) against a Completeness dimension worth 25%, and Completeness is the weakest dimension by {Inv(gap, "F1")} points. Some of that gap may be the prompt rather than the model. Running the same suite at `verboseMode: true` separates the two; that run is not comparable with this one on Completeness, Conciseness or Readability.");
                 sb.AppendLine();
@@ -3433,6 +3725,13 @@ public static class BenchmarkReportBuilder
                 ? $"; plus {toolResults.FailedNotFound} failed call(s) whose error is a not-found ({ToolTally(toolResults.FailedNotFoundByTool)})"
                 : string.Empty;
             sb.AppendLine($"- **Not-found results:** {toolResults.NotFound} of {toolResults.InspectableSuccessful} inspectable successful payloads{notFoundTools}{failedNotFound}; {toolResults.Unavailable} payloads unavailable.");
+            if (toolResults.SectionMiss > 0)
+            {
+                string sectionMissTools = toolResults.SectionMissByTool.Count > 0
+                    ? $" ({ToolTally(toolResults.SectionMissByTool)})"
+                    : string.Empty;
+                sb.AppendLine($"- **Section not found:** {toolResults.SectionMiss}{sectionMissTools} — *the article exists but has no section by the requested name; the result lists its headings.*");
+            }
             // AgentLoopRunner stores a result before the batch budget and the turn limit cut it, so
             // those two cuts never reach a stored row: they are not recorded, which is not zero.
             sb.AppendLine($"- **Cut before the model saw it:** {toolResults.PerToolCap} by the per-tool cap; batch budget and turn limit not recorded. **Cut in the stored record only:** {toolResults.RecordCut}. " +
@@ -3683,7 +3982,7 @@ public static class BenchmarkReportBuilder
                 ? $", model {a.ModelTimeMs} ms, tools {a.ToolTimeMs.Value} ms"
                 : string.Empty;
             sb.AppendLine($"- **Duration:** {a.DurationMs} ms (TTFT: {(a.TimeToFirstTokenMs.HasValue ? $"{a.TimeToFirstTokenMs.Value} ms" : "N/A")}{timingSuffix})");
-            string reasoningSuffix = a.ReasoningTokens.HasValue ? $", Reasoning={a.ReasoningTokens.Value}" : string.Empty;
+            string reasoningSuffix = a.ReasoningTokens.HasValue && !IsAnthropicCandidate(run) ? $", Reasoning={a.ReasoningTokens.Value}" : string.Empty;
             sb.AppendLine($"- **Tokens:** In={a.InputTokens ?? 0}, Out={a.OutputTokens ?? 0}, CacheRead={a.CacheReadInputTokens ?? 0}{reasoningSuffix}");
             if (!string.IsNullOrWhiteSpace(a.ActualServiceTierUsed))
             {
@@ -4006,18 +4305,19 @@ public static class BenchmarkReportBuilder
                 if (accusedSentences.Count > 0)
                 {
                     var (accusedSupported, accusedRefuted, accusedIndeterminate) = VerdictCounts(accusedSentences);
-                    sb.AppendLine($"> - **Accused sentences checked:** {accusedSentences.Count} — supported {accusedSupported}, refuted {accusedRefuted}, indeterminate {accusedIndeterminate}");
+                    string accusedSplit = isPanelRun ? $" ({MemberSplitText(accusedSentences)})" : string.Empty;
+                    sb.AppendLine($"> - **Accused sentences checked:** {accusedSentences.Count}{accusedSplit} — supported {accusedSupported}, refuted {accusedRefuted}, indeterminate {accusedIndeterminate}");
                 }
                 var supportedAccusationsOfAnswer = BenchmarkService.SupportedAccusations(accusedSentences);
                 foreach (var accusation in supportedAccusationsOfAnswer)
                 {
-                    sb.AppendLine($"> - **Supported accusation:** a sentence the assessor charged as false was checked by the claim verifier and **supported** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({accusation.Citation}). *Advisory; the deduction stands.*");
+                    sb.AppendLine($"> - **Supported accusation:** a sentence {ChargedBy(accusation)} charged as false was checked by the claim verifier and **supported** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({accusation.Citation}). *Advisory; the deduction stands.*");
                 }
                 foreach (var accusation in accusedSentences.Where(v => !supportedAccusationsOfAnswer.Contains(v)))
                 {
                     string verdictWord = accusation.EffectiveVerdict.ToString().ToLowerInvariant();
                     string citation = string.IsNullOrWhiteSpace(accusation.Citation) ? "no citation" : accusation.Citation;
-                    sb.AppendLine($"> - **Accused sentence, {verdictWord}:** a sentence the assessor charged as false was checked by the claim verifier and returned **{VerdictText(accusation)}** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({citation}).");
+                    sb.AppendLine($"> - **Accused sentence, {verdictWord}:** a sentence {ChargedBy(accusation)} charged as false was checked by the claim verifier and returned **{VerdictText(accusation)}** — \"{accusation.Claim}\"{QuotedFragmentsText(accusation)} ({citation}).");
                 }
                 // The assessor's own evidence sentences: a refutation clears the answer, not convicts it.
                 var assessorStatements = AssessorStatementsOf(a);
@@ -4028,14 +4328,17 @@ public static class BenchmarkReportBuilder
                     foreach (var statement in assessorStatements.Where(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted))
                     {
                         string citation = string.IsNullOrWhiteSpace(statement.Citation) ? "no citation" : statement.Citation;
-                        sb.AppendLine($"> - **Assessor statement refuted:** a statement of the assessor's own evidence was checked by the claim verifier and **refuted** — \"{statement.Claim}\" ({citation}). *The assessor, not the answer, was wrong on this point; advisory, the deduction stands.*");
+                        string wrongParty = MemberPhrase(statement) is string statementMember ? char.ToUpperInvariant(statementMember[0]) + statementMember[1..] : "The assessor";
+                        sb.AppendLine($"> - **Assessor statement refuted:** a statement of {ChargedByPossessive(statement)} own evidence was checked by the claim verifier and **refuted** — \"{statement.Claim}\" ({citation}). *{wrongParty}, not the answer, {(MemberPhrase(statement) == "both members" ? "were" : "was")} wrong on this point; advisory, the deduction stands.*");
                     }
                 }
                 var suspectedFalse = SuspectedFalseClaimsOf(a);
                 if (suspectedFalse.Count > 0)
                 {
                     var (suspectedSupported, suspectedRefuted, suspectedIndeterminate) = VerdictCounts(suspectedFalse);
-                    sb.AppendLine($"> - **Suspected false by the assessor:** {suspectedFalse.Count} — refuted {suspectedRefuted} (the verifier sided with the assessor), supported {suspectedSupported} (the verifier sided with the answer), indeterminate {suspectedIndeterminate}");
+                    sb.AppendLine(isPanelRun
+                        ? $"> - **Suspected false by the panel:** {suspectedFalse.Count} ({MemberSplitText(suspectedFalse)}) — refuted {suspectedRefuted} (the verifier sided with the member), supported {suspectedSupported} (the verifier sided with the answer), indeterminate {suspectedIndeterminate}"
+                        : $"> - **Suspected false by the assessor:** {suspectedFalse.Count} — refuted {suspectedRefuted} (the verifier sided with the assessor), supported {suspectedSupported} (the verifier sided with the answer), indeterminate {suspectedIndeterminate}");
                 }
                 // A verdict the harness demoted: the verifier cited a function nothing calls.
                 foreach (var noted in (ClaimVerificationsOf(a) ?? new List<BenchmarkClaimVerification>())
@@ -4080,8 +4383,15 @@ public static class BenchmarkReportBuilder
         sb.AppendLine();
         sb.AppendLine("### Compliance & Evaluation Terms");
         sb.AppendLine($"- **Purpose Statement:** {run.PurposeStatementUsed ?? "Internal evaluation of candidate AI models for the Overseer assistant within GnollHack. Benchmark outputs are third-party generated content used solely for automated capability evaluation and scoring, and are not used for training, fine-tuning, distilling, or developing competing AI models."}");
+        // A panel run names every grading role, so the compliance list covers each model that read the output.
         string evaluatedBy = isPanelRun
             ? $"**{run.AssessorModelSnapshot.Label()}** ({run.AssessorModelSnapshot.Provider}) and **{run.CoAssessorModelSnapshot.Label()}** ({run.CoAssessorModelSnapshot?.Provider})"
+                + (run.SecondOpinionAssessorModelConfigurationId.HasValue
+                    ? $"; reference reader **{run.SecondOpinionAssessorModelSnapshot.Label()}** ({run.SecondOpinionAssessorModelSnapshot?.Provider})"
+                    : string.Empty)
+                + (run.ClaimVerifierModelConfigurationId.HasValue
+                    ? $"; claim verifier **{run.ClaimVerifierModelSnapshot.Label()}** ({run.ClaimVerifierModelSnapshot?.Provider})"
+                    : string.Empty)
             : $"**{run.AssessorModelSnapshot.Label()}** ({run.AssessorModelSnapshot.Provider})";
         sb.AppendLine($"- **Third-Party Model Content:** Outputs generated by **{run.TestedModelSnapshot.Label()}** ({run.TestedModelSnapshot.Provider}) and evaluated by {evaluatedBy} are third-party content evaluated solely for domain-specific benchmark scoring and operational model selection.");
         sb.AppendLine("- **Distillation / Training Prohibition:** No prompt, completion, or evaluation output in this benchmark is used for model training, fine-tuning, distillation, or developing competing AI models.");
@@ -4179,7 +4489,7 @@ public static class BenchmarkReportBuilder
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedCriticalError)) flagDescriptions.Add("Contested critical error (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction))
                 {
-                    flagDescriptions.Add($"Contested accuracy deduction (advisory, changed no score) ({string.Join(" and ", ContestedDeductionCauses(ia))})");
+                    flagDescriptions.Add($"Contested accuracy deduction (advisory, changed no score) ({string.Join(" and ", ContestedDeductionCauses(ia, isPanelRun ? BenchmarkPanelMember.A : (BenchmarkPanelMember?)null))})");
                 }
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.DimensionOutlier)) flagDescriptions.Add("Dimension outlier: one level ≤ 1 beside three at ≥ 3, no defect of that kind named (advisory, changed no score)");
@@ -4374,7 +4684,7 @@ public static class BenchmarkReportBuilder
             sb.AppendLine("### Disputed Assessments");
             sb.AppendLine();
             sb.AppendLine(isPanelRun
-                ? $"{disputed.Count} answer(s) carry a reference reader verdict flagged as materially different. Panel member A's verdict and the reader's are shown here, and § 3 has member B's beside them; the panel score is what scored, and the reader is advisory."
+                ? $"{disputed.Count} answer(s) carry a reference reader verdict flagged as materially different. The panel score and the reference reader's are shown here, with each member's score beside the panel's; the panel score is what scored, and the reader is advisory."
                 : $"{disputed.Count} answer(s) were read by a second reader, which reached a materially different verdict. The assessor's verdict is what scored; these are flagged for a human to settle, and re-assessing from the run detail is the way to do it.");
             sb.AppendLine();
             foreach (var d in disputed)
@@ -4393,11 +4703,21 @@ public static class BenchmarkReportBuilder
                     claimNoteParts.Add(claimNoteParts.Count == 0 ? $"Accused sentences: {accusedCounts}" : $"accused sentences: {accusedCounts}");
                 }
                 string claimNote = claimNoteParts.Count == 0 ? string.Empty : $" [{string.Join("; ", claimNoteParts)}]";
-                sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelSnapshot.Label()}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelSnapshot.Label()}){claimNote}");
+                if (isPanelRun)
+                {
+                    static string YesNo(bool? value) => value == true ? "yes" : "no";
+                    string panelScore = d.PanelQualityScore.HasValue ? $"{ScoreText(d.PanelQualityScore.Value)} / 100" : "not computed";
+                    string memberBScore = d.CoAssessmentQualityScore.HasValue ? Inv(d.CoAssessmentQualityScore.Value) : "not scored";
+                    sb.AppendLine($"- **Question {d.OrderIndex}:** panel {panelScore} (A {d.QualityScore?.ToString(CultureInfo.InvariantCulture) ?? "not scored"}, B {memberBScore}; critical error A {YesNo(d.CriticalError)}, B {YesNo(d.CoAssessmentCriticalError)}) vs reference reader {d.SecondOpinionQualityScore!.Value} / 100 (critical error {YesNo(d.SecondOpinionCriticalError)}, {d.SecondOpinionByModelSnapshot.Label()}){claimNote}");
+                }
+                else
+                {
+                    sb.AppendLine($"- **Question {d.OrderIndex}:** first {d.QualityScore ?? 0} / 100 (critical error {(d.CriticalError ? "yes" : "no")}, {d.AssessedByModelSnapshot.Label()}) vs second {d.SecondOpinionQualityScore!.Value} / 100 (critical error {(d.SecondOpinionCriticalError == true ? "yes" : "no")}, {d.SecondOpinionByModelSnapshot.Label()}){claimNote}");
+                }
                 string? secondReaderComment = ReadSecondOpinionComment(d.SecondOpinionJson);
                 if (secondReaderComment != null)
                 {
-                    sb.AppendLine($"  - Second reader: {secondReaderComment}");
+                    sb.AppendLine($"  - {(isPanelRun ? "Reference reader" : "Second reader")}: {secondReaderComment}");
                 }
             }
             sb.AppendLine();
@@ -4457,10 +4777,14 @@ public static class BenchmarkReportBuilder
                         BenchmarkConvergenceStatus.Convergent => "Convergent",
                         BenchmarkConvergenceStatus.MemberAOnly => "Member A only",
                         BenchmarkConvergenceStatus.MemberBOnly => "Member B only",
+                        BenchmarkConvergenceStatus.Conflicting => "Conflicting",
                         _ => row.Status.ToString()
                     };
-                    string questions = row.Question.HasValue ? $"Q{row.Question.Value}" : "—";
-                    sb.AppendLine($"| {TableCell(row.Kind)} · {TableCell(FindingCategoryText(row.Category))} | {questions} | {TableCell(row.MemberAText)} | {TableCell(row.MemberBText)} | {status} |");
+                    string questions = row.Questions.Count > 0 ? string.Join(", ", row.Questions.Select(q => $"Q{q}")) : "—";
+                    string kind = row.Status == BenchmarkConvergenceStatus.Conflicting
+                        ? $"{row.Kind} (A) vs {BenchmarkSynthesisConvergence.OppositeKind(row.Kind)} (B)"
+                        : row.Kind;
+                    sb.AppendLine($"| {TableCell(kind)} · {TableCell(FindingCategoryText(row.Category))} | {questions} | {TableCell(row.MemberAText)} | {TableCell(row.MemberBText)} | {status} |");
                 }
             }
             else
@@ -4567,7 +4891,10 @@ public static class BenchmarkReportBuilder
         // easiest questions — on the 2026-09-03 run a fully hallucinated answer at assessed
         // difficulty 25 moved the index by one point. The Critical Errors count under Results
         // Summary above is the figure to read for this failure mode, not the index delta.
-        sb.AppendLine("> The Intelligence Index weights each question by its assessed difficulty, so a critical error on an easy question moves the index the least of all — a fully hallucinated answer at assessed difficulty 25 can move it by as little as one point. The **Critical Errors** count under Results Summary is the number to read for this failure mode.");
+        // A panel run names the Critical Errors line only when it printed.
+        sb.AppendLine(!isPanelRun || criticalErrorsLinePrints
+            ? "> The Intelligence Index weights each question by its assessed difficulty, so a critical error on an easy question moves the index the least of all — a fully hallucinated answer at assessed difficulty 25 can move it by as little as one point. The **Critical Errors** count under Results Summary is the number to read for this failure mode."
+            : "> The Intelligence Index weights each question by its assessed difficulty, so a critical error on an easy question moves the index the least of all — a fully hallucinated answer at assessed difficulty 25 can move it by as little as one point. Neither panel member nor the reference reader recorded a critical error on this run.");
         sb.AppendLine();
         if (isPanelRun)
         {

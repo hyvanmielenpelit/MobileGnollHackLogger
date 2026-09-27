@@ -406,13 +406,6 @@
             <div class="gh-disclosure-body fsp-section-body">
               <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterMarkControl }"></ng-container>
               <ng-container *ngTemplateOutlet="range; context: { family: 'scatter', control: scatterFrontierControl }"></ng-container>
-              <div class="fsp-check">
-                <label class="checkbox-label">
-                  <input type="checkbox" id="mc-style-scatter-dominatedShading" [checked]="scatter.dominatedShading"
-                         (change)="setScatter('dominatedShading', checkedOf($event))">
-                  Shade the region the frontier beats
-                </label>
-              </div>
             </div>
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'scatter', name: 'marks' }"></ng-container>
