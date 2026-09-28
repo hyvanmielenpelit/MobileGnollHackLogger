@@ -172,7 +172,7 @@ public class BenchmarkReportPackServiceTests
     {
         await using var h = await Harness.CreateAsync();
         await h.PrepareAsync();
-        h.Provider.Replies.Enqueue(WriterProvider.ServerError);
+        h.Provider.Replies.Enqueue(WriterProvider.ProviderError);
 
         var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
 
@@ -703,13 +703,13 @@ public class BenchmarkReportPackServiceTests
 
     /// <summary>
     /// A provider that answers each request with the next queued reply. The reply travels in the
-    /// request body and <see cref="ReplyEchoHandler"/> sends it back; <see cref="ServerError"/> makes
-    /// the handler answer 500.
+    /// request body and <see cref="ReplyEchoHandler"/> sends it back; <see cref="ProviderError"/> makes
+    /// the handler answer 400, which the agent loop fails at once instead of retrying with backoff.
     /// </summary>
     private sealed class WriterProvider : IAiProvider
     {
         public const string Name = "ReportWriterTest";
-        public const string ServerError = "__server_error__";
+        public const string ProviderError = "__provider_error__";
         public const int PromptTokens = 5000;
         public const int OutputTokens = 800;
 
@@ -779,8 +779,8 @@ public class BenchmarkReportPackServiceTests
             string body = request.Content == null ? "{}" : await request.Content.ReadAsStringAsync(cancellationToken);
             using var doc = JsonDocument.Parse(body);
             string reply = doc.RootElement.TryGetProperty("reply", out var value) ? value.GetString() ?? string.Empty : string.Empty;
-            return reply == WriterProvider.ServerError
-                ? new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new StringContent("{\"error\":\"boom\"}"), RequestMessage = request }
+            return reply == WriterProvider.ProviderError
+                ? new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("{\"error\":\"boom\"}"), RequestMessage = request }
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(reply), RequestMessage = request };
         }
     }
