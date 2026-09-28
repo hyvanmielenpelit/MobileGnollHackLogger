@@ -427,7 +427,7 @@ public class BenchmarkReportPackRendererTests
                 document.Id = 100 + (int)audience;
                 db.BenchmarkReportDocuments.Add(document);
             }
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         }
 
         foreach (var combination in AllowedCombinations())
@@ -445,7 +445,7 @@ public class BenchmarkReportPackRendererTests
             string twice = BenchmarkReportPackRenderer.Render(fresh, options);
 
             await using var db = new ApplicationDbContext(dbOptions);
-            var stored = await db.BenchmarkReportDocuments.AsNoTracking().SingleAsync(d => d.Id == 100 + (int)audience);
+            var stored = await db.BenchmarkReportDocuments.AsNoTracking().SingleAsync(d => d.Id == 100 + (int)audience, TestContext.Current.CancellationToken);
             string reloaded = BenchmarkReportPackRenderer.Render(stored, options);
 
             Assert.Equal(Sha256(once), Sha256(twice));

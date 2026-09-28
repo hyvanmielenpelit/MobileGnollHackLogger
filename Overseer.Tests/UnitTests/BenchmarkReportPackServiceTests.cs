@@ -46,10 +46,10 @@ public class BenchmarkReportPackServiceTests
         var prep = await h.PrepareAsync();
         h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
 
-        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary);
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync());
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportDocumentStatus.Completed, document.Status);
         Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, document.Audience);
         Assert.Equal(BenchmarkReportDocumentOrigin.ReportPack, document.Origin);
@@ -66,7 +66,7 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(16, child.SynthesisSha256.Length);
 
         Assert.Equal(1, h.Provider.Calls);
-        var usage = Assert.Single(await h.Db.SystemAiUsageLogs.ToListAsync());
+        var usage = Assert.Single(await h.Db.SystemAiUsageLogs.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportPackService.UsageRoleContext, usage.RoleContext);
         Assert.Equal(8, usage.RoleContext);
         Assert.Equal(h.Writer.Id, usage.SystemAiApiConfigurationId);
@@ -80,16 +80,16 @@ public class BenchmarkReportPackServiceTests
         h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: "{{subject}} answered 3 questions well."));
         h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
 
-        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary);
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync());
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportDocumentStatus.Completed, document.Status);
         Assert.Equal(2 * WriterProvider.PromptTokens, document.InputTokens);
         Assert.Equal(2 * WriterProvider.OutputTokens, document.OutputTokens);
 
         Assert.Equal(2, h.Provider.Calls);
-        var usage = await h.Db.SystemAiUsageLogs.ToListAsync();
+        var usage = await h.Db.SystemAiUsageLogs.ToListAsync(TestContext.Current.CancellationToken);
         Assert.Equal(2, usage.Count);
         Assert.All(usage, u => Assert.Equal(BenchmarkReportPackService.UsageRoleContext, u.RoleContext));
 
@@ -106,10 +106,10 @@ public class BenchmarkReportPackServiceTests
         h.Provider.Replies.Enqueue(reply);
         h.Provider.Replies.Enqueue(reply);
 
-        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary);
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync());
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
 
         var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
@@ -128,10 +128,10 @@ public class BenchmarkReportPackServiceTests
         h.Provider.Replies.Enqueue(reply);
         h.Provider.Replies.Enqueue(reply);
 
-        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary);
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync());
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
 
         var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
@@ -154,7 +154,7 @@ public class BenchmarkReportPackServiceTests
         var job = await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync());
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, document.Origin);
         Assert.Equal($"run:{runId}", document.SubjectKey);
         Assert.Equal(runId, Assert.Single(document.Runs).RunId);
@@ -163,7 +163,7 @@ public class BenchmarkReportPackServiceTests
         Assert.Empty(sheet.Peers);
         Assert.Equal(BenchmarkReportFacts.StandaloneReason, sheet.Facts.Single(f => f.Key == "quality.rank").UnavailableReason);
 
-        var usage = Assert.Single(await h.Db.SystemAiUsageLogs.ToListAsync());
+        var usage = Assert.Single(await h.Db.SystemAiUsageLogs.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportPackService.UsageRoleContext, usage.RoleContext);
     }
 
@@ -174,11 +174,11 @@ public class BenchmarkReportPackServiceTests
         await h.PrepareAsync();
         h.Provider.Replies.Enqueue(WriterProvider.ServerError);
 
-        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary);
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkReportPackJobStatus.Failed, job.Status);
         Assert.Equal(BenchmarkReportPackDocumentStatus.Failed, Assert.Single(job.Documents).Status);
-        Assert.Empty(await h.Db.BenchmarkReportDocuments.ToListAsync());
+        Assert.Empty(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -192,7 +192,7 @@ public class BenchmarkReportPackServiceTests
 
         Assert.Equal(BenchmarkReportPackJobStatus.Canceled, job.Status);
         Assert.Equal(BenchmarkReportPackDocumentStatus.Canceled, Assert.Single(job.Documents).Status);
-        Assert.Empty(await h.Db.BenchmarkReportDocuments.ToListAsync());
+        Assert.Empty(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(0, h.Provider.Calls);
     }
 
@@ -320,7 +320,7 @@ public class BenchmarkReportPackServiceTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.InternalBrief);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
             new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
 
@@ -339,7 +339,7 @@ public class BenchmarkReportPackServiceTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
             new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
 
@@ -366,7 +366,7 @@ public class BenchmarkReportPackServiceTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.InternalBrief);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
             new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
 
@@ -387,7 +387,7 @@ public class BenchmarkReportPackServiceTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
             new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
 
@@ -412,7 +412,7 @@ public class BenchmarkReportPackServiceTests
         await using var h = await Harness.CreateAsync();
         var prep = await h.PrepareAsync();
         h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
-        await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary);
+        await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
         var render = new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance);
         long runId = h.Seeded.RunIds[0];
 
@@ -420,13 +420,13 @@ public class BenchmarkReportPackServiceTests
         Assert.False(fresh.RunChangedSinceGeneration);
         Assert.Equal(new[] { runId }, fresh.SubjectRunIds);
 
-        var run = await h.Db.BenchmarkRuns.SingleAsync(r => r.Id == runId);
+        var run = await h.Db.BenchmarkRuns.SingleAsync(r => r.Id == runId, TestContext.Current.CancellationToken);
         run.QualityIndex = (run.QualityIndex ?? 0) + 1;
-        await h.Db.SaveChangesAsync();
+        await h.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
         Assert.True(Assert.Single(await render.ListAsync(null, runId, null, CancellationToken.None)).RunChangedSinceGeneration);
 
         h.Db.BenchmarkRuns.Remove(run);
-        await h.Db.SaveChangesAsync();
+        await h.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var orphan = Assert.Single(await render.ListAsync(h.Seeded.SuiteId, null, null, CancellationToken.None));
         Assert.True(orphan.RunChangedSinceGeneration);
         Assert.Equal(new[] { runId }, orphan.MissingRunIds);

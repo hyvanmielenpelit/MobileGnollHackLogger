@@ -67,7 +67,7 @@ public class BenchmarkPdfRendererTests
     [Fact]
     public void APdf_DeclaresPdfA3AndPdfUA1_AndCarriesAStructureTree()
     {
-        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown("# Heading\n\nA paragraph.\n\n## Section\n\nMore text.\n", Info());
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown("# Heading\n\nA paragraph.\n\n## Section\n\nMore text.\n", Info(), TestContext.Current.CancellationToken);
 
         using var reader = PdfDocument.Open(pdf);
         Assert.True(reader.TryGetXmpMetadata(out var xmp), "The PDF carries no XMP metadata.");
@@ -90,7 +90,7 @@ public class BenchmarkPdfRendererTests
             markdown.Append("Paragraph ").Append(i).Append(" carries enough words to take up a line or two of the page body.\n\n");
         }
 
-        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown.ToString(), Info(classification));
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown.ToString(), Info(classification), TestContext.Current.CancellationToken);
 
         using var reader = PdfDocument.Open(pdf);
         int pages = reader.NumberOfPages;
@@ -112,7 +112,7 @@ public class BenchmarkPdfRendererTests
             markdown.Append("| row ").Append(i).Append(" | ").Append(i * 3).Append(" |\n");
         }
 
-        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown.ToString(), Info());
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown.ToString(), Info(), TestContext.Current.CancellationToken);
 
         using var reader = PdfDocument.Open(pdf);
         Assert.True(reader.NumberOfPages >= 2, "The table should run past one page.");
@@ -129,7 +129,7 @@ public class BenchmarkPdfRendererTests
     {
         const string markdown = "Before <b>bold</b> and <script>alert(1)</script> after.\n\n<div>A block of html</div>\n";
 
-        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown, Info());
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown, Info(), TestContext.Current.CancellationToken);
 
         string text = AllText(pdf);
         Assert.Contains("<b>bold</b>", text);
@@ -143,7 +143,7 @@ public class BenchmarkPdfRendererTests
         const string characters = "≥≤→±×—·✓−";
         string markdown = "Scores: a ≥ b, c ≤ d, e → f, 5 ± 1, 3 × 4 — fine · done ✓ and −2.\n";
 
-        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown, Info());
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown, Info(), TestContext.Current.CancellationToken);
 
         string text = AllText(pdf);
         foreach (char c in characters)
@@ -160,7 +160,7 @@ public class BenchmarkPdfRendererTests
         string longLine = new('x', 2000);
         string text = "FIRSTLINEMARKER\nSECONDLINEMARKER\n" + longLine + "\n";
 
-        byte[] pdf = BenchmarkPdfRenderer.RenderPlainText(text, Info(BenchmarkPdfClassification.Internal));
+        byte[] pdf = BenchmarkPdfRenderer.RenderPlainText(text, Info(BenchmarkPdfClassification.Internal), TestContext.Current.CancellationToken);
 
         using var reader = PdfDocument.Open(pdf);
         var page = reader.GetPage(1);
@@ -178,8 +178,8 @@ public class BenchmarkPdfRendererTests
     {
         string huge = new('a', BenchmarkPdfRenderer.MaxSourceCharacters + 1);
 
-        var markdown = Assert.Throws<BenchmarkPdfSourceTooLargeException>(() => BenchmarkPdfRenderer.RenderMarkdown(huge, Info()));
-        var plain = Assert.Throws<BenchmarkPdfSourceTooLargeException>(() => BenchmarkPdfRenderer.RenderPlainText(huge, Info()));
+        var markdown = Assert.Throws<BenchmarkPdfSourceTooLargeException>(() => BenchmarkPdfRenderer.RenderMarkdown(huge, Info(), TestContext.Current.CancellationToken));
+        var plain = Assert.Throws<BenchmarkPdfSourceTooLargeException>(() => BenchmarkPdfRenderer.RenderPlainText(huge, Info(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BenchmarkPdfRenderer.MaxSourceCharacters + 1, markdown.Characters);
         Assert.Equal(BenchmarkPdfRenderer.MaxSourceCharacters + 1, plain.Characters);
@@ -210,8 +210,8 @@ public class BenchmarkPdfRendererTests
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.Letter);
 
         // PDFs are reproducible in content but not bytes: PDF/UA makes QuestPDF embed a fresh document id.
-        byte[] first = BenchmarkPdfRenderer.RenderMarkdown(markdown, info);
-        byte[] second = BenchmarkPdfRenderer.RenderMarkdown(markdown, info);
+        byte[] first = BenchmarkPdfRenderer.RenderMarkdown(markdown, info, TestContext.Current.CancellationToken);
+        byte[] second = BenchmarkPdfRenderer.RenderMarkdown(markdown, info, TestContext.Current.CancellationToken);
 
         using var a = PdfDocument.Open(first);
         using var b = PdfDocument.Open(second);

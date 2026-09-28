@@ -67,7 +67,7 @@ public class SystemConfigUsageGuardTests
     {
         await AddRunAsync(BenchmarkRunStatus.Running, assessorId: ConfigId, verifierId: ConfigId);
 
-        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId));
+        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
 
         Assert.Equal("run", blocker.Kind);
         Assert.NotNull(blocker.RunId);
@@ -81,7 +81,7 @@ public class SystemConfigUsageGuardTests
         await AddRunAsync(BenchmarkRunStatus.Completed);
         var config = new SystemAiApiConfiguration { Id = ConfigId, DisplayName = "Assessor", Provider = "OpenAI", ModelId = "m" };
 
-        var check = await Guard().CheckDeletionAsync(config);
+        var check = await Guard().CheckDeletionAsync(config, TestContext.Current.CancellationToken);
 
         Assert.True(check.CanDelete);
         Assert.Empty(check.Blockers);
@@ -96,7 +96,7 @@ public class SystemConfigUsageGuardTests
     {
         await AddSeriesAsync(status);
 
-        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId));
+        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
 
         Assert.Equal("series", blocker.Kind);
         Assert.Equal(new[] { "claim verifier" }, blocker.Roles);
@@ -108,7 +108,7 @@ public class SystemConfigUsageGuardTests
         await AddSeriesAsync(BenchmarkRunSeriesStatus.Stopped);
         var config = new SystemAiApiConfiguration { Id = ConfigId, DisplayName = "Verifier", Provider = "OpenAI", ModelId = "m" };
 
-        var check = await Guard().CheckDeletionAsync(config);
+        var check = await Guard().CheckDeletionAsync(config, TestContext.Current.CancellationToken);
 
         Assert.True(check.CanDelete);
         Assert.Equal(1, check.StoppedSeriesCount);
@@ -120,10 +120,10 @@ public class SystemConfigUsageGuardTests
         var job = new BenchmarkDifficultyJob { SuiteName = "Sokoban basics", AssessorConfigId = ConfigId };
         Assert.True(_difficulty.TryStart(job, out _));
 
-        Assert.Equal("difficultyJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId)).Kind);
+        Assert.Equal("difficultyJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken)).Kind);
 
         _difficulty.Complete(job.Id, BenchmarkDifficultyJobStatus.Completed);
-        Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId));
+        Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public class SystemConfigUsageGuardTests
         var job = new BenchmarkGenerationJob { SuiteName = "Sokoban basics", GeneratorConfigId = ConfigId };
         Assert.True(_generation.TryStart(job, out _));
 
-        Assert.Equal("generationJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId)).Kind);
+        Assert.Equal("generationJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken)).Kind);
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public class SystemConfigUsageGuardTests
         var job = new BenchmarkRubricCheckJob { SuiteName = "Sokoban basics", CheckerConfigId = ConfigId };
         Assert.True(_rubricCheck.TryStart(job, out _));
 
-        Assert.Equal("rubricCheckJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId)).Kind);
+        Assert.Equal("rubricCheckJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken)).Kind);
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public class SystemConfigUsageGuardTests
         var job = new BenchmarkRubricGapAuthorJob { SuiteName = "Sokoban basics", AuthorConfigId = ConfigId };
         Assert.True(_gapAuthor.TryStart(job, out _));
 
-        Assert.Equal("rubricGapAuthorJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId)).Kind);
+        Assert.Equal("rubricGapAuthorJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken)).Kind);
     }
 
     [Fact]
@@ -159,13 +159,13 @@ public class SystemConfigUsageGuardTests
         var job = new BenchmarkReportPackJob { SuiteName = "Sokoban basics", SubjectLabel = "Claude 5.5 Opus", WriterConfigId = ConfigId };
         Assert.True(_reportPack.TryStart(job, out _));
 
-        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId));
+        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
         Assert.Equal("reportPackJob", blocker.Kind);
         Assert.Contains("Claude 5.5 Opus", blocker.Label);
         Assert.Equal(new[] { "report writer" }, blocker.Roles);
 
         _reportPack.Complete(job.Id, BenchmarkReportPackJobStatus.Completed);
-        Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId));
+        Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
     }
 
     [Theory]
@@ -184,9 +184,9 @@ public class SystemConfigUsageGuardTests
             ReportWriterModelConfigurationId = ConfigId,
             ReportDocumentsStatus = status
         }));
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        var blockers = await Guard().FindActiveUsesAsync(ConfigId);
+        var blockers = await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken);
 
         if (!blocks)
         {
@@ -206,6 +206,6 @@ public class SystemConfigUsageGuardTests
     {
         Assert.True(_difficulty.TryStart(new BenchmarkDifficultyJob { SuiteName = "S", AssessorConfigId = ConfigId + 1 }, out _));
 
-        Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId));
+        Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
     }
 }

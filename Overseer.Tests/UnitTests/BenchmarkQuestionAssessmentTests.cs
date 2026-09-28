@@ -42,6 +42,7 @@ public class BenchmarkQuestionAssessmentTests
         Assert.Equal(75, question.AssessedDifficulty);
         Assert.Equal(now, question.AssessedDifficultyAtUtc);
         Assert.Equal(42L, question.AssessedDifficultyModelConfigurationId);
+        Assert.NotNull(question.AssessedDifficultyModelSnapshot);
         Assert.Same(snapshot, question.AssessedDifficultyModelSnapshot);
         Assert.Equal("Claude 3.5 Sonnet", question.AssessedDifficultyModelSnapshot.Label());
         Assert.Equal("Anthropic", question.AssessedDifficultyModelSnapshot.Provider);

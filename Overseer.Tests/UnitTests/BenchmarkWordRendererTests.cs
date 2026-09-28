@@ -107,7 +107,7 @@ public class BenchmarkWordRendererTests
     [Fact]
     public void Headings_UseWordsBuiltInStyles_AndRunsCarryOnlyMarkdownFormatting()
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info()));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info(), TestContext.Current.CancellationToken));
         var main = package.MainDocumentPart!;
         var body = main.Document!.Body!;
 
@@ -147,7 +147,7 @@ public class BenchmarkWordRendererTests
     [Fact]
     public void CodeBlocks_AreOneCodeBlockParagraphPerLine_WithLeadingSpacesKept()
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info()));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info(), TestContext.Current.CancellationToken));
         var code = package.MainDocumentPart!.Document!.Body!.Descendants<W.Paragraph>().Where(p => StyleOf(p) == "CodeBlock").ToList();
 
         Assert.Contains(code, p => TextOf(p) == "if (ready)");
@@ -160,7 +160,7 @@ public class BenchmarkWordRendererTests
     [Fact]
     public void PlainText_IsOneCodeBlockParagraphPerLine_AfterTheTitleBlock()
     {
-        using var package = Open(BenchmarkWordRenderer.RenderPlainText(PlainText, Info(BenchmarkPdfClassification.Internal)));
+        using var package = Open(BenchmarkWordRenderer.RenderPlainText(PlainText, Info(BenchmarkPdfClassification.Internal), TestContext.Current.CancellationToken));
         var body = package.MainDocumentPart!.Document!.Body!;
         var code = body.Elements<W.Paragraph>().Where(p => StyleOf(p) == "CodeBlock").ToList();
 
@@ -178,7 +178,7 @@ public class BenchmarkWordRendererTests
     [Fact]
     public void Tables_RepeatTheirHeaderRows_KeepBodyRowsWhole_AndRightAlignANumericColumn()
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info()));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info(), TestContext.Current.CancellationToken));
         var body = package.MainDocumentPart!.Document!.Body!;
         var tables = body.Elements<W.Table>().Where(t => t.GetFirstChild<W.TableProperties>()?.TableStyle?.Val?.Value == "GnollBenchTable").ToList();
         Assert.Equal(2, tables.Count);
@@ -212,7 +212,7 @@ public class BenchmarkWordRendererTests
     [Fact]
     public void OrderedLists_RestartAtTheirOwnStart_AndNestedItemsSitOneLevelDown()
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info()));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info(), TestContext.Current.CancellationToken));
         var main = package.MainDocumentPart!;
         var paragraphs = main.Document!.Body!.Descendants<W.Paragraph>().ToList();
         var numbering = main.NumberingDefinitionsPart!.Numbering!;
@@ -247,7 +247,7 @@ public class BenchmarkWordRendererTests
     [Fact]
     public void ASafeLink_IsAnExternalHyperlink_AndAJavascriptLinkIsPlainText()
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info()));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info(), TestContext.Current.CancellationToken));
         var main = package.MainDocumentPart!;
         var body = main.Document!.Body!;
 
@@ -271,7 +271,7 @@ public class BenchmarkWordRendererTests
     public void TheProperties_CarryTheMetadata_AndTheStoredCreationDate()
     {
         var info = Info(BenchmarkPdfClassification.Internal);
-        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, info);
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, info, TestContext.Current.CancellationToken);
         using var package = Open(docx);
 
         var core = Core(package);
@@ -304,7 +304,7 @@ public class BenchmarkWordRendererTests
     [InlineData(BenchmarkPdfPaper.Letter, 12240, 15840)]
     public void TheSection_HasThePaperAndMargins_AFirstPageHeader_AndPageFieldsInTheFooters(BenchmarkPdfPaper paper, int width, int height)
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown("Text.\n", Info(paper: paper)));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown("Text.\n", Info(paper: paper), TestContext.Current.CancellationToken));
         var main = package.MainDocumentPart!;
         var section = main.Document!.Body!.Elements<W.SectionProperties>().Single();
 
@@ -337,7 +337,7 @@ public class BenchmarkWordRendererTests
     [InlineData(BenchmarkPdfClassification.ProviderConfidential, false)]
     public void TheWatermark_IsWordsOwn_AndOnlyOnInternalDocuments(BenchmarkPdfClassification classification, bool expected)
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown("Text.\n", Info(classification)));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown("Text.\n", Info(classification), TestContext.Current.CancellationToken));
         var headers = package.MainDocumentPart!.HeaderParts.ToList();
         Assert.Equal(2, headers.Count);
 
@@ -368,7 +368,7 @@ public class BenchmarkWordRendererTests
     public void ATableOfContents_ListsTheSections_ExactlyWhenAllowedWithFourOfThem(int sections, bool allowed, bool expected)
     {
         string markdown = string.Concat(Enumerable.Range(1, sections).Select(i => $"## Section {i}\n\nText {i}.\n\n"));
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(markdown, Info() with { AllowTableOfContents = allowed }));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(markdown, Info() with { AllowTableOfContents = allowed }, TestContext.Current.CancellationToken));
         var body = package.MainDocumentPart!.Document!.Body!;
 
         var contents = body.Elements<W.SdtBlock>().ToList();
@@ -401,7 +401,7 @@ public class BenchmarkWordRendererTests
     [Fact]
     public void RawHtml_IsLiteralText_AndNothingIsImported()
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info()));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info(), TestContext.Current.CancellationToken));
         var main = package.MainDocumentPart!;
         string text = TextOf(main.Document!.Body!);
 
@@ -419,8 +419,8 @@ public class BenchmarkWordRendererTests
     {
         string huge = new('a', BenchmarkWordRenderer.MaxSourceCharacters + 1);
 
-        var markdown = Assert.Throws<BenchmarkWordSourceTooLargeException>(() => BenchmarkWordRenderer.RenderMarkdown(huge, Info()));
-        var plain = Assert.Throws<BenchmarkWordSourceTooLargeException>(() => BenchmarkWordRenderer.RenderPlainText(huge, Info()));
+        var markdown = Assert.Throws<BenchmarkWordSourceTooLargeException>(() => BenchmarkWordRenderer.RenderMarkdown(huge, Info(), TestContext.Current.CancellationToken));
+        var plain = Assert.Throws<BenchmarkWordSourceTooLargeException>(() => BenchmarkWordRenderer.RenderPlainText(huge, Info(), TestContext.Current.CancellationToken));
 
         Assert.Equal(BenchmarkWordRenderer.MaxSourceCharacters + 1, markdown.Characters);
         Assert.Equal(BenchmarkWordRenderer.MaxSourceCharacters + 1, plain.Characters);
@@ -444,7 +444,7 @@ public class BenchmarkWordRendererTests
     [Fact]
     public void SixFaces_AreEmbeddedObfuscated_AndDeobfuscateToTheOriginalFonts()
     {
-        using var package = Open(BenchmarkWordRenderer.RenderMarkdown("Text.\n", Info()));
+        using var package = Open(BenchmarkWordRenderer.RenderMarkdown("Text.\n", Info(), TestContext.Current.CancellationToken));
         var main = package.MainDocumentPart!;
         Assert.NotNull(main.DocumentSettingsPart!.Settings!.EmbedTrueTypeFonts);
         Assert.Null(main.DocumentSettingsPart.Settings.SaveSubsetFonts);

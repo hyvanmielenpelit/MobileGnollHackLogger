@@ -78,7 +78,7 @@ public class BenchmarkServiceFrozenSettingsTests
         config.EncryptedApiKey = rotated;
         config.ApiKeyNonce = nonce;
         config.ApiKeyTag = tag;
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var (bound, apiKey, error) = await Service().ResolveClaimVerifierAsync(_db, run, CancellationToken.None);
 
@@ -126,7 +126,7 @@ public class BenchmarkServiceFrozenSettingsTests
         var config = await AddConfigAsync();
         var run = await LaunchAsync(config);
         config.Provider = "Anthropic";
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         var (bound, _, error) = await Service().ResolveAssessorAsync(_db, run, null, CancellationToken.None);
 
@@ -145,7 +145,7 @@ public class BenchmarkServiceFrozenSettingsTests
         Assert.Equal(12345, service.GraderOutputCap(runAssessor!, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens));
 
         config.MaxOutputTokens = 9000;
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var (overrideAssessor, _, _) = await service.ResolveAssessorAsync(_db, run, config.Id, CancellationToken.None);
         Assert.Equal(9000, service.GraderOutputCap(overrideAssessor!, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens));
     }

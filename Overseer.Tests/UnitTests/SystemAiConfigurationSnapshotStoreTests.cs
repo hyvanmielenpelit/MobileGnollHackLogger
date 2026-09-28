@@ -91,7 +91,7 @@ public class SystemAiConfigurationSnapshotStoreTests
         var first = await SystemAiConfigurationSnapshotStore.CaptureAsync(db, Live(), CancellationToken.None);
         var second = await SystemAiConfigurationSnapshotStore.CaptureAsync(db, Live(), CancellationToken.None);
         Assert.Same(first, second);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // After the save, a later capture of the same settings finds the stored row.
         var third = await SystemAiConfigurationSnapshotStore.CaptureAsync(db, Live(), CancellationToken.None);
@@ -99,9 +99,9 @@ public class SystemAiConfigurationSnapshotStoreTests
 
         // Different settings get a row of their own.
         var other = await SystemAiConfigurationSnapshotStore.CaptureAsync(db, Live(thinkingLevel: "low"), CancellationToken.None);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         Assert.NotEqual(first.Id, other.Id);
-        Assert.Equal(2, await db.SystemAiConfigurationSnapshots.CountAsync());
+        Assert.Equal(2, await db.SystemAiConfigurationSnapshots.CountAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
