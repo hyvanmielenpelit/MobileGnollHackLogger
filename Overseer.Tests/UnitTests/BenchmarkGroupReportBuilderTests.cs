@@ -2,6 +2,7 @@ namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using MobileGnollHackLogger.Data;
@@ -228,6 +229,98 @@ public class BenchmarkGroupReportBuilderTests
         Assert.Contains("exploratory", md, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Benjamini", md);
         Assert.All(comparison.ItemComparisons, c => Assert.True(c.Exploratory));
+    }
+
+    /// <summary>
+    /// A treatment group compared against a baseline, optionally with token usage recorded on the
+    /// treatment so that the conditional Token and Tool Usage section precedes the comparison.
+    /// </summary>
+    private static string ComparisonReport(bool withUsage)
+    {
+        var suite = Suite();
+        var questions = Questions(20, 50, 80);
+
+        var baselineRuns = new List<BenchmarkRun>
+        {
+            Run(1, questions, new[] { 60, 70, 80 }),
+            Run(2, questions, new[] { 62, 72, 82 }),
+            Run(3, questions, new[] { 58, 68, 78 })
+        };
+        var treatmentRuns = new List<BenchmarkRun>
+        {
+            Run(4, questions, new[] { 70, 80, 90 }),
+            Run(5, questions, new[] { 72, 82, 92 }),
+            Run(6, questions, new[] { 68, 78, 88 })
+        };
+
+        if (withUsage)
+        {
+            foreach (var run in treatmentRuns)
+            {
+                run.TotalInputTokens = 2_100_000;
+                run.TotalOutputTokens = 60_000;
+                run.Answers[0].ToolCallSummary = "wiki_search×2";
+            }
+        }
+
+        var baseline = BenchmarkGroupStatistics.Compute(suite, questions, baselineRuns);
+        var treatment = BenchmarkGroupStatistics.Compute(suite, questions, treatmentRuns);
+        var comparison = BenchmarkGroupStatistics.Compare(baseline, treatment);
+        Assert.NotEmpty(comparison.ItemComparisons);
+        Assert.Equal(withUsage, treatment.Usage != null);
+
+        var group = new BenchmarkRunGroup { Id = 13, Name = "Treatment", BenchmarkSuiteId = 5 };
+
+        return BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, treatment, BenchmarkComparabilityKey.Resolve(treatmentRuns), treatmentRuns,
+            comparison, "Baseline");
+    }
+
+    /// <summary>
+    /// The comparison's subsections take the number the running counter gave their parent, which
+    /// moves with the optional usage section; a hardcoded "6.1" would sit under "## 7." or "## 8.".
+    /// </summary>
+    [Theory]
+    [InlineData(false, 7)]
+    [InlineData(true, 8)]
+    public void Report_NumbersComparisonSubsectionsUnderTheirParent(bool withUsage, int expectedSection)
+    {
+        string md = ComparisonReport(withUsage);
+
+        Assert.Contains($"## {expectedSection}. Paired Group Comparison", md);
+        Assert.Contains($"### {expectedSection}.1 Tests", md);
+        Assert.Contains($"### {expectedSection}.2 Per-item differences", md);
+        Assert.DoesNotContain("### 6.1 Tests", md);
+        Assert.DoesNotContain("### 6.2 Per-item differences", md);
+    }
+
+    /// <summary>
+    /// ":" in a custom date format is the culture's time separator, which is "." under fi-FI, so
+    /// both the header stamp and the manifest's start times must be formatted invariantly.
+    /// </summary>
+    [Fact]
+    public void Report_FormatsTimestampsInvariantly_EvenUnderFinnishCulture()
+    {
+        var prevCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("fi-FI");
+
+            var (group, result, runs) = Fixture();
+
+            string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
+                group, result, BenchmarkComparabilityKey.Resolve(runs), runs,
+                computedAtUtc: new DateTime(2026, 9, 6, 8, 30, 15, DateTimeKind.Utc));
+
+            Assert.Contains("**Analysis computed:** 2026-09-06 08:30:15 UTC", md);
+            Assert.Contains("| 1 | 2026-09-06 10:00 |", md);
+            Assert.DoesNotContain("08.30.15", md);
+            Assert.DoesNotContain("2026-09-06 10.00", md);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = prevCulture;
+        }
     }
 
     [Fact]

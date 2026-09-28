@@ -28,6 +28,14 @@ public static class BenchmarkGroupReportBuilder
     private static string Inv(double? value, string format = "F2", string nullText = "—")
         => value.HasValue ? value.Value.ToString(format, CultureInfo.InvariantCulture) : nullText;
 
+    /// <summary>
+    /// A UTC timestamp in the report's own fixed shape. ":" in a custom format string is the
+    /// culture's time separator rather than a literal, so an interpolated "{d:HH:mm:ss}" renders
+    /// "08.30.00" under fi-FI. Mirrors <c>BenchmarkReportBuilder.Stamp</c>.
+    /// </summary>
+    private static string Stamp(DateTime value, string format = "yyyy-MM-dd HH:mm:ss")
+        => value.ToString(format, CultureInfo.InvariantCulture);
+
     private static string Seconds(double? ms)
         => ms.HasValue ? Inv(ms.Value / 1000.0, "F1") + " s" : "—";
 
@@ -146,7 +154,7 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine($"**Items (*Q*):** {result.ItemCount}" +
                       (result.UnansweredItemCount > 0 ? $" ({result.UnansweredItemCount} unanswered by every member and excluded)" : string.Empty) + "  ");
         sb.AppendLine($"**Comparability:** {TierLabel(comparability?.Tier ?? (BenchmarkComparabilityTier)group.Tier)}  ");
-        sb.AppendLine($"**Analysis computed:** {(computedAtUtc ?? DateTime.UtcNow):yyyy-MM-dd HH:mm:ss} UTC  ");
+        sb.AppendLine($"**Analysis computed:** {Stamp(computedAtUtc ?? DateTime.UtcNow)} UTC  ");
         if (!string.IsNullOrWhiteSpace(overseerVersion))
         {
             sb.AppendLine($"**Overseer version:** {overseerVersion}  ");
@@ -184,7 +192,7 @@ public static class BenchmarkGroupReportBuilder
             {
                 sb.AppendLine(
                     $"| {run.Id} " +
-                    $"| {run.StartedAtUtc:yyyy-MM-dd HH:mm} " +
+                    $"| {Stamp(run.StartedAtUtc, "yyyy-MM-dd HH:mm")} " +
                     $"| {run.Status} " +
                     $"| {(run.QualityIndex.HasValue ? run.QualityIndex.Value.ToString(CultureInfo.InvariantCulture) : "—")} " +
                     $"| {(run.SpeedIndex.HasValue ? run.SpeedIndex.Value.ToString(CultureInfo.InvariantCulture) : "—")} " +
@@ -897,7 +905,7 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine($"- **Cohen's *d*z (effect size):** {Inv(cmp.CohensDz, "F3")} — the paired effect size: mean difference over the SD of those differences, not a pooled between-group *d*, which would describe a comparison nobody made here.");
         sb.AppendLine();
 
-        sb.AppendLine("### 6.1 Tests");
+        sb.AppendLine($"### {section}.1 Tests");
         sb.AppendLine();
         sb.AppendLine($"**Wilcoxon signed-rank (primary).** *n* = {cmp.Wilcoxon.SampleSize}" +
                       (cmp.Wilcoxon.ZeroDifferenceCount > 0 ? $" after discarding {cmp.Wilcoxon.ZeroDifferenceCount} zero difference(s)" : string.Empty) +
@@ -912,7 +920,7 @@ public static class BenchmarkGroupReportBuilder
 
         if (cmp.ItemComparisons.Count > 0)
         {
-            sb.AppendLine("### 6.2 Per-item differences — **exploratory**");
+            sb.AppendLine($"### {section}.2 Per-item differences — **exploratory**");
             sb.AppendLine();
             sb.AppendLine($"> {cmp.ExploratoryNote}");
             sb.AppendLine();
