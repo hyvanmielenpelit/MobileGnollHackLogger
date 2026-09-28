@@ -114,6 +114,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "KaTeX_*",
+                "input": "node_modules/katex/dist/fonts",
+                "output": "base/media"
               }
             ],
             "styles": [
