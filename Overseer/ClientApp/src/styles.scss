@@ -1184,6 +1184,7 @@ dialog:not([open]),
   padding: 1px 5px;
   border-radius: 4px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* Info Button */
@@ -3510,6 +3511,7 @@ app-table-pager {
   padding: 1px 5px;
   border-radius: 4px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* Effective price next to a model name in any model picker. */
@@ -3520,6 +3522,7 @@ app-table-pager {
   padding: 2px 6px;
   border-radius: 4px;
   border: 1px solid rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
 }
 
 /* Whether the model's API key may run requests in parallel, in any model picker. */

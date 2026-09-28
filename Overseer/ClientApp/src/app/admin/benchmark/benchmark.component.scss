@@ -2537,7 +2537,7 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
     display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
     .form-group { margin-bottom: 0; }
   }
-  .calibration-model-field { flex: 1 1 16rem; min-width: 0; }
+  .calibration-model-field { flex: 1 1 22rem; min-width: min(100%, 22rem); }
   .calibration-target-field { flex: 1 1 10rem; min-width: 0; select { width: 100%; } }
   .calibration-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
   .calibration-item { padding: 8px 10px; border: 1px solid #333; border-radius: 6px; font-size: 12px; }
