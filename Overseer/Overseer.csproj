@@ -46,6 +46,7 @@
     <Content Update="Data\**" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="Services\ModelCatalogs\*.json" />
     <EmbeddedResource Include="Resources\Pdf\**" />
+    <EmbeddedResource Include="Resources\Word\**" />
   </ItemGroup>
 
   <ItemGroup>

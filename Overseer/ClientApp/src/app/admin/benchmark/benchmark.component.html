@@ -1502,48 +1502,50 @@
   @if (selectedRunDetail || runDetailRequestedId != null) {
     <app-run-report-frame mainLabel="Findings and questions" asideLabel="Run details" [busy]="loadingDetail"
                           [figuresCollapsible]="true" figuresStorageKey="overseer.benchmark.runReport.figuresCollapsed">
-      <div runReportHeader class="dialog-title-group">
-        <div class="dialog-title-row">
-          <!-- Decorative: the title beside it names the run. -->
-          <img class="gnollbench-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="28" height="28">
+      <div runReportHeader class="rr-identity">
+        <!-- Decorative: the title beside it names the run. -->
+        <img class="gnollbench-emblem rr-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="64" height="64">
+        <div class="dialog-title-group">
+          <div class="dialog-title-row">
+            @if (selectedRunDetail) {
+              <h3 id="runDetailTitle">Run #{{ selectedRunDetail.id }}: {{ selectedRunDetail.suiteName }}</h3>
+              <div class="dialog-title-badges">
+                <span class="status-badge" [class]="statusBadgeClass(selectedRunDetail.status)">
+                  {{ formatStatusLabel(selectedRunDetail.status) }}
+                </span>
+                @if (answerShortfallOf(selectedRunDetail); as progress) {
+                  <span class="badge-progress-count"
+                        [attr.interestfor]="'tip-dialog-progress-' + selectedRunDetail.id"
+                        [attr.style]="'anchor-name: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} / {{ progress.total }}</span>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-dialog-progress-' + selectedRunDetail.id"
+                       [attr.style]="'position-anchor: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
+                }
+              </div>
+            } @else {
+              <h3 id="runDetailTitle">Run #{{ runDetailRequestedId }}</h3>
+            }
+          </div>
           @if (selectedRunDetail) {
-            <h3 id="runDetailTitle">Run #{{ selectedRunDetail.id }}: {{ selectedRunDetail.suiteName }}</h3>
-            <div class="dialog-title-badges">
-              <span class="status-badge" [class]="statusBadgeClass(selectedRunDetail.status)">
-                {{ formatStatusLabel(selectedRunDetail.status) }}
-              </span>
-              @if (answerShortfallOf(selectedRunDetail); as progress) {
-                <span class="badge-progress-count"
-                      [attr.interestfor]="'tip-dialog-progress-' + selectedRunDetail.id"
-                      [attr.style]="'anchor-name: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} / {{ progress.total }}</span>
-                <div popover="hint" class="gh-tooltip" [id]="'tip-dialog-progress-' + selectedRunDetail.id"
-                     [attr.style]="'position-anchor: --tip-dialog-progress-' + selectedRunDetail.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
+            <p class="dialog-subtitle">
+              Model: <strong>{{ selectedRunDetail.testedModelDisplayNameUsed }}</strong> |
+              @if (selectedRunDetail.isPanelRun) {
+                Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }} + {{ selectedRunDetail.coAssessorModelDisplayNameUsed }}</strong> |
+              } @else {
+                Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }}</strong> |
               }
-            </div>
-          } @else {
-            <h3 id="runDetailTitle">Run #{{ runDetailRequestedId }}</h3>
+              @if (candidatePromptSummaryOf(selectedRunDetail); as promptSummary) {
+                Prompt: <strong>{{ promptSummary }}</strong> |
+              }
+              Started: {{ selectedRunDetail.startedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC
+            </p>
+            @if (boardDeliveryLine(selectedRunDetail); as boardDelivery) {
+              <p class="dialog-subtitle board-delivery-line">{{ boardDelivery }}</p>
+              @for (gap of boardDeliveryGaps(selectedRunDetail); track gap) {
+                <p class="dialog-subtitle"><strong>Graded without the board — {{ gap }}</strong></p>
+              }
+            }
           }
         </div>
-        @if (selectedRunDetail) {
-          <p class="dialog-subtitle">
-            Model: <strong>{{ selectedRunDetail.testedModelDisplayNameUsed }}</strong> |
-            @if (selectedRunDetail.isPanelRun) {
-              Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }} + {{ selectedRunDetail.coAssessorModelDisplayNameUsed }}</strong> |
-            } @else {
-              Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }}</strong> |
-            }
-            @if (candidatePromptSummaryOf(selectedRunDetail); as promptSummary) {
-              Prompt: <strong>{{ promptSummary }}</strong> |
-            }
-            Started: {{ selectedRunDetail.startedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC
-          </p>
-          @if (boardDeliveryLine(selectedRunDetail); as boardDelivery) {
-            <p class="dialog-subtitle board-delivery-line">{{ boardDelivery }}</p>
-            @for (gap of boardDeliveryGaps(selectedRunDetail); track gap) {
-              <p class="dialog-subtitle"><strong>Graded without the board — {{ gap }}</strong></p>
-            }
-          }
-        }
       </div>
 
       <!-- A group, not a toolbar: every action is its own Tab stop, with no arrow-key roving. -->
@@ -2924,12 +2926,13 @@
             <div class="gh-disclosure-body calibration-panel">
               <p class="form-hint">
                 Re-grades every answer of this run with another model and reports how far it diverges
-                from the run's own assessor. Changes nothing about the run, and never appears in the
-                report.
+                from the run's own assessor. Use it before replacing an assessor, to see whether the
+                newcomer grades these answers the way the current one does. Changes nothing about the
+                run, and never appears in the report.
               </p>
 
-              <div class="flex-row gap-10 align-end">
-                <div class="form-group flex-1">
+              <div class="calibration-controls">
+                <div class="form-group calibration-model-field">
                   <label id="bmCalibrationModelLabel">Calibration assessor</label>
                   <app-model-picker class="calibration-model-selector" labelledBy="bmCalibrationModelLabel"
                                     placeholder="Select a model" [emptyHint]="benchmarkPickerEmptyHint"
@@ -2937,7 +2940,7 @@
                                     (selectionChange)="selectCalibrationAssessorModel($event.model)"></app-model-picker>
                 </div>
                 @if (selectedRunDetail.isPanelRun) {
-                  <div class="form-group">
+                  <div class="form-group calibration-target-field">
                     <label for="calibrationTargetSelect">Compare against</label>
                     <select id="calibrationTargetSelect" class="gh-input" [(ngModel)]="calibrationTarget">
                       @for (option of calibrationTargetOptions; track option.value) {
@@ -2963,46 +2966,33 @@
               } @else if (calibrations.length === 0) {
                 <p class="text-muted">No calibration has been run against this run yet.</p>
               } @else {
-                <table class="gh-table calibration-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Assessor</th>
-                      @if (selectedRunDetail.isPanelRun) {
-                        <th scope="col">Compared against</th>
-                      }
-                      <th scope="col">Mean abs. delta</th>
-                      <th scope="col">Disagreements</th>
-                      <th scope="col">Answers</th>
-                      <th scope="col">Tokens</th>
-                      <th scope="col">Duration</th>
-                      <th scope="col">Run at</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (cal of calibrations; track cal.id) {
-                      <tr>
-                        <td>
+                <ul class="calibration-list">
+                  @for (cal of calibrations; track cal.id) {
+                    <li class="calibration-item">
+                      <div class="calibration-item-head">
+                        <span>
                           {{ cal.assessorDisplayNameUsed }}
                           <app-provider-badge [provider]="cal.assessorProviderUsed"></app-provider-badge>
-                        </td>
+                        </span>
+                        <span class="text-muted">{{ cal.createdAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC</span>
+                      </div>
+                      <!-- Each div pairs a term with its value, so the grid places them as one cell. -->
+                      <dl class="calibration-stats">
                         @if (selectedRunDetail.isPanelRun) {
-                          <td>{{ calibrationTargetLabel(cal.comparedAgainst) }}</td>
+                          <div><dt>Compared against</dt><dd>{{ calibrationTargetLabel(cal.comparedAgainst) }}</dd></div>
                         }
-                        <td>{{ cal.meanAbsDelta != null ? (cal.meanAbsDelta | number:'1.1-1') : 'N/A' }}</td>
-                        <td>{{ cal.disagreementCount }}</td>
-                        <td>{{ cal.answerCount }}@if (cal.skippedAnswerCount > 0) { <span class="text-muted"> ({{ cal.skippedAnswerCount }} skipped)</span> }</td>
-                        <td>{{ cal.inputTokens }} in / {{ cal.outputTokens }} out</td>
-                        <td>{{ formatDuration(cal.durationMs) }}</td>
-                        <td>{{ cal.createdAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC</td>
-                      </tr>
+                        <div><dt>Mean abs. delta</dt><dd>{{ cal.meanAbsDelta != null ? (cal.meanAbsDelta | number:'1.1-1') : 'N/A' }}</dd></div>
+                        <div><dt>Disagreements</dt><dd>{{ cal.disagreementCount }}</dd></div>
+                        <div><dt>Answers</dt><dd>{{ cal.answerCount }}@if (cal.skippedAnswerCount > 0) { <span class="text-muted"> ({{ cal.skippedAnswerCount }} skipped)</span> }</dd></div>
+                        <div><dt>Tokens</dt><dd>{{ cal.inputTokens }} in / {{ cal.outputTokens }} out</dd></div>
+                        <div><dt>Duration</dt><dd>{{ formatDuration(cal.durationMs) }}</dd></div>
+                      </dl>
                       @if (cal.errorMessage) {
-                        <tr>
-                          <td [attr.colspan]="selectedRunDetail.isPanelRun ? 8 : 7" class="calibration-error">{{ cal.errorMessage }}</td>
-                        </tr>
+                        <p class="calibration-error">{{ cal.errorMessage }}</p>
                       }
-                    }
-                  </tbody>
-                </table>
+                    </li>
+                  }
+                </ul>
               }
             </div>
           </details>

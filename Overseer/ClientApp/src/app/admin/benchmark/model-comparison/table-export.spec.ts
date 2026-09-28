@@ -1,4 +1,5 @@
 import { FIGURE_EXPORT_MAX_DIMENSION } from './figure-export';
+import type { FigureLogo } from './figure-logo';
 import { DEFAULT_APPEARANCE_STYLE } from './figure-style';
 import type { FigureAppearanceStyle } from './figure-style';
 import { resolveFigureTheme } from './figure-theme';
@@ -874,6 +875,112 @@ describe('table-export', () => {
       expect(canvas.width).toBe(1);
       expect(canvas.height).toBe(1);
       await expectAsync(encodeComparisonTable(built, 'png', { size })).toBeRejectedWithError(/selected columns/);
+    });
+
+    describe('with the logo', () => {
+      /** A logo drawn from a small canvas, `heightPx` tall at `aspectRatio`. */
+      function logoOf(heightPx: number, aspectRatio = 1): FigureLogo {
+        const image = document.createElement('canvas');
+        image.width = 8;
+        image.height = 8;
+        return { image, aspectRatio, heightPx };
+      }
+
+      /** Every `fillText` with its y, and every `drawImage` call's arguments. */
+      function spyDrawing(): { texts: { text: string; y: number }[]; images: any[][] } {
+        const texts: { text: string; y: number }[] = [];
+        const images: any[][] = [];
+        const realFillText = CanvasRenderingContext2D.prototype.fillText;
+        const realDrawImage = CanvasRenderingContext2D.prototype.drawImage;
+        spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
+          this: CanvasRenderingContext2D,
+          ...args: any[]
+        ) {
+          texts.push({ text: String(args[0]), y: args[2] });
+          return (realFillText as any).apply(this, args);
+        } as any);
+        spyOn(CanvasRenderingContext2D.prototype, 'drawImage').and.callFake(function (
+          this: CanvasRenderingContext2D,
+          ...args: any[]
+        ) {
+          images.push(args);
+          return (realDrawImage as any).apply(this, args);
+        } as any);
+        return { texts, images };
+      }
+
+      /** The y of the header cell `A`, which {@link narrowModel} draws once. */
+      function headerTop(texts: { text: string; y: number }[]): number {
+        return texts.find(entry => entry.text === 'A')!.y;
+      }
+
+      it('draws the logo at the top right and starts the header row below it', () => {
+        const built = narrowModel();
+        const logo = logoOf(96);
+        const drawing = spyDrawing();
+        const { layout } = resolveTableImageLayout(built, { logo });
+        composeTableImage(built, { logo, previewRaster: 1 });
+
+        const drawn = drawing.images.filter(args => args[0] === logo.image);
+        expect(drawn.length).toBe(1);
+        expect(drawn[0].slice(1)).toEqual([layout!.layoutWidth - 20 - 96, 20, 96, 96]);
+        expect(headerTop(drawing.texts)).toBeGreaterThanOrEqual(20 + 96 + 6);
+      });
+
+      it('grows the image and the measured size by exactly the taller heading block', () => {
+        const built = narrowModel();
+        const logo = logoOf(96);
+        const drawing = spyDrawing();
+        composeTableImage(built, { previewRaster: 1 });
+        const topWithout = headerTop(drawing.texts);
+        drawing.texts.length = 0;
+        composeTableImage(built, { logo, previewRaster: 1 });
+        const grown = headerTop(drawing.texts) - topWithout;
+        expect(grown).toBeGreaterThan(0);
+
+        const without = resolveTableImageLayout(built).layout!;
+        const withLogo = resolveTableImageLayout(built, { logo }).layout!;
+        expect(withLogo.layoutWidth).toBe(without.layoutWidth);
+        expect(withLogo.layoutHeight - without.layoutHeight).toBeCloseTo(grown, 6);
+
+        const measuredWithout = measureTableImage(built, { textScale: 1 });
+        const measuredWith = measureTableImage(built, { textScale: 1, logo });
+        expect(measuredWith.widthPx).toBe(measuredWithout.widthPx);
+        expect(measuredWith.heightPx - measuredWithout.heightPx).toBe(Math.round(grown));
+        expect(resolveTableImageLayout(built, { logo, size: box(measuredWith.widthPx, measuredWith.heightPx) }).refusal)
+          .toBeNull();
+        expect(resolveTableImageLayout(built, { logo, size: box(measuredWith.widthPx, measuredWith.heightPx - 1) }).refusal)
+          .toContain(`need at least ${measuredWith.heightPx} px of height`);
+      });
+
+      it('wraps the subtitle in the narrower column beside the logo', () => {
+        const built = narrowModel();
+        const drawing = spyDrawing();
+        const subtitleLineCount = (): number => {
+          const top = headerTop(drawing.texts);
+          return drawing.texts.filter(entry => entry.y < top && entry.text !== 'Comparison table').length;
+        };
+        composeTableImage(built, { previewRaster: 1 });
+        const without = subtitleLineCount();
+        drawing.texts.length = 0;
+        composeTableImage(built, { logo: logoOf(96, 3248 / 850), previewRaster: 1 });
+        expect(subtitleLineCount()).toBeGreaterThan(without);
+      });
+
+      it('draws and measures exactly as before without a logo', () => {
+        const built = readingModel();
+        expect(differingBytes(composeTableImage(built), composeTableImage(built, { logo: null }))).toBe(0);
+        expect(measureTableImage(built, { textScale: 1, logo: null })).toEqual(measureTableImage(built, { textScale: 1 }));
+      });
+
+      it('passes the logo through the encoder', async () => {
+        const built = narrowModel();
+        const natural = measureTableImage(built, { textScale: 1 });
+        const size = box(natural.widthPx, natural.heightPx);
+        expect(resolveTableImageLayout(built, { size }).refusal).toBeNull();
+        await expectAsync(encodeComparisonTable(built, 'png', { size, logo: logoOf(96) }))
+          .toBeRejectedWithError(/px of height/);
+      });
     });
   });
 

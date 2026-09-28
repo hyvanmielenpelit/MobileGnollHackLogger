@@ -48,11 +48,19 @@ import {
   writeStoredFigureSize,
   writeStoredTableImageSize
 } from './figure-size';
-import { DEFAULT_FIGURE_STYLE, FigureAppearanceStyle, FigureStyle, TableImageStyle, normalizeFigureStyle } from './figure-style';
+import {
+  DEFAULT_FIGURE_STYLE,
+  FigureAppearanceStyle,
+  FigureLogoVariant,
+  FigureStyle,
+  TableImageStyle,
+  normalizeFigureStyle
+} from './figure-style';
 import { FigureStylePanelComponent, FigureStylePanelKind } from './figure-style-panel.component';
 import { ResolvedFigureTheme, resolveFigureTheme } from './figure-theme';
 import { figureFont } from './figure-fonts';
 import { ensureFigureFont } from './figure-font-loader';
+import { FigureLogo, ensureFigureLogo, figureLogoAspect } from './figure-logo';
 import { ExportSizeSectionComponent } from './export-size-section.component';
 import { TableSettingsPanelComponent } from './table-settings-panel.component';
 import { exactFilter, SortAccessor, TableState } from '../../../shared/data-table/table-state';
@@ -719,6 +727,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** Whether the chosen font family loaded, for the Theme tab's status line. Empty for Overseer default. */
   fontLoadStatus = '';
+
+  /** The decoded GnollBench logo per variant, once loaded. */
+  private figureLogos: Partial<Record<FigureLogoVariant, CanvasImageSource>> = {};
 
   /** Pending rebuild after a style change, so a range drag rebuilds once it pauses. */
   private styleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1403,14 +1414,18 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * Stores the style at once, so the panel's own controls follow it, persists it, and rebuilds the
    * six figures and the table image once the change pauses: a range drag or a colour picker fires on
-   * every step. A newly chosen font starts loading at once.
+   * every step. A newly chosen font, and a newly shown or chosen logo, starts loading at once.
    */
   onFigureStyleChange(style: FigureStyle): void {
-    const previousFont = this.figureStyle.appearance.fontFamily;
+    const previous = this.figureStyle.appearance;
     this.figureStyle = normalizeFigureStyle(style);
     this.writeStoredFigureStyle(this.figureStyle);
-    if (this.figureStyle.appearance.fontFamily !== previousFont) {
+    const appearance = this.figureStyle.appearance;
+    if (appearance.fontFamily !== previous.fontFamily) {
       void this.loadFigureFont();
+    }
+    if (appearance.logo && (appearance.logo !== previous.logo || appearance.logoVariant !== previous.logoVariant)) {
+      void this.loadFigureLogo();
     }
     this.cancelScheduledStyle();
     this.styleTimer = setTimeout(() => {
@@ -1445,6 +1460,33 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.fontLoadStatus = status;
       this.cdr.markForCheck();
     }
+  }
+
+  /** Loads the chosen logo variant while the logo is shown. A logo that fails to load draws nothing. */
+  private async loadFigureLogo(): Promise<void> {
+    const appearance = this.figureStyle.appearance;
+    if (!appearance.logo) {
+      return;
+    }
+    const variant = appearance.logoVariant;
+    const image = await ensureFigureLogo(variant);
+    if (image) {
+      this.figureLogos[variant] = image;
+    }
+  }
+
+  /** The font and the logo every composition and measurement draws with, loaded together. */
+  private async prepareFigureComposition(): Promise<void> {
+    await Promise.all([this.loadFigureFont(), this.loadFigureLogo()]);
+  }
+
+  /** The logo the composers draw, or null while it is hidden or not loaded. */
+  private figureLogo(): FigureLogo | null {
+    const appearance = this.figureStyle.appearance;
+    const image = appearance.logo ? this.figureLogos[appearance.logoVariant] : undefined;
+    return image
+      ? { image, aspectRatio: figureLogoAspect(appearance.logoVariant), heightPx: appearance.logoHeightPx }
+      : null;
   }
 
   /** Resolves the theme once per appearance, so every composition reads one cached object. */
@@ -2394,8 +2436,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     refusal: string | null;
     pixels: string;
   }> {
-    // The chrome is measured before it is drawn, so the face has to be there first.
-    await this.loadFigureFont();
+    // The chrome is measured before it is drawn, so the face and the logo have to be there first.
+    await this.prepareFigureComposition();
     const chrome = this.exportChrome(card);
     const { layout, refusal } = resolveFigureLayout(chrome, resolution, this.exportDensity, this.exportTextScale);
     if (!layout) {
@@ -2425,7 +2467,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     layout: FigureExportLayout,
     format: FigureExportFormat = this.exportFormat
   ): Promise<HTMLCanvasElement | null> {
-    await this.loadFigureFont();
+    await this.prepareFigureComposition();
     const plot = card.tiles
       ? await renderTiledPlotOffscreen(card.tiles.configs, card.tiles.columns, layout)
       : await renderPlotOffscreen(
@@ -2449,7 +2491,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         badgePx: style.badgeTextSizePx,
         footerPx: style.footerTextSizePx
       },
-      theme: this.figureTheme
+      theme: this.figureTheme,
+      logo: this.figureLogo()
     };
   }
 
@@ -3280,7 +3323,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cdr.markForCheck();
 
     try {
-      await this.loadFigureFont();
+      await this.prepareFigureComposition();
       if (sequence !== this.previewSeq) {
         return;
       }
@@ -3362,7 +3405,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cdr.markForCheck();
 
     try {
-      await this.loadFigureFont();
+      await this.prepareFigureComposition();
       if (sequence !== this.previewSeq) {
         return;
       }
@@ -4100,7 +4143,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!this.allActive || this.allTargetPixels === null) {
       return;
     }
-    await this.loadFigureFont();
+    await this.prepareFigureComposition();
     if (generation !== this.allGeneration || !this.allActive) {
       return;
     }
@@ -4517,7 +4560,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.cdr.markForCheck();
       return;
     }
-    await this.loadFigureFont();
+    await this.prepareFigureComposition();
     if (sequence !== this.tableMeasureSeq) {
       return;
     }
@@ -4532,7 +4575,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       const fit = measureTableImage(model, {
         theme: this.figureTheme,
         tableStyle: this.figureStyle.table,
-        textScale: this.tableImageSize.textScalePercent / 100
+        textScale: this.tableImageSize.textScalePercent / 100,
+        logo: this.figureLogo()
       });
       const rows = model.rows.length;
       const columns = model.columns.length;
@@ -4590,7 +4634,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return diagnostics ? { ...model, panelDiagnostics: diagnostics } : model;
   }
 
-  /** The table image's theme, row style and size: *Fit the table* at a density, or a box in plain pixels. */
+  /** The table image's theme, row style, logo and size: *Fit the table* at a density, or a box in plain pixels. */
   private tableImageOptions(): TableImageOptions {
     const settings = this.tableImageSize;
     const density = resolveSizeDensity(settings);
@@ -4607,7 +4651,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         textScale: settings.textScalePercent / 100
       };
     }
-    return { theme: this.figureTheme, tableStyle: this.figureStyle.table, size };
+    return { theme: this.figureTheme, tableStyle: this.figureStyle.table, size, logo: this.figureLogo() };
   }
 
   // --- Download and copy ---
@@ -4633,7 +4677,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       let pixels = '';
       let encoded: TableExportResult;
       if (format === 'image') {
-        await this.loadFigureFont();
+        await this.prepareFigureComposition();
         const options = this.tableImageOptions();
         const sizeError = sizeErrors(this.tableImageSize, 'image').any;
         const target = sizeError === '' ? resolveTableImageLayout(model, options) : { layout: null, refusal: sizeError };
@@ -4694,7 +4738,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     try {
       const model = this.tableModel(this.tableFlavour(format), rows);
       if (format === 'image') {
-        await this.loadFigureFont();
+        await this.prepareFigureComposition();
         const options = this.tableImageOptions();
         const sizeError = sizeErrors(this.tableImageSize, 'image').any;
         const target = sizeError === '' ? resolveTableImageLayout(model, options) : { layout: null, refusal: sizeError };

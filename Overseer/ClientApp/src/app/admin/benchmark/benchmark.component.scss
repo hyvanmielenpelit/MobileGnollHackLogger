@@ -1123,8 +1123,7 @@
   }
 }
 
-// Tool call record. The disclosure's own table is a compact .gh-table like .calibration-table
-// above; the per-call argument/result panel reuses the .artifact-box geometry above it, since
+// Tool call record. The disclosure's own table is a compact .gh-table; the per-call argument/result panel reuses the .artifact-box geometry above it, since
 // both are audit material (mostly leaked JSON) rather than part of the answer.
 .tool-call-counts {
   font-size: 11px;
@@ -2304,6 +2303,22 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   flex-shrink: 0;
 }
 
+// The run report's header: the emblem spans the title group's rows.
+.rr-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+
+  > .dialog-title-group { flex: 1 1 auto; }
+}
+
+.rr-emblem { width: 64px; height: 64px; }
+
+@container run-report-frame (max-width: 40rem) {
+  .rr-emblem { width: 40px; height: 40px; }
+}
+
 // Not nested under .dialog-header: the run report's header holds the same title group.
 .dialog-title-group {
   display: flex;
@@ -2465,10 +2480,23 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .calibration-panel {
   border-top: 1px solid #333;
   padding-top: 15px;
+  overflow-wrap: anywhere;
 
-  .align-end { align-items: flex-end; }
-  .calibration-table { font-size: 12px; }
-  .calibration-error { color: #fbbf24; }
+  .calibration-controls {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
+    .form-group { margin-bottom: 0; }
+  }
+  .calibration-model-field { flex: 1 1 16rem; min-width: 0; }
+  .calibration-target-field { flex: 1 1 10rem; min-width: 0; select { width: 100%; } }
+  .calibration-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .calibration-item { padding: 8px 10px; border: 1px solid #333; border-radius: 6px; font-size: 12px; }
+  .calibration-item-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+  .calibration-stats {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 6px 12px; margin: 8px 0 0;
+    dt { color: #888; }
+    dd { margin: 0; }
+  }
+  .calibration-error { margin: 6px 0 0; color: #fbbf24; }
 }
 
 // Assessor panel. Terse for the same component style budget as above.

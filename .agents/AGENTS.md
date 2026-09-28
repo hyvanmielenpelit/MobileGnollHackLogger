@@ -46,7 +46,8 @@ To compile SCSS files:
 ## Image Conventions
 
 ### Rules for Image Files
-- **WebP format**: Convert JPG and PNG images to WebP to optimize web asset performance.
+- **Browser UI: WebP.** Images shown in the web user interface are WebP at quality 85. Convert JPG and PNG images to WebP to optimize web asset performance.
+- **Downloadable documents: PNG.** Images embedded in files a user downloads and opens in another application — Word (`.docx`) and similar office formats (`.xlsx`, `.pptx`, `.odt`) — are PNG, or JPEG for a photograph, because WebP pictures do not open in Word 2019, Word 2021 or LibreOffice. Such images are server-side resources that never reach the browser, so WebP's loading-performance purpose does not apply. A renderer that decodes WebP itself before embedding (QuestPDF for the benchmark PDFs) may keep using the WebP originals.
 - **Conversion quality**: When converting images to WebP, always use a compression quality of **85** (e.g., `quality=85` in Pillow or `-q 85` in cwebp).
 
 ## Temporary and Guidance Files

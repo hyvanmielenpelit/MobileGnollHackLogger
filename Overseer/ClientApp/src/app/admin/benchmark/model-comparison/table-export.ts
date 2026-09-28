@@ -44,6 +44,8 @@ import {
   wrapText
 } from './figure-export';
 import type { FigureExportResult, WebpQuality } from './figure-export';
+import { FIGURE_LOGO_GAP, drawFigureLogo, figureLogoBox } from './figure-logo';
+import type { FigureLogo, FigureLogoBox } from './figure-logo';
 import { DEFAULT_TABLE_IMAGE_STYLE } from './figure-style';
 import type { TableImageStyle } from './figure-style';
 import { resolveFigureTheme, tableBandColor } from './figure-theme';
@@ -68,6 +70,8 @@ export interface TableImageOptions {
   readonly theme?: ResolvedFigureTheme;
   readonly tableStyle?: TableImageStyle;
   readonly size?: TableImageSize;
+  /** Drawn in the top right corner, beside the title and subtitle. Absent or null draws none. */
+  readonly logo?: FigureLogo | null;
 }
 
 /** One resolved table image: the box it is laid out in and the bitmap it is written at. */
@@ -1314,6 +1318,9 @@ interface TableImageContent {
   readonly columns: readonly TableImageColumn[];
   /** The width the title, the bands and the rules span: the table's, or the box's less its padding. */
   readonly contentWidth: number;
+  /** The logo's box in the top right corner, or null without a logo. */
+  readonly logo: FigureLogoBox | null;
+  /** Wrapped beside the logo, when there is one. */
   readonly titleLines: string[];
   readonly subtitleLines: string[];
   readonly noticeLines: readonly string[][];
@@ -1331,6 +1338,8 @@ interface TableImagePlan {
   readonly content: TableImageContent;
   readonly theme: ResolvedFigureTheme;
   readonly style: TableImageStyle;
+  /** Drawn into `content.logo`. */
+  readonly logo: FigureLogo | null;
 }
 
 /**
@@ -1367,7 +1376,7 @@ export function resolveTableImageLayout(
  */
 export function measureTableImage(
   model: ComparisonTableModel,
-  options: { theme?: ResolvedFigureTheme; tableStyle?: TableImageStyle; textScale: number }
+  options: { theme?: ResolvedFigureTheme; tableStyle?: TableImageStyle; textScale: number; logo?: FigureLogo | null }
 ): { widthPx: number; heightPx: number } {
   const theme = options.theme ?? resolveFigureTheme();
   const type = tableTypography(theme);
@@ -1380,8 +1389,8 @@ export function measureTableImage(
   // The height is the box layout's at exactly that width, so typing both numbers back fits.
   const boxed = boxColumnWidths(natural, widthPx, textScale);
   const content = boxed.kind === 'fits'
-    ? layoutTableContent(model, boxed.widths, boxed.contentWidth, measurer, type)
-    : layoutTableContent(model, widths, Math.max(columnsSpan(widths), TABLE_MIN_CONTENT_WIDTH), measurer, type);
+    ? layoutTableContent(model, boxed.widths, boxed.contentWidth, measurer, type, options.logo)
+    : layoutTableContent(model, widths, Math.max(columnsSpan(widths), TABLE_MIN_CONTENT_WIDTH), measurer, type, options.logo);
   return { widthPx, heightPx: requestedPx(content.height, textScale) };
 }
 
@@ -1449,7 +1458,7 @@ const TABLE_MEDIA_TYPES: Record<string, string> = {
  *
  * The single place the eight formats are dispatched, so the component holds no second copy of the
  * mapping and a format added here reaches the view by adding one `<option>`. The image options
- * (`theme`, `tableStyle`, `size`) are read only for PNG and WebP; absent, they draw the dark,
+ * (`theme`, `tableStyle`, `size`, `logo`) are read only for PNG and WebP; absent, they draw the dark,
  * banded *Fit the table* image at {@link TABLE_IMAGE_SCALE}. A refused image size rejects with the
  * refusal text rather than writing a 1 × 1 image.
  */
@@ -1462,7 +1471,8 @@ export async function encodeComparisonTable(
     const { plan, refusal } = planTableImage(model, {
       theme: options?.theme,
       tableStyle: options?.tableStyle,
-      size: options?.size
+      size: options?.size,
+      logo: options?.logo
     });
     if (!plan) {
       throw new Error(refusal ?? 'The table image could not be laid out.');
@@ -1613,21 +1623,27 @@ function boxColumnWidths(
   return { kind: 'narrow', minimumWidthPx };
 }
 
-/** Wraps every text of the table to these column widths and this content width, and sums the height. */
+/**
+ * Wraps every text of the table to these column widths and this content width, and sums the height.
+ * The title and subtitle wrap beside the logo, and their block is at least the logo's height.
+ */
 function layoutTableContent(
   model: ComparisonTableModel,
   widths: readonly number[],
   contentWidth: number,
   measurer: TableMeasurer,
-  type: TableTypography
+  type: TableTypography,
+  logo?: FigureLogo | null
 ): TableImageContent {
   const columns: TableImageColumn[] = model.columns.map((column, index) => ({
     column,
     width: widths[index],
     headerLines: measurer.wrap(column.header, widths[index], TABLE_TEXT_SIZE, type.heading)
   }));
-  const titleLines = measurer.wrap(TABLE_IMAGE_TITLE, contentWidth, TABLE_TITLE_SIZE, type.heading);
-  const subtitleLines = measurer.wrap(provenanceLine(model.provenance), contentWidth, TABLE_SUBTITLE_SIZE, '400');
+  const logoBox = figureLogoBox(logo, contentWidth);
+  const headingWidth = logoBox ? contentWidth - logoBox.width - FIGURE_LOGO_GAP : contentWidth;
+  const titleLines = measurer.wrap(TABLE_IMAGE_TITLE, headingWidth, TABLE_TITLE_SIZE, type.heading);
+  const subtitleLines = measurer.wrap(provenanceLine(model.provenance), headingWidth, TABLE_SUBTITLE_SIZE, '400');
   const noticeLines = model.provenance.notices.map(
     notice => measurer.wrap(notice, contentWidth, TABLE_SUBTITLE_SIZE, '400')
   );
@@ -1639,8 +1655,10 @@ function layoutTableContent(
   const bodyHeights = bodyRows.map(cells => rowHeight(Math.max(1, ...cells.map(lines => lines.length))));
 
   let height = TABLE_PADDING * 2;
-  height += blockHeight(titleLines, TABLE_TITLE_SIZE);
-  height += blockHeight(subtitleLines, TABLE_SUBTITLE_SIZE);
+  height += Math.max(
+    blockHeight(titleLines, TABLE_TITLE_SIZE) + blockHeight(subtitleLines, TABLE_SUBTITLE_SIZE),
+    logoBox?.height ?? 0
+  );
   height += TABLE_LINE_GAP + headerHeight + TABLE_RULE_GAP;
   height += bodyHeights.reduce((total, rowHeightPx) => total + rowHeightPx, 0);
   height += TABLE_RULE_GAP;
@@ -1648,7 +1666,9 @@ function layoutTableContent(
     height += TABLE_LINE_GAP + blockHeight(lines, TABLE_SUBTITLE_SIZE);
   }
 
-  return { columns, contentWidth, titleLines, subtitleLines, noticeLines, headerHeight, bodyRows, bodyHeights, height };
+  return {
+    columns, contentWidth, logo: logoBox, titleLines, subtitleLines, noticeLines, headerHeight, bodyRows, bodyHeights, height
+  };
 }
 
 /** The one layout {@link resolveTableImageLayout}, {@link composeTableImage} and the encoder share. */
@@ -1658,6 +1678,7 @@ function planTableImage(
 ): { plan: TableImagePlan | null; refusal: string | null } {
   const theme = options.theme ?? resolveFigureTheme();
   const style = options.tableStyle ?? DEFAULT_TABLE_IMAGE_STYLE;
+  const logo = options.logo ?? null;
   const size: TableImageSize = options.size ?? { mode: 'fit', density: TABLE_IMAGE_SCALE };
   const type = tableTypography(theme);
   const measurer = tableMeasurer(type.stack);
@@ -1669,7 +1690,7 @@ function planTableImage(
     }
     const widths = fitColumnWidths(naturalColumnWidths(model, measurer, type), size.density);
     const contentWidth = Math.max(columnsSpan(widths), TABLE_MIN_CONTENT_WIDTH);
-    const content = layoutTableContent(model, widths, contentWidth, measurer, type);
+    const content = layoutTableContent(model, widths, contentWidth, measurer, type, logo);
     const imageWidth = contentWidth + TABLE_PADDING * 2;
     const imageHeight = content.height;
 
@@ -1691,7 +1712,7 @@ function planTableImage(
       pixelHeight: Math.max(1, Math.floor(imageHeight * density)),
       ...counts
     };
-    return { plan: { layout, content, theme, style }, refusal: null };
+    return { plan: { layout, content, theme, style, logo }, refusal: null };
   }
 
   const { widthPx, heightPx, density, textScale } = size;
@@ -1717,7 +1738,7 @@ function planTableImage(
     };
   }
 
-  const content = layoutTableContent(model, boxed.widths, boxed.contentWidth, measurer, type);
+  const content = layoutTableContent(model, boxed.widths, boxed.contentWidth, measurer, type, logo);
   const minimumHeight = requestedPx(content.height, textScale);
   if (minimumHeight > heightPx) {
     return {
@@ -1736,12 +1757,12 @@ function planTableImage(
     pixelHeight: Math.round(heightPx * density),
     ...counts
   };
-  return { plan: { layout, content, theme, style }, refusal: null };
+  return { plan: { layout, content, theme, style, logo }, refusal: null };
 }
 
 /** Draws a resolved plan, top-aligned in its box, at its own scale or at `previewRaster`. */
 function drawTableImage(plan: TableImagePlan, previewRaster?: number): HTMLCanvasElement {
-  const { layout, content, theme, style } = plan;
+  const { layout, content, theme, style, logo } = plan;
   const previewing = isPositiveNumber(previewRaster);
   const raster = isPositiveNumber(previewRaster) ? previewRaster : layout.scale;
 
@@ -1758,11 +1779,15 @@ function drawTableImage(plan: TableImagePlan, previewRaster?: number): HTMLCanva
   const type = tableTypography(theme);
   const colors = theme.chrome;
   paintFigureBackground(context, layout.layoutWidth, layout.layoutHeight, theme);
+  if (logo && content.logo) {
+    drawFigureLogo(context, logo, content.logo, TABLE_PADDING + content.contentWidth - content.logo.width, TABLE_PADDING);
+  }
   context.textBaseline = 'top';
 
   let y = TABLE_PADDING;
   y = drawLines(context, content.titleLines, TABLE_PADDING, y, TABLE_TITLE_SIZE, type.heading, colors.title, type.stack);
   y = drawLines(context, content.subtitleLines, TABLE_PADDING, y, TABLE_SUBTITLE_SIZE, '400', colors.muted, type.stack);
+  y = Math.max(y, TABLE_PADDING + (content.logo?.height ?? 0));
   y += TABLE_LINE_GAP;
 
   drawRowCells(

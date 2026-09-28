@@ -8,9 +8,10 @@ using Microsoft.AspNetCore.Mvc;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.Pdf;
+using Overseer.Services.Benchmarking.Word;
 
 /// <summary>
-/// Stored report-pack documents: list, detail, render (Markdown or PDF) and delete. Its only dependency is
+/// Stored report-pack documents: list, detail, render (Markdown, PDF or Word) and delete. Its only dependency is
 /// <see cref="BenchmarkReportRenderService"/>, which holds no provider, key or agent loop, so no
 /// action here can make a model call; a test pins the constructor.
 /// </summary>
@@ -84,6 +85,37 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         byte[] pdf = await Task.Run(() => BenchmarkPdfRenderer.RenderMarkdown(markdown!, info, ct), ct);
 
         return File(pdf, "application/pdf", BenchmarkPdfFileNames.ForReportDocument(document!, options!));
+    }
+
+    /// <summary>
+    /// The same document as a Word document on <c>a4</c> (the default) or <c>letter</c> paper, with the
+    /// same validation, refusals and name as <see cref="RenderPdf"/>. Rendered by the static
+    /// <see cref="BenchmarkWordRenderer"/>, so this path stays as free of model clients as the Markdown one.
+    /// </summary>
+    [HttpGet("report-documents/{id:long}/render/docx")]
+    public async Task<IActionResult> RenderDocx(
+        long id, [FromQuery] string? disclosure, [FromQuery] string? peers, [FromQuery] string? paper, CancellationToken ct)
+    {
+        var (options, invalid) = ParseRenderOptions(disclosure, peers);
+        if (invalid != null) return invalid;
+        if (!BenchmarkPdfDocumentInfo.TryParsePaper(paper, out var wordPaper))
+        {
+            return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
+        }
+
+        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, options!, ct);
+        if (notFound) return NotFound();
+        if (refusal != null) return BadRequest(new { error = refusal });
+
+        if (BenchmarkWordRenderer.IsTooLarge(markdown))
+        {
+            return StatusCode(413, new { error = BenchmarkWordRenderer.TooLargeMessage(markdown!.Length) });
+        }
+
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, wordPaper);
+        byte[] docx = await Task.Run(() => BenchmarkWordRenderer.RenderMarkdown(markdown!, info, ct), ct);
+
+        return File(docx, BenchmarkWordRenderer.ContentType, BenchmarkPdfFileNames.ForReportDocument(document!, options!, "docx"));
     }
 
     [HttpDelete("report-documents/{id:long}")]

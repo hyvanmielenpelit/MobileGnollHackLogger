@@ -85,8 +85,12 @@ describe('text-archive', () => {
       for (let i = 9; i < pdf.length; i++) {
         pdf[i] = i % 7;
       }
+      const docx = new Uint8Array(pdf.length);
+      docx.set(new TextEncoder().encode('PK\u0003\u0004'));
+      docx.set(pdf.subarray(9), 9);
       const mixed: ArchiveEntry[] = [
         { name: 'report_INTERNAL.pdf', bytes: pdf, mtime: completed },
+        { name: 'report_INTERNAL.docx', bytes: docx, mtime: completed },
         { name: 'report_INTERNAL.md', text: 'The same line of a long report.\n'.repeat(100), mtime: completed }
       ];
 
@@ -94,9 +98,11 @@ describe('text-archive', () => {
 
       const methods = zipEntryMethods(zip);
       expect(methods.get('report_INTERNAL.pdf')).toBe(0);
+      expect(methods.get('report_INTERNAL.docx')).toBe(0);
       expect(methods.get('report_INTERNAL.md')).toBe(8);
       const unzipped = unzipSync(zip);
       expect(Array.from(unzipped['report_INTERNAL.pdf'])).toEqual(Array.from(pdf));
+      expect(Array.from(unzipped['report_INTERNAL.docx'])).toEqual(Array.from(docx));
       expect(zipEntryTimes(zip).get('report_INTERNAL.pdf')?.getTime()).toBe(completed.getTime());
     });
   });
@@ -126,6 +132,7 @@ describe('text-archive', () => {
         description: 'Executive Summary',
         format: 'HTML',
         pdfPaper: null,
+        wordPaper: null,
         documentId: 12,
         audience: 'Executive Summary',
         disclosure: 'Summary',
@@ -141,6 +148,7 @@ describe('text-archive', () => {
         description: 'Run report',
         format: 'Markdown',
         pdfPaper: null,
+        wordPaper: null,
         documentId: null,
         audience: null,
         disclosure: null,
@@ -192,14 +200,34 @@ describe('text-archive', () => {
 
       const a4 = await buildManifest({ packageName: 'Custom', packagedAt: packaged, files: [{ ...pdfFile, pdfPaper: 'a4' }] });
       expect(a4).toContain('- **PDF:** PDF/UA-1, PDF/A-3A, A4\n');
+      expect(a4).not.toContain('**Word:**');
     });
 
-    it('prints a Format line and no PDF line for a download without a PDF', async () => {
+    it('names a Word document’s format and paper', async () => {
+      const wordFile: ManifestFile = {
+        ...files[1],
+        name: 'Suite_Model_20260921_170500_INTERNAL.docx',
+        content: new Uint8Array([0x61, 0x62, 0x63]),
+        format: 'Word',
+        wordPaper: 'letter'
+      };
+      const manifest = await buildManifest({ packageName: 'Internal package', packagedAt: packaged, files: [wordFile] });
+
+      expect(manifest).toContain('- **Content:** Run report\n- **Format:** Word\n- **Word:** Office Open XML (.docx), US Letter\n');
+      expect(manifest).not.toContain('**PDF:**');
+      expect(manifest).toContain('- **SHA-256:** `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`');
+
+      const a4 = await buildManifest({ packageName: 'Custom', packagedAt: packaged, files: [{ ...wordFile, wordPaper: 'a4' }] });
+      expect(a4).toContain('- **Word:** Office Open XML (.docx), A4\n');
+    });
+
+    it('prints a Format line and no PDF or Word line for a download without either', async () => {
       const manifest = await buildManifest({ packageName: 'Custom', packagedAt: packaged, files });
 
       expect(manifest.match(/- \*\*Format:\*\* /g)?.length).toBe(2);
       expect(manifest).toContain('- **Format:** Markdown');
       expect(manifest).not.toContain('PDF/UA');
+      expect(manifest).not.toContain('Office Open XML');
     });
 
     it('lists the files that could not be prepared, only when there are any', async () => {

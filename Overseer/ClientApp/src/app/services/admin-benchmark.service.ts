@@ -2240,7 +2240,7 @@ export interface BenchmarkTextFile {
   fileName: string;
 }
 
-/** The paper a PDF is laid out on. */
+/** The paper a PDF or Word document is laid out on. */
 export type BenchmarkPdfPaper = 'a4' | 'letter';
 
 /** A binary file fetched from the server, with the name its `Content-Disposition` gave it, if any. */
@@ -2927,6 +2927,39 @@ export class AdminBenchmarkService {
   /** The diagnostics text the client captured, as a PDF; the server renders it and stores nothing. */
   renderDiagnosticsPdf(runId: number, text: string, capturedAtUtc: string, paper: BenchmarkPdfPaper): Observable<BenchmarkBinaryFile> {
     return this.binaryFile(this.http.post(`/api/admin/benchmark/runs/${runId}/diagnostics/pdf`, { text, capturedAtUtc },
+      { params: new HttpParams().set('paper', paper), observe: 'response', responseType: 'arraybuffer' }));
+  }
+
+  // Word documents (.docx), rendered by the server on the same paper and with the same limits as the PDFs.
+
+  /** The document as a Word document at the given disclosure and peer naming. */
+  getReportDocumentDocx(
+    id: number,
+    disclosure: BenchmarkReportDisclosure,
+    peers: BenchmarkReportPeerNaming,
+    paper: BenchmarkPdfPaper
+  ): Observable<BenchmarkBinaryFile> {
+    const params = new HttpParams()
+      .set('disclosure', reportDisclosureParam(disclosure))
+      .set('peers', reportPeerNamingParam(peers))
+      .set('paper', paper);
+    return this.binaryFile(this.http.get(`/api/admin/benchmark/report-documents/${id}/render/docx`,
+      { params, observe: 'response', responseType: 'arraybuffer' }));
+  }
+
+  getRunReportDocx(runId: number, paper: BenchmarkPdfPaper): Observable<BenchmarkBinaryFile> {
+    return this.binaryFile(this.http.get(`${this.getRunReportUrl(runId)}/docx`,
+      { params: new HttpParams().set('paper', paper), observe: 'response', responseType: 'arraybuffer' }));
+  }
+
+  getToolCallLogDocx(runId: number, paper: BenchmarkPdfPaper): Observable<BenchmarkBinaryFile> {
+    return this.binaryFile(this.http.get(`${this.getToolCallLogUrl(runId)}/docx`,
+      { params: new HttpParams().set('paper', paper), observe: 'response', responseType: 'arraybuffer' }));
+  }
+
+  /** The diagnostics text the client captured, as a Word document; the server renders it and stores nothing. */
+  renderDiagnosticsDocx(runId: number, text: string, capturedAtUtc: string, paper: BenchmarkPdfPaper): Observable<BenchmarkBinaryFile> {
+    return this.binaryFile(this.http.post(`/api/admin/benchmark/runs/${runId}/diagnostics/docx`, { text, capturedAtUtc },
       { params: new HttpParams().set('paper', paper), observe: 'response', responseType: 'arraybuffer' }));
   }
 

@@ -118,7 +118,7 @@ The `Overseer` SPA is built separately from the ASP.NET Core host. Changes to Ty
 
 ### Images
 
-New or replaced raster assets are converted to **WebP at quality 85**.
+New or replaced raster assets for the browser UI are converted to **WebP at quality 85**; images embedded in downloadable documents (Word and similar formats) stay PNG or JPEG — see the `image_conversion` skill.
 
 ### Documentation and Solution Items (`docs/` and `MobileGnollHackLogger.slnx`)
 

@@ -9,7 +9,7 @@ export type ArchiveEntry = { name: string; mtime: Date } & ({ text: string } | {
 /** Deflate level for text: well compressed, and cheap enough for a synchronous zip on the main thread. */
 const TEXT_DEFLATE_LEVEL = 6;
 
-/** Bytes are stored, not deflated: a PDF's streams are already compressed. */
+/** Bytes are stored, not deflated: a PDF's streams are already compressed, and a .docx is itself a zip. */
 const BYTES_DEFLATE_LEVEL = 0;
 
 /**
@@ -52,7 +52,7 @@ export function uniqueFileNames(names: readonly string[]): string[] {
   });
 }
 
-/** The paper a PDF is laid out on. */
+/** The paper a PDF or Word document is laid out on. */
 export type ManifestPaper = 'a4' | 'letter';
 
 /** One file as the manifest describes it. Null fields print as a dash. */
@@ -62,10 +62,12 @@ export interface ManifestFile {
   content: string | Uint8Array;
   /** What the file is: `Executive Summary`, `Run report`, `Run diagnostics (…)`…. */
   description: string;
-  /** `PDF`, `Markdown`, `HTML` or `Text`. */
+  /** `PDF`, `Word`, `Markdown`, `HTML` or `Text`. */
   format: string;
   /** The paper of a PDF; null for every other format. */
   pdfPaper: ManifestPaper | null;
+  /** The paper of a Word document; null for every other format. */
+  wordPaper: ManifestPaper | null;
   documentId: number | null;
   audience: string | null;
   disclosure: string | null;
@@ -121,7 +123,8 @@ export async function sha256Hex(content: string | Uint8Array): Promise<string | 
 /**
  * `MANIFEST.md`: when the package was made, then one block per file with its name, format, document
  * id, audience, disclosure, peer naming, renderer version, creation time, writer and SHA-256, and for
- * a PDF its conformance and paper. The same input always gives the same text.
+ * a PDF its conformance and paper, for a Word document its format and paper. The same input always
+ * gives the same text.
  */
 export async function buildManifest(input: ManifestInput): Promise<string> {
   const hashes = await Promise.all(input.files.map(file => sha256Hex(file.content)));
@@ -151,6 +154,9 @@ export async function buildManifest(input: ManifestInput): Promise<string> {
     );
     if (file.pdfPaper) {
       lines.push(`- **PDF:** PDF/UA-1, PDF/A-3A, ${paperLabel(file.pdfPaper)}`);
+    }
+    if (file.wordPaper) {
+      lines.push(`- **Word:** Office Open XML (.docx), ${paperLabel(file.wordPaper)}`);
     }
     lines.push(
       `- **Document id:** ${dash(file.documentId)}`,

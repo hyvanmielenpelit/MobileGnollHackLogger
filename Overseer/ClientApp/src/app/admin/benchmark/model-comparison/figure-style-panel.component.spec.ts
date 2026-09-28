@@ -1031,11 +1031,11 @@ describe('FigureStylePanelComponent', () => {
     return { ...DEFAULT_FIGURE_STYLE, appearance: { ...DEFAULT_FIGURE_STYLE.appearance, ...appearance } };
   }
 
-  it('renders the four appearance sections, with Expand and Collapse all', () => {
+  it('renders the five appearance sections, with Expand and Collapse all', () => {
     render('appearance');
     expect(host().querySelector('#mc-style-appearance-heading')?.textContent)
       .toContain('Theme and fonts — every chart and the table image');
-    expect(sectionTitles()).toEqual(['Theme and background', 'Font', 'Text color', 'Borders']);
+    expect(sectionTitles()).toEqual(['Theme and background', 'Font', 'Text color', 'Borders', 'GnollBench logo']);
     expect(host().querySelector('#mc-style-appearance-expand')).not.toBeNull();
     expect(host().querySelector('#mc-style-appearance-collapse')).not.toBeNull();
   });
@@ -1183,6 +1183,68 @@ describe('FigureStylePanelComponent', () => {
 
     render('appearance', withAppearance({ border: true, borderWidthPx: 2, borderRadiusPx: 12 }));
     expect(readout('border')).toBe('2 px · radius 12');
+  });
+
+  describe('the GnollBench logo', () => {
+    const readout = (): string =>
+      host().querySelector('#mc-style-appearance-section-logo > summary .gh-disclosure-summary-value')!.textContent!.trim();
+
+    it('shows the wide logo at 48 px by default, and hides it from its checkbox', () => {
+      render('appearance');
+      const show = control('mc-style-appearance-logo');
+      expect(show.checked).toBeTrue();
+      expect(show.closest('label')?.textContent).toContain('Show the GnollBench logo');
+      expect(hintOf(show)).toContain('In the top right corner of every chart and of the table image');
+      expect(control('mc-style-appearance-logoVariant-wide').checked).toBeTrue();
+      expect(control('mc-style-appearance-logoHeightPx').value).toBe('48');
+      expect(readout()).toBe('wide · 48 px');
+
+      setChecked(show, false);
+      expect(emitted[0].appearance.logo).toBeFalse();
+      expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+    });
+
+    it('chooses the variant from a radio group and the height from a range', () => {
+      render('appearance');
+      const square = control('mc-style-appearance-logoVariant-square');
+      expect(square.name).toBe('mc-style-appearance-logoVariant');
+      expect(square.closest('label')?.textContent?.trim()).toBe('Square emblem');
+      expect(control('mc-style-appearance-logoVariant-wide').closest('label')?.textContent?.trim())
+        .toBe('Wide, with the name');
+      setChecked(square, true);
+      expect(emitted[0].appearance.logoVariant).toBe('square');
+      acceptLast();
+
+      const height = control('mc-style-appearance-logoHeightPx');
+      expect(height.min).toBe('16');
+      expect(height.max).toBe('96');
+      setRange(height, 64);
+      expect(emitted[1].appearance.logoHeightPx).toBe(64);
+      acceptLast();
+      expect(readout()).toBe('square · 64 px');
+    });
+
+    it('disables the variant and the height while the logo is hidden, and reads hidden', () => {
+      const group = (): HTMLFieldSetElement =>
+        control('mc-style-appearance-logoVariant-wide').closest('fieldset') as HTMLFieldSetElement;
+      render('appearance', withAppearance({ logo: false }));
+      expect(group().disabled).toBeTrue();
+      expect(group().getAttribute('aria-labelledby')).toBe('mc-style-appearance-logoVariant-label');
+      expect(host().querySelector('#mc-style-appearance-logoVariant-label')?.textContent?.trim()).toBe('Logo');
+      expect(control('mc-style-appearance-logoHeightPx').disabled).toBeTrue();
+      expect(readout()).toBe('hidden');
+
+      render('appearance');
+      expect(group().disabled).toBeFalse();
+      expect(control('mc-style-appearance-logoHeightPx').disabled).toBeFalse();
+    });
+
+    it('resets the section to the shown wide logo at 48 px', () => {
+      render('appearance', withAppearance({ logo: false, logoVariant: 'square', logoHeightPx: 80 }));
+      resetButton('mc-style-appearance-section-logo-reset').click();
+      fixture.detectChanges();
+      expect(emitted[0].appearance).toEqual(DEFAULT_FIGURE_STYLE.appearance);
+    });
   });
 
   it('resets theme and fonts to defaults', () => {

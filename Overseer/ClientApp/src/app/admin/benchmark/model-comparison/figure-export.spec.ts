@@ -38,6 +38,7 @@ import {
   webpEncoderQuality
 } from './figure-export';
 import type { FigureBadge, FigureChrome, FigureFooter, FigureNote } from './figure-chrome';
+import type { FigureLogo } from './figure-logo';
 import { DEFAULT_APPEARANCE_STYLE, DEFAULT_FIGURE_STYLE } from './figure-style';
 import type { FigureAppearanceStyle } from './figure-style';
 import { resolveFigureTheme } from './figure-theme';
@@ -410,6 +411,139 @@ describe('figure-export', () => {
 
       expect(composed.height).toBe(measured.height + sourceSize.height);
       expect(plotTop + sourceSize.height + 20).toBe(composed.height);
+    });
+  });
+
+  describe('logo', () => {
+    const topLeft = { x: 'left', y: 'top', label: 'Better' } as const;
+
+    /** A logo drawn from a small canvas, `heightPx` tall at `aspectRatio`. */
+    function logoOf(heightPx = 48, aspectRatio = 1): FigureLogo {
+      const image = document.createElement('canvas');
+      image.width = 8;
+      image.height = 8;
+      return { image, aspectRatio, heightPx };
+    }
+
+    /** Every `drawImage` call's arguments, the plot's and the logo's alike. */
+    function spyDrawImage(): any[][] {
+      const calls: any[][] = [];
+      const real = CanvasRenderingContext2D.prototype.drawImage;
+      spyOn(CanvasRenderingContext2D.prototype, 'drawImage').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        ...args: any[]
+      ) {
+        calls.push(args);
+        return (real as any).apply(this, args);
+      } as any);
+      return calls;
+    }
+
+    it('makes the header at least the logo height and narrows the header column', () => {
+      const source = sourceOf({ ...headerOnlyChrome(), title: 'Intelligence', badges: [] }, emptyFooter);
+      const without = measureFigureChrome(source, 400);
+      const withLogo = measureFigureChrome({ ...source, logo: logoOf(96) }, 400);
+
+      expect(withLogo.logo).toEqual({ width: 96, height: 96 });
+      expect(withLogo.headerWidth).toBe(400 - 96 - 16);
+      // One 18 px title line is 25 px tall; the logo sets the header's height instead.
+      expect(withLogo.height - without.height).toBe(96 - 25);
+    });
+
+    it('wraps a long title and the badges in the narrower header column', () => {
+      const title = 'Intelligence against speed across every model in the comparable set';
+      const badges: FigureBadge[] = [
+        { text: '8 models', tone: 'neutral' },
+        { text: '1–3 runs each', tone: 'neutral' },
+        { text: '16 of 18 questions', tone: 'neutral' }
+      ];
+      const source = sourceOf({ ...headerOnlyChrome(), title, badges, direction: topLeft }, emptyFooter);
+      const without = measureFigureChrome(source, 400);
+      const withLogo = measureFigureChrome({ ...source, logo: logoOf(48, 3248 / 850) }, 400);
+
+      expect(withLogo.headerWidth).toBeLessThan(without.headerWidth);
+      expect(withLogo.titleLines.length).toBeGreaterThan(without.titleLines.length);
+      const allowed = withLogo.headerWidth - withLogo.direction!.width - 6;
+      for (const row of withLogo.badgeRows) {
+        const rowWidth = row.badges.reduce((sum, entry) => sum + entry.width, 0) + (row.badges.length - 1) * 6;
+        expect(rowWidth).toBeLessThanOrEqual(allowed);
+      }
+    });
+
+    it('caps a wide logo at 40% of the content width, its height with it', () => {
+      const measured = measureFigureChrome({ ...sourceOf(), logo: logoOf(96, 3248 / 850) }, 400);
+      expect(measured.logo!.width).toBeCloseTo(160, 6);
+      expect(measured.logo!.height).toBeCloseTo(160 / (3248 / 850), 6);
+    });
+
+    it('draws the logo at the top right and ends the Better badge left of it', () => {
+      const calls = spyDrawImage();
+      const texts: { text: string; x: number }[] = [];
+      const realFillText = CanvasRenderingContext2D.prototype.fillText;
+      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
+        this: CanvasRenderingContext2D,
+        ...args: any[]
+      ) {
+        texts.push({ text: String(args[0]), x: args[1] });
+        return (realFillText as any).apply(this, args);
+      } as any);
+
+      const logo = logoOf(48);
+      const figure = request({
+        chrome: figureChrome({ ...headerOnlyChrome(), badges: [{ text: '2 models', tone: 'neutral' }], direction: topLeft }),
+        footer: figureFooter(emptyFooter),
+        logo,
+        density: 1
+      });
+      const measured = measureFigureChrome(figure, 400);
+      composeFigureImage(figure);
+
+      const drawn = calls.filter(args => args[0] === logo.image);
+      expect(drawn.length).toBe(1);
+      expect(drawn[0].slice(1)).toEqual([20 + 400 - 48, 20, 48, 48]);
+      const better = texts.find(entry => entry.text === 'Better');
+      expect(better).toBeDefined();
+      expect(better!.x).toBeLessThan(20 + measured.headerWidth);
+      expect(20 + measured.headerWidth + 16).toBe(drawn[0][1]);
+    });
+
+    it('measures exactly the height the composition draws with a logo taller than the header', () => {
+      const canvas = sourceCanvas();
+      const figure = request({
+        canvas,
+        chrome: figureChrome({ ...headerOnlyChrome(), title: 'Intelligence', badges: [] }),
+        footer: figureFooter(emptyFooter),
+        logo: logoOf(80)
+      });
+      const measured = measureFigureChrome(figure, 400);
+
+      let composed!: HTMLCanvasElement;
+      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
+
+      expect(plotTop).toBe(20 + 80 + 16);
+      expect(composed.height).toBe(measured.height + sourceSize.height);
+    });
+
+    it('leaves every measurement unchanged without a logo', () => {
+      const source = sourceOf({ direction: topLeft });
+      const absent = measureFigureChrome(source, 400);
+      expect(measureFigureChrome({ ...source, logo: null }, 400)).toEqual(absent);
+      expect(absent.logo).toBeNull();
+      expect(absent.headerWidth).toBe(400);
+
+      const calls = spyDrawImage();
+      const canvas = sourceCanvas();
+      composeFigureImage(request({ canvas, density: 1 }));
+      expect(calls.length).toBe(1);
+      expect(calls[0][0]).toBe(canvas);
+    });
+
+    it('leaves the plot less height in a fixed-size layout', () => {
+      const resolution = groupedPresets[0];
+      const source = sourceOf({ ...headerOnlyChrome(), badges: [] }, emptyFooter);
+      const without = resolveFigureLayout(source, resolution, 1, 1).layout!;
+      const withLogo = resolveFigureLayout({ ...source, logo: logoOf(96) }, resolution, 1, 1).layout!;
+      expect(withLogo.plotHeight).toBeLessThan(without.plotHeight);
     });
   });
 

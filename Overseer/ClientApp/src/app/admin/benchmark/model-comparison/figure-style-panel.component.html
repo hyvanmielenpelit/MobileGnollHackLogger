@@ -719,6 +719,40 @@
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'appearance', name: 'border' }"></ng-container>
         </div>
+
+        <div class="fsp-section">
+          <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('appearance', 'logo')"
+                   [open]="isOpen('appearance', 'logo')" (toggle)="onSectionToggle('appearance', 'logo', $event)">
+            <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'appearance', section: section('appearance', 'logo') }"></ng-container>
+            <div class="gh-disclosure-body fsp-section-body">
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" [id]="controlId('appearance', 'logo')" [checked]="appearance.logo"
+                         aria-describedby="mc-style-appearance-logo-tip"
+                         (change)="setAppearance('logo', checkedOf($event))">
+                  Show the GnollBench logo
+                </label>
+                <app-info-tip tipId="mc-style-appearance-logo-tip" subject="Show the GnollBench logo">In the top right corner of every chart and of the table image, on the page, in the previews and in every export.</app-info-tip>
+              </div>
+              <fieldset class="gh-choice" [disabled]="!appearance.logo" aria-labelledby="mc-style-appearance-logoVariant-label">
+                <legend><span id="mc-style-appearance-logoVariant-label">Logo</span></legend>
+                @for (option of logoVariantOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="mc-style-appearance-logoVariant"
+                           [id]="'mc-style-appearance-logoVariant-' + option.value"
+                           [value]="option.value" [checked]="appearance.logoVariant === option.value"
+                           (change)="setAppearance('logoVariant', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+              @for (control of appearanceLogoControls; track control.key) {
+                <ng-container *ngTemplateOutlet="range; context: { family: 'appearance', control: control }"></ng-container>
+              }
+            </div>
+          </details>
+          <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'appearance', name: 'logo' }"></ng-container>
+        </div>
       </div>
 
       <div class="fsp-actions">

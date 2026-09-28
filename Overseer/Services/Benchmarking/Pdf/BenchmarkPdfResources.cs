@@ -109,17 +109,32 @@ public static class BenchmarkPdfResources
     }
 
     /// <summary>
+    /// The bytes of one of the embedded font files, such as <c>SourceSans3-Regular.ttf</c>, read on each
+    /// call rather than kept in memory.
+    /// </summary>
+    internal static byte[] FontFile(string fileName)
+    {
+        if (!FontFiles.Contains(fileName, StringComparer.Ordinal))
+        {
+            throw new ArgumentException($"{fileName} is not one of the embedded fonts.", nameof(fileName));
+        }
+
+        var assembly = typeof(BenchmarkPdfResources).Assembly;
+        return ReadResource(assembly, assembly.GetManifestResourceNames(), fileName);
+    }
+
+    /// <summary>
     /// One embedded resource by file name. Manifest names carry the root namespace and folder path
     /// (<c>Overseer.Resources.Pdf.Fonts.SourceSans3-Regular.ttf</c>), so the file is matched as a suffix.
     /// </summary>
-    private static byte[] ReadResource(Assembly assembly, IReadOnlyList<string> names, string fileName)
+    internal static byte[] ReadResource(Assembly assembly, IReadOnlyList<string> names, string fileName)
     {
         string suffix = "." + fileName;
         string? name = names.FirstOrDefault(n => n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
         if (name == null)
         {
             throw new InvalidOperationException(
-                $"The embedded resource {fileName} is missing from {assembly.GetName().Name}; Resources/Pdf must be an EmbeddedResource.");
+                $"The embedded resource {fileName} is missing from {assembly.GetName().Name}; Resources/Pdf and Resources/Word must be EmbeddedResources.");
         }
 
         using var stream = assembly.GetManifestResourceStream(name)

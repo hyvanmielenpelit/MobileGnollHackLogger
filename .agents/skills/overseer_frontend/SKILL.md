@@ -259,10 +259,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     per-document disclosure (*Summary* / *Detailed* / *Full*) and peer naming (*Named* /
     *Anonymized*); `_INTERNAL` file-name suffixes; several files as one ZIP with a `MANIFEST.md`. Its
     HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
-    ones. Every row offers **PDF** first (rendered server-side, see `ai-benchmark-report-pack.md` § 8);
-    the Provider preset is PDF only and Internal PDF and Markdown, with a remembered *A4* / *US Letter*
-    paper size (stored settings version 2). Run diagnostics are captured once per download, so the `.txt`
-    and `.pdf` agree. The dialog is `frame($width: 92rem)` and nearly full height, the GnollBench emblem
+    ones. Every row offers **PDF** first, then **Word** (both rendered server-side, see
+    `ai-benchmark-report-pack.md` § 8); the Provider preset is PDF only and Internal PDF, Word and
+    Markdown, with a remembered *A4* / *US Letter* paper size (stored settings version 3, migrated from
+    version 2). Run diagnostics are captured once per download, so the `.txt`, `.pdf` and `.docx` agree.
+    While a package is prepared, an overlay over the body shows a ring spinner, the step and a progress
+    bar. The dialog is `frame($width: 92rem)` and nearly full height, the GnollBench emblem
     precedes its title, and its explanations are click-mode `app-info-tip`s; the *Internal only* tag, the
     *Peers are named* warning and failures stay visible.
   - `#importDefaultSuitesDialog`: Import Default Suites (Manage Suites tab) — a multi-select

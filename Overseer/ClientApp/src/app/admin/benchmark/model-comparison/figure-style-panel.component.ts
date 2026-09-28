@@ -114,7 +114,8 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
     { name: 'theme', title: 'Theme and background', keys: ['theme', 'background', 'backgroundColor', 'previewBackdrop', 'previewBackdropColor'] },
     { name: 'font', title: 'Font', keys: ['fontFamily', 'headingWeight', 'labelWeight'] },
     { name: 'colors', title: 'Text color', keys: ['headingColor', 'textColor'] },
-    { name: 'border', title: 'Borders', keys: ['border', 'borderWidthPx', 'borderRadiusPx', 'borderColor'] }
+    { name: 'border', title: 'Borders', keys: ['border', 'borderWidthPx', 'borderRadiusPx', 'borderColor'] },
+    { name: 'logo', title: 'GnollBench logo', keys: ['logo', 'logoVariant', 'logoHeightPx'] }
   ]
 };
 
@@ -234,6 +235,8 @@ export class FigureStylePanelComponent implements OnInit {
 
   readonly appearanceBorderControls: readonly RangeControl<NumericAppearanceStyleKey>[] =
     (['borderWidthPx', 'borderRadiusPx'] as const).map(appearanceRangeControl);
+  readonly appearanceLogoControls: readonly RangeControl<NumericAppearanceStyleKey>[] =
+    [appearanceRangeControl('logoHeightPx')];
 
   readonly badgeControls: Readonly<Record<StyleFamily, readonly BadgeControl[]>> = {
     bar: badgeControlsFor('bar'),
@@ -256,6 +259,11 @@ export class FigureStylePanelComponent implements OnInit {
     { value: 'auto', label: 'Automatic' },
     { value: 'always', label: 'Always' },
     { value: 'never', label: 'Never' }
+  ] as const;
+
+  readonly logoVariantOptions = [
+    { value: 'wide', label: 'Wide, with the name' },
+    { value: 'square', label: 'Square emblem' }
   ] as const;
 
   /** Regular / Medium / Semibold / Bold: shared by the appearance weights and each family's axis title weight. */
@@ -360,6 +368,9 @@ export class FigureStylePanelComponent implements OnInit {
       }
       if (key === 'borderRadiusPx') {
         return !this.appearance.border && this.appearance.background === 'transparent';
+      }
+      if (key === 'logoHeightPx') {
+        return !this.appearance.logo;
       }
       return false;
     }
@@ -562,6 +573,8 @@ export class FigureStylePanelComponent implements OnInit {
         ].join(' · ');
       case 'border':
         return a.border ? `${a.borderWidthPx} px · radius ${a.borderRadiusPx}` : 'none';
+      case 'logo':
+        return a.logo ? `${a.logoVariant} · ${a.logoHeightPx} px` : 'hidden';
       default:
         return '';
     }

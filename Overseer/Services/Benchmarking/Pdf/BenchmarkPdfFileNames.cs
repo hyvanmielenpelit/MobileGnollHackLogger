@@ -6,7 +6,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 
 /// <summary>
-/// The download names of the benchmark PDFs, built exactly as the Download Center builds the names
+/// The download names of the benchmark PDFs and Word documents, built exactly as the Download Center builds the names
 /// of the Markdown and HTML files, so every format of one document shares one base name.
 /// </summary>
 public static class BenchmarkPdfFileNames
@@ -40,10 +40,12 @@ public static class BenchmarkPdfFileNames
     }
 
     /// <summary>
-    /// <c>&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].pdf</c>, as the Download Center names a
-    /// pack document: the title, else "&lt;audience&gt;: &lt;subject&gt;"; <c>_INTERNAL</c> at Full disclosure.
+    /// <c>&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].&lt;extension&gt;</c>, as the Download Center
+    /// names a pack document: the title, else "&lt;audience&gt;: &lt;subject&gt;"; <c>_INTERNAL</c> at Full
+    /// disclosure. The extension is <c>pdf</c> or <c>docx</c>.
     /// </summary>
-    public static string ForReportDocument(BenchmarkReportDocument document, BenchmarkReportRenderOptions options)
+    public static string ForReportDocument(
+        BenchmarkReportDocument document, BenchmarkReportRenderOptions options, string extension = "pdf")
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(options);
@@ -60,15 +62,19 @@ public static class BenchmarkPdfFileNames
         string peers = options.PeerNaming == BenchmarkReportPeerNaming.Named ? "named" : "anonymized";
         string internalSuffix = options.Disclosure == BenchmarkReportDisclosure.Full ? "_INTERNAL" : string.Empty;
 
-        return SafeFileName(title) + "_" + disclosure + "_" + peers + internalSuffix + ".pdf";
+        return SafeFileName(title) + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
     }
 
     /// <summary>A run file's server name with <c>_INTERNAL</c> before a <c>.pdf</c> extension that replaces its own.</summary>
-    public static string InternalPdfName(string serverFileName)
+    public static string InternalPdfName(string serverFileName) => InternalFileName(serverFileName, "pdf");
+
+    /// <summary>A run file's server name with <c>_INTERNAL</c> before an extension that replaces its own.</summary>
+    public static string InternalFileName(string serverFileName, string extension)
     {
         ArgumentNullException.ThrowIfNull(serverFileName);
+        ArgumentNullException.ThrowIfNull(extension);
         int dot = serverFileName.LastIndexOf('.');
         string baseName = dot > 0 ? serverFileName[..dot] : serverFileName;
-        return baseName + "_INTERNAL.pdf";
+        return baseName + "_INTERNAL." + extension;
     }
 }

@@ -70,7 +70,10 @@ describe('figure-style', () => {
       border: false,
       borderWidthPx: 1,
       borderRadiusPx: 0,
-      borderColor: null
+      borderColor: null,
+      logo: true,
+      logoVariant: 'wide',
+      logoHeightPx: 48
     });
     expect(DEFAULT_FIGURE_STYLE.table).toEqual({ rowShading: 'medium', rowRules: false });
     expect(DEFAULT_FIGURE_STYLE.numbers).toEqual({
@@ -452,6 +455,26 @@ describe('figure-style', () => {
     for (const value of [null, [], 'dark', 3]) {
       expect(normalizeFigureStyle({ appearance: value }).appearance).withContext(String(value)).toEqual(DEFAULT_FIGURE_STYLE.appearance);
     }
+  });
+
+  it('keeps valid logo fields and repairs the rest', () => {
+    const kept = normalizeFigureStyle({ appearance: { logo: false, logoVariant: 'square', logoHeightPx: 72 } });
+    expect(kept.appearance).toEqual({ ...DEFAULT_FIGURE_STYLE.appearance, logo: false, logoVariant: 'square', logoHeightPx: 72 });
+
+    const repaired = normalizeFigureStyle({ appearance: { logo: 'yes', logoVariant: 'huge', logoHeightPx: 200 } });
+    expect(repaired.appearance.logo).toBeTrue();
+    expect(repaired.appearance.logoVariant).toBe('wide');
+    expect(repaired.appearance.logoHeightPx).toBe(96);
+    expect(normalizeFigureStyle({ appearance: { logoHeightPx: 12.6 } }).appearance.logoHeightPx).toBe(16);
+    expect(normalizeFigureStyle({ appearance: { logoHeightPx: 40.4 } }).appearance.logoHeightPx).toBe(40);
+    expect(normalizeFigureStyle({ appearance: { logoHeightPx: '48' } }).appearance.logoHeightPx).toBe(48);
+  });
+
+  it('reads a stored appearance without the logo fields at their defaults', () => {
+    const style = normalizeFigureStyle({ appearance: { theme: 'light', border: true } });
+    expect(style.appearance.logo).toBeTrue();
+    expect(style.appearance.logoVariant).toBe('wide');
+    expect(style.appearance.logoHeightPx).toBe(48);
   });
 
   it('migrates the stored row bands and keeps a valid shading', () => {

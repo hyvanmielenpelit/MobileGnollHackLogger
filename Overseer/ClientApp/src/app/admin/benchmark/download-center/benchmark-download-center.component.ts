@@ -66,7 +66,7 @@ export interface DownloadCenterDocumentsContext {
 export type DownloadCenterContext = DownloadCenterRunContext | DownloadCenterDocumentsContext;
 
 export type DownloadPackageId = 'internal' | 'provider' | 'custom';
-export type DownloadFormat = 'pdf' | 'md' | 'html' | 'txt';
+export type DownloadFormat = 'pdf' | 'docx' | 'md' | 'html' | 'txt';
 export type DownloadRowKind = 'pack' | 'runReport' | 'toolCallLog' | 'diagnostics';
 
 /** What a remembered choice is keyed by: a pack document's audience, or a run file's kind. */
@@ -119,6 +119,13 @@ export interface DownloadFailure {
   reason: string;
 }
 
+/** A download in preparation: finished steps of `total` (every file, then the ZIP or the save) and the current one. */
+export interface DownloadProgress {
+  done: number;
+  total: number;
+  step: string;
+}
+
 /** The text a row's text formats are made from; `capturedAt` is set for the diagnostics. */
 interface SourceText {
   text: string;
@@ -126,14 +133,14 @@ interface SourceText {
   capturedAt: Date | null;
 }
 
-/** A PDF the server rendered, with the name it gave it. */
-interface SourcePdf {
+/** A PDF or Word document the server rendered, with the name it gave it. */
+interface SourceBinary {
   bytes: Uint8Array;
   fileName: string | null;
   capturedAt: Date | null;
 }
 
-/** A finished file: a PDF's bytes, or the text of every other format. */
+/** A finished file: a PDF's or Word document's bytes, or the text of every other format. */
 type ProducedFile = { name: string; mime: string; mtime: Date; manifest: ManifestFile }
   & ({ text: string } | { bytes: Uint8Array });
 
@@ -148,8 +155,11 @@ export const downloadCenterIo = {
 
 export const DOWNLOAD_CENTER_STORAGE_KEY = 'overseer.benchmark.downloadCenter';
 
-/** The stored settings' version; settings of any other version read as absent. */
-const STORED_SETTINGS_VERSION = 2;
+/**
+ * The stored settings' version. Version 2 is migrated on reading, without the Internal package's
+ * remembered formats; settings of any other version read as absent.
+ */
+export const STORED_SETTINGS_VERSION = 3;
 
 /** One remembered row choice; every field is checked against the row before it is applied. */
 interface StoredChoice {
@@ -170,7 +180,7 @@ export const DOWNLOAD_PACKAGES: readonly DownloadPackage[] = [
   {
     id: 'internal',
     name: 'Internal package',
-    description: 'Every available file for the Overseer team, as PDF and Markdown (Text for the diagnostics): report documents at Full disclosure with peers named, the run report, the tool-call log and the diagnostics.'
+    description: 'Every available file for the Overseer team, as PDF, Word and Markdown (PDF, Word and Text for the diagnostics): report documents at Full disclosure with peers named, the run report, the tool-call log and the diagnostics.'
   },
   {
     id: 'provider',
@@ -194,19 +204,21 @@ export const INTERNAL_REASONS = {
 
 const MIME_TYPES: Record<DownloadFormat, string> = {
   pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   md: 'text/markdown;charset=utf-8',
   html: 'text/html;charset=utf-8',
   txt: 'text/plain;charset=utf-8'
 };
 
-const FORMAT_LABELS: Record<DownloadFormat, string> = { pdf: 'PDF', md: 'Markdown', html: 'HTML', txt: 'Text' };
+const FORMAT_LABELS: Record<DownloadFormat, string> = { pdf: 'PDF', docx: 'Word', md: 'Markdown', html: 'HTML', txt: 'Text' };
 
 /**
  * The formats a package chooses where a row offers them: Provider the PDF alone; Internal, and Custom
- * with nothing to keep, the PDF and the text it is made from (Markdown, or Text for the diagnostics).
+ * with nothing to keep, the PDF, the Word document and the text they are made from (Markdown, or Text
+ * for the diagnostics).
  */
 const PRESET_FORMATS: Record<'internal' | 'provider', readonly DownloadFormat[]> = {
-  internal: ['pdf', 'md', 'txt'],
+  internal: ['pdf', 'docx', 'md', 'txt'],
   provider: ['pdf']
 };
 
@@ -225,8 +237,9 @@ let nextInstanceId = 0;
  * lists every available document with its options.
  *
  * It makes no request but the document list or detail that fills the table, the render endpoints
- * (Markdown and PDF), the run report and tool-call log endpoints and their PDFs, and the diagnostics
- * PDF endpoint, which renders the captured text and stores nothing: nothing here can start generation.
+ * (Markdown, PDF and Word), the run report and tool-call log endpoints with their PDFs and Word
+ * documents, and the diagnostics PDF and Word endpoints, which render the captured text and store
+ * nothing: nothing here can start generation.
  */
 @Component({
   selector: 'app-benchmark-download-center',
@@ -251,13 +264,15 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
 
   context: DownloadCenterContext | null = null;
   packageId: DownloadPackageId = 'internal';
-  /** The paper every PDF of a download is laid out on. */
+  /** The paper every PDF and Word document of a download is laid out on. */
   paper: BenchmarkPdfPaper = 'a4';
   rows: DownloadRow[] = [];
   loadingDocuments = false;
   /** Notices above the table: runs that no longer exist, documents that could not be loaded. */
   notices: string[] = [];
   preparing = false;
+  /** The download in preparation, shown over the dialog body; null while none is. */
+  progress: DownloadProgress | null = null;
   statusMessage = '';
   failures: DownloadFailure[] = [];
 
@@ -287,6 +302,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     this.failures = [];
     this.statusMessage = '';
     this.preparing = false;
+    this.progress = null;
     const stored = readStoredSettings();
     this.packageId = stored?.package ?? 'internal';
     this.paper = stored?.paper ?? 'a4';
@@ -317,6 +333,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     }
     this.generation++;
     this.preparing = false;
+    this.progress = null;
     this.cdr.markForCheck();
     this.closed.emit();
   }
@@ -543,7 +560,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     const paper = this.paper;
     const texts = new Map<string, Promise<SourceText>>();
 
+    const progress: DownloadProgress = { done: 0, total: plan.length + 1, step: '' };
     this.preparing = true;
+    this.progress = progress;
     this.failures = [];
     this.persistSettings();
 
@@ -552,22 +571,28 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
 
     for (let i = 0; i < plan.length; i++) {
       const { row, format, state } = plan[i];
-      this.statusMessage = `Preparing ${i + 1} of ${plan.length}…`;
-      this.cdr.markForCheck();
+      this.showStep(progress, `Preparing ${i + 1} of ${plan.length} — ${row.label} (${FORMAT_LABELS[format]})`);
       try {
-        const source = format === 'pdf'
-          ? await this.pdfSource(row, state, context, texts, paper)
+        const source = format === 'pdf' || format === 'docx'
+          ? await this.binarySource(row, state, context, texts, paper, format)
           : await this.sourceText(row, state, context, texts);
         if (generation !== this.generation) {
+          this.releaseProgress(progress);
           return;
         }
         produced.push(this.produceFile(row, state, format, source, context, packagedAt, paper));
       } catch (error) {
         if (generation !== this.generation) {
+          this.releaseProgress(progress);
           return;
         }
         failures.push({ label: `${row.label} (${FORMAT_LABELS[format]})`, reason: failureReason(error, row) });
       }
+      progress.done++;
+    }
+
+    if (produced.length > 0) {
+      this.showStep(progress, plan.length === 1 ? 'Saving…' : 'Building the ZIP…');
     }
 
     try {
@@ -595,12 +620,14 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
         entries.push({ name: MANIFEST_FILE_NAME, text: manifest, mtime: packagedAt });
         const archive = await buildTextArchive(entries);
         if (generation !== this.generation) {
+          this.releaseProgress(progress);
           return;
         }
         downloadCenterIo.saveBlob(archive, this.zipFileName(context, packagedAt));
       }
     } catch (error) {
       if (generation !== this.generation) {
+        this.releaseProgress(progress);
         return;
       }
       failures.push({ label: 'The ZIP', reason: error instanceof Error ? error.message : 'it could not be built' });
@@ -608,9 +635,25 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     }
 
     this.preparing = false;
+    this.progress = null;
     this.failures = failures;
     this.statusMessage = completionMessage(plan.length, produced.length, failures.length);
     this.cdr.markForCheck();
+  }
+
+  /** Shows a download step in the overlay and in the footer's status line. */
+  private showStep(progress: DownloadProgress, step: string): void {
+    progress.step = step;
+    this.statusMessage = step;
+    this.cdr.markForCheck();
+  }
+
+  /** Clears an abandoned download's progress, unless a newer download has already replaced it. */
+  private releaseProgress(progress: DownloadProgress): void {
+    if (this.progress === progress) {
+      this.progress = null;
+      this.cdr.markForCheck();
+    }
   }
 
   // -------------------------------------------------------------------------------------------
@@ -807,7 +850,8 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
 
   /**
    * The text a row's files are made from, fetched once however many formats use it: the diagnostics
-   * are captured once per download, and the same capture feeds their Text and their PDF.
+   * are captured once per download, and the same capture feeds their Text, their PDF and their Word
+   * document.
    */
   private sourceText(
     row: DownloadRow,
@@ -850,30 +894,43 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** A row's PDF, rendered by the server; the diagnostics PDF from the same capture as their Text. */
-  private async pdfSource(
+  /**
+   * A row's PDF or Word document, rendered by the server; the diagnostics' from the same capture as
+   * their Text.
+   */
+  private async binarySource(
     row: DownloadRow,
     state: DownloadRowState,
     context: DownloadCenterContext,
     cache: Map<string, Promise<SourceText>>,
-    paper: BenchmarkPdfPaper
-  ): Promise<SourcePdf> {
+    paper: BenchmarkPdfPaper,
+    format: 'pdf' | 'docx'
+  ): Promise<SourceBinary> {
+    const service = this.benchmarkService;
+    const word = format === 'docx';
     switch (row.kind) {
-      case 'pack':
-        return {
-          ...await firstValueFrom(this.benchmarkService.getReportDocumentPdf(row.doc!.id, state.disclosure, state.naming, paper)),
-          capturedAt: null
-        };
-      case 'runReport':
-        return { ...await firstValueFrom(this.benchmarkService.getRunReportPdf(row.runId!, paper)), capturedAt: null };
-      case 'toolCallLog':
-        return { ...await firstValueFrom(this.benchmarkService.getToolCallLogPdf(row.runId!, paper)), capturedAt: null };
+      case 'pack': {
+        const { id } = row.doc!;
+        const file = word
+          ? service.getReportDocumentDocx(id, state.disclosure, state.naming, paper)
+          : service.getReportDocumentPdf(id, state.disclosure, state.naming, paper);
+        return { ...await firstValueFrom(file), capturedAt: null };
+      }
+      case 'runReport': {
+        const file = word ? service.getRunReportDocx(row.runId!, paper) : service.getRunReportPdf(row.runId!, paper);
+        return { ...await firstValueFrom(file), capturedAt: null };
+      }
+      case 'toolCallLog': {
+        const file = word ? service.getToolCallLogDocx(row.runId!, paper) : service.getToolCallLogPdf(row.runId!, paper);
+        return { ...await firstValueFrom(file), capturedAt: null };
+      }
       case 'diagnostics': {
         const captured = await this.sourceText(row, state, context, cache);
         const capturedAt = captured.capturedAt ?? downloadCenterIo.now();
-        const pdf = await firstValueFrom(
-          this.benchmarkService.renderDiagnosticsPdf(row.runId!, captured.text, isoSeconds(capturedAt), paper));
-        return { ...pdf, capturedAt };
+        const file = word
+          ? service.renderDiagnosticsDocx(row.runId!, captured.text, isoSeconds(capturedAt), paper)
+          : service.renderDiagnosticsPdf(row.runId!, captured.text, isoSeconds(capturedAt), paper);
+        return { ...await firstValueFrom(file), capturedAt };
       }
     }
   }
@@ -882,7 +939,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     row: DownloadRow,
     state: DownloadRowState,
     format: DownloadFormat,
-    source: SourceText | SourcePdf,
+    source: SourceText | SourceBinary,
     context: DownloadCenterContext,
     packagedAt: Date,
     paper: BenchmarkPdfPaper
@@ -906,7 +963,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       createdAtUtc = isoSeconds(mtime);
     } else if (row.kind === 'diagnostics') {
       const run = (context as DownloadCenterRunContext).run;
-      name = format === 'pdf' && source.fileName
+      name = (format === 'pdf' || format === 'docx') && source.fileName
         ? internalServerName(source.fileName, format)
         : `${safeFileName(run.suiteName)}_${safeFileName(run.modelLabel)}_run${run.id}_diagnostics_INTERNAL.${format}`;
       mtime = source.capturedAt ?? packagedAt;
@@ -930,6 +987,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
         content: bytes ?? text,
         format: FORMAT_LABELS[format],
         pdfPaper: format === 'pdf' ? paper : null,
+        wordPaper: format === 'docx' ? paper : null,
         description: row.kind === 'pack' ? audienceLabel(row.doc!.audience) : RUN_FILE_DESCRIPTIONS[row.kind],
         documentId: row.doc?.id ?? null,
         audience: row.doc ? audienceLabel(row.doc.audience) : null,
@@ -964,7 +1022,7 @@ const RUN_FILE_DESCRIPTIONS: Record<Exclude<DownloadRowKind, 'pack'>, string> = 
 };
 
 export const ROW_NOTES = {
-  toolCallLog: 'Can run to several megabytes; its PDF can be hundreds of pages.',
+  toolCallLog: 'Can run to several megabytes; its PDF and Word files can be hundreds of pages.',
   diagnostics: 'Captured when the download is prepared, not stored.'
 } as const;
 
@@ -981,17 +1039,17 @@ function runFileRows(run: DownloadCenterRunInfo): DownloadRow[] {
     {
       ...base, key: `report:${run.id}`, kind: 'runReport', category: 'runReport',
       label: `Run report, run #${run.id}`, detail, note: null,
-      formats: ['pdf', 'md', 'html'], internalReason: INTERNAL_REASONS.runReport
+      formats: ['pdf', 'docx', 'md', 'html'], internalReason: INTERNAL_REASONS.runReport
     },
     {
       ...base, key: `log:${run.id}`, kind: 'toolCallLog', category: 'toolCallLog',
       label: `Tool-call log, run #${run.id}`, detail, note: ROW_NOTES.toolCallLog,
-      formats: ['pdf', 'md'], internalReason: INTERNAL_REASONS.toolCallLog
+      formats: ['pdf', 'docx', 'md'], internalReason: INTERNAL_REASONS.toolCallLog
     },
     {
       ...base, key: `diag:${run.id}`, kind: 'diagnostics', category: 'diagnostics',
       label: `Run diagnostics, run #${run.id}`, detail, note: ROW_NOTES.diagnostics,
-      formats: ['pdf', 'txt'], internalReason: INTERNAL_REASONS.diagnostics
+      formats: ['pdf', 'docx', 'txt'], internalReason: INTERNAL_REASONS.diagnostics
     }
   ];
 }
@@ -1008,7 +1066,7 @@ function subjectRunReportRow(runId: number, subjectLabel: string): DownloadRow {
     doc: null,
     runChanged: false,
     allowedDisclosures: [],
-    formats: ['pdf', 'md', 'html'],
+    formats: ['pdf', 'docx', 'md', 'html'],
     internalReason: INTERNAL_REASONS.runReport
   };
 }
@@ -1034,7 +1092,7 @@ function packRow(doc: BenchmarkReportDocumentListItemDto): DownloadRow {
     doc,
     runChanged: !!doc.runChangedSinceGeneration,
     allowedDisclosures: allowed,
-    formats: ['pdf', 'md', 'html'],
+    formats: ['pdf', 'docx', 'md', 'html'],
     internalReason: shareable ? null : INTERNAL_REASONS.internalBrief
   };
 }
@@ -1147,20 +1205,37 @@ function completionMessage(planned: number, produced: number, failed: number): s
     : `Downloaded ${produced} of ${planned} files as one ZIP; ${failed} failed.`;
 }
 
-/** The stored settings, or null when absent, unreadable, corrupt or of another version. */
+/**
+ * The stored settings, or null when absent, unreadable, corrupt or of another version. Version 2
+ * reads as version 3 without the formats remembered for the Internal package, so its rows take the
+ * Internal preset.
+ */
 function readStoredSettings(): StoredSettings | null {
   try {
     const raw = localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY);
     if (!raw) {
       return null;
     }
-    const parsed = JSON.parse(raw) as Partial<StoredSettings> | null;
-    if (!parsed || typeof parsed !== 'object' || parsed.version !== STORED_SETTINGS_VERSION) {
+    const parsed = JSON.parse(raw) as { version?: unknown; package?: unknown; paper?: unknown; packages?: unknown } | null;
+    if (!parsed || typeof parsed !== 'object' || (parsed.version !== STORED_SETTINGS_VERSION && parsed.version !== 2)) {
       return null;
     }
-    const pkg = DOWNLOAD_PACKAGES.some(p => p.id === parsed.package) ? parsed.package : undefined;
-    const paper = PDF_PAPERS.some(p => p.id === parsed.paper) ? parsed.paper : undefined;
-    const packages = parsed.packages && typeof parsed.packages === 'object' ? parsed.packages : undefined;
+    const pkg = DOWNLOAD_PACKAGES.find(p => p.id === parsed.package)?.id;
+    const paper = PDF_PAPERS.find(p => p.id === parsed.paper)?.id;
+    let packages = parsed.packages && typeof parsed.packages === 'object'
+      ? parsed.packages as NonNullable<StoredSettings['packages']>
+      : undefined;
+    if (parsed.version === 2 && packages?.internal && typeof packages.internal === 'object') {
+      const internal: Partial<Record<DownloadRowCategory, StoredChoice>> = {};
+      for (const [category, choice] of Object.entries(packages.internal)) {
+        if (choice && typeof choice === 'object') {
+          const kept: StoredChoice = { ...choice };
+          delete kept.formats;
+          internal[category as DownloadRowCategory] = kept;
+        }
+      }
+      packages = { ...packages, internal };
+    }
     return { version: STORED_SETTINGS_VERSION, package: pkg, paper, packages };
   } catch {
     return null;

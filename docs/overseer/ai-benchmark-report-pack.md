@@ -251,31 +251,40 @@ packages documents and run files for download.
 
 | Package | Contents | Disclosure | Peers | Formats |
 |---|---|---|---|---|
-| **Internal package** | Every available document: pack documents, the run report, the tool-call log, run diagnostics | Full | Named | PDF and Markdown (PDF and Text for the diagnostics) |
+| **Internal package** | Every available document: pack documents, the run report, the tool-call log, run diagnostics | Full | Named | PDF, Word and Markdown (PDF, Word and Text for the diagnostics) |
 | **Provider package** | Executive Summary and Technical Report only; internal-only rows are listed but unselectable, with their reason | Summary (Detailed as an option) | Anonymized (Named as an option, with a warning) | PDF |
-| **Custom** | Any selection | Per document | Per document | Any |
+| **Custom** | Any selection | Per document | Per document | Any, Word included |
 
-Each row offers its formats PDF first: pack documents and the run report PDF, Markdown and HTML; the
-tool-call log PDF and Markdown; diagnostics PDF and Text. The choices are remembered per browser in
-settings **version 2**; a stored version 1 is ignored once, so every admin meets the PDF defaults. The
+Each row offers its formats PDF first, then Word: pack documents and the run report PDF, Word, Markdown
+and HTML; the tool-call log PDF, Word and Markdown; diagnostics PDF, Word and Text. The choices are
+remembered per browser in settings **version 3**. A stored version 2 is migrated: the package, the paper
+and every remembered choice are kept except the Internal package's remembered formats, which are dropped
+so every admin meets the Internal package's Word default once. Any older version is ignored. The
 dialog's explanations — each package's description, the column meanings, the paper size, a row's note
 and the full reason a row is internal-only — sit behind click-mode info buttons; the red *Internal only*
 tag, the *Peers are named* warning and the failure list stay on screen.
 
 **Paper size.** *A4* by default, *US Letter* as an option, remembered with the other settings and sent
-with every PDF request.
+with every PDF and Word request.
+
+**Progress.** While a package is prepared, an overlay dims the dialog body (leaving Close and Cancel
+usable) and shows a ring spinner, the current step — *Preparing 2 of 5 — …*, *Building the ZIP…*,
+*Saving…* — and a progress bar. The footer's status line announces the same steps to screen readers;
+with reduced motion the ring stands still.
 
 **File names.** A pack document at Full, and every internal-only file (run report, tool-call log,
 diagnostics), gets an `_INTERNAL` file-name suffix. The run report and tool-call log are fetched from the
-existing run endpoints and keep the server's file name; their PDFs are named by the server, with
-`_INTERNAL.pdf`. Run diagnostics are a point-in-time capture, taken **once per download**: the `.txt` and
-the `.pdf` of one download hold the same text and the same capture time.
+existing run endpoints and keep the server's file name; their PDFs and Word files are named by the server,
+with `_INTERNAL.pdf` and `_INTERNAL.docx`. Run diagnostics are a point-in-time capture, taken **once per
+download**: the `.txt`, the `.pdf` and the `.docx` of one download hold the same text and the same capture
+time.
 
 **ZIP and manifest.** Several files download as one ZIP, `<model>_<package>_<yyyyMMdd_HHmmss>.zip`, with a
 `MANIFEST.md` listing each file's name, document id, audience, disclosure, naming, renderer version,
 creation time, writer, format and SHA-256 — for a PDF, of its exact bytes, and with a
-`PDF: PDF/UA-1, PDF/A-3A, A4` (or `US Letter`) line. PDFs are stored in the ZIP uncompressed, since their
-streams already are. The packaging time appears only in the manifest and the ZIP name, so the Markdown
+`PDF: PDF/UA-1, PDF/A-3A, A4` (or `US Letter`) line, or for a Word file a
+`Word: Office Open XML (.docx), A4` (or `US Letter`) line. PDFs and Word files are stored in the ZIP
+uncompressed, since their streams already are. The packaging time appears only in the manifest and the ZIP name, so the Markdown
 documents stay byte-identical across downloads.
 
 **HTML.** HTML is built client-side from the rendered Markdown by a converter with its own private
@@ -313,6 +322,45 @@ still reaches no model client, clock or configuration, and the architecture pins
 - **Limits**: a source over 6,000,000 characters is refused with 413 and a message to download the
   Markdown instead; a render stops when the request is canceled. The diagnostics text is posted for
   rendering and is **never stored or logged**.
+
+### Word
+
+Word files (`.docx`) are for editing. `BenchmarkWordRenderer` (`Overseer/Services/Benchmarking/Word/`)
+walks the same prepared Markdig tree as the PDF renderer and writes the package with the Open XML SDK,
+never by string templating. It is static and stateless like the PDF renderer, so the architecture pins of
+§ 7 stand. The colors come from the palette the PDF uses (`BenchmarkDocumentPalette`).
+
+- **Styles**: every piece of formatting is a named style; direct formatting appears only where the
+  Markdown carries it (bold, italic, strike, underline, mark, a cell's alignment). Built-in styles keep
+  Word's own ids and names — *Normal*, *Title*, *Subtitle*, *heading 1–6*, *List Paragraph*, *Quote*,
+  *TOC Heading*, *toc 2*, *header*, *footer*, *Hyperlink*, *Table Grid* — so the Styles pane, the
+  Navigation pane, the table of contents and the accessibility checker recognize them. GnollBench adds
+  *Document Kind*, *Code Block*, *Inline Code*, *Horizontal Rule*, *Source Line*, *Classification Internal*
+  / *Provider*, *GnollBench Table* and *GnollBench Facts*. Headings are Bold where the PDF uses Semibold,
+  because Word selects weights only as regular and bold within a family.
+- **Lists** are real Word lists: one bullet definition shared by every bulleted list, and a new list
+  instance for each ordered list, starting at its own number.
+- **Tables** use *GnollBench Table*: a shaded header row that repeats on every page, zebra banding, rows
+  that do not split across pages, numeric columns right-aligned, and column widths from the
+  same weights the PDF uses.
+- **Page 1** mirrors the PDF: the wide logo, the document kind, the title, the subject line, a facts table,
+  *Source {first 16 hex} · Word layout 1* and the classification banner. The table of contents follows
+  under the PDF's rule, as a real `TOC` field pre-filled with links to the `##` sections and marked for
+  Word to refresh (page numbers included) when the file is opened; Word may ask once to update fields.
+- **Every page**: from page 2 a header with the emblem, *GnollBench · {kind}* and the subject; a footer
+  with the short classification, the source hash and layout version, and *Page X of Y* as `PAGE` and
+  `NUMPAGES` fields; for internal documents Word's own *INTERNAL* text watermark, which *Design →
+  Watermark → Remove Watermark* removes.
+- **Fonts**: Source Sans 3 and Source Code Pro are embedded the way Word's *Embed fonts in the file* does
+  (ECMA-376 obfuscated font parts, not subset), so the document looks and edits the same without them
+  installed; about 1 MB per file. A reader whose Word blocks embedded fonts sees Calibri and Consolas.
+- **Images**: the two logos are PNG (`Overseer/Resources/Word/`), because WebP pictures do not open in
+  Word 2019, Word 2021 or LibreOffice.
+- **Properties**: title, author *GnollBench (Overseer)*, subject, keywords, language `en-US` and the
+  stored creation date (never the request time), plus the custom properties *GnollBench Classification*
+  and *GnollBench Source SHA-256*. The file opens without *Compatibility Mode*.
+- **Limits**: the PDF's — 413 over 6,000,000 characters, canceled with the request, and the diagnostics
+  text is never stored or logged.
 
 ---
 
@@ -354,9 +402,13 @@ The start's refusals, in the order they are checked:
 - `GET /api/admin/benchmark/report-documents/{id}/render/pdf?disclosure=&peers=&paper=a4|letter`: The same
   document as a PDF (`application/pdf`), named `<title>_<disclosure>_<peers>[_INTERNAL].pdf`; the same
   refusals as `render`, 400 for another `paper`, 413 over the size limit.
+- `GET /api/admin/benchmark/report-documents/{id}/render/docx?disclosure=&peers=&paper=a4|letter`: The
+  same document as Word
+  (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`), named
+  `<title>_<disclosure>_<peers>[_INTERNAL].docx`, with the PDF endpoint's refusals.
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its run rows cascade.
 
-### Run files as PDF (`AdminBenchmarkController`)
+### Run files as PDF and Word (`AdminBenchmarkController`)
 
 - `GET /api/admin/benchmark/runs/{id}/report/pdf?paper=`: The run report as a PDF, named after the
   Markdown with `_INTERNAL.pdf`.
@@ -365,6 +417,10 @@ The start's refusals, in the order they are checked:
 - `POST /api/admin/benchmark/runs/{id}/diagnostics/pdf?paper=`: Body `{ text, capturedAtUtc }`, at most
   4 MB. Renders the diagnostics the client captured, dated at the capture; 404 for an unknown run, 400 for
   empty text or an unreadable time. The text is not stored or logged.
+- `GET /api/admin/benchmark/runs/{id}/report/docx?paper=`,
+  `GET /api/admin/benchmark/runs/{id}/tool-call-log/docx?paper=` and
+  `POST /api/admin/benchmark/runs/{id}/diagnostics/docx?paper=`: The same three files as Word, with the
+  PDF endpoints' validation and limits, named `…_INTERNAL.docx` and `…_diagnostics_INTERNAL.docx`.
 
 ---
 

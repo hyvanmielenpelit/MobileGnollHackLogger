@@ -38,6 +38,8 @@ import type {
   FigureNoteTone
 } from './figure-chrome';
 import { figureDirectionRotation } from './figure-chrome';
+import { FIGURE_LOGO_GAP, drawFigureLogo, figureLogoBox } from './figure-logo';
+import type { FigureLogo, FigureLogoBox } from './figure-logo';
 import { FADED_MARK_ALPHA, resolveFigureTheme } from './figure-theme';
 import type { ResolvedChromeColors, ResolvedFigureBorder, ResolvedFigureTheme } from './figure-theme';
 import {
@@ -299,6 +301,8 @@ export interface FigureExportRequest {
   readonly webpQuality?: WebpQuality;
   /** Colours, chrome font and border. Absent draws the dark theme, {@link resolveFigureTheme}'s default. */
   readonly theme?: ResolvedFigureTheme;
+  /** Drawn in the top right corner, beside the header. Absent or null draws none. */
+  readonly logo?: FigureLogo | null;
 }
 
 /** What `encodeFigureImage` produced, including the format actually written. */
@@ -628,6 +632,9 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
   // Painted before anything else: a transparent PNG of a Chart.js canvas is dark-on-dark in any
   // light document it is pasted into, so only a theme that asks for it leaves the ground empty.
   paintFigureBackground(context, width, height, theme);
+  if (request.logo && chrome.logo) {
+    drawFigureLogo(context, request.logo, chrome.logo, PADDING + contentWidth - chrome.logo.width, PADDING);
+  }
 
   context.textBaseline = 'top';
   let y = PADDING;
@@ -641,8 +648,8 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
     y += LINE_GAP;
     drawBadgeRows(context, chrome.badgeRows, PADDING, y, sizes, paint);
     if (chrome.direction) {
-      // Right-aligned on the first badge row, which it shares the height of.
-      drawDirectionBadge(context, chrome.direction, PADDING + contentWidth - chrome.direction.width, y, sizes, paint);
+      // Right-aligned in the header column on the first badge row, which it shares the height of.
+      drawDirectionBadge(context, chrome.direction, PADDING + chrome.headerWidth - chrome.direction.width, y, sizes, paint);
     }
     y += badgeRowCount * sizes.badgeHeight + (badgeRowCount - 1) * BADGE_GAP;
   }
@@ -652,6 +659,7 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
     y = drawBlock(context, chrome.detailLines, PADDING, y, DETAIL_SIZE, '400', paint.colors.muted, paint.stack);
   }
 
+  y = Math.max(y, PADDING + (chrome.logo?.height ?? 0));
   y += PLOT_GAP;
   if (chartWidth > 0 && chartHeight > 0 && plotWidth > 0 && plotHeight > 0) {
     context.drawImage(request.canvas, PADDING, y, plotWidth, plotHeight);
@@ -1071,7 +1079,10 @@ interface ResolvedTextSizes {
 export interface MeasuredChrome {
   readonly sizes: ResolvedTextSizes;
   readonly titleLines: string[];
-  /** Narrowed by the Better badge's width, when there is one, so no badge runs under it. */
+  /**
+   * Narrowed to the header column, which the logo narrows, and by the Better badge's width when
+   * there is one, so no badge runs under either.
+   */
   readonly badgeRows: readonly MeasuredBadgeRow[];
   /** Drawn right-aligned on the first badge row, or on a row of its own when there are no badges. */
   readonly direction: MeasuredDirection | null;
@@ -1080,6 +1091,10 @@ export interface MeasuredChrome {
   readonly highlightLines: string[];
   readonly noteBlocks: readonly MeasuredNote[];
   readonly footer: MeasuredFooter;
+  /** The logo's box in the top right corner, or null without a logo. */
+  readonly logo: FigureLogoBox | null;
+  /** The column the title, badges and detail wrap in: the content width less the logo and its gap. */
+  readonly headerWidth: number;
   /** The composition's height less the plot box: padding, every block and the gaps between. */
   readonly height: number;
 }
@@ -1099,12 +1114,15 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
   const theme = source.theme ?? resolveFigureTheme();
   const stack = theme.fonts.chromeStack;
   const measure = document.createElement('canvas').getContext('2d');
-  const wrap = (text: string, size: number, weight: string): string[] =>
-    measure ? wrapText(measure, text, contentWidth, size, weight, stack) : (text ? [text] : []);
+  const logo = figureLogoBox(source.logo, contentWidth);
+  const headerWidth = logo ? contentWidth - logo.width - FIGURE_LOGO_GAP : contentWidth;
+  const wrapAt = (text: string, width: number, size: number, weight: string): string[] =>
+    measure ? wrapText(measure, text, width, size, weight, stack) : (text ? [text] : []);
+  const wrap = (text: string, size: number, weight: string): string[] => wrapAt(text, contentWidth, size, weight);
 
   const chrome = source.chrome;
   const sizes = resolveTextSizes(source.textSizes ?? DEFAULT_FIGURE_TEXT_SIZES);
-  const titleLines = wrap(chrome.title, sizes.titlePx, String(theme.fonts.headingWeight));
+  const titleLines = wrapAt(chrome.title, headerWidth, sizes.titlePx, String(theme.fonts.headingWeight));
   const direction = chrome.direction
     ? {
         rotation: figureDirectionRotation(chrome.direction),
@@ -1112,11 +1130,11 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
         width: measure ? directionBadgeWidth(measure, chrome.direction.label, sizes, stack) : 0
       }
     : null;
-  const badgeWidth = direction ? contentWidth - direction.width - BADGE_GAP : contentWidth;
+  const badgeWidth = direction ? headerWidth - direction.width - BADGE_GAP : headerWidth;
   const badgeRows: MeasuredBadgeRow[] = measure
     ? wrapBadges(measure, chrome.badges, badgeWidth, sizes.badgePx, stack)
     : (chrome.badges.length > 0 ? [{ badges: chrome.badges.map(badge => ({ badge, width: 0 })) }] : []);
-  const detailLines = wrap(chrome.detail, DETAIL_SIZE, '400');
+  const detailLines = wrapAt(chrome.detail, headerWidth, DETAIL_SIZE, '400');
   const keyRows: MeasuredKeyRow[] = measure
     ? wrapKeyItems(measure, chrome.key, contentWidth, stack)
     : (chrome.key.length > 0 ? [{ items: chrome.key.map(item => ({ item, width: 0 })) }] : []);
@@ -1133,6 +1151,7 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
   if (detailLines.length > 0) {
     headerHeight += LINE_GAP + blockHeight(detailLines, DETAIL_SIZE);
   }
+  headerHeight = Math.max(headerHeight, logo?.height ?? 0);
 
   let height = PADDING * 2;
   height += headerHeight;
@@ -1150,7 +1169,9 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
     height += RULE_GAP + footer.height;
   }
 
-  return { sizes, titleLines, badgeRows, direction, detailLines, keyRows, highlightLines, noteBlocks, footer, height };
+  return {
+    sizes, titleLines, badgeRows, direction, detailLines, keyRows, highlightLines, noteBlocks, footer, logo, headerWidth, height
+  };
 }
 
 function resolveTextSizes(sizes: FigureChromeTextSizes): ResolvedTextSizes {

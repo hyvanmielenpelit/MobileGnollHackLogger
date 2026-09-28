@@ -2784,6 +2784,10 @@ previews and in every export, through one resolved theme:
   and the series hues stay theme-owned.
 - **Borders**: an optional figure border with width, corner radius (which also rounds the
   background, leaving transparent corners) and colour.
+- **GnollBench logo**: on by default, in the top right corner of every chart and of the table image:
+  the wide logo with the name or the square emblem, 16–96 px high (48 by default), in layout px so it
+  scales with the text size. Drawn from 3248 × 850 and 843 × 843 sources so high-density exports stay
+  sharp. The heading text narrows to leave room for it, and it takes at most 40 % of the image's width.
 
 The Charts tab adds *Axis title weight* and *Frame the plot area* to the bar and trade-off panels.
 All of it is stored with the figure style (`overseer.modelComparison.figureStyle`, still
@@ -3111,6 +3115,19 @@ A4 or US Letter, is remembered per browser. The Download Center's stored setting
 every admin meets the new defaults once. The dialog is wider and taller, and its explanations moved behind
 click-mode info buttons. The layout, endpoints and limits are in
 [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 8–9.
+
+**Word downloads.** Every document in the Download Center also downloads as **Word** (`.docx`), for
+editing. A static Open XML SDK renderer beside the PDF renderer walks the same Markdig tree and writes a
+document the way Word itself builds one: named built-in styles (*Title*, *Heading 1–6*, *Quote*, *List
+Paragraph*) plus a few GnollBench ones (*Code Block*, *GnollBench Table*), real numbered and bulleted
+lists, real tables with repeating header rows, a table of contents field, *Page X of Y* footer fields,
+Word's own *INTERNAL* watermark on internal documents, and embedded Source Sans 3 and Source Code Pro
+fonts. Its logos are PNG, because WebP pictures do not open in Word 2019, Word 2021 or LibreOffice. The
+four endpoints are the PDF ones with `/docx` in place of `/pdf`. The **Internal package** now defaults to
+PDF, Word and Markdown (PDF, Word and Text for the diagnostics); the Provider package stays PDF only. The
+stored settings move to version 3, migrated from version 2 with only the Internal package's remembered
+formats dropped. While a package is prepared, an overlay shows a spinner, the current step and a progress
+bar. Details are in [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 8.
 
 ### Harness Version 29 Updates
 

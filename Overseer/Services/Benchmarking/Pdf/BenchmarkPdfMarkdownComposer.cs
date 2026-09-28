@@ -70,14 +70,14 @@ internal static class BenchmarkPdfMarkdownComposer
     private const int MaxColumnWordCharacters = 24;
     private const int MaxColumnTextCharacters = 60;
 
-    private enum CellAlign
+    internal enum CellAlign
     {
         Left,
         Center,
         Right
     }
 
-    private readonly record struct InlineStyle(bool Bold, bool Italic, bool Strike, bool Underline, bool Marked);
+    internal readonly record struct InlineStyle(bool Bold, bool Italic, bool Strike, bool Underline, bool Marked);
 
     /// <summary>A parsed document, ready to compose: its top-level blocks and its table of contents.</summary>
     internal sealed class Prepared
@@ -395,12 +395,49 @@ internal static class BenchmarkPdfMarkdownComposer
             (rows[r].IsHeader ? headerRows : bodyRows).Add(cellsByRow[r]);
         }
 
+        var (aligns, weights) = ColumnLayout(table, headerRows, bodyRows, columns, ctx.Document.Source);
+
+        container.SemanticTable().Table(t =>
+        {
+            t.ColumnsDefinition(cd =>
+            {
+                foreach (float weight in weights) cd.RelativeColumn(weight);
+            });
+
+            if (headerRows.Count > 0)
+            {
+                t.Header(h =>
+                {
+                    for (int r = 0; r < headerRows.Count; r++)
+                    {
+                        PlaceRow(() => h.Cell(), headerRows[r], (uint)(r + 1), columns, aligns, header: true, zebra: false, ctx);
+                    }
+                });
+            }
+
+            for (int r = 0; r < bodyRows.Count; r++)
+            {
+                ctx.Token.ThrowIfCancellationRequested();
+                PlaceRow(() => t.Cell(), bodyRows[r], (uint)(r + 1), columns, aligns, header: false, zebra: r % 2 == 1, ctx);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Each column's alignment and relative width, in points for the A4 text width: a declared
+    /// alignment, else right for a numeric column and left otherwise; the widths from
+    /// <see cref="ColumnWeights"/> over the columns' word and text lengths.
+    /// </summary>
+    internal static (CellAlign[] Aligns, float[] Weights) ColumnLayout(
+        MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
+        int columns, string source)
+    {
         var texts = new Dictionary<MdTableCell, string>();
         string TextOf(MdTableCell cell)
         {
             if (!texts.TryGetValue(cell, out string? value))
             {
-                value = CellText(cell, ctx.Document.Source);
+                value = CellText(cell, source);
                 texts[cell] = value;
             }
             return value;
@@ -442,32 +479,8 @@ internal static class BenchmarkPdfMarkdownComposer
             minimum[c] = Math.Max(bodyMinimum[c], Fit(LongestWord(headerWords)));
             preferred[c] = Math.Max(minimum[c], Math.Min(longest, MaxColumnTextCharacters));
         }
-        var weights = ColumnWeights(bodyMinimum, minimum, preferred);
 
-        container.SemanticTable().Table(t =>
-        {
-            t.ColumnsDefinition(cd =>
-            {
-                foreach (float weight in weights) cd.RelativeColumn(weight);
-            });
-
-            if (headerRows.Count > 0)
-            {
-                t.Header(h =>
-                {
-                    for (int r = 0; r < headerRows.Count; r++)
-                    {
-                        PlaceRow(() => h.Cell(), headerRows[r], (uint)(r + 1), columns, aligns, header: true, zebra: false, ctx);
-                    }
-                });
-            }
-
-            for (int r = 0; r < bodyRows.Count; r++)
-            {
-                ctx.Token.ThrowIfCancellationRequested();
-                PlaceRow(() => t.Cell(), bodyRows[r], (uint)(r + 1), columns, aligns, header: false, zebra: r % 2 == 1, ctx);
-            }
-        });
+        return (aligns, ColumnWeights(bodyMinimum, minimum, preferred));
     }
 
     /// <summary>
@@ -478,7 +491,7 @@ internal static class BenchmarkPdfMarkdownComposer
     /// value never breaks inside a word before a column heading does. When even the body's words do not
     /// fit, the columns are sized by them, so words break as evenly as they can.
     /// </summary>
-    private static float[] ColumnWeights(double[] bodyMinimum, double[] minimum, double[] preferred)
+    internal static float[] ColumnWeights(double[] bodyMinimum, double[] minimum, double[] preferred)
     {
         int columns = minimum.Length;
         double capacity = Math.Max(columns * 3.0, (TableWidthPoints - columns * CellPaddingPoints) / AverageCharacterPoints);
@@ -499,7 +512,7 @@ internal static class BenchmarkPdfMarkdownComposer
         return widths.Select(w => (float)(w * AverageCharacterPoints + CellPaddingPoints)).ToArray();
     }
 
-    private static MdTableCell? CellAt(List<MdTableCell> cells, int column)
+    internal static MdTableCell? CellAt(List<MdTableCell> cells, int column)
     {
         int position = 0;
         foreach (var cell in cells)
@@ -562,13 +575,13 @@ internal static class BenchmarkPdfMarkdownComposer
         });
     }
 
-    private static bool IsNumericColumn(IReadOnlyList<string> values)
+    internal static bool IsNumericColumn(IReadOnlyList<string> values)
     {
         var meaningful = values.Select(v => v.Trim()).Where(v => !Placeholders.Contains(v)).ToList();
         return meaningful.Count > 0 && meaningful.All(v => NumericCell.IsMatch(v));
     }
 
-    private static string CellText(MdTableCell cell, string source)
+    internal static string CellText(MdTableCell cell, string source)
     {
         var sb = new StringBuilder();
         foreach (var block in cell)
@@ -634,7 +647,7 @@ internal static class BenchmarkPdfMarkdownComposer
         }
     }
 
-    private static InlineStyle Emphasis(InlineStyle style, EmphasisInline emphasis) => emphasis.DelimiterChar switch
+    internal static InlineStyle Emphasis(InlineStyle style, EmphasisInline emphasis) => emphasis.DelimiterChar switch
     {
         '*' or '_' => emphasis.DelimiterCount >= 2 ? style with { Bold = true } : style with { Italic = true },
         '~' => style with { Strike = true },
@@ -666,7 +679,7 @@ internal static class BenchmarkPdfMarkdownComposer
         span.FontColor(BenchmarkPdfStyle.Teal).Underline();
     }
 
-    private static bool IsSafeUrl(string? url)
+    internal static bool IsSafeUrl(string? url)
         => !string.IsNullOrWhiteSpace(url)
             && Uri.TryCreate(url, UriKind.Absolute, out var uri)
             && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeMailto);
@@ -728,9 +741,9 @@ internal static class BenchmarkPdfMarkdownComposer
         }
     }
 
-    private static string SourceOf(MarkdownObject node, string source) => SourceOf(node.Span, source);
+    internal static string SourceOf(MarkdownObject node, string source) => SourceOf(node.Span, source);
 
-    private static string SourceOf(SourceSpan span, string source)
+    internal static string SourceOf(SourceSpan span, string source)
     {
         if (span.IsEmpty || span.Start < 0 || span.End >= source.Length || span.End < span.Start) return string.Empty;
         return source.Substring(span.Start, span.Length);

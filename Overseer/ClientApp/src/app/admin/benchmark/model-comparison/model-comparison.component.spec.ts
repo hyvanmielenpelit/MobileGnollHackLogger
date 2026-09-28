@@ -48,6 +48,7 @@ import {
 import { DEFAULT_TABLE_COLUMNS, TableColumnConfig, TableFileFormat, xlsxWriterModule } from './table-export';
 import { FIGURE_EXPORT_MAX_DENSITY_PERCENT, FIGURE_EXPORT_MAX_DIMENSION, zipWriterModule } from './figure-export';
 import { FIGURE_SIZE_STORAGE_KEY, TABLE_IMAGE_SIZE_STORAGE_KEY, defaultFigureSize } from './figure-size';
+import { figureLogoIo, resetFigureLogoCache } from './figure-logo';
 import { fitHeightZoom, previewZoomRange, zoomToSlider } from './preview-view';
 import { ToastComponent } from '../../../shared/toast/toast.component';
 import { provideHttpClient } from '@angular/common/http';
@@ -306,6 +307,9 @@ describe('ModelComparisonComponent', () => {
     // The figure style, the sizes, the columns, the formats and the sidebar are remembered per
     // browser, so one spec's must not reach the next.
     STORED_KEYS.forEach(key => localStorage.removeItem(key));
+    // No logo loads unless a spec supplies one, so every layout is measured without it.
+    resetFigureLogoCache();
+    spyOn(figureLogoIo, 'loadImage').and.resolveTo(null);
     await TestBed.configureTestingModule({
       imports: [ModelComparisonComponent],
       // The Report Pack dialog, created by Reports, loads its writers, documents and job over HTTP.
@@ -5232,6 +5236,72 @@ describe('ModelComparisonComponent', () => {
     expect(scatter.footer).toEqual({ suite: '', computedAt: '' });
 
     expect(exportChrome(component.profileCard!).textSizes!.titlePx).toBe(22);
+  });
+
+  describe('the GnollBench logo', () => {
+    type LogoAccess = {
+      exportChrome(card: ComparisonFigureCard): { logo?: { image: CanvasImageSource; aspectRatio: number; heightPx: number } | null };
+      tableImageOptions(): { logo?: { image: CanvasImageSource; aspectRatio: number; heightPx: number } | null };
+      prepareFigureComposition(): Promise<void>;
+    };
+    const access = (): LogoAccess => component as unknown as LogoAccess;
+
+    let logoImage: HTMLCanvasElement;
+
+    beforeEach(() => {
+      logoImage = document.createElement('canvas');
+      logoImage.width = 8;
+      logoImage.height = 8;
+      (figureLogoIo.loadImage as jasmine.Spy).and.resolveTo(logoImage);
+    });
+
+    it('draws the wide logo at 48 px into every chart and the table image by default', async () => {
+      render(buildDto(comparableSet(3)), 2);
+      await access().prepareFigureComposition();
+
+      const chart = access().exportChrome(component.panelCards[0]).logo!;
+      expect(chart.image).toBe(logoImage);
+      expect(chart).toEqual(jasmine.objectContaining({ heightPx: 48, aspectRatio: 3248 / 850 }));
+      expect(access().tableImageOptions().logo).toEqual(jasmine.objectContaining({ heightPx: 48, aspectRatio: 3248 / 850 }));
+      expect(figureLogoIo.loadImage).toHaveBeenCalledWith('/img/gnollbench/gnollbench-wide-v3-h850.webp');
+    });
+
+    it('draws the square emblem at its own proportions and the chosen height', async () => {
+      render(buildDto(comparableSet(3)), 2);
+      withStyleDebounce(() => component.onFigureStyleChange({
+        ...component.figureStyle,
+        appearance: { ...component.figureStyle.appearance, logoVariant: 'square', logoHeightPx: 64 }
+      }));
+      await access().prepareFigureComposition();
+
+      expect(access().exportChrome(component.panelCards[0]).logo)
+        .toEqual(jasmine.objectContaining({ heightPx: 64, aspectRatio: 1 }));
+      expect(access().tableImageOptions().logo).toEqual(jasmine.objectContaining({ heightPx: 64, aspectRatio: 1 }));
+      expect(figureLogoIo.loadImage).toHaveBeenCalledWith('/img/gnollbench/gnollbench-logo-v3-843.webp');
+    });
+
+    it('draws no logo while it is hidden, and loads none', async () => {
+      render(buildDto(comparableSet(3)), 2);
+      withStyleDebounce(() => component.onFigureStyleChange({
+        ...component.figureStyle,
+        appearance: { ...component.figureStyle.appearance, logo: false }
+      }));
+      (figureLogoIo.loadImage as jasmine.Spy).calls.reset();
+      await access().prepareFigureComposition();
+
+      expect(access().exportChrome(component.panelCards[0]).logo).toBeNull();
+      expect(access().tableImageOptions().logo).toBeNull();
+      expect(figureLogoIo.loadImage).not.toHaveBeenCalled();
+    });
+
+    it('draws no logo where it failed to load', async () => {
+      (figureLogoIo.loadImage as jasmine.Spy).and.resolveTo(null);
+      render(buildDto(comparableSet(3)), 2);
+      await access().prepareFigureComposition();
+
+      expect(access().exportChrome(component.panelCards[0]).logo).toBeNull();
+      expect(access().tableImageOptions().logo).toBeNull();
+    });
   });
 
   it('writes one image and no archive for a single figure from the preview', async () => {

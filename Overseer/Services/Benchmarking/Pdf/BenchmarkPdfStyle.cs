@@ -11,24 +11,24 @@ using QuestPDF.Infrastructure;
 /// </summary>
 internal static class BenchmarkPdfStyle
 {
-    public static readonly Color Ink = Color.FromHex("#1B1B1B");
-    public static readonly Color Muted = Color.FromHex("#55595E");
-    public static readonly Color Teal = Color.FromHex("#2F7088");
-    public static readonly Color Gold = Color.FromHex("#AA8E47");
-    public static readonly Color Rule = Color.FromHex("#C9CED3");
-    public static readonly Color TableHeader = Color.FromHex("#EEF1F3");
-    public static readonly Color Zebra = Color.FromHex("#F7F8F9");
-    public static readonly Color CodeBackground = Color.FromHex("#F5F5F5");
-    public static readonly Color CodeBorder = Color.FromHex("#D4D4D4");
-    public static readonly Color InlineCodeBackground = Color.FromHex("#EEF1F3");
-    public static readonly Color QuoteRule = Color.FromHex("#B8BDC2");
-    public static readonly Color MarkedBackground = Color.FromHex("#FFF1B8");
-    public static readonly Color Watermark = Color.FromHex("#F0F0F0");
+    public static readonly Color Ink = Hex(BenchmarkDocumentPalette.Ink);
+    public static readonly Color Muted = Hex(BenchmarkDocumentPalette.Muted);
+    public static readonly Color Teal = Hex(BenchmarkDocumentPalette.Teal);
+    public static readonly Color Gold = Hex(BenchmarkDocumentPalette.Gold);
+    public static readonly Color Rule = Hex(BenchmarkDocumentPalette.Rule);
+    public static readonly Color TableHeader = Hex(BenchmarkDocumentPalette.TableHeader);
+    public static readonly Color Zebra = Hex(BenchmarkDocumentPalette.Zebra);
+    public static readonly Color CodeBackground = Hex(BenchmarkDocumentPalette.CodeBackground);
+    public static readonly Color CodeBorder = Hex(BenchmarkDocumentPalette.CodeBorder);
+    public static readonly Color InlineCodeBackground = Hex(BenchmarkDocumentPalette.InlineCodeBackground);
+    public static readonly Color QuoteRule = Hex(BenchmarkDocumentPalette.QuoteRule);
+    public static readonly Color MarkedBackground = Hex(BenchmarkDocumentPalette.MarkedBackground);
+    public static readonly Color Watermark = Hex(BenchmarkDocumentPalette.Watermark);
 
-    public static readonly Color InternalBanner = Color.FromHex("#FBE9E9");
-    public static readonly Color InternalText = Color.FromHex("#8A1C1C");
-    public static readonly Color ProviderBanner = Color.FromHex("#FFF4DC");
-    public static readonly Color ProviderText = Color.FromHex("#7A5200");
+    public static readonly Color InternalBanner = Hex(BenchmarkDocumentPalette.InternalBanner);
+    public static readonly Color InternalText = Hex(BenchmarkDocumentPalette.InternalText);
+    public static readonly Color ProviderBanner = Hex(BenchmarkDocumentPalette.ProviderBanner);
+    public static readonly Color ProviderText = Hex(BenchmarkDocumentPalette.ProviderText);
 
     public const float BaseSize = 10.5f;
     public const float LineHeight = 1.4f;
@@ -78,4 +78,6 @@ internal static class BenchmarkPdfStyle
 
     public static T MonoSpan<T>(T span) where T : TextSpanDescriptor => span
         .FontFamily(BenchmarkPdfResources.MonoFamily, BenchmarkPdfResources.FallbackFamily);
+
+    private static Color Hex(string rgb) => Color.FromHex("#" + rgb);
 }

@@ -9731,11 +9731,8 @@ describe('AdminBenchmarkComponent', () => {
         component.calibrations = rows;
         fixture.detectChanges();
 
-        const headers = Array.from(fixture.nativeElement.querySelectorAll('.calibration-table th')).map((th: any) => th.textContent.trim());
-        expect(headers).toContain('Compared against');
-        const cells = Array.from(fixture.nativeElement.querySelectorAll('.calibration-table tbody tr'))
-          .map((tr: any) => tr.querySelectorAll('td')[1].textContent.trim());
-        expect(cells).toEqual(['Co-assessor B', 'Assessor A']);
+        expect(fixture.nativeElement.querySelectorAll('.calibration-list > li.calibration-item').length).toBe(2);
+        expect(statValues('Compared against')).toEqual(['Co-assessor B', 'Assessor A']);
       });
 
       it('should show neither the Compared against column nor the target select on a single-assessor run', () => {
@@ -9748,10 +9745,46 @@ describe('AdminBenchmarkComponent', () => {
         component.selectedRunDetail = buildPanelRun({ isPanelRun: false });
         component.calibrations = rows;
         fixture.detectChanges();
-        const singleHeaders = Array.from(fixture.nativeElement.querySelectorAll('.calibration-table th')).map((th: any) => th.textContent.trim());
-        expect(singleHeaders).not.toContain('Compared against');
+        expect(fixture.nativeElement.querySelectorAll('.calibration-item').length).toBe(1);
+        expect(statTerms()).not.toContain('Compared against');
         expect(fixture.nativeElement.querySelector('#calibrationTargetSelect')).toBeNull();
       });
+
+      it('should wrap the calibration controls and list the calibrations without a table', () => {
+        component.selectedRunDetail = buildPanelRun();
+        component.calibrations = [
+          { id: 2, benchmarkRunId: 77, assessorDisplayNameUsed: 'Claude Opus 5', assessorProviderUsed: 'Anthropic',
+            createdAtUtc: '2026-09-27T09:00:00Z', answerCount: 18, skippedAnswerCount: 3, meanAbsDelta: 4.5,
+            disagreementCount: 1, inputTokens: 1, outputTokens: 1, durationMs: 1, comparedAgainst: null,
+            errorMessage: 'Three answers could not be graded.' }
+        ] as any[];
+        fixture.detectChanges();
+
+        const controls = fixture.nativeElement.querySelector('.calibration-panel .calibration-controls') as HTMLElement;
+        expect(controls).toBeTruthy();
+        expect(controls.querySelector('.calibration-model-field app-model-picker')).toBeTruthy();
+        expect(controls.querySelector('.calibration-target-field #calibrationTargetSelect')).toBeTruthy();
+        expect(controls.querySelector('button.btn-gh')?.textContent?.trim()).toBe('Calibrate assessor');
+        expect(fixture.nativeElement.querySelector('.calibration-table')).toBeNull();
+        expect(fixture.nativeElement.querySelector('.calibration-panel table')).toBeNull();
+
+        expect(statTerms()).toEqual(['Compared against', 'Mean abs. delta', 'Disagreements', 'Answers', 'Tokens', 'Duration']);
+        expect(statValues('Answers')).toEqual(['18 (3 skipped)']);
+        const item = fixture.nativeElement.querySelector('.calibration-item') as HTMLElement;
+        expect(item.querySelector('.calibration-item-head')?.textContent).toContain('Claude Opus 5');
+        expect(item.querySelector('p.calibration-error')?.textContent?.trim()).toBe('Three answers could not be graded.');
+      });
+
+      function statTerms(): string[] {
+        return Array.from(fixture.nativeElement.querySelectorAll('.calibration-stats dt'))
+          .map((dt: any) => dt.textContent.trim());
+      }
+
+      function statValues(term: string): string[] {
+        return Array.from(fixture.nativeElement.querySelectorAll('.calibration-stats dt'))
+          .filter((dt: any) => dt.textContent.trim() === term)
+          .map((dt: any) => dt.nextElementSibling.textContent.replace(/\s+/g, ' ').trim());
+      }
     });
   });
 
@@ -10298,11 +10331,15 @@ describe('AdminBenchmarkComponent', () => {
         const tabs = fixture.nativeElement.querySelector('.gh-tabs[role="tablist"]') as HTMLElement;
         expect(wordmark.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-        const emblem = dialog().querySelector('.dialog-title-row > img.gnollbench-emblem') as HTMLImageElement;
+        const emblem = dialog().querySelector('.rr-identity > img.gnollbench-emblem') as HTMLImageElement;
         expect(emblem).toBeTruthy();
         expect(emblem.getAttribute('alt')).toBe('');
         expect(emblem.getAttribute('src')).toBe('/img/gnollbench/gnollbench-logo-v3-256.webp');
-        expect(emblem.nextElementSibling?.id).toBe('runDetailTitle');
+        expect(emblem.getAttribute('width')).toBe('64');
+        expect(emblem.getAttribute('height')).toBe('64');
+        const titleGroup = emblem.nextElementSibling as HTMLElement;
+        expect(titleGroup.classList).toContain('dialog-title-group');
+        expect(titleGroup.querySelector('#runDetailTitle')).toBeTruthy();
       });
 
       it('should put a key-figures toggle, a summary and the strip actions in a bar above the cards', () => {

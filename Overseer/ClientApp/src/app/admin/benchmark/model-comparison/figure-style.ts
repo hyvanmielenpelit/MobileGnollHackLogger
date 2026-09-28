@@ -23,6 +23,7 @@ export type FigureFontId = 'default' | 'inter' | 'roboto' | 'geist' | 'ibm-plex-
 export type FigureFontWeight = 400 | 500 | 600 | 700;
 /** How strongly the table image shades every second body row. */
 export type TableRowShading = 'none' | 'light' | 'medium' | 'strong';
+export type FigureLogoVariant = 'wide' | 'square';
 
 export const FIGURE_THEME_NAMES: readonly FigureThemeName[] = ['dark', 'light'];
 export const FIGURE_BACKGROUND_MODES: readonly FigureBackgroundMode[] = ['theme', 'transparent', 'custom'];
@@ -31,6 +32,7 @@ export const FIGURE_FONT_IDS: readonly FigureFontId[] =
   ['default', 'inter', 'roboto', 'geist', 'ibm-plex-sans', 'source-sans-3', 'open-sans'];
 export const FIGURE_FONT_WEIGHTS: readonly FigureFontWeight[] = [400, 500, 600, 700];
 export const TABLE_ROW_SHADINGS: readonly TableRowShading[] = ['none', 'light', 'medium', 'strong'];
+export const FIGURE_LOGO_VARIANTS: readonly FigureLogoVariant[] = ['wide', 'square'];
 
 /** Shared by every chart and the table image. */
 export interface FigureAppearanceStyle {
@@ -55,6 +57,11 @@ export interface FigureAppearanceStyle {
   readonly borderRadiusPx: number;
   /** Null follows the theme. */
   readonly borderColor: string | null;
+  /** The GnollBench logo in the top right corner of every chart and the table image. */
+  readonly logo: boolean;
+  readonly logoVariant: FigureLogoVariant;
+  /** In layout px; the width follows the variant's proportions. */
+  readonly logoHeightPx: number;
 }
 
 /** Table image only. */
@@ -151,7 +158,10 @@ export interface FigureStyle {
   readonly table: TableImageStyle;
 }
 
-/** Dark, on the theme background, in the Overseer font, without a border: the drawing before any theme existed. */
+/**
+ * Dark, on the theme background, in the Overseer font, without a border: the drawing before any
+ * theme existed, with the wide GnollBench logo added.
+ */
 export const DEFAULT_APPEARANCE_STYLE: FigureAppearanceStyle = {
   theme: 'dark',
   background: 'theme',
@@ -167,6 +177,9 @@ export const DEFAULT_APPEARANCE_STYLE: FigureAppearanceStyle = {
   borderWidthPx: 1,
   borderRadiusPx: 0,
   borderColor: null,
+  logo: true,
+  logoVariant: 'wide',
+  logoHeightPx: 48,
 };
 
 export const DEFAULT_TABLE_IMAGE_STYLE: TableImageStyle = {
@@ -298,7 +311,7 @@ export const CHROME_RANGE_CONTROLS: readonly RangeControl<NumericChromeStyleKey>
   textSizeControl('footerTextSizePx', 'Footer text size'),
 ];
 
-export type NumericAppearanceStyleKey = 'borderWidthPx' | 'borderRadiusPx';
+export type NumericAppearanceStyleKey = 'borderWidthPx' | 'borderRadiusPx' | 'logoHeightPx';
 
 export const APPEARANCE_RANGE_CONTROLS: readonly RangeControl<NumericAppearanceStyleKey>[] = [
   { key: 'borderWidthPx', label: 'Border width', min: 1, max: 8, step: 1, unit: 'px' },
@@ -308,6 +321,15 @@ export const APPEARANCE_RANGE_CONTROLS: readonly RangeControl<NumericAppearanceS
     hint: 'Also rounds the background.',
     min: 0,
     max: 32,
+    step: 1,
+    unit: 'px',
+  },
+  {
+    key: 'logoHeightPx',
+    label: 'Logo height',
+    hint: "The width follows the logo's proportions, up to 40% of the image's width.",
+    min: 16,
+    max: 96,
     step: 1,
     unit: 'px',
   },
@@ -501,6 +523,9 @@ export function normalizeAppearance(value: unknown): FigureAppearanceStyle {
     borderWidthPx: numeric('borderWidthPx'),
     borderRadiusPx: numeric('borderRadiusPx'),
     borderColor: nullableHexColor(v['borderColor'], d.borderColor),
+    logo: booleanOr(v['logo'], d.logo),
+    logoVariant: oneOf(v['logoVariant'], FIGURE_LOGO_VARIANTS, d.logoVariant),
+    logoHeightPx: numeric('logoHeightPx'),
   };
 }
 

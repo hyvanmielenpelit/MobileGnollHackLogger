@@ -18,6 +18,7 @@ using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.Pdf;
+using Overseer.Services.Benchmarking.Word;
 using Microsoft.Extensions.DependencyInjection;
 
 [Route("api/admin/benchmark")]
@@ -4522,6 +4523,22 @@ public class AdminBenchmarkController : ControllerBase
         return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
     }
 
+    /// <summary>The run report as a Word document on <c>a4</c> (the default) or <c>letter</c> paper; always internal.</summary>
+    [HttpGet("runs/{id}/report/docx")]
+    public async Task<IActionResult> GetRunReportDocx(long id, [FromQuery] string? paper, CancellationToken ct)
+    {
+        if (!BenchmarkPdfDocumentInfo.TryParsePaper(paper, out var wordPaper))
+        {
+            return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
+        }
+
+        var (run, markdown, filename) = await BuildRunReportAsync(id);
+        if (run == null) return NotFound();
+
+        var info = BenchmarkPdfDocumentInfo.ForRunReport(run, GetOverseerVersion(), wordPaper);
+        return await WordFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalFileName(filename!, "docx"), ct);
+    }
+
     /// <summary>
     /// The whole run's tool-call record — every argument, result and error each call carried —
     /// as a Markdown export for reading offline. On-demand rather than part of the run detail:
@@ -4552,6 +4569,22 @@ public class AdminBenchmarkController : ControllerBase
 
         var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, pdfPaper);
         return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
+    }
+
+    /// <summary>The tool-call log as a Word document on <c>a4</c> (the default) or <c>letter</c> paper; always internal.</summary>
+    [HttpGet("runs/{id}/tool-call-log/docx")]
+    public async Task<IActionResult> GetRunToolCallLogDocx(long id, [FromQuery] string? paper, CancellationToken ct)
+    {
+        if (!BenchmarkPdfDocumentInfo.TryParsePaper(paper, out var wordPaper))
+        {
+            return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
+        }
+
+        var (run, markdown, filename) = await BuildToolCallLogAsync(id);
+        if (run == null) return NotFound();
+
+        var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, wordPaper);
+        return await WordFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalFileName(filename!, "docx"), ct);
     }
 
     /// <summary>
@@ -4586,6 +4619,39 @@ public class AdminBenchmarkController : ControllerBase
         var info = BenchmarkPdfDocumentInfo.ForDiagnostics(run, capturedAtUtc, GetOverseerVersion(), pdfPaper);
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.pdf";
         return await PdfFileAsync(request.Text, plainText: true, info, filename, ct);
+    }
+
+    /// <summary>
+    /// The run diagnostics text the client captured, as a Word document, with the same refusals as
+    /// <see cref="RenderRunDiagnosticsPdf"/>. The text is rendered and returned, never stored or logged.
+    /// </summary>
+    [HttpPost("runs/{id}/diagnostics/docx")]
+    [RequestSizeLimit(4_000_000)]
+    public async Task<IActionResult> RenderRunDiagnosticsDocx(
+        long id, [FromQuery] string? paper, [FromBody] BenchmarkRunDiagnosticsPdfRequest? request, CancellationToken ct)
+    {
+        if (!BenchmarkPdfDocumentInfo.TryParsePaper(paper, out var wordPaper))
+        {
+            return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
+        }
+
+        var run = await _dbContext.BenchmarkRuns
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (run == null) return NotFound();
+
+        if (request == null || string.IsNullOrWhiteSpace(request.Text))
+        {
+            return BadRequest(new { error = "text must not be empty." });
+        }
+        if (!BenchmarkRunDiagnosticsPdfRequest.TryParseCapturedAt(request.CapturedAtUtc, out DateTime capturedAtUtc))
+        {
+            return BadRequest(new { error = "capturedAtUtc must be an ISO 8601 time." });
+        }
+
+        var info = BenchmarkPdfDocumentInfo.ForDiagnostics(run, capturedAtUtc, GetOverseerVersion(), wordPaper);
+        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.docx";
+        return await WordFileAsync(request.Text, plainText: true, info, filename, ct);
     }
 
     /// <summary>
@@ -4655,6 +4721,26 @@ public class AdminBenchmarkController : ControllerBase
                 : BenchmarkPdfRenderer.RenderMarkdown(source, info, ct),
             ct);
         return File(pdf, "application/pdf", fileName);
+    }
+
+    /// <summary>
+    /// A source rendered as a Word download, off the request thread and stopped by the request's
+    /// cancellation; 413 for a source above <see cref="BenchmarkWordRenderer.MaxSourceCharacters"/>.
+    /// </summary>
+    private async Task<IActionResult> WordFileAsync(
+        string source, bool plainText, BenchmarkPdfDocumentInfo info, string fileName, CancellationToken ct)
+    {
+        if (BenchmarkWordRenderer.IsTooLarge(source))
+        {
+            return StatusCode(413, new { error = BenchmarkWordRenderer.TooLargeMessage(source.Length) });
+        }
+
+        byte[] docx = await Task.Run(
+            () => plainText
+                ? BenchmarkWordRenderer.RenderPlainText(source, info, ct)
+                : BenchmarkWordRenderer.RenderMarkdown(source, info, ct),
+            ct);
+        return File(docx, BenchmarkWordRenderer.ContentType, fileName);
     }
 
     [HttpGet("suites/{id}/runs/footprint")]
