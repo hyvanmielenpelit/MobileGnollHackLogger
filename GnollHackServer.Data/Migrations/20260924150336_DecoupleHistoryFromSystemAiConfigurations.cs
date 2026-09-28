@@ -413,6 +413,7 @@ namespace GnollHackServer.Data.Migrations
 
         // A legacy role: the table, the new snapshot column, and for each snapshot field the legacy
         // column that recorded it, or null when that role never recorded the field.
+#nullable enable
         private sealed record LegacyRole(
             string Name, int Kind, string Table, string SnapshotColumn, bool IsComplete,
             string? DisplayName, string Provider, string ModelId, string? ThinkingLevel, string? ReasoningMode,
@@ -455,6 +456,7 @@ namespace GnollHackServer.Data.Migrations
             ("ReasoningSummary", r.ReasoningSummary, true), ("ServiceTier", r.ServiceTier, true),
             ("MaxOutputTokens", r.MaxOutputTokens, false), ("ParallelExecutionMode", r.ParallelExecutionMode, false),
         };
+#nullable disable
 
         // One batch, run inside the migration's transaction: any THROW rolls the whole migration back.
         // The canonical form and hash match SystemAiConfigurationSnapshotStore: the SHA-256 of the
