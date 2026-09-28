@@ -2075,33 +2075,77 @@
     }
   }
 
+  /* The header rule and the columns are 16px apart, the header's own bottom padding; the
+     global .dialog-header margin and the body's 20px top padding would add up to 40px. */
+  .dialog-header {
+    margin-bottom: 0;
+  }
+
+  .run-progress-body {
+    padding-top: 16px;
+  }
+
+  /* The title takes focus on open. */
+  .dialog-header h3:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+
+  /* The type and rule come from the global .gh-section-title; this is the layout only. */
   .run-progress-questions-title {
     display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin: 0 0 8px 0;
-    font-size: 13px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #aaa;
+    align-items: center;
+    gap: 10px;
   }
 
+  /* A neutral pill in the body font, not the heading's Cinzel capitals. */
   .run-progress-questions-count {
+    padding: 1px 8px;
+    border: 1px solid var(--border-glass);
+    border-radius: 999px;
+    font-family: "Lato", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--nav-color);
     font-variant-numeric: tabular-nums;
-    color: #888;
-    font-weight: 400;
   }
 
-  /* The published score, before the status chip, aligned as a column. */
+  /* The published score, before the status chip: a tier badge of the chip's height and shape,
+     so the two read as a pair. The number carries the meaning; the color repeats it. */
   .job-item-score {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
-    min-inline-size: 3.5ch;
-    text-align: end;
-    font-size: 13px;
-    font-weight: 600;
+    min-inline-size: 5ch;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
     font-variant-numeric: tabular-nums;
-    color: #ddd;
+    line-height: 1.35;
+
+    &.badge-score-high {
+      color: var(--score-high-ink);
+      background: var(--score-high-bg);
+      border-color: var(--score-high-border);
+    }
+
+    &.badge-score-mid {
+      color: var(--score-mid-ink);
+      background: var(--score-mid-bg);
+      border-color: var(--score-mid-border);
+    }
+
+    &.badge-score-low {
+      color: var(--score-low-ink);
+      background: var(--score-low-bg);
+      border-color: var(--score-low-border);
+    }
   }
 
   @container run-progress (inline-size >= 60rem) {
@@ -2548,6 +2592,36 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
     dd { margin: 0; }
   }
   .calibration-error { margin: 6px 0 0; color: #fbbf24; }
+}
+
+// The run report's AI-Written Reports section: a status line, a row per stored document, and the
+// writer picker with Write Reports while a document is missing.
+.rr-ai-reports {
+  overflow-wrap: anywhere;
+
+  .rr-ai-status { margin: 0 0 10px; }
+  .rr-ai-doc-list { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
+  .rr-ai-doc-row {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
+    padding: 8px 10px; border: 1px solid var(--border-glass); border-radius: 6px;
+  }
+  .rr-ai-doc-text { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+  .rr-ai-doc-name { font-weight: 600; }
+  .rr-ai-doc-status {
+    border-color: var(--border-glass);
+    color: var(--nav-color);
+
+    &.is-warning { border-color: var(--color-warning); color: var(--color-warning); }
+  }
+  // Its own line under the name, as .gh-tag-changed is everywhere else.
+  .rr-ai-doc-text .gh-tag-changed { flex-basis: 100%; margin-top: 2px; }
+  .rr-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .rr-ai-write {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 14px;
+    .form-group { margin-bottom: 0; }
+  }
+  .rr-ai-writer-field { flex: 1 1 22rem; min-width: min(100%, 22rem); }
+  .rr-ai-write-blocked { margin: 6px 0 0; }
 }
 
 // Assessor panel. Terse for the same component style budget as above.

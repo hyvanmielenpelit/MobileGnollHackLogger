@@ -295,6 +295,18 @@ describe('AdminBenchmarkService', () => {
       req.flush([]);
     });
 
+    it('writes the AI-written reports of a run with the chosen writer', () => {
+      let status: number | undefined;
+      service.writeRunReportDocuments(73, { writerModelConfigurationId: 5 }).subscribe(res => status = res.status);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ writerModelConfigurationId: 5 });
+      req.flush({ runId: 73, status: 1 }, { status: 202, statusText: 'Accepted' });
+
+      expect(status).toBe(1);
+    });
+
     it('gets a document detail', () => {
       service.getReportDocument(9).subscribe();
       const req = httpMock.expectOne('/api/admin/benchmark/report-documents/9');

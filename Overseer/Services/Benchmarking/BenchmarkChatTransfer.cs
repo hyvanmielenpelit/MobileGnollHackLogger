@@ -3,6 +3,7 @@ namespace Overseer.Services.Benchmarking;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 
 public enum BenchmarkToolFamily
@@ -387,4 +388,60 @@ public static class BenchmarkChatTransfer
 
         return false;
     }
+
+    /// <summary>
+    /// Words that mark a question as one the knowledge base answers: app navigation, settings,
+    /// troubleshooting and platform documentation, the scope <c>ChatService</c>'s "Information
+    /// Routing" and <c>get_knowledge_article.md</c> give it.
+    /// </summary>
+    public static readonly IReadOnlyList<string> KnowledgeBaseTopicKeywords = new[]
+    {
+        "navigation", "settings", "options", "troubleshooting", "crash",
+        "account", "controls", "replay", "save management", "import", "export",
+        "system requirements", "developer tools", "vault", "get_knowledge_article"
+    };
+
+    /// <summary>
+    /// A <see cref="KnowledgeBaseTopicKeywords"/> word, case-insensitive and whole, that is not part
+    /// of a file name: not preceded by <c>/</c>, <c>\</c> or <c>.</c>, and not followed by <c>.</c>
+    /// and a letter, so <c>src/options.c</c> is not the options menu.
+    /// </summary>
+    private static readonly Regex KnowledgeBaseTopicRegex = new(
+        @"(?<![/\\.])\b(?:" + string.Join("|", KnowledgeBaseTopicKeywords.Select(Regex.Escape)) + @")\b(?!\.\p{L})",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A rubric's <c>**SOURCE**</c> section, bounded at the next bold label as
+    /// <see cref="BenchmarkRubricCitationValidator"/> bounds it.
+    /// </summary>
+    private static readonly Regex RubricSourceSectionRegex = new(
+        @"\*\*SOURCE\*\*[\s\S]*?(?=\n\s*\*\*[A-Z][A-Z ]{2,}\*\*|\z)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when some answer's question, or its rubric outside the <c>**SOURCE**</c> section, names
+    /// a knowledge-base topic (<see cref="KnowledgeBaseTopicRegex"/>). The report's Tool Routing
+    /// section and the run diagnostics both read this, so a run with no such question reads its
+    /// zero-knowledge-base count as prompt-compliant in both places.
+    /// </summary>
+    public static bool HasKnowledgeBaseRoutingQuestion(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        if (answers == null) return false;
+
+        foreach (var a in answers)
+        {
+            if (a == null) continue;
+            if (IsKnowledgeBaseTopicText(a.QuestionText) || IsKnowledgeBaseTopicText(WithoutSourceSection(a.ExpectedPointsUsed)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static string? WithoutSourceSection(string? rubric)
+        => string.IsNullOrEmpty(rubric) ? rubric : RubricSourceSectionRegex.Replace(rubric, " ");
+
+    private static bool IsKnowledgeBaseTopicText(string? text)
+        => !string.IsNullOrWhiteSpace(text) && KnowledgeBaseTopicRegex.IsMatch(text);
 }

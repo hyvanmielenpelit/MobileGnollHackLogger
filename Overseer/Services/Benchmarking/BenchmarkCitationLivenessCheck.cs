@@ -28,7 +28,9 @@ using System.Text.RegularExpressions;
 /// names a wiki page or a board line. A single-line, unranged reference whose cited line is itself
 /// only a column-0 function definition — nothing inside the body — gets a note naming the function
 /// instead of the usual liveness check; a range starting on that same line is exempt, since it also
-/// reaches inside the body.
+/// reaches inside the body. So is a claim about where that function is defined: one naming the
+/// function as a whole identifier and an integer within <see cref="DefinitionLineClaimTolerance"/>
+/// of the cited line, which the definition line settles; it gets the liveness check instead.
 ///
 /// A single-line, unranged reference to a <c>src/*.c</c> or <c>include/*.h</c> line inside a
 /// <c>#define</c> header — the <c>#define</c> line, or for a function-like macro one of the
@@ -150,18 +152,22 @@ public sealed class BenchmarkCitationLivenessCheck
                 continue;
             }
 
-            string? note = v.Verdict == BenchmarkClaimVerdict.Indeterminate ? null : NoteFor(v.Citation);
+            string? note = v.Verdict == BenchmarkClaimVerdict.Indeterminate ? null : NoteFor(v.Citation, v.Claim);
             result.Add(note == null ? v : v with { CitationNote = note });
         }
         return result;
     }
 
-    /// <summary>The note for <paramref name="citation"/>, or null when it does not apply or anything fails.</summary>
-    public string? NoteFor(string? citation)
+    /// <summary>
+    /// The note for <paramref name="citation"/>, or null when it does not apply or anything fails.
+    /// <paramref name="claim"/>, when given, is the verified claim's text, read only to exempt a
+    /// definition-line citation of a claim about where that definition is.
+    /// </summary>
+    public string? NoteFor(string? citation, string? claim = null)
     {
         try
         {
-            return NoteForCore(citation);
+            return NoteForCore(citation, claim);
         }
         catch
         {
@@ -169,7 +175,33 @@ public sealed class BenchmarkCitationLivenessCheck
         }
     }
 
-    private string? NoteForCore(string? citation)
+    /// <summary>How far, in lines, a line number a claim names may lie from a cited definition line.</summary>
+    public const int DefinitionLineClaimTolerance = 5;
+
+    private static readonly Regex IntegerRegex = new(@"\d+", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// True when <paramref name="claim"/> names <paramref name="functionName"/> as a whole identifier
+    /// (<c>use_lamp</c> or <c>use_lamp()</c>) and holds an integer within
+    /// <see cref="DefinitionLineClaimTolerance"/> of <paramref name="line"/>.
+    /// </summary>
+    private static bool ClaimLocatesDefinition(string? claim, string functionName, int line)
+    {
+        if (string.IsNullOrWhiteSpace(claim)) return false;
+        if (!Regex.IsMatch(claim, $@"\b{Regex.Escape(functionName)}\b", RegexOptions.CultureInvariant)) return false;
+
+        foreach (Match m in IntegerRegex.Matches(claim))
+        {
+            if (int.TryParse(m.Value, out int number) && Math.Abs(number - line) <= DefinitionLineClaimTolerance)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private string? NoteForCore(string? citation, string? claim)
     {
         if (string.IsNullOrWhiteSpace(citation)) return null;
 
@@ -239,7 +271,7 @@ public sealed class BenchmarkCitationLivenessCheck
             if (!hasRange && line >= 1 && line <= lines.Length)
             {
                 string? definitionName = SourceLivenessIndex.DefinitionNameAt(lines, line - 1, lines[line - 1]);
-                if (definitionName != null)
+                if (definitionName != null && !ClaimLocatesDefinition(claim, definitionName, line))
                 {
                     string definitionNote = DefinitionLineNoteText(path, line, definitionName);
                     if (!notes.Contains(definitionNote, StringComparer.Ordinal)) notes.Add(definitionNote);

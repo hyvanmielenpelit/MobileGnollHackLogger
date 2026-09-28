@@ -252,6 +252,13 @@ public static class BenchmarkAssessmentParser
     };
 
     /// <summary>
+    /// The highest ACCURACY level at which a verdict's fabrication prose makes it a contested
+    /// verdict. A fabrication serious enough to question a missing critical error is not graded 5
+    /// or 6, so prose beside such a level describes a lesser fault.
+    /// </summary>
+    public const int ContestedVerdictMaxAccuracyLevel = 4;
+
+    /// <summary>
     /// Parses one per-question verdict. Pass <paramref name="gradedAnswerText"/> — the exact text
     /// the assessor was shown — to have an uncited critical error demoted: the cap takes a
     /// question to 25 regardless of its levels, and on the 2026-09-03 run it was applied for an
@@ -371,8 +378,10 @@ public static class BenchmarkAssessmentParser
             // the harness records the divergence and routes it to a second reader rather than
             // overriding a judgement it is not in a position to make. Read from the comment and the
             // accuracy evidence only, where a fabrication is charged; the completeness evidence lists
-            // omissions. Game vocabulary and denied fabrications do not count.
+            // omissions. Game vocabulary and denied fabrications do not count, and neither does a
+            // verdict above ContestedVerdictMaxAccuracyLevel.
             bool contestedVerdict = !criticalError &&
+                Math.Clamp(accuracyLevel, 0, 6) <= ContestedVerdictMaxAccuracyLevel &&
                 (BenchmarkVerdictConsistency.MentionsUndeniedFabrication(comment) ||
                  BenchmarkVerdictConsistency.MentionsUndeniedFabrication(accuracyEvidence));
 

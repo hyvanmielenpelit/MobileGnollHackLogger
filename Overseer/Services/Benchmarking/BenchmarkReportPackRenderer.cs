@@ -84,17 +84,25 @@ public static class BenchmarkReportJson
 /// same row and options always yield the same bytes: <c>\n</c> line breaks, invariant formatting,
 /// and every collection in a stated order (questions by number, peers by letter, rows by R number,
 /// facts by key, writer sections in the audience's slot order).
+///
+/// <para>A sheet with no peers renders the stand-alone form: no peer tables, no pairwise-significance
+/// statement and no peer columns. The Executive Summary and the Report for AI Researchers and
+/// Developers print the evidence each strength, weakness and recommendation cites beneath it, and end
+/// with the evaluation terms; the Internal Improvement Brief does neither.</para>
 /// </summary>
 public static class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 1;
+    public const int ReportFormatVersion = 2;
 
     private const string ProductName = "Overseer GnollHack Assistant Benchmark";
     private const string TokenPattern = @"\{\{([^{}]+)\}\}";
     private const string NoValue = "—";
 
-    /// <summary>A question this far below the peer mean, or with a critical error, gets its note printed.</summary>
-    private const double NoteThreshold = -15.0;
+    /// <summary>The run report's own prohibition sentence (BenchmarkReportBuilder, Compliance &amp; Evaluation Terms).</summary>
+    private const string DistillationProhibition = "No prompt, completion, or evaluation output in this benchmark is used for model training, fine-tuning, distillation, or developing competing AI models.";
+
+    /// <summary>What a grader's provider that is also a peer's reads as when peers are anonymized.</summary>
+    private const string WithheldProvider = "a withheld provider";
 
     private const string SummaryStamp = "Confidential. Prepared for the model's provider. Questions are described, not quoted.";
     private const string DetailedStamp = "Confidential. Prepared for the model's provider. Contains benchmark questions — do not publish.";
@@ -109,8 +117,8 @@ public static class BenchmarkReportPackRenderer
             : new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full };
 
     /// <summary>
-    /// Executive Summary and Technical Report render at every level; the Internal Improvement Brief at
-    /// Full only. Either peer naming is allowed for all three.
+    /// Executive Summary and Report for AI Researchers and Developers render at every level; the
+    /// Internal Improvement Brief at Full only. Either peer naming is allowed for all three.
     /// </summary>
     public static bool IsAllowed(BenchmarkReportAudience audience, BenchmarkReportRenderOptions options)
     {
@@ -163,6 +171,10 @@ public static class BenchmarkReportPackRenderer
         }
 
         RemovedContent(sb, ctx);
+        if (ctx.PrintsEvidence)
+        {
+            EvaluationTerms(sb, ctx);
+        }
         Footer(sb, ctx);
         return sb.ToString();
     }
@@ -192,7 +204,10 @@ public static class BenchmarkReportPackRenderer
 
         Heading(sb, "## How confident are we");
         Slot(sb, ctx, BenchmarkReportSlots.Confidence);
-        NoSignificance(sb, ctx);
+        if (!ctx.Standalone)
+        {
+            NoSignificance(sb, ctx);
+        }
 
         AboutBenchmark(sb, ctx);
     }
@@ -206,7 +221,14 @@ public static class BenchmarkReportPackRenderer
 
         KeyFigures(sb, ctx, "## Key figures");
         SetupAndMethod(sb, ctx);
-        ResultsAgainstPeers(sb, ctx);
+        if (ctx.Standalone)
+        {
+            StandaloneResults(sb, ctx);
+        }
+        else
+        {
+            ResultsAgainstPeers(sb, ctx);
+        }
 
         Heading(sb, "## Why it scored this way");
         Slot(sb, ctx, BenchmarkReportSlots.WhyItScored);
@@ -298,7 +320,7 @@ public static class BenchmarkReportPackRenderer
     private static string PeersText(Context ctx)
     {
         var peers = OrderedPeers(ctx.Sheet);
-        if (peers.Count == 0) return "none";
+        if (peers.Count == 0) return "none; this is a stand-alone report";
 
         if (ctx.Anonymized)
         {
@@ -429,8 +451,11 @@ public static class BenchmarkReportPackRenderer
             + "critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the "
             + "difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with "
             + "tool time excluded. Cost per question is the model under test's spend divided by the questions asked.");
-        Line(sb, "- **Comparability:** every model in this report was measured under one instrument condition, signature `"
-            + D(ctx, "comparison.signature") + "`.");
+        Line(sb, ctx.Standalone
+            ? "- **Comparability:** this report describes the model on its own, measured under the instrument condition with signature `"
+                + D(ctx, "comparison.signature") + "`."
+            : "- **Comparability:** every model in this report was measured under one instrument condition, signature `"
+                + D(ctx, "comparison.signature") + "`.");
         Line(sb, "- **Pricing basis:** " + D(ctx, "comparison.pricingBasis"));
         Line(sb, "- **Versions:** harness " + D(ctx, "run.harnessVersion") + ", scoring method " + D(ctx, "scoring.methodVersion") + ".");
         Line(sb);
@@ -532,6 +557,33 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
     }
 
+    /// <summary>The stand-alone form of the results: the subject's own dimensions and bands, with no peer column.</summary>
+    private static void StandaloneResults(StringBuilder sb, Context ctx)
+    {
+        var sheet = ctx.Sheet;
+
+        Heading(sb, "## Results");
+
+        Heading(sb, "### Dimensions");
+        Line(sb, "| Dimension | " + Cell(sheet.SubjectLabel) + " |");
+        Line(sb, "|---|---|");
+        foreach (var (key, name) in new[] { ("accuracy", "Accuracy"), ("completeness", "Completeness"), ("conciseness", "Conciseness"), ("readability", "Readability") })
+        {
+            Line(sb, "| " + name + " | " + D(ctx, "dimension." + key) + " |");
+        }
+        Line(sb);
+
+        Heading(sb, "### Difficulty bands");
+        Line(sb, "| Difficulty band | Questions | " + Cell(sheet.SubjectLabel) + " |");
+        Line(sb, "|---|---|---|");
+        foreach (var (key, name) in new[] { ("simple", "Simple"), ("intermediate", "Intermediate"), ("advanced", "Advanced") })
+        {
+            string prefix = "band." + key;
+            Line(sb, "| " + name + " | " + D(ctx, prefix + ".questions") + " | " + D(ctx, prefix + ".score") + " |");
+        }
+        Line(sb);
+    }
+
     private static void Recommendations(StringBuilder sb, Context ctx, string target)
     {
         var items = ctx.Writer.Recommendations
@@ -547,16 +599,27 @@ public static class BenchmarkReportPackRenderer
         var questions = sheet.Questions.OrderBy(q => q.Number).ToList();
 
         Heading(sb, heading);
-        Line(sb, "| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted claims | Tool calls | Model time |");
-        Line(sb, "|---|---|---|---|---|---|---|---|---|---|");
+        if (ctx.Standalone)
+        {
+            Line(sb, "| Q | Topic | Band | Score | Critical error | Refuted claims | Tool calls | Model time |");
+            Line(sb, "|---|---|---|---|---|---|---|---|");
+        }
+        else
+        {
+            Line(sb, "| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted claims | Tool calls | Model time |");
+            Line(sb, "|---|---|---|---|---|---|---|---|---|---|");
+        }
         foreach (var q in questions)
         {
+            string peerCells = ctx.Standalone
+                ? string.Empty
+                : " | " + (q.PeerMean.HasValue ? BenchmarkReportFormat.Whole(q.PeerMean.Value) : NoValue)
+                  + " | " + (q.Difference.HasValue ? BenchmarkReportFormat.Signed(q.Difference.Value) : NoValue);
             Line(sb, "| Q" + Inv(q.Number)
                 + " | " + Cell(Topic(ctx, q.Number) ?? NoValue)
                 + " | " + q.Band
                 + " | " + (q.Score.HasValue ? BenchmarkReportFormat.Whole(q.Score.Value) : NoValue)
-                + " | " + (q.PeerMean.HasValue ? BenchmarkReportFormat.Whole(q.PeerMean.Value) : NoValue)
-                + " | " + (q.Difference.HasValue ? BenchmarkReportFormat.Signed(q.Difference.Value) : NoValue)
+                + peerCells
                 + " | " + (q.CriticalError ? "yes" : "no")
                 + " | " + Inv(q.RefutedClaims)
                 + " | " + BenchmarkReportFormat.OneDecimal(q.ToolCalls)
@@ -565,12 +628,27 @@ public static class BenchmarkReportPackRenderer
         }
         Line(sb);
 
-        Heading(sb, "### Questions below the peer mean or with a critical error");
-        var noted = questions.Where(q => q.CriticalError || (q.Difference.HasValue && q.Difference.Value < NoteThreshold)).ToList();
-        if (noted.Count == 0)
+        var needingNote = BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet);
+        var noted = questions.Where(q => needingNote.Contains(q.Number)).ToList();
+        if (ctx.Standalone)
         {
-            Line(sb, "No question was more than 15 points below the peer mean or carried a critical error.");
-            Line(sb);
+            string below = BenchmarkReportFormat.Whole(BenchmarkReportPackPrompt.StandaloneNoteScore);
+            Heading(sb, "### Questions scoring below " + below + " or with a critical error");
+            if (noted.Count == 0)
+            {
+                Line(sb, "No question scored below " + below + " or carried a critical error.");
+                Line(sb);
+            }
+        }
+        else
+        {
+            Heading(sb, "### Questions below the peer mean or with a critical error");
+            if (noted.Count == 0)
+            {
+                Line(sb, "No question was more than " + BenchmarkReportFormat.Whole(BenchmarkReportPackPrompt.QuestionNoteGapPoints)
+                    + " points below the peer mean or carried a critical error.");
+                Line(sb);
+            }
         }
 
         foreach (var q in noted)
@@ -692,7 +770,8 @@ public static class BenchmarkReportPackRenderer
     private static void ToolUse(StringBuilder sb, Context ctx)
     {
         Heading(sb, "## Tool-use behavior");
-        Line(sb, "- **Tool calls per question:** " + D(ctx, "tools.callsPerQuestion") + " (peer mean " + D(ctx, "tools.callsPerQuestion.peerMean") + ")");
+        Line(sb, "- **Tool calls per question:** " + D(ctx, "tools.callsPerQuestion")
+            + (ctx.Standalone ? string.Empty : " (peer mean " + D(ctx, "tools.callsPerQuestion.peerMean") + ")"));
         Line(sb, "- **Source code share:** " + D(ctx, "tools.share.sourceCode"));
         Line(sb, "- **Wiki share:** " + D(ctx, "tools.share.wiki"));
         Line(sb, "- **Structured lookup share:** " + D(ctx, "tools.share.structuredLookup"));
@@ -768,7 +847,7 @@ public static class BenchmarkReportPackRenderer
         Line(sb, "- The benchmark asks single-turn questions under one chat configuration. It does not exercise conversation "
             + "history, pre-injected wiki context, spoiler-free mode, web search or subagents.");
         Line(sb, "- Interval: " + D(ctx, "quality.intervalBasis"));
-        if (!string.IsNullOrWhiteSpace(sheet.NoSignificanceSummary))
+        if (!ctx.Standalone && !string.IsNullOrWhiteSpace(sheet.NoSignificanceSummary))
         {
             Line(sb, "- Significance: " + sheet.NoSignificanceSummary);
         }
@@ -830,6 +909,65 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
     }
 
+    /// <summary>
+    /// The terms the subject was evaluated under: its runs' purpose statements, the run report's
+    /// distillation prohibition, and whose content the document rests on. The subject is always named;
+    /// a grader's provider that is also a peer's is withheld when peers are anonymized.
+    /// </summary>
+    private static void EvaluationTerms(StringBuilder sb, Context ctx)
+    {
+        var sheet = ctx.Sheet;
+        var purposes = (sheet.PurposeStatements ?? new List<string>())
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(OneLine)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Heading(sb, "## Evaluation terms");
+        if (purposes.Count == 0)
+        {
+            Line(sb, "- **Purpose statement:** not recorded for this document.");
+        }
+        else if (purposes.Count == 1)
+        {
+            Line(sb, "- **Purpose statement:** " + purposes[0]);
+        }
+        else
+        {
+            Line(sb, "- **Purpose statements:**");
+            foreach (var purpose in purposes)
+            {
+                Line(sb, "  - " + purpose);
+            }
+        }
+
+        Line(sb, "- **Distillation / training prohibition:** " + DistillationProhibition);
+
+        var graderProviders = sheet.Graders
+            .Select(g => g.Provider?.Trim() ?? string.Empty)
+            .Where(p => p.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(p => GraderProviderText(ctx, p))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        string graded = graderProviders.Count == 0
+            ? "graded by AI models"
+            : "graded by models from " + BenchmarkReportFormat.LetterList(graderProviders);
+
+        Line(sb, "- **Third-party model content:** Outputs generated by **" + sheet.SubjectLabel + "** (" + sheet.SubjectProvider + "), "
+            + graded + ", and described in this document by **" + ctx.Document.WriterDisplayName + "** (" + ctx.Document.WriterProvider
+            + ") are third-party content evaluated solely for domain-specific benchmark scoring and operational model selection.");
+        Line(sb);
+    }
+
+    /// <summary>A grader's provider, or <see cref="WithheldProvider"/> when anonymized peers share it and the subject does not.</summary>
+    private static string GraderProviderText(Context ctx, string provider)
+    {
+        bool peerProvider = ctx.Sheet.Peers.Any(p => string.Equals(p.Provider?.Trim(), provider, StringComparison.OrdinalIgnoreCase));
+        bool subjectProvider = string.Equals(ctx.Sheet.SubjectProvider?.Trim(), provider, StringComparison.OrdinalIgnoreCase);
+        return ctx.Anonymized && peerProvider && !subjectProvider ? WithheldProvider : provider;
+    }
+
     private static void Footer(StringBuilder sb, Context ctx)
     {
         var document = ctx.Document;
@@ -862,9 +1000,153 @@ public static class BenchmarkReportPackRenderer
         foreach (var item in items)
         {
             Line(sb, "- " + Prose(ctx, item.Text) + " *(" + Support(ctx, item.Evidence) + ")*");
+            if (ctx.PrintsEvidence)
+            {
+                EvidenceLines(sb, ctx, item);
+            }
         }
         Line(sb);
     }
+
+    /// <summary>
+    /// One indented line per evidence id the item cites, built from the fact sheet and the content
+    /// snapshot. In the Report for AI Researchers and Developers, Detailed disclosure adds each cited
+    /// question as asked, and Full adds every grader's accuracy evidence on it, verbatim.
+    /// </summary>
+    private static void EvidenceLines(StringBuilder sb, Context ctx, BenchmarkReportWriterItem item)
+    {
+        var ids = (item.Evidence ?? new List<string>())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        foreach (string id in ids)
+        {
+            Line(sb, "  - *Evidence:* " + EvidenceText(ctx, id));
+        }
+
+        if (ctx.Document.Audience != BenchmarkReportAudience.TechnicalReport || ctx.Options.Disclosure == BenchmarkReportDisclosure.Summary)
+        {
+            return;
+        }
+
+        foreach (int number in CitedQuestions(ctx, item, ids))
+        {
+            var blocks = ContentFor(ctx, number);
+            if (blocks.Count == 0) continue;
+
+            Line(sb, "  - *Q" + Inv(number) + " as asked:* " + OneLine(blocks[0].Question.QuestionText));
+            if (ctx.Options.Disclosure != BenchmarkReportDisclosure.Full) continue;
+
+            foreach (var (runId, question) in blocks)
+            {
+                string run = ctx.Content.Runs.Count > 1 ? " (run " + Inv(runId) + ")" : string.Empty;
+                foreach (var grader in question.Graders)
+                {
+                    foreach (var evidence in grader.Evidence.Where(e => e.StartsWith("Accuracy:", StringComparison.Ordinal)))
+                    {
+                        Line(sb, "  - *" + grader.Role + " on Q" + Inv(number) + run + ":* " + OneLine(evidence));
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>What one evidence id stands for: a question's figures, a finding row's support, or a fact's value.</summary>
+    private static string EvidenceText(Context ctx, string id)
+    {
+        if (QuestionNumber(id) is int number)
+        {
+            return QuestionEvidence(ctx, number);
+        }
+
+        var row = ctx.Sheet.Rows.FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.Ordinal));
+        if (row != null)
+        {
+            string questions = row.Questions.Count > 0
+                ? " (" + string.Join(", ", row.Questions.Distinct().OrderBy(n => n).Select(n => "Q" + Inv(n))) + ")"
+                : string.Empty;
+            int runCount = ctx.Sheet.SubjectRunIds.Count;
+            string recurrence = runCount > 1 ? ", in " + Inv(row.Recurrence) + " of " + Inv(runCount) + " runs" : string.Empty;
+            string prefix = ctx.Document.Audience == BenchmarkReportAudience.TechnicalReport ? row.Id + ": " : string.Empty;
+            return prefix + row.SupportLabel + " — " + row.Category.Replace('_', ' ') + questions + recurrence;
+        }
+
+        var fact = Fact(ctx, id);
+        if (fact != null)
+        {
+            return id + ": " + (fact.Available ? fact.Display : NotAvailableText(fact));
+        }
+
+        return id;
+    }
+
+    /// <summary>
+    /// <c>Q6 — topic: score 59 / 100; peer mean 72 (−13); Panel member A 55, Panel member B 62; a grader
+    /// flagged a critical error; the claim verifier refuted one claim</c>, each part only where it applies.
+    /// </summary>
+    private static string QuestionEvidence(Context ctx, int number)
+    {
+        string? topic = Topic(ctx, number);
+        string head = "Q" + Inv(number) + (topic != null ? " — " + topic : string.Empty);
+
+        var q = ctx.Sheet.Questions.FirstOrDefault(x => x.Number == number);
+        if (q == null) return head;
+
+        var parts = new List<string>
+        {
+            q.Score.HasValue ? "score " + BenchmarkReportFormat.Whole(q.Score.Value) + " / 100" : "not scored"
+        };
+        if (q.PeerMean.HasValue)
+        {
+            parts.Add("peer mean " + BenchmarkReportFormat.Whole(q.PeerMean.Value)
+                + (q.Difference.HasValue ? " (" + BenchmarkReportFormat.Signed(q.Difference.Value) + ")" : string.Empty));
+        }
+
+        var blocks = ContentFor(ctx, number);
+        if (blocks.Count == 1)
+        {
+            var scores = blocks[0].Question.Graders
+                .Where(g => g.Score.HasValue)
+                .Select(g => g.Role + " " + Inv(g.Score!.Value))
+                .ToList();
+            if (scores.Count > 0) parts.Add(string.Join(", ", scores));
+        }
+
+        if (q.CriticalError) parts.Add("a grader flagged a critical error");
+        if (q.RefutedClaims > 0)
+        {
+            parts.Add("the claim verifier refuted " + (q.RefutedClaims == 1 ? "one claim" : Inv(q.RefutedClaims) + " claims"));
+        }
+
+        return head + ": " + string.Join("; ", parts);
+    }
+
+    /// <summary>The questions an item cites: its Q evidence, its own question list and its rows' questions, in order.</summary>
+    private static List<int> CitedQuestions(Context ctx, BenchmarkReportWriterItem item, IReadOnlyList<string> ids)
+    {
+        var numbers = new List<int>();
+        foreach (string id in ids)
+        {
+            if (QuestionNumber(id) is int number)
+            {
+                numbers.Add(number);
+                continue;
+            }
+
+            var row = ctx.Sheet.Rows.FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.Ordinal));
+            if (row != null) numbers.AddRange(row.Questions);
+        }
+        numbers.AddRange(item.Questions ?? new List<int>());
+
+        return numbers.Distinct().OrderBy(n => n).ToList();
+    }
+
+    /// <summary>The number of a <c>Q&lt;n&gt;</c> evidence id, or null for any other id.</summary>
+    private static int? QuestionNumber(string id)
+        => id.Length > 1 && id[0] == 'Q' && int.TryParse(id.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out int n)
+            ? n
+            : null;
 
     private static void Slot(StringBuilder sb, Context ctx, string slot)
     {
@@ -1035,13 +1317,7 @@ public static class BenchmarkReportPackRenderer
         _ => FullStamp
     };
 
-    private static string AudienceName(BenchmarkReportAudience audience) => audience switch
-    {
-        BenchmarkReportAudience.ExecutiveSummary => "Executive Summary",
-        BenchmarkReportAudience.TechnicalReport => "Technical Report",
-        BenchmarkReportAudience.InternalBrief => "Internal Improvement Brief",
-        _ => audience.ToString()
-    };
+    private static string AudienceName(BenchmarkReportAudience audience) => BenchmarkReportRenderService.AudienceName(audience);
 
     private static string JoinSentences(string? first, string? second)
     {
@@ -1080,5 +1356,11 @@ public static class BenchmarkReportPackRenderer
         public required List<BenchmarkReportValidationNote> Notes { get; init; }
 
         public bool Anonymized => Options.PeerNaming == BenchmarkReportPeerNaming.Anonymized;
+
+        /// <summary>The sheet has no peers: a stand-alone report.</summary>
+        public bool Standalone => Sheet.Peers.Count == 0;
+
+        /// <summary>Evidence lines and the evaluation terms belong to every audience but the Internal Improvement Brief.</summary>
+        public bool PrintsEvidence => Document.Audience != BenchmarkReportAudience.InternalBrief;
     }
 }

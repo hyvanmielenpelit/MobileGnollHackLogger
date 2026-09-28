@@ -381,6 +381,21 @@ public class BenchmarkRun
     /// <summary>The output cap actually sent on every claim-verifier call. Fixed at launch.</summary>
     public int? ClaimVerifierEffectiveMaxOutputTokens { get; set; }
 
+    // Report writer.
+    //
+    // Null means no AI-written run-completion documents are written automatically. When set, the
+    // configuration writes the run's Executive Summary and Report for AI Researchers and Developers
+    // once, after the run completes. Not a grading role and not a comparability key.
+    // Attribution only, not a foreign key: deleting a configuration never touches history.
+    public long? ReportWriterModelConfigurationId { get; set; }
+
+    /// <summary>Where the run's two run-completion documents stand.</summary>
+    public BenchmarkRunReportDocumentsStatus ReportDocumentsStatus { get; set; } = BenchmarkRunReportDocumentsStatus.NotRequested;
+
+    /// <summary>Why the documents failed or were skipped; null otherwise.</summary>
+    [MaxLength(1000)]
+    public string? ReportDocumentsMessage { get; set; }
+
     // Run metadata
     [MaxLength(450)]
     public string? StartedByUserId { get; set; }

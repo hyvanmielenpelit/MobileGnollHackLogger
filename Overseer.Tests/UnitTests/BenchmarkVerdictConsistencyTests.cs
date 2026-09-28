@@ -68,9 +68,9 @@ public class BenchmarkVerdictConsistencyTests
         Assert.True(BenchmarkVerdictConsistency.MentionsFabrication("The hero quaffed a potion of hallucination and it hallucinates a wand."));
     }
 
-    private static string ParserVerdict(string comment, string accuracyEvidence, string completenessEvidence) => $$"""
+    private static string ParserVerdict(string comment, string accuracyEvidence, string completenessEvidence, int accuracyLevel = 5) => $$"""
         {
-          "accuracyLevel": 5,
+          "accuracyLevel": {{accuracyLevel}},
           "completenessLevel": 5,
           "concisenessLevel": 5,
           "readabilityLevel": 5,
@@ -118,7 +118,39 @@ public class BenchmarkVerdictConsistencyTests
     public void ContestedVerdict_FollowsTheAccuracyEvidence(string accuracyEvidence, bool expected)
     {
         var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            ParserVerdict(comment: "Solid answer.", accuracyEvidence: accuracyEvidence, completenessEvidence: "Matches rubric."),
+            ParserVerdict(comment: "Solid answer.", accuracyEvidence: accuracyEvidence, completenessEvidence: "Matches rubric.", accuracyLevel: 3),
+            gradedAnswerText: null);
+
+        Assert.True(result.Success);
+        Assert.Equal(expected, result.Result!.ContestedVerdict);
+    }
+
+    [Theory]
+    [InlineData("A trivial imprecision: the answer invents a turn count the source does not give.")]
+    [InlineData("A minor fabrication of the lamp's fuel figure.")]
+    [InlineData("The torch rule is a slight imprecision rather than a hallucinated mechanic, though it invents a detail.")]
+    [InlineData("An invented ink cost of lesser consequence.")]
+    [InlineData("The only imprecision is the invented fractional raw values.")]
+    public void MentionsUndeniedFabrication_IgnoresATrivialImprecision(string text)
+    {
+        Assert.False(BenchmarkVerdictConsistency.MentionsUndeniedFabrication(text));
+    }
+
+    [Fact]
+    public void MentionsUndeniedFabrication_MinorQualifierIsSentenceScoped()
+    {
+        Assert.True(BenchmarkVerdictConsistency.MentionsUndeniedFabrication(
+            "A minor imprecision in the dice. The answer invents a racial intrinsic."));
+    }
+
+    [Theory]
+    [InlineData("Candidate invents a racial intrinsic not in the rubric.", 3, true)]
+    [InlineData("Candidate invents a racial intrinsic not in the rubric.", 5, false)]
+    [InlineData("A trivial imprecision: the candidate invents a turn count.", 3, false)]
+    public void ContestedVerdict_NeedsAnUnqualifiedFabricationAtAccuracyFourOrBelow(string accuracyEvidence, int accuracyLevel, bool expected)
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            ParserVerdict(comment: "Solid answer.", accuracyEvidence: accuracyEvidence, completenessEvidence: "Matches rubric.", accuracyLevel: accuracyLevel),
             gradedAnswerText: null);
 
         Assert.True(result.Success);
@@ -236,6 +268,57 @@ public class BenchmarkVerdictConsistencyTests
     {
         Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(null, Enumerable.Range(1, 5)));
         Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication("Q1 invents a thing.", Enumerable.Empty<int>()));
+    }
+
+    [Fact]
+    public void QuestionsNamedWithFabrication_ListOfLesserConsequence_NamesNoQuestion()
+    {
+        // The shape of run 73's synthesis: a list of small slips, one of them worded as an invention.
+        const string synthesis =
+            "The remaining accuracy faults were of lesser consequence: Q6 misstates the healing-potion dice, " +
+            "Q13 invents an ink cost outside the documented range, and Q17 overstates the hunger of worn items.";
+
+        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
+    [Fact]
+    public void QuestionsNamedWithFabrication_ListSentence_NamesOnlyTheItemThatCarriesTheFabrication()
+    {
+        const string synthesis =
+            "The remaining accuracy faults were few: Q6 misstates the healing-potion dice, " +
+            "Q13 invents an ink cost outside the documented range, and Q17 overstates the hunger of worn items.";
+
+        Assert.Equal(new[] { 13 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
+    [Fact]
+    public void QuestionsNamedWithFabrication_ListItemsSplitAtSemicolonsButNotInsideParentheses()
+    {
+        const string synthesis =
+            "Two answers stand out: Q4 fabricates a relight rule (citing use_lamp, apply.c); Q9 omits the cost.";
+
+        Assert.Equal(new[] { 4 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
+    [Fact]
+    public void QuestionsNamedWithFabrication_TheLeadBeforeTheColonIsItsOwnItem()
+    {
+        const string synthesis = "Q11 fabricates a mechanic: the answer claims torches can be relit, and Q12 omits the fuel count.";
+
+        Assert.Equal(new[] { 11 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
+    [Fact]
+    public void QuestionsNamedWithFabrication_ACitationColonIsNotAListColon()
+    {
+        const string synthesis = "Q4 cites src/apply.c:2604 and invents a relight rule.";
+
+        Assert.Equal(new[] { 4 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
     }
 
     [Theory]

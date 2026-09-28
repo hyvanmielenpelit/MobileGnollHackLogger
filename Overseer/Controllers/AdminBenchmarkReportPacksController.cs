@@ -19,10 +19,10 @@ using Overseer.Services.Benchmarking;
 using Overseer.Services.Privacy;
 
 /// <summary>
-/// Report-pack generation: preview (no model call), start, progress and cancel. The writer call
-/// runs in <see cref="BenchmarkReportPackService"/>, resolved per job from a fresh scope; stored
-/// documents are served by <see cref="AdminBenchmarkReportDocumentsController"/>, which cannot
-/// reach a model.
+/// Report-pack generation: preview (no model call), start, progress and cancel, and writing a
+/// finished run's own run-completion documents on request. The writer call runs in
+/// <see cref="BenchmarkReportPackService"/>, resolved per job from a fresh scope; stored documents
+/// are served by <see cref="AdminBenchmarkReportDocumentsController"/>, which cannot reach a model.
 /// </summary>
 [Route("api/admin/benchmark")]
 [Authorize(Policy = "AdminOnly")]
@@ -45,6 +45,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     private readonly EndpointPolicy _endpointPolicy;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IConfiguration _configuration;
+    private readonly BenchmarkRunReportDocumentService? _runReportDocuments;
 
     public AdminBenchmarkReportPacksController(
         ApplicationDbContext db,
@@ -54,7 +55,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         ModelPricingService pricingService,
         EndpointPolicy endpointPolicy,
         IServiceScopeFactory scopeFactory,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        BenchmarkRunReportDocumentService? runReportDocuments = null)
     {
         _db = db;
         _jobManager = jobManager;
@@ -64,6 +66,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         _endpointPolicy = endpointPolicy;
         _scopeFactory = scopeFactory;
         _configuration = configuration;
+        _runReportDocuments = runReportDocuments;
     }
 
     /// <summary>
@@ -224,6 +227,68 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         });
 
         return Accepted(new BenchmarkReportPackStartResponse { JobId = job.Id });
+    }
+
+    /// <summary>
+    /// Writes a finished run's missing run-completion documents with the given writer, which becomes
+    /// the run's report writer. Answers 202 with the run's Pending status. Refusals, in order: no body
+    /// (400); unknown run (404); the run has no final synthesis yet (400); both documents exist, or a
+    /// job for the run is Pending or Writing (409); an unusable writer, the model under test, a writer of
+    /// its provider, or a refused endpoint (400); the spend cap (429).
+    /// </summary>
+    [HttpPost("runs/{runId:long}/report-documents")]
+    public async Task<IActionResult> WriteRunReportDocuments(long runId, [FromBody] WriteRunReportDocumentsRequest request, CancellationToken ct)
+    {
+        if (request == null) return BadRequest(new { error = "A request body is required." });
+        if (_runReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+        var run = await _db.BenchmarkRuns.FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run == null) return NotFound();
+
+        if (!BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run))
+        {
+            return BadRequest(new { error = "The run has not finished with a final synthesis, so there is nothing to write about yet." });
+        }
+
+        if (BenchmarkRunReportDocumentService.IsInProgress(run.ReportDocumentsStatus) || _runReportDocuments.IsActive(runId))
+        {
+            return Conflict(new { error = "The reports of this run are already being written." });
+        }
+
+        var missing = await BenchmarkRunReportDocumentService.MissingAudiencesAsync(_db, runId, ct);
+        if (missing.Count == 0)
+        {
+            return Conflict(new { error = "This run already has both AI-written reports. Delete them first to write them again." });
+        }
+
+        var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
+        string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(
+            writer, BenchmarkRunReportDocumentService.CandidateIdentity(run), _complianceGuard);
+        if (refusal != null) return BadRequest(new { error = refusal });
+        if (!_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
+        {
+            return BadRequest(new { error = $"Report writer configuration '{writer.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}" });
+        }
+
+        var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
+        if (!canSpend) return StatusCode(StatusCodes.Status429TooManyRequests, denialReason);
+
+        run.ReportWriterModelConfigurationId = writer.Id;
+        run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Pending;
+        run.ReportDocumentsMessage = null;
+        await _db.SaveChangesAsync(ct);
+
+        string? userId = User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (!_runReportDocuments.TryStart(runId, userId, out _))
+        {
+            return Conflict(new { error = "The reports of this run are already being written." });
+        }
+
+        return Accepted(new WriteRunReportDocumentsResponse
+        {
+            RunId = runId,
+            Status = BenchmarkRunReportDocumentsStatus.Pending
+        });
     }
 
     [HttpGet("report-packs/jobs/{jobId}")]

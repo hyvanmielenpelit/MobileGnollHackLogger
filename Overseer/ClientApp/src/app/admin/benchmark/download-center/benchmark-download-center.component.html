@@ -31,7 +31,7 @@
           <!-- Left: the package, which sets every row's choices, and the paper size. -->
           <section class="dc-package" [attr.aria-labelledby]="idPrefix + '-package-legend'">
             <fieldset class="gh-choice dc-package-choice" [disabled]="preparing">
-              <legend class="dc-section-title" [id]="idPrefix + '-package-legend'">Package</legend>
+              <legend class="dc-section-title gh-section-title" [id]="idPrefix + '-package-legend'">Package</legend>
               @for (pkg of packages; track pkg.id) {
                 <!-- The info button sits beside the label: a button may not sit inside a <label>. -->
                 <div class="dc-package-card" [class.is-selected]="packageId === pkg.id">
@@ -52,7 +52,7 @@
             </fieldset>
 
             <fieldset class="gh-choice dc-paper-choice" [disabled]="preparing">
-              <legend class="dc-section-title" [id]="idPrefix + '-paper-legend'">
+              <legend class="dc-section-title gh-section-title" [id]="idPrefix + '-paper-legend'">
                 Paper size
                 <app-info-tip trigger="click" [tipId]="idPrefix + '-paper-tip'" subject="Paper size">For PDF and Word files. Letter suits readers in North America; A4 everywhere else.</app-info-tip>
               </legend>
@@ -89,7 +89,7 @@
 
           <!-- Right: every available document, with its options. -->
           <section class="dc-documents" [attr.aria-labelledby]="idPrefix + '-documents-title'">
-            <h4 class="dc-section-title" [id]="idPrefix + '-documents-title'">Documents</h4>
+            <h4 class="gh-section-title" [id]="idPrefix + '-documents-title'">Documents</h4>
 
             @for (notice of notices; track notice) {
               <p class="dc-notice">{{ notice }}</p>

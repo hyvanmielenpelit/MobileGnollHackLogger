@@ -1,11 +1,11 @@
 import { ChangeDetectorRef } from '@angular/core';
-import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks, flush } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
 import { ModelPickerComponent } from '../../shared/model-picker/model-picker.component';
 import { of, throwError, Subject } from 'rxjs';
-import { AdminBenchmarkComponent } from './benchmark.component';
+import { AdminBenchmarkComponent, RUN_REPORT_DOCUMENTS_POLL_MS } from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
@@ -102,10 +102,15 @@ describe('AdminBenchmarkComponent', () => {
       'getSnapshot',
       'getRunBoard',
       'getActiveQuestionGeneration',
-      'getBoardFactsCheck'
+      'getBoardFactsCheck',
+      'listReportDocuments',
+      'writeRunReportDocuments',
+      'getReportDocumentPdf'
     ]);
 
     benchmarkServiceMock.getActiveQuestionGeneration.and.returnValue(of(null));
+    // The run report lists the run's AI-written reports whenever it loads a run.
+    benchmarkServiceMock.listReportDocuments.and.returnValue(of([]));
     benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of(null));
 
     benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
@@ -2803,21 +2808,53 @@ describe('AdminBenchmarkComponent', () => {
       expect(questions.classList.contains('run-progress-questions')).toBeTrue();
 
       // The overview keeps everything but the question list, in its order.
-      for (const selector of ['.progress-heading', '.run-model-strip', '.run-stage-rail', '.job-progress-block',
+      for (const selector of ['.run-model-strip', '.run-stage-rail', '.job-progress-block',
         '.run-stat-strip', 'app-benchmark-cost-panel', '.job-diagnostics']) {
         expect(overview.querySelector(selector)).withContext(selector).toBeTruthy();
       }
       expect(overview.querySelector('.run-question-list')).toBeNull();
       expect(overview.querySelector('[role="status"][aria-live="polite"].progress-status')).toBeTruthy();
 
-      // The heading stays the first focusable element of the body and the focus target.
-      expect(body.querySelector('[tabindex]')?.classList.contains('progress-heading')).toBeTrue();
+      // The overview begins with the roster: no heading of its own. The dialog title is the focus target.
+      expect(overview.querySelector('.progress-heading')).toBeNull();
+      const dialogTitle = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-header #runProgressDialogTitle') as HTMLElement;
+      expect(dialogTitle.getAttribute('tabindex')).toBe('-1');
 
       expect(questions.getAttribute('aria-labelledby')).toBe('runProgressQuestionsTitle');
       expect(questions.getAttribute('tabindex')).toBe('0');
       const title = questions.querySelector('h4#runProgressQuestionsTitle') as HTMLElement;
       expect(title.textContent?.replace(/\s+/g, ' ').trim()).toBe('Questions 2');
       expect(questions.querySelectorAll('.run-question-list .job-item-row').length).toBe(2);
+      expect(questions.querySelector('.gh-section-title')).toBe(title);
+    });
+
+    it('should focus the dialog title when the run progress dialog opens', () => {
+      component.activeRunDetail = buildRun({ status: 'Completed', answers: [buildAnswer(1)] });
+      const dialog = component.runProgressDialog.nativeElement as HTMLDialogElement;
+
+      component.openRunProgressDialog();
+
+      try {
+        expect(dialog.open).toBeTrue();
+        expect(document.activeElement?.id).toBe('runProgressDialogTitle');
+      } finally {
+        component.closeRunProgressDialog();
+      }
+    });
+
+    const progressSubtitle = () => (fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-subtitle') as HTMLElement)
+      .textContent!.replace(/\s+/g, ' ').trim();
+
+    it('should say the run is starting in the subtitle until the run detail loads', () => {
+      component.activeRunDetail = null;
+      fixture.detectChanges();
+      expect(progressSubtitle()).toBe('Starting benchmark run…');
+    });
+
+    it('should name the suite and profile in the subtitle once the run detail loads', () => {
+      component.activeRunDetail = buildRun({ suiteName: 'Suite X', scoringProfileName: 'Strict' });
+      fixture.detectChanges();
+      expect(progressSubtitle()).toBe('Suite X | Profile: Strict');
     });
 
     describe('layout by width', () => {
@@ -2877,6 +2914,24 @@ describe('AdminBenchmarkComponent', () => {
       // Before the status chip.
       expect(score.nextElementSibling?.classList.contains('job-status-chip')).toBeTrue();
       expect(rows[1].querySelector('.job-item-score')).toBeNull();
+    });
+
+    it('should give a scored question row a score tier badge', () => {
+      component.activeRunDetail = buildRun({
+        answers: [
+          buildAnswer(1, { qualityScore: 83 }),
+          buildAnswer(2, { qualityScore: 45 })
+        ]
+      });
+      fixture.detectChanges();
+
+      const scores = Array.from(fixture.nativeElement.querySelectorAll('.run-question-list .job-item-score')) as HTMLElement[];
+      expect(scores.length).toBe(2);
+      expect(scores[0].classList.contains('job-item-score')).toBeTrue();
+      expect(scores[0].classList.contains('badge-score-high')).toBeTrue();
+      expect(scores[1].classList.contains('badge-score-low')).toBeTrue();
+      expect(scores[1].textContent?.trim()).toBe('Score 45');
+      expect(scores[1].nextElementSibling?.classList.contains('job-status-chip')).toBeTrue();
     });
 
     it('should show the panel score on a panel run\'s question row, and none until both members have scored', () => {
@@ -4182,6 +4237,28 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.runDiagnosticsText).toContain('Gradeable answers (index population): 2 of 4');
     });
 
+    it('should call zero knowledge-base calls prompt-compliant only when the suite has no knowledge-base topic', () => {
+      const run = (hasKnowledgeBaseRoutingQuestion: boolean) => buildCompletedRun({
+        status: 'Completed',
+        toolFamilyCounts: { source: 2, wiki: 1 },
+        zeroKnowledgeBaseAnswerCount: 2,
+        hasKnowledgeBaseRoutingQuestion,
+        answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
+      });
+
+      component.activeRunDetail = run(false);
+      let text = component.runDiagnosticsText;
+      expect(text).toContain('answers with 0 knowledge base calls: 2 of 2 gradeable');
+      expect(text).toContain('  (prompt-compliant on game-mechanics topics');
+      expect(text).not.toContain('the suite has knowledge-base topics');
+
+      component.activeRunDetail = run(true);
+      text = component.runDiagnosticsText;
+      expect(text).toContain('answers with 0 knowledge base calls: 2 of 2 gradeable');
+      expect(text).toContain("  (the suite has knowledge-base topics; see the report's Tool Routing section)");
+      expect(text).not.toContain('prompt-compliant');
+    });
+
     it('should read the rerun meters against the client-captured scope before any re-run answer lands', () => {
       component.activeRunDetail = buildCompletedRun({
         status: 'Running',
@@ -4305,13 +4382,14 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const labels = groupLabels('grading');
-      expect(labels.length).toBe(4);
+      expect(labels.length).toBe(5);
       expect(labels[0]).toBe('Assessor');
       expect(labels[1]).toMatch(/^Co-Assessor/);
       expect(labels[2]).toMatch(/^Second Reader/);
       expect(labels[3]).toMatch(/^Claim Verifier/);
+      expect(labels[4]).toMatch(/^Report Writer/);
 
-      for (const id of ['bmCoAssessorModelLabel', 'bmSecondOpinionModelLabel', 'bmClaimVerifierModelLabel']) {
+      for (const id of ['bmCoAssessorModelLabel', 'bmSecondOpinionModelLabel', 'bmClaimVerifierModelLabel', 'bmReportWriterModelLabel']) {
         expect(fixture.nativeElement.querySelector(`#${id} .field-optional`)?.textContent?.trim()).toBe('Optional');
       }
       expect(fixture.nativeElement.querySelector('#bmAssessorModelLabel .field-optional')).toBeNull();
@@ -4748,6 +4826,53 @@ describe('AdminBenchmarkComponent', () => {
       button.click();
       expect(open).toHaveBeenCalledWith('roles');
       expect(component.graderGuideProfile).toBe(component.selectedScoringProfile ?? null);
+    });
+
+    it('should offer an optional Report Writer after the Claim Verifier, with its hint in a click-mode popup', () => {
+      fixture.detectChanges();
+
+      const grading = card().querySelector('.setup-group-grading') as HTMLElement;
+      const labels = Array.from(grading.querySelectorAll(':scope > .form-group > label'))
+        .map(label => (label.textContent ?? '').replace(/\s+/g, ' ').trim());
+      expect(labels.slice(-2)).toEqual(['Claim Verifier Optional', 'Report Writer Optional']);
+
+      const picker = grading.querySelector('.report-writer-model-selector') as HTMLElement;
+      const trigger = picker.querySelector('.selector-trigger') as HTMLElement;
+      expect(trigger.getAttribute('aria-labelledby')).toContain('bmReportWriterModelLabel');
+      expect(trigger.getAttribute('aria-describedby')).toBe('bmReportWriterModelHint');
+      expect(trigger.textContent).toContain('None — no AI-written reports');
+      expect(component.reportWriterConfigId).toBeNull();
+
+      const hint = card().querySelector('#bmReportWriterModelHint') as HTMLElement;
+      expect(hint.closest('.gh-info-popup')?.getAttribute('popover')).toBe('auto');
+      expect(picker.parentElement!.classList).toContain('gh-field-row');
+      expect(picker.nextElementSibling).toBe(hint.closest('app-info-tip'));
+      const text = (hint.textContent ?? '').replace(/\s+/g, ' ');
+      expect(text).toContain('this model writes an Executive Summary and a Report for AI Researchers and Developers once');
+      expect(text).toContain('Downloads render them without calling it again');
+      expect(text).toContain('from another provider than the model under test');
+    });
+
+    it('should show the server\'s report-writer refusal before Start and hold Start back', () => {
+      component.systemConfigs = [
+        component.systemConfigs[0],
+        { ...component.systemConfigs[0], id: 2, displayName: 'Other Claude', modelId: 'claude-other' }
+      ];
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+      component.reportWriterConfigId = 2;
+      fixture.detectChanges();
+
+      expect(component.reportWriterLaunchRefusal).toBe('Choose a report writer from another provider than the model under test.');
+      expect(card().querySelector('.setup-group-grading .report-writer-advisory')?.textContent?.trim())
+        .toBe('Choose a report writer from another provider than the model under test.');
+      expect(component.canStartRun).toBeFalse();
+      expect(component.startBenchmarkHint).toBe('Choose a report writer from another provider than the model under test.');
+
+      component.reportWriterConfigId = 1;
+      expect(component.reportWriterLaunchRefusal).toBe('The model under test cannot write its own reports.');
+      component.reportWriterConfigId = null;
+      expect(component.reportWriterLaunchRefusal).toBe('');
     });
   });
 
@@ -5433,6 +5558,39 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.hasInstrumentMeasurements).toBeTrue();
         expect(measurementsText()).not.toContain('out-of-scope completeness deduction(s)');
         expect(measurementsText()).toContain('1 rubric format suggestion(s) not followed');
+      });
+
+      it('should give each panel member its own counts, and name member A on the docked subsets', () => {
+        const memberB = (orderIndex: number, flags: any): any => ({
+          id: 600 + orderIndex, orderIndex, questionText: `Q${orderIndex}`, difficulty: 1, answerText: 'a',
+          status: 'Ok', assessmentStatus: 'Scored', durationMs: 1, modelTimeMs: 1,
+          scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 80,
+          panelQualityScore: 78, coAssessmentStatus: 'Scored', coAssessmentQualityScore: 76,
+          coAssessmentCriticalError: false, coAssessmentJson: JSON.stringify({ qualityScore: 76, flags })
+        });
+        component.selectedRunDetail = buildFinishedRun({
+          isPanelRun: true,
+          completenessOutOfScopeCount: 0,
+          readabilityFormOnlyCount: 8,
+          readabilityFormOnlyDeductedCount: 2,
+          answers: [
+            memberB(1, { readabilityFormOnly: true, completenessOutOfScope: true }),
+            memberB(2, { readabilityFormOnly: true }),
+            memberB(3, {})
+          ]
+        });
+        fixture.detectChanges();
+
+        expect(component.memberBReadabilityFormOnlyCount).toBe(2);
+        expect(component.memberBCompletenessOutOfScopeCount).toBe(1);
+        expect(component.hasInstrumentMeasurements).toBeTrue();
+        const text = measurementsText();
+        expect(text).toContain('8 (member A) and 2 (member B) rubric format suggestion(s) not followed');
+        expect(text).toContain("2 of member A's sit beside a Readability level below 6");
+        // Member A recorded none, member B one: the line shows because either member counted it.
+        expect(text).toContain('0 (member A) and 1 (member B) out-of-scope completeness deduction(s)');
+        expect(text).toContain('rubric points a panel member itself placed outside what the question asked');
+        expect(text).not.toContain('the assessor itself');
       });
 
       it('should stay hidden when neither was recorded', () => {
@@ -7104,6 +7262,35 @@ describe('AdminBenchmarkComponent', () => {
       // A per-run safety acknowledgement: remembering it would silently defeat the warning dialog.
       expect(stored.acknowledgeSameProvider).toBeUndefined();
       component.ngOnDestroy();
+    });
+
+    it('should send and remember the report writer, and restore it while it still qualifies', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      const writer = { ...secondConfig(2), provider: 'OpenAI', modelId: 'gpt-writer' };
+      component.systemConfigs = [component.systemConfigs[0], writer];
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+      component.reportWriterConfigId = 2;
+
+      component.startBenchmark();
+
+      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].reportWriterModelConfigurationId).toBe(2);
+      expect(JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!).reportWriterConfigId).toBe(2);
+      component.ngOnDestroy();
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      restored.componentInstance.systemConfigs = [component.systemConfigs[0], writer];
+      restored.detectChanges();
+      expect(restored.componentInstance.reportWriterConfigId).toBe(2);
+      restored.componentInstance.ngOnDestroy();
+
+      // A writer that no longer qualifies restores to "None".
+      const dropped = TestBed.createComponent(AdminBenchmarkComponent);
+      dropped.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      dropped.detectChanges();
+      expect(dropped.componentInstance.reportWriterConfigId).toBeNull();
+      dropped.componentInstance.ngOnDestroy();
     });
 
     it('should default completionSound to true before anything is remembered', () => {
@@ -10325,6 +10512,183 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.selectedRunDetail?.id).toBe(77);
       expect(component.runDetailLoadError).toBeNull();
       expect(dialog.querySelector('#rr-retry-load')).toBeNull();
+    });
+
+    describe('AI-Written Reports', () => {
+      /** A run-completion document of run 55, written by the fixture's Anthropic configuration. */
+      function aiDoc(id: number, audience: number, overrides: any = {}): any {
+        return {
+          id, packId: 'run-55', audience, title: `Document ${id}`, subjectKey: 'run:55', subjectLabel: 'Test Model',
+          subjectRunIds: [55], suiteId: 1, suiteName: 'Default Suite', writerDisplayName: 'Test Model',
+          writerProvider: 'Anthropic', writerModelId: 'claude-3-5-sonnet', writerThinkingLevel: null,
+          sameProviderAcknowledged: false, status: 'Completed', reportFormatVersion: 2,
+          createdAtUtc: '2026-09-28T10:15:00Z', inputTokens: 0, outputTokens: 0, durationMs: 0, costUsd: null,
+          runChangedSinceGeneration: false, missingRunIds: [], allowedDisclosures: [1, 2, 3], origin: 2,
+          ...overrides
+        };
+      }
+
+      function aiSection(): HTMLDetailsElement {
+        return fixture.nativeElement.querySelector('.benchmark-run-detail-dialog details.rr-ai-reports') as HTMLDetailsElement;
+      }
+
+      function aiStatus(): string {
+        return (aiSection().querySelector('.rr-ai-status[role="status"]')?.textContent ?? '').trim();
+      }
+
+      function writeButton(): HTMLButtonElement {
+        return aiSection().querySelector('.rr-ai-write-btn') as HTMLButtonElement;
+      }
+
+      it('should sit directly above Assessor Calibration, closed and offering Write Reports while none exists', () => {
+        openReport(reportRun({ assessmentJson: '{}' }));
+
+        const section = aiSection();
+        expect(section.classList).toContain('gh-disclosure');
+        expect(section.querySelector('summary')?.textContent?.trim()).toBe('AI-Written Reports');
+        const next = section.nextElementSibling as HTMLElement;
+        expect(next.tagName).toBe('DETAILS');
+        expect(next.querySelector('summary')?.textContent?.trim()).toBe('Assessor Calibration');
+        expect(section.open).toBeFalse();
+
+        expect(benchmarkServiceMock.listReportDocuments).toHaveBeenCalledWith({ runId: 55 });
+        expect(aiStatus()).toBe('Not requested');
+        expect(section.querySelectorAll('.rr-ai-doc-row').length).toBe(0);
+        expect(section.querySelector('#rrReportWriterModelLabel')?.textContent?.trim()).toBe('Report writer');
+        expect(writeButton().disabled).toBeTrue();
+        expect(section.querySelector('#rrReportWriterBlocked')?.textContent?.trim()).toBe('Choose a report writer.');
+      });
+
+      it('should write the missing reports with the chosen writer, then follow the job until they are written', fakeAsync(() => {
+        benchmarkServiceMock.writeRunReportDocuments.and.returnValue(of({ runId: 55, status: 1 }));
+        // The run's own writer preselects the picker; the view is not re-rendered after a later selection here.
+        openReport(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+
+        expect(writeButton().disabled).toBeFalse();
+        writeButton().click();
+        fixture.detectChanges();
+
+        expect(benchmarkServiceMock.writeRunReportDocuments).toHaveBeenCalledOnceWith(55, { writerModelConfigurationId: 1 });
+        expect(aiStatus()).toBe('Waiting for the report writer');
+        expect(writeButton().disabled).toBeTrue();
+        expect(aiSection().querySelector('#rrReportWriterBlocked')?.textContent?.trim()).toBe('The reports are being written.');
+
+        benchmarkServiceMock.getRun.and.returnValue(of(reportRun({
+          assessmentJson: '{}', reportWriterModelConfigurationId: 1, reportWriterDisplayName: 'Test Model', reportDocumentsStatus: 3
+        })));
+        benchmarkServiceMock.listReportDocuments.and.returnValue(of([
+          aiDoc(71, 1),
+          aiDoc(72, 2),
+          // A Report Pack document about the same run is not one of its AI-written reports.
+          aiDoc(73, 2, { origin: 1, subjectKey: 'group:4' })
+        ]));
+        tick(RUN_REPORT_DOCUMENTS_POLL_MS);
+        fixture.detectChanges();
+
+        expect(aiStatus()).toBe('Written by Test Model on 2026-09-28 10:15 UTC');
+        expect(aiSection().querySelectorAll('.rr-ai-doc-row').length).toBe(2);
+        expect(aiSection().querySelector('.rr-ai-write')).toBeNull();
+        expect((component as any).runReportDocumentsPoll).toBeNull();
+        flush();
+        discardPeriodicTasks();
+      }));
+
+      it('should list stored reports open by default, each with a View button named for it', () => {
+        benchmarkServiceMock.listReportDocuments.and.returnValue(of([
+          aiDoc(72, 2, { runChangedSinceGeneration: true, createdAtUtc: '2026-09-28T11:00:00Z', writerDisplayName: 'Writer B' }),
+          aiDoc(71, 1)
+        ]));
+        openReport(reportRun({ assessmentJson: '{}', reportDocumentsStatus: 4, reportWriterDisplayName: 'Writer B' }));
+
+        const section = aiSection();
+        expect(section.open).toBeTrue();
+        expect(aiStatus()).toBe('Written with warnings by Writer B on 2026-09-28 11:00 UTC');
+        const rows = Array.from(section.querySelectorAll('.rr-ai-doc-row')) as HTMLElement[];
+        expect(rows.map(row => row.querySelector('.rr-ai-doc-name')?.textContent?.trim()))
+          .toEqual(['Executive Summary', 'Report for AI Researchers and Developers']);
+        const views = rows.map(row => row.querySelector('button.rr-ai-doc-view') as HTMLButtonElement);
+        expect(views.map(button => button.getAttribute('aria-label')))
+          .toEqual(['View the Executive Summary', 'View the Report for AI Researchers and Developers']);
+        for (const button of views) {
+          expect(button.classList).toContain('btn-gh');
+          expect(button.classList).toContain('btn-gh-small');
+        }
+        expect(rows[0].querySelector('.gh-tag-changed')).toBeNull();
+        expect(rows[1].querySelector('.gh-tag-changed')?.textContent?.trim()).toBe('Run changed since this document was written');
+        expect(section.querySelector('.rr-ai-write')).toBeNull();
+
+        const open = spyOn(component.runDownloadCenter!, 'open');
+        (section.querySelector('.rr-ai-downloads') as HTMLButtonElement).click();
+        expect(open).toHaveBeenCalledTimes(1);
+        expect((open.calls.mostRecent().args[0] as any).run.id).toBe(55);
+      });
+
+      it('should offer Write Reports for the one report that is missing', () => {
+        benchmarkServiceMock.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+        openReport(reportRun({ assessmentJson: '{}', reportDocumentsStatus: 5, reportDocumentsMessage: 'The writer returned no usable text.' }));
+
+        expect(aiStatus()).toBe('Failed: The writer returned no usable text.');
+        expect(aiSection().querySelectorAll('.rr-ai-doc-row').length).toBe(1);
+        expect(aiSection().querySelector('.rr-ai-write')).not.toBeNull();
+      });
+
+      it('should open a report as a PDF in a new tab at its fullest disclosure with peers named', () => {
+        benchmarkServiceMock.listReportDocuments.and.returnValue(of([aiDoc(71, 1, { allowedDisclosures: [1, 2] })]));
+        benchmarkServiceMock.getReportDocumentPdf.and.returnValue(of({ bytes: new Uint8Array([37, 80, 68, 70]), fileName: null }));
+        const tab = { closed: false, location: { href: '' }, close: jasmine.createSpy('close') };
+        const windowOpen = spyOn(window, 'open').and.returnValue(tab as any);
+        spyOn(URL, 'createObjectURL').and.returnValue('blob:report');
+        openReport(reportRun({ assessmentJson: '{}' }));
+
+        (aiSection().querySelector('button.rr-ai-doc-view') as HTMLButtonElement).click();
+
+        expect(windowOpen).toHaveBeenCalledOnceWith('', '_blank');
+        expect(benchmarkServiceMock.getReportDocumentPdf.calls.mostRecent().args.slice(0, 3)).toEqual([71, 2, 1]);
+        expect(tab.location.href).toBe('blob:report');
+      });
+
+      it('should refuse a writer of the candidate\'s provider inline', () => {
+        component.systemConfigs = [
+          ...component.systemConfigs,
+          { ...component.systemConfigs[0], id: 9, displayName: 'GPT Writer', provider: 'OpenAI', modelId: 'gpt-writer' }
+        ];
+        openReport(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 9 }));
+
+        const blocked = 'Choose a report writer from another provider than the model under test.';
+        expect(aiSection().querySelector('#rrReportWriterBlocked')?.textContent?.trim()).toBe(blocked);
+        expect(writeButton().disabled).toBeTrue();
+        expect(aiSection().querySelector('.rr-report-writer-model-selector .selector-trigger')?.getAttribute('aria-describedby'))
+          .toBe('rrReportWriterBlocked');
+      });
+
+      it('should show the server\'s refusal of Write Reports inline', () => {
+        benchmarkServiceMock.writeRunReportDocuments.and.returnValue(throwError(() => ({
+          status: 400, error: { error: 'The model under test cannot write its own reports.' }
+        })));
+        openReport(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+
+        writeButton().click();
+        fixture.detectChanges();
+
+        expect(aiSection().querySelector('[role="alert"]')?.textContent?.trim()).toBe('The model under test cannot write its own reports.');
+        expect(aiStatus()).toBe('Not requested');
+        expect(writeButton().disabled).toBeFalse();
+      });
+
+      it('should poll a finished run\'s reports while they are written, and stop when the report closes', async () => {
+        openReport(reportRun({
+          assessmentJson: '{}', reportWriterModelConfigurationId: 1, reportWriterDisplayName: 'Test Model', reportDocumentsStatus: 2
+        }));
+
+        expect(aiStatus()).toBe('Writing…');
+        expect((component as any).runReportDocumentsPoll).not.toBeNull();
+
+        const closed = nextEvent(reportDialog(), 'close');
+        component.closeRunDetail();
+        await closed;
+
+        expect((component as any).runReportDocumentsPoll).toBeNull();
+      });
     });
 
     it('should open the Download Center on the viewed run from Downloads', () => {

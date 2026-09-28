@@ -426,6 +426,53 @@ public class BenchmarkComplianceGuardTests
     }
 
     [Fact]
+    public async Task StartRun_RefusesAReportWriterFromTheCandidatesProvider_OrTheCandidateItself_With400()
+    {
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, modelB, modelC) = await SeedConfigsAndSuite(db);
+
+        StartBenchmarkRunRequest Request(long writerId) => new()
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = modelA.Id,
+            AssessorModelConfigurationId = modelC.Id,
+            ReportWriterModelConfigurationId = writerId
+        };
+
+        // modelB is another Google model than the Google candidate.
+        var sameProvider = Assert.IsType<BadRequestObjectResult>(await controller.StartRun(Request(modelB.Id)));
+        Assert.Equal(BenchmarkRunReportDocumentService.SameProviderMessage, sameProvider.Value);
+
+        var sameModel = Assert.IsType<BadRequestObjectResult>(await controller.StartRun(Request(modelA.Id)));
+        Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, sameModel.Value);
+
+        var unknown = Assert.IsType<BadRequestObjectResult>(await controller.StartRun(Request(999999)));
+        Assert.Equal(BenchmarkRunReportDocumentService.InvalidWriterMessage, unknown.Value);
+
+        Assert.Empty(await db.BenchmarkRuns.ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task StartRun_StampsAReportWriterFromAnotherProvider_OnTheRun()
+    {
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, _, modelC) = await SeedConfigsAndSuite(db);
+
+        var result = await controller.StartRun(new StartBenchmarkRunRequest
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = modelA.Id,
+            AssessorModelConfigurationId = modelC.Id,
+            ReportWriterModelConfigurationId = modelC.Id
+        });
+        Assert.IsType<AcceptedResult>(result);
+
+        var run = await db.BenchmarkRuns.FirstAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(modelC.Id, run.ReportWriterModelConfigurationId);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, run.ReportDocumentsStatus);
+    }
+
+    [Fact]
     public async Task SpendingEndpoints_Return429_WhenSpendCapExceeded()
     {
         var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 1);

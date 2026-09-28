@@ -221,16 +221,25 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#runProgressDialog`: the run progress dialog, **full-screen** (`gh-dialog-fullscreen`, no
     component sizing of its own). Its content wrapper is an inline-size container (`run-progress`)
     and its body holds two sections: `section.run-progress-overview` (everything but the questions,
-    in order, `#runProgressHeading` first and still the focus target) and
+    in order, beginning with the model roster; it has no heading of its own) and
     `section.run-progress-questions` (`aria-labelledby="runProgressQuestionsTitle"`, `tabindex="0"`
-    with a visible focus ring, *Questions* and a count, then the question list). Narrow is the
-    default — one column, the body scrolls. From `60rem` of content width the body is a grid,
-    `minmax(0, 3fr) minmax(22rem, 2fr)`, and each section scrolls on its own
+    with a visible focus ring, then the question list). **The dialog title is the focus target**:
+    `<h3 id="runProgressDialogTitle" #runProgressHeading tabindex="-1">`, also the dialog's accessible
+    name, focused on open, with a `:focus-visible` ring; while the run detail loads, the subtitle reads
+    *Starting benchmark run…*. The header's bottom margin is 0 and the body's top padding 16px, scoped
+    to this dialog. The questions heading is `h4.gh-section-title` (the shared benchmark section
+    heading in `styles.scss`: gold Cinzel capitals over a fine rule, also the Download Center's) with
+    the count in a small neutral Lato pill (`.run-progress-questions-count`); its accessible name stays
+    *Questions N*. Narrow is the default — one column, the body scrolls. From `60rem` of content width
+    the body is a grid, `minmax(0, 3fr) minmax(22rem, 2fr)`, and each section scrolls on its own
     (`overscroll-behavior: contain`, `scrollbar-gutter: stable`). **Keep the overview a block
     container**: the cost panel relies on margin collapse. Keep exactly one polling live region. A
-    scored row shows its published score (panel score in a panel run) before its chip, named by a
-    visually hidden *Score* word, not `aria-label`. The roster and banner say **Assessor** (never
-    *Evaluator*); a panel run's banner says *Assessors*.
+    scored row shows its published score (panel score in a panel run) before its chip as a tier badge
+    of the chip's height and shape — `getQuestionScoreBadgeClass` gives `badge-score-high` (≥ 80),
+    `badge-score-mid` (≥ 50) or `badge-score-low`, colored from the `--score-*` tokens on `:root` —
+    named by a visually hidden *Score* word, not `aria-label`; the color repeats the number, never
+    replaces it. The roster and banner say **Assessor** (never *Evaluator*); a panel run's banner says
+    *Assessors*.
   - `#runDetailDialog`: the run report dialog, **full-screen**. A sticky header holds *Run #N*, the
     status and a `role="group"` *Run actions* (never `role="toolbar"`: it has no arrow-key roving):
     **Downloads** (opens the Download Center), **Re-run** (an action popover, `frontend_ui_controls`
@@ -252,9 +261,26 @@ To find specific popups, look in the corresponding component's `.html` template:
     column below. **No footer.** Escape and the header Close both close it, and closing always stops
     detail polling. Question cards have real `<button>` headers, filter toggles (*Critical errors*,
     *Disputed*, *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*.
+    Directly above *Assessor Calibration*, an **AI-Written Reports** section (`<details
+    class="gh-disclosure">`, open by default when documents exist) shows the run's run-completion
+    documents: a `role="status"` line (*Not requested*, *Waiting for the report writer*, *Writing…*,
+    *Written by <writer> on <date>*, *Written with warnings*, *Failed: …*, *Skipped: …*), refreshed by
+    the run poll and, after completion, by a 5-second poll that stops when the dialog closes; one row
+    per document with its status badge, a *Run changed since this document was written* badge when the
+    list item says so, and a **View** button (`btn-gh btn-gh-small`, named *View the Executive Summary*
+    / *View the Report for AI Researchers and Developers*) that opens the Full, named-peers PDF in a new
+    tab; **Downloads** (opens the Download Center on this run); and, when the finished run lacks a
+    document, a **Report writer** picker with its refusals shown inline and **Write Reports**, disabled
+    while a job is Pending or Writing. The section is not a run action. The launcher's *Grading*
+    fieldset has the matching optional **Report Writer** field after *Claim Verifier* (an
+    `app-model-picker`, empty choice *None — no AI-written reports*, a click-mode info tip, remembered
+    with the other launcher fields). Audience 2 is shown everywhere as **Report for AI Researchers and
+    Developers** (its stored type is still `TechnicalReport`).
   - **Download Center**: one dialog for downloading a run's and a report pack's files, opened from the
     run report's **Downloads** and from the Report Pack dialog. Package presets *Internal*,
-    *External* (internal-only rows listed but unselectable, with their reason) and *Custom*;
+    *External* (the Executive Summary and the Report for AI Researchers and Developers; internal-only
+    rows listed but unselectable, with their reason) and *Custom*; a run context lists every document
+    whose subject includes the run, run-completion documents included;
     per-document disclosure (*Summary* / *Detailed* / *Full*) and peer naming (*Named* /
     *Anonymized*); `_INTERNAL` file-name suffixes; several files as one ZIP with a `MANIFEST.md`. Its
     HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
@@ -265,7 +291,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     While a package is prepared, an overlay over the body shows a ring spinner, the step and a progress
     bar. The dialog is `frame($width: 92rem)` and nearly full height, the GnollBench emblem
     precedes its title, and its explanations are click-mode `app-info-tip`s; the *Internal only* tag, the
-    *Peers are named* warning and failures stay visible.
+    *Peers are named* warning and failures stay visible. Its *Documents* heading and the two package
+    legends use the shared `gh-section-title`; the legends keep a `dc-section-title` override only for
+    what the global `.gh-choice > legend` rule would otherwise change.
   - `#importDefaultSuitesDialog`: Import Default Suites (Manage Suites tab) — a multi-select
     catalog of the default suite files under `Overseer/Data/DefaultSuites/`, opened by the
     toolbar's Import Default Suites button (from harness 24).
@@ -340,8 +368,8 @@ To find specific popups, look in the corresponding component's `.html` template:
   - **Reports** (the *zap* glyph) opens the **Report Pack dialog**, full-screen: choose the subject
     (any entry that is not Excluded), the report writer (an `app-model-picker` with an info tip on the
     recommended writer; the subject's own model is refused, and a same-provider writer needs its
-    acknowledgment checkbox checked) and the documents — Executive Summary, Technical Report, Internal
-    Improvement Brief; preview the estimate, start and follow the job, then list, preview (*eye*),
+    acknowledgment checkbox checked) and the documents — Executive Summary, Report for AI Researchers
+    and Developers, Internal Improvement Brief; preview the estimate, start and follow the job, then list, preview (*eye*),
     download (through the Download Center) or delete (*trash*) the stored documents, each flagged
     *Run changed since this document was written* when its run moved. Rendering is server-side and
     deterministic; see `docs/overseer/ai-benchmark-report-pack.md`.

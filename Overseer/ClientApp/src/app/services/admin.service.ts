@@ -132,11 +132,14 @@ export interface SystemAiConfigDto {
 
 /** Something using a system configuration right now, which a delete would interrupt. */
 export interface SystemConfigBlockerDto {
-  /** "run", "series", "difficultyJob", "generationJob", "rubricCheckJob", "rubricGapAuthorJob" or "reportPackJob". */
+  /**
+   * "run", "series", "difficultyJob", "generationJob", "rubricCheckJob", "rubricGapAuthorJob",
+   * "reportPackJob" or "runReportWriter" (a run whose AI-written reports are queued or being written).
+   */
   kind: string;
   /** The run or series id, or the job id. */
   id: string;
-  /** A benchmark run id when `kind` is "run", so the UI can open it. */
+  /** A benchmark run id when `kind` is "run" or "runReportWriter", so the UI can open it. */
   runId?: number | null;
   label: string;
   /** The roles the configuration plays, in words ("assessor", "claim verifier"). */

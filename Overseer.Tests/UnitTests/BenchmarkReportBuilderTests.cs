@@ -2202,6 +2202,23 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
+    public void KnowledgeBaseRouting_DoesNotReadAFileNameInTheRubricsSourceSection()
+    {
+        // Run 73's shape: the rubric's only keyword is the file name src/options.c in its SOURCE list.
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        q1.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
+        q1.ToolCallSummary = "wiki_search×1";
+        q1.ExpectedPointsUsed = "**REQUIRED**\n- Exceptional adds one enchantment level.\n\n**SOURCE** — src/options.c:139, src/objnam.c";
+        q1.ExpectedPointsRecorded = true;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.DoesNotContain("Knowledge base under-use:", report);
+        Assert.Contains("Per `Overseer/Services/ChatService.cs` § \"Information Routing\" and `Overseer/ToolGuides/get_knowledge_article.md`", report);
+    }
+
+    [Fact]
     public void DirectionalAgreement_SentenceAbsentBelowThresholdAndPresentAtOrAbove()
     {
         // Case 1: n = 1 (below threshold of 3)

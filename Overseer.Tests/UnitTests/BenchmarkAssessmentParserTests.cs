@@ -14,12 +14,13 @@ public class BenchmarkAssessmentParserTests
         string? unverifiedClaims = null,
         bool criticalError = false,
         string comment = "A reasonable answer.",
-        string accuracyEvidence = "Matches rubric.")
+        string accuracyEvidence = "Matches rubric.",
+        int accuracyLevel = 3)
     {
         string claims = unverifiedClaims ?? "[]";
         return $$"""
         {
-          "accuracyLevel": 3,
+          "accuracyLevel": {{accuracyLevel}},
           "completenessLevel": 4,
           "concisenessLevel": 5,
           "readabilityLevel": 5,
@@ -121,6 +122,37 @@ public class BenchmarkAssessmentParserTests
             Answer);
 
         Assert.True(result.Result!.ContestedVerdict);
+    }
+
+    [Theory]
+    [InlineData(3, true)]
+    [InlineData(4, true)]
+    [InlineData(5, false)]
+    [InlineData(6, false)]
+    public void ContestedVerdict_RequiresAccuracyAtMostFour(int accuracyLevel, bool expected)
+    {
+        // A fabrication serious enough to question a missing critical error is not graded 5 or 6.
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            Verdict(
+                accuracyEvidence: "Candidate invents a racial intrinsic not in the rubric.",
+                accuracyLevel: accuracyLevel),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.Equal(expected, result.Result!.ContestedVerdict);
+    }
+
+    [Fact]
+    public void ContestedVerdict_IsNotSetForATrivialImprecision()
+    {
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(
+            Verdict(
+                accuracyEvidence: "A minor imprecision: the answer invents a slightly different turn count for the lamp.",
+                accuracyLevel: 4),
+            Answer);
+
+        Assert.True(result.Success);
+        Assert.False(result.Result!.ContestedVerdict);
     }
 
     [Fact]

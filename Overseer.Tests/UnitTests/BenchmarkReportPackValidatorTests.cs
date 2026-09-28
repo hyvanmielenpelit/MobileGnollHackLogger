@@ -44,8 +44,8 @@ internal static class ReportPackWriterTestData
         },
         Graders = new List<BenchmarkReportGrader>
         {
-            new() { Role = "Assessor", Label = "Gemini 3.8 Flash", Provider = "Google", ModelId = "gemini-3.8-flash", SameFamilyAsSubject = false },
-            new() { Role = "Co-assessor", Label = "Claude Sonnet 5.5", Provider = "Anthropic", ModelId = "claude-sonnet-5-5", SameFamilyAsSubject = true },
+            new() { Role = BenchmarkReportFacts.PanelMemberARole, Label = "Gemini 3.8 Flash", Provider = "Google", ModelId = "gemini-3.8-flash", SameFamilyAsSubject = false },
+            new() { Role = BenchmarkReportFacts.PanelMemberBRole, Label = "Claude Sonnet 5.5", Provider = "Anthropic", ModelId = "claude-sonnet-5-5", SameFamilyAsSubject = true },
         },
         Facts = new List<BenchmarkReportFact>
         {
@@ -521,12 +521,23 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
-    public void Rule5_RecommendationMayCiteNothing()
+    public void Rule5_AResearcherReportRecommendationMustCiteEvidence()
     {
         var output = ReportPackWriterTestData.ValidOutput(Tr);
         output.Recommendations[0].Evidence.Clear();
 
-        Assert.Empty(Validate(Tr, output));
+        var note = Assert.Single(Validate(Tr, output));
+        Assert.Equal(5, note.Rule);
+        Assert.Equal("recommendations[0]", note.Location);
+    }
+
+    [Fact]
+    public void Rule5_AnInternalBriefRecommendationMayCiteNothing()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Ib);
+        output.Recommendations[0].Evidence.Clear();
+
+        Assert.Empty(Validate(Ib, output));
     }
 
     [Fact]
@@ -658,6 +669,59 @@ public class BenchmarkReportPackValidatorTests
         var note = Assert.Single(Validate(Tr, output));
         Assert.Equal(7, note.Rule);
         Assert.Equal("sections.abstract", note.Location);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportSlots.Meaning, 90)]
+    [InlineData(BenchmarkReportSlots.Confidence, 60)]
+    public void Rule7_ExecutiveSummarySlotWordLimits(string slot, int limit)
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("advice", limit));
+        Assert.Empty(Validate(Es, output));
+
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("advice", limit + 1));
+        var note = Assert.Single(Validate(Es, output));
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("sections." + slot, note.Location);
+    }
+
+    [Fact]
+    public void Rule7_ExecutiveSummaryItemWordLimit()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+
+        output.Strengths[0].Text = string.Join(" ", Enumerable.Repeat("lore", 30));
+        Assert.Empty(Validate(Es, output));
+
+        output.Strengths[0].Text = string.Join(" ", Enumerable.Repeat("lore", 31));
+        var note = Assert.Single(Validate(Es, output));
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("strengths[0]", note.Location);
+    }
+
+    [Fact]
+    public void Rule7_TheResearcherReportItemsHaveNoThirtyWordCap()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Strengths[0].Text = string.Join(" ", Enumerable.Repeat("lore", 31));
+
+        Assert.Empty(Validate(Tr, output));
+    }
+
+    [Fact]
+    public void Rule7_TheResearcherReportHoldsSixRecommendations()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        var recommendation = output.Recommendations[0];
+        for (int i = 0; i < 5; i++) output.Recommendations.Add(recommendation);
+        Assert.Empty(Validate(Tr, output));
+
+        output.Recommendations.Add(recommendation);
+        var note = Assert.Single(Validate(Tr, output));
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("recommendations[6]", note.Location);
     }
 
     // Rule 8 ------------------------------------------------------------------------------------
@@ -808,6 +872,42 @@ public class BenchmarkReportPackValidatorTests
         Assert.Empty(ValidateMeaning(text));
     }
 
+    // Rule 12 -----------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("Its behaviour was sound.", "behaviour")]
+    [InlineData("It analysed the board well.", "analysed")]
+    [InlineData("The Grey dragon answer was right.", "Grey")]
+    [InlineData("Its judgement on prayer was cautious.", "judgement")]
+    public void Rule12_BritishSpellings(string text, string word)
+    {
+        var note = Assert.Single(ValidateMeaning(text));
+
+        Assert.Equal(BenchmarkReportPackValidator.UsSpellingRule, note.Rule);
+        Assert.Equal(12, note.Rule);
+        Assert.Equal(MeaningP1, note.Location);
+        Assert.Contains(word, note.Message);
+    }
+
+    [Theory]
+    [InlineData("Its behavior was sound, and it analyzed the gray dragon's color.")]
+    [InlineData("The greyhound and the recentred word are not whole-word matches.")]
+    public void Rule12_UsEnglishAndPartialWordsPass(string text)
+    {
+        Assert.Empty(ValidateMeaning(text));
+    }
+
+    [Fact]
+    public void Rule12_AppliesToItems()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Weaknesses[0].Text = "Overlooked the colour of cursed items on the board.";
+
+        var note = Assert.Single(Validate(Tr, output));
+        Assert.Equal(12, note.Rule);
+        Assert.Equal("weaknesses[0]", note.Location);
+    }
+
     // DropInvalid -------------------------------------------------------------------------------
 
     [Theory]
@@ -955,6 +1055,41 @@ public class BenchmarkReportPackValidatorTests
 
         Assert.True(result.Fatal);
         Assert.Contains(result.Notes, n => n.Rule == 1 && n.Location == "sections.modelResult" && !n.Dropped);
+    }
+
+    [Fact]
+    public void Drop_KeepsABritishSpelling_AndRecordsItsNote()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Headline = "{{subject}} showed sound behaviour on item lore at {{quality.index}}.";
+        output.Strengths[0].Text = "Explained the colour of item lore accurately.";
+
+        var result = Drop(Es, output);
+
+        Assert.False(result.Fatal);
+        Assert.Equal(output.Headline, result.Output.Headline);
+        Assert.Equal("Explained the colour of item lore accurately.", Assert.Single(result.Output.Strengths).Text);
+        Assert.Contains(result.Notes, n => n.Rule == 12 && n.Location == "headline" && !n.Dropped);
+        Assert.Contains(result.Notes, n => n.Rule == 12 && n.Location == "strengths[0]" && !n.Dropped);
+        Assert.DoesNotContain(result.Notes, n => n.Dropped);
+    }
+
+    [Fact]
+    public void Drop_TrimsAnOverlongMeaningByParagraph()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        string first = string.Join(" ", Enumerable.Repeat("advice", 60));
+        string second = string.Join(" ", Enumerable.Repeat("guidance", 40));
+        output.Sections[BenchmarkReportSlots.Meaning] = first + "\n\n" + second;
+
+        var result = Drop(Es, output);
+
+        Assert.False(result.Fatal);
+        Assert.Equal(first, result.Output.Sections[BenchmarkReportSlots.Meaning]);
+        var note = Assert.Single(result.Notes);
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("sections.meaning[p2]", note.Location);
+        Assert.True(note.Dropped);
     }
 
     [Fact]

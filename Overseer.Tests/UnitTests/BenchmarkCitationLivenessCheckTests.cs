@@ -190,6 +190,80 @@ public class BenchmarkCitationLivenessCheckTests
         Assert.Null(SpellCheck().NoteFor("src/spell.c:12-40"));
     }
 
+    private static BenchmarkCitationLivenessCheck ApplyCheck()
+    {
+        // use_lamp's definition line is 2604, as in the run-73 source clone.
+        var apply = Enumerable.Repeat(string.Empty, 2602).ToList();
+        apply.AddRange(new[]
+        {
+            "void",                          // 2603
+            "use_lamp(obj)",                 // 2604
+            "struct obj *obj;",              // 2605
+            "{",                             // 2606
+            "    obj->lamplit = 1;",         // 2607
+            "}",                             // 2608
+            "",                              // 2609
+            "int",                           // 2610
+            "doapply()",                     // 2611
+            "{",                             // 2612
+            "    use_lamp(uwep);",           // 2613
+            "    return 1;",                 // 2614
+            "}"                              // 2615
+        });
+
+        var corpus = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["src/apply.c"] = apply
+        };
+        return new BenchmarkCitationLivenessCheck(() => corpus);
+    }
+
+    [Fact]
+    public void ADefinitionLineCitationOfAClaimAboutWhereTheFunctionIsDefined_GetsNoNote()
+    {
+        // Run 73's Q4: the claim locates use_lamp() near line 2602, and the citation is its
+        // definition line, which settles exactly that.
+        Assert.Null(ApplyCheck().NoteFor(
+            "src/apply.c:2604",
+            "Torches are lit and snuffed by the same routine (`use_lamp()` in `src/apply.c`, around line 2602)."));
+    }
+
+    [Theory]
+    [InlineData("torches cannot be relit")]
+    [InlineData("use_lamp() decides whether a torch can be relit.")]
+    [InlineData("use_lamp() decides whether a torch can be relit (around line 2500).")]
+    [InlineData("use_lamps is defined around line 2604.")]
+    [InlineData(null)]
+    public void ADefinitionLineCitationOfAnyOtherClaim_GetsTheDefinitionLineNote(string? claim)
+    {
+        Assert.Equal(
+            "cited line src/apply.c:2604 is only the definition line of use_lamp",
+            ApplyCheck().NoteFor("src/apply.c:2604", claim));
+    }
+
+    [Fact]
+    public void AClaimAboutWhereADeadFunctionIsDefined_StillGetsTheLivenessCheck()
+    {
+        // The definition line settles the location, not whether anything calls the function.
+        Assert.Equal(
+            "cited function priest_talk has no live call site",
+            Check().NoteFor("src/priest.c:7", "priest_talk() is defined at line 7 of src/priest.c."));
+    }
+
+    [Fact]
+    public void Annotate_PassesTheClaimToTheDefinitionLineCheck()
+    {
+        var located = new BenchmarkClaimVerification(
+            0, "`use_lamp()` in `src/apply.c`, around line 2602, handles torches.", BenchmarkClaimVerdict.Supported, "src/apply.c:2604", "Found.");
+        var unrelated = new BenchmarkClaimVerification(
+            1, "Torches cannot be relit.", BenchmarkClaimVerdict.Supported, "src/apply.c:2604", "Found.");
+
+        var annotated = ApplyCheck().Annotate(new[] { located, unrelated });
+
+        Assert.Null(annotated[0].CitationNote);
+        Assert.Equal("cited line src/apply.c:2604 is only the definition line of use_lamp", annotated[1].CitationNote);
+    }
+
     [Fact]
     public void ACitationOfAFileNotInTheIndex_GetsTheMissingFileNote()
     {

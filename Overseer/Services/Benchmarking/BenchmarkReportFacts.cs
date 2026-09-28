@@ -78,6 +78,11 @@ using Overseer.Models;
 // Each entry's Extra facts (BenchmarkReportEntryFigures.Extra) reuse dimension.<d>,
 // tools.callsPerQuestion and errors.critical for that entry alone.
 //
+// A comparison with no peers is a stand-alone report: every fact that compares the subject with
+// peers (the .peerMean and .difference facts, quality.peerMedian, quality.peerBest,
+// quality.intervalOverlap, the three ranks and panel.judgeDependentPairs) keeps its key and is
+// unavailable with StandaloneReason.
+//
 // Question numbering (shared with BenchmarkReportContent): items are keyed by question and item
 // revision (an unlinked answer by its order index and revision). Numbers follow the lowest-id run's
 // answers by order index; items only a later run asked follow, in run-id and order-index order.
@@ -124,6 +129,9 @@ public static class BenchmarkReportFacts
     public const string SupportComputed = "Computed";
 
     public const string NotAvailable = "not available";
+
+    /// <summary>Why a peer fact is unavailable on a sheet with no peers.</summary>
+    public const string StandaloneReason = "A stand-alone run report has no peers.";
 
     public const string PanelMemberARole = "Panel member A";
     public const string PanelMemberBRole = "Panel member B";
@@ -234,7 +242,13 @@ public static class BenchmarkReportFacts
                 CostDegraded = p.Entry.CostDegraded,
                 Explanation = p.Entry.Explanation
             }).ToList(),
-            Graders = BuildGraders(subjectRuns, subject.Provider)
+            Graders = BuildGraders(subjectRuns, subject.Provider),
+            PurposeStatements = subjectRuns
+                .Select(r => r.PurposeStatementUsed?.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Select(p => p!)
+                .Distinct(StringComparer.Ordinal)
+                .ToList()
         };
 
         var significance = comparison.ExcludedMeasures
@@ -256,6 +270,11 @@ public static class BenchmarkReportFacts
         AddPanelFacts(facts, subject, subjectRuns, comparison, peers);
         AddStyleFact(facts, subjectRuns, subjectStats);
         AddScoringAndProvenanceFacts(facts, subjectRuns);
+
+        if (peers.Count == 0)
+        {
+            facts.Withhold(IsPeerFact, StandaloneReason);
+        }
 
         sheet.Facts = facts.Sorted();
         sheet.Questions = BuildQuestions(slots, subjectStats, peers.Select(p => p.Stats).ToList());
@@ -1171,6 +1190,13 @@ public static class BenchmarkReportFacts
 
     private static BenchmarkReportFactsResult Refuse(string reason) => new() { Refusal = reason };
 
+    /// <summary>A fact that compares the subject with its peers.</summary>
+    public static bool IsPeerFact(string key)
+        => key.EndsWith(".peerMean", StringComparison.Ordinal)
+           || key.EndsWith(".difference", StringComparison.Ordinal)
+           || key is "quality.peerMedian" or "quality.peerBest" or "quality.intervalOverlap"
+               or "quality.rank" or "speed.rank" or "cost.rank" or "panel.judgeDependentPairs";
+
     private static List<BenchmarkRun> RunsOf(BenchmarkModelComparisonEntryDto entry, IReadOnlyDictionary<long, BenchmarkRun> runsById)
         => entry.RunIds
             .Where(runsById.ContainsKey)
@@ -1314,6 +1340,22 @@ public static class BenchmarkReportFacts
                 Available = false,
                 UnavailableReason = string.IsNullOrWhiteSpace(reason) ? "Not recorded." : reason
             });
+
+        /// <summary>Every fact whose key matches becomes unavailable with <paramref name="reason"/>, keeping its key.</summary>
+        public void Withhold(Func<string, bool> matches, string reason)
+        {
+            for (int i = 0; i < _facts.Count; i++)
+            {
+                if (!matches(_facts[i].Key)) continue;
+                _facts[i] = new BenchmarkReportFact
+                {
+                    Key = _facts[i].Key,
+                    Display = NotAvailable,
+                    Available = false,
+                    UnavailableReason = reason
+                };
+            }
+        }
 
         public List<BenchmarkReportFact> Sorted()
             => _facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();

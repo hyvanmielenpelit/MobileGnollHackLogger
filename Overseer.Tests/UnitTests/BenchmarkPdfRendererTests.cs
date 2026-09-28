@@ -55,7 +55,7 @@ public class BenchmarkPdfRendererTests
         Assert.Equal(info.SubjectLine, reader.Information.Subject);
         Assert.Contains("GPT-5.6 Luna", reader.Information.Keywords);
         Assert.Contains("GnollHack Core Suite", reader.Information.Keywords);
-        Assert.Contains("Technical Report", reader.Information.Keywords);
+        Assert.Contains("Report for AI Researchers and Developers", reader.Information.Keywords);
         Assert.Contains("GnollBench", reader.Information.Keywords);
         Assert.Equal("Overseer " + BenchmarkPdfRenderer.OverseerVersion, reader.Information.Creator);
         Assert.Equal(BenchmarkReportPackFixture.CreatedAt, reader.Information.GetCreatedDateTimeOffset()!.Value.UtcDateTime);
@@ -243,20 +243,41 @@ public class BenchmarkPdfRendererTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_detailed_anonymized.pdf",
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
                 PeerNaming = BenchmarkReportPeerNaming.Anonymized
             }));
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_full_named_INTERNAL.pdf",
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Full,
                 PeerNaming = BenchmarkReportPeerNaming.Named
             }));
         Assert.Equal("Suite_Model_20260928_104200_INTERNAL.pdf", BenchmarkPdfFileNames.InternalPdfName("Suite_Model_20260928_104200.md"));
+    }
+
+    [Fact]
+    public void AResearcherReportWrittenUnderTheLegacyName_IsNamedAndTitledUnderTheNewOne()
+    {
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        document.Title = "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Technical Report";
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named };
+
+        Assert.Equal(
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(document, options));
+        Assert.Equal(
+            "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers",
+            BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4).Title);
+
+        // The other audiences keep the title-derived name.
+        var executive = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        Assert.Equal(
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(executive, options));
     }
 
     // --- Run file endpoints ------------------------------------------------------------------------

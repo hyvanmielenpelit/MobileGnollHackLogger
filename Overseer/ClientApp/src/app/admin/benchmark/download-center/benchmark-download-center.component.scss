@@ -302,19 +302,11 @@
   }
 }
 
-/* One heading style for the sidebar's legends and the Documents title: Overseer's section legend
-   typography over a hairline rule. */
-.dc-section-title,
+/* The sidebar's legends and the Documents title share the global .gh-section-title. The global
+   .gh-choice > legend rule outranks it on the spacing, so the legends restate it here. */
 .dc-package .gh-choice > legend.dc-section-title {
   margin: 0 0 10px;
   padding: 0 0 6px;
-  border-bottom: 1px solid var(--border-glass);
-  font-family: "Cinzel", serif;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--primary-color);
 }
 
 .dc-notice {

@@ -24,6 +24,18 @@
   --provider-anthropic-ink: #f7b39b;
   --provider-google: #4285f4;
   --provider-google-ink: #a8c7fa;
+
+  /* Score tiers (80 and over, 50 and over, below 50): the ink, the tint and the border of a
+     score badge. */
+  --score-high-ink: #81c784;
+  --score-high-bg: rgba(76, 175, 80, 0.15);
+  --score-high-border: rgba(76, 175, 80, 0.45);
+  --score-mid-ink: #ffb74d;
+  --score-mid-bg: rgba(255, 152, 0, 0.15);
+  --score-mid-border: rgba(255, 152, 0, 0.45);
+  --score-low-ink: #e57373;
+  --score-low-bg: rgba(244, 67, 54, 0.15);
+  --score-low-border: rgba(244, 67, 54, 0.45);
 }
 
 *, *::before, *::after {
@@ -1592,6 +1604,19 @@ label.checkbox-label,
   font-size: 0.9em;
   line-height: 1.45;
   color: #aaa;
+}
+
+/* Section heading of the benchmark dialogs: gold Cinzel capitals over a fine rule. */
+.gh-section-title {
+  margin: 0 0 10px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border-glass);
+  font-family: "Cinzel", serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary-color);
 }
 
 /* Themed native disclosure. The summary is the only interactive part; the marker is drawn with a

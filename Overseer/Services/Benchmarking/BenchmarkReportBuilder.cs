@@ -3938,7 +3938,7 @@ public static class BenchmarkReportBuilder
             // than recomputed.
             int routingAnsweredCount = routing.AnsweredQuestionCount;
             int routingZeroKbCount = routing.ZeroKnowledgeBaseAnswerCount;
-            if (HasKnowledgeBaseRoutingQuestion(answers))
+            if (BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(answers))
             {
                 sb.AppendLine($"- **Knowledge base under-use:** {routingZeroKbCount} of {routingAnsweredCount} answered question(s) made zero `get_knowledge_article` calls.");
             }
@@ -5144,37 +5144,5 @@ public static class BenchmarkReportBuilder
             return $"{ts.Minutes}m {ts.Seconds}s";
         }
         return $"{ts.Seconds}.{ts.Milliseconds / 100}s";
-    }
-
-    private static readonly string[] KnowledgeBaseTopicKeywords = new[]
-    {
-        "navigation", "settings", "options", "troubleshooting", "crash",
-        "account", "controls", "replay", "save management", "import", "export",
-        "system requirements", "developer tools", "vault", "get_knowledge_article"
-    };
-
-    private static bool HasKnowledgeBaseRoutingQuestion(IEnumerable<BenchmarkRunAnswer> answers)
-    {
-        foreach (var a in answers)
-        {
-            if (IsKnowledgeBaseTopicText(a.QuestionText) || IsKnowledgeBaseTopicText(a.ExpectedPointsUsed))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static bool IsKnowledgeBaseTopicText(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return false;
-        foreach (var kw in KnowledgeBaseTopicKeywords)
-        {
-            if (Regex.IsMatch(text, $@"\b{Regex.Escape(kw)}\b", RegexOptions.IgnoreCase))
-            {
-                return true;
-            }
-        }
-        return false;
     }
 }

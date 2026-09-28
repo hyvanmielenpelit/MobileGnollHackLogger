@@ -780,6 +780,25 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(runId);
+            ScheduleRunReportDocuments(runId);
+        }
+    }
+
+    /// <summary>
+    /// Hands a finished run to the run-completion document writer, after the run has released the run
+    /// slot so the next run of a series is never held up by it. The writer does nothing unless the run
+    /// completed, names a report writer and has no document yet; with no writer registered, nothing happens.
+    /// </summary>
+    private void ScheduleRunReportDocuments(long runId)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            _ = scope.ServiceProvider.GetService<BenchmarkRunReportDocumentService>()?.ScheduleIfDue(runId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Scheduling the run-completion documents of run {RunId} failed.", runId);
         }
     }
 
@@ -1004,6 +1023,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(runId);
+            ScheduleRunReportDocuments(runId);
         }
     }
 

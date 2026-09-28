@@ -27,13 +27,29 @@ public class BenchmarkReportRenderService
         _logger = logger;
     }
 
+    /// <summary>The name audience 2 was shown under before it was relabeled, still in older documents' stored titles.</summary>
+    public const string LegacyTechnicalReportName = "Technical Report";
+
     public static string AudienceName(BenchmarkReportAudience audience) => audience switch
     {
         BenchmarkReportAudience.ExecutiveSummary => "Executive Summary",
-        BenchmarkReportAudience.TechnicalReport => "Technical Report",
+        BenchmarkReportAudience.TechnicalReport => "Report for AI Researchers and Developers",
         BenchmarkReportAudience.InternalBrief => "Internal Improvement Brief",
         _ => audience.ToString()
     };
+
+    /// <summary>
+    /// A stored title as it is shown now: a Report for AI Researchers and Developers written under the
+    /// legacy name has its trailing <c>— Technical Report</c> replaced by the current one.
+    /// </summary>
+    public static string CurrentTitle(BenchmarkReportAudience audience, string? title)
+    {
+        title ??= string.Empty;
+        string legacySuffix = " — " + LegacyTechnicalReportName;
+        return audience == BenchmarkReportAudience.TechnicalReport && title.EndsWith(legacySuffix, StringComparison.Ordinal)
+            ? title[..^legacySuffix.Length] + " — " + AudienceName(audience)
+            : title;
+    }
 
     /// <summary>
     /// First 16 hex characters of SHA-256 over <c>AssessmentJson + "\n" + CoAssessorSynthesisJson</c>: part of a
@@ -63,7 +79,7 @@ public class BenchmarkReportRenderService
             .Take(limit)
             .Select(d => new
             {
-                d.Id, d.PackId, d.Audience, d.Title, d.SubjectKey, d.SubjectLabel, d.SubjectRunIdsJson,
+                d.Id, d.PackId, d.Audience, d.Origin, d.Title, d.SubjectKey, d.SubjectLabel, d.SubjectRunIdsJson,
                 d.SuiteId, d.SuiteName, d.WriterDisplayName, d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel,
                 d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
                 d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd,
@@ -80,7 +96,7 @@ public class BenchmarkReportRenderService
                 && now != new RunFingerprint(r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256));
 
             var item = new BenchmarkReportDocumentListItemDto();
-            Fill(item, d.Id, d.PackId, d.Audience, d.Title, d.SubjectKey, d.SubjectLabel, d.SubjectRunIdsJson,
+            Fill(item, d.Id, d.PackId, d.Audience, d.Origin, d.Title, d.SubjectKey, d.SubjectLabel, d.SubjectRunIdsJson,
                 d.SuiteId, d.SuiteName, d.WriterDisplayName, d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel,
                 d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
                 d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd);
@@ -113,7 +129,7 @@ public class BenchmarkReportRenderService
             RunChangedSinceGeneration = missing.Count > 0 || d.Runs.Any(r => current.TryGetValue(r.RunId, out var now)
                 && now != new RunFingerprint(r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256))
         };
-        Fill(dto, d.Id, d.PackId, d.Audience, d.Title, d.SubjectKey, d.SubjectLabel, d.SubjectRunIdsJson,
+        Fill(dto, d.Id, d.PackId, d.Audience, d.Origin, d.Title, d.SubjectKey, d.SubjectLabel, d.SubjectRunIdsJson,
             d.SuiteId, d.SuiteName, d.WriterDisplayName, d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel,
             d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
             d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd);
@@ -206,7 +222,8 @@ public class BenchmarkReportRenderService
     }
 
     private static void Fill(
-        BenchmarkReportDocumentListItemDto item, long id, Guid packId, BenchmarkReportAudience audience, string title,
+        BenchmarkReportDocumentListItemDto item, long id, Guid packId, BenchmarkReportAudience audience,
+        BenchmarkReportDocumentOrigin origin, string title,
         string subjectKey, string subjectLabel, string subjectRunIdsJson, long? suiteId, string suiteName,
         string writerDisplayName, string writerProvider, string writerModelId, string? writerThinkingLevel,
         bool sameProviderAcknowledged, BenchmarkReportDocumentStatus status, int reportFormatVersion, DateTime createdAtUtc,
@@ -215,7 +232,8 @@ public class BenchmarkReportRenderService
         item.Id = id;
         item.PackId = packId;
         item.Audience = audience;
-        item.Title = title;
+        item.Origin = origin;
+        item.Title = CurrentTitle(audience, title);
         item.SubjectKey = subjectKey;
         item.SubjectLabel = subjectLabel;
         item.SubjectRunIds = DeserializeRunIds(subjectRunIdsJson);

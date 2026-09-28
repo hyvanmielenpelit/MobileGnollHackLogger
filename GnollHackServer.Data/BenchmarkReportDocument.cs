@@ -16,8 +16,44 @@ public enum BenchmarkReportDocumentStatus
 {
     Completed = 1,
 
-    /// <summary>The validator dropped items or paragraphs after the repair turn; the validation notes list them.</summary>
+    /// <summary>The validator dropped items or paragraphs, or kept one it flagged, after the repair turn; the validation notes list them.</summary>
     CompletedWithWarnings = 2,
+}
+
+/// <summary>How a report-pack document came to be written.</summary>
+public enum BenchmarkReportDocumentOrigin
+{
+    /// <summary>A report pack started from Model Comparison, about one entry among its peers.</summary>
+    ReportPack = 1,
+
+    /// <summary>Written once after a run completed, about that run on its own, with no peers.</summary>
+    RunCompletion = 2,
+}
+
+/// <summary>
+/// Where a run's two AI-written run-completion documents stand. Stored on the run as
+/// <c>ReportDocumentsStatus</c>; the documents themselves are <see cref="BenchmarkReportDocument"/> rows.
+/// </summary>
+public enum BenchmarkRunReportDocumentsStatus
+{
+    /// <summary>No writer was chosen, or nothing has been asked of it yet.</summary>
+    NotRequested = 0,
+
+    /// <summary>Waiting for the report-pack slot.</summary>
+    Pending = 1,
+
+    Writing = 2,
+
+    Completed = 3,
+
+    /// <summary>Both documents were stored, and at least one carries validation warnings.</summary>
+    CompletedWithWarnings = 4,
+
+    /// <summary>At least one document could not be written; any document that was stored is kept.</summary>
+    Failed = 5,
+
+    /// <summary>The compliance guard refused the spend; nothing was written.</summary>
+    Skipped = 6,
 }
 
 /// <summary>
@@ -36,6 +72,9 @@ public class BenchmarkReportDocument
     public Guid PackId { get; set; }
 
     public BenchmarkReportAudience Audience { get; set; }
+
+    /// <summary>A report pack's document, or one written after a run completed. Rows written before the column existed are report-pack documents.</summary>
+    public BenchmarkReportDocumentOrigin Origin { get; set; } = BenchmarkReportDocumentOrigin.ReportPack;
 
     /// <summary>The comparison entry key of the subject: <c>run:&lt;id&gt;</c> or <c>group:&lt;id&gt;</c>.</summary>
     [MaxLength(64)]

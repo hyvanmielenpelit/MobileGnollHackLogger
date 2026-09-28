@@ -633,6 +633,9 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "state": "Degraded"
     }
   ],
+  "purposeStatements": [
+    "Internal evaluation of candidate AI models for the Overseer assistant within GnollHack."
+  ],
   "questions": [
     {
       "band": "Simple",
@@ -764,6 +767,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Report 101 · format version 1 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Report 101 · format version 2 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*

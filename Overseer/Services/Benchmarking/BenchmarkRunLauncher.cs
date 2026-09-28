@@ -110,7 +110,8 @@ public class BenchmarkRunLauncher
         SystemAiApiConfiguration? ClaimVerifierConfig,
         int? RequestedMode,
         bool IsSameProvider,
-        SystemAiApiConfiguration? CoAssessorConfig);
+        SystemAiApiConfiguration? CoAssessorConfig,
+        SystemAiApiConfiguration? ReportWriterConfig);
 
     /// <summary>
     /// Every rule a run must satisfy, in one place. Creates nothing, so a caller that only needs
@@ -248,6 +249,21 @@ public class BenchmarkRunLauncher
             }
         }
 
+        // Optional: a report writer writes the run's two AI-written documents once it completes. It
+        // is neither a grader nor a comparability key, and it never shares the candidate's provider.
+        SystemAiApiConfiguration? reportWriterConfig = null;
+        if (request.ReportWriterModelConfigurationId.HasValue)
+        {
+            reportWriterConfig = await _dbContext.SystemAiApiConfigurations
+                .FindAsync(new object?[] { request.ReportWriterModelConfigurationId.Value }, ct);
+
+            string? writerRefusal = BenchmarkRunReportDocumentService.WriterRefusal(reportWriterConfig, testedConfig, _complianceGuard);
+            if (writerRefusal != null)
+            {
+                return (BenchmarkRunLaunchResult.Fail(BenchmarkRunLaunchOutcome.Invalid, writerRefusal), null);
+            }
+        }
+
         // The mode that will actually apply, resolved here rather than in the service: only this
         // method sees the start dialog's override, and only the service sees the profile. An
         // explicit Off drops the second-opinion assessor from the run, because the enum defines
@@ -280,7 +296,8 @@ public class BenchmarkRunLauncher
         foreach (var (role, config) in new (string, SystemAiApiConfiguration?)[]
         {
             ("Tested model", testedConfig), ("Assessor", assessorConfig), ("Co-assessor", coAssessorConfig),
-            (isPanelRun ? "Reference reader" : "Second reader", secondOpinionConfig), ("Claim verifier", claimVerifierConfig)
+            (isPanelRun ? "Reference reader" : "Second reader", secondOpinionConfig), ("Claim verifier", claimVerifierConfig),
+            ("Report writer", reportWriterConfig)
         })
         {
             if (config == null) continue;
@@ -314,7 +331,7 @@ public class BenchmarkRunLauncher
         }
         return (null, new ValidatedLaunch(
             suite, testedConfig, assessorConfig, secondOpinionConfig, claimVerifierConfig,
-            requestedMode, isSameProvider, coAssessorConfig));
+            requestedMode, isSameProvider, coAssessorConfig, reportWriterConfig));
     }
 
     /// <summary>
@@ -416,6 +433,9 @@ public class BenchmarkRunLauncher
             ClaimVerifierEffectiveMaxOutputTokens = claimVerifierSnapshot != null
                 ? _benchmarkService.ClaimVerifierOutputCap
                 : null,
+
+            // Every member of a series is launched from the same request, so each carries the writer.
+            ReportWriterModelConfigurationId = validated.ReportWriterConfig?.Id,
 
             // Left at Off (0) when the operator did not override, so the service stamps the
             // scoring profile's own default at run start.

@@ -37,6 +37,15 @@ public static class BenchmarkVerdictConsistency
         RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
+    /// Words that grade a fault as trivial: "a minor imprecision", "of lesser consequence". Whole
+    /// words, case-insensitive. A sentence carrying one describes a fault too small to question a
+    /// missing critical error, so <see cref="HasUndeniedFabrication"/> does not count it.
+    /// </summary>
+    internal static readonly Regex MinorSeverityRegex = new(
+        @"\b(?:trivial|minor|slight|small|lesser|imprecis\w*)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
     /// The game senses of the <see cref="FabricationRegex"/> stem "hallucinat": the potion, the
     /// status effect and its risk, cures and causes, and a hallucinating hero. Masked out before
     /// <see cref="FabricationRegex"/> is applied, so "the poison or hallucination gamble of the
@@ -130,6 +139,8 @@ public static class BenchmarkVerdictConsistency
     /// questions per paragraph, and a paragraph-wide match would attribute one question's
     /// hallucination to every question mentioned near it. A missed match costs an advisory line;
     /// a false match accuses a clean verdict, so the narrower scope is the right error to make.
+    /// A sentence that introduces a list with a colon is narrowed further, to its list items
+    /// (<see cref="FabricationScopes"/>).
     /// </summary>
     public static IReadOnlyList<int> QuestionsNamedWithFabrication(
         string? synthesisText,
@@ -151,17 +162,69 @@ public static class BenchmarkVerdictConsistency
         {
             if (!HasUndeniedFabrication(sentence)) continue;
 
-            foreach (Match m in QuestionReferenceRegex.Matches(sentence))
+            foreach (string scope in FabricationScopes(sentence))
             {
-                if (int.TryParse(m.Groups[1].Value, out int index) && known.Contains(index))
+                if (!HasUndeniedFabrication(scope)) continue;
+
+                foreach (Match m in QuestionReferenceRegex.Matches(scope))
                 {
-                    found.Add(index);
+                    if (int.TryParse(m.Groups[1].Value, out int index) && known.Contains(index))
+                    {
+                        found.Add(index);
+                    }
                 }
             }
         }
 
         return found.OrderBy(i => i).ToList();
     }
+
+    /// <summary>
+    /// The spans of <paramref name="sentence"/> within which a question reference and a fabrication
+    /// word belong together. A sentence without a list colon (a colon followed by whitespace or the
+    /// end, so a citation such as <c>src/apply.c:2604</c> is not one) is a single span. Otherwise the
+    /// text before the colon is one span and the text after it is split into list items at
+    /// <c>;</c> and <c>,</c> outside parentheses: "Q6 misstates the dice, Q13 invents a cost"
+    /// charges Q13 alone.
+    /// </summary>
+    private static IEnumerable<string> FabricationScopes(string sentence)
+    {
+        Match colon = ListColonRegex.Match(sentence);
+        if (!colon.Success)
+        {
+            yield return sentence;
+            yield break;
+        }
+
+        yield return sentence.Substring(0, colon.Index);
+
+        int depth = 0;
+        int start = colon.Index + 1;
+        for (int i = start; i < sentence.Length; i++)
+        {
+            char c = sentence[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                if (depth > 0) depth--;
+            }
+            else if ((c == ',' || c == ';') && depth == 0)
+            {
+                yield return sentence.Substring(start, i - start);
+                start = i + 1;
+            }
+        }
+
+        yield return sentence.Substring(start);
+    }
+
+    /// <summary>A colon that introduces a list: followed by whitespace or the end of the sentence.</summary>
+    private static readonly Regex ListColonRegex = new(
+        @":(?=\s|$)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>
     /// A denial word ending the text before a <see cref="FabricationRegex"/> match, followed by at
@@ -174,10 +237,16 @@ public static class BenchmarkVerdictConsistency
 
     /// <summary>
     /// True when <paramref name="sentence"/> holds a <see cref="FabricationRegex"/> match that
-    /// <see cref="FabricationDenialPrefixRegex"/> does not deny.
+    /// <see cref="FabricationDenialPrefixRegex"/> does not deny, and carries no
+    /// <see cref="MinorSeverityRegex"/> qualifier.
     /// </summary>
     private static bool HasUndeniedFabrication(string sentence)
     {
+        if (MinorSeverityRegex.IsMatch(sentence))
+        {
+            return false;
+        }
+
         foreach (Match m in FabricationRegex.Matches(sentence))
         {
             if (!FabricationDenialPrefixRegex.IsMatch(sentence.Substring(0, m.Index)))

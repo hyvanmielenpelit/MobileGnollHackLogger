@@ -79,7 +79,7 @@ export const REPORT_PACK_AUDIENCES: readonly ReportPackAudienceOption[] = [
   },
   {
     audience: BenchmarkReportAudience.TechnicalReport,
-    label: 'Technical Report',
+    label: 'Report for AI Researchers and Developers',
     description: 'For AI researchers and model developers: figures against the peers, strengths, weaknesses and recommendations.',
     checkedByDefault: true
   },

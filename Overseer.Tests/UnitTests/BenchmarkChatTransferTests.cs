@@ -308,4 +308,70 @@ public class BenchmarkChatTransferTests
         Assert.Equal(7, totals["source_code_search"]);
         Assert.Equal(1, totals["wiki_search"]);
     }
+
+    private static BenchmarkRunAnswer RoutingAnswer(string question, string? rubric = null)
+        => new() { OrderIndex = 1, QuestionText = question, ExpectedPointsUsed = rubric };
+
+    [Theory]
+    [InlineData("How do I change the tileset settings in GnollHack?")]
+    [InlineData("Where are the Options in the main menu?")]
+    [InlineData("How do I export a save file?")]
+    [InlineData("What does get_knowledge_article say about the vault?")]
+    [InlineData("Does the game crash when the replay ends?")]
+    public void HasKnowledgeBaseRoutingQuestion_FindsATopicInTheQuestion(string question)
+    {
+        Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { RoutingAnswer(question) }));
+    }
+
+    [Fact]
+    public void HasKnowledgeBaseRoutingQuestion_FindsATopicInTheRubricBody()
+    {
+        var answer = RoutingAnswer(
+            "In GnollHack, what do Exceptional and Elite give to body armor?",
+            "**REQUIRED**\n- Points the player to the Settings menu.\n\n**SOURCE** — src/objnam.c:40");
+
+        Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { answer }));
+    }
+
+    [Theory]
+    [InlineData("**REQUIRED**\n- Exceptional adds one enchantment level.\n\n**SOURCE** — src/options.c:139")]
+    [InlineData("**REQUIRED**\n- Exceptional adds one enchantment level.\n\n**SOURCE**: the settings table in the wiki")]
+    [InlineData("**REQUIRED**\n- Exceptional adds one enchantment level, as `src/options.c` sets it.")]
+    [InlineData("**REQUIRED**\n- The flag lives in include\\options.h and flag.options.")]
+    public void HasKnowledgeBaseRoutingQuestion_IgnoresTheSourceSectionAndFileNames(string rubric)
+    {
+        var answer = RoutingAnswer("In GnollHack, what do Exceptional and Elite give to body armor?", rubric);
+
+        Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { answer }));
+    }
+
+    [Fact]
+    public void HasKnowledgeBaseRoutingQuestion_ReadsASectionAfterTheSourceSection()
+    {
+        var answer = RoutingAnswer(
+            "In GnollHack, what do Exceptional and Elite give to body armor?",
+            "**REQUIRED**\n- Exceptional adds one enchantment level.\n**SOURCE** — src/objnam.c:40\n**CRITICAL ERROR**\n- Sends the player to the settings menu.");
+
+        Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { answer }));
+    }
+
+    [Fact]
+    public void HasKnowledgeBaseRoutingQuestion_KeepsAKeywordAtTheEndOfASentence()
+    {
+        var answer = RoutingAnswer("Where do I find the game settings.");
+
+        Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { answer }));
+    }
+
+    [Fact]
+    public void HasKnowledgeBaseRoutingQuestion_IsFalseForMechanicsQuestionsAndEmptyInput()
+    {
+        Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[]
+        {
+            RoutingAnswer("In GnollHack, what do Exceptional and Elite give to body armor?"),
+            RoutingAnswer(string.Empty, null)
+        }));
+        Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new List<BenchmarkRunAnswer>()));
+        Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(null!));
+    }
 }

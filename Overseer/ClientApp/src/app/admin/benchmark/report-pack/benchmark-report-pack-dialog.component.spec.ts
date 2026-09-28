@@ -256,8 +256,11 @@ describe('BenchmarkReportPackDialogComponent', () => {
     expect(component.subjectKey).toBe('run:1');
   });
 
-  it('checks the Executive Summary and the Technical Report by default, not the Internal Brief', () => {
+  it('checks the Executive Summary and the Report for AI Researchers and Developers by default, not the Internal Brief', () => {
     openDialog();
+
+    const names = Array.from(host.querySelectorAll('.rp-audience-name')).map(name => (name.textContent ?? '').trim());
+    expect(names).toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
 
     expect(q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!.checked).toBeTrue();
     expect(q<HTMLInputElement>(`#rp-audience-${TechnicalReport}`)!.checked).toBeTrue();
@@ -483,7 +486,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
 
     const rows = (): string[] => Array.from(host.querySelectorAll('.rp-job-row'))
       .map(row => (row.textContent ?? '').replace(/\s+/g, ' ').trim());
-    expect(rows()).toEqual(['Executive Summary Writing 1', 'Technical Report Pending 0']);
+    expect(rows()).toEqual(['Executive Summary Writing 1', 'Report for AI Researchers and Developers Pending 0']);
     expect(q('.rp-job-status')!.getAttribute('role')).toBe('status');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 0 of 2 finished.');
     expect(q('.rp-job-log')).not.toBeNull();
@@ -500,7 +503,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
       ]
     }));
     fixture.detectChanges();
-    expect(rows()).toEqual(['Executive Summary Completed 1', 'Technical Report Repairing 2']);
+    expect(rows()).toEqual(['Executive Summary Completed 1', 'Report for AI Researchers and Developers Repairing 2']);
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 1 of 2 finished.');
 
     tick(REPORT_PACK_POLL_MS);

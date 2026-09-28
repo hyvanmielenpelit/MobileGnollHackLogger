@@ -323,6 +323,65 @@ public class BenchmarkReportFactsTests
     }
 
     [Fact]
+    public void AStandaloneSubject_HasEveryPeerFactUnavailable_WithTheStandaloneReason()
+    {
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 77, 83, modelTimeP50Ms: 9000, costPerQuestion: 0.02));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", SimpleRun(1, "OpenAI")));
+
+        Assert.Empty(sheet.Peers);
+        string[] peerFacts =
+        {
+            "quality.peerMedian", "quality.peerBest", "quality.intervalOverlap", "quality.rank", "speed.rank", "cost.rank",
+            "panel.judgeDependentPairs", "dimension.accuracy.peerMean", "dimension.accuracy.difference",
+            "band.simple.peerMean", "band.simple.difference", "tools.callsPerQuestion.peerMean"
+        };
+        foreach (string key in peerFacts)
+        {
+            var fact = FactOf(sheet, key);
+            Assert.False(fact.Available, key + " is available.");
+            Assert.Equal(BenchmarkReportFacts.StandaloneReason, fact.UnavailableReason);
+            Assert.Equal(BenchmarkReportFacts.NotAvailable, fact.Display);
+        }
+
+        // The subject's own figures stay.
+        Assert.True(FactOf(sheet, "quality.index").Available);
+        Assert.True(FactOf(sheet, "dimension.accuracy").Available);
+        Assert.True(FactOf(sheet, "speed.modelTimeP50").Available);
+        Assert.Equal("1", FactOf(sheet, "comparison.models").Display);
+    }
+
+    [Fact]
+    public void ASubjectWithPeers_KeepsItsPeerFacts()
+    {
+        var comparison = Comparison(
+            Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 77, 83),
+            Entry("run:2", new long[] { 2 }, "Peer", "Google", 70, 65, 75));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", SimpleRun(1, "OpenAI"), SimpleRun(2, "Google", 70)));
+
+        Assert.True(FactOf(sheet, "quality.rank").Available);
+        Assert.True(FactOf(sheet, "dimension.accuracy.peerMean").Available);
+        Assert.DoesNotContain(sheet.Facts, f => f.UnavailableReason == BenchmarkReportFacts.StandaloneReason);
+    }
+
+    [Fact]
+    public void PurposeStatements_AreTheSubjectRunsOwn_Distinct_InRunOrder()
+    {
+        var first = SimpleRun(1, "OpenAI");
+        first.PurposeStatementUsed = "Internal evaluation, round one.";
+        var second = SimpleRun(2, "OpenAI");
+        second.PurposeStatementUsed = "Internal evaluation, round one. ";
+        var third = SimpleRun(3, "OpenAI");
+        third.PurposeStatementUsed = "Internal evaluation, round two.";
+
+        var comparison = Comparison(Entry("group:9", new long[] { 1, 2, 3 }, "Subject", "OpenAI", 80));
+        var sheet = BuildSheet(Input(comparison, "group:9", first, second, third));
+
+        Assert.Equal(new[] { "Internal evaluation, round one.", "Internal evaluation, round two." }, sheet.PurposeStatements);
+    }
+
+    [Fact]
     public void Facts_AreSortedByKeyOrdinal_WithUniqueKeys_AndInvariantDisplays()
     {
         var comparison = Comparison(

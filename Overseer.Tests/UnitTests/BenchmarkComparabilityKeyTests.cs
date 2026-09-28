@@ -111,6 +111,26 @@ public class BenchmarkComparabilityKeyTests
     }
 
     [Fact]
+    public void RunsDifferingOnlyInReportWriter_ResolveTierA()
+    {
+        var a = Run(13);
+        a.ReportWriterModelConfigurationId = 7;
+        a.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Completed;
+        var b = Run(14);
+        b.ReportWriterModelConfigurationId = 9;
+        b.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Failed;
+        b.ReportDocumentsMessage = "The report writer configuration is no longer available.";
+        var c = Run(15);
+
+        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b, c });
+
+        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
+        Assert.Empty(result.Differences);
+        Assert.Equal(result.MemberKeyHashes[13], result.MemberKeyHashes[14]);
+        Assert.Equal(result.MemberKeyHashes[13], result.MemberKeyHashes[15]);
+    }
+
+    [Fact]
     public void ChangingQuestionParallelism_ResolvesTierB_WithSpeedAndCostFlagged()
     {
         var a = Run(13);

@@ -4,6 +4,10 @@ A **report pack** is a set of up to three documents about one model of a Model C
 the context of the other models compared with it. The documents are for three different readers: the
 model's provider or a manager, AI researchers and model developers, and the Overseer team itself.
 
+The same machinery also writes a run's own **run-completion documents**: the Executive Summary and the
+Report for AI Researchers and Developers about one run on its own, with no peers, written once after the
+run is scored by the report writer the run names (§ 11).
+
 This document describes the feature for developers: what each document holds, how the figures and the
 prose are kept apart, how the prose is validated, what is stored, and how a stored document is rendered
 at download. It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
@@ -20,11 +24,12 @@ Implementation:
 | Fact sheet, content snapshot, writer output, validation notes and DTOs | `Overseer/Models/BenchmarkReportPackModels.cs` |
 | The writer's prompts and the repair message | `BenchmarkReportPackPrompt` |
 | Parsing the writer's JSON | `BenchmarkReportPackParser` |
-| The eleven validation rules and the drop policy | `BenchmarkReportPackValidator` |
+| The twelve validation rules and the drop policy | `BenchmarkReportPackValidator` |
 | Generation: preparation, the writer call, repair, storage | `BenchmarkReportPackService` |
 | The background job and its progress | `BenchmarkReportPackJob`, `BenchmarkReportPackJobManager` |
+| A run's run-completion documents: scheduling, the queued job, the run's status | `BenchmarkRunReportDocumentService` (singleton) |
 | Deterministic Markdown rendering | `BenchmarkReportPackRenderer` (pure, static), behind `BenchmarkReportRenderService` |
-| Endpoints | `AdminBenchmarkReportPacksController`, `AdminBenchmarkReportDocumentsController` |
+| Endpoints | `AdminBenchmarkReportPacksController` (the write-now endpoint included), `AdminBenchmarkReportDocumentsController` |
 | Golden files | `Overseer.Tests/UnitTests/Golden/ReportPack/` |
 
 ---
@@ -41,20 +46,68 @@ is omitted from ranking, and the fact sheet marks the affected facts unavailable
 
 | Document | Reader | Disclosure | Skeleton |
 |---|---|---|---|
-| **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Any level | Headline (one sentence) · key figures · *What it did well* (at most 3) · *Where it fell short* (at most 3) · *What this means for use as a game assistant* · *How confident are we* |
-| **Technical Report** | AI researchers and model developers. Precise and neutral | Any level | Headline · abstract (at most 150 words) · figures against the peers · *Why it scored as it did* (failures by category) · *What worked* · strengths and weaknesses (at most 8 each) · question topics for every question · a note for each question more than 15 points below the peer mean or with a critical error · recommendations for model developers |
+| **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Any level | Headline (one sentence) · key figures · *What it did well* (at most 3, each at most 30 words) · *Where it fell short* (at most 3, each at most 30 words) · *What this means for use as a game assistant* (at most 90 words) · *How confident are we* (at most 60 words) · *Evaluation terms* |
+| **Report for AI Researchers and Developers** (stored as `TechnicalReport`) | AI researchers and model developers. Precise and neutral | Any level | Headline · abstract (at most 150 words) · figures against the peers · *Why it scored as it did* (failures by category) · *What worked* · strengths and weaknesses (at most 8 each) · question topics for every question · a note for each question more than 15 points below the peer mean or with a critical error (with no peers: scoring below 50 or with a critical error) · at most 6 recommendations for the model's next iteration, each naming the observed failure, the change proposed and the evidence · *Evaluation terms* |
 | **Internal Improvement Brief** | The Overseer team and its AI agents. Direct and practical | **Full only**; internal | Headline · three parts in the order of *What the Benchmark Is For*: the Overseer chat and its tools, the benchmarking system, the model's result · strengths and weaknesses · question topics and notes · recommendations for the chat, the benchmark or model developers · **leads** |
 
 The writer fills named **slots** and **lists** only; the renderer supplies every heading, table and
 figure. The slot ids are in `BenchmarkReportSlots`: `meaning` and `confidence` (Executive Summary);
-`abstract`, `whyItScored` and `whatWorked` (Technical Report); `overseerChat`, `benchmarkSystem` and
+`abstract`, `whyItScored` and `whatWorked` (Report for AI Researchers and Developers); `overseerChat`, `benchmarkSystem` and
 `modelResult` (Internal Brief). The *Why it scored as it did* categories are domain knowledge, reading
 the game state, tool use, instruction following, completeness under the concise answer style, and
 calibration; a category the data does not support is left out.
 
 The prose is written once and must be safe at every disclosure level: the same stored output renders
 for the provider, with questions described rather than quoted and peers anonymized, and for the team at
-Full.
+Full. The writer is told to write in US English (*color, behavior, analyze, center, gray, labeled,
+canceled*), and rule 12 (§ 3) checks it.
+
+**The name of audience 2.** The document for AI researchers and model developers is shown everywhere —
+dialogs, the Download Center, the rendered title, the PDF and Word metadata — as **Report for AI
+Researchers and Developers**. Its stored type is still `BenchmarkReportAudience.TechnicalReport` (2), and
+a document stored under the earlier name *Technical Report* is relabeled on display
+(`BenchmarkReportRenderService.CurrentTitle`); its file names use the label `Researcher_Report` (§ 9).
+
+**The stand-alone (peerless) form.** A comparison with only the subject — every run-completion document
+(§ 11) — has no peers. The fact sheet then marks every fact that compares the subject with peers
+unavailable with the reason *"A stand-alone run report has no peers."*
+(`BenchmarkReportFacts.StandaloneReason`); the writer prompt says there are no peers, that `{{peer:X}}`
+tokens are unavailable and that the subject is never compared with other models; and a question needs a
+note when it scored below 50 (`BenchmarkReportPackPrompt.StandaloneNoteScore`) or carried a critical
+error, in place of the peer gap. The renderer prints *Peers: none; this is a stand-alone report* in the
+header, a results table of the subject's own dimensions and bands with no peer column, question tables
+without *Peer mean* and *Difference*, a comparability line that describes the model on its own, and
+no pairwise-significance statement.
+
+**Evidence lines.** Under every strength, weakness and recommendation of the Executive Summary and the
+Report for AI Researchers and Developers, the renderer — never the writer — prints one indented
+*Evidence:* line per evidence id the item cites:
+
+- a **question** (`Q6`): its topic, its score out of 100, the peer mean and difference when there are
+  peers, each grader's quality score (by role, for a single-run subject), whether a grader flagged a
+  critical error, and how many claims the claim verifier refuted — for example
+  *"Q6 — healing potions: score 59 / 100; Panel member A 55, Panel member B 62; the claim verifier
+  refuted one claim"*. The per-grader Accuracy level is not printed, because `ContentJson` does not
+  store it;
+- a **finding row** (`R3`): its support label (§ 2), its category and questions, and, for a group
+  subject, in how many of its runs it recurred; the Report for AI Researchers and Developers also
+  prints the row id;
+- a **fact**: its key and its display value, or why it is unavailable.
+
+In the Report for AI Researchers and Developers, **Detailed** disclosure adds *"Qn as asked:"* with the
+question text of every question the item cites (through its Q ids, its rows' questions and its own
+question list), and **Full** adds each grader's `Accuracy:` evidence on those questions, verbatim from
+`ContentJson`. **Summary** prints the evidence lines only. The Internal Improvement Brief prints no
+evidence lines. Rule 9 (§ 3) still binds the writer's prose; the quoted evidence is content, not prose.
+
+**Evaluation terms.** The Executive Summary and the Report for AI Researchers and Developers end, after
+*Removed content* and before the footer, with an *Evaluation terms* block: the subject runs' purpose
+statements (`PurposeStatementUsed`, deduplicated, carried in the fact sheet's `purposeStatements`); the
+distillation and training prohibition sentence as the run report prints it; and a third-party model
+content sentence naming the subject and its provider, the graders' providers and the writer and its
+provider. The subject is always named; under anonymized peer naming, a grader provider that is also a
+peer's provider (and not the subject's) reads *"a withheld provider"*. The Internal Improvement Brief has
+no such block.
 
 **Leads** (Internal Brief only) are things worth checking, each tagged `harness`, `suite`, `chat` or
 `corpus`. They are provisional, un-triaged inputs written by an AI from computed figures, never
@@ -98,11 +151,16 @@ finding rows it cites, never written by the model:
 | *Single assessor* | A single-assessor run |
 | *Computed* | The item cites facts or questions only, no finding row |
 
+The writer prompt's row list finds the two panel members by the role names the fact sheet writes —
+`Panel member A` and `Panel member B` — as well as the legacy `Assessor` and `Co-assessor`, so in a panel
+run a row raised by one member only carries the note that it was *raised only by* that member and
+whether that member shares the subject's provider.
+
 ---
 
 ## 3. Validation, Repair and Drops
 
-`BenchmarkReportPackValidator` checks the writer's JSON against eleven rules. Each failure is a
+`BenchmarkReportPackValidator` checks the writer's JSON against twelve rules. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message.
 
@@ -112,22 +170,31 @@ finding rows it cites, never written by the model:
 | 2 | Every `{{…}}` token exists: a fact key, `{{subject}}` or a known peer letter |
 | 3 | No bare digits in prose after masking tokens, question references and known names |
 | 4 | Every question number exists, and the question topics cover every question where the document requires them |
-| 5 | Every evidence id exists, and every strength, weakness and lead cites at least one |
+| 5 | Every evidence id exists, and every strength, weakness and lead cites at least one — and so does every recommendation of the Report for AI Researchers and Developers |
 | 6 | A strength may not cite a weakness row and a weakness may not cite a strength row; a finding citing only Conflicting rows must say the graders disagree |
-| 7 | Length limits: headline at most 35 words, at most 3 strengths and 3 weaknesses in the Executive Summary, a question topic at most 12 words |
+| 7 | Length limits: headline at most 35 words; abstract at most 150 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words and *How confident are we* (`confidence`) at most 60 words; at most 6 recommendations in the Report for AI Researchers and Developers |
 | 8 | No headings, tables or HTML inside any text |
 | 9 | No run of 8 or more words shared with any question, rubric, answer or grader-evidence text |
 | 10 | No peer names, model ids or providers in prose |
 | 11 | No significance language: *significant*, *significantly*, *statistically*, *reliably better* or *worse*, *clearly outperforms* |
+| 12 | US English: no word of the fixed British-spelling list (`BenchmarkReportPackValidator.BritishSpellings`: *colour, behaviour, analyse, analysed, organise, recognise, favour, honour, centre, defence, catalogue, programme, grey, travelled, modelling, labelled, cancelled, judgement*), matched as whole words ignoring case, in any prose |
+
+Rules 2, 3, 8, 9, 10, 11 and 12 apply to every prose string: the headline, each paragraph of each slot,
+and the text of every item, topic and note.
 
 **Repair and drop policy.**
 
 1. When any rule fails, the writer gets **one repair turn**: every issue, then the output rules in brief
    (`BenchmarkReportPackPrompt.BuildRepairMessage`).
 2. What still fails after the repair is **dropped** — the item or paragraph is removed from the stored
-   output, the note records `Dropped`, and the document is stored as **CompletedWithWarnings**.
-3. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
-   row is stored.
+   output, the note records `Dropped`, and the document is stored as **CompletedWithWarnings**. An
+   over-cap slot with a word limit (the abstract, `meaning`, `confidence`) loses its last paragraphs
+   until it fits.
+3. **Rule 12 never drops.** A spelling slip is not worth losing a finding: after the repair turn, text
+   that still uses a British spelling is **kept**, its note is recorded without `Dropped`, and the
+   document is stored as **CompletedWithWarnings**.
+4. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
+   row is stored. A headline whose only fault is rule 12 is kept.
 
 The dialog and the Download Center show the validation notes, so a dropped item is never silent.
 
@@ -143,6 +210,10 @@ The dialog and the Download Center show the validation notes, so a dropped item 
   acknowledgment is stored on each document as `SameProviderAcknowledged`.
 - The writer must be an enabled Benchmark-role configuration with a key, and allowed by the endpoint
   policy.
+- **Run-completion documents are stricter** (§ 11): a writer from the candidate's provider is refused
+  (400, *"Choose a report writer from another provider than the model under test."*), with no
+  acknowledgment to override it, as is the model under test itself (*"The model under test cannot write
+  its own reports."*).
 
 **Recommended setting.** A **strong model — the tier recommended for scoring roles, Claude Opus or GPT
 Sol, not the provider's top tier (Claude Fable, GPT Astra)** — **from a family other than the subject's**,
@@ -153,10 +224,11 @@ per document keeps the cost small. The same recommendation is in `ai-benchmark.m
 models and effort*, the *How the graders work* guide and the dialog's writer info tip.
 
 **Usage and guards.** Each writer call is recorded in `SystemAiUsageLog` with `RoleContext = 8`
-(Report Pack). While a job runs, the writer configuration cannot be deleted: the usage guard reports a
-blocker of kind `reportPackJob`. The start is refused with 429 when
-`BenchmarkComplianceGuard.CanSpendAsync` denies it, and with 409 while another report-pack job is
-running — one job at a time.
+(Report Pack), run-completion documents included. While a job runs, the writer configuration cannot be
+deleted: the usage guard reports a blocker of kind `reportPackJob`, and of kind `runReportWriter` for a
+configuration named as the report writer of a run whose documents are Pending or Writing. The start is
+refused with 429 when `BenchmarkComplianceGuard.CanSpendAsync` denies it, and with 409 while another
+report-pack job runs or a run-completion job waits for the slot — one job at a time.
 
 ---
 
@@ -166,6 +238,10 @@ Each document is one **immutable** `BenchmarkReportDocument` row; there is no up
 
 - audience, subject key (`run:<id>` or `group:<id>`) and label, the subject's run ids, the comparison
   request, and the suite;
+- `Origin` (`BenchmarkReportDocumentOrigin`): **ReportPack** (1, the default, and the value every row
+  written before the column existed carries) for a document of a Report Pack job, **RunCompletion** (2)
+  for a run's own run-completion document (§ 11). An index on `(SubjectKey, Origin)` finds a run's
+  run-completion documents, and the list DTO carries `origin`;
 - the writer's identity and its configuration snapshot, and `SameProviderAcknowledged`;
 - `ReportFormatVersion`, the writer prompt's SHA-256 and `AnswerExcerptChars`;
 - `FactsJson` — the fact sheet;
@@ -201,7 +277,8 @@ Both are chosen **at download, per document**; the stored row is the same whatev
 provider column, and replaces the peers' model ids and providers in every table. The subject is always
 named.
 
-The Executive Summary and Technical Report render at any level with either naming. The Internal Brief
+The Executive Summary and the Report for AI Researchers and Developers render at any level with either
+naming. The Internal Brief
 renders at **Full only**; any other combination answers 400.
 
 Why provider copies default to Summary with anonymized peers is recorded in `ai-benchmark.md` § 7
@@ -233,6 +310,14 @@ A golden test fails on any change to the renderer's output.
 > the shapes stored as JSON are part of the format too, so renaming one of their properties is a format
 > change as well.
 
+**Format version 2** (the current one) added the *Evidence* lines, the *Evaluation terms* block and the
+stand-alone form (§ 1), and the label *Report for AI Researchers and Developers*; the fact sheet gained
+`purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
+JSON. Format 1 had none of these. The goldens include two stand-alone ones, `exec_standalone.md` and
+`technical_standalone.md`, rendered from the fixture's single-run subject. To regenerate every golden
+after an intended change, set `$env:OVERSEER_UPDATE_GOLDENS = '1'` and run the normal test command
+(`ai-benchmark.md` and the `testing-guidelines` skill give it), then review each diff before keeping it.
+
 **Configuration**, read only at generation:
 
 | Key | Default | Meaning |
@@ -252,10 +337,12 @@ packages documents and run files for download.
 | Package | Contents | Disclosure | Peers | Formats |
 |---|---|---|---|---|
 | **Internal** | Every available document: pack documents, the run report, the tool-call log, run diagnostics | Full | Named | PDF, Word and Markdown (PDF, Word and Text for the diagnostics) |
-| **External** | Executive Summary and Technical Report only; internal-only rows are listed but unselectable, with their reason | Summary (Detailed as an option) | Anonymized (Named as an option, with a warning) | PDF |
+| **External** | Executive Summary and Report for AI Researchers and Developers only; internal-only rows are listed but unselectable, with their reason | Summary (Detailed as an option) | Anonymized (Named as an option, with a warning) | PDF |
 | **Custom** | Any selection | Per document | Per document | Any, Word included |
 
 The summary line, the ZIP's `MANIFEST.md` and its file name call them *Internal package* and *External package*.
+Opened on a run, the dialog lists every document whose subject includes the run, so a run's
+run-completion documents (§ 11) appear under both packages beside any Report Pack documents about it.
 
 Each row offers its formats PDF first, then Word: pack documents and the run report PDF, Word, Markdown
 and HTML; the tool-call log PDF, Word and Markdown; diagnostics PDF, Word and Text. The choices are
@@ -376,8 +463,8 @@ All endpoints require the `AdminOnly` policy and sit under `api/admin/benchmark`
   subject, peers, estimated tokens and cost per document, the same-provider warning and any refusal.
 - `POST /api/admin/benchmark/report-packs`: Start a job. Body
   `{ runIds, groupIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`,
-  with audiences as numbers (1 Executive Summary, 2 Technical Report, 3 Internal Brief). Returns 202
-  `{ jobId }`.
+  with audiences as numbers (1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal
+  Brief). Returns 202 `{ jobId }`.
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel the job.
@@ -391,7 +478,16 @@ The start's refusals, in the order they are checked:
 4. No audience — 400.
 5. The spend cap — 429.
 6. A same-provider writer without `acknowledgeSameProvider` — 409, with the warning.
-7. A job already running — 409, with the running job.
+7. A job already running, or a run-completion job waiting for the slot — 409, with that job.
+
+- `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing
+  run-completion documents now (§ 11). Body `{ writerModelConfigurationId }`; the writer is recorded
+  on the run as its report writer, replacing an earlier one. Returns 202 `{ runId, status }` with the
+  status Pending. Refusals, in order: no body — 400; an unknown run — 404; a run that has not finished
+  (Completed, CompletedWithErrors or CompletedWithLimits) with a final synthesis — 400; a job for the
+  run Pending or Writing — 409; both documents already written — 409 (*"Delete them first to write them
+  again."*); a writer that is unusable, the model under test, or of the candidate's provider — 400; a
+  writer refused by the endpoint policy — 400; the spend cap — 429.
 
 ### Report documents (`AdminBenchmarkReportDocumentsController`)
 
@@ -403,11 +499,14 @@ The start's refusals, in the order they are checked:
   refused combination.
 - `GET /api/admin/benchmark/report-documents/{id}/render/pdf?disclosure=&peers=&paper=a4|letter`: The same
   document as a PDF (`application/pdf`), named `<title>_<disclosure>_<peers>[_INTERNAL].pdf`; the same
-  refusals as `render`, 400 for another `paper`, 413 over the size limit.
+  refusals as `render`, 400 for another `paper`, 413 over the size limit. A Report for AI Researchers and
+  Developers is named `<title without its "— <document name>" ending>_Researcher_Report_<disclosure>_<peers>[_INTERNAL].pdf`,
+  whether the stored title ends in the current name or the legacy *Technical Report*.
 - `GET /api/admin/benchmark/report-documents/{id}/render/docx?disclosure=&peers=&paper=a4|letter`: The
   same document as Word
   (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`), named
-  `<title>_<disclosure>_<peers>[_INTERNAL].docx`, with the PDF endpoint's refusals.
+  `<title>_<disclosure>_<peers>[_INTERNAL].docx` (with `_Researcher_Report` as for the PDF), with the
+  PDF endpoint's refusals.
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its run rows cascade.
 
 ### Run files as PDF and Word (`AdminBenchmarkController`)
@@ -433,4 +532,82 @@ The start's refusals, in the order they are checked:
 - It runs no significance test and states none.
 - It never reads the live suite: question and rubric text come from the subject's answer rows.
 - It never re-writes a stored document. A changed run is flagged, not re-generated; generate a new pack
-  if the old one is out of date.
+  if the old one is out of date. A run's run-completion documents are written again only after they are
+  deleted (§ 11).
+
+---
+
+## 11. Run-Completion Documents
+
+A run can name a **report writer** when it is launched. Once the run is scored, that writer writes the
+run's **Executive Summary** and **Report for AI Researchers and Developers** once, in the stand-alone form
+(§ 1), and stores them as ordinary `BenchmarkReportDocument` rows with `Origin = RunCompletion` and the
+subject key `run:<id>`. From then on they behave like any other document: every download renders the
+stored row, with no model call.
+
+**Choosing the writer.** The launcher's *Grading* fieldset has an optional **Report Writer** field after
+*Claim Verifier*, with the empty choice *None — no AI-written reports*.
+
+- `StartBenchmarkRunRequest.ReportWriterModelConfigurationId` is stored on the run as
+  `BenchmarkRun.ReportWriterModelConfigurationId` (no foreign key) and stamped on every member run of a
+  series.
+- The launcher refuses (400) a configuration that is not an enabled Benchmark-role configuration with a
+  key or that the endpoint policy refuses, the model under test (*"The model under test cannot write its
+  own reports."*), and any writer from the candidate's provider (*"Choose a report writer from another
+  provider than the model under test."*).
+- The writer is **not a comparability key**: two runs that differ only in their writer compare as Tier A.
+  It grades nothing and writes after scoring.
+
+**What the run records.** `BenchmarkRun.ReportDocumentsStatus` (`BenchmarkRunReportDocumentsStatus`) and
+`ReportDocumentsMessage` (at most 1,000 characters):
+
+| Status | Meaning |
+|---|---|
+| NotRequested (0) | The default: no job has been asked for |
+| Pending (1) | A job is queued for the report-pack slot |
+| Writing (2) | The writer is writing |
+| Completed (3) | Both documents are stored |
+| CompletedWithWarnings (4) | Both are stored, and one carries validation warnings (§ 3) |
+| Failed (5) | The message says why: *"<document name>: <error>"*, *"The report writer configuration is no longer available."* or *"Overseer restarted before the reports were written."*; a document already stored is kept |
+| Skipped (6) | The compliance guard refused the spend; the message is its reason |
+
+**When they are written.** `BenchmarkRunReportDocumentService.ScheduleIfDue(runId)` is called from the
+`finally` of `BenchmarkService.RunAsync` and of `RunFailedQuestionsAsync`, after the run has completed, and
+returns at once, so the next run of a series is never held up by the writer. It writes only when all of
+these hold: the run's status is exactly **Completed**; it names a report writer; its final synthesis
+exists; it has no run-completion document yet; and its documents are not already Pending or Writing.
+`RerunFinalSynthesisAsync` never calls it.
+
+**The job.**
+
+1. The run becomes **Pending**, and the job waits in a first-in, first-out queue for the report-pack slot
+   (`BenchmarkReportPackJobManager.WaitForSlotAsync`). While it waits, a manual Report Pack start answers
+   409 (§ 9).
+2. `BenchmarkComplianceGuard.CanSpendAsync` is checked; a refusal makes the run **Skipped** with the
+   guard's reason.
+3. The writer configuration must still exist, be enabled and have a key; otherwise the run is **Failed**
+   with *"The report writer configuration is no longer available."*
+4. The run becomes **Writing**. A single-run comparison is prepared, and only the missing audiences are
+   written, the Executive Summary first, through the Report Pack's own path: parsing, validation, one
+   repair turn, drops, storage and a `SystemAiUsageLog` row with `RoleContext = 8`, charged to the user
+   who launched the run (or who pressed **Write Reports**).
+5. The run ends **Completed**, **CompletedWithWarnings**, or **Failed** with the first failed document's
+   name and error. A document that was stored is kept, so a later **Write Reports** writes only the
+   missing one.
+
+**Restart.** No job survives a restart. At startup, in the cleanup block of `Program.cs` that settles
+interrupted benchmark work, every run left Pending or Writing becomes **Failed** with *"Overseer restarted
+before the reports were written."* (`SettleInterruptedAsync`).
+
+**Writing on request.** `POST /api/admin/benchmark/runs/{runId}/report-documents` (§ 9) writes the
+missing documents of any finished run with a final synthesis — a run launched with *None*, a run from
+before this feature, or a run whose job failed — with the writer it is given, which it records on the run.
+The run report dialog's **AI-Written Reports** section, directly above *Assessor Calibration*, shows the
+status and one row per document (**View** opens the Full, named-peers PDF; **Downloads** opens the
+Download Center on the run), and offers a writer picker and **Write Reports** while a document is
+missing.
+
+**Written once.** A run-completion document is immutable like every other: downloads only render it. A
+later re-synthesis or re-score marks it *Run changed since this document was written* and does not
+rewrite it; to write it again, delete it first (`DELETE /api/admin/benchmark/report-documents/{id}`) and
+use **Write Reports**.

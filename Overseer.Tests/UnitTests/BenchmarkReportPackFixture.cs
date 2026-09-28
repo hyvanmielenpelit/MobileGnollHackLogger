@@ -22,22 +22,45 @@ internal static class BenchmarkReportPackFixture
 {
     public static readonly DateTime CreatedAt = new(2026, 9, 28, 10, 42, 0, DateTimeKind.Utc);
 
+    public const string PurposeStatement =
+        "Internal evaluation of candidate AI models for the Overseer assistant within GnollHack.";
+
+    /// <summary>Set to <c>1</c> to write every golden file from the renderer's output instead of comparing against it.</summary>
+    public const string UpdateGoldensVariable = "OVERSEER_UPDATE_GOLDENS";
+
     // ---------------------------------------------------------------------------------------------
     // The stored document
     // ---------------------------------------------------------------------------------------------
 
     public static BenchmarkReportDocument Document(BenchmarkReportAudience audience)
+        => Document(audience, Sheet(), Writer(), Notes(), BenchmarkReportDocumentStatus.CompletedWithWarnings,
+            BenchmarkReportDocumentOrigin.ReportPack, "{\"runIds\":[12,13,14],\"groupIds\":[],\"pricingBasis\":1}");
+
+    /// <summary>A run-completion document: the same run with no peers, stored without warnings.</summary>
+    public static BenchmarkReportDocument StandaloneDocument(BenchmarkReportAudience audience)
+        => Document(audience, StandaloneSheet(), StandaloneWriter(), new List<BenchmarkReportValidationNote>(),
+            BenchmarkReportDocumentStatus.Completed, BenchmarkReportDocumentOrigin.RunCompletion,
+            "{\"runIds\":[12],\"groupIds\":[],\"pricingBasis\":1}");
+
+    private static BenchmarkReportDocument Document(
+        BenchmarkReportAudience audience,
+        BenchmarkReportFactSheet sheet,
+        BenchmarkReportWriterOutput writer,
+        List<BenchmarkReportValidationNote> notes,
+        BenchmarkReportDocumentStatus status,
+        BenchmarkReportDocumentOrigin origin,
+        string comparisonRequestJson)
     {
-        var sheet = Sheet();
         return new BenchmarkReportDocument
         {
             Id = 101,
             PackId = new Guid("3f2b8c1e-0000-4000-8000-000000000101"),
             Audience = audience,
+            Origin = origin,
             SubjectKey = "run:12",
             SubjectLabel = sheet.SubjectLabel,
             SubjectRunIdsJson = "[12]",
-            ComparisonRequestJson = "{\"runIds\":[12,13,14],\"groupIds\":[],\"pricingBasis\":1}",
+            ComparisonRequestJson = comparisonRequestJson,
             SuiteId = 5,
             SuiteName = "GnollHack Core Suite",
             WriterConfigId = 7,
@@ -51,10 +74,10 @@ internal static class BenchmarkReportPackFixture
             AnswerExcerptChars = 120,
             FactsJson = BenchmarkReportJson.Serialize(sheet),
             ContentJson = BenchmarkReportJson.Serialize(Content()),
-            WriterOutputJson = BenchmarkReportJson.Serialize(Writer()),
-            ValidationNotesJson = BenchmarkReportJson.Serialize(Notes()),
+            WriterOutputJson = BenchmarkReportJson.Serialize(writer),
+            ValidationNotesJson = BenchmarkReportJson.Serialize(notes),
             Title = BenchmarkReportPackRenderer.BuildTitle(audience, sheet),
-            Status = BenchmarkReportDocumentStatus.CompletedWithWarnings,
+            Status = status,
             CreatedAtUtc = CreatedAt,
             CreatedByUserId = "user-1",
             InputTokens = 12000,
@@ -163,6 +186,7 @@ internal static class BenchmarkReportPackFixture
         },
         NoSignificanceSummary = "Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none.",
         NoSignificanceInstead = "Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and choose the other under Compare with group.",
+        PurposeStatements = new List<string> { PurposeStatement },
         Entries = new List<BenchmarkReportEntryFigures>
         {
             new()
@@ -390,6 +414,72 @@ internal static class BenchmarkReportPackFixture
         }
     };
 
+    /// <summary>
+    /// <see cref="Sheet"/> as a stand-alone run report builds it: no peers, every peer fact unavailable
+    /// with the stand-alone reason, no peer figures per question and the subject's figures alone.
+    /// </summary>
+    public static BenchmarkReportFactSheet StandaloneSheet()
+    {
+        var sheet = Sheet();
+        sheet.Peers.Clear();
+        sheet.NoSignificanceSummary = string.Empty;
+        sheet.NoSignificanceInstead = string.Empty;
+        sheet.Facts = sheet.Facts
+            .Select(f => BenchmarkReportFacts.IsPeerFact(f.Key)
+                ? new BenchmarkReportFact
+                {
+                    Key = f.Key,
+                    Display = BenchmarkReportFacts.NotAvailable,
+                    Available = false,
+                    UnavailableReason = BenchmarkReportFacts.StandaloneReason
+                }
+                : f)
+            .ToList();
+        foreach (var q in sheet.Questions)
+        {
+            q.PeerMean = null;
+            q.Difference = null;
+            q.PeerCount = 0;
+        }
+        sheet.Entries = sheet.Entries.Where(e => e.IsSubject).ToList();
+        sheet.KnownNames = sheet.KnownNames
+            .Where(n => n is not ("Grok 5" or "grok-5" or "xAI" or "Mistral" or "Mistral Large 4" or "mistral-large-4"))
+            .ToList();
+        return sheet;
+    }
+
+    /// <summary>A writer output for <see cref="StandaloneSheet"/>: no peer token and no comparison.</summary>
+    public static BenchmarkReportWriterOutput StandaloneWriter()
+    {
+        var writer = Writer();
+        writer.Headline = "{{subject}} answers everyday GnollHack questions well but made one confident false claim about item destruction.";
+        writer.Sections[BenchmarkReportSlots.Confidence] = "The result rests on {{suite.questions}} questions, so it should be read with care.";
+        writer.Sections[BenchmarkReportSlots.Abstract] = "{{subject}} scored {{quality.index}} on {{suite.questions}} questions, with one critical error on Q3.";
+        writer.Sections[BenchmarkReportSlots.WhyItScored] = "One critical error on Q3 capped that answer at {{scoring.criticalErrorCap}}.\n\nCompleteness was its lowest dimension at {{dimension.completeness}}.";
+        writer.Weaknesses[0] = new BenchmarkReportWriterItem
+        {
+            Text = "Asserted a false outcome on Q3.",
+            Questions = new List<int> { 3 },
+            Evidence = new List<string> { "R1", "Q3" }
+        };
+        writer.Recommendations = new List<BenchmarkReportWriterRecommendation>
+        {
+            new()
+            {
+                For = BenchmarkReportSlots.TargetModelDevelopers,
+                Text = "Asserting a destruction rule without checking it cost Q3; verify object-destruction rules before stating them.",
+                Questions = new List<int> { 3 },
+                Evidence = new List<string> { "R1", "Q3" }
+            }
+        };
+        writer.QuestionNotes = new List<BenchmarkReportQuestionNote>
+        {
+            new() { Question = 3, Note = "Claimed a thrown gem always shatters; the rubric says it can survive." }
+        };
+        writer.Leads.Clear();
+        return writer;
+    }
+
     public static List<BenchmarkReportValidationNote> Notes() => new()
     {
         new() { Rule = 4, Location = "weaknesses[2]", Message = "Cited R9, which does not exist.", Dropped = true },
@@ -446,8 +536,29 @@ internal static class BenchmarkReportPackFixture
     // Golden files
     // ---------------------------------------------------------------------------------------------
 
+    /// <summary>True when <see cref="UpdateGoldensVariable"/> is <c>1</c>: golden tests write their files instead of comparing.</summary>
+    public static bool UpdateGoldens
+        => string.Equals(Environment.GetEnvironmentVariable(UpdateGoldensVariable), "1", StringComparison.Ordinal);
+
+    /// <summary>Writes a golden file in the repository: UTF-8 without a BOM, the renderer's <c>\n</c> line breaks kept.</summary>
+    public static void WriteGolden(string fileName, string text)
+    {
+        File.WriteAllBytes(GoldenPath(fileName), new System.Text.UTF8Encoding(false).GetBytes(text));
+    }
+
     /// <summary>The expected output, read from Overseer.Tests/UnitTests/Golden/ReportPack/ in the repository.</summary>
     public static string ReadGolden(string fileName)
+    {
+        string path = GoldenPath(fileName);
+        Assert.True(File.Exists(path), "Golden file not found: " + path);
+
+        byte[] bytes = File.ReadAllBytes(path);
+        Assert.False(Array.IndexOf(bytes, (byte)'\r') >= 0,"golden file has CRLF line endings; see .gitattributes (" + fileName + ")");
+
+        return new System.Text.UTF8Encoding(false).GetString(bytes);
+    }
+
+    private static string GoldenPath(string fileName)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MobileGnollHackLogger.slnx")))
@@ -457,13 +568,7 @@ internal static class BenchmarkReportPackFixture
 
         Assert.True(dir != null, "Repository root (MobileGnollHackLogger.slnx) not found above " + AppContext.BaseDirectory);
 
-        string path = Path.Combine(dir!.FullName, "Overseer.Tests", "UnitTests", "Golden", "ReportPack", fileName);
-        Assert.True(File.Exists(path), "Golden file not found: " + path);
-
-        byte[] bytes = File.ReadAllBytes(path);
-        Assert.False(Array.IndexOf(bytes, (byte)'\r') >= 0,"golden file has CRLF line endings; see .gitattributes (" + fileName + ")");
-
-        return new System.Text.UTF8Encoding(false).GetString(bytes);
+        return Path.Combine(dir!.FullName, "Overseer.Tests", "UnitTests", "Golden", "ReportPack", fileName);
     }
 
     // ---------------------------------------------------------------------------------------------

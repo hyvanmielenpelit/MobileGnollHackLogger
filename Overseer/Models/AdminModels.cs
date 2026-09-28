@@ -388,7 +388,7 @@ public class EndpointPolicySummaryDto
 /// <summary>Something using a system configuration right now, which a delete would interrupt.</summary>
 public class SystemConfigBlockerDto
 {
-    /// <summary>"run", "series", "difficultyJob", "generationJob", "rubricCheckJob", "rubricGapAuthorJob" or "reportPackJob".</summary>
+    /// <summary>"run", "series", "difficultyJob", "generationJob", "rubricCheckJob", "rubricGapAuthorJob", "reportPackJob" or "runReportWriter".</summary>
     public string Kind { get; set; } = string.Empty;
 
     /// <summary>The run or series id, or the job id.</summary>

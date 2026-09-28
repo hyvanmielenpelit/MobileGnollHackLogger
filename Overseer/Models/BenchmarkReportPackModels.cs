@@ -69,7 +69,7 @@ public static class BenchmarkReportSlots
     public const string Meaning = "meaning";         // What this means for use as a game assistant
     public const string Confidence = "confidence";   // How confident are we
 
-    // Technical Report
+    // Report for AI Researchers and Developers (the TechnicalReport audience)
     public const string Abstract = "abstract";       // ≤ 150 words
     public const string WhyItScored = "whyItScored"; // failures by category
     public const string WhatWorked = "whatWorked";
@@ -174,7 +174,7 @@ public sealed class BenchmarkReportPeer
 /// <summary>One grading role of the subject's runs, with its family relation to the subject.</summary>
 public sealed class BenchmarkReportGrader
 {
-    /// <summary>e.g. <c>Assessor</c>, <c>Co-assessor</c>, <c>Reference reader</c>, <c>Claim verifier</c>.</summary>
+    /// <summary>e.g. <c>Panel member A</c>, <c>Panel member B</c>, <c>Assessor</c>, <c>Reference reader</c>, <c>Claim verifier</c>.</summary>
     public string Role { get; set; } = string.Empty;
 
     public string Label { get; set; } = string.Empty;
@@ -297,6 +297,12 @@ public sealed class BenchmarkReportFactSheet
     public string NoSignificanceSummary { get; set; } = string.Empty;
 
     public string NoSignificanceInstead { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The subject runs' purpose statements as recorded at launch, distinct, in run-id order. The
+    /// renderer prints them under Evaluation terms; empty on a document written before they were kept.
+    /// </summary>
+    public List<string> PurposeStatements { get; set; } = new();
 
     /// <summary>
     /// Figures of every non-excluded entry (subject first, then peers by letter), for the
@@ -485,7 +491,7 @@ public sealed class BenchmarkReportQuestionNote
 /// <summary>One validation problem, and whether the offending item was dropped (stored as ValidationNotesJson).</summary>
 public sealed class BenchmarkReportValidationNote
 {
-    /// <summary>The D7 rule number, 1–11.</summary>
+    /// <summary>The D7 rule number, 1–12.</summary>
     public int Rule { get; set; }
 
     /// <summary>Where: <c>headline</c>, <c>sections.abstract</c>, <c>weaknesses[1]</c>, ….</summary>
@@ -615,6 +621,10 @@ public class BenchmarkReportDocumentListItemDto
     public long Id { get; set; }
     public Guid PackId { get; set; }
     public BenchmarkReportAudience Audience { get; set; }
+
+    /// <summary>A report pack's document (1), or one written after its run completed (2).</summary>
+    public BenchmarkReportDocumentOrigin Origin { get; set; }
+
     public string Title { get; set; } = string.Empty;
     public string SubjectKey { get; set; } = string.Empty;
     public string SubjectLabel { get; set; } = string.Empty;
@@ -651,4 +661,18 @@ public class BenchmarkReportDocumentDetailDto : BenchmarkReportDocumentListItemD
     public string WriterPromptSha256 { get; set; } = string.Empty;
     public List<BenchmarkReportValidationNote> ValidationNotes { get; set; } = new();
     public string FactsJson { get; set; } = string.Empty;
+}
+
+/// <summary>Writes a finished run's missing run-completion documents now, with the given writer.</summary>
+public class WriteRunReportDocumentsRequest
+{
+    public long WriterModelConfigurationId { get; set; }
+}
+
+public class WriteRunReportDocumentsResponse
+{
+    public long RunId { get; set; }
+
+    /// <summary>The run's documents status once the job is queued: <see cref="BenchmarkRunReportDocumentsStatus.Pending"/>.</summary>
+    public BenchmarkRunReportDocumentsStatus Status { get; set; }
 }

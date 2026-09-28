@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFortyOne()
+    public void HarnessVersion_IsFortyTwo()
     {
-        Assert.Equal("41", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("42", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -793,20 +793,28 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs41_ScoringMethodIs12()
+    public void Versions_HarnessIs42_ScoringMethodIs12()
     {
-        Assert.Equal("41", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("42", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 41 keeps scoring method 12: the per-verdict grading rules do not change. It changes
-        // what the flags and the verifier read around them: the omission detector sets aside
-        // rubric-subject clauses and reads "without noting" and "are not stated"; the citation notes
-        // limit the macro note to a #define's parameter list, read prose line references, and mark a
-        // blank or comment-only cited line; the union manifest merges label- and markup-only copies of
-        // one item, so a member's contested flag stands; the verifier's tool budget scales with the
-        // manifest. The tools gain a capped wiki_view section miss and a [Not reachable: …] line, which
-        // move ToolGuidesSha256, and the report and diagnostics become panel-aware. No answer flag is
-        // added, and the assessor prompt is unchanged.
+        // Harness 42 keeps scoring method 12: the level anchors and deduction rules do not change.
+        // The assessor prompt gains one sentence saying the rubric's SOURCE line is provenance, not
+        // the list of correct citations. Around the verdict: a definition-line citation carries no
+        // note when the claim names that definition and a nearby line, and the verifier's
+        // instruction 5 says so; a trivial or minor qualifier and an Accuracy above 4 keep a verdict
+        // from being contested; a synthesis list sentence charges only its own item; and the report
+        // and diagnostics share one knowledge-base topic guard that skips the rubric's SOURCE list.
+        // No answer flag is added, and the tool guides and the chat prompt do not move.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_SaysTheSourceLineIsProvenanceNotTheAnswerKey()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite", 1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok);
+
+        Assert.Contains("- **The rubric's SOURCE line records where the rubric's author found its facts; it is not the list of correct citations.** A source location the answer cites that the SOURCE line does not name — another function, another file or another line — is not wrong for that reason and never lowers ACCURACY by itself. When you cannot tell whether such a citation is right, copy its sentence to `unverifiedClaims`; the claim verifier checks it.", prompt);
     }
 
     [Fact]

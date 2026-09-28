@@ -104,6 +104,30 @@ public class BenchmarkReportPackRendererTests
 
         string rendered = Render(audience, disclosure, naming);
 
+        AssertMatchesGolden(file, rendered);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, "exec_standalone.md")]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, "technical_standalone.md")]
+    public void TheStandaloneForm_MatchesItsGoldenFile(BenchmarkReportAudience audience, string file)
+    {
+        string rendered = BenchmarkReportPackRenderer.Render(
+            StandaloneDocument(audience),
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
+
+        AssertMatchesGolden(file, rendered);
+    }
+
+    /// <summary>The golden comparison, or with <c>OVERSEER_UPDATE_GOLDENS=1</c> the golden file written from the output.</summary>
+    private static void AssertMatchesGolden(string file, string rendered)
+    {
+        if (UpdateGoldens)
+        {
+            WriteGolden(file, rendered);
+            return;
+        }
+
         AssertSameText(ReadGolden(file), rendered, file);
     }
 
@@ -145,7 +169,9 @@ public class BenchmarkReportPackRendererTests
 
         Assert.Contains("> **Question:** " + Q3Text, text);
         Assert.Contains(Q3Excerpt, text);
-        Assert.DoesNotContain(Q1Text, text);
+        // Q1 is quoted only because a strength cites it, and only as its evidence.
+        Assert.Contains("  - *Q1 as asked:* " + Q1Text, text);
+        Assert.DoesNotContain("> **Question:** " + Q1Text, text);
         Assert.DoesNotContain(Q1Rubric, text);
         Assert.DoesNotContain(Q1Evidence, text);
         Assert.DoesNotContain(Q3Ruling, text);
@@ -435,6 +461,151 @@ public class BenchmarkReportPackRendererTests
 
         Assert.All(fields, f => Assert.True(f.IsLiteral, f.Name + " is not a const"));
         Assert.Contains(fields, f => f.Name == nameof(BenchmarkReportPackRenderer.ReportFormatVersion));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Evidence lines, evaluation terms, the stand-alone form and the label
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void EveryStrengthWeaknessAndRecommendation_PrintsItsEvidenceBeneathIt()
+    {
+        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+
+        Assert.Contains("- Answers simple questions precisely and briefly. *(One grader — different family)*\n"
+            + "  - *Evidence:* R2: One grader — different family — accuracy (Q1)\n", text);
+        Assert.Contains("  - *Evidence:* R1: Both graders — critical error (Q3)\n"
+            + "  - *Evidence:* Q3 — Breaking a thrown gem: score 25 / 100; peer mean 68 (-43); Panel member A 25, Panel member B 25; "
+            + "a grader flagged a critical error; the claim verifier refuted one claim\n", text);
+        Assert.Contains("  - *Evidence:* band.intermediate.score: 49\n", text);
+    }
+
+    [Fact]
+    public void TheExecutiveSummary_PrintsEvidenceWithoutRowIds_AndNeverTheQuestionAsAsked()
+    {
+        foreach (var disclosure in BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.ExecutiveSummary))
+        {
+            string text = Render(BenchmarkReportAudience.ExecutiveSummary, disclosure, BenchmarkReportPeerNaming.Named);
+
+            Assert.Contains("  - *Evidence:* Both graders — critical error (Q3)\n", text);
+            Assert.DoesNotContain("as asked:*", text);
+        }
+    }
+
+    [Fact]
+    public void AtFull_TheResearcherReportAddsEachMembersAccuracyEvidence_ForTheCitedQuestions()
+    {
+        string full = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        string detailed = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
+
+        Assert.Contains("  - *Panel member A on Q3:* Accuracy: The gem does not always shatter.\n", full);
+        Assert.DoesNotContain("*Panel member A on Q3:*", detailed);
+        Assert.Contains("  - *Q3 as asked:* " + Q3Text + "\n", detailed);
+    }
+
+    [Fact]
+    public void TheInternalBrief_PrintsNoEvidenceLinesAndNoEvaluationTerms()
+    {
+        string text = Render(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+
+        Assert.DoesNotContain("*Evidence:*", text);
+        Assert.DoesNotContain("## Evaluation terms", text);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    public void BothDocuments_EndWithTheEvaluationTerms_BeforeTheFooter(BenchmarkReportAudience audience)
+    {
+        string text = Render(audience, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+
+        int terms = text.IndexOf("## Evaluation terms\n", StringComparison.Ordinal);
+        int footer = text.IndexOf("\n---\n", StringComparison.Ordinal);
+        Assert.True(terms > 0 && terms < footer, "The evaluation terms do not come right before the footer.");
+        Assert.Contains("- **Purpose statement:** " + PurposeStatement + "\n", text);
+        Assert.Contains("- **Distillation / training prohibition:** No prompt, completion, or evaluation output in this benchmark is used for model training, fine-tuning, distillation, or developing competing AI models.", text);
+        Assert.Contains("- **Third-party model content:** Outputs generated by **GPT-5.6 Luna** (OpenAI), graded by models from Google and Anthropic, "
+            + "and described in this document by **Claude Opus 5.5** (Anthropic) are third-party content", text);
+    }
+
+    [Fact]
+    public void TheEvaluationTerms_WithholdAGradersProviderThatAnAnonymizedPeerShares()
+    {
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = Sheet();
+        sheet.Graders[1].Provider = "xAI";
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        string anonymized = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+        string named = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
+
+        Assert.Contains("graded by models from Google and a withheld provider,", anonymized);
+        Assert.DoesNotContain("xAI", anonymized);
+        Assert.Contains("graded by models from Google and xAI,", named);
+    }
+
+    [Fact]
+    public void ADocumentWithoutPurposeStatements_SaysSo()
+    {
+        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var sheet = Sheet();
+        sheet.PurposeStatements.Clear();
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+
+        Assert.Contains("- **Purpose statement:** not recorded for this document.\n", text);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    public void TheStandaloneForm_HasNoPeerTablesColumnsOrSignificanceStatement(BenchmarkReportAudience audience)
+    {
+        foreach (var disclosure in BenchmarkReportPackRenderer.AllowedDisclosures(audience))
+        {
+            foreach (var naming in new[] { BenchmarkReportPeerNaming.Named, BenchmarkReportPeerNaming.Anonymized })
+            {
+                string text = BenchmarkReportPackRenderer.Render(
+                    StandaloneDocument(audience), new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
+
+                Assert.Contains("- **Peers:** none; this is a stand-alone report\n", text);
+                Assert.DoesNotContain("Results against peers", text);
+                Assert.DoesNotContain("Peer mean", text);
+                Assert.DoesNotContain("peer mean", text);
+                Assert.DoesNotContain("Testing every pair", text);
+                Assert.DoesNotContain("Judge-dependent", text);
+                Assert.DoesNotContain("{{", text);
+                Assert.Contains("## Evaluation terms", text);
+            }
+        }
+
+        if (audience == BenchmarkReportAudience.TechnicalReport)
+        {
+            string technical = BenchmarkReportPackRenderer.Render(StandaloneDocument(audience), new BenchmarkReportRenderOptions());
+            Assert.Contains("## Results\n", technical);
+            Assert.Contains("| Q | Topic | Band | Score | Critical error | Refuted claims | Tool calls | Model time |", technical);
+            Assert.Contains("### Questions scoring below 50 or with a critical error", technical);
+            Assert.Contains("**Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters", technical);
+            Assert.Contains("describes the model on its own", technical);
+        }
+    }
+
+    [Fact]
+    public void TheResearcherReport_IsTitledWithItsNewName()
+    {
+        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+
+        Assert.StartsWith("# GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers\n", text);
+        Assert.Equal("Report for AI Researchers and Developers", BenchmarkReportRenderService.AudienceName(BenchmarkReportAudience.TechnicalReport));
+        Assert.Equal(
+            "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers",
+            BenchmarkReportRenderService.CurrentTitle(BenchmarkReportAudience.TechnicalReport,
+                "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Technical Report"));
+        Assert.Equal(
+            "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Executive Summary",
+            BenchmarkReportRenderService.CurrentTitle(BenchmarkReportAudience.ExecutiveSummary,
+                "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Executive Summary"));
     }
 
     [Fact]

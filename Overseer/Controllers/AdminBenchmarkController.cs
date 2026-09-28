@@ -2875,6 +2875,13 @@ public class AdminBenchmarkController : ControllerBase
                 c.Id == run.AssessorModelConfigurationId.Value &&
                 c.IsEnabled && c.EncryptedApiKey != null && (c.ModelRole & 4) == 4);
 
+        string? reportWriterDisplayName = run.ReportWriterModelConfigurationId is long reportWriterId
+            ? await _dbContext.SystemAiApiConfigurations
+                .Where(c => c.Id == reportWriterId)
+                .Select(c => c.DisplayName)
+                .FirstOrDefaultAsync()
+            : null;
+
         // While a run is running, the run-level totals are 0 because BenchmarkRunFinalizer writes them
         // once at the end. The mid-run figures are summed from the answer rows by the finalizer's own
         // functions onto a detached copy, so the progress dialog and the finished run are costed by one
@@ -3056,6 +3063,11 @@ public class AdminBenchmarkController : ControllerBase
             ClaimVerifierReasoningModeUsed = run.ClaimVerifierModelSnapshot?.ReasoningMode,
             ClaimVerifierModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.ClaimVerifierModelSnapshot),
 
+            ReportWriterModelConfigurationId = run.ReportWriterModelConfigurationId,
+            ReportWriterDisplayName = reportWriterDisplayName,
+            ReportDocumentsStatus = run.ReportDocumentsStatus,
+            ReportDocumentsMessage = run.ReportDocumentsMessage,
+
             StartedByUserId = run.StartedByUserId,
             StartedByUserName = run.StartedByUser?.UserName,
             Status = run.Status,
@@ -3159,6 +3171,7 @@ public class AdminBenchmarkController : ControllerBase
                 },
                 kv => kv.Value),
             ZeroKnowledgeBaseAnswerCount = toolRouting.ZeroKnowledgeBaseAnswerCount,
+            HasKnowledgeBaseRoutingQuestion = BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(run.Answers),
 
             // Manual verdicts are trials an operator ran by hand against a prospective assessor;
             // the agreement figures are about the run's own two graders.

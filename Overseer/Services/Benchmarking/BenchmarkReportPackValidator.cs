@@ -26,9 +26,9 @@ public sealed class BenchmarkReportCleanResult
 /// <summary>
 /// The report-pack document rules (D7), checked against the fact sheet and the content snapshot.
 ///
-/// <para>Rules 2, 3, 8, 9, 10 and 11 apply to every prose string: the headline, each paragraph of each
-/// section, and the text of every item, topic and note. A section's paragraphs are checked one by one,
-/// so <see cref="DropInvalid"/> can remove only the offending ones.</para>
+/// <para>Rules 2, 3, 8, 9, 10, 11 and 12 apply to every prose string: the headline, each paragraph of
+/// each section, and the text of every item, topic and note. A section's paragraphs are checked one by
+/// one, so <see cref="DropInvalid"/> can remove only the offending ones.</para>
 ///
 /// <list type="number">
 /// <item>Structure: headline and required slots present and non-empty; no unknown slots; no lists the
@@ -37,14 +37,18 @@ public sealed class BenchmarkReportCleanResult
 /// written exactly, without inner spaces; no stray braces.</item>
 /// <item>No bare digit once tokens, known names and <c>Q&lt;n&gt;</c> / <c>R&lt;n&gt;</c> references are masked.</item>
 /// <item>Every question number exists in the subject's exam; topics cover every question where required.</item>
-/// <item>Every evidence id and <c>R&lt;n&gt;</c> reference exists; strengths, weaknesses and leads cite one.</item>
+/// <item>Every evidence id and <c>R&lt;n&gt;</c> reference exists; strengths, weaknesses and leads cite
+/// one, and so do the recommendations of the Report for AI Researchers and Developers.</item>
 /// <item>A strength cites no weakness row and a weakness no strength row; a finding citing only
 /// Conflicting rows says the graders disagree.</item>
-/// <item>Word and item limits.</item>
+/// <item>Word and item limits, the Executive Summary's slot and item word caps and the report's
+/// recommendation count included.</item>
 /// <item>No headings, Markdown tables or HTML.</item>
 /// <item>No run of <see cref="ShingleLength"/> words shared with the content snapshot.</item>
 /// <item>No peer name, label, model id or provider other than the subject's own provider.</item>
 /// <item>No significance claims. Matching is whole-word, so <c>insignificant</c> passes.</item>
+/// <item>US English: no word from <see cref="BritishSpellings"/>. It asks for the repair turn, but
+/// <see cref="DropInvalid"/> keeps the text and records the note instead of dropping it.</item>
 /// </list>
 /// </summary>
 public static class BenchmarkReportPackValidator
@@ -53,6 +57,28 @@ public static class BenchmarkReportPackValidator
     public const int HeadlineMaxWords = 35;
     public const int TopicMaxWords = 12;
     public const int AbstractMaxWords = 150;
+
+    /// <summary>The Executive Summary's "What this means for use as a game assistant".</summary>
+    public const int MeaningMaxWords = 90;
+
+    /// <summary>The Executive Summary's "How confident are we".</summary>
+    public const int ConfidenceMaxWords = 60;
+
+    /// <summary>Each strength and weakness of the Executive Summary.</summary>
+    public const int ExecutiveItemMaxWords = 30;
+
+    /// <summary>Recommendations the Report for AI Researchers and Developers holds.</summary>
+    public const int TechnicalReportMaxRecommendations = 6;
+
+    /// <summary>The rule number of the US English check, whose notes never drop an item.</summary>
+    public const int UsSpellingRule = 12;
+
+    /// <summary>British spellings rule 12 flags in prose, matched as whole words, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> BritishSpellings = new[]
+    {
+        "colour", "behaviour", "analyse", "analysed", "organise", "recognise", "favour", "honour", "centre",
+        "defence", "catalogue", "programme", "grey", "travelled", "modelling", "labelled", "cancelled", "judgement"
+    };
 
     /// <summary>Shorter peer names are not checked by rule 10.</summary>
     public const int MinPeerNameLength = 3;
@@ -82,6 +108,10 @@ public static class BenchmarkReportPackValidator
         @"\b(?:significant|significantly|statistically|reliably\s+better|reliably\s+worse|clearly\s+outperform(?:s|ed)?)\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    private static readonly Regex BritishSpellingRegex = new(
+        @"(?<![\p{L}\p{N}])(?:" + string.Join("|", BritishSpellings) + @")(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private enum ItemKind
     {
         Strength,
@@ -89,6 +119,23 @@ public static class BenchmarkReportPackValidator
         Recommendation,
         Lead,
     }
+
+    /// <summary>How many recommendations the audience's document holds.</summary>
+    public static int MaxRecommendations(BenchmarkReportAudience audience)
+        => audience == BenchmarkReportAudience.TechnicalReport ? TechnicalReportMaxRecommendations : int.MaxValue;
+
+    /// <summary>Rule 5: the Report for AI Researchers and Developers backs every recommendation with evidence.</summary>
+    public static bool RecommendationsRequireEvidence(BenchmarkReportAudience audience)
+        => audience == BenchmarkReportAudience.TechnicalReport;
+
+    /// <summary>The word cap of a slot, or null when it has none.</summary>
+    public static int? SlotMaxWords(BenchmarkReportAudience audience, string slot) => slot switch
+    {
+        BenchmarkReportSlots.Abstract => AbstractMaxWords,
+        BenchmarkReportSlots.Meaning when audience == BenchmarkReportAudience.ExecutiveSummary => MeaningMaxWords,
+        BenchmarkReportSlots.Confidence when audience == BenchmarkReportAudience.ExecutiveSummary => ConfidenceMaxWords,
+        _ => null
+    };
 
     // -----------------------------------------------------------------------------------------
     // Validate
@@ -124,9 +171,9 @@ public static class BenchmarkReportPackValidator
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), notes);
             }
 
-            if (slot == BenchmarkReportSlots.Abstract && WordCount(text) > AbstractMaxWords)
+            if (SlotMaxWords(audience, slot) is int cap && WordCount(text) > cap)
             {
-                Issue(notes, 7, location, $"The abstract has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {AbstractMaxWords.ToString(CultureInfo.InvariantCulture)}.");
+                Issue(notes, 7, location, $"{SlotName(slot)} has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {cap.ToString(CultureInfo.InvariantCulture)}.");
             }
         }
 
@@ -140,7 +187,7 @@ public static class BenchmarkReportPackValidator
 
         if (spec.UsesRecommendations)
         {
-            CheckItems(ctx, "recommendations", output.Recommendations, ItemKind.Recommendation, int.MaxValue, notes);
+            CheckItems(ctx, "recommendations", output.Recommendations, ItemKind.Recommendation, MaxRecommendations(audience), notes);
         }
         else if (output.Recommendations is { Count: > 0 })
         {
@@ -200,7 +247,7 @@ public static class BenchmarkReportPackValidator
     /// <summary>
     /// Removes every item and section paragraph with an issue from a copy of the output. The headline
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty. Missing
-    /// question topics are recorded but not fatal.
+    /// question topics are recorded but not fatal, and so is a rule 12 spelling: its text is kept.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -218,10 +265,11 @@ public static class BenchmarkReportPackValidator
 
         var headlineIssues = new List<BenchmarkReportValidationNote>();
         CheckHeadline(ctx, copy.Headline, headlineIssues);
-        if (headlineIssues.Count > 0)
+        notes.AddRange(headlineIssues);
+        var blockingHeadline = headlineIssues.FirstOrDefault(Blocks);
+        if (blockingHeadline != null)
         {
-            notes.AddRange(headlineIssues);
-            fatal ??= $"The headline is invalid and cannot be dropped: {headlineIssues[0].Message}";
+            fatal ??= $"The headline is invalid and cannot be dropped: {blockingHeadline.Message}";
         }
 
         var sections = output.Sections ?? new Dictionary<string, string>();
@@ -242,23 +290,24 @@ public static class BenchmarkReportPackValidator
             {
                 var issues = new List<BenchmarkReportValidationNote>();
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), issues);
-                if (issues.Count > 0)
+                if (issues.Any(Blocks))
                 {
                     notes.AddRange(MarkDropped(issues));
                 }
                 else
                 {
+                    notes.AddRange(issues);
                     kept.Add((p, paragraphs[p]));
                 }
             }
 
-            if (slot == BenchmarkReportSlots.Abstract)
+            if (SlotMaxWords(audience, slot) is int cap)
             {
-                while (kept.Count > 0 && WordCount(string.Join("\n\n", kept.Select(k => k.Text))) > AbstractMaxWords)
+                while (kept.Count > 0 && WordCount(string.Join("\n\n", kept.Select(k => k.Text))) > cap)
                 {
                     var last = kept[^1];
                     kept.RemoveAt(kept.Count - 1);
-                    Dropped(notes, 7, ParagraphLocation(slot, last.Index), $"Removed to bring the abstract within {AbstractMaxWords.ToString(CultureInfo.InvariantCulture)} words.");
+                    Dropped(notes, 7, ParagraphLocation(slot, last.Index), $"Removed to bring {LowerFirst(SlotName(slot))} within {cap.ToString(CultureInfo.InvariantCulture)} words.");
                 }
             }
 
@@ -284,7 +333,7 @@ public static class BenchmarkReportPackValidator
 
         if (spec.UsesRecommendations)
         {
-            copy.Recommendations = CleanItems(ctx, "recommendations", output.Recommendations, ItemKind.Recommendation, int.MaxValue, notes, CloneRecommendation);
+            copy.Recommendations = CleanItems(ctx, "recommendations", output.Recommendations, ItemKind.Recommendation, MaxRecommendations(audience), notes, CloneRecommendation);
         }
         else if (output.Recommendations is { Count: > 0 })
         {
@@ -298,17 +347,18 @@ public static class BenchmarkReportPackValidator
             var topic = topics[i] ?? new BenchmarkReportQuestionTopic();
             string location = $"questionTopics[{i.ToString(CultureInfo.InvariantCulture)}]";
             var issues = TopicIssues(ctx, topic, location);
-            if (issues.Count == 0 && topicSeen.Contains(topic.Question))
+            if (!issues.Any(Blocks) && topicSeen.Contains(topic.Question))
             {
                 issues.Add(Note(4, location, $"{Q(topic.Question)} already has a topic in an earlier entry."));
             }
 
-            if (issues.Count > 0)
+            if (issues.Any(Blocks))
             {
                 notes.AddRange(MarkDropped(issues));
                 continue;
             }
 
+            notes.AddRange(issues);
             topicSeen.Add(topic.Question);
             copy.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = topic.Question, Topic = topic.Topic });
         }
@@ -323,17 +373,18 @@ public static class BenchmarkReportPackValidator
                 var note = questionNotes[i] ?? new BenchmarkReportQuestionNote();
                 string location = $"questionNotes[{i.ToString(CultureInfo.InvariantCulture)}]";
                 var issues = NoteIssues(ctx, note, location);
-                if (issues.Count == 0 && noteSeen.Contains(note.Question))
+                if (!issues.Any(Blocks) && noteSeen.Contains(note.Question))
                 {
                     issues.Add(Note(4, location, $"{Q(note.Question)} already has a note in an earlier entry."));
                 }
 
-                if (issues.Count > 0)
+                if (issues.Any(Blocks))
                 {
                     notes.AddRange(MarkDropped(issues));
                     continue;
                 }
 
+                notes.AddRange(issues);
                 noteSeen.Add(note.Question);
                 copy.QuestionNotes.Add(new BenchmarkReportQuestionNote { Question = note.Question, Note = note.Note });
             }
@@ -468,6 +519,16 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, 11, location, $"Uses \"{string.Join("\", \"", claims)}\": the comparison runs no significance test, so say only whether the intervals overlap.");
         }
+
+        // Rule 12: US English.
+        var british = BritishSpellingRegex.Matches(stripped)
+            .Select(m => m.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (british.Count > 0)
+        {
+            Issue(notes, UsSpellingRule, location, $"Uses the British spelling{Plural(british.Count)} \"{string.Join("\", \"", british)}\": write in US English (color, behavior, analyze, center, gray, labeled, canceled).");
+        }
     }
 
     private static void CheckItems<T>(
@@ -509,7 +570,7 @@ public static class BenchmarkReportPackValidator
         {
             string location = ItemLocation(array, i);
             var issues = ItemIssues(ctx, items[i], kind, location);
-            if (issues.Count > 0)
+            if (issues.Any(Blocks))
             {
                 notes.AddRange(MarkDropped(issues));
                 continue;
@@ -521,6 +582,7 @@ public static class BenchmarkReportPackValidator
                 continue;
             }
 
+            notes.AddRange(issues);
             kept.Add(clone(items[i]));
         }
 
@@ -539,6 +601,13 @@ public static class BenchmarkReportPackValidator
         else
         {
             CheckProse(ctx, text, location, notes);
+
+            if (kind is ItemKind.Strength or ItemKind.Weakness
+                && ctx.Spec.Audience == BenchmarkReportAudience.ExecutiveSummary
+                && WordCount(text) > ExecutiveItemMaxWords)
+            {
+                Issue(notes, 7, location, $"The item has {WordCount(text).ToString(CultureInfo.InvariantCulture)} words; the limit is {ExecutiveItemMaxWords.ToString(CultureInfo.InvariantCulture)}.");
+            }
         }
 
         if (kind == ItemKind.Recommendation)
@@ -601,7 +670,8 @@ public static class BenchmarkReportPackValidator
             Issue(notes, 5, location, $"Unknown evidence id{Plural(unknownIds.Count)} {string.Join(", ", unknownIds.Distinct(StringComparer.Ordinal))}: cite a fact key, Q<n> or a finding row id from the data.");
         }
 
-        bool requiresEvidence = kind is ItemKind.Strength or ItemKind.Weakness or ItemKind.Lead;
+        bool requiresEvidence = kind is ItemKind.Strength or ItemKind.Weakness or ItemKind.Lead
+            || (kind == ItemKind.Recommendation && RecommendationsRequireEvidence(ctx.Spec.Audience));
         if (requiresEvidence && evidence.Count == 0)
         {
             Issue(notes, 5, location, "Cites no evidence: give at least one fact key, Q<n> or finding row id.");
@@ -705,13 +775,21 @@ public static class BenchmarkReportPackValidator
     private static string UnusedListMessage(BenchmarkReportAudienceSpec spec, string array)
         => $"The {DocumentName(spec.Audience)} does not use \"{array}\"; leave it out.";
 
-    private static string DocumentName(BenchmarkReportAudience audience) => audience switch
+    private static string DocumentName(BenchmarkReportAudience audience) => BenchmarkReportRenderService.AudienceName(audience);
+
+    private static string SlotName(string slot) => slot switch
     {
-        BenchmarkReportAudience.ExecutiveSummary => "Executive Summary",
-        BenchmarkReportAudience.TechnicalReport => "Technical Report",
-        BenchmarkReportAudience.InternalBrief => "Internal Improvement Brief",
-        _ => audience.ToString()
+        BenchmarkReportSlots.Abstract => "The abstract",
+        BenchmarkReportSlots.Meaning => "\"What this means for use as a game assistant\"",
+        BenchmarkReportSlots.Confidence => "\"How confident are we\"",
+        _ => $"The \"{slot}\" slot"
     };
+
+    private static string LowerFirst(string text)
+        => text.Length > 0 && char.IsUpper(text[0]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
+
+    /// <summary>Every rule but rule 12 removes the offending item or paragraph.</summary>
+    private static bool Blocks(BenchmarkReportValidationNote note) => note.Rule != UsSpellingRule;
 
     /// <summary>A section's text split on blank lines, each paragraph trimmed, empty ones left out.</summary>
     internal static List<string> SplitParagraphs(string text)

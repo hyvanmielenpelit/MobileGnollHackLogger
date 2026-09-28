@@ -394,6 +394,7 @@ to stop if the projection is more than about twice the estimate.
 | Reference Reader (optional, panel run) | ... or "None — no reference reader" | same |
 | Coverage | <option label>; in a panel run the fixed line "Every answer, blind — a third reading. Fixed in a panel run." | same |
 | Claim Verifier (optional) | ... or "None - no claim verification" | same |
+| Report Writer (optional) | <entry as the dropdown prints it> or "None — no AI-written reports" | same / CHANGED |
 | Number of Runs | 1 | |
 
 - Not in the launcher, and must also match: thinking level, service tier, reasoning mode and
@@ -430,6 +431,10 @@ Rules for writing a card:
   for a single-assessor run still lists the Co-Assessor field, as "None - single assessor".
 - **Choosing the grader models and effort** follows `docs/overseer/ai-benchmark.md` § 3 *Choosing
   grader models and effort*; a card names the configured entries as the dropdowns print them.
+- **`Report Writer` is not a comparability key.** It writes the run's two AI-written reports once
+  the run is scored and grades nothing, so a card may set or change it without moving the predicted
+  tier. The launcher refuses the model under test and any writer from its provider; the recommended
+  writer is in the same § 3 table.
 - **Name each run R1, R2, …** and use those names everywhere — in Part A's `Needs`, in the chat
   message, and in the prompt of § 6 — so that "the baseline run" never has to be guessed.
 
@@ -441,6 +446,10 @@ One card, the same for every run of the round unless a run needs more:
    your run-artifacts folder, in a new subfolder the card names.
 2. If the round's analysis used the suite's YAML export or a diagnostics capture, say so and name
    the buttons.
+   When the run card asks for them, also download the two AI-written reports — the Executive
+   Summary and the Report for AI Researchers and Developers — from the run's **Downloads** (the
+   Download Center, or **View** in the run report's *AI-Written Reports* section), after that
+   section shows them written.
 3. Start the next analysis with the **ready-to-paste prompt** the card provides. It carries: the
    run number and its R-name; the absolute path of this runbook; a **receipt** the developer
    fills in — *"Part A steps done: … ; skipped: … ; anything that went differently: …"*; and the

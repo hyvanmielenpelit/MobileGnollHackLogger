@@ -52,6 +52,7 @@ public class BenchmarkReportPackServiceTests
         var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync());
         Assert.Equal(BenchmarkReportDocumentStatus.Completed, document.Status);
         Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, document.Audience);
+        Assert.Equal(BenchmarkReportDocumentOrigin.ReportPack, document.Origin);
         Assert.Equal(job.PackId, document.PackId);
         Assert.Equal($"run:{h.Seeded.RunIds[0]}", document.SubjectKey);
         Assert.Equal(BenchmarkReportPackRenderer.ReportFormatVersion, document.ReportFormatVersion);
@@ -116,6 +117,54 @@ public class BenchmarkReportPackServiceTests
         var output = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
         Assert.DoesNotContain(output.Strengths, s => s.Text.Contains('7'));
         Assert.Equal(2, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task ABritishSpellingStillThereAfterRepair_IsKept_AndTheDocumentCompletesWithWarnings()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string reply = ExecutiveReply(prep, extraStrength: "{{subject}} showed sound judgement on item lore.");
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync());
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
+        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.UsSpellingRule && !n.Dropped && n.Location == "strengths[1]");
+        Assert.DoesNotContain(notes, n => n.Dropped);
+        var output = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+        Assert.Contains(output.Strengths, s => s.Text.Contains("judgement", StringComparison.Ordinal));
+        Assert.Equal(2, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task ARunCompletionJob_WritesAStandaloneDocument_StoredWithItsOrigin()
+    {
+        await using var h = await Harness.CreateAsync();
+        long runId = h.Seeded.RunIds[0];
+        var prep = await h.PrepareAsync(standalone: true);
+        Assert.Empty(prep.Sheet.Peers);
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync());
+        Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, document.Origin);
+        Assert.Equal($"run:{runId}", document.SubjectKey);
+        Assert.Equal(runId, Assert.Single(document.Runs).RunId);
+
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        Assert.Empty(sheet.Peers);
+        Assert.Equal(BenchmarkReportFacts.StandaloneReason, sheet.Facts.Single(f => f.Key == "quality.rank").UnavailableReason);
+
+        var usage = Assert.Single(await h.Db.SystemAiUsageLogs.ToListAsync());
+        Assert.Equal(BenchmarkReportPackService.UsageRoleContext, usage.RoleContext);
     }
 
     [Fact]
@@ -349,11 +398,11 @@ public class BenchmarkReportPackServiceTests
 
         Assert.Equal("application/pdf", provider.ContentType);
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_detailed_anonymized.pdf",
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             provider.FileDownloadName);
         Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(provider.FileContents, 0, 5));
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_full_named_INTERNAL.pdf",
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
             full.FileDownloadName);
     }
 
@@ -528,15 +577,49 @@ public class BenchmarkReportPackServiceTests
             AcknowledgeSameProvider = acknowledgeSameProvider
         };
 
-        public Task<BenchmarkReportPackPreparation> PrepareAsync()
-            => PrepareCoreAsync();
+        public Task<BenchmarkReportPackPreparation> PrepareAsync(bool standalone = false)
+            => PrepareCoreAsync(standalone);
 
-        private async Task<BenchmarkReportPackPreparation> PrepareCoreAsync()
+        private async Task<BenchmarkReportPackPreparation> PrepareCoreAsync(bool standalone)
         {
             var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
-                Db, new BenchmarkModelComparisonService(Db), Request(), BenchmarkReportPackPreparation.DefaultAnswerExcerptChars, CancellationToken.None);
+                Db, new BenchmarkModelComparisonService(Db), standalone ? StandaloneRequest() : Request(),
+                BenchmarkReportPackPreparation.DefaultAnswerExcerptChars, CancellationToken.None);
             Assert.True(prep != null, refusal);
             return prep!;
+        }
+
+        /// <summary>The first seeded run alone, as a run-completion job asks for it.</summary>
+        public BenchmarkReportPackRequest StandaloneRequest(IEnumerable<BenchmarkReportAudience>? audiences = null) => new()
+        {
+            RunIds = new List<long> { Seeded.RunIds[0] },
+            SubjectKey = $"run:{Seeded.RunIds[0]}",
+            Audiences = (audiences ?? new[] { BenchmarkReportAudience.ExecutiveSummary }).ToList(),
+            WriterModelConfigurationId = Writer.Id
+        };
+
+        /// <summary>Runs one run-completion job for the first seeded run through the service, over the fake writer.</summary>
+        public async Task<BenchmarkReportPackJob> RunCompletionAsync(BenchmarkReportAudience audience)
+        {
+            var snapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(Db, Writer, CancellationToken.None);
+            var request = StandaloneRequest(new[] { audience });
+            var job = new BenchmarkReportPackJob
+            {
+                SubjectKey = request.SubjectKey,
+                SubjectLabel = "gpt-5.6-luna",
+                SuiteName = "Isolation Suite",
+                WriterConfigId = Writer.Id,
+                WriterDisplayName = Writer.DisplayName,
+                WriterSnapshotId = snapshot.Id,
+                Request = request,
+                StartedByUserId = UserId,
+                Cts = new CancellationTokenSource(),
+                Documents = { new BenchmarkReportPackDocumentProgress { Audience = audience } }
+            };
+            await Jobs.WaitForSlotAsync(job, CancellationToken.None);
+
+            await Service().WriteRunCompletionDocumentsAsync(job, CancellationToken.None);
+            return job;
         }
 
         public AdminBenchmarkReportPacksController Controller() => new(

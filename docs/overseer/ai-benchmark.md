@@ -33,7 +33,7 @@ Starting a run opens a modal progress dialog, reachable again at any time from t
 
 The dialog header carries the run number, the suite and the scoring profile. The models are **not** in the header: they appear directly below it in a roster (*Model under test*, *Assessor*, and in a panel run *Co-assessor* and *Reference reader*), badged exactly as the model selectors in the AI Benchmark tab badge them — thinking level, reasoning mode, provider, requested service tier, and parallel tool calls — so the configuration under test is legible without opening the report. The active-run banner names the grader as *Assessor:*, or *Assessors:* in a panel run.
 
-**Layout.** The dialog is full-screen (`gh-dialog-fullscreen`). Its body holds two sections: the **overview** — alerts, heading, roster, stage rail, progress bars, statistics, cost panel, failed-questions alert and diagnostics, in that order — and **Questions**, the per-question list under a heading with its count. The content wrapper is an inline-size container (`run-progress`): below `60rem` of dialog content width the two sections stack in one column and the body scrolls as a whole; at `60rem` and wider the body is a two-column grid (`minmax(0, 3fr) minmax(22rem, 2fr)`) in which each section scrolls on its own, with `overscroll-behavior: contain` and a stable scrollbar gutter. The Questions section is focusable (`tabindex="0"`, with a visible focus ring) so a keyboard user can scroll it. The overview stays a block container, because the cost panel relies on margin collapse. A scored question row shows its published score beside its status chip — the panel score in a panel run (once both members have scored), otherwise the quality score — in tabular figures.
+**Layout.** The dialog is full-screen (`gh-dialog-fullscreen`). Its body holds two sections: the **overview** — alerts, roster, stage rail, progress bars, statistics, cost panel, failed-questions alert and diagnostics, in that order, with no heading of its own — and **Questions**, the per-question list under the shared gold section heading (`gh-section-title`) with its count in a small pill. The dialog title is the focus target when the dialog opens, and while the run detail is loading the subtitle reads *Starting benchmark run…*. The content wrapper is an inline-size container (`run-progress`): below `60rem` of dialog content width the two sections stack in one column and the body scrolls as a whole; at `60rem` and wider the body is a two-column grid (`minmax(0, 3fr) minmax(22rem, 2fr)`) in which each section scrolls on its own, with `overscroll-behavior: contain` and a stable scrollbar gutter. The Questions section is focusable (`tabindex="0"`, with a visible focus ring) so a keyboard user can scroll it. The overview stays a block container, because the cost panel relies on margin collapse. A scored question row shows its published score beside its status chip — the panel score in a panel run (once both members have scored), otherwise the quality score — in tabular figures, as a badge colored by the Run History tiers (green from 80, amber from 50, red below), which repeats what the number says.
 
 It presents the run as **three** stages, which is how `BenchmarkService.ExecuteRunAsync` (and `RunFailedQuestionsAsync` for a re-run) actually sequences the work:
 
@@ -4794,6 +4794,111 @@ time from stored columns and JSON.
 **Comparability.** `HarnessVersion` and `ToolGuidesSha256` both move, so a run after this round is two
 Instrument keys from runs 68–72 and is NotComparable with them.
 
+### Harness Version 42 Updates
+
+The run-73 round (2026-09-28). Five grading and detector defects found on run 73 (GPT-6 Luna @ `max`,
+panel-graded, snapshot suite 8 after its S1–S16 repair) are fixed, and a sixth in the client. None of
+them moved a run-73 score. `HarnessVersion` moves to **"42"**. `ScoringMethodVersion` stays **12**:
+H1 states a consequence of method 12's own rule — a claim the rubric does not settle is an
+`unverifiedClaims` entry, not a deduction — rather than changing an anchor. `CandidateSystemPromptSha256`,
+`ToolGuidesSha256`, the chat system prompt and `_policy.md` do not move. The same round adds the
+run-completion documents (below), which need one EF Core migration, `AddBenchmarkRunReportDocuments`.
+
+**Grading and verification.**
+
+- **H1 — the SOURCE line is provenance, not the answer key.** On Q4 both panel members graded Accuracy 5
+  with *"the only imprecision is the source citation"*, because the answer cited `use_lamp` at
+  `src/apply.c:2602–2681` (what `get_function_definition` returned; `use_torch` calls `use_lamp`) while
+  the rubric's SOURCE line named `src/apply.c:2435-2468`. The assessor prompt inserted the rubric verbatim
+  and said nothing about SOURCE. `BenchmarkAssessmentPrompt` now adds, beside *"A claim the rubric does
+  not mention is not thereby invented"*: *"The rubric's SOURCE line records where the rubric's author
+  found its facts; it is not the list of correct citations."* A source location the SOURCE line does not
+  name is not wrong for that reason and never lowers ACCURACY by itself; when the grader cannot tell
+  whether it is right, it copies the sentence to `unverifiedClaims` for the claim verifier.
+- **H2 — a definition line settles a claim about where a function is defined.** On the same Q4 the
+  verifier *supported* *"use_lamp() … is defined starting at line 2604"*, and the harness-36 note
+  (*"cited line src/apply.c:2604 is only the definition line of use_lamp"*) demoted the correct verdict to
+  Indeterminate, because `BenchmarkCitationLivenessCheck` saw only the citation. `NoteFor(citation,
+  claim)` now takes the verified item's claim, and the definition-line note is not written when the claim
+  names the function as a whole identifier (`use_lamp` or `use_lamp()`) **and** holds an integer within
+  `DefinitionLineClaimTolerance` = 5 of the cited line; the citation still gets the ordinary liveness
+  check. `NoteFor(citation)` without a claim behaves as before. The verifier's instruction 5 (both the
+  board and the no-board variant) now reads *"…and neither is the line on which a function merely begins,
+  unless the claim is about where that function is defined: cite the lines inside it that decide the
+  claim."*
+- **H3 — a trivial imprecision is not a fabrication.** Q13's member-A evidence, *"the only imprecision is
+  the invented fractional raw values"*, beside Accuracy 5, raised *Contested verdict*, because
+  `FabricationRegex` had no severity test. `BenchmarkVerdictConsistency.MinorSeverityRegex`,
+  `\b(?:trivial|minor|slight|small|lesser|imprecis\w*)\b` (whole words, case-insensitive), exempts a
+  sentence from `HasUndeniedFabrication`, and `BenchmarkAssessmentParser` raises `contestedVerdict` only
+  when the verdict's Accuracy level is at most `ContestedVerdictMaxAccuracyLevel` = 4: a fabrication
+  serious enough to question a missing critical error is not graded 5 or 6.
+- **H4 — a list sentence charges its own item only.** *Synthesis Divergence* named Q4, Q7, Q12 and Q13
+  from one synthesis sentence, *"Further accuracy defects of lesser consequence were recorded: a wrong
+  source line citation … and invented fractional success percentages"*, because
+  `QuestionsNamedWithFabrication` scoped by sentence. A sentence with a **list colon** — a colon followed
+  by whitespace or the end of the sentence, so `src/apply.c:2604` is not one — is now split: the lead
+  before the colon is one item, and the rest is split into items at `,` and `;` outside parentheses; a
+  question reference counts only when its own item carries the undenied fabrication word. A sentence with
+  no list colon keeps the sentence scope, and the H3 qualifier anywhere in a sentence exempts it.
+- **H5 — one knowledge-base topic guard.** Run 73's report printed the knowledge-base under-use line on an
+  all-mechanics suite: the keyword *options* matched `src/options.c:139` in Q1's SOURCE line, because
+  `HasKnowledgeBaseRoutingQuestion` read the whole rubric, and the diagnostics capture had no guard at
+  all. The guard is now one public method, `BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(answers)`,
+  shared by the report builder and the run detail DTO (`hasKnowledgeBaseRoutingQuestion`). It removes the
+  rubric's `**SOURCE**` section up to the next bold label (so a later section such as CRITICAL ERROR is
+  still read) and ignores a keyword preceded by `/`, `\` or `.`, or followed by `.` and a letter, as part
+  of a file name. The diagnostics capture prints the prompt-compliant parenthesis beside a zero
+  knowledge-base count only when the guard is false; otherwise it prints *"(the suite has knowledge-base
+  topics; see the report's Tool Routing section)"*.
+- **H6 — per-member Instrument Measurements (client only).** The run view's notice showed member A's
+  counts alone (*"8 rubric format suggestion(s) not followed"*; the report had A 8, B 4). In a panel run
+  each line now reads *"8 (member A) and 4 (member B) …"*, member B's counts are taken from its
+  co-assessment flags, the *docked* sub-lines name member A (the only member whose docked subset the
+  server computes), *"the assessor"* becomes *"a panel member"*, and the notice shows when either
+  member's count is above zero.
+
+**Run-completion documents.** A run can now carry its own two AI-written documents, the **Executive
+Summary** and the **Report for AI Researchers and Developers** (the Report Pack's *Technical Report*,
+relabeled everywhere it is shown; its stored type `BenchmarkReportAudience.TechnicalReport` is
+unchanged). The full description — trigger, queue, statuses, the write-now endpoint, restart handling and
+the once-only rule — is [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 11; the writer
+prompt, validation and rendering changes are its §§ 1, 3 and 7.
+
+- **Launcher field: Report Writer** (optional), in the *Grading* fieldset after *Claim Verifier*, empty
+  choice *None — no AI-written reports*, remembered with the other launcher settings.
+  `StartBenchmarkRunRequest.ReportWriterModelConfigurationId` is stored as
+  `BenchmarkRun.ReportWriterModelConfigurationId` and stamped on every member run of a series. The start
+  is refused (400) for a configuration that is not an enabled Benchmark-role configuration with a key or
+  that the endpoint policy refuses, for the model under test (*"The model under test cannot write its
+  own reports."*) and for any writer from the candidate's provider (*"Choose a report writer from another
+  provider than the model under test."*).
+- **Written once, after scoring.** When a run completes with a writer and a final synthesis,
+  `BenchmarkRunReportDocumentService` queues behind any running report-pack job, checks the compliance
+  guard and the writer, and writes the two documents once, with no peers, under
+  `SystemAiUsageLog.RoleContext = 8`. `BenchmarkRun.ReportDocumentsStatus` and `ReportDocumentsMessage`
+  record the outcome. Downloads only render; a later re-synthesis marks the documents stale and does not
+  rewrite them. `POST /api/admin/benchmark/runs/{runId}/report-documents` writes them later, which is how
+  a run launched with *None* — run 73 included — gets them.
+- **The run report dialog** has an **AI-Written Reports** section above *Assessor Calibration*; the
+  Download Center lists the documents under both packages. The usage guard reports a `runReportWriter`
+  blocker for a configuration named by a run whose documents are Pending or Writing.
+- **Report pack changes shipped with it**: `ReportFormatVersion` 2 (the *Evidence* lines under every
+  strength, weakness and recommendation, and the stand-alone form); rule 5 now covers the recommendations
+  of the Report for AI Researchers and Developers, rule 7 gains the Executive Summary's word caps and a
+  limit of 6 recommendations, and a new rule 12 checks US English. **H7**: the writer prompt's
+  single-member-finding note never printed in a panel run, because `AppendRows` matched the roles
+  `assessor` / `coassessor` while the fact sheet writes `Panel member A` / `Panel member B`; it matches
+  both now. **H8**: report-pack documents carried no purpose statement or distillation prohibition,
+  although § 7 says every exportable Markdown report includes the purpose statement; the Executive
+  Summary and the Report for AI Researchers and Developers now end with an *Evaluation terms* block that
+  carries both, with a third-party model content sentence.
+
+**Comparability.** Only the Instrument key `HarnessVersion` moves (41 → 42), so a run after this round,
+on run 73's configuration, is **Tier C** against run 73. The report writer is **not** a comparability
+key and is not part of `BenchmarkComparabilityKey`: two runs that differ only in their writer compare as
+Tier A, because the writer grades nothing and writes after the run is scored.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
@@ -5135,7 +5240,7 @@ release, while a family name lasts.
 | Second Reader | **Gemini Flash** (not Flash-Lite) | `medium` | A different provider from the assessor. When the candidate is a Gemini Flash model, use a different Flash version, and expect the weaker same-family pairing the launcher warns about |
 | Reference Reader | **Gemini Flash** (not Flash-Lite) | `medium` | The same model on every run you compare. Google is the third family beside the Anthropic and OpenAI members |
 | Claim Verifier | **Gemini Flash** (not Flash-Lite) | `medium` (`high` if its rulings are often wrong; never `low`) | The same as the reader. The report already notes that one model in both roles makes their findings correlated |
-| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: the Report Pack refuses it, and a writer from the same provider needs an acknowledgment. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
+| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: the Report Pack refuses it, and a writer from the same provider needs an acknowledgment. Chosen in the Report Pack dialog, and also in the launcher's optional **Report Writer** field for a run's own two documents, where a writer from the candidate's provider is refused outright; the assessor's model is a good choice there. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
 
 All roles avoid `xhigh` and `max`. Today's roster matches — Claude 5.5 Opus, GPT-6 Sol and Gemini 3.8
 Flash, all at `medium` — for a set whose candidates include neither Claude 5.5 Opus nor GPT-6 Sol. A set
@@ -5145,10 +5250,12 @@ every run of the set, so the whole set shares one panel; runs 68–72 were grade
 **Where the recommendations appear.** The launcher's grader info popups, the *How the graders work*
 guide (its section *Choosing grader models*) and the Report Pack dialog's writer info tip name the same
 **families** — Claude Opus, GPT Sol, Gemini Flash — and the top tiers not to use, Claude Fable and GPT
-Astra, with price ratios but no versions or prices. The table in **The roster today, and why Anthropic is primary** names the exact versions. The
+Astra, with price ratios but no versions or prices. The launcher's **Report Writer** info tip names no
+family: it asks for a strong model from another provider than the model under test, such as the one used
+as an assessor. The table in **The roster today, and why Anthropic is primary** names the exact versions. The
 project skills name no model or family at all and point here. When a provider renames or re-prices a line,
-this subsection, the roster table, the popups in `benchmark.component.html`, the guide component and the
-Report Pack dialog's writer info tip are the places to update.
+this subsection, the roster table, the popups in `benchmark.component.html` (the Report Writer tip
+included), the guide component and the Report Pack dialog's writer info tip are the places to update.
 
 **Two consequences of the co-assessor rule.**
 
@@ -6048,7 +6155,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `POST /api/admin/benchmark/suites/{id}/snapshot`: Attach a board built from uploaded snapshot text or an HTML dump to this suite (body `{ name, content, contentKind, notes?, sourceGnollHackVersion?, replaceExisting }`). 409 when the suite already has a snapshot and `replaceExisting` is false. Returns `{ board, suite }`. See *Game Snapshots*.
 
 ### Runs & Scoring
-- `POST /api/admin/benchmark/runs`: Start a benchmark run (gated by hourly/daily caps and same-provider acknowledgement).
+- `POST /api/admin/benchmark/runs`: Start a benchmark run (gated by hourly/daily caps and same-provider acknowledgement). An optional `reportWriterModelConfigurationId` names the run's report writer (§ *Harness Version 42 Updates*).
 - `GET /api/admin/benchmark/runs`: List historical runs with filtering.
 - `GET /api/admin/benchmark/runs/{id}`: Full run detail with question answers, compliance purpose statement, and assessment.
 - `GET /api/admin/benchmark/runs/active`: Return `{ runId }` for the run currently executing, or 204 when idle. Lets a client that reloaded mid-run reattach to it; the client then calls `GET .../runs/{id}` for the detail.
@@ -6088,7 +6195,8 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 
 #### Report Packs and Documents
 - `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and writer prompts for a report pack, without a model call (body as for the start). Returns the subject, the lettered peers, the estimated tokens and cost per document, the same-provider warning and any refusal.
-- `POST /api/admin/benchmark/report-packs`: Start a report-pack job (body `{ runIds, groupIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`, audiences 1 Executive Summary, 2 Technical Report, 3 Internal Brief). Returns 202 `{ jobId }`. Refusals, in order: 400 for an unknown entry or an Excluded subject; 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is the subject's own model; 400 for no audience; 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs.
+- `POST /api/admin/benchmark/report-packs`: Start a report-pack job (body `{ runIds, groupIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`, audiences 1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Brief). Returns 202 `{ jobId }`. Refusals, in order: 400 for an unknown entry or an Excluded subject; 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is the subject's own model; 400 for no audience; 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs.
+- `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing run-completion documents (Executive Summary and Report for AI Researchers and Developers) with the writer in the body, `{ writerModelConfigurationId }`, which is recorded on the run as its report writer. Returns 202 with the run's Pending status. 400 when the run has no final synthesis or the writer is refused (unusable, the model under test, the candidate's provider, the endpoint policy); 404 for an unknown run; 409 when both documents exist or a job for the run is Pending or Writing; 429 at the spend cap. See `ai-benchmark-report-pack.md` § 11.
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running report-pack job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel a report-pack job.
@@ -6124,7 +6232,7 @@ The benchmark performs domain evaluation:
    - The administrator must review and explicitly acknowledge the same-provider methodological notice (`acknowledgeSameProvider: true`).
    - Acknowledged status is persisted on `BenchmarkRun.SameProviderAcknowledged` and disclosed in generated reports.
 3. **Auditable Purpose Statement**:
-   - `Benchmark:Compliance:PurposeStatement` is recorded at execution time on `BenchmarkRun.PurposeStatementUsed` and included in every exportable Markdown report.
+   - `Benchmark:Compliance:PurposeStatement` is recorded at execution time on `BenchmarkRun.PurposeStatementUsed` and included in every exportable Markdown report. The Executive Summary and the Report for AI Researchers and Developers carry it, with the distillation prohibition, in their *Evaluation terms* block (`ai-benchmark-report-pack.md` § 1).
 4. **Visible Footprint & Manual Bulk Deletion**:
    - Retention is indefinite by design to maintain historical evaluation records without automated purges.
    - To keep storage visible and actionable, each suite displays its stored footprint (run count and total answer character count) alongside a bulk deletion control (`DELETE /api/admin/benchmark/suites/{id}/runs`).

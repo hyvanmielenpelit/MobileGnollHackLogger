@@ -168,6 +168,39 @@ public class SystemConfigUsageGuardTests
         Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId));
     }
 
+    [Theory]
+    [InlineData(BenchmarkRunReportDocumentsStatus.Pending, true)]
+    [InlineData(BenchmarkRunReportDocumentsStatus.Writing, true)]
+    [InlineData(BenchmarkRunReportDocumentsStatus.Completed, false)]
+    [InlineData(BenchmarkRunReportDocumentsStatus.Failed, false)]
+    public async Task ARunsReportWriter_BlocksOnlyWhileItsDocumentsArePendingOrWriting(BenchmarkRunReportDocumentsStatus status, bool blocks)
+    {
+        _db.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            SuiteName = "Sokoban basics",
+            Status = BenchmarkRunStatus.Completed,
+            TestedModelConfigurationId = 1,
+            AssessorModelConfigurationId = 2,
+            ReportWriterModelConfigurationId = ConfigId,
+            ReportDocumentsStatus = status
+        }));
+        await _db.SaveChangesAsync();
+
+        var blockers = await Guard().FindActiveUsesAsync(ConfigId);
+
+        if (!blocks)
+        {
+            Assert.Empty(blockers);
+            return;
+        }
+
+        var blocker = Assert.Single(blockers);
+        Assert.Equal("runReportWriter", blocker.Kind);
+        Assert.NotNull(blocker.RunId);
+        Assert.Contains("Sokoban basics", blocker.Label);
+        Assert.Equal(new[] { "report writer" }, blocker.Roles);
+    }
+
     [Fact]
     public async Task AJobForAnotherConfiguration_DoesNotBlock()
     {

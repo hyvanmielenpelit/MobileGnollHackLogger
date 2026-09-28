@@ -278,6 +278,11 @@ builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRubricGapA
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorService>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportPackJobManager>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportPackService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.IBenchmarkRunReportWriter>(sp =>
+    sp.GetRequiredService<Overseer.Services.Benchmarking.BenchmarkReportPackService>());
+// Singleton: it writes a run's documents after the run completes, outliving every request, and
+// opens its own scope per job.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRunReportDocumentService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportRenderService>();
 // Benchmark PDFs: the free Community license, and the embedded fonts registered once at startup.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
@@ -519,6 +524,16 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         await seriesOrchestrator.ReconcileOrphanedSeriesAsync(db);
     }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-series reconciliation failed."); }
+
+    // No run-completion document job survives a restart: a run left Pending or Writing is failed, and
+    // the run report dialog's Write Reports writes what is missing.
+    try
+    {
+        var db = benchmarkCleanupScope.ServiceProvider
+            .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        await Overseer.Services.Benchmarking.BenchmarkRunReportDocumentService.SettleInterruptedAsync(db);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark run-report document settlement failed."); }
 }
 
 app.Run();

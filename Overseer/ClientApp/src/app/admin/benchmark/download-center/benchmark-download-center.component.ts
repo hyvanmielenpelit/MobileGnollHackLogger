@@ -193,7 +193,7 @@ export const DOWNLOAD_PACKAGES: readonly DownloadPackage[] = [
     name: 'External',
     fullName: 'External package',
     tagline: 'Shareable reports for a model’s provider',
-    description: 'The Executive Summary and the Technical Report as PDF, to send to a model’s provider: Summary disclosure (Detailed optional), peers anonymized (named optional). Internal-only files cannot be chosen.'
+    description: 'The Executive Summary and the Report for AI Researchers and Developers as PDF, to send to a model’s provider: Summary disclosure (Detailed optional), peers anonymized (named optional). Internal-only files cannot be chosen.'
   },
   {
     id: 'custom',
@@ -964,7 +964,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
 
     if (row.kind === 'pack') {
       const doc = row.doc!;
-      name = `${safeFileName(doc.title || row.label)}_${reportDisclosureParam(state.disclosure)}_${reportPeerNamingParam(state.naming)}`
+      name = `${reportDocumentFileStem(doc, row.label)}_${reportDisclosureParam(state.disclosure)}_${reportPeerNamingParam(state.naming)}`
         + `${internal ? '_INTERNAL' : ''}.${format}`;
       if (format === 'html') {
         text = markdownToPrintableHtml(text, doc.title || row.label);
@@ -1120,10 +1120,25 @@ function sortDocuments(documents: readonly BenchmarkReportDocumentListItemDto[])
 export function audienceLabel(audience: BenchmarkReportAudience): string {
   switch (audience) {
     case BenchmarkReportAudience.ExecutiveSummary: return 'Executive Summary';
-    case BenchmarkReportAudience.TechnicalReport: return 'Technical Report';
+    case BenchmarkReportAudience.TechnicalReport: return 'Report for AI Researchers and Developers';
     case BenchmarkReportAudience.InternalBrief: return 'Internal Improvement Brief';
     default: return 'Report document';
   }
+}
+
+/** The audience suffixes a Report for AI Researchers and Developers title can end in, current and earlier. */
+const RESEARCHER_REPORT_TITLE_SUFFIX = /\s+[\u2014\u2013-]\s+(?:Report for AI Researchers and Developers|Technical Report)\s*$/;
+
+/**
+ * A report document's file-name stem. A Report for AI Researchers and Developers is named by its
+ * title without the audience suffix, then `_Researcher_Report`; every other document by its title.
+ */
+export function reportDocumentFileStem(doc: BenchmarkReportDocumentListItemDto, fallbackTitle: string): string {
+  const title = doc.title || fallbackTitle;
+  if (doc.audience !== BenchmarkReportAudience.TechnicalReport) {
+    return safeFileName(title);
+  }
+  return `${safeFileName(title.replace(RESEARCHER_REPORT_TITLE_SUFFIX, ''))}_Researcher_Report`;
 }
 
 function disclosureLabel(disclosure: BenchmarkReportDisclosure): string {
@@ -1213,6 +1228,11 @@ function completionMessage(planned: number, produced: number, failed: number): s
   return failed === 0
     ? `Downloaded ${produced} files as one ZIP.`
     : `Downloaded ${produced} of ${planned} files as one ZIP; ${failed} failed.`;
+}
+
+/** The paper the Download Center last used, for a PDF opened elsewhere; A4 when none is remembered. */
+export function rememberedPdfPaper(): BenchmarkPdfPaper {
+  return readStoredSettings()?.paper ?? 'a4';
 }
 
 /**

@@ -492,7 +492,7 @@ public class BenchmarkWordRendererTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_detailed_anonymized.docx",
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
@@ -645,10 +645,10 @@ public class BenchmarkWordRendererTests
 
         Assert.Equal(BenchmarkWordRenderer.ContentType, provider.ContentType);
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_detailed_anonymized.docx",
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             provider.FileDownloadName);
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_full_named_INTERNAL.docx",
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.docx",
             full.FileDownloadName);
         AssertValid(provider.FileContents);
         AssertValid(full.FileContents);

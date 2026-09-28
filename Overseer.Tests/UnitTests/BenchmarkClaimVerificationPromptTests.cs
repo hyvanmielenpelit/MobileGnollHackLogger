@@ -253,6 +253,18 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.DoesNotContain("'src/mon.c'", prompt);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction5_AcceptsTheDefinitionLineForAClaimAboutWhereTheFunctionIsDefined(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        Assert.Contains(
+            "and neither is the line on which a function merely begins, unless the claim is about where that function is defined: cite the lines inside it that decide the claim.",
+            prompt);
+    }
+
     // Run 52 Q5: the list item's meaning ("these are safe to eat") comes from its heading.
     private const string MushroomAnswer =
         "**Safe to Eat (Vegan):**\n"

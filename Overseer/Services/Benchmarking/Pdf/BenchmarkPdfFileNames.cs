@@ -39,10 +39,18 @@ public static class BenchmarkPdfFileNames
         return name.Length == 0 ? "export" : name;
     }
 
+    /// <summary>The file-name label of a Report for AI Researchers and Developers, in place of its long name.</summary>
+    public const string ResearcherReportLabel = "Researcher_Report";
+
     /// <summary>
     /// <c>&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].&lt;extension&gt;</c>, as the Download Center
     /// names a pack document: the title, else "&lt;audience&gt;: &lt;subject&gt;"; <c>_INTERNAL</c> at Full
     /// disclosure. The extension is <c>pdf</c> or <c>docx</c>.
+    ///
+    /// <para>A Report for AI Researchers and Developers is named
+    /// <c>&lt;title without its "— &lt;audience name&gt;" ending&gt;_Researcher_Report_…</c>, the ending being
+    /// either the current name or the legacy <c>Technical Report</c>; with no title, the subject label
+    /// takes the title's place.</para>
     /// </summary>
     public static string ForReportDocument(
         BenchmarkReportDocument document, BenchmarkReportRenderOptions options, string extension = "pdf")
@@ -53,6 +61,12 @@ public static class BenchmarkPdfFileNames
         string title = string.IsNullOrEmpty(document.Title)
             ? BenchmarkReportRenderService.AudienceName(document.Audience) + ": " + document.SubjectLabel
             : document.Title;
+        string label = string.Empty;
+        if (document.Audience == BenchmarkReportAudience.TechnicalReport)
+        {
+            title = string.IsNullOrEmpty(document.Title) ? document.SubjectLabel : WithoutAudienceEnding(document.Title);
+            label = "_" + ResearcherReportLabel;
+        }
         string disclosure = options.Disclosure switch
         {
             BenchmarkReportDisclosure.Detailed => "detailed",
@@ -62,7 +76,22 @@ public static class BenchmarkPdfFileNames
         string peers = options.PeerNaming == BenchmarkReportPeerNaming.Named ? "named" : "anonymized";
         string internalSuffix = options.Disclosure == BenchmarkReportDisclosure.Full ? "_INTERNAL" : string.Empty;
 
-        return SafeFileName(title) + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
+        return SafeFileName(title) + label + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
+    }
+
+    /// <summary>The title without a trailing <c> — Report for AI Researchers and Developers</c> or <c> — Technical Report</c>.</summary>
+    private static string WithoutAudienceEnding(string title)
+    {
+        foreach (string name in new[]
+                 {
+                     BenchmarkReportRenderService.AudienceName(BenchmarkReportAudience.TechnicalReport),
+                     BenchmarkReportRenderService.LegacyTechnicalReportName
+                 })
+        {
+            string ending = " — " + name;
+            if (title.EndsWith(ending, StringComparison.Ordinal)) return title[..^ending.Length];
+        }
+        return title;
     }
 
     /// <summary>A run file's server name with <c>_INTERNAL</c> before a <c>.pdf</c> extension that replaces its own.</summary>

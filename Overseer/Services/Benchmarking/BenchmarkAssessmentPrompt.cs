@@ -610,8 +610,20 @@ public static class BenchmarkAssessmentPrompt
     ///     tools add a [Not reachable: …] line for a function definition with no live call site; the
     ///     five tool guides that describe these move ToolGuidesSha256. ScoringMethodVersion stays 12
     ///     and CandidateSystemPromptSha256 does not move.
+    /// v42: the assessor prompt says the rubric's SOURCE line records provenance, not the list of
+    ///     correct citations, so a citation it does not name never lowers ACCURACY by itself (H1). A
+    ///     definition-line citation carries no citation note when the claim names that definition
+    ///     and a line within 5 of it, and the verifier's instruction 5 accepts the definition line
+    ///     for a claim about where a function is defined (H2). A sentence qualifying a fault as
+    ///     trivial, minor, slight, small, lesser or imprecise describes no fabrication, and a
+    ///     contested verdict needs ACCURACY at 4 or below (H3). A synthesis sentence that introduces
+    ///     a list with a colon attributes a fabrication to its own list item only (H4). The report and
+    ///     the run diagnostics share one knowledge-base topic guard, which reads questions and rubric
+    ///     bodies but not the rubric's SOURCE list or file names (H5). The client's Instrument
+    ///     Measurements notice counts per panel member (H6, client only). ScoringMethodVersion stays
+    ///     12; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "41";
+    public const string HarnessVersion = "42";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -797,6 +809,9 @@ public static class BenchmarkAssessmentPrompt
         // ground-truth list, so "absent from the rubric" and "contradicted by the rubric" are
         // different findings and only the second one can carry a critical error.
         sb.AppendLine("- **A claim the rubric does not mention is not thereby invented.** Mark criticalError only for a claim the rubric's ground truth or your own verified knowledge **contradicts**; a claim the rubric merely omits belongs in `unverifiedClaims` (section 7), where the harness checks it against the source.");
+        // The SOURCE line names where the rubric's author looked, not every correct place to look,
+        // so a citation outside it is a claim to verify rather than a defect.
+        sb.AppendLine("- **The rubric's SOURCE line records where the rubric's author found its facts; it is not the list of correct citations.** A source location the answer cites that the SOURCE line does not name — another function, another file or another line — is not wrong for that reason and never lowers ACCURACY by itself. When you cannot tell whether such a citation is right, copy its sentence to `unverifiedClaims`; the claim verifier checks it.");
         sb.AppendLine("- When criticalError is true you MUST return `criticalErrorQuote`: the offending sentence copied verbatim from the candidate answer. The harness checks that this text appears in the answer and **ignores an unverifiable critical error**, so a missing or paraphrased quote costs the finding.");
         sb.AppendLine("- Quote the sentence that commits the error the clause names. When the clause is about advice or an implication, quote the advice, not a true statement beside it.");
         sb.AppendLine();

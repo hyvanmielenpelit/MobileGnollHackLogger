@@ -132,12 +132,23 @@ public sealed class BenchmarkReportPackPreparation
 
 }
 
+/// <summary>Writes a run's run-completion documents; the job's document progress carries the outcome.</summary>
+public interface IBenchmarkRunReportWriter
+{
+    /// <summary>
+    /// Writes every document on the job's list, one after another, stored with
+    /// <see cref="BenchmarkReportDocumentOrigin.RunCompletion"/>. The job's request names the one run
+    /// and its writer; the job must already hold the report-pack slot.
+    /// </summary>
+    Task WriteRunCompletionDocumentsAsync(BenchmarkReportPackJob job, CancellationToken ct);
+}
+
 /// <summary>
 /// Writes report-pack documents: one writer call per document, one repair turn when validation
 /// fails, then drop-and-notice. The only class of the feature that calls a model; rendering is
 /// <see cref="BenchmarkReportRenderService"/>'s and never calls one.
 /// </summary>
-public class BenchmarkReportPackService
+public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 {
     /// <summary>The SystemAiUsageLog.RoleContext value for report-pack writing.</summary>
     public const int UsageRoleContext = 8;
@@ -185,6 +196,19 @@ public class BenchmarkReportPackService
         var job = _jobManager.TryGet(jobId);
         if (job == null) return;
 
+        await RunJobAsync(job, BenchmarkReportDocumentOrigin.ReportPack, ct);
+    }
+
+    public Task WriteRunCompletionDocumentsAsync(BenchmarkReportPackJob job, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        return RunJobAsync(job, BenchmarkReportDocumentOrigin.RunCompletion, ct);
+    }
+
+    /// <summary>Prepares the job's subject once, then writes and stores each document with <paramref name="origin"/>.</summary>
+    private async Task RunJobAsync(BenchmarkReportPackJob job, BenchmarkReportDocumentOrigin origin, CancellationToken ct)
+    {
+        string jobId = job.Id;
         try
         {
             int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
@@ -233,7 +257,7 @@ public class BenchmarkReportPackService
             foreach (var progress in job.Documents.ToList())
             {
                 ct.ThrowIfCancellationRequested();
-                bool ok = await WriteDocumentAsync(job, progress.Audience, prep, config, endpoint, apiKey, pricing, excerptChars, maxOutputTokens, ct);
+                bool ok = await WriteDocumentAsync(job, progress.Audience, origin, prep, config, endpoint, apiKey, pricing, excerptChars, maxOutputTokens, ct);
                 if (ok) completed++; else failed++;
             }
 
@@ -274,6 +298,7 @@ public class BenchmarkReportPackService
     private async Task<bool> WriteDocumentAsync(
         BenchmarkReportPackJob job,
         BenchmarkReportAudience audience,
+        BenchmarkReportDocumentOrigin origin,
         BenchmarkReportPackPreparation prep,
         SystemAiApiConfiguration config,
         AiEndpointDescriptor endpoint,
@@ -379,7 +404,8 @@ public class BenchmarkReportPackService
             job.AddLog($"{name}: {notes.Count(n => n.Dropped)} item(s) removed by validation.", "warning");
         }
 
-        var status = notes.Any(n => n.Dropped)
+        // A spelling note (rule 12) keeps its item but still marks the document.
+        var status = notes.Any(n => n.Dropped || n.Rule == BenchmarkReportPackValidator.UsSpellingRule)
             ? BenchmarkReportDocumentStatus.CompletedWithWarnings
             : BenchmarkReportDocumentStatus.Completed;
 
@@ -387,6 +413,7 @@ public class BenchmarkReportPackService
         {
             PackId = job.PackId,
             Audience = audience,
+            Origin = origin,
             SubjectKey = prep.Subject.Key,
             SubjectLabel = Truncate(prep.Sheet.SubjectLabel, 256),
             SubjectRunIdsJson = BenchmarkReportJson.Serialize(prep.SubjectRuns.Select(r => r.Id).ToList()),

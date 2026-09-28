@@ -571,6 +571,32 @@
                   </div>
                 }
               </div>
+
+              <div class="form-group">
+                <label id="bmReportWriterModelLabel">Report Writer <span class="field-optional">Optional</span></label>
+                <div class="gh-field-row">
+                  <app-model-picker class="report-writer-model-selector"
+                                    labelledBy="bmReportWriterModelLabel" describedBy="bmReportWriterModelHint"
+                                    noneLabel="None — no AI-written reports" [showPrice]="true"
+                                    [options]="benchmarkPickerOptions" [selectedKey]="reportWriterConfigId"
+                                    (selectionChange)="selectReportWriterModel($event.model)"></app-model-picker>
+                  <app-info-tip trigger="click" tipId="bmReportWriterModelHint" subject="Report Writer">
+                    <p>After the run is scored, this model writes an Executive Summary and a Report for AI Researchers
+                      and Developers once. Downloads render them without calling it again.</p>
+                    <p>Use a strong model from another provider than the model under test, such as the one you use as
+                      an assessor.</p>
+                  </app-info-tip>
+                </div>
+
+                <!-- The server's two report-writer refusals, shown before Start so the run is never sent. -->
+                @if (reportWriterLaunchRefusal) {
+                  <div class="alert alert-warning mt-10 report-writer-advisory" role="note">
+                    <div class="alert-content">
+                      <div class="alert-body">{{ reportWriterLaunchRefusal }}</div>
+                    </div>
+                  </div>
+                }
+              </div>
             </fieldset>
 
             <fieldset class="gh-fieldset setup-group setup-group-exec">
@@ -2056,35 +2082,46 @@
             They are how much of a dimension's shortfall the instrument can account for, and they
             are what a later rule change is checked against.
           -->
+          <!-- In a panel run each count is given per member: member A's from the run, member B's
+               counted from its own verdicts. The docked subsets are member A's alone. -->
           @if (hasInstrumentMeasurements) {
             <div class="alert alert-info mb-20" role="note">
               <div class="alert-content">
                 <div class="alert-heading"><strong>Instrument Measurements</strong></div>
                 <div class="alert-body">
-                  @if (completenessOutOfScopeCount > 0) {
+                  @if (hasCompletenessOutOfScopeMeasurement) {
                     <div>
-                      <strong>{{ completenessOutOfScopeCount }} out-of-scope completeness deduction(s)</strong> &mdash;
-                      rubric points the assessor itself placed outside what the question asked, recorded
+                      @if (instrumentMeasurementsPerMember) {
+                        <strong>{{ completenessOutOfScopeCount }} (member A) and {{ memberBCompletenessOutOfScopeCount }} (member B) out-of-scope completeness deduction(s)</strong> &mdash;
+                        rubric points a panel member itself placed outside what the question asked, recorded
+                      } @else {
+                        <strong>{{ completenessOutOfScopeCount }} out-of-scope completeness deduction(s)</strong> &mdash;
+                        rubric points the assessor itself placed outside what the question asked, recorded
+                      }
                       under the <code>OUT-OF-SCOPE:</code> marker &mdash; the instruction is not to deduct
                       for them. The instrument's share of the Accuracy-to-Completeness gap.
                     </div>
                     @if (completenessOutOfScopeDeductedCount > 0) {
                       <div>
-                        {{ completenessOutOfScopeDeductedCount }} of them sit beside a Completeness level
+                        {{ completenessOutOfScopeDeductedCount }} of {{ instrumentMeasurementsPerMember ? "member A's" : 'them' }} sit beside a Completeness level
                         below 6 with no in-scope defect named &mdash; flagged for a second reading.
                       </div>
                     }
                   }
-                  @if (readabilityFormOnlyCount > 0) {
+                  @if (hasReadabilityFormOnlyMeasurement) {
                     <div>
-                      <strong>{{ readabilityFormOnlyCount }} rubric format suggestion(s) not followed</strong> &mdash;
+                      @if (instrumentMeasurementsPerMember) {
+                        <strong>{{ readabilityFormOnlyCount }} (member A) and {{ memberBReadabilityFormOnlyCount }} (member B) rubric format suggestion(s) not followed</strong> &mdash;
+                      } @else {
+                        <strong>{{ readabilityFormOnlyCount }} rubric format suggestion(s) not followed</strong> &mdash;
+                      }
                       rubric FORM criteria naming a presentation the answer did not adopt, recorded under
                       the <code>FORM:</code> marker &mdash; the instruction is not to deduct for them.
                       Readability is graded on its level anchors alone.
                     </div>
                     @if (readabilityFormOnlyDeductedCount > 0) {
                       <div>
-                        {{ readabilityFormOnlyDeductedCount }} of them sit beside a Readability level
+                        {{ readabilityFormOnlyDeductedCount }} of {{ instrumentMeasurementsPerMember ? "member A's" : 'them' }} sit beside a Readability level
                         below 6 with no other basis named.
                       </div>
                     }
@@ -2917,6 +2954,78 @@
             [pricingSource]="selectedRunDetail.pricingSource ?? null"
             [pricingIncomplete]="selectedRunDetail.pricingIncomplete ?? false"
             [legacyRun]="isLegacyCostRun(selectedRunDetail)"></app-benchmark-cost-panel>
+
+          <!--
+            The run's AI-written reports: an Executive Summary and a Report for AI Researchers and
+            Developers, written once after scoring by the run's report writer and stored. View and
+            Downloads render the stored text; only Write Reports calls a model.
+          -->
+          <details class="gh-disclosure mt-20 rr-ai-reports" [open]="runReportDocuments.length > 0">
+            <summary>AI-Written Reports</summary>
+            <div class="gh-disclosure-body">
+              <p class="rr-ai-status" role="status">{{ runReportStatusText(selectedRunDetail) }}</p>
+
+              @if (runReportDocumentsError) {
+                <p class="form-hint text-danger">{{ runReportDocumentsError }}</p>
+              }
+
+              @if (runReportDocuments.length > 0) {
+                <ul class="rr-ai-doc-list">
+                  @for (doc of runReportDocuments; track doc.id) {
+                    <li class="rr-ai-doc-row" [attr.data-document-id]="doc.id">
+                      <div class="rr-ai-doc-text">
+                        <span class="rr-ai-doc-name">{{ reportAudienceLabel(doc.audience) }}</span>
+                        <span class="gh-tag rr-ai-doc-status" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ reportDocumentStatusLabel(doc.status) }}</span>
+                        @if (doc.runChangedSinceGeneration) {
+                          <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
+                        }
+                      </div>
+                      <button type="button" class="btn-gh btn-gh-small rr-ai-doc-view"
+                              [attr.aria-label]="'View the ' + reportAudienceLabel(doc.audience)"
+                              (click)="viewRunReportDocument(doc)">View</button>
+                    </li>
+                  }
+                </ul>
+              }
+
+              @if (runReportViewError) {
+                <div class="alert alert-warning mt-10" role="alert">
+                  <div class="alert-content"><div class="alert-body">{{ runReportViewError }}</div></div>
+                </div>
+              }
+
+              <div class="rr-ai-actions">
+                <button type="button" class="btn-gh btn-gh-small rr-ai-downloads" (click)="openRunDownloads()">Downloads</button>
+              </div>
+
+              @if (runReportDocumentsMissing) {
+                <div class="rr-ai-write">
+                  <div class="form-group rr-ai-writer-field">
+                    <label id="rrReportWriterModelLabel">Report writer</label>
+                    <app-model-picker class="rr-report-writer-model-selector" labelledBy="rrReportWriterModelLabel"
+                                      [describedBy]="runReportWriteBlockedReason ? 'rrReportWriterBlocked' : null"
+                                      placeholder="Select a model" [emptyHint]="benchmarkPickerEmptyHint" [showPrice]="true"
+                                      [options]="benchmarkPickerOptions" [selectedKey]="runReportWriterConfigId"
+                                      (selectionChange)="selectRunReportWriterModel($event.model)"></app-model-picker>
+                  </div>
+                  <button type="button" class="btn-gh rr-ai-write-btn"
+                          [disabled]="!!runReportWriteBlockedReason || runReportWriteSubmitting"
+                          [attr.aria-busy]="runReportWriteSubmitting ? 'true' : null"
+                          (click)="writeRunReports()">
+                    {{ runReportWriteSubmitting ? 'Requesting…' : 'Write Reports' }}
+                  </button>
+                </div>
+                @if (runReportWriteBlockedReason) {
+                  <p id="rrReportWriterBlocked" class="form-hint rr-ai-write-blocked">{{ runReportWriteBlockedReason }}</p>
+                }
+                @if (runReportWriteError) {
+                  <div class="alert alert-warning mt-10" role="alert">
+                    <div class="alert-content"><div class="alert-body">{{ runReportWriteError }}</div></div>
+                  </div>
+                }
+              }
+            </div>
+          </details>
 
           <!--
             Assessor calibration. Grades this finished run's answers with another model and records
@@ -4114,11 +4223,16 @@
   <div class="dialog-content flex-col run-progress-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3 id="runProgressDialogTitle">Benchmark Run #{{ activeRunDetail?.id ?? activeRunId }}</h3>
+        <!-- The focus target on open: it is also the dialog's accessible name. -->
+        <h3 id="runProgressDialogTitle" #runProgressHeading tabindex="-1">Benchmark Run #{{ activeRunDetail?.id ?? activeRunId }}</h3>
         <!-- Models are not in the header: they carry badges, and a header line cannot show
              them without wrapping. They live in .run-model-strip at the top of the body. -->
         <p class="dialog-subtitle">
-          {{ activeRunDetail?.suiteName }} | Profile: {{ activeRunDetail?.scoringProfileName || 'Default' }}
+          @if (activeRunDetail) {
+            {{ activeRunDetail.suiteName }} | Profile: {{ activeRunDetail.scoringProfileName || 'Default' }}
+          } @else {
+            Starting benchmark run…
+          }
         </p>
       </div>
       <button type="button" class="btn-icon-action" [attr.aria-label]="returnToSeriesOnClose ? 'Return to series progress' : 'Close benchmark run progress'" (click)="closeRunProgressDialog()">
@@ -4148,14 +4262,6 @@
         @if (completionSoundStatus) {
           <p class="text-muted" role="status">{{ completionSoundStatus }}</p>
         }
-        <h4 #runProgressHeading tabindex="-1" class="progress-heading">
-          @if (activeRunDetail) {
-            {{ activeRunDetail.suiteName }}
-          } @else {
-            Starting benchmark run…
-          }
-        </h4>
-
         <!-- The models, badged exactly as the selectors in the tab badge them, so the
              configuration under test is legible without opening the report. -->
         @if (activeRunDetail) {
@@ -4467,7 +4573,7 @@
 
       <!-- Focusable so a keyboard user can scroll it once it scrolls on its own. -->
       <section class="run-progress-questions" tabindex="0" aria-labelledby="runProgressQuestionsTitle">
-        <h4 id="runProgressQuestionsTitle" class="run-progress-questions-title">
+        <h4 id="runProgressQuestionsTitle" class="gh-section-title run-progress-questions-title">
           Questions <span class="run-progress-questions-count">{{ runProgressRows.length }}</span>
         </h4>
         <ul class="job-item-list run-question-list">
@@ -4482,7 +4588,7 @@
               @if (score != null) {
                 <!-- The hidden word, not aria-label, names it: aria-label is prohibited on a
                      generic span and is ignored by some screen readers there. -->
-                <span class="job-item-score"><span class="visually-hidden">Score </span>{{ score | number:'1.0-1' }}</span>
+                <span class="job-item-score" [class]="getQuestionScoreBadgeClass(score)"><span class="visually-hidden">Score </span>{{ score | number:'1.0-1' }}</span>
               }
               <span class="job-status-chip" [class]="runRowChipClass(row)">{{ runRowChipLabel(row) }}</span>
             </li>

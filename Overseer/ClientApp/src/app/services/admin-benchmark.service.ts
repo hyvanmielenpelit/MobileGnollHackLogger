@@ -740,6 +740,12 @@ export interface StartBenchmarkRunRequest {
    * and wiki using read-only tools. Null means no claim verification.
    */
   claimVerifierModelConfigurationId?: number | null;
+  /**
+   * Optional. When set, this configuration writes the run's Executive Summary and Report for AI
+   * Researchers and Developers once, after the run is scored. It may be neither the model under
+   * test nor of its provider. Null means no AI-written reports. Not a comparability key.
+   */
+  reportWriterModelConfigurationId?: number | null;
   scoringProfileId?: number | null;
   acknowledgeSameProvider?: boolean;
   verboseMode?: boolean;
@@ -1176,6 +1182,18 @@ export interface BenchmarkRunDetailDto {
   claimVerifierReasoningModeUsed?: string | null;
   claimVerifierModelEndpoint?: string | null;
 
+  /** Null when the run was started without a report writer and none was chosen since. */
+  reportWriterModelConfigurationId?: number | null;
+  /** The report writer configuration's current display name; null when none or deleted. */
+  reportWriterDisplayName?: string | null;
+  /**
+   * Where the run's two AI-written documents stand. It is not reset when the documents are
+   * deleted, so whether they exist is read from the document list.
+   */
+  reportDocumentsStatus?: BenchmarkRunReportDocumentsStatus;
+  /** Why the documents failed or were skipped; null otherwise. */
+  reportDocumentsMessage?: string | null;
+
   startedByUserId?: string | null;
   startedByUserName?: string | null;
   status: string | number;
@@ -1316,6 +1334,12 @@ export interface BenchmarkRunDetailDto {
    */
   toolFamilyCounts?: { [family: string]: number } | null;
   zeroKnowledgeBaseAnswerCount?: number | null;
+  /**
+   * The suite asks at least one question a knowledge-base article answers
+   * (BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion), so answers without a knowledge-base
+   * call are not by themselves prompt-compliant. Undefined on a run detail served before it existed.
+   */
+  hasKnowledgeBaseRoutingQuestion?: boolean;
   secondOpinionDisagreementCount?: number;
   toolOverheadMs?: number | null;
   difficultyFallbackUsed: boolean;
@@ -2064,6 +2088,33 @@ export enum BenchmarkReportPeerNaming {
   Anonymized = 2
 }
 
+/** Where a stored document came from: Model Comparison's Report Pack, or a run's completion. */
+export enum BenchmarkReportDocumentOrigin {
+  ReportPack = 1,
+  RunCompletion = 2
+}
+
+/** Where a run's two AI-written (run-completion) documents stand. */
+export enum BenchmarkRunReportDocumentsStatus {
+  NotRequested = 0,
+  Pending = 1,
+  Writing = 2,
+  Completed = 3,
+  CompletedWithWarnings = 4,
+  Failed = 5,
+  Skipped = 6
+}
+
+/** Writes a finished run's missing AI-written documents now, with this writer. */
+export interface WriteRunReportDocumentsRequest {
+  writerModelConfigurationId: number;
+}
+
+export interface WriteRunReportDocumentsResponse {
+  runId: number;
+  status: BenchmarkRunReportDocumentsStatus;
+}
+
 /** The comparison's pricing basis as the report-pack request body carries it: a number. */
 export enum BenchmarkReportPackPricingBasis {
   AsRun = 0,
@@ -2206,11 +2257,13 @@ export interface BenchmarkReportDocumentListItemDto {
   missingRunIds: number[];
   /** The disclosure levels this document renders at. */
   allowedDisclosures: BenchmarkReportDisclosure[];
+  /** Report Pack or run completion. Undefined on a list served before it existed: a Report Pack document. */
+  origin?: BenchmarkReportDocumentOrigin;
 }
 
 /** One validation problem, and whether the offending item was dropped. */
 export interface BenchmarkReportValidationNote {
-  /** The validator rule number, 1–11. */
+  /** The validator rule number, 1–12. */
   rule: number;
   /** Where: `headline`, `sections.abstract`, `weaknesses[1]`, …. */
   location: string;
@@ -2876,6 +2929,16 @@ export class AdminBenchmarkService {
 
   deleteReportDocument(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/report-documents/${id}`);
+  }
+
+  /**
+   * Writes a finished run's missing AI-written documents with the given writer, which becomes the
+   * run's report writer. 202 once queued. Refusals: 400 `{ error }` (no final synthesis, or the
+   * writer refused), 404, 409 `{ error }` (both documents exist, or a job is pending or writing),
+   * 429 a plain string.
+   */
+  writeRunReportDocuments(runId: number, request: WriteRunReportDocumentsRequest): Observable<WriteRunReportDocumentsResponse> {
+    return this.http.post<WriteRunReportDocumentsResponse>(`/api/admin/benchmark/runs/${runId}/report-documents`, request);
   }
 
   /** The run's Markdown report as text, named as the server's `Content-Disposition` names it. */

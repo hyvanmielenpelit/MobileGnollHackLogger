@@ -1,22 +1,22 @@
 # GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers
 
-*Confidential. Prepared for the model's provider. Questions are described, not quoted.*
+*INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.*
 
 - **Date:** 2026-09-28
 - **Suite:** GnollHack Core Suite
 - **Questions:** 4
 - **Runs:** 1 (run 12)
-- **Peers:** Models A and B, identities withheld
+- **Peers:** none; this is a stand-alone report
 
 ## Abstract
 
-GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, ranking 2nd of 3 against Model A and Model B.
+GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, with one critical error on Q3.
 
 ## Key figures
 
-- **Intelligence:** 80 ± 3 / 100, 2nd of 3; its 95 % interval overlaps those of Models A and B.
-- **Speed:** median answer time 12.3 s, 2nd of 2.
-- **Cost:** $0.036 per question, 2nd of 3.
+- **Intelligence:** 80 ± 3 / 100.
+- **Speed:** median answer time 12.3 s.
+- **Cost:** $0.036 per question.
 - **Serious errors:** 1 of 4 answers.
 
 ## Setup and method
@@ -30,76 +30,45 @@ GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, ranking 2nd of 3 against Model
   - Panel member B: Claude Haiku 5 (Anthropic, claude-haiku-5), different family from the model under test
   - Claim verifier: Gemini 3.8 Flash (Google, gemini-3.8-flash), different family from the model under test
 - **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
-- **Comparability:** every model in this report was measured under one instrument condition, signature `sig-7f3a91`.
+- **Comparability:** this report describes the model on its own, measured under the instrument condition with signature `sig-7f3a91`.
 - **Pricing basis:** Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
 - **Versions:** harness 41, scoring method 12.
 
-## Results against peers
-
-### Quality
-
-| Model | Intelligence Index | 95 % interval | Rank |
-|---|---|---|---|
-| **GPT-5.6 Luna** | 80 | 77–83 | 2 |
-| Model A | 85 | 81–89 | 1 |
-| Model B | 78 | 74–83 | 3 |
-
-*GPT-5.6 Luna: its 95 % interval overlaps those of Models A and B. This describes where the intervals overlap; it is not a significance test.*
-
-Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none. Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and choose the other under Compare with group.
-
-### Speed
-
-| Model | Median answer time | Rank |
-|---|---|---|
-| **GPT-5.6 Luna** | 12.3 s | 2 |
-| Model A | 9.8 s | 1 |
-| Model B | not available | — |
-
-Not ranked on speed:
-
-- Model B: Degraded: speed was measured with parallel execution disabled.
-
-### Cost
-
-| Model | Cost per question | Rank |
-|---|---|---|
-| **GPT-5.6 Luna** | $0.036 | 2 |
-| Model A | $0.052 | 3 |
-| Model B | $0.021 | 1 |
+## Results
 
 ### Dimensions
 
-| Dimension | GPT-5.6 Luna | Peer mean | Difference |
-|---|---|---|---|
-| Accuracy | 84 | 82 | +2 |
-| Completeness | 70 | 78 | -8 |
-| Conciseness | 88 | 85 | +3 |
-| Readability | 90 | 89 | +1 |
+| Dimension | GPT-5.6 Luna |
+|---|---|
+| Accuracy | 84 |
+| Completeness | 70 |
+| Conciseness | 88 |
+| Readability | 90 |
 
 ### Difficulty bands
 
-| Difficulty band | Questions | GPT-5.6 Luna | Peer mean | Difference |
-|---|---|---|---|---|
-| Simple | 1 | 90 | 85 | +5 |
-| Intermediate | 2 | 49 | 69 | -21 |
-| Advanced | 1 | 87 | 91 | -4 |
-
-### Judge-dependent pairs
-
-Judge-dependent pairs: not available. The compared runs were not all graded by the same panel.
+| Difficulty band | Questions | GPT-5.6 Luna |
+|---|---|---|
+| Simple | 1 | 90 |
+| Intermediate | 2 | 49 |
+| Advanced | 1 | 87 |
 
 ## Why it scored this way
 
 One critical error on Q3 capped that answer at 25.
 
-Completeness was 70 against a peer mean of 78.
+Completeness was its lowest dimension at 70.
 
-- Asserted a false outcome on Q3, where Model A scored well. *(Both graders)*
+- Asserted a false outcome on Q3. *(Both graders)*
   - *Evidence:* R1: Both graders — critical error (Q3)
-  - *Evidence:* Q3 — Breaking a thrown gem: score 25 / 100; peer mean 68 (-43); Panel member A 25, Panel member B 25; a grader flagged a critical error; the claim verifier refuted one claim
+  - *Evidence:* Q3 — Breaking a thrown gem: score 25 / 100; Panel member A 25, Panel member B 25; a grader flagged a critical error; the claim verifier refuted one claim
+  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
+  - *Panel member A on Q3:* Accuracy: The gem does not always shatter.
 - Scored lowest on intermediate questions (49). *(Computed)*
   - *Evidence:* band.intermediate.score: 49
+  - *Q2 as asked:* How long is the prayer timeout after a successful prayer?
+  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
+  - *Panel member A on Q3:* Accuracy: The gem does not always shatter.
 
 ## What worked well
 
@@ -107,28 +76,137 @@ Short, accurate answers on simple questions (R2).
 
 - Answers simple questions precisely and briefly. *(One grader — different family)*
   - *Evidence:* R2: One grader — different family — accuracy (Q1)
+  - *Q1 as asked:* What happens if I throw a gem at a co-aligned unicorn?
+  - *Panel member A on Q1:* Accuracy: Matches rubric.
 
 ## Recommendations for model developers
 
-- Verify object-destruction rules before asserting them. *(Both graders)*
+- Asserting a destruction rule without checking it cost Q3; verify object-destruction rules before stating them. *(Both graders)*
   - *Evidence:* R1: Both graders — critical error (Q3)
+  - *Evidence:* Q3 — Breaking a thrown gem: score 25 / 100; Panel member A 25, Panel member B 25; a grader flagged a critical error; the claim verifier refuted one claim
+  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
+  - *Panel member A on Q3:* Accuracy: The gem does not always shatter.
 
 ## Per-question results
 
-| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted claims | Tool calls | Model time |
-|---|---|---|---|---|---|---|---|---|---|
-| Q1 | Throwing gems at unicorns | Simple | 90 | 85 | +5 | no | 0 | 2.0 | 8.1 s |
-| Q2 | Prayer timeout | Intermediate | 72 | 70 | +2 | no | 0 | 3.0 | 11.0 s |
-| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5.0 | 15.2 s |
-| Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4.0 | 13.4 s |
+| Q | Topic | Band | Score | Critical error | Refuted claims | Tool calls | Model time |
+|---|---|---|---|---|---|---|---|
+| Q1 | Throwing gems at unicorns | Simple | 90 | no | 0 | 2.0 | 8.1 s |
+| Q2 | Prayer timeout | Intermediate | 72 | no | 0 | 3.0 | 11.0 s |
+| Q3 | Breaking a thrown gem | Intermediate | 25 | yes | 1 | 5.0 | 15.2 s |
+| Q4 | Wand of wishing charges | Advanced | 87 | no | 0 | 4.0 | 13.4 s |
 
-### Questions below the peer mean or with a critical error
+### Questions scoring below 50 or with a critical error
 
 **Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters; the rubric says it can survive.
 
+> **Question:** Will my gem break if I throw it at a unicorn?
+>
+> **Answer excerpt:** Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for…
+
+### Question details
+
+#### Q1: Throwing gems at unicorns
+
+**Question:**
+
+> What happens if I throw a gem at a co-aligned unicorn?
+
+**Rubric:**
+
+> - The unicorn catches the gem.
+> - A valuable gem raises Luck; worthless glass does not.
+
+**Answer excerpt:**
+
+> The unicorn catches it. A real gem of your alignment raises your Luck; glass does nothing.
+
+**Graders:**
+
+- **Panel member A (Gemini 3.8 Flash):** score 92. Accurate and brief.
+  - Accuracy: Matches rubric.
+- **Panel member B (Claude Haiku 5):** score 88. Correct.
+
+**Claim verifier:**
+
+- No claims were checked.
+
+#### Q2: Prayer timeout
+
+**Question:**
+
+> How long is the prayer timeout after a successful prayer?
+
+**Rubric:**
+
+> - The timeout is reset to a random value around 350.
+
+**Answer excerpt:**
+
+> About 50 to 1000 turns, typically near 350.
+
+**Graders:**
+
+- **Panel member A (Gemini 3.8 Flash):** score 75. Terse.
+  - Completeness: Omits the Luck adjustment.
+- **Panel member B (Claude Haiku 5):** score 69.
+
+**Claim verifier:**
+
+- **supported:** "The timeout is typically near 350." — Matches the prayer code (pray.c).
+
+#### Q3: Breaking a thrown gem
+
+**Question:**
+
+> Will my gem break if I throw it at a unicorn?
+
+**Rubric:**
+
+*Rubric not recorded for this answer.*
+
+**Answer excerpt:**
+
+> Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for…
+
+**Graders:**
+
+- **Panel member A (Gemini 3.8 Flash):** score 25. Critical error.
+  - Accuracy: The gem does not always shatter.
+  - Critical error: "A thrown gem always shatters on impact"
+- **Panel member B (Claude Haiku 5):** score 25. Fabricated breakage.
+
+**Claim verifier:**
+
+- **refuted:** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
+
+#### Q4: Wand of wishing charges
+
+**Question:**
+
+> How many wishes can I get from a wand of wishing?
+
+**Rubric:**
+
+> - 1 to 3 charges.
+> - Wresting gives one more.
+
+**Answer excerpt:**
+
+> A new wand has 1 to 3 charges, and you can wrest one more.
+
+**Graders:**
+
+- **Panel member A (Gemini 3.8 Flash):** score 88. Good.
+- **Panel member B (Claude Haiku 5):** score 86.
+
+**Claim verifier:**
+
+- No claims were checked.
+
 ## Tool-use behavior
 
-- **Tool calls per question:** 3.5 (peer mean 2.8)
+- **Tool calls per question:** 3.5
 - **Source code share:** 57 %
 - **Wiki share:** 29 %
 - **Structured lookup share:** 14 %
@@ -153,11 +231,14 @@ Short, accurate answers on simple questions (R2).
 | R2 | strength · accuracy | Q1 | One grader — different family | 1 of 1 run |
 | R3 | strength (A) vs weakness (B) · conciseness | Q2 | Graders disagree | 1 of 1 run |
 
+- **R1:** member A: States that a thrown gem always shatters. · member B: Claims the gem is always destroyed.
+- **R2:** member A: Precise on the unicorn throwing rules.
+- **R3:** member A: Admirably brief. · member B: Too terse to be useful.
+
 ## Threats to validity
 
 - The benchmark asks single-turn questions under one chat configuration. It does not exercise conversation history, pre-injected wiki context, spoiler-free mode, web search or subagents.
 - Interval: Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two.
-- Significance: Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none.
 - The graders are AI models. Each grader's family relation to the model under test is stated under Setup and method; a grader from the model's own family may read it more favorably.
 
 ## Reproducibility appendix
@@ -174,12 +255,6 @@ Short, accurate answers on simple questions (R2).
 - **Pricing basis:** Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
 - **Price card date:** 2026-09-01
 
-## Removed content
-
-Automatic validation removed these items from the writer's output before it was stored:
-
-- `weaknesses[2]` (rule 4)
-
 ## Evaluation terms
 
 - **Purpose statement:** Internal evaluation of candidate AI models for the Overseer assistant within GnollHack.
@@ -188,6 +263,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Report 101 · format version 2 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers anonymized*
+*Report 101 · format version 2 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*

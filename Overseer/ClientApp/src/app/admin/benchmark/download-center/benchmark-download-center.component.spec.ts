@@ -22,8 +22,10 @@ import {
   INTERNAL_REASONS,
   ROW_NOTES,
   STORED_SETTINGS_VERSION,
+  audienceLabel,
   downloadCenterIo,
-  internalServerName
+  internalServerName,
+  reportDocumentFileStem
 } from './benchmark-download-center.component';
 import { sha256Hex } from './text-archive';
 import { zipEntryTimes } from './zip-entry-times.testing';
@@ -62,7 +64,7 @@ const DIAG_DOCX_NAME = 'Board_Suite_GPT_Model_X_run42_diagnostics_INTERNAL.docx'
 function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
   const titles: Record<number, string> = {
     [ExecutiveSummary]: 'Executive Summary: GPT Model X',
-    [TechnicalReport]: 'Technical Report: GPT Model X',
+    [TechnicalReport]: 'GPT Model X — Report for AI Researchers and Developers',
     [InternalBrief]: 'Internal Improvement Brief: GPT Model X'
   };
   return {
@@ -367,6 +369,14 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(checked('doc:1')).toEqual(['pdf']);
     });
 
+    it('labels the second audience the Report for AI Researchers and Developers, in External as well', () => {
+      expect(audienceLabel(TechnicalReport)).toBe('Report for AI Researchers and Developers');
+      expect(audienceLabel(ExecutiveSummary)).toBe('Executive Summary');
+      const external = DOWNLOAD_PACKAGES.find(p => p.id === 'provider')!.description;
+      expect(external).toContain('The Executive Summary and the Report for AI Researchers and Developers as PDF');
+      expect(external).not.toContain('Technical Report');
+    });
+
     it('describes Internal’s formats as PDF, Word and Markdown', () => {
       expect(DOWNLOAD_PACKAGES.find(p => p.id === 'internal')!.description).toBe(
         'Every available file for the Overseer team, as PDF, Word and Markdown (PDF, Word and Text for the diagnostics): '
@@ -531,7 +541,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       openRun();
 
       expect(rowElement('doc:2').querySelector('input[type="checkbox"]')!.getAttribute('aria-label'))
-        .toBe('Include Technical Report: GPT Model X');
+        .toBe('Include GPT Model X — Report for AI Researchers and Developers');
     });
 
     it('tags a document whose run changed since it was written', () => {
@@ -700,7 +710,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const p = component.idPrefix;
 
       for (const id of [`${p}-package-legend`, `${p}-paper-legend`, `${p}-documents-title`]) {
-        expect(byId(id)!.classList.contains('dc-section-title')).withContext(id).toBeTrue();
+        expect(byId(id)!.classList.contains('gh-section-title')).withContext(id).toBeTrue();
       }
       const options = Array.from(host().querySelectorAll<HTMLLabelElement>('.dc-paper-choice label.dc-paper-option'));
       expect(options.length).toBe(2);
@@ -893,9 +903,9 @@ describe('BenchmarkDownloadCenterComponent', () => {
         'executive-summary-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
         'executive-summary-gpt-model-x_full_named_INTERNAL.docx': documentTime,
         'executive-summary-gpt-model-x_full_named_INTERNAL.md': documentTime,
-        'technical-report-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
-        'technical-report-gpt-model-x_full_named_INTERNAL.docx': documentTime,
-        'technical-report-gpt-model-x_full_named_INTERNAL.md': documentTime,
+        'gpt-model-x_Researcher_Report_full_named_INTERNAL.pdf': documentTime,
+        'gpt-model-x_Researcher_Report_full_named_INTERNAL.docx': documentTime,
+        'gpt-model-x_Researcher_Report_full_named_INTERNAL.md': documentTime,
         'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
         'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.docx': documentTime,
         'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.md': documentTime,
@@ -1007,12 +1017,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       choose('custom', { 'doc:2': { disclosure: Detailed, naming: Named, formats: ['html'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('technical-report-gpt-model-x_detailed_named.html');
+      expect(saveText.calls.mostRecent().args[0]).toBe('gpt-model-x_Researcher_Report_detailed_named.html');
       expect(saveText.calls.mostRecent().args[2]).toBe('text/html;charset=utf-8');
 
       choose('provider', { 'doc:2': { formats: ['md'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('technical-report-gpt-model-x_summary_anonymized.md');
+      expect(saveText.calls.mostRecent().args[0]).toBe('gpt-model-x_Researcher_Report_summary_anonymized.md');
       expect(saveText.calls.mostRecent().args[0]).not.toContain('INTERNAL');
 
       choose('internal', { 'diag:42': { formats: ['txt'] } });
@@ -1052,6 +1062,15 @@ describe('BenchmarkDownloadCenterComponent', () => {
         expect(saveBytes.calls.mostRecent().args[0]).withContext(key).toBe(name);
         expect(saveBytes.calls.mostRecent().args[2]).withContext(key).toBe(DOCX_MIME);
       }
+    });
+
+    it('names a Report for AI Researchers and Developers by its title without the audience, then _Researcher_Report', () => {
+      expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: 'GPT Model X — Report for AI Researchers and Developers' }), 'x'))
+        .toBe('gpt-model-x_Researcher_Report');
+      expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: 'GPT Model X — Technical Report' }), 'x'))
+        .toBe('gpt-model-x_Researcher_Report');
+      expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: '' }), 'Fallback Label')).toBe('fallback-label_Researcher_Report');
+      expect(reportDocumentFileStem(doc(1, ExecutiveSummary), 'x')).toBe('executive-summary-gpt-model-x');
     });
 
     it('never doubles _INTERNAL on a server name that already carries it', () => {

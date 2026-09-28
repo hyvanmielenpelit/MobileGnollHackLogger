@@ -1213,7 +1213,7 @@
         <li>
           {{ blocker.label }} — {{ formatBlockerRoles(blocker.roles) }}, started
           {{ blocker.startedAtUtc | date:'yyyy-MM-dd HH:mm:ss':'UTC' }} UTC.
-          @if (blocker.kind === 'run' && blocker.runId != null) {
+          @if ((blocker.kind === 'run' || blocker.kind === 'runReportWriter') && blocker.runId != null) {
             <button type="button" class="btn-ghost" (click)="openBlockerRun(blocker)">Open run #{{ blocker.runId }}</button>
           }
         </li>

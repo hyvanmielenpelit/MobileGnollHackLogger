@@ -295,6 +295,15 @@ public class StartBenchmarkRunRequest
     /// </summary>
     public int? SecondOpinionMode { get; set; }
     public long? ClaimVerifierModelConfigurationId { get; set; }
+
+    /// <summary>
+    /// Optional. When set, this configuration writes the run's Executive Summary and Report for AI
+    /// Researchers and Developers once, after the run completes. It may be neither the model under test
+    /// nor another model of its provider. Null writes nothing; the run report dialog can write them
+    /// later. Not a comparability key.
+    /// </summary>
+    public long? ReportWriterModelConfigurationId { get; set; }
+
     public long? ScoringProfileId { get; set; }
     public bool AcknowledgeSameProvider { get; set; }
 
@@ -869,6 +878,18 @@ public class BenchmarkRunDetailDto
     /// <summary>"official", or a fingerprinted description of the custom endpoint the claim verifier ran against; null when the run has no claim verifier.</summary>
     public string? ClaimVerifierModelEndpoint { get; set; }
 
+    /// <summary>The configuration that writes the run's AI-written documents; null when none was chosen.</summary>
+    public long? ReportWriterModelConfigurationId { get; set; }
+
+    /// <summary>The report writer configuration's current display name; null when none was chosen or it was deleted.</summary>
+    public string? ReportWriterDisplayName { get; set; }
+
+    /// <summary>Where the run's two run-completion documents stand; the documents are listed by run id.</summary>
+    public BenchmarkRunReportDocumentsStatus ReportDocumentsStatus { get; set; }
+
+    /// <summary>Why the documents failed or were skipped; null otherwise.</summary>
+    public string? ReportDocumentsMessage { get; set; }
+
     public string? StartedByUserId { get; set; }
     public string? StartedByUserName { get; set; }
     public BenchmarkRunStatus Status { get; set; }
@@ -1107,6 +1128,13 @@ public class BenchmarkRunDetailDto
     /// </summary>
     public IReadOnlyDictionary<string, int>? ToolFamilyCounts { get; set; }
     public int? ZeroKnowledgeBaseAnswerCount { get; set; }
+
+    /// <summary>
+    /// A question or its rubric, the SOURCE list aside, is about a topic the knowledge base covers
+    /// (BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion), so answers without a knowledge-base
+    /// call are not by themselves prompt-compliant.
+    /// </summary>
+    public bool HasKnowledgeBaseRoutingQuestion { get; set; }
 
     /// <summary>Answers whose two verdicts disagreed, among those graded twice.</summary>
     public int SecondOpinionDisagreementCount { get; set; }

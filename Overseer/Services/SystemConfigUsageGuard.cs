@@ -9,8 +9,9 @@ namespace Overseer.Services;
 /// <summary>
 /// Decides whether a system AI configuration may be deleted now. History never blocks a delete:
 /// benchmark history records its own settings snapshots and only an attribution id. What blocks is
-/// something calling the model at this moment — a running benchmark run, an active series, or a
-/// benchmark job in flight — because a delete would stop its calls partway through.
+/// something calling the model at this moment — a running benchmark run, a run whose AI-written
+/// reports are queued or being written, an active series, or a benchmark job in flight — because a
+/// delete would stop its calls partway through.
 /// </summary>
 public class SystemConfigUsageGuard
 {
@@ -73,6 +74,28 @@ public class SystemConfigUsageGuard
                 Roles = Roles(configId, r.TestedModelConfigurationId, r.AssessorModelConfigurationId,
                     r.SecondOpinionAssessorModelConfigurationId, r.ClaimVerifierModelConfigurationId),
                 StartedAtUtc = r.StartedAtUtc
+            });
+        }
+
+        // A run whose AI-written documents are queued or being written calls its report writer.
+        var writingReports = await _db.BenchmarkRuns
+            .IgnoreAutoIncludes()
+            .Where(r => r.ReportWriterModelConfigurationId == configId
+                && (r.ReportDocumentsStatus == BenchmarkRunReportDocumentsStatus.Pending
+                    || r.ReportDocumentsStatus == BenchmarkRunReportDocumentsStatus.Writing))
+            .Select(r => new { r.Id, r.SuiteName, r.StartedAtUtc, r.CompletedAtUtc })
+            .ToListAsync(ct);
+
+        foreach (var r in writingReports)
+        {
+            blockers.Add(new SystemConfigBlockerDto
+            {
+                Kind = "runReportWriter",
+                Id = r.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                RunId = r.Id,
+                Label = $"AI-written reports of benchmark run #{r.Id} on suite '{r.SuiteName}'",
+                Roles = new List<string> { "report writer" },
+                StartedAtUtc = r.CompletedAtUtc ?? r.StartedAtUtc
             });
         }
 

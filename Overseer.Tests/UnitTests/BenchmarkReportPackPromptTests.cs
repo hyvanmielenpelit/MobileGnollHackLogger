@@ -250,7 +250,7 @@ public class BenchmarkReportPackPromptTests
 
         Assert.Contains("- {{peer:A}}: Comparable", message);
         Assert.Contains("- {{peer:B}}: Degraded; speed figures degraded", message);
-        Assert.Contains("- Co-assessor: same provider as the subject", message);
+        Assert.Contains("- Panel member B: same provider as the subject", message);
         Assert.DoesNotContain("GPT-5.2", message);
         Assert.DoesNotContain("OpenAI", message);
         Assert.DoesNotContain("Gemini", message);
@@ -264,7 +264,7 @@ public class BenchmarkReportPackPromptTests
         string message = Build(BenchmarkReportAudience.TechnicalReport).UserMessage;
 
         Assert.Contains("R3 | kind: weakness | category: accuracy | questions: Q3 | status: Conflicting | support: Graders disagree | in 1 of 1 runs", message);
-        Assert.Contains("raised only by the Co-assessor, which shares the subject's provider", message);
+        Assert.Contains("raised only by the Panel member B, which shares the subject's provider", message);
         Assert.Contains("  member B: Reasonable prayer advice.", message);
 
         Assert.Contains("[Q2] band: Intermediate | score: 50 | peer mean: 72 | difference: -22 | critical error: no", message);
@@ -289,6 +289,90 @@ public class BenchmarkReportPackPromptTests
         Assert.DoesNotContain("QUESTIONS NEEDING A NOTE", executive);
         Assert.DoesNotContain("QUESTIONS NEEDING A TOPIC", executive);
         Assert.Equal(new[] { 2, 3 }, BenchmarkReportPackPrompt.QuestionsNeedingNote(ReportPackWriterTestData.Sheet()));
+    }
+
+    [Fact]
+    public void UserMessage_ASingleMemberRowOfAPanelRun_SaysWhichMemberRaisedIt()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Rows.Add(new BenchmarkReportFindingRow
+        {
+            Id = "R5", Kind = "weakness", Category = "tool_use", Questions = new List<int> { 2 },
+            Status = "MemberAOnly", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentFamily, MemberAText = "Few lookups."
+        });
+
+        string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
+
+        Assert.Contains("raised only by the Panel member B, which shares the subject's provider", message);
+        Assert.Contains("raised only by the Panel member A, which does not share the subject's provider", message);
+    }
+
+    [Fact]
+    public void UserMessage_LegacyAssessorRoleNames_StillNameTheSingleMember()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Graders[0].Role = "Assessor";
+        sheet.Graders[1].Role = "Co-assessor";
+
+        string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
+
+        Assert.Contains("raised only by the Co-assessor, which shares the subject's provider", message);
+    }
+
+    [Fact]
+    public void AStandaloneSheet_SaysThereAreNoPeers_AndNotesWeakQuestionsByScore()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Peers.Clear();
+        foreach (var q in sheet.Questions)
+        {
+            q.PeerMean = null;
+            q.Difference = null;
+        }
+
+        string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
+
+        Assert.Contains("(no peers: this is a stand-alone run report", message);
+        Assert.DoesNotContain("{{peer:A}}", message);
+        // Q2 scored 50, which is not below 50; Q3 carries a critical error.
+        Assert.Equal(new[] { 3 }, BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet));
+
+        sheet.Questions[1].Score = 49;
+        Assert.Equal(new[] { 2, 3 }, BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet));
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_AsksForUsEnglish_AndStatesTheStandaloneForm(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("Write in US English: color, behavior, analyze, center, gray, labeled, canceled.", system);
+        Assert.Contains("stand-alone run report", system);
+    }
+
+    [Fact]
+    public void ExecutiveSummary_StatesItsWordCaps()
+    {
+        string system = Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt;
+
+        Assert.Contains("At most 90 words: what this means for use as a game assistant", system);
+        Assert.Contains("At most 60 words: how confident are we", system);
+        Assert.Contains("each at most 30 words", system);
+    }
+
+    [Fact]
+    public void ResearcherReport_AsksForEvidencedRecommendations_AndUsesItsNewName()
+    {
+        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
+
+        Assert.Contains("DOCUMENT: Report for AI Researchers and Developers.", system);
+        Assert.Contains("recommendations: at most six items", system);
+        Assert.Contains("the observed failure, the change proposed for the model's next iteration, and the evidence", system);
+        Assert.Contains("Every recommendation cites at least one evidence id", system);
+        Assert.DoesNotContain("A recommendation may cite evidence as well.", system);
+
+        Assert.Contains("A recommendation may cite evidence as well.", Build(BenchmarkReportAudience.InternalBrief).SystemPrompt);
     }
 
     [Fact]
