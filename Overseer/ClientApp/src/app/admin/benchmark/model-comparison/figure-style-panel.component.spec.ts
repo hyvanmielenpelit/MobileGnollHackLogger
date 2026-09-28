@@ -548,6 +548,87 @@ describe('FigureStylePanelComponent', () => {
     expect(host().querySelector('#mc-style-profile-badge-direction')).toBeNull();
   });
 
+  describe('the Better badge position', () => {
+    const radios = (family: 'bar' | 'scatter'): HTMLInputElement[] =>
+      Array.from(host().querySelectorAll<HTMLInputElement>(`input[type="radio"][name="mc-style-${family}-betterBadgePlacement"]`));
+    const headingReadout = (family: 'bar' | 'scatter'): string =>
+      host().querySelector(`#mc-style-${family}-section-heading > summary .gh-disclosure-summary-value`)?.textContent?.trim() ?? '';
+
+    it('offers two radios in the bar and trade-off heading sections, Where it fits by default, and none for the profile', () => {
+      for (const family of ['bar', 'scatter'] as const) {
+        render(family);
+        const group = radios(family);
+        expect(group.map(radio => radio.value)).withContext(family).toEqual(['fit', 'always']);
+        expect(group.map(radio => radio.checked)).withContext(family).toEqual([true, false]);
+        const fieldset = group[0].closest('fieldset')!;
+        expect(fieldset.closest(`#mc-style-${family}-section-heading`)).withContext(family).not.toBeNull();
+        expect(fieldset.querySelector('legend')?.textContent).withContext(family).toContain('Better badge position');
+        expect(host().querySelector(`#${fieldset.getAttribute('aria-describedby')}`)?.textContent?.trim())
+          .withContext(family).toContain('Where it fits keeps the heading\'s height');
+        expect(control(`mc-style-${family}-betterBadgePlacement-always`).closest('label')?.textContent?.trim())
+          .withContext(family).toBe('Always under the logo');
+      }
+
+      render('profile');
+      expect(host().querySelector('[name="mc-style-profile-betterBadgePlacement"]')).toBeNull();
+      expect(host().textContent).not.toContain('Better badge position');
+    });
+
+    it('emits Always under the logo for one family only, and nothing else changes', () => {
+      for (const family of ['bar', 'scatter'] as const) {
+        fixture.destroy();
+        create();
+        render(family);
+        control(`mc-style-${family}-betterBadgePlacement-always`).click();
+        fixture.detectChanges();
+        expect(emitted.length).withContext(family).toBe(1);
+        expect(emitted[0][family]).withContext(family)
+          .toEqual({ ...DEFAULT_FIGURE_STYLE[family], betterBadgePlacement: 'always' as const });
+        const other = family === 'bar' ? 'scatter' : 'bar';
+        expect(emitted[0][other]).withContext(family).toBe(DEFAULT_FIGURE_STYLE[other]);
+        expect(emitted[0].profile).withContext(family).toBe(DEFAULT_FIGURE_STYLE.profile);
+        expect(emitted[0].appearance).withContext(family).toBe(DEFAULT_FIGURE_STYLE.appearance);
+        expect(emitted[0].numbers).withContext(family).toBe(DEFAULT_FIGURE_STYLE.numbers);
+      }
+    });
+
+    it('names Always in the heading read-out, and Reset Heading and badges returns it to Where it fits', () => {
+      for (const family of ['bar', 'scatter'] as const) {
+        fixture.destroy();
+        create();
+        render(family);
+        control(`mc-style-${family}-betterBadgePlacement-always`).click();
+        fixture.detectChanges();
+        acceptLast();
+        expect(control(`mc-style-${family}-betterBadgePlacement-always`).checked).withContext(family).toBeTrue();
+        expect(headingReadout(family)).withContext(family)
+          .toBe('18 px · badges 11 px · Better (always under logo), models, runs, questions, pricing');
+
+        const reset = resetButton(`mc-style-${family}-section-heading-reset`);
+        expect(reset.getAttribute('aria-label')).withContext(family).toBe('Reset Heading and badges to defaults');
+        expect(reset.getAttribute('aria-disabled')).withContext(family).toBeNull();
+        reset.click();
+        expect(emitted.length).withContext(family).toBe(2);
+        expect(emitted[1][family].betterBadgePlacement).withContext(family).toBe('fit');
+        expect(emitted[1][family]).withContext(family).toEqual(DEFAULT_FIGURE_STYLE[family]);
+        acceptLast();
+        expect(control(`mc-style-${family}-betterBadgePlacement-fit`).checked).withContext(family).toBeTrue();
+        expect(headingReadout(family)).withContext(family)
+          .toBe('18 px · badges 11 px · Better, models, runs, questions, pricing');
+      }
+    });
+
+    it('leaves Better out of the read-out while the Better badge is hidden, whatever its position', () => {
+      const style: FigureStyle = {
+        ...DEFAULT_FIGURE_STYLE,
+        bar: { ...DEFAULT_FIGURE_STYLE.bar, betterBadgePlacement: 'always', hiddenBadges: ['direction'] }
+      };
+      render('bar', style);
+      expect(headingReadout('bar')).toBe('18 px · badges 11 px · models, runs, questions, pricing');
+      expect(control('mc-style-bar-betterBadgePlacement-always').disabled).toBeFalse();
+    });
+  });
+
   it('sizes the caption text of one family, up to 48 px', () => {
     render('scatter');
     const heading = control('mc-style-scatter-titleSizePx');

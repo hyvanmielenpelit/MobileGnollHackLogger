@@ -31,7 +31,7 @@
           <!-- Left: the package, which sets every row's choices, and the paper size. -->
           <section class="dc-package" [attr.aria-labelledby]="idPrefix + '-package-legend'">
             <fieldset class="gh-choice dc-package-choice" [disabled]="preparing">
-              <legend [id]="idPrefix + '-package-legend'">Package</legend>
+              <legend class="dc-section-title" [id]="idPrefix + '-package-legend'">Package</legend>
               @for (pkg of packages; track pkg.id) {
                 <!-- The info button sits beside the label: a button may not sit inside a <label>. -->
                 <div class="dc-package-card" [class.is-selected]="packageId === pkg.id">
@@ -41,7 +41,10 @@
                            [checked]="packageId === pkg.id"
                            [attr.aria-describedby]="idPrefix + '-package-' + pkg.id + '-desc'"
                            (change)="selectPackage(pkg.id)">
-                    <span class="dc-package-name">{{ pkg.name }}</span>
+                    <span class="dc-package-text">
+                      <span class="dc-package-name">{{ pkg.name }}</span>
+                      <span class="dc-package-tagline">{{ pkg.tagline }}</span>
+                    </span>
                   </label>
                   <app-info-tip trigger="click" [tipId]="idPrefix + '-package-' + pkg.id + '-desc'" [subject]="pkg.name">{{ pkg.description }}</app-info-tip>
                 </div>
@@ -49,18 +52,18 @@
             </fieldset>
 
             <fieldset class="gh-choice dc-paper-choice" [disabled]="preparing">
-              <legend [id]="idPrefix + '-paper-legend'">
+              <legend class="dc-section-title" [id]="idPrefix + '-paper-legend'">
                 Paper size
                 <app-info-tip trigger="click" [tipId]="idPrefix + '-paper-tip'" subject="Paper size">For PDF and Word files. Letter suits readers in North America; A4 everywhere else.</app-info-tip>
               </legend>
               @for (option of papers; track option.id) {
-                <label class="gh-radio">
+                <label class="gh-radio dc-paper-option" [class.is-selected]="paper === option.id">
                   <input type="radio" [name]="idPrefix + '-paper'" [value]="option.id"
                          [id]="idPrefix + '-paper-' + option.id"
                          [checked]="paper === option.id"
                          [attr.aria-describedby]="idPrefix + '-paper-tip'"
                          (change)="selectPaper(option.id)">
-                  {{ option.label }}
+                  <span class="dc-paper-name">{{ option.label }}</span>
                 </label>
               }
             </fieldset>

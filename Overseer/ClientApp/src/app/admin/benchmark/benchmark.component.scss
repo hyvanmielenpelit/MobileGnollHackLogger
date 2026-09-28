@@ -630,19 +630,45 @@
 /* .gh-table now lives in styles.scss: declared here, emulated encapsulation kept it from
    ever reaching the Suite Health child component's tables. */
 
-/* Run History column widths. Twelve columns is a lot for one row; without these the numeric and
-   status columns stretch to fit their sort button while the model-name columns are squeezed. */
+/* Run History column widths. Twelve columns share one row, so every column that holds a short
+   value is sized to it and the text columns share what is left, wrapping rather than widening
+   the table. */
 .history-table-wrapper table {
-  th:nth-child(1), td:nth-child(1) { inline-size: 64px; }    // ID
-  th:nth-child(2), td:nth-child(2) { min-inline-size: 220px; } // Suite
-  th:nth-child(5), td:nth-child(5) { inline-size: 140px; }   // Status
+  /* Compact cell padding, in this table only. A sortable header keeps padding 0 on the cell and
+     pads its inner button, which lives in the sort header's own template. */
+  th:not(.gh-th-sortable), td { padding-inline: 10px; }
+  ::ng-deep .gh-th-sort { padding-inline: 10px; }
+
+  /* Content-sized columns, never wider than what they hold: ID, Status, Intelligence Index,
+     Speed Index, Instrument, Duration, Cost, Date (UTC) and Actions. */
+  th:nth-child(1), td:nth-child(1),
+  th:nth-child(5), td:nth-child(5),
   th:nth-child(6), td:nth-child(6),
-  th:nth-child(7), td:nth-child(7) { inline-size: 110px; }   // Intelligence / Speed Index
-  th:nth-child(8), td:nth-child(8) { width: 1%; white-space: nowrap; padding-left: 8px; padding-right: 8px; } // Instrument
-  th:nth-child(9), td:nth-child(9) { inline-size: 85px; }    // Duration
-  th:nth-child(10), td:nth-child(10) { inline-size: 96px; }  // Cost
-  th:nth-child(11), td:nth-child(11) { inline-size: 140px; } // Date (UTC)
-  th:nth-child(12), td:nth-child(12) { inline-size: 136px; } // Actions
+  th:nth-child(7), td:nth-child(7),
+  th:nth-child(8), td:nth-child(8),
+  th:nth-child(9), td:nth-child(9),
+  th:nth-child(10), td:nth-child(10),
+  th:nth-child(11), td:nth-child(11),
+  th:nth-child(12), td:nth-child(12) {
+    width: 1%;
+  }
+
+  /* ID, both indexes, Duration, Cost and Date stay on one line; their headers may wrap. */
+  tbody td:nth-child(1),
+  tbody td:nth-child(6),
+  tbody td:nth-child(7),
+  tbody td:nth-child(9),
+  tbody td:nth-child(10),
+  tbody td:nth-child(11) {
+    white-space: nowrap;
+  }
+
+  /* The instrument stack is monospaced and never wraps, so it takes a little less padding. */
+  th:nth-child(8), td:nth-child(8) { padding-inline: 8px; }
+
+  /* Text columns share the remaining width and wrap: Suite, then Tested and Assessor Model. */
+  td:nth-child(2) { min-inline-size: 8rem; overflow-wrap: anywhere; }
+  td:nth-child(3), td:nth-child(4) { min-inline-size: 6rem; }
 }
 
 .status-badge {
@@ -859,7 +885,8 @@
   padding-right: 8px;
 }
 
-.cost-cell {
+// The cell stays a table cell; the model-under-test cost and the catalog total stack inside it.
+.cost-stack {
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -868,6 +895,30 @@
 .cost-secondary {
   color: #888;
   font-size: .8em;
+}
+
+// Run History date and time, one above the other.
+.history-date-cell .history-date,
+.history-date-cell .history-time {
+  display: block;
+}
+
+.history-date-cell .history-time {
+  color: #888;
+}
+
+// Run History row actions, two by two. The popover="hint" tooltips between the buttons are
+// display: none until shown, and shown ones sit in the top layer, so neither is a grid item.
+.history-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 32px);
+  gap: 4px;
+  justify-content: end;
+}
+
+// Scoped under the table so it out-ranks the global .gh-table .action-cell .action-btn margin.
+.history-table-wrapper .history-actions .action-btn {
+  margin: 0;
 }
 
 // The five entries stack, one per line, in the fixed order PROMPT, GUIDES, KB, WIKI, SRC. The
@@ -2670,7 +2721,6 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .score-card { position: relative; }
 .score-card:is(:hover, :focus-within) app-key-figure-card-actions { opacity: 1; }
 @media (hover: none) { .score-card app-key-figure-card-actions { opacity: 1; } }
-.bm-brand { padding: 4px 0 12px; }
 .rr-skeleton { min-height: 64px; margin-bottom: 12px; border-radius: 6px; background: #1c1c1c; }
 .rr-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .question-actions { flex-wrap: wrap; }

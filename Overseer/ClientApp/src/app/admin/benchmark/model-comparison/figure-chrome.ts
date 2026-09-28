@@ -54,8 +54,8 @@ export interface FigureChrome {
   readonly title: string;
   readonly badges: readonly FigureBadge[];
   /**
-   * The better direction, drawn as the Better badge at the end of the badge row; absent when hidden
-   * or when the figure has none.
+   * The better direction, drawn as the Better badge under the logo or at the end of the badge row, as
+   * the figure style places it; absent when hidden or when the figure has none.
    */
   readonly direction?: FigureDirection;
   /** One short sentence under the badges, or ''. Used only for the pricing basis on cost figures. */

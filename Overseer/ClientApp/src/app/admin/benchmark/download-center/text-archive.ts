@@ -88,7 +88,7 @@ export interface ManifestFailure {
 }
 
 export interface ManifestInput {
-  /** `Internal package`, `Provider package` or `Custom`. */
+  /** `Internal package`, `External package` or `Custom`. */
   packageName: string;
   /** The packaging time: printed here and in the zip name, nowhere else. */
   packagedAt: Date;

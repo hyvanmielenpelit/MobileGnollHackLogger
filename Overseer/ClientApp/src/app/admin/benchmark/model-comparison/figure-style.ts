@@ -14,6 +14,8 @@ export type BarOrientationChoice = 'auto' | 'vertical' | 'horizontal';
 export type ScatterLegendPosition = 'bottom' | 'right';
 /** Whether a bar value-axis title puts its final parenthetical on a line of its own. */
 export type AxisTitleBreak = 'auto' | 'always' | 'never';
+/** Where a figure's Better badge goes when there is a logo it fits under. */
+export type BetterBadgePlacement = 'fit' | 'always';
 
 export type FigureThemeName = 'dark' | 'light';
 export type FigureBackgroundMode = 'theme' | 'transparent' | 'custom';
@@ -33,6 +35,7 @@ export const FIGURE_FONT_IDS: readonly FigureFontId[] =
 export const FIGURE_FONT_WEIGHTS: readonly FigureFontWeight[] = [400, 500, 600, 700];
 export const TABLE_ROW_SHADINGS: readonly TableRowShading[] = ['none', 'light', 'medium', 'strong'];
 export const FIGURE_LOGO_VARIANTS: readonly FigureLogoVariant[] = ['wide', 'square'];
+export const BETTER_BADGE_PLACEMENTS: readonly BetterBadgePlacement[] = ['fit', 'always'];
 
 /** Shared by every chart and the table image. */
 export interface FigureAppearanceStyle {
@@ -113,6 +116,8 @@ export interface BarFigureStyle extends FigureChromeStyle {
   /** A hairline box around the plot area. */
   readonly plotFrame: boolean;
   readonly hiddenBadges: readonly FigureBadgeKind[];
+  /** Under the logo where it fits without growing the heading, or always under the logo. */
+  readonly betterBadgePlacement: BetterBadgePlacement;
 }
 
 export interface ScatterFigureStyle extends FigureChromeStyle {
@@ -140,6 +145,8 @@ export interface ScatterFigureStyle extends FigureChromeStyle {
   /** A hairline box around the plot area. */
   readonly plotFrame: boolean;
   readonly hiddenBadges: readonly FigureBadgeKind[];
+  /** Under the logo where it fits without growing the heading, or always under the logo. */
+  readonly betterBadgePlacement: BetterBadgePlacement;
 }
 
 export interface ProfileFigureStyle extends FigureChromeStyle {
@@ -222,6 +229,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     axisTitleWeight: 400,
     plotFrame: false,
     hiddenBadges: [],
+    betterBadgePlacement: 'fit',
   },
   scatter: {
     ...DEFAULT_CHROME_STYLE,
@@ -240,6 +248,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
     axisTitleWeight: 400,
     plotFrame: false,
     hiddenBadges: [],
+    betterBadgePlacement: 'fit',
   },
   profile: {
     ...DEFAULT_CHROME_STYLE,
@@ -346,7 +355,7 @@ export interface BadgeControl {
   readonly hint?: string;
 }
 
-/** Every badge kind, the Better badge first: it ends the badge row on the figure and heads the list. */
+/** Every badge kind, the Better badge first: it heads the list. */
 export const BADGE_CONTROLS: readonly BadgeControl[] = [
   { kind: 'direction', label: 'Better badge' },
   { kind: 'models', label: 'Number of models' },
@@ -473,6 +482,7 @@ function normalizeBar(value: unknown): BarFigureStyle {
     axisTitleWeight: fontWeightOr(v['axisTitleWeight'], d.axisTitleWeight),
     plotFrame: booleanOr(v['plotFrame'], d.plotFrame),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
+    betterBadgePlacement: oneOf(v['betterBadgePlacement'], BETTER_BADGE_PLACEMENTS, d.betterBadgePlacement),
   };
 }
 
@@ -500,6 +510,7 @@ function normalizeScatter(value: unknown): ScatterFigureStyle {
     axisTitleWeight: fontWeightOr(v['axisTitleWeight'], d.axisTitleWeight),
     plotFrame: booleanOr(v['plotFrame'], d.plotFrame),
     hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']),
+    betterBadgePlacement: oneOf(v['betterBadgePlacement'], BETTER_BADGE_PLACEMENTS, d.betterBadgePlacement),
   };
 }
 

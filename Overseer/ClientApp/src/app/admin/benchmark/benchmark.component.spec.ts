@@ -8063,6 +8063,114 @@ describe('AdminBenchmarkComponent', () => {
       expect(entries[3].getAttribute('title')).toBe('GnollHack wiki Git HEAD SHA: not recorded');
       expect(entries[4].getAttribute('title')).toBe('GnollHack source Git HEAD SHA: src-a');
     });
+
+    /** Enters Run History through its real tab, with the server returning these runs. */
+    function openHistoryWith(runs: any[]): void {
+      benchmarkServiceMock.getRuns.and.returnValue(of(runs));
+      (fixture.nativeElement.querySelector('#bm-tab-history') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
+    /** The height of an element's text as laid out, one line box per wrapped line. */
+    function textHeight(element: HTMLElement): number {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return range.getBoundingClientRect().height;
+    }
+
+    it('should keep the cost cell a table cell, and stack the date over the time and the actions two by two', () => {
+      openHistoryWith([buildHistoryRun({
+        id: 42,
+        startedAtUtc: '2026-09-28T16:12:00',
+        estimatedCandidateCost: 2.5211,
+        estimatedCost: 6.0068,
+        degradedAnswerCount: 2
+      })]);
+
+      const row = fixture.nativeElement.querySelector('.history-table-wrapper tbody tr') as HTMLTableRowElement;
+      expect(row).toBeTruthy();
+      expect(row.querySelector('.badge-degraded-count')?.textContent?.trim()).toBe('⚠ 2');
+
+      const costCell = row.querySelector('td.cost-cell') as HTMLTableCellElement;
+      expect(getComputedStyle(costCell).display).toBe('table-cell');
+      const stacks = costCell.querySelectorAll('.cost-stack');
+      expect(stacks.length).toBe(1);
+      expect(stacks[0].querySelector('.cost-primary')?.textContent?.trim()).toBe('$2.5211');
+      expect(stacks[0].querySelector('.cost-secondary')?.textContent?.trim()).toBe('catalog $6.0068');
+
+      const dateCell = row.querySelector('td.history-date-cell') as HTMLTableCellElement;
+      expect(dateCell.querySelector('.history-date')?.textContent?.trim()).toBe('2026-09-28');
+      expect(dateCell.querySelector('.history-time')?.textContent?.trim()).toBe('16:12');
+
+      const actions = row.querySelector('.action-cell .history-actions') as HTMLElement;
+      expect(getComputedStyle(actions).display).toBe('grid');
+      const buttons = Array.from(actions.querySelectorAll('button.action-btn')) as HTMLButtonElement[];
+      expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual([
+        'View details for run 42',
+        'Download Markdown report for run 42',
+        'Download tool-call log for run 42',
+        'Delete run 42'
+      ]);
+    });
+
+    it('should fit the run history table in 1360 px without scrolling sideways', async () => {
+      const longSuite = 'Snapshot: Tommi2 2026-09-17 (long variant for wrapping)';
+      const hash = (seed: string, length: number) => seed.repeat(Math.ceil(length / seed.length)).substring(0, length);
+      const instrument = {
+        candidateSystemPromptSha256: hash('3f9d06fa', 64),
+        toolGuidesSha256: hash('b66a59b2', 64),
+        knowledgeBaseHeadSha: hash('7424b03c', 40),
+        wikiHeadSha: hash('080485a1', 40),
+        sourceCodeHeadSha: hash('429db58e', 40),
+        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
+      };
+      const suites = [
+        { benchmarkSuiteId: 7, suiteName: longSuite },
+        { benchmarkSuiteId: 5, suiteName: 'Snapshot: Tommi2 2026-09-17' },
+        { benchmarkSuiteId: 3, suiteName: 'GnollHack Mechanics Core' }
+      ];
+      const models = ['GPT-5.6 Luna', 'Claude 5 Opus', 'Gemini 3.8 Flash'];
+      const runs = Array.from({ length: 10 }, (_, i) => buildHistoryRun({
+        ...instrument,
+        ...suites[i % suites.length],
+        id: 110 - i,
+        testedModelDisplayNameUsed: models[i % models.length],
+        assessorModelDisplayNameUsed: 'Claude 5 Opus',
+        qualityIndex: 60 + i * 3,
+        speedIndex: 90 - i * 4,
+        totalAnswerDurationMs: 765466 + i * 61000,
+        totalDurationMs: 1419000 + i * 61000,
+        estimatedCandidateCost: 2.5211,
+        estimatedCost: 6.0068,
+        startedAtUtc: `2026-09-${String(28 - i).padStart(2, '0')}T16:12:00`
+      }));
+      // The newest run of the long-named suite moved its knowledge base since run 107, the next
+      // older run of that suite, so it carries the INSTRUMENT CHANGED badge.
+      runs[0].knowledgeBaseHeadSha = hash('c0ffee42', 40);
+      runs[1].degradedAnswerCount = 3;
+
+      fixture.nativeElement.style.width = '1360px';
+      openHistoryWith(runs);
+      await document.fonts.ready;
+      fixture.detectChanges();
+
+      const rows = Array.from(
+        fixture.nativeElement.querySelectorAll('.history-table-wrapper tbody tr')
+      ) as HTMLTableRowElement[];
+      expect(rows.length).toBe(10);
+      expect(fixture.nativeElement.querySelectorAll('.history-table-wrapper .instrument-fingerprint').length).toBe(50);
+      expect(Array.from(fixture.nativeElement.querySelectorAll('.history-table-wrapper .instrument-changed'))
+        .map((badge: any) => badge.textContent.trim())).toEqual(['INSTRUMENT CHANGED']);
+
+      const scroller = fixture.nativeElement.querySelector('.history-table-wrapper.gh-datatable-scroll') as HTMLElement;
+      expect(scroller.clientWidth).toBeGreaterThan(0);
+      expect(scroller.scrollWidth).toBeLessThanOrEqual(scroller.clientWidth);
+
+      // The long suite name wraps rather than widening the table.
+      const longRow = rows.find(r => r.cells[1].textContent?.trim() === longSuite) as HTMLTableRowElement;
+      expect(longRow).toBeTruthy();
+      expect(textHeight(longRow.cells[1])).toBeGreaterThan(textHeight(longRow.cells[0]) * 1.5);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -10319,17 +10427,15 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
       }
 
-      it('should show the GnollBench wordmark above the tab row and the emblem before the run title', () => {
+      it('should show no wordmark above the tab row, and the emblem before the run title', () => {
         component.selectedRunDetail = reportRun();
         fixture.detectChanges();
 
-        const wordmark = fixture.nativeElement.querySelector('.benchmark-container > .bm-brand > img.gnollbench-wordmark') as HTMLImageElement;
-        expect(wordmark).toBeTruthy();
-        expect(wordmark.getAttribute('alt')).toBe('GnollBench');
-        expect(wordmark.getAttribute('width')).toBe('978');
-        expect(wordmark.getAttribute('height')).toBe('256');
-        const tabs = fixture.nativeElement.querySelector('.gh-tabs[role="tablist"]') as HTMLElement;
-        expect(wordmark.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(fixture.nativeElement.querySelector('.benchmark-container .gnollbench-wordmark')).toBeNull();
+        expect(fixture.nativeElement.querySelector('.bm-brand')).toBeNull();
+        const container = fixture.nativeElement.querySelector('.benchmark-container') as HTMLElement;
+        const firstChild = container.firstElementChild as HTMLElement;
+        expect(firstChild.matches('.gh-tabs[role="tablist"]')).toBeTrue();
 
         const emblem = dialog().querySelector('.rr-identity > img.gnollbench-emblem') as HTMLImageElement;
         expect(emblem).toBeTruthy();

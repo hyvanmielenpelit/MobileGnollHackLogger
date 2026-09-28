@@ -215,10 +215,9 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#confirmDialog`: Confirm
   - `#changelogDialog`: Changelog
 
-- **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — the tab opens with a
-  brand row, the GnollBench wordmark (`.gnollbench-wordmark`, `alt="GnollBench"`, width and height set so
-  nothing shifts), above the benchmark tabs. Not an exhaustive list of this component's dialogs, only the
-  ones recorded here so far:
+- **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — the tab opens directly
+  with the benchmark tabs, with no brand row above them. Not an exhaustive list of this component's
+  dialogs, only the ones recorded here so far:
   - `#runProgressDialog`: the run progress dialog, **full-screen** (`gh-dialog-fullscreen`, no
     component sizing of its own). Its content wrapper is an inline-size container (`run-progress`)
     and its body holds two sections: `section.run-progress-overview` (everything but the questions,
@@ -254,13 +253,13 @@ To find specific popups, look in the corresponding component's `.html` template:
     detail polling. Question cards have real `<button>` headers, filter toggles (*Critical errors*,
     *Disputed*, *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*.
   - **Download Center**: one dialog for downloading a run's and a report pack's files, opened from the
-    run report's **Downloads** and from the Report Pack dialog. Package presets *Internal package*,
-    *Provider package* (internal-only rows listed but unselectable, with their reason) and *Custom*;
+    run report's **Downloads** and from the Report Pack dialog. Package presets *Internal*,
+    *External* (internal-only rows listed but unselectable, with their reason) and *Custom*;
     per-document disclosure (*Summary* / *Detailed* / *Full*) and peer naming (*Named* /
     *Anonymized*); `_INTERNAL` file-name suffixes; several files as one ZIP with a `MANIFEST.md`. Its
     HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
     ones. Every row offers **PDF** first, then **Word** (both rendered server-side, see
-    `ai-benchmark-report-pack.md` § 8); the Provider preset is PDF only and Internal PDF, Word and
+    `ai-benchmark-report-pack.md` § 8); the External preset is PDF only and Internal PDF, Word and
     Markdown, with a remembered *A4* / *US Letter* paper size (stored settings version 3, migrated from
     version 2). Run diagnostics are captured once per download, so the `.txt`, `.pdf` and `.docx` agree.
     While a package is prepared, an overlay over the body shows a ring spinner, the step and a progress

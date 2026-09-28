@@ -309,7 +309,7 @@ describe('figure-export', () => {
       return { texts, rotations };
     }
 
-    it('draws the Better badge on the badge row, its arrow turned toward the better corner', () => {
+    it('ends the badge row without a logo, its arrow turned toward the better corner', () => {
       const drawing = spyDrawing();
       composeFigureImage(request({
         chrome: figureChrome({ ...headerOnlyChrome(), badges: [{ text: '2 models', tone: 'neutral' }], direction: topLeft }),
@@ -333,7 +333,7 @@ describe('figure-export', () => {
       expect(drawing.rotations.length).toBe(0);
     });
 
-    it('narrows the badge rows by the pill and the gap, and adds no height beside existing badges', () => {
+    it('wraps the Better badge as the last item of the badge flow', () => {
       const title = 'Intelligence against speed across every model in the comparable set';
       const badges: FigureBadge[] = [
         { text: '8 models', tone: 'neutral' },
@@ -348,12 +348,32 @@ describe('figure-export', () => {
       const without = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), title, badges }, emptyFooter), 400);
 
       expect(withDirection.titleLines).toEqual(without.titleLines);
+      // The ordinary badges wrap in the full width; the pill no longer narrows them.
+      expect(withDirection.badgeRows).toEqual(without.badgeRows);
       expect(withDirection.direction).not.toBeNull();
-      expect(withDirection.direction!.width).toBeGreaterThan(0);
-      const allowed = 400 - withDirection.direction!.width - 6;
+      const pill = withDirection.direction!.width;
+      expect(pill).toBeGreaterThan(0);
+      const placement = withDirection.direction!.placement;
+      expect(placement.kind).toBe('badgeFlow');
+      if (placement.kind !== 'badgeFlow') {
+        return;
+      }
+      const rowWidthOf = (row: (typeof withDirection.badgeRows)[number]): number =>
+        row.badges.reduce((sum, entry) => sum + entry.width, 0) + (row.badges.length - 1) * 6;
       for (const row of withDirection.badgeRows) {
-        const rowWidth = row.badges.reduce((sum, entry) => sum + entry.width, 0) + (row.badges.length - 1) * 6;
-        expect(rowWidth).toBeLessThanOrEqual(allowed);
+        expect(rowWidthOf(row)).toBeLessThanOrEqual(400);
+      }
+      const rows = withDirection.badgeRows;
+      const lastWidth = rowWidthOf(rows[rows.length - 1]);
+      if (placement.row === rows.length - 1) {
+        // It ends the last row, the badge gap after the last pill.
+        expect(placement.x).toBeCloseTo(lastWidth + 6, 6);
+        expect(placement.x + pill).toBeLessThanOrEqual(400);
+      } else {
+        // It did not fit there, so it starts a row of its own.
+        expect(placement.row).toBe(rows.length);
+        expect(placement.x).toBe(0);
+        expect(lastWidth + 6 + pill).toBeGreaterThan(400);
       }
 
       const short: FigureBadge[] = [{ text: '2 models', tone: 'neutral' }];
@@ -463,7 +483,7 @@ describe('figure-export', () => {
 
       expect(withLogo.headerWidth).toBeLessThan(without.headerWidth);
       expect(withLogo.titleLines.length).toBeGreaterThan(without.titleLines.length);
-      const allowed = withLogo.headerWidth - withLogo.direction!.width - 6;
+      const allowed = withLogo.headerWidth;
       for (const row of withLogo.badgeRows) {
         const rowWidth = row.badges.reduce((sum, entry) => sum + entry.width, 0) + (row.badges.length - 1) * 6;
         expect(rowWidth).toBeLessThanOrEqual(allowed);
@@ -476,23 +496,56 @@ describe('figure-export', () => {
       expect(measured.logo!.height).toBeCloseTo(160 / (3248 / 850), 6);
     });
 
-    it('draws the logo at the top right and ends the Better badge left of it', () => {
-      const calls = spyDrawImage();
-      const texts: { text: string; x: number }[] = [];
+    /** Every `fillText` call's text and position. */
+    function spyTexts(): { text: string; x: number; y: number }[] {
+      const texts: { text: string; x: number; y: number }[] = [];
       const realFillText = CanvasRenderingContext2D.prototype.fillText;
       spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
         this: CanvasRenderingContext2D,
         ...args: any[]
       ) {
-        texts.push({ text: String(args[0]), x: args[1] });
+        texts.push({ text: String(args[0]), x: args[1], y: args[2] });
         return (realFillText as any).apply(this, args);
       } as any);
+      return texts;
+    }
 
-      const logo = logoOf(48);
+    /** A 144 × 48 px logo at a 400 px content width: far wider than the Better badge. */
+    function wideLogo(): FigureLogo {
+      return logoOf(48, 3);
+    }
+
+    /**
+     * One 18 px title line and one badge row: a 25 + 6 + 17 = 48 px left column, too short to hold
+     * the pill under a 48 px logo, whose bottom would be 48 + 6 + 17 = 71 px down.
+     */
+    function shortHeader(): Partial<FigureChrome> {
+      return {
+        ...headerOnlyChrome(),
+        title: 'Intelligence',
+        badges: [{ text: '2 models', tone: 'neutral' }],
+        direction: topLeft
+      };
+    }
+
+    /** The short header and a detail line under the badges: a left column at least 71 px tall. */
+    function tallHeader(): Partial<FigureChrome> {
+      return { ...shortHeader(), detail: '18 items per run, current catalog as of 2026-09-07' };
+    }
+
+    /** The pill's left edge from its label's x: the start padding, the 14 px arrow and its gap. */
+    const labelInset = 6 + 14 + 5;
+
+    it('draws the logo at the top right and, with room under it, the Better badge right-aligned there', () => {
+      const calls = spyDrawImage();
+      const texts = spyTexts();
+
+      const logo = wideLogo();
       const figure = request({
-        chrome: figureChrome({ ...headerOnlyChrome(), badges: [{ text: '2 models', tone: 'neutral' }], direction: topLeft }),
+        chrome: figureChrome(tallHeader()),
         footer: figureFooter(emptyFooter),
         logo,
+        betterBadgePlacement: 'fit',
         density: 1
       });
       const measured = measureFigureChrome(figure, 400);
@@ -500,11 +553,111 @@ describe('figure-export', () => {
 
       const drawn = calls.filter(args => args[0] === logo.image);
       expect(drawn.length).toBe(1);
-      expect(drawn[0].slice(1)).toEqual([20 + 400 - 48, 20, 48, 48]);
+      expect(drawn[0].slice(1)).toEqual([20 + 400 - 144, 20, 144, 48]);
+      expect(20 + measured.headerWidth + 16).toBe(drawn[0][1]);
+
+      expect(measured.direction!.placement.kind).toBe('underLogo');
       const better = texts.find(entry => entry.text === 'Better');
       expect(better).toBeDefined();
+      expect(better!.x).toBeGreaterThan(20 + measured.headerWidth + 16);
+      expect(better!.x - labelInset + measured.direction!.width).toBeCloseTo(20 + 400, 6);
+      // The label sits the badge padding below the pill's top.
+      expect(better!.y - 3).toBeGreaterThanOrEqual(20 + 48 + 6);
+
+      const withoutDirection = measureFigureChrome(
+        { ...sourceOf({ ...tallHeader(), direction: undefined }, emptyFooter), logo },
+        400
+      );
+      expect(measured.height).toBe(withoutDirection.height);
+    });
+
+    it('ends the badge row with the Better badge when the left column leaves no room under the logo', () => {
+      const texts = spyTexts();
+      const figure = request({
+        chrome: figureChrome(shortHeader()),
+        footer: figureFooter(emptyFooter),
+        logo: wideLogo(),
+        betterBadgePlacement: 'fit',
+        density: 1
+      });
+      const measured = measureFigureChrome(figure, 400);
+      composeFigureImage(figure);
+
+      expect(measured.direction!.placement.kind).toBe('badgeFlow');
+      const better = texts.find(entry => entry.text === 'Better');
+      const badge = texts.find(entry => entry.text === '2 models');
+      expect(better).toBeDefined();
       expect(better!.x).toBeLessThan(20 + measured.headerWidth);
-      expect(20 + measured.headerWidth + 16).toBe(drawn[0][1]);
+      expect(better!.y).toBe(badge!.y);
+    });
+
+    it('always draws the Better badge under the logo when asked, and grows the header to hold it', () => {
+      const texts = spyTexts();
+      const source = { ...sourceOf(shortHeader(), emptyFooter), logo: wideLogo() };
+      const fit = measureFigureChrome({ ...source, betterBadgePlacement: 'fit' }, 400);
+      const always = measureFigureChrome({ ...source, betterBadgePlacement: 'always' }, 400);
+
+      expect(always.direction!.placement).toEqual({ kind: 'underLogo', top: 48 + 6 });
+      expect(always.height - fit.height).toBe(48 + 6 + 17 - 48);
+
+      composeFigureImage(request({ ...source, betterBadgePlacement: 'always', density: 1 }));
+      const better = texts.find(entry => entry.text === 'Better');
+      expect(better).toBeDefined();
+      expect(better!.x - labelInset + always.direction!.width).toBeCloseTo(20 + 400, 6);
+      expect(better!.y).toBe(20 + 48 + 6 + 3);
+    });
+
+    it('treats an absent Better badge placement as fit', () => {
+      for (const header of [shortHeader(), tallHeader()]) {
+        const source = { ...sourceOf(header, emptyFooter), logo: wideLogo() };
+        expect(measureFigureChrome(source, 400)).toEqual(measureFigureChrome({ ...source, betterBadgePlacement: 'fit' }, 400));
+      }
+    });
+
+    it('keeps the badge flow when the pill is wider than the logo', () => {
+      const source = { ...sourceOf(tallHeader(), emptyFooter), logo: logoOf(16) };
+      for (const betterBadgePlacement of ['fit', 'always'] as const) {
+        const measured = measureFigureChrome({ ...source, betterBadgePlacement }, 400);
+        expect(measured.logo).toEqual({ width: 16, height: 16 });
+        expect(measured.direction!.width).toBeGreaterThan(16);
+        expect(measured.direction!.placement.kind).withContext(betterBadgePlacement).toBe('badgeFlow');
+      }
+    });
+
+    /** Composes one figure with the wide logo and returns its measured and drawn heights and its plot's top. */
+    function composeUnderLogo(header: Partial<FigureChrome>, betterBadgePlacement: 'fit' | 'always') {
+      const canvas = sourceCanvas();
+      const figure = request({
+        canvas,
+        chrome: figureChrome(header),
+        footer: figureFooter(emptyFooter),
+        logo: wideLogo(),
+        betterBadgePlacement
+      });
+      const measured = measureFigureChrome(figure, 400);
+
+      let composed!: HTMLCanvasElement;
+      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
+      return { measured, composed, plotTop };
+    }
+
+    it('measures exactly the height the composition draws with the Better badge under the logo', () => {
+      const { measured, composed, plotTop } = composeUnderLogo(tallHeader(), 'fit');
+
+      expect(measured.direction!.placement.kind).toBe('underLogo');
+      expect(composed.height).toBe(measured.height + sourceSize.height);
+      // Nothing is drawn below this plot, so only the bottom padding follows it.
+      expect(plotTop + sourceSize.height + 20).toBe(composed.height);
+    });
+
+    it('measures exactly the height the composition draws with the Better badge always under the logo', () => {
+      const { measured, composed, plotTop } = composeUnderLogo(shortHeader(), 'always');
+
+      expect(measured.direction!.placement.kind).toBe('underLogo');
+      expect(composed.height).toBe(measured.height + sourceSize.height);
+      // The logo, the gap under it, the pill and the gap before the plot.
+      expect(plotTop).toBe(20 + 54 + 17 + 16);
+      expect(plotTop + sourceSize.height + 20).toBe(composed.height);
     });
 
     it('measures exactly the height the composition draws with a logo taller than the header', () => {

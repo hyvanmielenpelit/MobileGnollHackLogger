@@ -172,6 +172,17 @@
   min-inline-size: 0;
 }
 
+/* The sidebar: a panel holding the package, the paper size and the warning, spaced by its gap. */
+.dc-package {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
 /* The package radios as cards: a bordered block per option, gold while chosen. The label fills the
    card, so the whole card but its info button chooses the package. */
 .dc-package-choice {
@@ -182,7 +193,7 @@
 
 .dc-package-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   padding-inline-end: 8px;
   border: 1px solid var(--border-glass);
@@ -203,6 +214,7 @@
 
 .dc-package-label {
   flex: 1 1 auto;
+  align-items: flex-start;
   min-width: 0;
   gap: 10px;
   padding: 10px 12px;
@@ -210,20 +222,75 @@
 
   input[type="radio"] {
     flex-shrink: 0;
+    margin-top: 2px;
   }
 }
 
-.dc-package-name {
-  font-weight: 700;
-  color: #f2f2f2;
+/* The name over its one-line tagline. */
+.dc-package-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
+.dc-package-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ececec;
+}
+
+.dc-package-tagline {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #a1a1aa;
+}
+
+/* Level with the name's line. */
+.dc-package-card app-info-tip {
+  margin-top: 6px;
+}
+
+/* The paper sizes as two cards side by side, drawn like the package cards. The legend is the
+   fieldset's rendered legend, above the grid rather than in it. */
 .dc-paper-choice {
-  margin-top: 16px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.dc-paper-option {
+  min-width: 0;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+
+  &.is-selected,
+  &:has(input:checked) {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 9%, transparent);
+  }
+
+  input[type="radio"] {
+    flex-shrink: 0;
+  }
+}
+
+.dc-paper-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ececec;
 }
 
 .dc-named-warning {
-  margin: 14px 0 0;
+  margin: 0;
 
   .alert-heading,
   .alert-body {
@@ -235,10 +302,19 @@
   }
 }
 
-.dc-section-title {
+/* One heading style for the sidebar's legends and the Documents title: Overseer's section legend
+   typography over a hairline rule. */
+.dc-section-title,
+.dc-package .gh-choice > legend.dc-section-title {
   margin: 0 0 10px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border-glass);
   font-family: "Cinzel", serif;
-  color: var(--title-color);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--primary-color);
 }
 
 .dc-notice {
@@ -414,7 +490,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dc-package-card {
+  .dc-package-card,
+  .dc-paper-option {
     transition: none;
   }
 

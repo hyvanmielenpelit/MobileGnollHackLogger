@@ -325,7 +325,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
   }
 
   describe('packages', () => {
-    it('opens on the Internal package: every row chosen, pack documents at Full with peers named', () => {
+    it('opens on Internal: every row chosen, pack documents at Full with peers named', () => {
       openRun();
 
       expect(component.packageId).toBe('internal');
@@ -345,7 +345,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.summaryLine).toBe('18 files · 1 ZIP · Internal package');
     });
 
-    it('chooses the PDF, the Word document and their text source in the Internal package, and the PDF alone in the Provider package', () => {
+    it('chooses the PDF, the Word document and their text source in Internal, and the PDF alone in External', () => {
       openRun();
 
       expect(component.stateOf(row('doc:1')).formats).toEqual(['pdf', 'docx', 'md']);
@@ -367,13 +367,13 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(checked('doc:1')).toEqual(['pdf']);
     });
 
-    it('describes the Internal package’s formats as PDF, Word and Markdown', () => {
+    it('describes Internal’s formats as PDF, Word and Markdown', () => {
       expect(DOWNLOAD_PACKAGES.find(p => p.id === 'internal')!.description).toBe(
         'Every available file for the Overseer team, as PDF, Word and Markdown (PDF, Word and Text for the diagnostics): '
         + 'report documents at Full disclosure with peers named, the run report, the tool-call log and the diagnostics.');
     });
 
-    it('lists internal-only rows in the Provider package but makes them unselectable, each with its reason behind an info button', () => {
+    it('lists internal-only rows in External but makes them unselectable, each with its reason behind an info button', () => {
       openRun();
       host().querySelector<HTMLInputElement>(`#${component.idPrefix}-package-provider`)!.click();
       render();
@@ -412,7 +412,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         expect(disclosure.disabled).toBeFalse();
         expect(element.querySelector('.gh-tag-shareable')).not.toBeNull();
       }
-      expect(component.summaryLine).toBe('2 files · 1 ZIP · Provider package');
+      expect(component.summaryLine).toBe('2 files · 1 ZIP · External package');
     });
 
     it('warns, naming the compliance note, when a provider copy names its peers', () => {
@@ -445,6 +445,27 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const [ibDisclosure] = Array.from(rowElement('doc:3').querySelectorAll<HTMLSelectElement>('select'));
       expect(Array.from(ibDisclosure.options).map(o => o.textContent!.trim())).toEqual(['Full']);
       expect(rowElement('report:42').querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBeFalse();
+    });
+
+    it('names the presets Internal, External and Custom, and stores External as provider', async () => {
+      openRun();
+
+      const names = Array.from(host().querySelectorAll('.dc-package-choice .dc-package-name')).map(name => name.textContent!.trim());
+      expect(names).toEqual(['Internal', 'External', 'Custom']);
+      const external = host().querySelector<HTMLInputElement>(`#${component.idPrefix}-package-provider`)!;
+      expect(external.closest('label')!.querySelector('.dc-package-name')!.textContent!.trim()).toBe('External');
+
+      external.click();
+      render();
+      expect(component.packageId).toBe('provider');
+      expect(component.summaryLine).toBe('2 files · 1 ZIP · External package');
+
+      await runDownload();
+
+      const zip = await savedZip();
+      expect(zip.name).toBe('gpt-model-x_external-package_20260928_101502.zip');
+      expect(zip.files['MANIFEST.md']).toContain('- **Package:** External package');
+      expect(JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!).package).toBe('provider');
     });
   });
 
@@ -548,7 +569,8 @@ describe('BenchmarkDownloadCenterComponent', () => {
         const radio = host().querySelector<HTMLInputElement>(`#${component.idPrefix}-package-${pkg.id}`)!;
         const label = radio.closest('label')!;
         expect(label.querySelector('button')).withContext(pkg.id).toBeNull();
-        expect(label.textContent!.trim()).withContext(pkg.id).toBe(pkg.name);
+        expect(label.querySelector('.dc-package-name')!.textContent!.trim()).withContext(pkg.id).toBe(pkg.name);
+        expect(label.querySelector('.dc-package-tagline')!.textContent!.trim()).withContext(pkg.id).toBe(pkg.tagline);
         const descriptionId = radio.getAttribute('aria-describedby')!;
         expect(descriptionId).toBe(`${component.idPrefix}-package-${pkg.id}-desc`);
         expect(byId(descriptionId)!.textContent!.trim()).withContext(pkg.id).toBe(pkg.description);
@@ -672,6 +694,24 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.paper).toBe('letter');
       expect(host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-letter`)!.checked).toBeTrue();
     });
+
+    it('shares one heading style across the sidebar and the Documents column, and draws the paper sizes as cards', () => {
+      openRun();
+      const p = component.idPrefix;
+
+      for (const id of [`${p}-package-legend`, `${p}-paper-legend`, `${p}-documents-title`]) {
+        expect(byId(id)!.classList.contains('dc-section-title')).withContext(id).toBeTrue();
+      }
+      const options = Array.from(host().querySelectorAll<HTMLLabelElement>('.dc-paper-choice label.dc-paper-option'));
+      expect(options.length).toBe(2);
+      expect(options.map(option => option.querySelector('.dc-paper-name')!.textContent!.trim())).toEqual(component.papers.map(paper => paper.label));
+      expect(options.map(option => option.classList.contains('is-selected'))).toEqual([true, false]);
+
+      host().querySelector<HTMLInputElement>(`#${p}-paper-letter`)!.click();
+      render();
+
+      expect(options.map(option => option.classList.contains('is-selected'))).toEqual([false, true]);
+    });
   });
 
   describe('remembered settings', () => {
@@ -793,7 +833,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     it('downloads one file as itself', async () => {
       openRun();
       choose('provider', { 'doc:1': { formats: ['md'] } });
-      expect(component.summaryLine).toBe('1 file · Provider package');
+      expect(component.summaryLine).toBe('1 file · External package');
 
       await runDownload();
 
@@ -810,7 +850,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     it('downloads one PDF as its bytes, rendered at the chosen options', async () => {
       openRun();
       choose('provider', { 'doc:1': {} });
-      expect(component.summaryLine).toBe('1 file · Provider package');
+      expect(component.summaryLine).toBe('1 file · External package');
 
       await runDownload();
 

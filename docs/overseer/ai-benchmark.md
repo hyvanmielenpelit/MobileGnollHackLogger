@@ -3129,6 +3129,36 @@ stored settings move to version 3, migrated from version 2 with only the Interna
 formats dropped. While a package is prepared, an overlay shows a spinner, the current step and a progress
 bar. Details are in [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 8.
 
+### Benchmark UI Polish and Better Badge Position (2026-09-28) — No Version Bump
+
+*Layout and naming fixes in the AI Benchmark tab, and a placement option for the comparison figures'
+Better badge.* Nothing here grades anything: no grading prompt, score, index or comparability key
+changes; `HarnessVersion`, `ScoringMethodVersion` and `ReportFormatVersion` do not move. No database
+change, and nothing a run records changes.
+
+**The tab's top.** The AI Benchmark tab starts with its sub-tab row; there is no wordmark above it. The
+square emblem before *Run #N* in the run report and before the Download Center's and Report Pack dialog's
+titles, and both logos in every PDF and Word file, stay.
+
+**Run History.** The table fits its panel: the ID, status, index, instrument, duration, cost, date and
+action columns take the width of their content, and the suite and model columns share the rest, with long
+names wrapping. The date sits over the time, and the four action buttons form a 2 × 2 grid. The whole
+table fits a 1440-px window; below that the table alone scrolls sideways.
+
+**Download Center.** The packages are **Internal**, **External** and **Custom**, each card with a one-line
+tagline under its name. The summary line, the ZIP's `MANIFEST.md` and its file name say *Internal
+package*, *External package* and *Custom*. The stored package id of External is still `provider`, so
+remembered settings carry over. The sidebar is a panel whose *Package* and *Paper size* headings share the
+Documents column's section-heading style, and A4 and US Letter are two option cards.
+
+**Better badge position.** In the comparison figures the Better badge sits under the logo, right-aligned
+with it. A new figure-style option, **Better badge position** in *Heading and badges* (bar and trade-off
+charts, set separately), chooses between *Under the logo where it fits* (the default), which keeps the
+heading's height and otherwise ends the badge row, and *Always under the logo*, which lets the heading grow
+to make room. Without the logo, or with a logo narrower than the badge, it ends the badge row under either
+option. The figure style stays `version: 1`, and a style stored before the option existed reads the
+default.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

@@ -35,7 +35,8 @@ describe('figure-style', () => {
       gridlines: true,
       axisTitleWeight: 400,
       plotFrame: false,
-      hiddenBadges: []
+      hiddenBadges: [],
+      betterBadgePlacement: 'fit'
     });
     expect(DEFAULT_FIGURE_STYLE.scatter).toEqual({
       ...chromeDefaults,
@@ -53,9 +54,11 @@ describe('figure-style', () => {
       gridlines: true,
       axisTitleWeight: 400,
       plotFrame: false,
-      hiddenBadges: []
+      hiddenBadges: [],
+      betterBadgePlacement: 'fit'
     });
     expect(DEFAULT_FIGURE_STYLE.profile).toEqual({ ...chromeDefaults, hiddenBadges: [] });
+    expect('betterBadgePlacement' in DEFAULT_FIGURE_STYLE.profile).toBeFalse();
     expect(DEFAULT_FIGURE_STYLE.appearance).toEqual({
       theme: 'dark',
       background: 'theme',
@@ -356,6 +359,28 @@ describe('figure-style', () => {
       expect(normalizeFigureStyle({ bar: { axisTitleBreak: value } }).bar.axisTitleBreak)
         .withContext(JSON.stringify(value)).toBe('auto');
     }
+  });
+
+  it('keeps an always Better badge placement per family and reads anything else as fit', () => {
+    const kept = normalizeFigureStyle({ bar: { betterBadgePlacement: 'always' }, scatter: { betterBadgePlacement: 'always' } });
+    expect(kept.bar.betterBadgePlacement).toBe('always');
+    expect(kept.scatter.betterBadgePlacement).toBe('always');
+    expect('betterBadgePlacement' in kept.profile).toBeFalse();
+    for (const value of ['sometimes', 1, null, true, ['always'], undefined]) {
+      const repaired = normalizeFigureStyle({ bar: { betterBadgePlacement: value }, scatter: { betterBadgePlacement: value } });
+      expect(repaired.bar.betterBadgePlacement).withContext(JSON.stringify(value) ?? 'undefined').toBe('fit');
+      expect(repaired.scatter.betterBadgePlacement).withContext(JSON.stringify(value) ?? 'undefined').toBe('fit');
+    }
+  });
+
+  it('reads a style stored before the Better badge placement existed as fit, and the rest unchanged', () => {
+    const storedBar: Record<string, unknown> = { ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10, hiddenBadges: ['runs'] };
+    const storedScatter: Record<string, unknown> = { ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 9 };
+    delete storedBar['betterBadgePlacement'];
+    delete storedScatter['betterBadgePlacement'];
+    const style = normalizeFigureStyle({ version: 1, bar: storedBar, scatter: storedScatter });
+    expect(style.bar).toEqual({ ...storedBar, betterBadgePlacement: 'fit' } as unknown as typeof style.bar);
+    expect(style.scatter).toEqual({ ...storedScatter, betterBadgePlacement: 'fit' } as unknown as typeof style.scatter);
   });
 
   it('normalizes the number formats field by field and drops unknown keys', () => {

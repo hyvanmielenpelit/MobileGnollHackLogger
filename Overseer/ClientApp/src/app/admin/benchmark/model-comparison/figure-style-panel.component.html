@@ -96,7 +96,8 @@
        [attr.style]="'position-anchor: --' + sectionId(family, name) + '-reset'">{{ resetTip(family, name) }}</div>
 </ng-template>
 
-<!-- Heading and badges: the two caption sizes, then every badge the family offers. -->
+<!-- Heading and badges: the two caption sizes, then every badge the family offers, then, for the bar
+     and trade-off families, where the Better badge goes. -->
 <ng-template #headingSection let-family="family">
   <div class="fsp-section">
     <details class="gh-disclosure gh-disclosure--section" [id]="sectionId(family, 'heading')"
@@ -129,6 +130,24 @@
             }
           </div>
         </div>
+        @if (family !== 'profile') {
+          <fieldset class="gh-choice" [attr.aria-labelledby]="controlId(family, 'betterBadgePlacement-label')"
+                    [attr.aria-describedby]="tipId(family, 'betterBadgePlacement')">
+            <legend>
+              <span [id]="controlId(family, 'betterBadgePlacement-label')">Better badge position</span>
+              <app-info-tip [tipId]="tipId(family, 'betterBadgePlacement')" subject="Better badge position">Where it fits keeps the heading's height, and otherwise ends the badge row. Always lets the heading grow to make room. Without the logo, or with a logo narrower than the badge, it ends the badge row.</app-info-tip>
+            </legend>
+            @for (option of betterBadgePlacementOptions; track option.value) {
+              <label class="gh-radio">
+                <input type="radio" [name]="controlId(family, 'betterBadgePlacement')"
+                       [id]="controlId(family, 'betterBadgePlacement-' + option.value)"
+                       [value]="option.value" [checked]="betterBadgePlacementOf(family) === option.value"
+                       (change)="setBetterBadgePlacement(family, option.value)">
+                {{ option.label }}
+              </label>
+            }
+          </fieldset>
+        }
       </div>
     </details>
     <ng-container *ngTemplateOutlet="sectionReset; context: { family: family, name: 'heading' }"></ng-container>

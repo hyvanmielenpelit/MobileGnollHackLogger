@@ -2479,7 +2479,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /**
    * One card's chrome: everything the exported image carries besides the plot itself, at its
-   * family's caption sizes, with the footer emptied while the family hides it, in the theme.
+   * family's caption sizes and Better badge placement, with the footer emptied while the family
+   * hides it, in the theme.
    */
   private exportChrome(card: ComparisonFigureCard): FigureExportChrome {
     const style = this.figureStyle[this.familyOf(card)];
@@ -2492,7 +2493,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
         footerPx: style.footerTextSizePx
       },
       theme: this.figureTheme,
-      logo: this.figureLogo()
+      logo: this.figureLogo(),
+      betterBadgePlacement: 'betterBadgePlacement' in style ? style.betterBadgePlacement : undefined
     };
   }
 

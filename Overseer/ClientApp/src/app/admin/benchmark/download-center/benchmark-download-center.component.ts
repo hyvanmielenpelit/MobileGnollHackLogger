@@ -110,6 +110,10 @@ export interface DownloadRowState {
 export interface DownloadPackage {
   id: DownloadPackageId;
   name: string;
+  /** The name in the summary line, the manifest and the ZIP file name. */
+  fullName: string;
+  /** One line under the name on the package card. */
+  tagline: string;
   description: string;
 }
 
@@ -179,17 +183,23 @@ interface StoredSettings {
 export const DOWNLOAD_PACKAGES: readonly DownloadPackage[] = [
   {
     id: 'internal',
-    name: 'Internal package',
+    name: 'Internal',
+    fullName: 'Internal package',
+    tagline: 'Every file, for the Overseer team',
     description: 'Every available file for the Overseer team, as PDF, Word and Markdown (PDF, Word and Text for the diagnostics): report documents at Full disclosure with peers named, the run report, the tool-call log and the diagnostics.'
   },
   {
     id: 'provider',
-    name: 'Provider package',
+    name: 'External',
+    fullName: 'External package',
+    tagline: 'Shareable reports for a model’s provider',
     description: 'The Executive Summary and the Technical Report as PDF, to send to a model’s provider: Summary disclosure (Detailed optional), peers anonymized (named optional). Internal-only files cannot be chosen.'
   },
   {
     id: 'custom',
     name: 'Custom',
+    fullName: 'Custom',
+    tagline: 'Your own selection',
     description: 'Any selection, at any level a document allows.'
   }
 ];
@@ -213,7 +223,7 @@ const MIME_TYPES: Record<DownloadFormat, string> = {
 const FORMAT_LABELS: Record<DownloadFormat, string> = { pdf: 'PDF', docx: 'Word', md: 'Markdown', html: 'HTML', txt: 'Text' };
 
 /**
- * The formats a package chooses where a row offers them: Provider the PDF alone; Internal, and Custom
+ * The formats a package chooses where a row offers them: External the PDF alone; Internal, and Custom
  * with nothing to keep, the PDF, the Word document and the text they are made from (Markdown, or Text
  * for the diagnostics).
  */
@@ -233,7 +243,7 @@ let nextInstanceId = 0;
 
 /**
  * The Download Center: packages report documents and run files for download, as one file or as a
- * ZIP with `MANIFEST.md`. Three packages set the choices (Internal, Provider, Custom); the table
+ * ZIP with `MANIFEST.md`. Three packages set the choices (Internal, External, Custom); the table
  * lists every available document with its options.
  *
  * It makes no request but the document list or detail that fills the table, the render endpoints
@@ -395,7 +405,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     return state;
   }
 
-  /** In the Provider package, internal-only rows are listed but cannot be chosen. */
+  /** In the External package, internal-only rows are listed but cannot be chosen. */
   isSelectable(row: DownloadRow): boolean {
     return this.isSelectableIn(row, this.packageId);
   }
@@ -530,7 +540,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
   /** `5 files · 1 ZIP · Internal package`. */
   get summaryLine(): string {
     const count = this.plannedFiles.length;
-    const name = this.currentPackage.name;
+    const name = this.currentPackage.fullName;
     if (count === 0) {
       return `No files chosen · ${name}`;
     }
@@ -556,7 +566,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     const context = this.context;
     const packagedAt = downloadCenterIo.now();
     const plan = this.plannedFiles.map(file => ({ ...file, state: { ...this.stateOf(file.row), formats: [...this.stateOf(file.row).formats] } }));
-    const packageName = this.currentPackage.name;
+    const packageName = this.currentPackage.fullName;
     const paper = this.paper;
     const texts = new Map<string, Promise<SourceText>>();
 
@@ -1007,7 +1017,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     const model = context.kind === 'run'
       ? context.run.modelLabel
       : (this.rows.find(row => row.doc)?.doc?.subjectLabel ?? 'reports');
-    return `${safeFileName(model)}_${safeFileName(this.currentPackage.name)}_${exportTimestamp(packagedAt)}.zip`;
+    return `${safeFileName(model)}_${safeFileName(this.currentPackage.fullName)}_${exportTimestamp(packagedAt)}.zip`;
   }
 }
 

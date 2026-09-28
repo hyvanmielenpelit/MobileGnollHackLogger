@@ -813,8 +813,8 @@ function errorBarOptions(theme: ResolvedFigureTheme) {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Which corner of a scatter is the good one. Drawn as the Better badge on the figure's badge row,
- * never as a reversed axis.
+ * Which corner of a scatter is the good one. Drawn as the Better badge, under the logo or at the
+ * end of the badge row, never as a reversed axis.
  */
 export type PreferredCorner = FigureDirection;
 

@@ -40,6 +40,7 @@ import type {
 import { figureDirectionRotation } from './figure-chrome';
 import { FIGURE_LOGO_GAP, drawFigureLogo, figureLogoBox } from './figure-logo';
 import type { FigureLogo, FigureLogoBox } from './figure-logo';
+import type { BetterBadgePlacement } from './figure-style';
 import { FADED_MARK_ALPHA, resolveFigureTheme } from './figure-theme';
 import type { ResolvedChromeColors, ResolvedFigureBorder, ResolvedFigureTheme } from './figure-theme';
 import {
@@ -303,6 +304,8 @@ export interface FigureExportRequest {
   readonly theme?: ResolvedFigureTheme;
   /** Drawn in the top right corner, beside the header. Absent or null draws none. */
   readonly logo?: FigureLogo | null;
+  /** Where the Better badge goes when it fits under the logo. Absent is `'fit'`. */
+  readonly betterBadgePlacement?: BetterBadgePlacement;
 }
 
 /** What `encodeFigureImage` produced, including the format actually written. */
@@ -643,13 +646,24 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
   y = drawBlock(
     context, chrome.titleLines, PADDING, y, sizes.titlePx, String(theme.fonts.headingWeight), paint.colors.title, paint.stack);
 
+  // The Better badge is either right-aligned under the logo, at a top measured from the header's
+  // top, or the last pill of the badge flow, on the row and at the x the measurement placed it.
+  const direction = chrome.direction;
+  const placement = direction?.placement ?? null;
+  let directionBottom = 0;
+  if (direction && placement?.kind === 'underLogo') {
+    drawDirectionBadge(
+      context, direction, PADDING + contentWidth - direction.width, PADDING + placement.top, sizes, paint);
+    directionBottom = PADDING + placement.top + sizes.badgeHeight;
+  }
+
   const badgeRowCount = badgeRowCountOf(chrome);
   if (badgeRowCount > 0) {
     y += LINE_GAP;
     drawBadgeRows(context, chrome.badgeRows, PADDING, y, sizes, paint);
-    if (chrome.direction) {
-      // Right-aligned in the header column on the first badge row, which it shares the height of.
-      drawDirectionBadge(context, chrome.direction, PADDING + chrome.headerWidth - chrome.direction.width, y, sizes, paint);
+    if (direction && placement?.kind === 'badgeFlow') {
+      drawDirectionBadge(
+        context, direction, PADDING + placement.x, y + placement.row * (sizes.badgeHeight + BADGE_GAP), sizes, paint);
     }
     y += badgeRowCount * sizes.badgeHeight + (badgeRowCount - 1) * BADGE_GAP;
   }
@@ -659,7 +673,7 @@ export function composeFigureImage(request: FigureExportRequest): HTMLCanvasElem
     y = drawBlock(context, chrome.detailLines, PADDING, y, DETAIL_SIZE, '400', paint.colors.muted, paint.stack);
   }
 
-  y = Math.max(y, PADDING + (chrome.logo?.height ?? 0));
+  y = Math.max(y, PADDING + (chrome.logo?.height ?? 0), directionBottom);
   y += PLOT_GAP;
   if (chartWidth > 0 && chartHeight > 0 && plotWidth > 0 && plotHeight > 0) {
     context.drawImage(request.canvas, PADDING, y, plotWidth, plotHeight);
@@ -1058,11 +1072,17 @@ interface MeasuredFooter {
   readonly height: number;
 }
 
-/** The Better badge: its arrow's rotation, its word and the pill width it measured at. */
+/** Where the Better badge is drawn: under the logo, right-aligned, or ending the badge flow. */
+type DirectionPlacement =
+  | { readonly kind: 'underLogo'; readonly top: number }                  // from the header's top
+  | { readonly kind: 'badgeFlow'; readonly row: number; readonly x: number }; // row index, x from the content's left
+
+/** The Better badge: its arrow's rotation, its word, the pill width it measured at and its place. */
 interface MeasuredDirection {
   readonly rotation: number;
   readonly label: string;
   readonly width: number;
+  readonly placement: DirectionPlacement;
 }
 
 /** The request's caption sizes, resolved into every size the measure and draw paths read. */
@@ -1080,11 +1100,14 @@ export interface MeasuredChrome {
   readonly sizes: ResolvedTextSizes;
   readonly titleLines: string[];
   /**
-   * Narrowed to the header column, which the logo narrows, and by the Better badge's width when
-   * there is one, so no badge runs under either.
+   * The ordinary badges, wrapped in the header column, which the logo narrows. The Better badge is
+   * never among them, even where it ends their flow.
    */
   readonly badgeRows: readonly MeasuredBadgeRow[];
-  /** Drawn right-aligned on the first badge row, or on a row of its own when there are no badges. */
+  /**
+   * Right-aligned under the logo where the figure style and the room there allow, otherwise the
+   * last pill of the badge flow: on the last badge row when it fits, else on a row of its own.
+   */
   readonly direction: MeasuredDirection | null;
   readonly detailLines: string[];
   readonly keyRows: readonly MeasuredKeyRow[];
@@ -1123,18 +1146,40 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
   const chrome = source.chrome;
   const sizes = resolveTextSizes(source.textSizes ?? DEFAULT_FIGURE_TEXT_SIZES);
   const titleLines = wrapAt(chrome.title, headerWidth, sizes.titlePx, String(theme.fonts.headingWeight));
-  const direction = chrome.direction
-    ? {
-        rotation: figureDirectionRotation(chrome.direction),
-        label: chrome.direction.label,
-        width: measure ? directionBadgeWidth(measure, chrome.direction.label, sizes, stack) : 0
-      }
-    : null;
-  const badgeWidth = direction ? headerWidth - direction.width - BADGE_GAP : headerWidth;
   const badgeRows: MeasuredBadgeRow[] = measure
-    ? wrapBadges(measure, chrome.badges, badgeWidth, sizes.badgePx, stack)
+    ? wrapBadges(measure, chrome.badges, headerWidth, sizes.badgePx, stack)
     : (chrome.badges.length > 0 ? [{ badges: chrome.badges.map(badge => ({ badge, width: 0 })) }] : []);
   const detailLines = wrapAt(chrome.detail, headerWidth, DETAIL_SIZE, '400');
+
+  // The left column's height with `rowCount` badge rows: the title, the badge rows and the detail.
+  const titleHeight = blockHeight(titleLines, sizes.titlePx);
+  const detailHeight = detailLines.length > 0 ? LINE_GAP + blockHeight(detailLines, DETAIL_SIZE) : 0;
+  const columnHeight = (rowCount: number): number =>
+    titleHeight
+    + (rowCount > 0 ? LINE_GAP + rowCount * sizes.badgeHeight + (rowCount - 1) * BADGE_GAP : 0)
+    + detailHeight;
+
+  let direction: MeasuredDirection | null = null;
+  if (chrome.direction) {
+    const width = measure ? directionBadgeWidth(measure, chrome.direction.label, sizes, stack) : 0;
+    const underLogoTop = logo && width <= logo.width
+      ? directionTopUnderLogo(logo, badgeRows.length, titleHeight, sizes)
+      : null;
+    // `'fit'` goes under the logo only where the left column already covers the pill's bottom;
+    // `'always'` goes there whenever the pill fits the logo's width, and the header grows to hold it.
+    const placed: DirectionPlacement = underLogoTop !== null && (
+      source.betterBadgePlacement === 'always' ||
+      underLogoTop + sizes.badgeHeight <= columnHeight(badgeRows.length)
+    )
+      ? { kind: 'underLogo', top: underLogoTop }
+      : directionInBadgeFlow(badgeRows, width, headerWidth);
+    direction = {
+      rotation: figureDirectionRotation(chrome.direction),
+      label: chrome.direction.label,
+      width,
+      placement: placed
+    };
+  }
   const keyRows: MeasuredKeyRow[] = measure
     ? wrapKeyItems(measure, chrome.key, contentWidth, stack)
     : (chrome.key.length > 0 ? [{ items: chrome.key.map(item => ({ item, width: 0 })) }] : []);
@@ -1143,15 +1188,12 @@ export function measureFigureChrome(source: FigureChromeSource, contentWidth: nu
     chrome.notes.map(note => ({ tone: note.tone, lines: wrap(note.text, NOTE_SIZE, '400') }));
   const footer = measureFooter(measure, source.footer, contentWidth, sizes, stack);
 
-  let headerHeight = blockHeight(titleLines, sizes.titlePx);
-  const badgeRowCount = badgeRowCountOf({ badgeRows, direction });
-  if (badgeRowCount > 0) {
-    headerHeight += LINE_GAP + badgeRowCount * sizes.badgeHeight + (badgeRowCount - 1) * BADGE_GAP;
-  }
-  if (detailLines.length > 0) {
-    headerHeight += LINE_GAP + blockHeight(detailLines, DETAIL_SIZE);
-  }
-  headerHeight = Math.max(headerHeight, logo?.height ?? 0);
+  const placement = direction?.placement;
+  const headerHeight = Math.max(
+    columnHeight(badgeRowCountOf({ badgeRows, direction })),
+    logo?.height ?? 0,
+    placement?.kind === 'underLogo' ? placement.top + sizes.badgeHeight : 0
+  );
 
   let height = PADDING * 2;
   height += headerHeight;
@@ -1185,9 +1227,51 @@ function resolveTextSizes(sizes: FigureChromeTextSizes): ResolvedTextSizes {
   };
 }
 
-/** The badge rows, or one row for the Better badge alone when there are no other badges. */
+/** The badge rows, and the row the Better badge starts when it ends the badge flow on a row of its own. */
 function badgeRowCountOf(chrome: Pick<MeasuredChrome, 'badgeRows' | 'direction'>): number {
-  return Math.max(chrome.badgeRows.length, chrome.direction ? 1 : 0);
+  const placement = chrome.direction?.placement;
+  return placement?.kind === 'badgeFlow'
+    ? Math.max(chrome.badgeRows.length, placement.row + 1)
+    : chrome.badgeRows.length;
+}
+
+/**
+ * The Better badge's top under the logo, from the header's top: the first badge row's top at or
+ * below the logo and its gap, so the pill lines up with that row, or the logo and its gap alone.
+ */
+function directionTopUnderLogo(
+  logo: FigureLogoBox,
+  badgeRowCount: number,
+  titleHeight: number,
+  sizes: ResolvedTextSizes
+): number {
+  const floor = logo.height + LINE_GAP;
+  for (let row = 0; row < badgeRowCount; row += 1) {
+    const top = titleHeight + LINE_GAP + row * (sizes.badgeHeight + BADGE_GAP);
+    if (top >= floor) {
+      return top;
+    }
+  }
+  return floor;
+}
+
+/**
+ * The Better badge as the last pill of the badge flow, wrapped as {@link wrapBadges} wraps: at the
+ * end of the last row when it fits `maxWidth` there, otherwise at the start of a row of its own.
+ */
+function directionInBadgeFlow(
+  rows: readonly MeasuredBadgeRow[],
+  width: number,
+  maxWidth: number
+): DirectionPlacement {
+  if (rows.length === 0) {
+    return { kind: 'badgeFlow', row: 0, x: 0 };
+  }
+  const last = rows[rows.length - 1].badges;
+  const x = last.reduce((sum, entry) => sum + entry.width, 0) + last.length * BADGE_GAP;
+  return x + width <= maxWidth
+    ? { kind: 'badgeFlow', row: rows.length - 1, x }
+    : { kind: 'badgeFlow', row: rows.length, x: 0 };
 }
 
 /** The Better badge's arrow side, in layout px. */

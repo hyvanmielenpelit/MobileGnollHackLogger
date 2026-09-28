@@ -5,6 +5,7 @@ import type { FigureBadgeKind } from './figure-chrome';
 import {
   BadgeControl,
   BarFigureStyle,
+  BetterBadgePlacement,
   DEFAULT_APPEARANCE_STYLE,
   DEFAULT_FIGURE_STYLE,
   FIGURE_BACKGROUND_MODES,
@@ -73,6 +74,8 @@ export interface FigureStyleSection {
 const NUMBERS_SECTION: FigureStyleSection = { name: 'numbers', title: 'Number format', keys: [], shared: true };
 
 const HEADING_KEYS = ['titleSizePx', 'badgeTextSizePx', 'hiddenBadges'] as const;
+/** The bar and trade-off heading sections also place the Better badge, which the profile lacks. */
+const DIRECTED_HEADING_KEYS = [...HEADING_KEYS, 'betterBadgePlacement'] as const;
 const FOOTER_KEYS = ['footer', 'footerTextSizePx'] as const;
 
 /**
@@ -81,7 +84,7 @@ const FOOTER_KEYS = ['footer', 'footerTextSizePx'] as const;
  */
 export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly FigureStyleSection[]>> = {
   bar: [
-    { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
+    { name: 'heading', title: 'Heading and badges', keys: DIRECTED_HEADING_KEYS },
     { name: 'bars', title: 'Bars', keys: ['gapPercent', 'maxBarWidthPx', 'cornerRadiusPx', 'outlineWidthPx', 'filledBars'] },
     {
       name: 'values',
@@ -97,7 +100,7 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
     { name: 'layout', title: 'Layout', keys: ['orientation', 'gridlines', 'plotFrame'] }
   ],
   scatter: [
-    { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
+    { name: 'heading', title: 'Heading and badges', keys: DIRECTED_HEADING_KEYS },
     { name: 'marks', title: 'Marks and frontier', keys: ['markRadiusPx', 'frontierLine', 'frontierWidthPx'] },
     { name: 'labels', title: 'Labels and legend', keys: ['labelTextSizePx', 'legendPosition', 'thinkingLevelBreak'] },
     NUMBERS_SECTION,
@@ -253,6 +256,11 @@ export class FigureStylePanelComponent implements OnInit {
   readonly legendOptions = [
     { value: 'bottom', label: 'Bottom' },
     { value: 'right', label: 'Right' }
+  ] as const;
+
+  readonly betterBadgePlacementOptions = [
+    { value: 'fit', label: 'Under the logo where it fits' },
+    { value: 'always', label: 'Always under the logo' }
   ] as const;
 
   readonly axisTitleBreakOptions = [
@@ -462,6 +470,19 @@ export class FigureStylePanelComponent implements OnInit {
       ? current.filter((k) => k !== kind)
       : current.includes(kind) ? [...current] : [...current, kind];
     this.setFamily(family, 'hiddenBadges', hidden);
+  }
+
+  /** The family's Better badge placement; the profile, which has no Better badge, reads `fit`. */
+  betterBadgePlacementOf(family: StyleFamily): BetterBadgePlacement {
+    return family === 'profile' ? 'fit' : this.figureStyle[family].betterBadgePlacement;
+  }
+
+  setBetterBadgePlacement(family: 'bar' | 'scatter', value: BetterBadgePlacement): void {
+    if (family === 'bar') {
+      this.setBar('betterBadgePlacement', value);
+    } else {
+      this.setScatter('betterBadgePlacement', value);
+    }
   }
 
   checkedOf(event: Event): boolean {
@@ -782,9 +803,12 @@ export class FigureStylePanelComponent implements OnInit {
     const style = this.figureStyle[family];
     switch (name) {
       case 'heading': {
+        const alwaysUnderLogo = this.betterBadgePlacementOf(family) === 'always';
         const shown = this.badgeControls[family]
           .filter((control) => !style.hiddenBadges.includes(control.kind))
-          .map((control) => BADGE_READOUT_NAMES[control.kind]);
+          .map((control) => control.kind === 'direction' && alwaysUnderLogo
+            ? `${BADGE_READOUT_NAMES.direction} (always under logo)`
+            : BADGE_READOUT_NAMES[control.kind]);
         return [`${style.titleSizePx} px`, `badges ${style.badgeTextSizePx} px`, shown.length > 0 ? shown.join(', ') : 'none shown']
           .join(' · ');
       }
