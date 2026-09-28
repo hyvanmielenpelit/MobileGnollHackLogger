@@ -937,11 +937,18 @@ export interface FigureArchiveEntry {
   blob: Blob;
 }
 
+/** Per-file options of one zip entry: its deflate level and its stored modification time. */
+export interface ZipEntryOptions {
+  level?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+  /** Without it `fflate` stamps the entry with `Date.now()`. */
+  mtime?: Date | number;
+}
+
 /** The one function this module calls from `fflate`, typed to the shape version 0.8 exports. */
 export interface ZipWriterModule {
   zipSync(
-    data: Record<string, [Uint8Array, { level: 0 }]>,
-    options?: { level: 0 }
+    data: Record<string, [Uint8Array, ZipEntryOptions]>,
+    options?: ZipEntryOptions
   ): Uint8Array;
 }
 
@@ -966,7 +973,7 @@ export const zipWriterModule: { load(): Promise<ZipWriterModule> } = {
  */
 export async function buildFigureArchive(entries: readonly FigureArchiveEntry[]): Promise<Blob> {
   const writer = await zipWriterModule.load();
-  const files: Record<string, [Uint8Array, { level: 0 }]> = {};
+  const files: Record<string, [Uint8Array, ZipEntryOptions]> = {};
   for (const entry of entries) {
     files[entry.name] = [new Uint8Array(await entry.blob.arrayBuffer()), { level: 0 }];
   }
@@ -1008,8 +1015,8 @@ export async function copyImageToClipboard(blob: Blob): Promise<ClipboardImageOu
 // Internals
 // -----------------------------------------------------------------------------------------------
 
-/** `yyyyMMdd_HHmmss` in local time: sortable, and shared by every filename this module writes. */
-function exportTimestamp(now: Date): string {
+/** `yyyyMMdd_HHmmss` in local time: sortable, and shared by every export filename. */
+export function exportTimestamp(now: Date = new Date()): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
   return (
     `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +

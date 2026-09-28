@@ -28,8 +28,9 @@ public class SystemConfigUsageGuardTests
     private readonly BenchmarkGenerationJobManager _generation = new();
     private readonly BenchmarkRubricCheckJobManager _rubricCheck = new();
     private readonly BenchmarkRubricGapAuthorJobManager _gapAuthor = new();
+    private readonly BenchmarkReportPackJobManager _reportPack = new();
 
-    private SystemConfigUsageGuard Guard() => new(_db, _difficulty, _generation, _rubricCheck, _gapAuthor);
+    private SystemConfigUsageGuard Guard() => new(_db, _difficulty, _generation, _rubricCheck, _gapAuthor, _reportPack);
 
     private async Task AddRunAsync(BenchmarkRunStatus status, long? assessorId = ConfigId, long? verifierId = null)
     {
@@ -150,6 +151,21 @@ public class SystemConfigUsageGuardTests
         Assert.True(_gapAuthor.TryStart(job, out _));
 
         Assert.Equal("rubricGapAuthorJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId)).Kind);
+    }
+
+    [Fact]
+    public async Task AReportPackJob_BlocksItsWriterWhileActive_AndNotOnceFinished()
+    {
+        var job = new BenchmarkReportPackJob { SuiteName = "Sokoban basics", SubjectLabel = "Claude 5.5 Opus", WriterConfigId = ConfigId };
+        Assert.True(_reportPack.TryStart(job, out _));
+
+        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId));
+        Assert.Equal("reportPackJob", blocker.Kind);
+        Assert.Contains("Claude 5.5 Opus", blocker.Label);
+        Assert.Equal(new[] { "report writer" }, blocker.Roles);
+
+        _reportPack.Complete(job.Id, BenchmarkReportPackJobStatus.Completed);
+        Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId));
     }
 
     [Fact]

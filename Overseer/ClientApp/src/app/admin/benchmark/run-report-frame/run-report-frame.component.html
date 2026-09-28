@@ -1,0 +1,20 @@
+<!-- Narrow, .rrf-top is display: contents, so only the header sticks while the frame scrolls;
+     wide, header and figures stick together above the two scrolling columns. -->
+<div class="rrf-top">
+  <header class="rrf-header">
+    <div class="rrf-identity"><ng-content select="[runReportHeader]" /></div>
+    <div class="rrf-actions"><ng-content select="[runReportActions]" /></div>
+  </header>
+  <div class="rrf-figures"><ng-content select="[runReportFigures]" /></div>
+</div>
+
+<div class="rrf-body" [attr.aria-busy]="busy ? 'true' : null">
+  <div class="rrf-columns">
+    <section class="rrf-main" tabindex="0" [attr.aria-label]="mainLabel">
+      <ng-content select="[runReportMain]" />
+    </section>
+    <section class="rrf-aside" tabindex="0" [attr.aria-label]="asideLabel">
+      <ng-content select="[runReportAside]" />
+    </section>
+  </div>
+</div>

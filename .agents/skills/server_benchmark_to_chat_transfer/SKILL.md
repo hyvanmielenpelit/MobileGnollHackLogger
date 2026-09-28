@@ -125,6 +125,10 @@ An analysis that fails to classify its findings into this taxonomy is incomplete
 >
 > This rule exists because a finding was once built on a sentence the prompt had never contained — see the withdrawal of T3 below.
 
+> **An Internal Improvement Brief's leads are inputs to this triage, never findings.**
+>
+> The Report Pack's Internal Improvement Brief (`docs/overseer/ai-benchmark-report-pack.md`) ends in **leads**, each tagged `harness`, `suite`, `chat` or `corpus`. They are provisional and un-triaged, written by an AI model from computed figures and grader text: the tag is the writer's guess, not a triage, and the writer never read the source, the tool-call log or the corpora. Treat each lead as a pointer to where to look. Before anything is changed because of one, it must go through this section's triage, the evidence bar of § 6 and, whenever it turns on what a tool returned, the tool-layer diagnostics of § 4a — exactly as a finding you found yourself. A lead that does not survive that is dropped, whatever its tag said.
+
 ### Worked Example: Benchmark Run 11 (2026-09-04, GPT-5.6 Luna)
 - **Harness Defects (F1–F8)**:
   - F1: Blind second opinion migration lacked default backfill (`SecondOpinionBlind = 0`), causing run 11 to run anchored.

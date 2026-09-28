@@ -1,0 +1,352 @@
+@use '../benchmark-dialog-frame' as frame;
+
+/* The dialog itself is .gh-dialog-fullscreen (styles.scss); the frame fills it and owns the two
+   scrolling columns. */
+
+.rp-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+
+  h3 {
+    margin: 0;
+    font-size: 1.3em;
+    color: var(--title-color);
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+  }
+}
+
+.rp-subtitle {
+  margin: 0;
+  font-size: 0.85em;
+  color: #a1a1aa;
+}
+
+.rp-section-title {
+  margin: 0 0 12px;
+  font-family: "Cinzel", serif;
+  font-size: 1.05rem;
+  color: var(--title-color);
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.rp-subsection-title {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #ddd;
+}
+
+.rp-new,
+.rp-library {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-inline-size: 0;
+}
+
+.rp-field {
+  margin-bottom: 0;
+}
+
+.rp-note {
+  margin: 0;
+  font-size: 13px;
+  color: #a1a1aa;
+}
+
+.rp-error {
+  margin: 0;
+  font-size: 13px;
+  color: #fca5a5;
+}
+
+.rp-guide-link {
+  align-self: flex-start;
+  font-size: 13px;
+}
+
+/* The documents as cards of name and description, one checkbox each. */
+.rp-documents-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rp-audience {
+  gap: 10px;
+}
+
+.rp-audience-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.rp-audience-name {
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.rp-audience-desc {
+  font-size: 12.5px;
+  color: #a1a1aa;
+}
+
+.rp-refusal,
+.rp-same-provider {
+  margin-bottom: 0;
+}
+
+.rp-acknowledge {
+  margin-top: 6px;
+  font-size: 14px;
+  color: #e4e4e7;
+}
+
+.rp-estimate,
+.rp-job {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.rp-estimate-subject,
+.rp-job-meta {
+  margin: 0;
+  font-size: 13px;
+  color: #d4d4d8;
+  overflow-wrap: anywhere;
+}
+
+.rp-estimate-table,
+.rp-job-table {
+  inline-size: 100%;
+  font-size: 13px;
+
+  th[scope="row"] {
+    font-weight: 500;
+    text-align: start;
+  }
+}
+
+.rp-estimate-total {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.rp-generate-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+.rp-start-error {
+  padding: 8px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.45);
+  border-radius: 6px;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.rp-job-status {
+  margin: 0;
+  font-size: 14px;
+  color: #e4e4e7;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.rp-job-row-error {
+  display: block;
+  font-size: 12px;
+  color: #fca5a5;
+}
+
+.rp-log-list {
+  margin: 0;
+  padding-inline-start: 1.2em;
+  font-size: 12.5px;
+  color: #d4d4d8;
+
+  li + li {
+    margin-top: 4px;
+  }
+}
+
+.rp-log-time,
+.rp-log-severity {
+  margin-inline-end: 6px;
+  color: #a1a1aa;
+}
+
+.rp-log-warning .rp-log-severity {
+  color: #fcd34d;
+}
+
+.rp-cancel-job {
+  align-self: flex-start;
+}
+
+/* --- Documents --- */
+
+.rp-library-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.rp-selection-count {
+  margin: 0;
+  font-size: 13px;
+  color: #d4d4d8;
+}
+
+.rp-library-status {
+  margin: 0;
+  font-size: 13px;
+  color: #86efac;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.rp-col-check {
+  inline-size: 2.5rem;
+}
+
+.rp-col-date,
+.rp-col-cost {
+  white-space: nowrap;
+}
+
+.rp-col-subject {
+  min-inline-size: 10rem;
+}
+
+.rp-row-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* --- Nested dialogs --- */
+
+.rp-nested {
+  display: contents;
+}
+
+.gh-dialog.rp-preview-dialog {
+  @include frame.frame($width: 60rem, $full-height: true);
+}
+
+.gh-dialog.rp-delete-dialog {
+  @include frame.frame($width: 34rem);
+}
+
+.rp-preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-bottom: 8px;
+}
+
+.rp-preview-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 12rem;
+}
+
+.rp-preview-control-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a1a1aa;
+}
+
+.rp-preview-level {
+  margin: 0 0 12px;
+}
+
+.rp-preview-notes {
+  margin-bottom: 12px;
+}
+
+/* The rendered document: HTML from markdownToSafeHtmlFragment, inserted with [innerHTML], so its
+   elements carry no encapsulation attribute and are reached with ::ng-deep under the panel. */
+.rp-preview-doc {
+  padding: 16px 20px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #e4e4e7;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  ::ng-deep {
+    h1, h2, h3, h4 {
+      font-family: "Cinzel", serif;
+      color: var(--title-color);
+      margin: 1.2em 0 0.5em;
+    }
+
+    h1:first-child {
+      margin-top: 0;
+    }
+
+    table {
+      display: block;
+      max-inline-size: 100%;
+      overflow-x: auto;
+      border-collapse: collapse;
+      margin: 0.8em 0;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 4px 8px;
+      border: 1px solid var(--border-glass);
+      text-align: start;
+      vertical-align: top;
+    }
+
+    blockquote {
+      margin: 0.8em 0;
+      padding: 4px 12px;
+      border-inline-start: 3px solid var(--primary-color);
+      color: #d4d4d8;
+    }
+
+    pre, code {
+      font-size: 12.5px;
+    }
+
+    pre {
+      white-space: pre-wrap;
+    }
+  }
+}

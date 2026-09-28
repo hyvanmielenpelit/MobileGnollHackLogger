@@ -88,7 +88,7 @@
 // styles.scss so all three can share one definition; moving it is a change to files this component
 // does not own, so it is left as the same follow-up the progress dialog already records.
 .gh-dialog.mr-analysis-dialog {
-  // Sized like .benchmark-run-detail-dialog: this shows the same class of content, a report.
+  // Sized for a report.
   width: min(1150px, 94vw);
   max-width: min(1150px, 94vw);
   height: min(88dvh, 900px);

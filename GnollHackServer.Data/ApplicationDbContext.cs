@@ -50,6 +50,8 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkGroupAnalysis> BenchmarkGroupAnalyses { get; set; } = null!;
         public DbSet<SystemAiConfigurationSnapshot> SystemAiConfigurationSnapshots { get; set; } = null!;
         public DbSet<BenchmarkRunBoardSnapshot> BenchmarkRunBoardSnapshots { get; set; } = null!;
+        public DbSet<BenchmarkReportDocument> BenchmarkReportDocuments { get; set; } = null!;
+        public DbSet<BenchmarkReportDocumentRun> BenchmarkReportDocumentRuns { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -443,6 +445,25 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<BenchmarkGroupAnalysis>()
                 .HasIndex(a => new { a.BenchmarkRunGroupId, a.ComputedAtUtc });
+
+            // --- Report-pack documents ---
+
+            modelBuilder.Entity<BenchmarkReportDocument>(e =>
+            {
+                e.HasIndex(d => new { d.SuiteId, d.CreatedAtUtc });
+                e.HasIndex(d => d.PackId);
+                e.Property(d => d.CostUsd).HasPrecision(18, 8);
+                e.HasOne(d => d.WriterModelSnapshot).WithMany().HasForeignKey(d => d.WriterModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.Navigation(d => d.WriterModelSnapshot).AutoInclude();
+            });
+
+            // The only foreign key is to the document: a run's deletion leaves the documents about it.
+            modelBuilder.Entity<BenchmarkReportDocumentRun>(e =>
+            {
+                e.HasKey(r => new { r.DocumentId, r.RunId });
+                e.HasIndex(r => r.RunId);
+                e.HasOne(r => r.Document).WithMany(d => d.Runs).HasForeignKey(r => r.DocumentId).OnDelete(DeleteBehavior.Cascade);
+            });
 
             modelBuilder.Entity<Bones>()
                 .Property(b => b.Created)

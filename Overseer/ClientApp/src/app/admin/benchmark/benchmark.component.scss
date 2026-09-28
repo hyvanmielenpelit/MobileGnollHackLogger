@@ -1259,13 +1259,6 @@
   color: #888;
 }
 
-.score-summary-bar {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 15px;
-  margin-bottom: 20px;
-}
-
 .score-card {
   background: #161616;
   border: 1px solid #333;
@@ -1319,12 +1312,20 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
+    width: 100%;
     padding: 12px 16px;
+    border: 0;
+    font: inherit;
+    color: inherit;
+    text-align: start;
     cursor: pointer;
     background: #1a1a1a;
     transition: background 0.2s;
 
     &:hover { background: #222; }
+    &:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
+    &[aria-expanded="true"] .expand-icon { transform: rotate(180deg); }
 
     .header-left {
       display: flex;
@@ -1341,7 +1342,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      .expand-icon { font-size: 11px; color: #777; }
+      .expand-icon { flex: none; color: #777; }
     }
   }
 
@@ -1573,12 +1574,6 @@
   }
 }
 
-.modal-actions-bar {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 /* .btn-link now lives in styles.scss, for the same reason as .gh-table. */
 
 /* ==========================================================================
@@ -1602,25 +1597,6 @@
 /* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
 @media (max-width: 600px) {
   .gh-dialog.benchmark-questions-dialog {
-    height: calc(100dvh - 8px);
-    max-height: calc(100dvh - 8px);
-  }
-}
-
-.gh-dialog.benchmark-run-detail-dialog {
-  width: min(1150px, 94vw);
-  max-width: min(1150px, 94vw);
-  height: calc(100dvh - 16px);
-  max-height: calc(100dvh - 16px);
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.15));
-  background: rgba(20, 20, 20, 0.98);
-}
-
-/* Half the inset on a phone, mirroring .gh-dialog-fullscreen's own 600px step. */
-@media (max-width: 600px) {
-  .gh-dialog.benchmark-run-detail-dialog {
     height: calc(100dvh - 8px);
     max-height: calc(100dvh - 8px);
   }
@@ -1710,23 +1686,6 @@
       font-size: 13px;
       color: #ccc;
       font-weight: 600;
-    }
-  }
-
-  // The completion sound shares a .form-group with the field above it, so it carries its own top
-  // margin rather than relying on the gap between groups.
-  .completion-sound-toggle {
-    margin-top: 10px;
-  }
-
-  // .form-group is a flex column with align-items: stretch, which would otherwise stretch the
-  // Test sound button to the full width of the field it sits under.
-  .completion-sound-actions {
-    display: flex;
-    align-items: center;
-
-    .btn-gh-small {
-      align-self: flex-start;
     }
   }
 
@@ -2311,11 +2270,9 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .active-run-banner. */
 
 .gh-dialog.benchmark-questions-dialog[open],
-.gh-dialog.benchmark-run-detail-dialog[open],
 .gh-dialog.benchmark-scoring-profiles-dialog[open],
 .gh-dialog.benchmark-form-dialog[open],
 .gh-dialog.benchmark-questions-dialog:modal,
-.gh-dialog.benchmark-run-detail-dialog:modal,
 .gh-dialog.benchmark-scoring-profiles-dialog:modal,
 .gh-dialog.benchmark-form-dialog:modal {
   display: flex;
@@ -2345,58 +2302,59 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   top: 0;
   z-index: 10;
   flex-shrink: 0;
+}
 
-  .dialog-title-group {
+// Not nested under .dialog-header: the run report's header holds the same title group.
+.dialog-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+
+  .dialog-title-row {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;          // badges drop below the title only when the header is too narrow
+    column-gap: 12px;
+    row-gap: 6px;
     min-width: 0;
 
-    .dialog-title-row {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;          // badges drop below the title only when the header is too narrow
-      column-gap: 12px;
-      row-gap: 6px;
-      min-width: 0;
-
-      h3 {
-        flex: 0 1 auto;
-        min-width: 0;
-      }
-    }
-
     h3 {
-      margin: 0;
-      color: var(--title-color, var(--primary-color));
-      font-family: "Cinzel", serif;
-      font-size: 1.25rem;
-      font-weight: 700;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      flex: 0 1 auto;
+      min-width: 0;
+    }
+  }
+
+  h3 {
+    margin: 0;
+    color: var(--title-color, var(--primary-color));
+    font-family: "Cinzel", serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .dialog-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: #888;
+  }
+
+  .dialog-title-badges {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+
+    .badge-progress-count {
+      margin-left: 0;   // the gap spaces them
     }
 
-    .dialog-subtitle {
-      margin: 0;
-      font-size: 13px;
-      color: #888;
-    }
-
-    .dialog-title-badges {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      flex-shrink: 0;
-
-      .badge-progress-count {
-        margin-left: 0;   // the gap spaces them
-      }
-
-      .status-badge,
-      .badge-progress-count {
-        text-box: trim-both cap alphabetic;  // optical centring beside the Cinzel title; inert where unsupported
-      }
+    .status-badge,
+    .badge-progress-count {
+      text-box: trim-both cap alphabetic;  // optical centring beside the Cinzel title; inert where unsupported
     }
   }
 }
@@ -2467,14 +2425,6 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   flex-direction: column;
   gap: 6px;
   font-size: 14px;
-}
-
-.font-mono {
-  font-family: monospace;
-}
-
-.font-normal {
-  font-weight: normal;
 }
 
 .visually-hidden {
@@ -2681,4 +2631,21 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+// Run report dialog: app-run-report-frame lays out the header, strip and columns.
+.rr-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rr-status { font-size: 12px; color: #888; }
+.rr-figures { display: contents; }
+.rr-skeleton { min-height: 64px; margin-bottom: 12px; border-radius: 6px; background: #1c1c1c; }
+.rr-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.question-actions { flex-wrap: wrap; }
+.rr-config {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0 0 20px;
+  font-size: 12px;
+  dt { color: #888; }
+  dd { margin: 0; overflow-wrap: anywhere; }
 }

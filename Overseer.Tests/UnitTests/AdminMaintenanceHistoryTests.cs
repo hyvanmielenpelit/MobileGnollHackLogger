@@ -50,7 +50,8 @@ public class AdminMaintenanceHistoryTests
             new Overseer.Services.Benchmarking.BenchmarkDifficultyJobManager(),
             new Overseer.Services.Benchmarking.BenchmarkGenerationJobManager(),
             new Overseer.Services.Benchmarking.BenchmarkRubricCheckJobManager(),
-            new Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager());
+            new Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager(),
+            new Overseer.Services.Benchmarking.BenchmarkReportPackJobManager());
         var controller = new AdminController(db, config, null!, cryptoService, governor, endpointPolicy, usageGuard, pricingService);
 
         return (controller, db);

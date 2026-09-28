@@ -230,6 +230,24 @@ To find specific popups, look in the corresponding component's `.html` template:
     scored row shows its published score (panel score in a panel run) before its chip, named by a
     visually hidden *Score* word, not `aria-label`. The roster and banner say **Assessor** (never
     *Evaluator*); a panel run's banner says *Assessors*.
+  - `#runDetailDialog`: the run report dialog, **full-screen**. A sticky header holds *Run #N*, the
+    status and a `role="group"` *Run actions* (never `role="toolbar"`: it has no arrow-key roving):
+    **Downloads** (opens the Download Center), **Re-run** (an action popover, `frontend_ui_controls`
+    §4f: *Re-score run*, *Re-run final synthesis*, *Retry failed assessments*, *Retry claim
+    verification*, *Re-run failed questions*, a disabled one showing its reason), the icon-only **View
+    game snapshot** and **Copy diagnostics**, and **Close**. Under it a key-figures strip, then a body
+    of two columns from `60rem` — findings and questions left; notices, run configuration, band
+    agreement, tool usage with the tool routing table, cost and assessor calibration right — and one
+    column below. **No footer.** Escape and the header Close both close it, and closing always stops
+    detail polling. Question cards have real `<button>` headers, filter toggles (*Critical errors*,
+    *Disputed*, *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*.
+  - **Download Center**: one dialog for downloading a run's and a report pack's files, opened from the
+    run report's **Downloads** and from the Report Pack dialog. Package presets *Internal package*,
+    *Provider package* (internal-only rows listed but unselectable, with their reason) and *Custom*;
+    per-document disclosure (*Summary* / *Detailed* / *Full*) and peer naming (*Named* /
+    *Anonymized*); `_INTERNAL` file-name suffixes; several files as one ZIP with a `MANIFEST.md`. Its
+    HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
+    ones. Run diagnostics in it are labeled *captured now*.
   - `#importDefaultSuitesDialog`: Import Default Suites (Manage Suites tab) — a multi-select
     catalog of the default suite files under `Overseer/Data/DefaultSuites/`, opened by the
     toolbar's Import Default Suites button (from harness 24).
@@ -301,6 +319,14 @@ To find specific popups, look in the corresponding component's `.html` template:
     measures, each with a summary, an *Instead: …* line and a *Why* disclosure). The dialog body
     renders only while it is open, and it stops propagation of its own close and cancel events so
     they never reach, and close, the wizard's own dialog.
+  - **Reports** (the *zap* glyph) opens the **Report Pack dialog**, full-screen: choose the subject
+    (any entry that is not Excluded), the report writer (an `app-model-picker` with an info tip on the
+    recommended writer; the subject's own model is refused, and a same-provider writer needs its
+    acknowledgment checkbox checked) and the documents — Executive Summary, Technical Report, Internal
+    Improvement Brief; preview the estimate, start and follow the job, then list, preview (*eye*),
+    download (through the Download Center) or delete (*trash*) the stored documents, each flagged
+    *Run changed since this document was written* when its run moved. Rendering is server-side and
+    deterministic; see `docs/overseer/ai-benchmark-report-pack.md`.
   - **Recompute** is icon-only: a `.action-btn` with the rotate glyph,
     `aria-label="Recompute the comparison"` and the tooltip *Recompute this comparison*. A refetch
     whose payload carries the same entry keys (from changing Prices or from Recompute) keeps the

@@ -107,6 +107,8 @@ import {
   suiteYamlFileName
 } from './question-yaml/question-yaml-format';
 import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload-dialog.component';
+import { RunReportFrameComponent } from './run-report-frame/run-report-frame.component';
+import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
 import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../utils/download.util';
 import { jobStatusLabel } from '../../utils/job-status-label.util';
@@ -215,6 +217,44 @@ export interface BenchmarkSourceShareCorrelations {
   sampleSize: number;
 }
 
+/** Which pass of a run is executing, as the progress rail and the diagnostics name it. */
+export type BenchmarkRunStage = 'answering' | 'verifying' | 'secondopinion' | 'finalizing' | 'terminal';
+
+/** A question filter of the run report. A card is shown when it matches any pressed filter. */
+export type RunReportQuestionFilter = 'critical' | 'disputed' | 'disagree' | 'below70' | 'flagged';
+
+/** One item of the run report's Re-run popover; `reason` says why it is unavailable, or is null. */
+export interface RunReportRerunAction {
+  key: string;
+  label: string;
+  reason: string | null;
+  run: () => void;
+}
+
+/** The progress figures the diagnostics capture prints for one run. */
+interface RunDiagnosticsFacts {
+  answered: number;
+  total: number;
+  scored: number;
+  failed: BenchmarkRunAnswerDto[];
+  gradeable: number;
+  terminal: boolean;
+  /** Order indexes of the re-run in effect; empty when there is none. */
+  rerunScope: number[];
+  /** Answers with a claim verification, and with a second verdict, within the re-run scope. */
+  verifiedInScope: number;
+  secondOpinionInScope: number;
+  rows: BenchmarkRunProgressRow[];
+}
+
+/** One row of the run report's Run configuration list. */
+export interface RunReportConfigRow {
+  term: string;
+  value: string;
+  /** A hash or identifier, set in a monospace face. */
+  code?: boolean;
+}
+
 /**
  * One line of a run's instrument fingerprint stack: a short visible label, a colour class, the
  * eight-character hash prefix, and the tooltip carrying the corpus name and the full hash.
@@ -269,7 +309,8 @@ interface BenchmarkRunSettings {
     SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
-    SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent
+    SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
+    RunReportFrameComponent, BenchmarkDownloadCenterComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -297,6 +338,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('questionsDialog') questionsDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('questionFormDialog') questionFormDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('runDetailDialog') runDetailDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('runDownloadCenter') runDownloadCenter?: BenchmarkDownloadCenterComponent;
+  @ViewChild('rerunPopover') rerunPopover?: ElementRef<HTMLElement>;
+  @ViewChild('rerunTrigger') rerunTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('scoringProfileFormDialog') scoringProfileFormDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('sameProviderDialog') sameProviderDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('bulkDeleteDialog') bulkDeleteDialog!: ElementRef<HTMLDialogElement>;
@@ -800,6 +844,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   // Detail Modal
   selectedRunDetail: BenchmarkRunDetailDto | null = null;
   loadingDetail = false;
+  /** The run the report dialog is showing or loading; the header names it while the detail is absent. */
+  runDetailRequestedId: number | null = null;
+  /** Why the run detail could not be loaded, or null. */
+  runDetailLoadError: string | null = null;
+  /** Discards a detail response that arrives after the dialog closed or moved to another run. */
+  private runDetailLoadToken = 0;
+  /** The pressed question filters of the run report. */
+  questionFilters = new Set<RunReportQuestionFilter>();
+  /** Whether the Re-run popover is open, from its toggle event; the trigger's aria-expanded. */
+  rerunPopoverOpen = false;
+  /** The run report's Copy diagnostics announcement. */
+  runReportCopyStatus = '';
+  private runReportCopyTimer: ReturnType<typeof setTimeout> | null = null;
   expandedQuestions = new Set<number>();
   expandedThoughts = new Set<number>();
   expandedArtifacts = new Set<number>();
@@ -1506,6 +1563,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.comparisonSubscription?.unsubscribe();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
+    if (this.runReportCopyTimer) { clearTimeout(this.runReportCopyTimer); }
     clearTimeout(this.questionsCopyStatusTimer);
     clearTimeout(this.suitesCopyStatusTimer);
     if (this.titleRestoreVisibilityHandler && typeof document !== 'undefined') {
@@ -4220,10 +4278,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * predating the field, and it can only ever reach 'finalizing' as a catch-all for the whole
    * post-answering span.
    */
-  get runStage(): 'answering' | 'verifying' | 'secondopinion' | 'finalizing' | 'terminal' {
+  get runStage(): BenchmarkRunStage {
     const run = this.activeRunDetail;
     if (!run) return 'answering';
     if (this.rerunLaunchPending) return 'answering';
+    return this.runStageOf(run);
+  }
+
+  /** The stage of any run from its own detail, with no re-run launch pending. */
+  runStageOf(run: BenchmarkRunDetailDto): BenchmarkRunStage {
     if (this.formatStatus(run.status) !== 'Running') return 'terminal';
 
     switch (run.stage) {
@@ -4709,14 +4772,24 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       (run.testedModelProviderUsed ?? '').toLowerCase() === 'openai';
   }
 
+  /** The diagnostics capture of the active run, which the progress dialog copies and downloads. */
+  get runDiagnosticsText(): string {
+    return this.runDiagnosticsTextFor(this.activeRunDetail, this.runStage);
+  }
+
   /**
-   * Everything an operator would paste into a bug report, assembled from the run detail.
+   * Everything an operator would paste into a bug report, assembled from a run detail.
    * Answer text, thought text, and assessor comments are deliberately excluded: they are
    * long model-generated content already reachable through the run detail dialog and the
    * Markdown report. No credential or connection string appears in the DTO.
+   *
+   * The active run's progress figures are the progress dialog's own, re-run scope and launch
+   * state included. Any other run, such as the one the run report shows, is described from its
+   * detail alone, so the run report and the Download Center capture the same text for it.
    */
-  get runDiagnosticsText(): string {
-    const run = this.activeRunDetail;
+  runDiagnosticsTextFor(run: BenchmarkRunDetailDto | null, stage: BenchmarkRunStage): string {
+    const live = run === this.activeRunDetail;
+    const facts = live || !run ? this.activeRunDiagnosticsFacts() : this.detailDiagnosticsFacts(run);
     const lines: string[] = [];
 
     // Header
@@ -4758,9 +4831,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         answering: '1 of 3', verifying: '2 of 3 (verifying)',
         secondopinion: `2 of 3 (${readerName})`, finalizing: '3 of 3'
       };
-      const stageStr = this.runStage === 'terminal'
+      const stageStr = stage === 'terminal'
         ? 'terminal'
-        : `${stageNumbers[this.runStage]} (${run.stage ? 'server' : 'derived'})`;
+        : `${stageNumbers[stage]} (${run.stage ? 'server' : 'derived'})`;
       lines.push(`Run ID: ${run.id}, Suite: ${run.suiteName} (${run.benchmarkSuiteId ?? 'n/a'}), Status: ${this.formatStatus(run.status)}, Stage: ${stageStr}, Started by: ${run.startedByUserName || 'unknown'}`);
       lines.push(`Started (raw):    ${run.startedAtUtc}`);
       const startedParsed = run.startedAtUtc ? parseServerUtcDate(run.startedAtUtc).toISOString() : 'n/a';
@@ -4777,7 +4850,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         : '—';
       lines.push(`Elapsed (run):    ${runSpan}`);
       if (run.rerunStartedAtUtc) {
-        const rerunSpan = this.runElapsedIsRerun
+        const rerunSpan = live && this.runElapsedIsRerun
           ? this.runElapsedLabel
           : this.formatElapsed(elapsedMsBetween(run.rerunStartedAtUtc, run.rerunCompletedAtUtc));
         lines.push(`Re-run elapsed:   ${rerunSpan}`);
@@ -4846,11 +4919,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
       // --- PROGRESS ---
       lines.push('--- PROGRESS ---');
-      lines.push(`Answered ${this.runAnsweredCount} of ${this.runTotalQuestionCount}, scored ${this.runScoredCount} of ${this.runTotalQuestionCount}, failed ${this.runFailedAnswerCount}`);
+      lines.push(`Answered ${facts.answered} of ${facts.total}, scored ${facts.scored} of ${facts.total}, failed ${facts.failed.length}`);
       // The same population the report's own per-answer denominators use — an answer the
       // quality index excludes. Printed alongside the raw answer count so the capture and the
       // report cannot disagree the way run 29's 15-of-17 and 15-of-18 did.
-      lines.push(`Gradeable answers (index population): ${this.runGradeableAnswerCount} of ${this.runTotalQuestionCount}`);
+      lines.push(`Gradeable answers (index population): ${facts.gradeable} of ${facts.total}`);
       const inFlight = run.inFlightOrderIndexes ?? [];
       lines.push(`In flight: ${inFlight.length > 0 ? inFlight.map(i => `Q${i}`).join(', ') : 'none'}`);
       const verifyingNow = run.inFlightVerificationOrderIndexes ?? [];
@@ -4860,23 +4933,27 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       // absent, so the answer rows are counted instead. The meters' re-run-scoped pair follows.
       const answersVerified = run.answers.filter(a => a.claimVerificationJson != null || a.claimVerificationError != null).length;
       const answersSecondGraded = run.answers.filter(a => a.secondOpinionQualityScore != null || a.secondOpinionError != null).length;
-      const verifiedRunWide = this.runIsTerminal ? (run.claimVerifiedAnswerCount ?? answersVerified) : answersVerified;
-      const secondGradedRunWide = this.runIsTerminal ? (run.secondOpinionGradedAnswerCount ?? answersSecondGraded) : answersSecondGraded;
-      const scopedPair = this.runHasRerunScope ? ` (re-run scope: ${this.runVerifiedCount}, ${this.runSecondOpinionCount})` : '';
+      const verifiedRunWide = facts.terminal ? (run.claimVerifiedAnswerCount ?? answersVerified) : answersVerified;
+      const secondGradedRunWide = facts.terminal ? (run.secondOpinionGradedAnswerCount ?? answersSecondGraded) : answersSecondGraded;
+      const hasRerunScope = facts.rerunScope.length > 0;
+      const scopedPair = hasRerunScope ? ` (re-run scope: ${facts.verifiedInScope}, ${facts.secondOpinionInScope})` : '';
       lines.push(`Answers with verified claims: ${verifiedRunWide}, ${run.isPanelRun ? 'reference-read' : 'second-graded'} ${secondGradedRunWide}${scopedPair}`);
-      if (this.runHasRerunScope) {
-        const scopeLabel = this.runIsTerminal ? 'Failed-question re-run covered' : 'Failed-question re-run in progress over';
-        lines.push(`${scopeLabel}: ${this.effectiveRerunScope.map(i => `Q${i}`).join(', ')}`);
+      if (hasRerunScope) {
+        const scopeLabel = facts.terminal ? 'Failed-question re-run covered' : 'Failed-question re-run in progress over';
+        lines.push(`${scopeLabel}: ${facts.rerunScope.map(i => `Q${i}`).join(', ')}`);
         const reAnswered = run.rerunAnsweredOrderIndexes ?? [];
         const reScored = run.rerunScoredOrderIndexes ?? [];
         const qList = (xs: number[]) => xs.length > 0 ? xs.map(i => `Q${i}`).join(', ') : 'none';
-        lines.push(`Re-run answered: ${qList(reAnswered)} (${reAnswered.length} of ${this.runMeterTotal}); re-run scored: ${qList(reScored)} (${reScored.length} of ${this.runMeterTotal})`);
+        lines.push(`Re-run answered: ${qList(reAnswered)} (${reAnswered.length} of ${facts.rerunScope.length}); re-run scored: ${qList(reScored)} (${reScored.length} of ${facts.rerunScope.length})`);
       }
-      lines.push(`Re-run launch pending: ${this.rerunLaunchPending}`);
-      if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {
-        lines.push(`Suite questions loaded: ${this.runProgressQuestions.length} for suite ${this.runProgressQuestionsSuiteId}`);
-      } else {
-        lines.push('Suite questions loaded: not loaded — list degraded to answers only');
+      // The launch state and the suite question list belong to the progress dialog's run.
+      if (live) {
+        lines.push(`Re-run launch pending: ${this.rerunLaunchPending}`);
+        if (this.runProgressQuestions.length > 0 && this.runProgressQuestionsSuiteId != null) {
+          lines.push(`Suite questions loaded: ${this.runProgressQuestions.length} for suite ${this.runProgressQuestionsSuiteId}`);
+        } else {
+          lines.push('Suite questions loaded: not loaded — list degraded to answers only');
+        }
       }
       lines.push('');
 
@@ -4897,7 +4974,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       lines.push('');
 
       // --- SCORES --- (only when terminal)
-      if (this.runIsTerminal) {
+      if (facts.terminal) {
         lines.push('--- SCORES ---');
         // `finalScore` is the Holistic Assessor Score, which feeds no aggregate — labelling it
         // "final" read as the canonical result, which is the Intelligence Index (quality index).
@@ -5063,7 +5140,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         // Over the gradeable-answer population, which is what the report's own knowledge-base
         // routing lines use. Against run.answers.length the two artifacts printed different
         // denominators for one run.
-        lines.push(`answers with 0 knowledge base calls: ${zeroKbAnswers} of ${this.runGradeableAnswerCount} gradeable (${run.answers.length} answer row(s))`);
+        lines.push(`answers with 0 knowledge base calls: ${zeroKbAnswers} of ${facts.gradeable} gradeable (${run.answers.length} answer row(s))`);
         lines.push('  (prompt-compliant on game-mechanics topics — ChatService.cs "Information Routing" scopes the');
         lines.push('   knowledge base to app navigation, settings, controls, replay, vault and troubleshooting)');
         lines.push('');
@@ -5128,11 +5205,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       lines.push(`Run error: ${run.errorMessage}`);
       hasError = true;
     }
-    if (this.runQuestionsLoadError) {
+    if (live && this.runQuestionsLoadError) {
       lines.push(`Questions fetch error: ${this.runQuestionsLoadError}`);
       hasError = true;
     }
-    const failureGroups = this.failedAnswerGroups(this.runFailedAnswers);
+    const failureGroups = this.failedAnswerGroups(facts.failed);
     for (const group of failureGroups) {
       const statusPrefix = group.httpStatusCode != null ? `HTTP ${group.httpStatusCode} — ` : '';
       const questionList = group.questions.map(q => `Q${q}`).join(', ');
@@ -5145,9 +5222,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     lines.push('');
 
     // --- QUESTIONS ---
-    if (run && this.runProgressRows.length > 0) {
+    if (run && facts.rows.length > 0) {
       lines.push('--- QUESTIONS ---');
-      for (const row of this.runProgressRows) {
+      for (const row of facts.rows) {
         const ans = row.answer;
         if (!ans) {
           lines.push(`[Q${row.orderIndex}] status=${row.status === 'Answering' ? 'Answering' : 'Pending'}`);
@@ -5226,6 +5303,54 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
 
     return lines.join('\n');
+  }
+
+  /** The progress figures of the active run, as the progress dialog shows them. */
+  private activeRunDiagnosticsFacts(): RunDiagnosticsFacts {
+    return {
+      answered: this.runAnsweredCount,
+      total: this.runTotalQuestionCount,
+      scored: this.runScoredCount,
+      failed: this.runFailedAnswers,
+      gradeable: this.runGradeableAnswerCount,
+      terminal: this.runIsTerminal,
+      rerunScope: this.effectiveRerunScope,
+      verifiedInScope: this.runVerifiedCount,
+      secondOpinionInScope: this.runSecondOpinionCount,
+      rows: this.runProgressRows
+    };
+  }
+
+  /** The progress figures of a run from its detail alone: its own answers, its server-reported re-run scope. */
+  private detailDiagnosticsFacts(run: BenchmarkRunDetailDto): RunDiagnosticsFacts {
+    const scope = run.rerunScopeOrderIndexes ?? [];
+    const inScope = new Set(scope);
+    const scoped = (answers: BenchmarkRunAnswerDto[]) =>
+      scope.length > 0 ? answers.filter(a => inScope.has(a.orderIndex)).length : answers.length;
+    return {
+      answered: run.answers.length,
+      total: run.totalQuestionCount,
+      scored: run.answers.filter(a => {
+        const s = this.formatAssessmentStatus(a.assessmentStatus);
+        return s === 'Scored' || s === 'Failed';
+      }).length,
+      failed: run.answers.filter(a => this.isAnswerFailed(a)),
+      gradeable: run.answers.filter(a => this.countsTowardQualityIndex(a)).length,
+      terminal: this.formatStatus(run.status) !== 'Running',
+      rerunScope: scope,
+      verifiedInScope: scoped(run.answers.filter(a => a.claimVerificationJson != null || a.claimVerificationError != null)),
+      secondOpinionInScope: scoped(run.answers.filter(a => a.secondOpinionQualityScore != null || a.secondOpinionError != null)),
+      rows: [...run.answers]
+        .sort((a, b) => a.orderIndex - b.orderIndex)
+        .map(a => ({
+          orderIndex: a.orderIndex,
+          questionText: a.questionText,
+          answer: a,
+          status: this.formatAnswerStatus(a.status),
+          assessmentStatus: this.formatAssessmentStatus(a.assessmentStatus),
+          errorMessage: a.errorMessage ?? null
+        }))
+    };
   }
 
   /**
@@ -5688,6 +5813,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   viewRunDetail(runId: number) {
+    const token = ++this.runDetailLoadToken;
+    if (this.runDetailRequestedId !== runId) {
+      this.questionFilters.clear();
+    }
+    this.runDetailRequestedId = runId;
+    this.runDetailLoadError = null;
     this.loadingDetail = true;
     this.selectedRunDetail = null;
     this.expandedQuestions.clear();
@@ -5702,29 +5833,387 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.calibrationErrorMessage = null;
     this.calibrationAssessorConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
     this.calibrationTarget = 'Assessor';
-    this.runDetailDialog?.nativeElement.showModal();
+    // Re-scoring reloads the run into the dialog that is already open.
+    const dialog = this.runDetailDialog?.nativeElement;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
     this.loadCalibrations(runId);
 
     this.benchmarkService.getRun(runId).subscribe({
       next: (data) => {
+        if (token !== this.runDetailLoadToken) return;
         this.selectedRunDetail = data;
         this.loadingDetail = false;
         this.cdr.detectChanges();
+        // The header's tooltips and the Re-run popover are new anchors to the polyfill.
+        refreshAnchorPositioning();
       },
       error: (err) => {
+        if (token !== this.runDetailLoadToken) return;
         this.loadingDetail = false;
+        this.runDetailLoadError = this.runDetailLoadErrorOf(err, runId);
         console.error('Failed to load run details', err);
         this.cdr.detectChanges();
       }
     });
   }
 
+  /** The run report's Try again after a failed load. */
+  retryRunDetail(): void {
+    if (this.runDetailRequestedId != null) {
+      this.viewRunDetail(this.runDetailRequestedId);
+    }
+  }
+
+  /** The failure line of the run report, from the server's message where it sent one. */
+  private runDetailLoadErrorOf(err: any, runId: number): string {
+    if (err?.status === 404) {
+      return `Run #${runId} no longer exists.`;
+    }
+    if (err?.status === 0) {
+      return `Run #${runId} could not be loaded: the server could not be reached.`;
+    }
+    const message = typeof err?.error === 'string' ? err.error : err?.error?.message;
+    return message ? `Run #${runId} could not be loaded: ${message}` : `Run #${runId} could not be loaded.`;
+  }
+
+  /**
+   * Closes the run report. An open dialog's close event runs {@link onRunDetailClosed}; a dialog
+   * that is not open is cleaned up here, so the cleanup runs exactly once either way.
+   */
   closeRunDetail() {
+    const dialog = this.runDetailDialog?.nativeElement;
+    if (dialog?.open) {
+      dialog.close();
+    } else {
+      this.onRunDetailClosed();
+    }
+  }
+
+  /**
+   * The run report's cleanup, on the dialog's close event however it closed: the header's Close,
+   * Escape, or code. Stops detail polling and clears the run. Idempotent.
+   */
+  onRunDetailClosed(event?: Event): void {
+    const dialog = this.runDetailDialog?.nativeElement;
+    // A nested element's event, or a queued close that arrives after the dialog was reopened.
+    if ((event && event.target !== dialog) || dialog?.open) {
+      return;
+    }
+    this.runDetailLoadToken++;
     this.stopDetailPolling();
     this.selectedRunDetail = null;
+    this.runDetailRequestedId = null;
+    this.runDetailLoadError = null;
+    this.loadingDetail = false;
     this.calibrations = [];
     this.calibrationErrorMessage = null;
-    this.runDetailDialog?.nativeElement.close();
+    this.rerunPopoverOpen = false;
+    this.runReportCopyStatus = '';
+  }
+
+  // --- Run report: header actions ---
+
+  /**
+   * The Re-run popover's items, each listed under the condition that makes it apply. An item that
+   * applies but cannot run now stays listed with its reason.
+   */
+  rerunActions(run: BenchmarkRunDetailDto): RunReportRerunAction[] {
+    const busy = this.isRunBusy() ? 'A retry is already running on this run.' : null;
+    const aborted = this.isAbortedRun(run) ? 'The run stopped before finishing its suite.' : null;
+    const actions: RunReportRerunAction[] = [{
+      key: 'rescore',
+      label: this.rescoringRun ? 'Re-scoring...' : 'Re-score run',
+      reason: this.rescoringRun ? 'Re-scoring is in progress.' : (busy ?? aborted),
+      run: () => this.rescoreRun(run.id)
+    }];
+    if (run.answers.length > 0) {
+      actions.push({
+        key: 'synthesis',
+        label: this.runningSynthesis ? 'Synthesizing...' : 'Re-run final synthesis',
+        reason: busy,
+        run: () => this.openRetryDialog('synthesis', run.id)
+      });
+    }
+    if (this.hasUnscoredAssessments()) {
+      actions.push({
+        key: 'assessments',
+        label: this.retryingAssessments ? 'Retrying...' : 'Retry failed assessments',
+        reason: busy,
+        run: () => this.openRetryDialog('assessments', run.id)
+      });
+    }
+    if (this.hasFailedClaimVerifications()) {
+      actions.push({
+        key: 'claim-verification',
+        label: this.retryingClaimVerification ? 'Retrying...' : 'Retry claim verification',
+        reason: busy,
+        run: () => this.openRetryDialog('claim-verification', run.id)
+      });
+    }
+    const status = this.formatStatus(run.status);
+    if (this.failedAnswers().length > 0 && (status === 'Failed' || status === 'Canceled' || status === 'CompletedWithErrors')) {
+      actions.push({
+        key: 'failed-questions',
+        label: 'Re-run failed questions',
+        reason: busy ?? aborted,
+        run: () => this.rerunFailedFromRunDetail(run.id)
+      });
+    }
+    return actions;
+  }
+
+  onRerunAction(action: RunReportRerunAction): void {
+    if (action.reason) {
+      return;
+    }
+    this.closeRerunPopover();
+    action.run();
+  }
+
+  /** The popover's toggle event: aria-expanded, and focus into the popover or back to the trigger. */
+  onRerunToggle(event: Event): void {
+    const open = (event as ToggleEvent).newState === 'open';
+    this.rerunPopoverOpen = open;
+    const popover = this.rerunPopover?.nativeElement;
+    if (open) {
+      refreshAnchorPositioning();
+      popover?.querySelector<HTMLElement>('.gh-action-popover-item:not([aria-disabled="true"])')?.focus();
+      return;
+    }
+    const active = document.activeElement;
+    if (!active || active === document.body || !!popover?.contains(active)) {
+      this.rerunTrigger?.nativeElement.focus();
+    }
+  }
+
+  /** Escape closes the popover only; the run report dialog stays open. */
+  onRerunPopoverKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    this.closeRerunPopover();
+  }
+
+  private closeRerunPopover(): void {
+    try {
+      this.rerunPopover?.nativeElement.hidePopover();
+    } catch {
+      // Already hidden.
+    }
+    this.rerunPopoverOpen = false;
+    this.rerunTrigger?.nativeElement.focus();
+  }
+
+  /** Opens the Download Center on the viewed run; its diagnostics are captured when a download is prepared. */
+  openRunDownloads(): void {
+    const run = this.selectedRunDetail;
+    if (!run) {
+      return;
+    }
+    this.runDownloadCenter?.open({
+      kind: 'run',
+      run: {
+        id: run.id,
+        suiteName: run.suiteName,
+        modelLabel: run.testedModelDisplayNameUsed,
+        startedAtUtc: run.startedAtUtc,
+        completedAtUtc: run.completedAtUtc ?? null
+      },
+      diagnosticsText: () => {
+        const selected = this.selectedRunDetail;
+        const current = selected && selected.id === run.id ? selected : run;
+        return this.runDiagnosticsTextFor(current, this.runStageOf(current));
+      }
+    });
+  }
+
+  /** Focus lost when the Download Center closed over the run report goes back to Downloads. */
+  onRunDownloadsClosed(): void {
+    const active = document.activeElement;
+    if (this.runDetailDialog?.nativeElement.open && (!active || active === document.body)) {
+      document.getElementById('rr-downloads-trigger')?.focus();
+    }
+  }
+
+  /** Copies the viewed run's diagnostics, the text the Download Center saves for it. */
+  async copyRunReportDiagnostics(): Promise<void> {
+    const run = this.selectedRunDetail;
+    if (!run) {
+      return;
+    }
+    const copied = await copyToClipboard(this.runDiagnosticsTextFor(run, this.runStageOf(run)));
+    if (this.runReportCopyTimer) {
+      clearTimeout(this.runReportCopyTimer);
+      this.runReportCopyTimer = null;
+    }
+    if (copied) {
+      this.runReportCopyStatus = 'Diagnostics copied to the clipboard.';
+      this.runReportCopyTimer = setTimeout(() => {
+        this.runReportCopyStatus = '';
+        this.runReportCopyTimer = null;
+        this.cdr.detectChanges();
+      }, COPY_STATUS_MS);
+    } else {
+      this.runReportCopyStatus = 'Could not copy the diagnostics to the clipboard.';
+    }
+    this.cdr.detectChanges();
+  }
+
+  // --- Run report: question filters ---
+
+  readonly questionFilterOptions: readonly { key: RunReportQuestionFilter; label: string }[] = [
+    { key: 'critical', label: 'Critical errors' },
+    { key: 'disputed', label: 'Disputed' },
+    { key: 'disagree', label: 'Members disagree' },
+    { key: 'below70', label: 'Below 70' },
+    { key: 'flagged', label: 'Flagged' }
+  ];
+
+  /** The filters a run offers: Members disagree only in a panel run. */
+  questionFiltersOf(run: BenchmarkRunDetailDto): readonly { key: RunReportQuestionFilter; label: string }[] {
+    return run.isPanelRun
+      ? this.questionFilterOptions
+      : this.questionFilterOptions.filter(option => option.key !== 'disagree');
+  }
+
+  /** Below 70 reads the published score: the panel score in a panel run, else the quality score. */
+  matchesQuestionFilter(run: BenchmarkRunDetailDto, ans: BenchmarkRunAnswerDto, filter: RunReportQuestionFilter): boolean {
+    switch (filter) {
+      case 'critical': return !!ans.criticalError;
+      case 'disputed': return !!ans.secondOpinionDisagreed;
+      case 'disagree': return !!ans.panelDisagreed;
+      case 'below70': {
+        const score = run.isPanelRun ? ans.panelQualityScore : ans.qualityScore;
+        return score != null && score < 70;
+      }
+      case 'flagged': return (ans.answerFlagNames?.length ?? 0) > 0;
+    }
+  }
+
+  questionFilterCount(run: BenchmarkRunDetailDto, filter: RunReportQuestionFilter): number {
+    return run.answers.filter(ans => this.matchesQuestionFilter(run, ans, filter)).length;
+  }
+
+  toggleQuestionFilter(filter: RunReportQuestionFilter): void {
+    if (this.questionFilters.has(filter)) {
+      this.questionFilters.delete(filter);
+    } else {
+      this.questionFilters.add(filter);
+    }
+  }
+
+  /** The answers the question list shows: every answer, or those matching any pressed filter. */
+  visibleAnswers(run: BenchmarkRunDetailDto): BenchmarkRunAnswerDto[] {
+    if (this.questionFilters.size === 0) {
+      return run.answers;
+    }
+    const filters = Array.from(this.questionFilters);
+    return run.answers.filter(ans => filters.some(filter => this.matchesQuestionFilter(run, ans, filter)));
+  }
+
+  clearQuestionFilters(): void {
+    this.questionFilters.clear();
+  }
+
+  expandAllQuestions(run: BenchmarkRunDetailDto): void {
+    for (const ans of this.visibleAnswers(run)) {
+      this.expandedQuestions.add(ans.orderIndex);
+    }
+  }
+
+  collapseAllQuestions(): void {
+    this.expandedQuestions.clear();
+  }
+
+  // --- Run report: side column ---
+
+  /** The Run configuration list: the model and its settings, every grading role, scoring and the instrument. */
+  runConfigurationRows(run: BenchmarkRunDetailDto): RunReportConfigRow[] {
+    const panel = !!run.isPanelRun;
+    const grader = (name: string | null | undefined, provider: string | null | undefined, modelId: string | null | undefined,
+      thinking: string | null | undefined, reasoning: string | null | undefined): string => {
+      const relation = this.familyRelationOf(provider, run.testedModelProviderUsed);
+      const family = relation === 'same-family'
+        ? 'same family as the model under test'
+        : relation === 'cross-family' ? 'different family from the model under test' : 'family not recorded';
+      return `${name || modelId || 'not recorded'} (${provider ?? 'n/a'} / ${modelId ?? 'n/a'}) · thinking ${thinking ?? 'default'}, `
+        + `reasoning ${reasoning ?? 'default'} · ${family}`;
+    };
+
+    const rows: RunReportConfigRow[] = [
+      { term: 'Model under test', value: `${run.testedModelDisplayNameUsed} (${run.testedModelProviderUsed} / ${run.testedModelIdUsed})` },
+      {
+        term: 'Model settings',
+        value: `thinking ${run.testedModelThinkingLevelUsed ?? 'default'}, reasoning ${run.testedModelReasoningModeUsed ?? 'default'}, `
+          + `service tier ${run.testedModelServiceTierUsed ?? 'default'}, max output tokens ${run.testedModelMaxOutputTokensUsed ?? 'default'}`
+      }
+    ];
+    if (run.testedModelEndpoint) {
+      rows.push({ term: 'Endpoint', value: run.testedModelEndpoint });
+    }
+    rows.push({
+      term: panel ? 'Member A' : 'Assessor',
+      value: grader(run.assessorModelDisplayNameUsed, run.assessorModelProviderUsed, run.assessorModelIdUsed,
+        run.assessorModelThinkingLevelUsed, run.assessorModelReasoningModeUsed)
+    });
+    if (panel) {
+      rows.push({
+        term: 'Member B',
+        value: grader(run.coAssessorModelDisplayNameUsed, run.coAssessorModelProviderUsed, run.coAssessorModelIdUsed,
+          run.coAssessorModelThinkingLevelUsed, run.coAssessorModelReasoningModeUsed)
+      });
+    }
+    const readerTerm = panel ? 'Reference reader' : 'Second reader';
+    if (run.secondOpinionAssessorModelConfigurationId != null || run.secondOpinionAssessorModelDisplayNameUsed) {
+      rows.push({
+        term: readerTerm,
+        value: grader(run.secondOpinionAssessorModelDisplayNameUsed, run.secondOpinionAssessorModelProviderUsed,
+          run.secondOpinionAssessorModelIdUsed, run.secondOpinionAssessorModelThinkingLevelUsed,
+          run.secondOpinionAssessorModelReasoningModeUsed)
+      });
+      const coverage = this.runSecondOpinionModeLabel(run);
+      if (coverage) {
+        rows.push({ term: 'Coverage', value: coverage });
+      }
+    } else {
+      rows.push({ term: readerTerm, value: 'None' });
+    }
+    rows.push({
+      term: 'Claim verifier',
+      value: run.claimVerifierModelConfigurationId != null || run.claimVerifierDisplayNameUsed
+        ? grader(run.claimVerifierDisplayNameUsed, run.claimVerifierProviderUsed, run.claimVerifierModelIdUsed,
+          run.claimVerifierThinkingLevelUsed, run.claimVerifierReasoningModeUsed)
+        : 'None'
+    });
+    rows.push(
+      { term: 'Scoring profile', value: run.scoringProfileName ?? 'not recorded' },
+      { term: 'Harness version', value: run.harnessVersion ?? '1 (unversioned legacy)' },
+      { term: 'Scoring method version', value: `${run.scoringMethodVersion}` },
+      { term: 'Tool call budget', value: run.maxToolCallsPerQuestionUsed != null ? `${run.maxToolCallsPerQuestionUsed} per question` : 'not recorded' },
+      { term: 'Parallel questions', value: `${run.maxParallelQuestionsUsed}` },
+      { term: 'Prompt', value: this.candidatePromptSummaryOf(run) ?? 'not recorded' },
+      { term: 'Prompt source', value: run.candidatePromptSourceUsed ?? 'not recorded' },
+      { term: 'Prompt SHA-256', value: run.candidateSystemPromptSha256 ?? 'not recorded', code: !!run.candidateSystemPromptSha256 },
+      { term: 'Tool guides SHA-256', value: run.toolGuidesSha256 ?? 'not recorded', code: !!run.toolGuidesSha256 },
+      { term: 'Knowledge base HEAD', value: run.knowledgeBaseHeadSha ?? 'not recorded', code: !!run.knowledgeBaseHeadSha },
+      { term: 'Wiki HEAD', value: run.wikiHeadSha ?? 'not recorded', code: !!run.wikiHeadSha },
+      { term: 'Source code HEAD', value: run.sourceCodeHeadSha ?? 'not recorded', code: !!run.sourceCodeHeadSha },
+      { term: 'Started by', value: run.startedByUserName || 'unknown' }
+    );
+    return rows;
+  }
+
+  /** A Pearson r for the tool routing line, signed with a true minus; n/a where it is undefined. */
+  formatCorrelation(r: number | null): string {
+    if (r == null) {
+      return 'n/a';
+    }
+    const text = Math.abs(r).toFixed(2);
+    return r < 0 ? `−${text}` : text;
   }
 
   startDetailPolling(runId: number) {

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 // The comparison wire contract lives beside the view that renders it, so both consumers read one
 // declaration. The reverse edge in that file is an `import type`, which TypeScript erases, so the
@@ -2036,7 +2036,239 @@ export interface BenchmarkGroupAnalysisDto {
   comparison?: any;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Report packs and stored report documents. The enums travel as numbers, as the server has no
+// string enum converter; the render endpoint alone takes lower-case names in its query string.
+// ---------------------------------------------------------------------------------------------
 
+/** The reader a report-pack document is written for. */
+export enum BenchmarkReportAudience {
+  ExecutiveSummary = 1,
+  TechnicalReport = 2,
+  InternalBrief = 3
+}
+
+/** How much verbatim benchmark content a rendered document prints. */
+export enum BenchmarkReportDisclosure {
+  /** Questions described by topic; no question text, rubric, answer or grader evidence. */
+  Summary = 1,
+  /** Verbatim question text and answer excerpts for the questions the notes discuss. */
+  Detailed = 2,
+  /** Everything, rubrics and grader evidence included. Internal only. */
+  Full = 3
+}
+
+/** Whether peers are printed by name or as "Model A", "Model B"…. */
+export enum BenchmarkReportPeerNaming {
+  Named = 1,
+  Anonymized = 2
+}
+
+/** The comparison's pricing basis as the report-pack request body carries it: a number. */
+export enum BenchmarkReportPackPricingBasis {
+  AsRun = 0,
+  Current = 1
+}
+
+/** The render endpoint's `disclosure` query value. */
+export type BenchmarkReportDisclosureParam = 'summary' | 'detailed' | 'full';
+
+/** The render endpoint's `peers` query value. */
+export type BenchmarkReportPeerNamingParam = 'named' | 'anonymized';
+
+export function reportDisclosureParam(disclosure: BenchmarkReportDisclosure): BenchmarkReportDisclosureParam {
+  switch (disclosure) {
+    case BenchmarkReportDisclosure.Detailed: return 'detailed';
+    case BenchmarkReportDisclosure.Full: return 'full';
+    default: return 'summary';
+  }
+}
+
+export function reportPeerNamingParam(naming: BenchmarkReportPeerNaming): BenchmarkReportPeerNamingParam {
+  return naming === BenchmarkReportPeerNaming.Named ? 'named' : 'anonymized';
+}
+
+/** Preview and start request. The first three fields mirror the model comparison's query. */
+export interface BenchmarkReportPackRequest {
+  runIds: number[];
+  groupIds: number[];
+  pricingBasis: BenchmarkReportPackPricingBasis;
+  /** The comparison entry key of the subject, `run:<id>` or `group:<id>`. */
+  subjectKey: string;
+  audiences: BenchmarkReportAudience[];
+  writerModelConfigurationId: number;
+  /** The operator acknowledged that the writer shares the subject's provider. */
+  acknowledgeSameProvider: boolean;
+}
+
+export interface BenchmarkReportPackPeerDto {
+  letter: string;
+  entryKey: string;
+  label: string;
+  provider: string;
+  state: string;
+}
+
+export interface BenchmarkReportPackAudienceEstimateDto {
+  audience: BenchmarkReportAudience;
+  promptChars: number;
+  estimatedInputTokens: number;
+  estimatedOutputTokens: number;
+  /** Null when the writer has no resolvable price. */
+  estimatedCostUsd: number | null;
+}
+
+export interface BenchmarkReportPackPreviewDto {
+  subjectKey: string;
+  subjectLabel: string;
+  subjectState: string;
+  suiteName: string;
+  peers: BenchmarkReportPackPeerDto[];
+  estimates: BenchmarkReportPackAudienceEstimateDto[];
+  /** Sum of the first call of each estimate; a repair turn can roughly double a document. */
+  estimatedTotalCostUsd: number | null;
+  writerDisplayName: string | null;
+  /** The same-provider warning, or null. Starting requires acknowledging it. */
+  sameProviderWarning: string | null;
+  /** Why the pack cannot be generated as requested, or null when it can. */
+  refusal: string | null;
+}
+
+export interface BenchmarkReportPackStartResponse {
+  jobId: string;
+}
+
+/** `Pending`, `Writing`, `Repairing`, `Completed`, `CompletedWithWarnings`, `Failed` or `Canceled`. */
+export type BenchmarkReportPackDocumentStatus = string;
+
+export interface BenchmarkReportPackDocumentProgressDto {
+  audience: BenchmarkReportAudience;
+  status: BenchmarkReportPackDocumentStatus;
+  documentId: number | null;
+  errorMessage: string | null;
+  modelCalls: number;
+}
+
+export interface BenchmarkReportPackJobLogEntryDto {
+  timestampUtc: string;
+  message: string;
+  severity: string;
+}
+
+export interface BenchmarkReportPackJobDto {
+  id: string;
+  packId: string;
+  subjectKey: string;
+  subjectLabel: string;
+  suiteId: number | null;
+  suiteName: string;
+  writerConfigId: number;
+  writerDisplayName: string;
+  startedByUserId: string | null;
+  startedAtUtc: string;
+  completedAtUtc: string | null;
+  /** `Running`, `Completed`, `CompletedWithErrors`, `Canceled` or `Failed`. */
+  status: string;
+  totalModelCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number | null;
+  documents: BenchmarkReportPackDocumentProgressDto[];
+  log: BenchmarkReportPackJobLogEntryDto[];
+}
+
+/** A stored document in a list; never carries rendered text. */
+export interface BenchmarkReportDocumentListItemDto {
+  id: number;
+  packId: string;
+  audience: BenchmarkReportAudience;
+  title: string;
+  subjectKey: string;
+  subjectLabel: string;
+  subjectRunIds: number[];
+  suiteId: number | null;
+  suiteName: string;
+  writerDisplayName: string;
+  writerProvider: string;
+  writerModelId: string;
+  writerThinkingLevel: string | null;
+  sameProviderAcknowledged: boolean;
+  status: string;
+  reportFormatVersion: number;
+  createdAtUtc: string;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+  costUsd: number | null;
+  /** A subject run was re-scored, re-run or deleted since the document was written. */
+  runChangedSinceGeneration: boolean;
+  /** Subject runs that no longer exist. */
+  missingRunIds: number[];
+  /** The disclosure levels this document renders at. */
+  allowedDisclosures: BenchmarkReportDisclosure[];
+}
+
+/** One validation problem, and whether the offending item was dropped. */
+export interface BenchmarkReportValidationNote {
+  /** The validator rule number, 1–11. */
+  rule: number;
+  /** Where: `headline`, `sections.abstract`, `weaknesses[1]`, …. */
+  location: string;
+  message: string;
+  /** The item or paragraph was removed from the stored output. */
+  dropped: boolean;
+}
+
+export interface BenchmarkReportDocumentDetailDto extends BenchmarkReportDocumentListItemDto {
+  pricingSource: string | null;
+  answerExcerptChars: number;
+  writerPromptSha256: string;
+  validationNotes: BenchmarkReportValidationNote[];
+  factsJson: string;
+}
+
+/** Which stored documents to list; every field is optional. */
+export interface BenchmarkReportDocumentQuery {
+  suiteId?: number | null;
+  runId?: number | null;
+  take?: number | null;
+}
+
+/** A text file fetched from the server, with the name its `Content-Disposition` gave it. */
+export interface BenchmarkTextFile {
+  text: string;
+  fileName: string;
+}
+
+/**
+ * The file name a `Content-Disposition` header carries: `filename*=UTF-8''…` first (RFC 5987,
+ * percent-decoded), then `filename="…"` or a bare `filename=…`, else the fallback.
+ */
+export function fileNameFromContentDisposition(header: string | null | undefined, fallback: string): string {
+  if (!header) {
+    return fallback;
+  }
+  const extended = /filename\*\s*=\s*([^']*)'[^']*'([^;]+)/i.exec(header);
+  if (extended) {
+    try {
+      const decoded = decodeURIComponent(extended[2].trim().replace(/^"(.*)"$/, '$1'));
+      if (decoded.trim() !== '') {
+        return decoded.trim();
+      }
+    } catch {
+      // A malformed escape falls through to the plain parameter.
+    }
+  }
+  const quoted = /filename\s*=\s*"((?:\\.|[^"\\])*)"/i.exec(header);
+  if (quoted && quoted[1].trim() !== '') {
+    return quoted[1].replace(/\\(.)/g, '$1').trim();
+  }
+  const bare = /filename\s*=\s*([^;"\s][^;]*)/i.exec(header);
+  if (bare && bare[1].trim() !== '') {
+    return bare[1].trim();
+  }
+  return fallback;
+}
 
 @Injectable({
   providedIn: 'root'
@@ -2550,5 +2782,81 @@ export class AdminBenchmarkService {
       params = params.append(key, value);
     }
     return this.http.get<BenchmarkComparabilityIndexDto>(MODEL_COMPARABILITY_INDEX_ENDPOINT, { params });
+  }
+
+  // Report packs. Preview makes no model call; start begins a background job.
+  previewReportPack(request: BenchmarkReportPackRequest): Observable<BenchmarkReportPackPreviewDto> {
+    return this.http.post<BenchmarkReportPackPreviewDto>('/api/admin/benchmark/report-packs/preview', request);
+  }
+
+  /**
+   * 202 with the job id. Refusals: 400 `{ error }`, 429 a plain string, 409 a
+   * `SameProviderWarningDto` (unacknowledged same provider) or a `BenchmarkReportPackJobDto`
+   * (a job already running).
+   */
+  startReportPack(request: BenchmarkReportPackRequest): Observable<BenchmarkReportPackStartResponse> {
+    return this.http.post<BenchmarkReportPackStartResponse>('/api/admin/benchmark/report-packs', request);
+  }
+
+  getReportPackJob(jobId: string): Observable<BenchmarkReportPackJobDto> {
+    return this.http.get<BenchmarkReportPackJobDto>(`/api/admin/benchmark/report-packs/jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  /** The running job, or null (204) when none is running. */
+  getActiveReportPackJob(): Observable<BenchmarkReportPackJobDto | null> {
+    return this.http.get<BenchmarkReportPackJobDto | null>('/api/admin/benchmark/report-packs/jobs/active');
+  }
+
+  cancelReportPackJob(jobId: string): Observable<{ cancelled: boolean }> {
+    return this.http.post<{ cancelled: boolean }>(
+      `/api/admin/benchmark/report-packs/jobs/${encodeURIComponent(jobId)}/cancel`, {});
+  }
+
+  // Stored report documents. None of these can reach a model.
+  listReportDocuments(query: BenchmarkReportDocumentQuery = {}): Observable<BenchmarkReportDocumentListItemDto[]> {
+    let params = new HttpParams();
+    if (query.suiteId != null) params = params.set('suiteId', query.suiteId);
+    if (query.runId != null) params = params.set('runId', query.runId);
+    if (query.take != null) params = params.set('take', query.take);
+    return this.http.get<BenchmarkReportDocumentListItemDto[]>('/api/admin/benchmark/report-documents', { params });
+  }
+
+  getReportDocument(id: number): Observable<BenchmarkReportDocumentDetailDto> {
+    return this.http.get<BenchmarkReportDocumentDetailDto>(`/api/admin/benchmark/report-documents/${id}`);
+  }
+
+  /** The document as Markdown at the given disclosure and peer naming; the same options give the same bytes. */
+  renderReportDocument(
+    id: number,
+    disclosure: BenchmarkReportDisclosure,
+    peers: BenchmarkReportPeerNaming
+  ): Observable<string> {
+    const params = new HttpParams()
+      .set('disclosure', reportDisclosureParam(disclosure))
+      .set('peers', reportPeerNamingParam(peers));
+    return this.http.get(`/api/admin/benchmark/report-documents/${id}/render`, { params, responseType: 'text' });
+  }
+
+  deleteReportDocument(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/admin/benchmark/report-documents/${id}`);
+  }
+
+  /** The run's Markdown report as text, named as the server's `Content-Disposition` names it. */
+  getRunReportText(runId: number): Observable<BenchmarkTextFile> {
+    return this.getTextFile(this.getRunReportUrl(runId), `benchmark_run${runId}_report.md`);
+  }
+
+  /** The run's tool-call log as text, named as the server's `Content-Disposition` names it. */
+  getToolCallLogText(runId: number): Observable<BenchmarkTextFile> {
+    return this.getTextFile(this.getToolCallLogUrl(runId), `benchmark_run${runId}_tool_calls.md`);
+  }
+
+  private getTextFile(url: string, fallbackName: string): Observable<BenchmarkTextFile> {
+    return this.http.get(url, { observe: 'response', responseType: 'text' }).pipe(
+      map(response => ({
+        text: response.body ?? '',
+        fileName: fileNameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName)
+      }))
+    );
   }
 }

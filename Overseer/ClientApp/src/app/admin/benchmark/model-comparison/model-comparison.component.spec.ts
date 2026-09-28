@@ -50,6 +50,9 @@ import { FIGURE_EXPORT_MAX_DENSITY_PERCENT, FIGURE_EXPORT_MAX_DIMENSION, zipWrit
 import { FIGURE_SIZE_STORAGE_KEY, TABLE_IMAGE_SIZE_STORAGE_KEY, defaultFigureSize } from './figure-size';
 import { fitHeightZoom, previewZoomRange, zoomToSlider } from './preview-view';
 import { ToastComponent } from '../../../shared/toast/toast.component';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { BenchmarkReportPackDialogComponent } from '../report-pack/benchmark-report-pack-dialog.component';
 
 describe('ModelComparisonComponent', () => {
   let component: ModelComparisonComponent;
@@ -305,7 +308,8 @@ describe('ModelComparisonComponent', () => {
     STORED_KEYS.forEach(key => localStorage.removeItem(key));
     await TestBed.configureTestingModule({
       imports: [ModelComparisonComponent],
-      providers: [provideCharts({ registerables: APP_CHART_REGISTRABLES })]
+      // The Report Pack dialog, created by Reports, loads its writers, documents and job over HTTP.
+      providers: [provideCharts({ registerables: APP_CHART_REGISTRABLES }), provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
 
     fixture = TestBed.createComponent(ModelComparisonComponent);
@@ -1087,6 +1091,99 @@ describe('ModelComparisonComponent', () => {
     dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
 
     expect(heard).toEqual([]);
+  });
+
+  describe('Reports', () => {
+    function reportPackDialog(): BenchmarkReportPackDialogComponent | null {
+      return fixture.debugElement.query(By.directive(BenchmarkReportPackDialogComponent))?.componentInstance ?? null;
+    }
+
+    afterEach(() => {
+      (fixture.nativeElement as HTMLElement).querySelectorAll('dialog').forEach(dialog => {
+        if (dialog.open) {
+          dialog.close();
+        }
+      });
+    });
+
+    it('creates nothing of the Report Pack dialog until Reports is pressed', () => {
+      render(buildDto(comparableSet(3)), 2);
+      expect(reportPackDialog()).toBeNull();
+      const trigger = fixture.debugElement.query(By.css('#mc-reports-trigger')).nativeElement as HTMLButtonElement;
+      expect(trigger.classList).toContain('btn-ghost');
+      expect(trigger.textContent).toContain('Reports');
+    });
+
+    it('opens the Report Pack dialog with the comparison\'s request, entries and suite', () => {
+      const group = buildEntry({ key: 'group:4', sourceKind: 'Group', sourceId: 4, runIds: [7, 8], label: 'Group 4' });
+      const excluded = buildExcludedEntry('run:9', ['ScoringMethodVersion']);
+      const entries = [...comparableSet(2), group, { ...excluded, sourceId: 9, runIds: [9] }];
+      render(buildDto(entries, { pricingBasis: 'AsRun' }), 2);
+
+      (fixture.debugElement.query(By.css('#mc-reports-trigger')).nativeElement as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const dialog = reportPackDialog();
+      expect(dialog).not.toBeNull();
+      expect(component.reportsOpen).toBeTrue();
+      expect(dialog!.context).toEqual({
+        runIds: [1, 2, 9],
+        groupIds: [4],
+        pricingBasis: 'AsRun',
+        entries,
+        suiteId: 5,
+        suiteName: 'GnollHack Player Assistance Benchmark Suite'
+      });
+      expect(dialog!.dialog!.nativeElement.open).toBeTrue();
+      // The Excluded entry is not a subject; the first charted one is chosen.
+      expect(dialog!.subjects.map(subject => subject.key)).toEqual(['run:1', 'run:2', 'group:4']);
+      expect(dialog!.subjectKey).toBe('run:1');
+    });
+
+    it('destroys the dialog when it closes, and returns focus to Reports', async () => {
+      render(buildDto(comparableSet(3)), 2);
+      (fixture.debugElement.query(By.css('#mc-reports-trigger')).nativeElement as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      reportPackDialog()!.close();
+      // The dialog's close event is queued as a task.
+      await new Promise(resolve => setTimeout(resolve));
+      fixture.detectChanges();
+
+      expect(component.reportsOpen).toBeFalse();
+      expect(reportPackDialog()).toBeNull();
+      expect(document.activeElement).toBe(fixture.debugElement.query(By.css('#mc-reports-trigger')).nativeElement);
+    });
+
+    it('re-emits the dialog\'s grader guide request as its own', () => {
+      render(buildDto(comparableSet(3)), 2);
+      const requests: number[] = [];
+      component.graderGuideRequested.subscribe(() => requests.push(1));
+      component.openReports();
+      fixture.detectChanges();
+
+      const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.rp-guide-link')!;
+      link.click();
+
+      expect(requests.length).toBe(1);
+    });
+
+    it('keeps the Report Pack dialog\'s close and cancel events from reaching the wizard\'s dialog', () => {
+      render(buildDto(comparableSet(3)), 2);
+      component.openReports();
+      fixture.detectChanges();
+
+      const dialog = reportPackDialog()!.dialog!.nativeElement;
+      const host = fixture.nativeElement as HTMLElement;
+      const heard: string[] = [];
+      host.addEventListener('close', () => heard.push('close'));
+      host.addEventListener('cancel', () => heard.push('cancel'));
+
+      dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+      dialog.dispatchEvent(new Event('close', { bubbles: true }));
+
+      expect(heard).toEqual([]);
+    });
   });
 
   it('emits refresh from Recompute, refuses it while loading, and marks aria-disabled', () => {
@@ -5532,7 +5629,7 @@ describe('ModelComparisonComponent', () => {
     expect(Math.abs(toggle.top + toggle.height / 2 - centreOf(bar))).toBeLessThanOrEqual(1);
 
     const stepRow = box('.mc-wizard-tabbar');
-    for (const selector of ['#mc-about-trigger', '.mc-recompute']) {
+    for (const selector of ['#mc-about-trigger', '#mc-reports-trigger', '.mc-recompute']) {
       const button = box(selector);
       expect(Math.abs(button.top + button.height / 2 - centreOf(stepRow))).withContext(selector).toBeLessThanOrEqual(1);
     }
@@ -5567,9 +5664,9 @@ describe('ModelComparisonComponent', () => {
     expect(getComputedStyle(toolbar).borderBottomStyle).toBe('solid');
   });
 
-  it('puts About and Recompute at the step row\'s end on step 2 only, and leaves the view bar the toggle and the tabs', () => {
+  it('puts About, Reports and Recompute at the step row\'s end on step 2 only, and leaves the view bar the toggle and the tabs', () => {
     render(buildDto(comparableSet(3)), 2);
-    for (const selector of ['#mc-about-trigger', '.mc-recompute']) {
+    for (const selector of ['#mc-about-trigger', '#mc-reports-trigger', '.mc-recompute']) {
       const button = fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement;
       expect(button.closest('.mc-wizard-tabbar .mc-wizard-meta')).withContext(selector).not.toBeNull();
       expect(button.closest('.mc-fig-bar')).withContext(selector).toBeNull();
@@ -5584,6 +5681,7 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
     expect(component.comparison).not.toBeNull();
     expect(fixture.debugElement.query(By.css('#mc-about-trigger'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('#mc-reports-trigger'))).toBeNull();
     expect(fixture.debugElement.query(By.css('.mc-recompute'))).toBeNull();
   });
 

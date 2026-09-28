@@ -4018,9 +4018,11 @@ describe('AdminBenchmarkComponent', () => {
       expect(diagnostics).not.toContain('[Q2] status=Pending');
     });
 
+    /** The icon-only View game snapshot button of the run report's header actions. */
     function viewGameSnapshotButton(): HTMLButtonElement | undefined {
-      const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll('.modal-actions-bar button'));
-      return buttons.find(b => (b.textContent || '').includes('View Game Snapshot'));
+      const buttons: HTMLButtonElement[] = Array.from(fixture.nativeElement.querySelectorAll(
+        '.benchmark-run-detail-dialog [role="group"][aria-label="Run actions"] button'));
+      return buttons.find(b => (b.getAttribute('aria-label') || '').startsWith('View game snapshot'));
     }
 
     it("should open the run's own board read-only from View Game Snapshot", () => {
@@ -9749,6 +9751,509 @@ describe('AdminBenchmarkComponent', () => {
         expect(singleHeaders).not.toContain('Compared against');
         expect(fixture.nativeElement.querySelector('#calibrationTargetSelect')).toBeNull();
       });
+    });
+  });
+
+  describe('run report dialog', () => {
+    function reportAnswer(orderIndex: number, overrides: any = {}): any {
+      return {
+        id: 300 + orderIndex, benchmarkRunId: 55, orderIndex, questionText: `Question ${orderIndex}`,
+        difficulty: 2, assessedDifficulty: 50, answerText: `Answer ${orderIndex}`, status: 'Ok',
+        assessmentStatus: 'Scored', durationMs: 1000, modelTimeMs: 1000, toolCallCount: 1,
+        scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 85,
+        ...overrides
+      };
+    }
+
+    /** Q1 has a critical error and scores 25, Q2 scores 60, Q3 carries a flag and scores 85. */
+    function reportRun(overrides: any = {}): any {
+      return {
+        id: 55, benchmarkSuiteId: 1, suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Test Model', testedModelProviderUsed: 'OpenAI', testedModelIdUsed: 'gpt-test',
+        testedModelParallelExecutionModeUsed: 0,
+        assessorModelDisplayNameUsed: 'Test Assessor', assessorModelProviderUsed: 'Google', assessorModelIdUsed: 'gemini-test',
+        startedByUserName: 'admin', status: 'Completed',
+        startedAtUtc: '2026-09-03T06:52:00Z', completedAtUtc: '2026-09-03T07:10:00Z',
+        totalAnswerDurationMs: 900000, totalDurationMs: 900000,
+        scoringProfileName: 'Standard', scoringProfileId: 1, scoringMethodVersion: 12, harnessVersion: '40',
+        transportDefectAnswerCount: 0, advisoryFlagAnswerCount: 0, scrubbedArtifactAnswerCount: 0,
+        difficultyFallbackUsed: false, speedMeasurementDegraded: false, maxParallelQuestionsUsed: 1,
+        answeredQuestionCount: 3, unansweredQuestionCount: 0, totalQuestionCount: 3,
+        assessmentParseFailed: false, totalInputTokens: 0, totalOutputTokens: 0,
+        totalCacheReadTokens: 0, totalCacheCreationTokens: 0, errorMessage: null,
+        answers: [
+          reportAnswer(1, { criticalError: true, qualityScore: 25 }),
+          reportAnswer(2, { qualityScore: 60 }),
+          reportAnswer(3, { answerFlagNames: ['RefutedClaim'] })
+        ],
+        ...overrides
+      };
+    }
+
+    function reportDialog(): HTMLDialogElement {
+      return component.runDetailDialog.nativeElement;
+    }
+
+    function runActions(): HTMLElement {
+      return fixture.nativeElement.querySelector('.benchmark-run-detail-dialog [role="group"][aria-label="Run actions"]') as HTMLElement;
+    }
+
+    /**
+     * Resolves on the next event of a type, by which time the listeners Angular added first have run,
+     * or after a second, so a missing event fails the expectations that follow rather than hanging.
+     */
+    function nextEvent(target: EventTarget, type: string): Promise<Event | null> {
+      return new Promise(resolve => {
+        const timer = setTimeout(() => resolve(null), 1000);
+        target.addEventListener(type, event => {
+          clearTimeout(timer);
+          resolve(event);
+        }, { once: true });
+      });
+    }
+
+    function macrotask(): Promise<void> {
+      return new Promise(resolve => setTimeout(resolve));
+    }
+
+    /** Opens the report the way Run History does, so the dialog is really modal. */
+    function openReport(run: any): void {
+      benchmarkServiceMock.getRun.and.returnValue(of(run));
+      component.viewRunDetail(run.id);
+      fixture.detectChanges();
+    }
+
+    afterEach(async () => {
+      const dialog = reportDialog();
+      if (dialog.open) {
+        const closed = nextEvent(dialog, 'close');
+        dialog.close();
+        await closed;
+      }
+      component.stopDetailPolling();
+    });
+
+    it('should hold the header actions in a named group, not a toolbar, and have no footer', () => {
+      component.selectedRunDetail = reportRun({ hasBoardRecord: true });
+      fixture.detectChanges();
+
+      const dialog = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog') as HTMLDialogElement;
+      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBeTrue();
+      expect(dialog.getAttribute('aria-labelledby')).toBe('runDetailTitle');
+      expect(dialog.querySelector('#runDetailTitle')?.textContent?.trim()).toBe('Run #55: Default Suite');
+
+      const group = runActions();
+      expect(group).toBeTruthy();
+      expect(dialog.querySelector('[role="toolbar"]')).toBeNull();
+
+      const buttons = Array.from(group.querySelectorAll(':scope > button')) as HTMLButtonElement[];
+      const names = buttons.map(b => b.getAttribute('aria-label') || (b.textContent || '').replace(/\s+/g, ' ').trim());
+      expect(names).toEqual(['Downloads', 'Re-run', 'View game snapshot of run 55', 'Copy diagnostics of run 55', 'Close run details']);
+      for (const button of buttons) {
+        expect(button.getAttribute('type')).toBe('button');
+        expect(button.hasAttribute('title')).withContext(names[buttons.indexOf(button)]).toBeFalse();
+      }
+      expect(buttons[0].classList.contains('btn-ghost')).toBeTrue();
+      expect(buttons[1].classList.contains('btn-ghost')).toBeTrue();
+      expect(buttons[1].getAttribute('popovertarget')).toBe('rr-rerun-popover');
+      expect(buttons[1].getAttribute('aria-expanded')).toBe('false');
+      expect(buttons[2].classList.contains('action-btn')).toBeTrue();
+      expect(buttons[2].getAttribute('interestfor')).toBe('rr-snapshot-tip');
+      expect(buttons[3].classList.contains('action-btn')).toBeTrue();
+      expect(buttons[3].getAttribute('interestfor')).toBe('rr-copy-diagnostics-tip');
+      expect(buttons[4].classList.contains('btn-icon-action')).toBeTrue();
+
+      const popover = dialog.querySelector('#rr-rerun-popover') as HTMLElement;
+      expect(popover.getAttribute('popover')).toBe('auto');
+      expect(popover.getAttribute('role')).toBe('group');
+      expect(popover.getAttribute('aria-label')).toBe('Re-run and repair');
+      expect(popover.querySelector('[role="menu"], [role="menuitem"]')).toBeNull();
+
+      expect(dialog.querySelector('.modal-actions-bar')).toBeNull();
+      expect(dialog.querySelector('.dialog-footer')).toBeNull();
+    });
+
+    it('should open the Re-run popover on its first enabled item, with aria-expanded from its toggle event', async () => {
+      openReport(reportRun());
+      const trigger = fixture.nativeElement.querySelector('#rr-rerun-trigger') as HTMLButtonElement;
+      const popover = fixture.nativeElement.querySelector('#rr-rerun-popover') as HTMLElement;
+
+      const opened = nextEvent(popover, 'toggle');
+      trigger.click();
+      await opened;
+      fixture.detectChanges();
+
+      expect(popover.matches(':popover-open')).toBeTrue();
+      expect(trigger.getAttribute('aria-expanded')).toBe('true');
+      expect(document.activeElement).toBe(popover.querySelector('[data-action="rescore"]'));
+    });
+
+    it('should close only the popover on Escape and return focus to its trigger', async () => {
+      openReport(reportRun());
+      const trigger = fixture.nativeElement.querySelector('#rr-rerun-trigger') as HTMLButtonElement;
+      const popover = fixture.nativeElement.querySelector('#rr-rerun-popover') as HTMLElement;
+      const opened = nextEvent(popover, 'toggle');
+      trigger.click();
+      await opened;
+      fixture.detectChanges();
+
+      const dialogKeydowns: Event[] = [];
+      reportDialog().addEventListener('keydown', e => dialogKeydowns.push(e));
+      const closed = nextEvent(popover, 'toggle');
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      (document.activeElement as HTMLElement).dispatchEvent(escape);
+      await closed;
+      fixture.detectChanges();
+
+      expect(escape.defaultPrevented).toBeTrue();
+      expect(dialogKeydowns.length).toBe(0);
+      expect(popover.matches(':popover-open')).toBeFalse();
+      expect(reportDialog().open).toBeTrue();
+      expect(trigger.getAttribute('aria-expanded')).toBe('false');
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('should keep an applicable Re-run action listed with its reason while it cannot run, and refuse it', () => {
+      component.selectedRunDetail = reportRun({
+        status: 'Failed',
+        isAborted: true,
+        answers: [reportAnswer(1, { status: 'Failed', errorMessage: 'boom', qualityScore: null })]
+      });
+      fixture.detectChanges();
+      const rescore = spyOn(component, 'rescoreRun');
+      const rerunFailed = spyOn(component, 'rerunFailedFromRunDetail');
+
+      const items = Array.from(fixture.nativeElement.querySelectorAll('#rr-rerun-popover .gh-action-popover-item')) as HTMLButtonElement[];
+      const item = (key: string) => items.find(i => i.getAttribute('data-action') === key)!;
+      for (const key of ['rescore', 'failed-questions']) {
+        expect(item(key)).withContext(key).toBeTruthy();
+        expect(item(key).getAttribute('aria-disabled')).withContext(key).toBe('true');
+        expect(item(key).disabled).withContext(key).toBeFalse();
+        expect(item(key).querySelector('.gh-action-popover-item-reason')?.textContent)
+          .withContext(key).toContain('The run stopped before finishing its suite.');
+      }
+
+      item('rescore').click();
+      item('failed-questions').click();
+      expect(rescore).not.toHaveBeenCalled();
+      expect(rerunFailed).not.toHaveBeenCalled();
+    });
+
+    it('should give every Re-run action the busy reason while a retry is running', () => {
+      component.selectedRunDetail = reportRun({ status: 'Running' });
+      fixture.detectChanges();
+      const reasons = Array.from(fixture.nativeElement.querySelectorAll('#rr-rerun-popover .gh-action-popover-item'))
+        .map((i: any) => ({ key: i.getAttribute('data-action'), reason: i.querySelector('.gh-action-popover-item-reason')?.textContent?.trim() }));
+      expect(reasons).toEqual([
+        { key: 'rescore', reason: 'A retry is already running on this run.' },
+        { key: 'synthesis', reason: 'A retry is already running on this run.' }
+      ]);
+    });
+
+    it('should run an available Re-run action', () => {
+      component.selectedRunDetail = reportRun();
+      fixture.detectChanges();
+      const rescore = spyOn(component, 'rescoreRun');
+      const available = fixture.nativeElement.querySelector('#rr-rerun-popover [data-action="rescore"]') as HTMLButtonElement;
+      expect(available.hasAttribute('aria-disabled')).toBeFalse();
+      available.click();
+      expect(rescore).toHaveBeenCalledOnceWith(55);
+    });
+
+    it('should filter the questions by any pressed filter, without Members disagree on a single-assessor run', () => {
+      component.selectedRunDetail = reportRun();
+      fixture.detectChanges();
+
+      const toggles = () => Array.from(fixture.nativeElement.querySelectorAll('.questions-detail-section .gh-filter-toggle')) as HTMLButtonElement[];
+      const toggle = (key: string) => toggles().find(t => t.getAttribute('data-filter') === key)!;
+      const shown = () => Array.from(fixture.nativeElement.querySelectorAll('.question-detail-card .q-number'))
+        .map((e: any) => e.textContent.trim());
+      const status = () => (fixture.nativeElement.querySelector('.questions-detail-section [role="status"]').textContent || '')
+        .replace(/\s+/g, ' ').trim();
+
+      expect(toggles().map(t => t.getAttribute('data-filter'))).toEqual(['critical', 'disputed', 'below70', 'flagged']);
+      expect(toggle('critical').textContent?.trim()).toBe('Critical errors (1)');
+      expect(toggle('below70').textContent?.trim()).toBe('Below 70 (2)');
+      expect(toggle('critical').getAttribute('aria-pressed')).toBe('false');
+      expect(shown()).toEqual(['Q1', 'Q2', 'Q3']);
+      expect(status()).toBe('');
+
+      toggle('critical').click();
+      fixture.detectChanges();
+      expect(toggle('critical').getAttribute('aria-pressed')).toBe('true');
+      expect(shown()).toEqual(['Q1']);
+
+      toggle('flagged').click();
+      fixture.detectChanges();
+      expect(shown()).toEqual(['Q1', 'Q3']);
+      expect(status()).toContain('Showing 2 of 3 questions');
+
+      toggle('critical').click();
+      toggle('flagged').click();
+      toggle('disputed').click();
+      fixture.detectChanges();
+      expect(shown()).toEqual([]);
+      const clear = fixture.nativeElement.querySelector('.questions-detail-section .gh-filter-clear') as HTMLButtonElement;
+      expect(clear.textContent?.trim()).toBe('Clear filters');
+      clear.click();
+      fixture.detectChanges();
+      expect(shown()).toEqual(['Q1', 'Q2', 'Q3']);
+    });
+
+    it('should offer Members disagree on a panel run, and read Below 70 from the panel score', () => {
+      const toggles = () => Array.from(fixture.nativeElement.querySelectorAll('.questions-detail-section .gh-filter-toggle')) as HTMLButtonElement[];
+      const toggle = (key: string) => toggles().find(t => t.getAttribute('data-filter') === key)!;
+      const shown = () => Array.from(fixture.nativeElement.querySelectorAll('.question-detail-card .q-number'))
+        .map((e: any) => e.textContent.trim());
+
+      component.selectedRunDetail = reportRun({
+        isPanelRun: true,
+        answers: [
+          reportAnswer(1, { panelDisagreed: true, panelQualityScore: 65, qualityScore: 80 }),
+          reportAnswer(2, { panelQualityScore: 90, qualityScore: 40 })
+        ]
+      });
+      fixture.detectChanges();
+      expect(toggles().map(t => t.getAttribute('data-filter'))).toEqual(['critical', 'disputed', 'disagree', 'below70', 'flagged']);
+      toggle('below70').click();
+      fixture.detectChanges();
+      expect(shown()).toEqual(['Q1']);
+      toggle('below70').click();
+      toggle('disagree').click();
+      fixture.detectChanges();
+      expect(shown()).toEqual(['Q1']);
+    });
+
+    it('should expand and collapse every shown question from real header buttons', () => {
+      component.selectedRunDetail = reportRun();
+      fixture.detectChanges();
+
+      const headers = () => Array.from(fixture.nativeElement.querySelectorAll('.question-card-header')) as HTMLButtonElement[];
+      expect(headers().length).toBe(3);
+      for (const header of headers()) {
+        expect(header.tagName).toBe('BUTTON');
+        expect(header.getAttribute('type')).toBe('button');
+        expect(header.getAttribute('aria-expanded')).toBe('false');
+        expect(header.querySelector('button, a, input, select, textarea')).toBeNull();
+      }
+
+      (fixture.nativeElement.querySelector('#rr-expand-all') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(headers().map(h => h.getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true']);
+      for (const header of headers()) {
+        const body = fixture.nativeElement.querySelector('#' + header.getAttribute('aria-controls'));
+        expect(body?.classList.contains('question-card-body')).toBeTrue();
+      }
+
+      (fixture.nativeElement.querySelector('#rr-collapse-all') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(headers().map(h => h.getAttribute('aria-expanded'))).toEqual(['false', 'false', 'false']);
+      expect(fixture.nativeElement.querySelectorAll('.question-card-body').length).toBe(0);
+    });
+
+    it('should make the per-question actions ghost buttons, the trial named by a tooltip rather than a title', () => {
+      component.selectedRunDetail = reportRun();
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('.question-card-header') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const actions = Array.from(fixture.nativeElement.querySelectorAll('.question-card-body .question-actions > button')) as HTMLButtonElement[];
+      expect(actions.map(b => (b.textContent || '').replace(/\s+/g, ' ').trim()))
+        .toEqual(['Re-run Question', 'Re-assess Question', 'Try another assessor (does not change the score)']);
+      for (const action of actions) {
+        expect(action.classList.contains('btn-ghost')).toBeTrue();
+        expect(action.classList.contains('btn-gh')).toBeFalse();
+      }
+      const trial = actions[2];
+      expect(trial.classList.contains('btn-gh-trial')).toBeTrue();
+      expect(trial.hasAttribute('title')).toBeFalse();
+      const tip = fixture.nativeElement.querySelector('#' + trial.getAttribute('interestfor')) as HTMLElement;
+      expect(tip.getAttribute('popover')).toBe('hint');
+      expect(tip.textContent).toContain('Changes no score, level, flag or index.');
+    });
+
+    it('should clean up exactly once when the header Close closes the report, stopping detail polling', async () => {
+      openReport(reportRun());
+      component.startDetailPolling(55);
+      expect(component.detailPollInterval).not.toBeNull();
+      const cleanup = spyOn(component, 'onRunDetailClosed').and.callThrough();
+
+      const closed = nextEvent(reportDialog(), 'close');
+      (runActions().querySelector('button[aria-label="Close run details"]') as HTMLButtonElement).click();
+      await closed;
+      await macrotask();
+
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      expect(reportDialog().open).toBeFalse();
+      expect(component.detailPollInterval).toBeNull();
+      expect(component.selectedRunDetail).toBeNull();
+      expect(component.runDetailRequestedId).toBeNull();
+    });
+
+    it('should clean up exactly once when Escape closes the report, stopping detail polling', async () => {
+      openReport(reportRun());
+      component.startDetailPolling(55);
+      const cleanup = spyOn(component, 'onRunDetailClosed').and.callThrough();
+      const dialog = reportDialog() as HTMLDialogElement & { requestClose?: () => void };
+
+      const closed = nextEvent(dialog, 'close');
+      // What Escape sends: a close request, which is a cancel event and then the close.
+      if (typeof dialog.requestClose === 'function') {
+        dialog.requestClose();
+      } else {
+        dialog.dispatchEvent(new Event('cancel', { cancelable: true }));
+        dialog.close();
+      }
+      await closed;
+      await macrotask();
+
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      expect(component.detailPollInterval).toBeNull();
+      expect(component.selectedRunDetail).toBeNull();
+    });
+
+    it('should clean up exactly once when code closes the report, whether or not it is open', async () => {
+      openReport(reportRun());
+      const cleanup = spyOn(component, 'onRunDetailClosed').and.callThrough();
+
+      const closed = nextEvent(reportDialog(), 'close');
+      component.closeRunDetail();
+      expect(cleanup).not.toHaveBeenCalled();
+      await closed;
+      await macrotask();
+      expect(cleanup).toHaveBeenCalledTimes(1);
+
+      cleanup.calls.reset();
+      component.selectedRunDetail = reportRun();
+      component.closeRunDetail();
+      expect(cleanup).toHaveBeenCalledTimes(1);
+      expect(component.selectedRunDetail).toBeNull();
+    });
+
+    it('should keep a run reopened before the previous close event arrived', async () => {
+      openReport(reportRun());
+      const closed = nextEvent(reportDialog(), 'close');
+      component.closeRunDetail();
+      openReport(reportRun({ id: 56 }));
+      await closed;
+      await macrotask();
+
+      expect(reportDialog().open).toBeTrue();
+      expect(component.selectedRunDetail?.id).toBe(56);
+    });
+
+    it('should show the header with Close and a skeleton while the run loads', () => {
+      const pending = new Subject<any>();
+      benchmarkServiceMock.getRun.and.returnValue(pending.asObservable());
+      component.viewRunDetail(77);
+      fixture.detectChanges();
+
+      const dialog = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog') as HTMLElement;
+      expect(dialog.querySelector('#runDetailTitle')?.textContent?.trim()).toBe('Run #77');
+      expect(dialog.querySelector('button[aria-label="Close run details"]')).toBeTruthy();
+      expect(dialog.querySelector('#rr-downloads-trigger')).toBeNull();
+      expect(dialog.querySelectorAll('.rr-skeleton').length).toBeGreaterThan(0);
+      expect(dialog.querySelector('.rrf-body')?.getAttribute('aria-busy')).toBe('true');
+
+      pending.next(reportRun({ id: 77 }));
+      fixture.detectChanges();
+      expect(dialog.querySelector('#runDetailTitle')?.textContent?.trim()).toBe('Run #77: Default Suite');
+      expect(dialog.querySelectorAll('.rr-skeleton').length).toBe(0);
+      expect(dialog.querySelector('.rrf-body')?.hasAttribute('aria-busy')).toBeFalse();
+    });
+
+    it('should show a load failure with Close and Try again', () => {
+      spyOn(console, 'error');
+      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500, error: 'Database unavailable' })));
+      component.viewRunDetail(77);
+      fixture.detectChanges();
+
+      const dialog = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog') as HTMLElement;
+      const alert = dialog.querySelector('[role="alert"]') as HTMLElement;
+      expect(alert.textContent).toContain('Run #77 could not be loaded: Database unavailable');
+      expect(dialog.querySelector('button[aria-label="Close run details"]')).toBeTruthy();
+      expect(dialog.querySelector('.rr-skeleton')).toBeNull();
+
+      benchmarkServiceMock.getRun.calls.reset();
+      benchmarkServiceMock.getRun.and.returnValue(of(reportRun({ id: 77 })));
+      (dialog.querySelector('#rr-retry-load') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(benchmarkServiceMock.getRun).toHaveBeenCalledOnceWith(77);
+      expect(component.selectedRunDetail?.id).toBe(77);
+      expect(component.runDetailLoadError).toBeNull();
+      expect(dialog.querySelector('#rr-retry-load')).toBeNull();
+    });
+
+    it('should open the Download Center on the viewed run from Downloads', () => {
+      component.selectedRunDetail = reportRun();
+      fixture.detectChanges();
+      const open = spyOn(component.runDownloadCenter!, 'open');
+
+      (fixture.nativeElement.querySelector('#rr-downloads-trigger') as HTMLButtonElement).click();
+
+      expect(open).toHaveBeenCalledTimes(1);
+      const context = open.calls.mostRecent().args[0] as any;
+      expect(context.kind).toBe('run');
+      expect(context.run).toEqual({
+        id: 55, suiteName: 'Default Suite', modelLabel: 'Test Model',
+        startedAtUtc: '2026-09-03T06:52:00Z', completedAtUtc: '2026-09-03T07:10:00Z'
+      });
+      const text = context.diagnosticsText() as string;
+      expect(text).toContain('Run ID: 55');
+      expect(text).toContain('Answered 3 of 3');
+    });
+
+    it('should copy the viewed run diagnostics from Copy diagnostics and announce it', fakeAsync(() => {
+      const run = reportRun();
+      component.selectedRunDetail = run;
+      fixture.detectChanges();
+      const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const expected = component.runDiagnosticsTextFor(run, component.runStageOf(run));
+      expect(expected).toContain('Run ID: 55');
+
+      (runActions().querySelector('button[aria-label="Copy diagnostics of run 55"]') as HTMLButtonElement).click();
+      tick();
+      fixture.detectChanges();
+
+      expect(writeText).toHaveBeenCalledOnceWith(expected);
+      const status = runActions().querySelector('.rr-status[role="status"]') as HTMLElement;
+      expect(status.textContent?.trim()).toBe('Diagnostics copied to the clipboard.');
+
+      tick(3000);
+      fixture.detectChanges();
+      expect(status.textContent?.trim()).toBe('');
+    }));
+
+    it('should list the run configuration and the tool routing table in the side column', () => {
+      component.selectedRunDetail = reportRun({
+        secondOpinionAssessorModelConfigurationId: 3, secondOpinionAssessorModelDisplayNameUsed: 'Reader',
+        secondOpinionAssessorModelProviderUsed: 'OpenAI', secondOpinionAssessorModelIdUsed: 'gpt-reader',
+        secondOpinionModeUsed: 1, candidateSystemPromptSha256: 'abc123',
+        answers: [
+          reportAnswer(1, { toolCallSummary: 'source_code_search×3, wiki_search×1', qualityScore: 70, modelTimeMs: 3000 }),
+          reportAnswer(2, { toolCallSummary: 'wiki_view×2', qualityScore: 90, modelTimeMs: 1000 })
+        ]
+      });
+      fixture.detectChanges();
+
+      const aside = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog .rrf-aside') as HTMLElement;
+      const terms = Array.from(aside.querySelectorAll('.rr-config dt')).map((dt: any) => dt.textContent.trim());
+      const value = (term: string) => (aside.querySelectorAll('.rr-config dd')[terms.indexOf(term)]?.textContent || '')
+        .replace(/\s+/g, ' ').trim();
+      expect(value('Assessor')).toContain('Test Assessor (Google / gemini-test)');
+      expect(value('Assessor')).toContain('different family from the model under test');
+      expect(value('Second reader')).toContain('same family as the model under test');
+      expect(value('Claim verifier')).toBe('None');
+      expect(value('Harness version')).toBe('40');
+      expect(value('Prompt SHA-256')).toBe('abc123');
+
+      const routing = aside.querySelector('.tool-routing-table') as HTMLTableElement;
+      expect(routing).toBeTruthy();
+      const rows = Array.from(routing.querySelectorAll('tbody tr')).map((tr: any) =>
+        Array.from(tr.querySelectorAll('td')).map((td: any) => td.textContent.trim()));
+      expect(rows).toEqual([['Source Code', '3', '50 %'], ['Wiki', '3', '50 %']]);
+      expect(aside.textContent).toContain('(n = 2)');
     });
   });
 });

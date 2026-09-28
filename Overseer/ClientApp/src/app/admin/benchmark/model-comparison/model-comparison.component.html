@@ -59,7 +59,7 @@
       }
     </div>
 
-    <!-- About and Recompute, on step 2 only: they concern the computed comparison, not the sources. -->
+    <!-- About, Reports and Recompute, on step 2 only: they concern the computed comparison, not the sources. -->
     @if (step === 2 && comparison) {
       <div class="mc-wizard-meta">
         <!-- The badge counts the caveats inside, so they are never silently hidden behind the button. -->
@@ -75,6 +75,14 @@
           @if (aboutNoteCount > 0) {
             <span class="mc-badge mc-about-count">{{ aboutNoteCount }}<span class="visually-hidden"> {{ aboutNoteCount === 1 ? 'note' : 'notes' }}</span></span>
           }
+        </button>
+        <button type="button" class="btn-ghost mc-reports-trigger" id="mc-reports-trigger" (click)="openReports()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+          Reports<span class="visually-hidden"> on this comparison</span>
         </button>
         <button type="button" class="action-btn mc-recompute" (click)="onRefresh()"
                 aria-label="Recompute the comparison"
@@ -1859,6 +1867,13 @@
       <button type="button" class="btn-gh btn-gh-cancel" (click)="aboutDialog.close()">Close</button>
     </div>
   </dialog>
+
+  <!-- REPORT PACKS: created on opening and destroyed on closing, outside every step panel. -->
+  @if (reportsOpen) {
+    <app-benchmark-report-pack-dialog #reportPack
+                                      (closed)="onReportsClosed()"
+                                      (graderGuideRequested)="onReportsGraderGuideRequested()" />
+  }
 
   <!-- The export outcome, as a toast. Always in the DOM, so its live region exists before it first speaks. -->
   <app-toast [notice]="exportNotice" (dismissed)="clearExportNotice()"></app-toast>

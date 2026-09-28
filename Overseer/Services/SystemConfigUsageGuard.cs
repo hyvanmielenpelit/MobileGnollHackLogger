@@ -24,19 +24,22 @@ public class SystemConfigUsageGuard
     private readonly BenchmarkGenerationJobManager _generationJobs;
     private readonly BenchmarkRubricCheckJobManager _rubricCheckJobs;
     private readonly BenchmarkRubricGapAuthorJobManager _rubricGapAuthorJobs;
+    private readonly BenchmarkReportPackJobManager _reportPackJobs;
 
     public SystemConfigUsageGuard(
         ApplicationDbContext db,
         BenchmarkDifficultyJobManager difficultyJobs,
         BenchmarkGenerationJobManager generationJobs,
         BenchmarkRubricCheckJobManager rubricCheckJobs,
-        BenchmarkRubricGapAuthorJobManager rubricGapAuthorJobs)
+        BenchmarkRubricGapAuthorJobManager rubricGapAuthorJobs,
+        BenchmarkReportPackJobManager reportPackJobs)
     {
         _db = db;
         _difficultyJobs = difficultyJobs;
         _generationJobs = generationJobs;
         _rubricCheckJobs = rubricCheckJobs;
         _rubricGapAuthorJobs = rubricGapAuthorJobs;
+        _reportPackJobs = reportPackJobs;
     }
 
     /// <summary>Everything calling the configuration's model right now. Empty means a delete interrupts nothing.</summary>
@@ -112,6 +115,13 @@ public class SystemConfigUsageGuard
         {
             blockers.Add(Job("rubricGapAuthorJob", gapAuthor.Id, $"Rubric gap drafting on suite '{gapAuthor.SuiteName}'",
                 "rubric author", gapAuthor.StartedAtUtc));
+        }
+
+        var reportPack = _reportPackJobs.Current;
+        if (reportPack != null && reportPack.Status == BenchmarkReportPackJobStatus.Running && reportPack.WriterConfigId == configId)
+        {
+            blockers.Add(Job("reportPackJob", reportPack.Id, $"Report pack for {reportPack.SubjectLabel} on suite '{reportPack.SuiteName}'",
+                "report writer", reportPack.StartedAtUtc));
         }
 
         return blockers;

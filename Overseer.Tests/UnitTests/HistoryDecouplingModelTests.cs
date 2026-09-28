@@ -44,7 +44,7 @@ public class HistoryDecouplingModelTests
         var snapshot = Model().FindEntityType(typeof(SystemAiConfigurationSnapshot))!;
         var foreignKeys = snapshot.GetReferencingForeignKeys().ToList();
 
-        Assert.Equal(14, foreignKeys.Count);
+        Assert.Equal(15, foreignKeys.Count);
         Assert.All(foreignKeys, fk => Assert.Equal(DeleteBehavior.Restrict, fk.DeleteBehavior));
     }
 
@@ -56,7 +56,7 @@ public class HistoryDecouplingModelTests
             .Where(n => n.TargetEntityType.ClrType == typeof(SystemAiConfigurationSnapshot))
             .ToList();
 
-        Assert.Equal(14, navigations.Count);
+        Assert.Equal(15, navigations.Count);
         Assert.All(navigations, n => Assert.True(n.IsEagerLoaded, $"{n.DeclaringEntityType.ClrType.Name}.{n.Name} is not auto-included."));
     }
 

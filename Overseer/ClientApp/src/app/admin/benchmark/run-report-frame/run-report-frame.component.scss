@@ -1,0 +1,142 @@
+/* The frame fills its dialog. Narrow, the frame itself scrolls and only the header sticks; from
+   60rem the header and the figures stay put and each column scrolls on its own. Two size
+   containers, because a container query styles only a container's descendants: the host
+   (run-report-frame) places the top block and the body, and the body (run-report) is what turns
+   its columns into a grid. Both are the same width. */
+:host {
+  --rrf-pad-inline: 24px;
+  --rrf-surface: rgba(16, 16, 16, 0.98);
+
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  container: run-report-frame / inline-size;
+}
+
+.rrf-top {
+  display: contents;
+}
+
+.rrf-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px max(var(--rrf-pad-inline), env(safe-area-inset-right)) 12px max(var(--rrf-pad-inline), env(safe-area-inset-left));
+  border-block-end: 1px solid var(--border-glass);
+  background: var(--rrf-surface);
+}
+
+.rrf-identity {
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.rrf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-inline-start: auto;
+
+  &:empty {
+    display: none;
+  }
+}
+
+/* Each element projected with runReportFigures is one cell. */
+.rrf-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 10px;
+  padding: 12px max(var(--rrf-pad-inline), env(safe-area-inset-right)) 12px max(var(--rrf-pad-inline), env(safe-area-inset-left));
+  border-block-end: 1px solid var(--border-glass);
+  background: var(--rrf-surface);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.rrf-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
+  min-inline-size: 0;
+  container: run-report / inline-size;
+}
+
+.rrf-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  flex: 1 1 auto;
+  padding: 16px max(var(--rrf-pad-inline), env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(var(--rrf-pad-inline), env(safe-area-inset-left));
+}
+
+.rrf-main,
+.rrf-aside {
+  min-inline-size: 0;
+  border-radius: 6px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+@container run-report-frame (inline-size >= 60rem) {
+  .rrf-top {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--rrf-surface);
+  }
+
+  .rrf-header {
+    position: static;
+  }
+
+  /* The body takes the height left under the top block; the columns scroll inside it. A short
+     viewport keeps a usable body, and the frame scrolls instead. */
+  .rrf-body {
+    flex: 1 1 0;
+    min-block-size: 18rem;
+  }
+}
+
+@container run-report (inline-size >= 60rem) {
+  .rrf-columns {
+    grid-template-columns: minmax(0, 3fr) minmax(22rem, 2fr);
+    grid-template-rows: minmax(0, 1fr);
+    min-block-size: 0;
+    overflow: hidden;
+    padding-block-end: 16px;
+  }
+
+  .rrf-main,
+  .rrf-aside {
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+}
+
+@media (max-width: 600px) {
+  :host {
+    --rrf-pad-inline: 16px;
+  }
+}

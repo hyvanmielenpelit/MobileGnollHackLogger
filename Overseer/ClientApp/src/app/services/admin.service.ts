@@ -132,7 +132,7 @@ export interface SystemAiConfigDto {
 
 /** Something using a system configuration right now, which a delete would interrupt. */
 export interface SystemConfigBlockerDto {
-  /** "run", "series", "difficultyJob", "generationJob", "rubricCheckJob" or "rubricGapAuthorJob". */
+  /** "run", "series", "difficultyJob", "generationJob", "rubricCheckJob", "rubricGapAuthorJob" or "reportPackJob". */
   kind: string;
   /** The run or series id, or the job id. */
   id: string;

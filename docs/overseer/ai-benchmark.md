@@ -25,6 +25,7 @@ The benchmark framework consists of:
 - **Provider Error Isolation**: Distinguishes between genuine model errors (wrong answers, hallucinations) and transient API infrastructure failures (HTTP 429 rate limits, 503 service unavailable, 529 overload). Provider errors are excluded from scores and denominators.
 - **Configurable Scoring Profiles**: Entities defining weights, level-to-score mappings, critical error ceilings, speed target latencies, decay factors, and maximum parallel questions.
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
+- **Report Packs and the Download Center**: For one Model Comparison entry, a separately chosen writer model writes an Executive Summary, a Technical Report and an Internal Improvement Brief from computed figures; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
 
 ### Run Progress Dialog
 
@@ -3034,6 +3035,50 @@ of four OpenAI models.
 **P1 extras.** The cost panel's axis title is two lines, *Candidate cost per suite run* / *(USD, N
 questions)*, so the export no longer clips it; the Intelligence bars keep their 95 % whiskers.
 
+### Report Packs, the Download Center and the Run Report Dialog (2026-09-28) — No Version Bump
+
+*Documents about one model for readers outside the benchmark, written from computed figures, and one
+place to download everything a run or a pack produced.* Nothing here grades anything: no grading prompt,
+score, index or comparability key changes, `HarnessVersion` stays **41** and `ScoringMethodVersion`
+stays **12**, and `CandidateSystemPromptSha256` and `ToolGuidesSha256` do not move. One EF Core migration,
+`AddBenchmarkReportDocuments`, adds the `BenchmarkReportDocuments` and `BenchmarkReportDocumentRuns`
+tables. The full description is [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
+
+**Report Packs.** Model Comparison's **Reports** button opens a full-screen Report Pack dialog. For one
+entry that is not Excluded (the *subject*), a separately chosen **report writer** writes up to three
+documents in the context of the other entries, lettered A, B, C… in quality-rank order: an **Executive
+Summary**, a **Technical Report** and an **Internal Improvement Brief** (Full disclosure only, internal).
+The writer references figures as `{{key}}` tokens into a computed fact sheet and never writes a digit
+except in a question reference; a validator with eleven rules gives it one repair turn and drops what
+still fails, storing the document as *CompletedWithWarnings*. The subject's own model is refused as
+writer, a same-provider writer needs an acknowledgment, and the call is recorded under
+`SystemAiUsageLog.RoleContext = 8`. The recommended writer is in § 3 *Choosing grader models and effort*.
+
+**Deterministic rendering.** Each document is an immutable row holding the fact sheet, the verbatim
+content taken from the subject's answer rows, and the validated writer output. Every download renders it
+with a pure static renderer at the chosen disclosure (*Summary*, *Detailed*, *Full*) and peer naming
+(*Named*, *Anonymized*), with no model call, no clock and invariant culture; golden files pin the output,
+and any output change bumps `ReportFormatVersion` in the same commit. A per-run scoring fingerprint flags
+a document whose run was re-scored or re-run afterwards.
+
+**Download Center.** One dialog, reached from the run report and from the Report Pack dialog, with
+*Internal*, *Provider* and *Custom* packages. Internal-only files carry an `_INTERNAL` suffix; several files
+download as one ZIP with a `MANIFEST.md`; HTML is built client-side, self-contained and printable.
+
+**The run report dialog** is full screen: a sticky header with Run #N, the status and a *Run actions*
+group — **Downloads**, a **Re-run** popover (*Re-score run*, *Re-run final synthesis*, *Retry failed
+assessments*, *Retry claim verification*, *Re-run failed questions*, each disabled one with its reason),
+**View game snapshot**, **Copy diagnostics** and **Close** — then a key-figures strip and a body of two
+columns from 60rem (findings and questions left; notices, run configuration, band agreement, tool usage
+with the tool routing table, cost and assessor calibration right), one column below. There is no footer.
+Escape and Close both close it, and closing stops detail polling. Question cards have button headers,
+filter toggles (*Critical errors*, *Disputed*, *Members disagree*, *Below 70*, *Flagged*) and Expand all /
+Collapse all. The Re-run popover is the first use of the global action popover (`.gh-action-popover`); the
+`frontend_ui_controls` skill § 4f describes the pattern.
+
+**The Markdown run report** gains an unnumbered `## At a Glance` section above `## 1. Run Manifest`. The
+numbered sections keep their numbers.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that
@@ -5010,19 +5055,20 @@ release, while a family name lasts.
 | Second Reader | **Gemini Flash** (not Flash-Lite) | `medium` | A different provider from the assessor. When the candidate is a Gemini Flash model, use a different Flash version, and expect the weaker same-family pairing the launcher warns about |
 | Reference Reader | **Gemini Flash** (not Flash-Lite) | `medium` | The same model on every run you compare. Google is the third family beside the Anthropic and OpenAI members |
 | Claim Verifier | **Gemini Flash** (not Flash-Lite) | `medium` (`high` if its rulings are often wrong; never `low`) | The same as the reader. The report already notes that one model in both roles makes their findings correlated |
+| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: the Report Pack refuses it, and a writer from the same provider needs an acknowledgment. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
 
 All roles avoid `xhigh` and `max`. Today's roster matches — Claude 5.5 Opus, GPT-6 Sol and Gemini 3.8
 Flash, all at `medium` — for a set whose candidates include neither Claude 5.5 Opus nor GPT-6 Sol. A set
 that includes either takes the previous version of **both** members, Claude 5 Opus and GPT-5.6 Sol, for
 every run of the set, so the whole set shares one panel; runs 68–72 were graded that way.
 
-**Where the recommendations appear.** The launcher's grader info popups and the *How the graders work*
-guide (its section *Choosing grader models*) name the same **families** — Claude Opus, GPT Sol, Gemini
-Flash — and the top tiers not to use, Claude Fable and GPT Astra, with price ratios but no versions or
-prices. The table in **The roster today, and why Anthropic is primary** names the exact versions. The
+**Where the recommendations appear.** The launcher's grader info popups, the *How the graders work*
+guide (its section *Choosing grader models*) and the Report Pack dialog's writer info tip name the same
+**families** — Claude Opus, GPT Sol, Gemini Flash — and the top tiers not to use, Claude Fable and GPT
+Astra, with price ratios but no versions or prices. The table in **The roster today, and why Anthropic is primary** names the exact versions. The
 project skills name no model or family at all and point here. When a provider renames or re-prices a line,
-this subsection, the roster table, the popups in `benchmark.component.html` and the guide component are
-the places to update.
+this subsection, the roster table, the popups in `benchmark.component.html`, the guide component and the
+Report Pack dialog's writer info tip are the places to update.
 
 **Two consequences of the co-assessor rule.**
 
@@ -5960,6 +6006,17 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 
   > There is deliberately **no accept-all endpoint**. § 7 rung 1 of `server_benchmark_to_chat_transfer` requires human authorship of curated knowledge, and `BenchmarkRubricGapDetector`'s own documentation says a gap is *"surfaced for a human to fold into the rubric — never applied automatically"*. One endpoint, one draft, one click, one item-revision bump. Editing before accepting strengthens the authorship claim rather than weakening it.
 
+#### Report Packs and Documents
+- `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and writer prompts for a report pack, without a model call (body as for the start). Returns the subject, the lettered peers, the estimated tokens and cost per document, the same-provider warning and any refusal.
+- `POST /api/admin/benchmark/report-packs`: Start a report-pack job (body `{ runIds, groupIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`, audiences 1 Executive Summary, 2 Technical Report, 3 Internal Brief). Returns 202 `{ jobId }`. Refusals, in order: 400 for an unknown entry or an Excluded subject; 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is the subject's own model; 400 for no audience; 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs.
+- `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
+- `GET /api/admin/benchmark/report-packs/jobs/active`: The running report-pack job, or 204.
+- `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel a report-pack job.
+- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` from its runs' scoring fingerprints.
+- `GET /api/admin/benchmark/report-documents/{id}`: Document detail: metadata, validation notes and the facts JSON.
+- `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`: Render a stored document as `text/markdown; charset=utf-8`, deterministically and with no model call. 400 for a refused combination (the Internal Brief renders at `full` only).
+- `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its `BenchmarkReportDocumentRuns` rows cascade. Deleting a run never deletes a document.
+
 ---
 
 ## 7. AI Provider Terms Compliance Controls
@@ -6003,6 +6060,12 @@ Compliance review must be revisited if:
 2. Benchmark completions are used for automated ingestion, distillation, or downstream model tuning.
 3. Daily run volumes or suite question sizes are increased by orders of magnitude.
 4. AI providers update commercial use or evaluation terms.
+
+### Sharing Reports with AI Providers
+Report Pack documents (see [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md)) can be sent to a model's provider. A provider copy is an Executive Summary or a Technical Report rendered at **Summary** or **Detailed** disclosure, with **anonymized peers** by default; the Internal Improvement Brief and every Full rendering are internal only.
+- **Suite text never reaches a provider below Detailed, and rubrics never do.** Summary describes questions by topic; Detailed quotes only the questions the notes discuss, with answer excerpts, and carries a *do not publish* stamp. A rubric is the suite's answer key: once it leaves the team, the questions it grades can no longer measure any model that may have seen it.
+- **Peers are anonymized by default** because a document naming competing models beside ranked results reads as a comparison between them. Sent to one provider privately it is not a publication, but a copy that is forwarded or quoted becomes one, and publishing benchmark results or comparisons externally as competitive claims is re-evaluation trigger 1 above. Naming peers in a provider copy is an explicit option with a warning, and an operator who uses it should treat the copy as potentially public.
+- The documents state interval overlap descriptively and make no significance claim, and each repeats the comparison's *Pairwise significance* excluded-measure statement, so a quoted sentence cannot be read as a claim the benchmark did not test.
 
 ---
 

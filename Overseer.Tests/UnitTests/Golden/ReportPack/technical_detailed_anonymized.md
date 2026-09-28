@@ -1,0 +1,186 @@
+# GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Technical Report
+
+*Confidential. Prepared for the model's provider. Contains benchmark questions — do not publish.*
+
+- **Date:** 2026-09-28
+- **Suite:** GnollHack Core Suite
+- **Questions:** 4
+- **Runs:** 1 (run 12)
+- **Peers:** Models A and B, identities withheld
+
+## Abstract
+
+GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, ranking 2nd of 3 against Model A and Model B.
+
+## Key figures
+
+- **Intelligence:** 80 ± 3 / 100, 2nd of 3; its 95 % interval overlaps those of Models A and B.
+- **Speed:** median answer time 12.3 s, 2nd of 2.
+- **Cost:** $0.036 per question, 2nd of 3.
+- **Serious errors:** 1 of 4 answers.
+
+## Setup and method
+
+- **Suite:** GnollHack Core Suite, 4 questions.
+- **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
+- **Model under test:** GPT-5.6 Luna (OpenAI, gpt-5.6-luna), thinking level high; 1 run.
+- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %. Each dimension is graded on behaviorally anchored levels scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
+- **Graders:**
+  - Panel member A: Gemini 3.8 Flash (Google, gemini-3.8-flash), different family from the model under test
+  - Panel member B: Claude Haiku 5 (Anthropic, claude-haiku-5), different family from the model under test
+  - Claim verifier: Gemini 3.8 Flash (Google, gemini-3.8-flash), different family from the model under test
+- **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
+- **Comparability:** every model in this report was measured under one instrument condition, signature `sig-7f3a91`.
+- **Pricing basis:** Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
+- **Versions:** harness 41, scoring method 12.
+
+## Results against peers
+
+### Quality
+
+| Model | Intelligence Index | 95 % interval | Rank |
+|---|---|---|---|
+| **GPT-5.6 Luna** | 80 | 77–83 | 2 |
+| Model A | 85 | 81–89 | 1 |
+| Model B | 78 | 74–83 | 3 |
+
+*GPT-5.6 Luna: its 95 % interval overlaps those of Models A and B. This describes where the intervals overlap; it is not a significance test.*
+
+Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none. Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and choose the other under Compare with group.
+
+### Speed
+
+| Model | Median answer time | Rank |
+|---|---|---|
+| **GPT-5.6 Luna** | 12.3 s | 2 |
+| Model A | 9.8 s | 1 |
+| Model B | not available | — |
+
+Not ranked on speed:
+
+- Model B: Degraded: speed was measured with parallel execution disabled.
+
+### Cost
+
+| Model | Cost per question | Rank |
+|---|---|---|
+| **GPT-5.6 Luna** | $0.036 | 2 |
+| Model A | $0.052 | 3 |
+| Model B | $0.021 | 1 |
+
+### Dimensions
+
+| Dimension | GPT-5.6 Luna | Peer mean | Difference |
+|---|---|---|---|
+| Accuracy | 84 | 82 | +2 |
+| Completeness | 70 | 78 | -8 |
+| Conciseness | 88 | 85 | +3 |
+| Readability | 90 | 89 | +1 |
+
+### Difficulty bands
+
+| Difficulty band | Questions | GPT-5.6 Luna | Peer mean | Difference |
+|---|---|---|---|---|
+| Simple | 1 | 90 | 85 | +5 |
+| Intermediate | 2 | 49 | 69 | -21 |
+| Advanced | 1 | 87 | 91 | -4 |
+
+### Judge-dependent pairs
+
+Judge-dependent pairs: not available. The compared runs were not all graded by the same panel.
+
+## Why it scored this way
+
+One critical error on Q3 capped that answer at 25.
+
+Completeness was 70 against a peer mean of 78.
+
+- Asserted a false outcome on Q3, where Model A scored well. *(Both graders)*
+- Scored lowest on intermediate questions (49). *(Computed)*
+
+## What worked well
+
+Short, accurate answers on simple questions (R2).
+
+- Answers simple questions precisely and briefly. *(One grader — different family)*
+
+## Recommendations for model developers
+
+- Verify object-destruction rules before asserting them. *(Both graders)*
+
+## Per-question results
+
+| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted claims | Tool calls | Model time |
+|---|---|---|---|---|---|---|---|---|---|
+| Q1 | Throwing gems at unicorns | Simple | 90 | 85 | +5 | no | 0 | 2.0 | 8.1 s |
+| Q2 | Prayer timeout | Intermediate | 72 | 70 | +2 | no | 0 | 3.0 | 11.0 s |
+| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5.0 | 15.2 s |
+| Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4.0 | 13.4 s |
+
+### Questions below the peer mean or with a critical error
+
+**Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters; the rubric says it can survive.
+
+> **Question:** Will my gem break if I throw it at a unicorn?
+>
+> **Answer excerpt:** Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for…
+
+## Tool-use behavior
+
+- **Tool calls per question:** 3.5 (peer mean 2.8)
+- **Source code share:** 57 %
+- **Wiki share:** 29 %
+- **Structured lookup share:** 14 %
+- **Knowledge base share:** 0 %
+- **Other tools share:** 0 %
+- **Answers without a knowledge-base article:** 4 of 4
+- **Failed tool calls:** 0
+- **Calls refused by the tool budget:** 0
+
+## Grader reliability
+
+- **Panel mean absolute difference:** 6.5 points
+- **Intraclass correlation, ICC(A,1):** 0.82
+- **Panel disagreements:** 1 of 4 answers
+- **Panel member A alone:** 81 / 100
+- **Panel member B alone:** 79 / 100
+- **Response-style conflict:** no
+
+| Row | Finding | Questions | Support | Recurrence |
+|---|---|---|---|---|
+| R1 | weakness · critical error | Q3 | Both graders | 1 of 1 run |
+| R2 | strength · accuracy | Q1 | One grader — different family | 1 of 1 run |
+| R3 | strength (A) vs weakness (B) · conciseness | Q2 | Graders disagree | 1 of 1 run |
+
+## Threats to validity
+
+- The benchmark asks single-turn questions under one chat configuration. It does not exercise conversation history, pre-injected wiki context, spoiler-free mode, web search or subagents.
+- Interval: Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two.
+- Significance: Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none.
+- The graders are AI models. Each grader's family relation to the model under test is stated under Setup and method; a grader from the model's own family may read it more favorably.
+
+## Reproducibility appendix
+
+- **Run ids:** 12
+- **Run dates:** 2026-09-20
+- **Model under test:** OpenAI gpt-5.6-luna, thinking level high
+- **Grader models:** Panel member A: Google gemini-3.8-flash, thinking level medium; Panel member B: Anthropic claude-haiku-5; Claim verifier: Google gemini-3.8-flash, thinking level medium
+- **Harness version:** 41
+- **Scoring method version:** 12
+- **Comparability signature:** `sig-7f3a91`
+- **System prompt SHA-256 prefix:** `e9b3e9a7c4d1`
+- **Tool guides SHA-256 prefix:** `f59d8b30a1c7`
+- **Pricing basis:** Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
+- **Price card date:** 2026-09-01
+
+## Removed content
+
+Automatic validation removed these items from the writer's output before it was stored:
+
+- `weaknesses[2]` (rule 4)
+
+---
+
+*Report 101 · format version 1 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Detailed · peers anonymized*
+
+*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*

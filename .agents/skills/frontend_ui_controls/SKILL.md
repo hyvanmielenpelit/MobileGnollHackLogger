@@ -194,16 +194,18 @@ you already read the label, it is noise; drop it.
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
 | play | Start Benchmark, Acknowledge & Start Run | "This begins now", and it reinforces the consequence of a button that starts real work |
-| trash | Delete Runs, Delete All Suite Runs | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
-| refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions | "This runs again" — the circular-arrow convention is universal |
+| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
+| refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions, **Re-run** (the run report's popover trigger, followed by a chevron state indicator) | "This runs again" — the circular-arrow convention is universal |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
-| file-with-arrow | Download Markdown Report, Download table | "A file arrives on your disk" |
+| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
-| copy (two rectangles) | Copy figure, Copy the table as Markdown | "Copies to the clipboard" — nothing is saved to disk |
+| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header) | "Copies to the clipboard" — nothing is saved to disk |
+| eye | Open in Single view, **Preview** a rendered report document | "Look at it here" — shows content without changing or downloading it |
+| map | **View game snapshot** (icon-only, the run report's header) | The game board the suite's questions are asked about |
 | layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
 | upload | Import Suite from YAML, Upload Snapshot | A file leaves the user's disk and enters the application; the arrow points out of the tray |
-| zap | Generate Questions | AI generation: content is produced from the snapshot, not typed in |
+| zap | Generate Questions, **Reports** (Model Comparison; opens the Report Pack dialog) | AI generation: content is produced by a model, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
 | compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard | A guided route through several steps: the wizard finds the way, the admin follows it |
@@ -293,6 +295,13 @@ Next can no longer drop under the picker — and the zoom group is the only grou
 shrinks, its slider giving way first; the zoom read-out is as wide as its text rather than reserving
 room for its longest value. Under 44 rem the row wraps with the figure group on its own line and the
 zoom and export groups sharing the next.*
+
+*Changed 2026-09-28 (report packs): the run report dialog's header holds a `role="group"` *Run
+actions*: **Downloads** (*file-with-arrow*, opens the Download Center), **Re-run** (*rotate*, then a
+*chevron* for the popover's open state; the first action popover, §4f), and the icon-only **View game
+snapshot** (*map*, new) and **Copy diagnostics** (*copy*). Model Comparison's **Reports** takes *zap*,
+the AI-generation glyph of Generate Questions. Report documents are previewed with *eye* and deleted
+with *trash* on an `.action-btn-danger`.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -663,6 +672,60 @@ selected option, so the handler must be idempotent.
 - The native customizable `<select>` (`appearance: base-select`) is not used until Firefox supports
   it: its fallback runs the badge texts together and loses the distinctions an administrator
   chooses by.
+
+### 4f. Action popovers: `.gh-action-popover`
+
+A labelled trigger that reveals a short list of **related actions** — the run report dialog's
+**Re-run** (*Re-score run*, *Re-run final synthesis*, *Retry failed assessments*, *Retry claim
+verification*, *Re-run failed questions*) is the first. It is a **popover-revealed button group,
+not an ARIA menu**: no `role="menu"` / `menuitem`, no arrow-key roving; Tab moves through the items.
+
+**When to use it.** Several actions of one kind that would crowd a header or toolbar, whose names
+need words (a row of five icon buttons for five re-run variants would be unreadable), and which the
+user picks one of at a time. A few distinct, frequent actions with recognizable glyphs stay a row of
+visible buttons or icon buttons (§4); a single action stays a button.
+
+```html
+<button type="button" class="btn-ghost" id="rr-rerun-trigger"
+        popovertarget="rr-rerun-popover" [attr.aria-expanded]="rerunOpen"
+        [attr.style]="'anchor-name: --rr-rerun'">
+  <svg class="btn-icon" ... aria-hidden="true"><!-- rotate --></svg> Re-run
+  <svg class="btn-icon" ... aria-hidden="true"><!-- chevron --></svg>
+</button>
+<div popover="auto" id="rr-rerun-popover" class="gh-action-popover"
+     role="group" aria-label="Re-run options" (toggle)="onRerunToggle($event)"
+     [attr.style]="'position-anchor: --rr-rerun'">
+  <button type="button" class="gh-action-popover-item" (click)="rescore()">Re-score run</button>
+  <button type="button" class="gh-action-popover-item" aria-disabled="true" (click)="noop()">
+    Retry claim verification
+    <span>The run has no claim verifier.</span>
+  </button>
+</div>
+```
+
+- **The two global classes** in `styles.scss`: `.gh-action-popover` (the panel) and
+  `.gh-action-popover-item` (a labeled, full-width button). Never restyle them in a component.
+- **`popover="auto"`** gives the top layer and light dismiss (a click outside, or another auto
+  popover opening). The trigger opens it with `popovertarget`.
+- **ARIA.** The panel is `role="group"` with an accessible name (`aria-label` or
+  `aria-labelledby`). The trigger's `aria-expanded` is bound from the panel's `toggle` event,
+  because the popover polyfill does not set it.
+- **Focus.** On open, focus moves to the first enabled item; on close, back to the trigger.
+- **Escape** closes only the popover: its handler calls `stopPropagation()`, as the reorderable
+  list's Move menu does (§4c), so the `<dialog>` it sits in does not close on the same key.
+- **Positioning.** Explicit anchor names on **both** trigger and panel via `[attr.style]` (§4.2
+  items 3–4), with a `flip-block` position-try fallback so a trigger near the bottom opens upward.
+  Call `ensureOverlayPolyfills()`; without anchor positioning the panel still works, centered.
+- **Disabled items are `aria-disabled="true"`** with an inert handler and the reason on a second
+  line inside the item — never `disabled`, and never silently absent, so the user learns why an
+  action is unavailable (§6).
+- **Open-state styling** uses `:is(:popover-open, .\:popover-open)` for the polyfill (§4, Polyfills),
+  and the entry animation has a `prefers-reduced-motion: reduce` entry.
+- The reorderable list's **Move** menu (§4c) predates this pattern and is not migrated to it.
+
+**Grouping the trigger with its neighbors.** A header's cluster of a few Tab-stop buttons — the run
+report's *Run actions* — is `role="group"` with an `aria-label`, **not** `role="toolbar"`. A toolbar
+promises arrow-key roving focus with one Tab stop; use it only for a group that implements that.
 
 ---
 
@@ -1117,6 +1180,17 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Radio groups inside a section keep their own `<fieldset>` and `<legend>`.
 - [ ] A section reset button sits after `<details>` in a positioned wrapper, outside both the summary
       and the body, and is named *Reset {title} to defaults*.
+
+**Action popovers**
+- [ ] A trigger revealing several related, worded actions uses `.gh-action-popover` /
+      `.gh-action-popover-item` (§4f): `popover="auto"`, `role="group"` with an accessible name, no
+      `role="menu"`.
+- [ ] The trigger's `aria-expanded` follows the `toggle` event; focus goes to the first enabled item
+      on open and back to the trigger on close; Escape closes only the popover (`stopPropagation`).
+- [ ] Explicit anchor names on both ends, a `flip-block` fallback, and `ensureOverlayPolyfills()`.
+- [ ] Unavailable items are `aria-disabled` with their reason on a second line, never removed.
+- [ ] A cluster of a few Tab-stop buttons is `role="group"` with an `aria-label`; `role="toolbar"`
+      only with arrow-key roving focus.
 
 **Pane resizers**
 - [ ] A user-resizable pane uses `app-pane-resizer` (§4d), named for the pane, with `aria-controls`

@@ -64,9 +64,15 @@ describe('BenchmarkGraderGuideComponent', () => {
     expect(verifier.querySelectorAll('.grader-guide-skip-it li').length).toBeGreaterThan(0);
   });
 
-  it('lists one row per grading role in the Choosing grader models table', () => {
+  it('lists one row per grading role and the report writer in the Choosing grader models table', () => {
     const rows = section('models').querySelectorAll('table tbody tr');
-    expect(rows.length).toBe(5);
+    expect(rows.length).toBe(6);
+  });
+
+  it('names the Report writer in the grading roles table', () => {
+    const roles = Array.from(section('roles').querySelectorAll('table tbody tr td:first-child'))
+      .map(cell => cell.textContent!.trim());
+    expect(roles).toContain('Report writer');
   });
 
   it('closes from a close button named Close grader guide', () => {

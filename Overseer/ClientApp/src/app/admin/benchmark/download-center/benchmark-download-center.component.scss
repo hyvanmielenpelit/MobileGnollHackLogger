@@ -1,0 +1,235 @@
+@use '../benchmark-dialog-frame' as frame;
+
+.gh-dialog.benchmark-download-center-dialog {
+  @include frame.frame($width: 64rem);
+}
+
+/* The body is the size container: the package column sits beside the table from 48rem. */
+.dc-body {
+  container: download-center / inline-size;
+}
+
+.dc-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+@container download-center (inline-size >= 48rem) {
+  .dc-layout {
+    grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.dc-package,
+.dc-documents {
+  min-inline-size: 0;
+}
+
+/* The package radios as cards: a bordered block per option, gold while chosen. */
+.dc-package-choice {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.dc-package-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  user-select: auto;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  input[type="radio"] {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+
+  &.is-selected,
+  &:has(input:checked) {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 9%, transparent);
+  }
+}
+
+.dc-package-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dc-package-name {
+  font-weight: 700;
+  color: #f2f2f2;
+}
+
+.dc-package-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #a1a1aa;
+}
+
+.dc-named-warning {
+  margin: 14px 0 0;
+
+  .alert-heading,
+  .alert-body {
+    margin: 0;
+  }
+
+  code {
+    overflow-wrap: anywhere;
+  }
+}
+
+.dc-section-title {
+  margin: 0 0 10px;
+  font-family: "Cinzel", serif;
+  color: var(--title-color);
+}
+
+.dc-notice {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-left: 3px solid #f59e0b;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.06);
+  font-size: 13px;
+  line-height: 1.45;
+  color: #e4e4e7;
+}
+
+.dc-failures {
+  .alert-heading {
+    margin: 0;
+  }
+}
+
+.dc-failure-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* Wide rows scroll sideways rather than widening the dialog. */
+.dc-table-scroll {
+  overflow-x: auto;
+}
+
+.dc-table {
+  min-width: 44rem;
+
+  th,
+  td {
+    vertical-align: top;
+    line-height: 1.4;
+  }
+
+  .dc-col-check {
+    width: 2.5rem;
+  }
+}
+
+.dc-row.is-unselectable {
+  .dc-doc-label {
+    color: #a1a1aa;
+  }
+}
+
+.dc-check {
+  margin: 0;
+}
+
+.dc-doc-label {
+  display: block;
+  font-weight: 600;
+  color: #ececec;
+  overflow-wrap: anywhere;
+}
+
+.dc-doc-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+}
+
+.dc-reason {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #d4b87a;
+}
+
+.dc-select {
+  min-width: 8.5rem;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+.dc-formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.dc-format {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dc-format-fixed,
+.dc-none {
+  font-size: 13px;
+  color: #a1a1aa;
+}
+
+.dc-loading,
+.dc-empty {
+  font-size: 13px;
+  color: #a1a1aa;
+  text-align: center;
+}
+
+.dc-footer {
+  align-items: center;
+}
+
+.dc-footer-text {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dc-summary {
+  margin: 0;
+  font-size: 13px;
+  color: #ddd;
+}
+
+.dc-status {
+  margin: 0;
+  min-height: 1.2em;
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dc-package-card {
+    transition: none;
+  }
+}

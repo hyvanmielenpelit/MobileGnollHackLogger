@@ -1,7 +1,18 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
-import { AdminBenchmarkService } from './admin-benchmark.service';
+import {
+  AdminBenchmarkService,
+  BenchmarkReportAudience,
+  BenchmarkReportDisclosure,
+  BenchmarkReportPackPricingBasis,
+  BenchmarkReportPackRequest,
+  BenchmarkReportPeerNaming,
+  BenchmarkTextFile,
+  fileNameFromContentDisposition,
+  reportDisclosureParam,
+  reportPeerNamingParam
+} from './admin-benchmark.service';
 
 describe('AdminBenchmarkService', () => {
   let service: AdminBenchmarkService;
@@ -191,5 +202,181 @@ describe('AdminBenchmarkService', () => {
     expect(req.request.params.getAll('runIds')).toEqual(['1', '2']);
     expect(req.request.params.getAll('groupIds')).toEqual(['3']);
     req.flush(mockIndex);
+  });
+
+  describe('report packs', () => {
+    const packRequest: BenchmarkReportPackRequest = {
+      runIds: [11, 12],
+      groupIds: [3],
+      pricingBasis: BenchmarkReportPackPricingBasis.Current,
+      subjectKey: 'run:11',
+      audiences: [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport],
+      writerModelConfigurationId: 7,
+      acknowledgeSameProvider: false
+    };
+
+    it('posts a preview request with numeric enums', () => {
+      let result: unknown;
+      service.previewReportPack(packRequest).subscribe(res => result = res);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/report-packs/preview');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(packRequest);
+      expect(req.request.body.pricingBasis).toBe(1);
+      expect(req.request.body.audiences).toEqual([1, 2]);
+      req.flush({ subjectKey: 'run:11', refusal: null });
+
+      expect(result).toEqual({ subjectKey: 'run:11', refusal: null });
+    });
+
+    it('posts a start request and returns the job id', () => {
+      let jobId: string | undefined;
+      service.startReportPack(packRequest).subscribe(res => jobId = res.jobId);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/report-packs');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(packRequest);
+      req.flush({ jobId: 'abc' }, { status: 202, statusText: 'Accepted' });
+
+      expect(jobId).toBe('abc');
+    });
+
+    it('gets a job by id', () => {
+      service.getReportPackJob('job-1').subscribe();
+      const req = httpMock.expectOne('/api/admin/benchmark/report-packs/jobs/job-1');
+      expect(req.request.method).toBe('GET');
+      req.flush({ id: 'job-1' });
+    });
+
+    it('surfaces an idle report-pack job manager (204) as null', () => {
+      let result: unknown = 'unset';
+      service.getActiveReportPackJob().subscribe(res => result = res);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/report-packs/jobs/active');
+      expect(req.request.method).toBe('GET');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(result).toBeNull();
+    });
+
+    it('cancels a job', () => {
+      let cancelled: boolean | undefined;
+      service.cancelReportPackJob('job-1').subscribe(res => cancelled = res.cancelled);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/report-packs/jobs/job-1/cancel');
+      expect(req.request.method).toBe('POST');
+      req.flush({ cancelled: true });
+
+      expect(cancelled).toBeTrue();
+    });
+  });
+
+  describe('report documents', () => {
+    it('lists documents with only the query parameters given', () => {
+      service.listReportDocuments({ runId: 42 }).subscribe();
+
+      const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
+      expect(req.request.method).toBe('GET');
+      expect(req.request.params.get('runId')).toBe('42');
+      expect(req.request.params.has('suiteId')).toBeFalse();
+      expect(req.request.params.has('take')).toBeFalse();
+      req.flush([]);
+    });
+
+    it('lists documents by suite with a take', () => {
+      service.listReportDocuments({ suiteId: 5, take: 20 }).subscribe();
+
+      const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
+      expect(req.request.params.get('suiteId')).toBe('5');
+      expect(req.request.params.get('take')).toBe('20');
+      expect(req.request.params.has('runId')).toBeFalse();
+      req.flush([]);
+    });
+
+    it('gets a document detail', () => {
+      service.getReportDocument(9).subscribe();
+      const req = httpMock.expectOne('/api/admin/benchmark/report-documents/9');
+      expect(req.request.method).toBe('GET');
+      req.flush({ id: 9 });
+    });
+
+    it('renders a document as text with lower-case query names', () => {
+      let text: string | undefined;
+      service.renderReportDocument(9, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized)
+        .subscribe(res => text = res);
+
+      const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents/9/render');
+      expect(req.request.method).toBe('GET');
+      expect(req.request.responseType).toBe('text');
+      expect(req.request.params.get('disclosure')).toBe('detailed');
+      expect(req.request.params.get('peers')).toBe('anonymized');
+      req.flush('# Report\n');
+
+      expect(text).toBe('# Report\n');
+    });
+
+    it('maps every disclosure and naming to its query value', () => {
+      expect(reportDisclosureParam(BenchmarkReportDisclosure.Summary)).toBe('summary');
+      expect(reportDisclosureParam(BenchmarkReportDisclosure.Detailed)).toBe('detailed');
+      expect(reportDisclosureParam(BenchmarkReportDisclosure.Full)).toBe('full');
+      expect(reportPeerNamingParam(BenchmarkReportPeerNaming.Named)).toBe('named');
+      expect(reportPeerNamingParam(BenchmarkReportPeerNaming.Anonymized)).toBe('anonymized');
+    });
+
+    it('deletes a document', () => {
+      service.deleteReportDocument(9).subscribe();
+      const req = httpMock.expectOne('/api/admin/benchmark/report-documents/9');
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+  });
+
+  describe('run files as text', () => {
+    it('fetches the run report as text and keeps the quoted server file name', () => {
+      let file: BenchmarkTextFile | undefined;
+      service.getRunReportText(42).subscribe(res => file = res);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/42/report');
+      expect(req.request.method).toBe('GET');
+      expect(req.request.responseType).toBe('text');
+      req.flush('# Run 42\n', {
+        headers: { 'Content-Disposition': 'attachment; filename="Suite_Model_20260901_101500.md"' }
+      });
+
+      expect(file).toEqual({ text: '# Run 42\n', fileName: 'Suite_Model_20260901_101500.md' });
+    });
+
+    it('prefers the RFC 5987 file name of the tool-call log', () => {
+      let file: BenchmarkTextFile | undefined;
+      service.getToolCallLogText(42).subscribe(res => file = res);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/42/tool-call-log');
+      expect(req.request.responseType).toBe('text');
+      req.flush('log', {
+        headers: {
+          'Content-Disposition': "attachment; filename=Suite_Model_run42_tool_calls.md; filename*=UTF-8''Suite_M%C3%B6del_run42_tool_calls.md"
+        }
+      });
+
+      expect(file?.fileName).toBe('Suite_Mödel_run42_tool_calls.md');
+    });
+
+    it('falls back to a default name without a Content-Disposition header', () => {
+      let file: BenchmarkTextFile | undefined;
+      service.getToolCallLogText(42).subscribe(res => file = res);
+
+      httpMock.expectOne('/api/admin/benchmark/runs/42/tool-call-log').flush('log');
+
+      expect(file?.fileName).toBe('benchmark_run42_tool_calls.md');
+    });
+
+    it('parses the Content-Disposition forms', () => {
+      expect(fileNameFromContentDisposition(null, 'x.md')).toBe('x.md');
+      expect(fileNameFromContentDisposition('attachment', 'x.md')).toBe('x.md');
+      expect(fileNameFromContentDisposition('attachment; filename=plain.md', 'x.md')).toBe('plain.md');
+      expect(fileNameFromContentDisposition('attachment; filename="with space.md"', 'x.md')).toBe('with space.md');
+      expect(fileNameFromContentDisposition("attachment; filename*=UTF-8''a%20b.md", 'x.md')).toBe('a b.md');
+      expect(fileNameFromContentDisposition("attachment; filename*=UTF-8''%E0%A4%A", 'x.md')).toBe('x.md');
+    });
   });
 });

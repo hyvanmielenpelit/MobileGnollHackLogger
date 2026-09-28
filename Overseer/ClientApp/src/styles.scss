@@ -554,6 +554,153 @@ a:hover {
   white-space: nowrap;
 }
 
+/* ==========================================================================
+   Status tags
+   Small pill labels beside a row's name: .gh-tag plus one of
+   .gh-tag-internal (not for sharing), .gh-tag-shareable, and
+   .gh-tag-changed (a report whose run was re-scored after it was written),
+   which sits on its own line under the name.
+   ========================================================================== */
+.gh-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.gh-tag-internal {
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.gh-tag-shareable {
+  border-color: rgba(34, 197, 94, 0.45);
+  background: rgba(34, 197, 94, 0.1);
+  color: #86efac;
+}
+
+.gh-tag-changed {
+  display: flex;
+  inline-size: fit-content;
+  margin-top: 6px;
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  white-space: normal;
+}
+
+/* ==========================================================================
+   Action popover
+   A popover-revealed group of labeled, full-width buttons (the run report's
+   Re-run actions, say). It is a group of buttons, not an ARIA menu: no
+   role="menu", no arrow-key roving, Tab moves through the items.
+
+   The panel is popover="auto" (light dismiss, Escape), with role="group" and
+   an aria-label; the trigger opens it with popovertarget and binds
+   aria-expanded from the panel's toggle event. Both ends name the anchor
+   explicitly, as the tooltips do, because the anchor-positioning polyfill has
+   no implicit anchors:
+     trigger  [attr.style]="'anchor-name: --x'"
+     panel    [attr.style]="'position-anchor: --x'"
+   An unavailable item stays focusable with aria-disabled="true" and says why
+   on a second line, .gh-action-popover-item-reason.
+   ========================================================================== */
+.gh-action-popover {
+  inset: auto;
+  top: calc(anchor(bottom) + 6px);
+  right: anchor(right);
+  #{'position-try-fallbacks'}: flip-block, flip-inline;
+  #{'position-try'}: flip-block, flip-inline;
+  margin: 0;
+  min-inline-size: 14rem;
+  max-inline-size: min(24rem, calc(100vw - 32px));
+  max-block-size: min(32rem, calc(100dvh - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(20, 20, 20, 0.97);
+  color: #e4e4e7;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-family: "Lato", sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  text-align: start;
+
+  /* The polyfill applies .\:popover-open in place of the pseudo-class; a browser that does not
+     know :popover-open drops a rule naming it alone, so the two always travel together. */
+  &:is(:popover-open, .\:popover-open) {
+    display: grid;
+    gap: 2px;
+    animation: gh-action-popover-in 0.14s ease-out;
+  }
+}
+
+@keyframes gh-action-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.gh-action-popover-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  appearance: none;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+
+  &:hover:not([aria-disabled='true']) {
+    background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+    color: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+
+  &[aria-disabled='true'] {
+    color: #8f8f96;
+    cursor: default;
+  }
+}
+
+/* Why the item above is unavailable: muted, normal weight, on its own line. */
+.gh-action-popover-item-reason {
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.35;
+  color: #a1a1aa;
+  white-space: normal;
+}
+
 /* Context window usage indicator tooltip */
 #cw-usage-tip {
   bottom: calc(anchor(top) + 8px);
@@ -607,8 +754,12 @@ a:hover {
   .gh-filter-toggle,
   .selector-trigger,
   .selector-trigger .chevron,
-  .model-option {
+  .model-option,
+  .gh-action-popover-item {
     transition: none;
+  }
+  .gh-action-popover:is(:popover-open, .\:popover-open) {
+    animation: none;
   }
   .gh-datatable thead > tr:first-child > th::after {
     transition: none;

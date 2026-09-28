@@ -4,7 +4,7 @@
     <div class="dialog-header">
       <div class="dialog-title-group">
         <h3 id="graderGuideTitle">How the graders work</h3>
-        <p class="dialog-subtitle">Who scores, who checks, which models to use, and how to choose the settings.</p>
+        <p class="dialog-subtitle">Who scores, who checks, who writes the reports, which models to use, and how to choose the settings.</p>
       </div>
       <button type="button" class="btn-icon-action" aria-label="Close grader guide" (click)="close()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
@@ -54,6 +54,11 @@
                 <td><strong>Claim Verifier</strong></td>
                 <td>No</td>
                 <td>When a grader says a fact in an answer is wrong or unverifiable, looks it up in the game source and wiki and rules it true, false or undecided. Shows where a grader was wrong; changes no score</td>
+              </tr>
+              <tr>
+                <td><strong>Report writer</strong></td>
+                <td>No</td>
+                <td>Writes the Executive Summary, Technical Report and Internal Brief from computed figures; changes no score. Chosen in Model Comparison's Report Pack dialog, not on a run</td>
               </tr>
             </tbody>
           </table>
@@ -426,6 +431,13 @@
                 <td>Flash-Lite</td>
                 <td>Medium; <strong>high</strong> if its rulings are often wrong; never low</td>
                 <td>It must use the lookup tools reliably</td>
+              </tr>
+              <tr>
+                <td><strong>Report writer</strong></td>
+                <td><strong>Claude Opus</strong> or <strong>GPT Sol</strong>, from a family other than the model under test</td>
+                <td>Claude Fable or GPT Astra: prose for readers does not need the top tier</td>
+                <td>Medium; <strong>high</strong> if its documents often need repair; never low</td>
+                <td>Never the model under test (refused); preferably not its family</td>
               </tr>
             </tbody>
           </table>

@@ -5000,4 +5000,274 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("| strength (A) vs weakness (B) · accuracy | Q4, Q5 | Q4 is exact. | Q4 and Q5 misstate the damage. | Conflicting |", report);
     }
+
+    // --- At a Glance ------------------------------------------------------------------------------
+
+    /// <summary>The At a Glance section: from its heading up to, not including, § 1's.</summary>
+    private static string AtAGlanceOf(string report)
+    {
+        int start = report.IndexOf("## At a Glance", StringComparison.Ordinal);
+        int end = report.IndexOf("## 1. Run Manifest", StringComparison.Ordinal);
+        Assert.True(start >= 0, "the report has an At a Glance section.");
+        Assert.True(end > start, "At a Glance comes before § 1.");
+        return report[start..end];
+    }
+
+    /// <summary>A synthesis JSON carrying the given findings, each as (kind, category, question, text).</summary>
+    private static string SynthesisJson(int overallScore, params (string Kind, string Category, int Question, string Text)[] findings)
+    {
+        string items = string.Join(",", findings.Select(f =>
+            $"{{\"kind\":\"{f.Kind}\",\"category\":\"{f.Category}\",\"questions\":[{f.Question}],\"text\":\"{f.Text}\"}}"));
+        return $"{{\"overallScore\":{overallScore},\"findings\":[{items}]}}";
+    }
+
+    [Fact]
+    public void AtAGlance_SitsBetweenTheIntroductionAndTheRunManifest_WithItsFiveTableRows()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80),
+            ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 60)));
+
+        int title = report.IndexOf("# GnollHack Overseer AI Intelligence Benchmark Report", StringComparison.Ordinal);
+        int note = report.IndexOf("> *Note:* This benchmark evaluates", StringComparison.Ordinal);
+        int glance = report.IndexOf("## At a Glance", StringComparison.Ordinal);
+        int manifest = report.IndexOf("## 1. Run Manifest", StringComparison.Ordinal);
+        Assert.True(title >= 0 && note > title && glance > note && manifest > glance);
+
+        string section = AtAGlanceOf(report);
+        Assert.Contains("| Figure | Value |", section);
+        foreach (string label in new[] { "Intelligence", "Speed", "Cost", "Critical errors", "Answered" })
+        {
+            Assert.Contains($"{Environment.NewLine}| {label} | ", section);
+        }
+
+        // Unnumbered: § 1 is still the first numbered section and every number is unchanged.
+        Assert.Contains("## 2. Results Summary", report);
+        Assert.Contains("## 7. Final Indices", report);
+    }
+
+    [Fact]
+    public void AtAGlance_RepeatsTheFiguresThatSection2AndTheCostBlockPrint()
+    {
+        var run = PanelReportRun();
+        var pricing = PanelReportPricing();
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: pricing);
+        string section = AtAGlanceOf(report);
+
+        string intelligence = Regex.Match(report, @"^### \*\*Intelligence Index: (.+)\*\*\r?$", RegexOptions.Multiline).Groups[1].Value;
+        Assert.NotEqual(string.Empty, intelligence);
+        Assert.Contains($"| Intelligence | {intelligence} |", section);
+
+        string speed = Regex.Match(report, @"^### \*\*((?:Speed Index|Median Model Time): .+?)\*\*", RegexOptions.Multiline).Groups[1].Value;
+        Assert.NotEqual(string.Empty, speed);
+        Assert.Contains($"| Speed | {speed}", section);
+
+        string total = Regex.Match(report, @"^- \*\*Estimated Cost:\*\* \$([0-9.]+) total\r?$", RegexOptions.Multiline).Groups[1].Value;
+        Assert.NotEqual(string.Empty, total);
+        decimal perQuestion = ModelPricingService.ComputeRunRoleCosts(run, pricing).Candidate / run.Answers.Count;
+        Assert.True(perQuestion >= 0.01m, "the fixture's per-question cost prints at two decimals.");
+        Assert.Contains(
+            $"| Cost | ${total} estimated total; candidate ${perQuestion.ToString("F2", CultureInfo.InvariantCulture)} per question over {run.Answers.Count} asked |",
+            section);
+
+        string answerRate = Regex.Match(report, @"^- \*\*Answer Rate:\*\* (.+?)\r?$", RegexOptions.Multiline).Groups[1].Value;
+        Assert.NotEqual(string.Empty, answerRate);
+        Assert.Contains($"| Answered | {answerRate} |", section);
+    }
+
+    [Fact]
+    public void AtAGlance_CountsCriticalErrorsAsSection2Does()
+    {
+        var cleared = VerificationClearedAnswer(1, BenchmarkDifficulty.Intermediate, 50, 70);
+        var capped = VerificationClearedAnswer(2, BenchmarkDifficulty.Intermediate, 50, 25);
+        capped.CriticalError = true;
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off, cleared, capped, ScoredAnswer(3, BenchmarkDifficulty.Intermediate, 50, 90)));
+
+        Assert.Contains("- **Critical Errors:** 1 applied (question(s) 2)", report);
+        Assert.Contains("| Critical errors | 1 applied (Q2) |", AtAGlanceOf(report));
+
+        var contested = ScoredAnswer(12, BenchmarkDifficulty.Intermediate, 55, 42);
+        contested.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+        contested.SecondOpinionCriticalError = true;
+        contested.SecondOpinionQualityScore = 25;
+        var splitReport = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90), contested));
+
+        Assert.Contains("1 raised only by the second reader (question(s) 12)", splitReport);
+        Assert.Contains("| Critical errors | none applied; 1 raised only by the second reader |", AtAGlanceOf(splitReport));
+    }
+
+    [Fact]
+    public void AtAGlance_SaysNotComputed_WhenTheIntelligenceIndexIsWithheld()
+    {
+        var ok = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        ok.SpeedScore = 80;
+        var failed = TerminalFailureAnswer(2, BenchmarkAnswerStatus.ProviderError, 503, "Our servers are currently overloaded.");
+        var withheld = new BenchmarkRun
+        {
+            Id = 62,
+            SuiteName = "Terminal Failure Suite",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
+            Status = BenchmarkRunStatus.CompletedWithErrors,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTime.UtcNow,
+            HarnessVersion = "21",
+            QualityIndex = null,
+            SpeedIndex = null,
+            TotalQuestionCount = 2,
+            Answers = new List<BenchmarkRunAnswer> { ok, failed }
+        };
+
+        string withheldSection = AtAGlanceOf(BenchmarkReportBuilder.BuildMarkdownReport(withheld));
+        Assert.Contains("| Intelligence | Not computed — 1 of 2 question(s) failed at the provider; see § 5 |", withheldSection);
+        Assert.DoesNotContain("Not Scored", withheldSection);
+
+        // Unscored for any other reason: the cell says so plainly rather than "Not Scored".
+        var unscored = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90));
+        unscored.QualityIndex = null;
+        Assert.Contains("| Intelligence | *not computed* |", AtAGlanceOf(BenchmarkReportBuilder.BuildMarkdownReport(unscored)));
+    }
+
+    [Fact]
+    public void AtAGlance_PanelRun_StatesGraderAgreement_AndOnlyConvergentFindings()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+        string section = AtAGlanceOf(report);
+
+        // The § 2 Panel Agreement figures, on one line.
+        Assert.Contains("- **Mean absolute difference |B − A|:** 11.2 points.", report);
+        Assert.Contains("- **Grader agreement:** members A and B both graded 5 of 5 answered questions; they differ by 11.2 points on average, ICC(A,1) ", section);
+        Assert.Contains(", and disagree on 1 of 5.", section);
+
+        // The one finding both members named; member B's lone strength is not listed.
+        Assert.Contains("- Weakness · accuracy · Q2 — Q2 misstates the item weight. / The weight in Q2 is wrong.", section);
+        Assert.DoesNotContain("Consistent source lookups.", section);
+        Assert.DoesNotContain("The assessor's leading findings", section);
+    }
+
+    [Fact]
+    public void AtAGlance_PanelRun_ListsAtMostFiveConvergentFindings()
+    {
+        var run = PanelReportRun();
+        var sevenWeaknesses = Enumerable.Range(1, 7)
+            .Select(q => ("weakness", "accuracy", q, $"Wrong on {q}."))
+            .ToArray();
+        run.AssessmentJson = SynthesisJson(72, sevenWeaknesses);
+        run.CoAssessorSynthesisJson = SynthesisJson(78, sevenWeaknesses);
+
+        string section = AtAGlanceOf(BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        Assert.Contains($"(the first {BenchmarkReportBuilder.AtAGlanceMaxConvergentFindings} of 7; the full comparison is § 6.3)", section);
+        int listed = section.Split('\n').Count(l => l.StartsWith("- Weakness · accuracy · Q", StringComparison.Ordinal));
+        Assert.Equal(5, listed);
+        Assert.Equal(5, BenchmarkReportBuilder.AtAGlanceMaxConvergentFindings);
+        Assert.Contains("- Weakness · accuracy · Q5 — Wrong on 5. / Wrong on 5.", section);
+        Assert.DoesNotContain("Wrong on 6.", section);
+    }
+
+    [Fact]
+    public void AtAGlance_SingleAssessorRun_ListsAtMostThreeStrengthsAndThreeWeaknesses()
+    {
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80),
+            ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 60));
+        run.AssessmentText = "A single reading of the run.";
+        run.AssessmentJson = SynthesisJson(70,
+            ("strength", "tool_use", 1, "Strength one."),
+            ("weakness", "accuracy", 2, "Weakness one."),
+            ("strength", "accuracy", 1, "Strength two."),
+            ("weakness", "completeness", 2, "Weakness two."),
+            ("strength", "readability", 2, "Strength three."),
+            ("weakness", "conciseness", 1, "Weakness three."),
+            ("strength", "other", 1, "Strength four."),
+            ("weakness", "other", 2, "Weakness four."));
+
+        string section = AtAGlanceOf(BenchmarkReportBuilder.BuildMarkdownReport(run));
+
+        Assert.Equal(3, BenchmarkReportBuilder.AtAGlanceMaxFindingsPerKind);
+        string[] lines = section.Replace("\r\n", "\n").Split('\n');
+        Assert.Equal(3, lines.Count(l => l.StartsWith("- Strength · ", StringComparison.Ordinal)));
+        Assert.Equal(3, lines.Count(l => l.StartsWith("- Weakness · ", StringComparison.Ordinal)));
+        Assert.Contains("- Strength · tool use · Q1 — Strength one.", section);
+        Assert.Contains("- Weakness · accuracy · Q2 — Weakness one.", section);
+        Assert.DoesNotContain("Strength four.", section);
+        Assert.DoesNotContain("Weakness four.", section);
+
+        // No panel figures on a single-assessor run.
+        Assert.DoesNotContain("Grader agreement", section);
+        Assert.DoesNotContain("Panel Agreement", section);
+        Assert.DoesNotContain("both members", section);
+    }
+
+    [Fact]
+    public void AtAGlance_WhereToFindWhat_PointsAtTheReportsOwnNumberedSections()
+    {
+        var single = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80)));
+        string section = AtAGlanceOf(single);
+
+        Assert.Contains("**Where to find what**", section);
+        var pointers = new (string Line, int Number, string Title)[]
+        {
+            ("- *What was run, and is it comparable with another run?* § 1 Run Manifest", 1, "Run Manifest"),
+            ("- *How good and how fast, and how certain is that?* § 2 Results Summary; the closing figures are § 7 Final Indices", 2, "Results Summary"),
+            ("- *What did the run cost?* § 2 Harness Cost", 2, "Results Summary"),
+            ("- *Did the run itself go wrong anywhere?* § 2 Run Integrity and § 5 Issues", 5, "Issues"),
+            ("- *Which questions did the model get wrong, and why?* § 3 Questions and Replies", 3, "Questions and Replies"),
+            ("- *How is a score computed?* § 4 Scoring Method & Configuration", 4, "Scoring Method & Configuration"),
+            ("- *What did the graders conclude overall?* § 6 Synthesis Assessment", 6, "Synthesis Assessment"),
+        };
+        foreach (var (line, number, title) in pointers)
+        {
+            Assert.Contains(line, section);
+            Assert.Contains($"## {number}. {title}", single);
+        }
+        Assert.Contains("## 7. Final Indices", single);
+        Assert.DoesNotContain("Panel Agreement", section);
+
+        string panelSection = AtAGlanceOf(BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun()));
+        Assert.Contains("- *Do the two graders agree?* § 2 Panel Agreement and § 6.3", panelSection);
+    }
+
+    [Fact]
+    public void AtAGlance_CarriesNoHeadlineOrSensitivityStringThatOtherAssertionsLocateByFirstOccurrence()
+    {
+        // A single-assessor run with a critical error, a verification-cleared sensitivity and a
+        // contested split, and a panel run; together they print every figure At a Glance could echo.
+        var cleared = VerificationClearedAnswer(1, BenchmarkDifficulty.Intermediate, 50, 70);
+        var capped = VerificationClearedAnswer(2, BenchmarkDifficulty.Intermediate, 50, 25);
+        capped.CriticalError = true;
+        var contested = ScoredAnswer(12, BenchmarkDifficulty.Intermediate, 55, 42);
+        contested.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+        contested.SecondOpinionCriticalError = true;
+        contested.SecondOpinionQualityScore = 25;
+
+        var reports = new[]
+        {
+            BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, cleared, capped, contested)),
+            BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun(), runPricing: PanelReportPricing()),
+        };
+
+        Assert.Contains("Verification-cleared Accuracy Sensitivity", reports[0]);
+        Assert.Contains("Contested-Verdict Sensitivity", reports[0]);
+
+        foreach (string report in reports)
+        {
+            string section = AtAGlanceOf(report);
+            foreach (string forbidden in new[]
+            {
+                "Contested-Verdict", "Evidence-informed", "Verification-cleared", "FORM-cleared", "Sensitivity",
+                "### ", "### **", "# **Intelligence Index", "Intelligence Index:", "Speed Index:**",
+                "- **Critical Errors:**", "- **Estimated Cost:**", "- **Answer Rate:**", "- **Total Questions:**",
+                "## 1.", "## 2.", "## 3.", "## 5.", "## 7.",
+            })
+            {
+                Assert.DoesNotContain(forbidden, section);
+            }
+        }
+    }
 }

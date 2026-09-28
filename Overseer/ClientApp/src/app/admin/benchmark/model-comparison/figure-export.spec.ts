@@ -26,6 +26,7 @@ import {
   densityPresetFor,
   displayDensity,
   encodeFigureImage,
+  exportTimestamp,
   figureArchiveFilename,
   figureExportFilename,
   layoutBoxFor,
@@ -1366,6 +1367,12 @@ describe('figure-export', () => {
     const name = figureArchiveFilename(new Date(2026, 8, 7, 14, 3, 9));
 
     expect(name).toBe('model-comparison_figures_20260907_140309.zip');
+  });
+
+  it('exports the local-time yyyyMMdd_HHmmss stamp', () => {
+    expect(exportTimestamp(new Date(2026, 0, 2, 3, 4, 5))).toBe('20260102_030405');
+    expect(exportTimestamp(new Date(2026, 11, 31, 23, 59, 58))).toBe('20261231_235958');
+    expect(exportTimestamp()).toMatch(/^\d{8}_\d{6}$/);
   });
 
   describe('buildFigureArchive', () => {

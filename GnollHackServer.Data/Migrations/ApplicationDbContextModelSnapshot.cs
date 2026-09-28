@@ -489,6 +489,179 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("BenchmarkQuestions");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkReportDocument", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AnswerExcerptChars")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Audience")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ComparisonRequestJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("CostUsd")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("decimal(18,8)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<long>("DurationMs")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FactsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long>("InputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("OutputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("PackId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("PricingSource")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("ReportFormatVersion")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("SameProviderAcknowledged")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SubjectKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("SubjectLabel")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("SubjectRunIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("SuiteId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SuiteName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("ValidationNotesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("WriterConfigId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WriterDisplayName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("WriterModelId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long?>("WriterModelSnapshotId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WriterOutputJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("WriterPromptSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("WriterProvider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("WriterThinkingLevel")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PackId");
+
+                    b.HasIndex("WriterModelSnapshotId");
+
+                    b.HasIndex("SuiteId", "CreatedAtUtc");
+
+                    b.ToTable("BenchmarkReportDocuments");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkReportDocumentRun", b =>
+                {
+                    b.Property<long>("DocumentId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("RunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("FinalScore")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("QualityIndex")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("RerunCompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ScoringMethodVersion")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("SpeedIndex")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SynthesisSha256")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.HasKey("DocumentId", "RunId");
+
+                    b.HasIndex("RunId");
+
+                    b.ToTable("BenchmarkReportDocumentRuns");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRubricAdditionAcceptance", b =>
                 {
                     b.Property<long>("Id")
@@ -3887,6 +4060,27 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("BenchmarkSuite");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkReportDocument", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.SystemAiConfigurationSnapshot", "WriterModelSnapshot")
+                        .WithMany()
+                        .HasForeignKey("WriterModelSnapshotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("WriterModelSnapshot");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkReportDocumentRun", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkReportDocument", "Document")
+                        .WithMany("Runs")
+                        .HasForeignKey("DocumentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Document");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRubricAdditionAcceptance", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.SystemAiConfigurationSnapshot", "AuthorModelSnapshot")
@@ -4320,6 +4514,11 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("AspNetUser");
 
                     b.Navigation("SystemAiApiConfiguration");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkReportDocument", b =>
+                {
+                    b.Navigation("Runs");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkRun", b =>

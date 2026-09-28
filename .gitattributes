@@ -77,6 +77,9 @@
 *.sh text eol=lf
 *.py text
 
+# Golden test files are compared byte for byte with renderer output that uses LF
+Overseer.Tests/UnitTests/Golden/** text eol=lf
+
 # Certificates and Keys
 *.pfx binary
 *.p12 binary

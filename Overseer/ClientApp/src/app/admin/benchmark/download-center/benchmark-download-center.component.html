@@ -1,0 +1,218 @@
+<dialog #downloadCenterDialog class="gh-dialog benchmark-download-center-dialog"
+        [attr.aria-labelledby]="idPrefix + '-title'"
+        (close)="onDialogClose()">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 [id]="idPrefix + '-title'">Downloads</h3>
+        <p class="dialog-subtitle">{{ subtitle }}</p>
+      </div>
+      <button type="button" class="btn-icon-action" aria-label="Close downloads"
+              [attr.interestfor]="idPrefix + '-close-tip'"
+              [attr.style]="'anchor-name: --' + idPrefix + '-close-tip'"
+              (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-close-tip'"
+           [attr.style]="'position-anchor: --' + idPrefix + '-close-tip'">Close downloads</div>
+    </div>
+
+    <div class="dialog-body dc-body">
+      <div class="dc-layout">
+        <!-- Left: the package, which sets every row's choices. -->
+        <section class="dc-package" [attr.aria-labelledby]="idPrefix + '-package-legend'">
+          <fieldset class="gh-choice dc-package-choice" [disabled]="preparing">
+            <legend [id]="idPrefix + '-package-legend'">Package</legend>
+            @for (pkg of packages; track pkg.id) {
+              <label class="gh-radio dc-package-card" [class.is-selected]="packageId === pkg.id">
+                <input type="radio" [name]="idPrefix + '-package'" [value]="pkg.id"
+                       [id]="idPrefix + '-package-' + pkg.id"
+                       [checked]="packageId === pkg.id"
+                       [attr.aria-describedby]="idPrefix + '-package-' + pkg.id + '-desc'"
+                       (change)="selectPackage(pkg.id)">
+                <span class="dc-package-text">
+                  <span class="dc-package-name">{{ pkg.name }}</span>
+                  <span class="dc-package-desc" [id]="idPrefix + '-package-' + pkg.id + '-desc'">{{ pkg.description }}</span>
+                </span>
+              </label>
+            }
+          </fieldset>
+
+          @if (namedPeersWarning) {
+            <div class="alert alert-warning dc-named-warning">
+              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <div class="alert-content">
+                <p class="alert-heading">Peers are named</p>
+                <p class="alert-body">
+                  A copy that names competing models beside ranked results reads as a comparison between them, and
+                  one that is forwarded or quoted becomes a public one. Treat it as potentially public. See the
+                  compliance note in <code>docs/overseer/ai-benchmark.md</code> &sect; 7, <em>Sharing Reports with AI Providers</em>.
+                </p>
+              </div>
+            </div>
+          }
+        </section>
+
+        <!-- Right: every available document, with its options. -->
+        <section class="dc-documents" [attr.aria-labelledby]="idPrefix + '-documents-title'">
+          <h4 class="dc-section-title" [id]="idPrefix + '-documents-title'">Documents</h4>
+
+          @for (notice of notices; track notice) {
+            <p class="dc-notice">{{ notice }}</p>
+          }
+
+          @if (failures.length > 0) {
+            <div class="alert alert-danger dc-failures">
+              <div class="alert-content">
+                <p class="alert-heading">Not downloaded</p>
+                <ul class="dc-failure-list">
+                  @for (failure of failures; track $index) {
+                    <li>{{ failure.label }}: {{ failure.reason }}</li>
+                  }
+                </ul>
+              </div>
+            </div>
+          }
+
+          <div class="dc-table-scroll">
+            <table class="gh-table dc-table" [attr.aria-busy]="loadingDocuments ? 'true' : null">
+              <caption class="visually-hidden">Documents available to download</caption>
+              <thead>
+                <tr>
+                  <th scope="col" class="dc-col-check"><span class="visually-hidden">Include</span></th>
+                  <th scope="col">Document</th>
+                  <th scope="col">Sharing</th>
+                  <th scope="col">Disclosure</th>
+                  <th scope="col">Names</th>
+                  <th scope="col">Formats</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of rows; track row.key) {
+                  @let rid = rowId(row);
+                  @let state = stateOf(row);
+                  @let selectable = isSelectable(row);
+                  <tr class="dc-row" [class.is-unselectable]="!selectable" [attr.data-row-key]="row.key">
+                    <td class="dc-col-check">
+                      <label class="checkbox-label dc-check">
+                        <input type="checkbox" [id]="rid + '-check'"
+                               [checked]="selectable && state.selected"
+                               [disabled]="!selectable || preparing"
+                               [attr.aria-label]="'Include ' + row.label"
+                               [attr.aria-describedby]="!selectable ? rid + '-reason' : null"
+                               (change)="toggleRow(row, $event)">
+                      </label>
+                    </td>
+                    <td class="dc-col-document">
+                      <span class="dc-doc-label">{{ row.label }}</span>
+                      <span class="dc-doc-detail">{{ row.detail }}</span>
+                      @if (row.runChanged) {
+                        <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
+                      }
+                      @if (!selectable) {
+                        <span class="dc-reason" [id]="rid + '-reason'">{{ internalReasonOf(row) }}</span>
+                      }
+                    </td>
+                    <td class="dc-col-sharing">
+                      @if (isInternalOnly(row)) {
+                        <span class="gh-tag gh-tag-internal">Internal only</span>
+                      } @else {
+                        <span class="gh-tag gh-tag-shareable">Shareable</span>
+                      }
+                    </td>
+                    <td class="dc-col-disclosure">
+                      @if (row.kind === 'pack' && selectable) {
+                        <select class="gh-input dc-select" [id]="rid + '-disclosure'"
+                                [attr.aria-label]="'Disclosure of ' + row.label"
+                                [disabled]="optionsLocked || preparing"
+                                (change)="setDisclosure(row, $event)">
+                          @for (option of disclosureOptions(row); track option) {
+                            <option [value]="option" [selected]="state.disclosure === option">{{ disclosureLabel(option) }}</option>
+                          }
+                        </select>
+                      } @else {
+                        <span class="dc-none" aria-hidden="true">&mdash;</span>
+                      }
+                    </td>
+                    <td class="dc-col-names">
+                      @if (row.kind === 'pack' && selectable) {
+                        <select class="gh-input dc-select" [id]="rid + '-names'"
+                                [attr.aria-label]="'Peer names in ' + row.label"
+                                [disabled]="optionsLocked || preparing"
+                                (change)="setNaming(row, $event)">
+                          @for (option of namingOptions(); track option) {
+                            <option [value]="option" [selected]="state.naming === option">{{ namingLabel(option) }}</option>
+                          }
+                        </select>
+                      } @else {
+                        <span class="dc-none" aria-hidden="true">&mdash;</span>
+                      }
+                    </td>
+                    <td class="dc-col-formats">
+                      @if (!selectable) {
+                        <span class="dc-none" aria-hidden="true">&mdash;</span>
+                      } @else if (row.formats.length > 1) {
+                        <span class="dc-formats">
+                          @for (format of row.formats; track format) {
+                            <label class="checkbox-label dc-format">
+                              <input type="checkbox" [id]="rid + '-format-' + format"
+                                     [checked]="hasFormat(row, format)"
+                                     [disabled]="preparing"
+                                     [attr.aria-label]="formatLabel(format) + ' copy of ' + row.label"
+                                     (change)="toggleFormat(row, format, $event)">
+                              {{ formatLabel(format) }}
+                            </label>
+                          }
+                        </span>
+                        @if (state.formats.length === 0) {
+                          <span class="dc-reason">No format chosen</span>
+                        }
+                      } @else {
+                        <span class="dc-format-fixed">{{ formatLabel(row.formats[0]) }} only</span>
+                      }
+                    </td>
+                  </tr>
+                }
+                @if (loadingDocuments) {
+                  <tr>
+                    <td colspan="6" class="dc-loading">Loading report documents&hellip;</td>
+                  </tr>
+                } @else if (rows.length === 0) {
+                  <tr>
+                    <td colspan="6" class="dc-empty">Nothing is available to download.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="dialog-footer dc-footer">
+      <div class="dc-footer-text">
+        <p class="dc-summary">{{ summaryLine }}</p>
+        <p class="dc-status" role="status">{{ statusMessage }}</p>
+      </div>
+      <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh dc-download"
+              [attr.aria-disabled]="canDownload ? null : 'true'"
+              (click)="download()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+          <line x1="12" y1="18" x2="12" y2="12"></line>
+          <polyline points="9 15 12 18 15 15"></polyline>
+        </svg>
+        Download
+      </button>
+    </div>
+  </div>
+</dialog>

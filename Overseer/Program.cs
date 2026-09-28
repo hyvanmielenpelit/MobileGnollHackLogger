@@ -276,6 +276,9 @@ builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRubricChec
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRubricCheckService>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorJobManager>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRubricGapAuthorService>();
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportPackJobManager>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportPackService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportRenderService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysisService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparabilityIndexService>();

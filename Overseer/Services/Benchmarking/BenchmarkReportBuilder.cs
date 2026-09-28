@@ -1208,6 +1208,10 @@ public static class BenchmarkReportBuilder
             sb.AppendLine();
         }
 
+        // At a Glance goes here. Its figures are the ones the sections below compute, so it is
+        // inserted at this offset once they have all been written.
+        int atAGlanceOffset = sb.Length;
+
         // 2. Run Manifest
         sb.AppendLine("## 1. Run Manifest");
         sb.AppendLine();
@@ -1240,10 +1244,12 @@ public static class BenchmarkReportBuilder
         }
         sb.AppendLine($"- **Total Questions:** {run.TotalQuestionCount}");
         sb.AppendLine($"- **Answered Questions:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}");
-        sb.AppendLine($"- **Answer Rate:** {run.AnsweredQuestionCount} of {run.TotalQuestionCount}"
+        // Also At a Glance's Answered cell.
+        string answerRateText = $"{run.AnsweredQuestionCount} of {run.TotalQuestionCount}"
             + (run.TotalQuestionCount > 0
                 ? $" ({Inv(run.AnsweredQuestionCount * 100.0 / run.TotalQuestionCount, "F1")}%)"
-                : string.Empty));
+                : string.Empty);
+        sb.AppendLine($"- **Answer Rate:** {answerRateText}");
         sb.AppendLine($"- **Run Status:** {run.Status}");
         sb.AppendLine($"- **Start Time (UTC):** {Stamp(run.StartedAtUtc)}");
         string endTime = run.CompletedAtUtc.HasValue ? Stamp(run.CompletedAtUtc.Value) : "In Progress / Interrupted";
@@ -2002,14 +2008,24 @@ public static class BenchmarkReportBuilder
         // a metric that has run out of resolution is a reporting problem and re-tuning the target would
         // end the comparable series for every quality dimension as well.
         bool speedAdvisory = speedSaturated || profileMisfit;
-        if (speedAdvisory && medianModelTimeMs.HasValue)
+
+        // The speed headline and its qualifier, printed here and repeated by At a Glance.
+        bool medianLeadsSpeed = speedAdvisory && medianModelTimeMs.HasValue;
+        string speedIndexText = IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored");
+        string speedHeadline = medianLeadsSpeed
+            ? $"Median Model Time: {Inv(medianModelTimeMs!.Value, "N0")} ms"
+            : $"Speed Index: {speedIndexText}";
+        string? speedQualifier = medianLeadsSpeed
+            ? $"Speed Index {speedIndexText} — advisory for this run{(run.SpeedMeasurementDegraded ? ", and measured under concurrency" : string.Empty)}"
+            : (run.SpeedMeasurementDegraded ? "Advisory — measured under concurrency" : null);
+        if (medianLeadsSpeed)
         {
-            sb.AppendLine($"### **Median Model Time: {Inv(medianModelTimeMs.Value, "N0")} ms**");
-            sb.AppendLine($"*Speed Index {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")} — advisory for this run{(run.SpeedMeasurementDegraded ? ", and measured under concurrency" : string.Empty)}.*");
+            sb.AppendLine($"### **{speedHeadline}**");
+            sb.AppendLine($"*{speedQualifier}.*");
         }
         else
         {
-            sb.AppendLine($"### **Speed Index: {IndexHeadline(run.SpeedIndex, " / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")}**" + (run.SpeedMeasurementDegraded ? " *(Advisory — measured under concurrency)*" : ""));
+            sb.AppendLine($"### **{speedHeadline}**" + (speedQualifier != null ? $" *({speedQualifier})*" : string.Empty));
         }
         if (speedSaturated)
         {
@@ -2143,6 +2159,9 @@ public static class BenchmarkReportBuilder
                 $"- **Highest Input-Token Answers:** {topList} — together {Inv(topShare, "F1")}% of the run's input tokens.");
         }
         sb.AppendLine();
+
+        // At a Glance's Cost cell, set from the Estimated Cost figures below.
+        string glanceCostText = "*not recorded*";
 
         // Harness cost. The token totals above are the candidate's alone; grading an 18-question
         // suite question by question is not a rounding error, and until this block existed the
@@ -2312,6 +2331,14 @@ public static class BenchmarkReportBuilder
                     sb.AppendLine("- **Estimated Cost:** not available as a single total — the participating roles do not price in comparable units; see the per-role figures below.");
                 }
 
+                // Per question asked: every answer row, whatever its status, as the run's token totals are.
+                string candidatePerQuestion = answers.Count > 0
+                    ? $"; candidate {PerUnitCost(candidateTotalCost / answers.Count)} per question over {answers.Count} asked"
+                    : string.Empty;
+                glanceCostText = (!roleCosts.Incomplete
+                    ? $"${Inv(totalCost, "F2")} estimated total"
+                    : "no single total (the roles do not price in comparable units)") + candidatePerQuestion;
+
                 sb.AppendLine($"  - Candidate ({run.TestedModelSnapshot.ModelId}): ${Inv(candidateTotalCost, "F2")} ({CostParts(roleParts.Candidate, candidateCard)})");
 
                 if (hasAssessor && assessorPricing != null)
@@ -2474,6 +2501,7 @@ public static class BenchmarkReportBuilder
                 if (missingRoles.Count == 0) missingRoles.Add("participating models");
 
                 sb.AppendLine($"- **Estimated Cost:** not available — no price is known for {string.Join(", ", missingRoles)}. Set a price in Admin → System AI Configs (Custom), or add `pricing` to the model's catalog entry.");
+                glanceCostText = $"*not available* — no price is known for {string.Join(", ", missingRoles)}";
             }
 
             if (verifierSpendLine != null)
@@ -2988,6 +3016,9 @@ public static class BenchmarkReportBuilder
             (Math.Abs(a.SecondOpinionQualityScore.Value - a.PanelQualityScore.Value) > BenchmarkService.SecondOpinionDisagreementPoints
              || ReaderSplitsFromPanel(a));
 
+        // At a Glance's one-line summary of the Panel Agreement figures; set for a panel run only.
+        string? glanceAgreementLine = null;
+
         // Panel Agreement: member B against member A over the answers both scored. The finalizer's
         // stored statistics are read first; the answers supply each figure a run did not store and
         // every question list.
@@ -3066,6 +3097,13 @@ public static class BenchmarkReportBuilder
                 sb.AppendLine("- **Not scored by the panel:** none.");
             }
             sb.AppendLine();
+
+            glanceAgreementLine = panelGraded > 0
+                ? $"- **Grader agreement:** members A and B both graded {panelGraded} of {answeredForPanel} answered questions; " +
+                  (panelMeanAbs.HasValue ? $"they differ by {Inv(panelMeanAbs.Value, "F1")} points on average" : "their mean difference is not recorded") +
+                  (panelIcc.HasValue ? $", ICC(A,1) {Inv(panelIcc.Value, "F2")}" : ", ICC(A,1) not computed") +
+                  $", and disagree on {panelDisagreementCount} of {panelGraded}."
+                : $"- **Grader agreement:** not measured — members A and B both graded none of {answeredForPanel} answered questions.";
         }
 
         // Assessor Agreement. The coverage fraction travels with the figure everywhere it is
@@ -4750,6 +4788,7 @@ public static class BenchmarkReportBuilder
         }
 
         var memberAFindings = BenchmarkAssessmentParser.ParseSynthesisFindings(run.AssessmentJson);
+        IReadOnlyList<BenchmarkSynthesisConvergenceRow> convergence = Array.Empty<BenchmarkSynthesisConvergenceRow>();
         if (isPanelRun)
         {
             var memberBFindings = BenchmarkAssessmentParser.ParseSynthesisFindings(run.CoAssessorSynthesisJson);
@@ -4765,7 +4804,7 @@ public static class BenchmarkReportBuilder
             // Computed from the two members' structured findings, never written by either model.
             sb.AppendLine("### 6.3 Where the Readers Agree and Disagree (computed)");
             sb.AppendLine();
-            var convergence = BenchmarkSynthesisConvergence.Compute(memberAFindings, memberBFindings);
+            convergence = BenchmarkSynthesisConvergence.Compute(memberAFindings, memberBFindings);
             if (convergence.Count > 0)
             {
                 sb.AppendLine("| Finding | Questions | A | B | Status |");
@@ -4922,7 +4961,154 @@ public static class BenchmarkReportBuilder
             }
         }
 
+        // At a Glance, from the figures the sections above printed.
+        var glanceCriticalErrors = new StringBuilder(appliedCriticalAnswers.Count > 0
+            ? $"{appliedCriticalAnswers.Count} applied ({string.Join(", ", appliedCriticalAnswers.Select(a => $"Q{a.OrderIndex}"))})"
+            : "none applied");
+        if (disputedBySecondReader.Count > 0)
+        {
+            glanceCriticalErrors.Append($"; {disputedBySecondReader.Count} disputed by the {readerName}");
+        }
+        if (raisedOnlyBySecondReader.Count > 0)
+        {
+            glanceCriticalErrors.Append($"; {raisedOnlyBySecondReader.Count} raised only by the {readerName}");
+        }
+        string glanceAnswered = unansweredAnswers.Count > 0
+            ? $"{answerRateText}; {unansweredAnswers.Count} unanswered ({string.Join(", ", unansweredAnswers.Select(a => $"Q{a.OrderIndex}"))})"
+            : answerRateText;
+
+        var glance = new StringBuilder();
+        AppendAtAGlance(
+            glance,
+            intelligence: IndexHeadline(run.QualityIndex, $"{seText} / 100", terminalFailureCount, run.TotalQuestionCount, "*not computed*"),
+            speed: speedQualifier != null ? $"{speedHeadline} ({speedQualifier})" : speedHeadline,
+            cost: glanceCostText,
+            criticalErrors: glanceCriticalErrors.ToString(),
+            answered: glanceAnswered,
+            isPanelRun: isPanelRun,
+            agreementLine: glanceAgreementLine,
+            convergence: convergence,
+            findings: memberAFindings);
+        sb.Insert(atAGlanceOffset, glance.ToString());
+
         return sb.ToString();
+    }
+
+    /// <summary>The most convergent findings At a Glance lists for a panel run.</summary>
+    internal const int AtAGlanceMaxConvergentFindings = 5;
+
+    /// <summary>The most strengths, and separately weaknesses, At a Glance lists for a single-assessor run.</summary>
+    internal const int AtAGlanceMaxFindingsPerKind = 3;
+
+    /// <summary>
+    /// The unnumbered At a Glance section between the introduction and § 1: the five headline
+    /// figures as a table, then for a panel run the graders' agreement and the findings both members
+    /// named, or for a single assessor its synthesis's first strengths and weaknesses, then which
+    /// section answers which question. Every figure is passed in as the numbered sections print it;
+    /// none is computed here. Carries no <c>###</c> heading and no sensitivity figure, so the first
+    /// occurrence of each of those stays in the section that owns it.
+    /// </summary>
+    private static void AppendAtAGlance(
+        StringBuilder sb,
+        string intelligence,
+        string speed,
+        string cost,
+        string criticalErrors,
+        string answered,
+        bool isPanelRun,
+        string? agreementLine,
+        IReadOnlyList<BenchmarkSynthesisConvergenceRow> convergence,
+        IReadOnlyList<BenchmarkSynthesisFinding> findings)
+    {
+        // A finding as one bullet: kind, category and questions, then its text on one line.
+        static string FindingLine(string kind, string? category, IReadOnlyList<int> questions, string text)
+        {
+            string label = kind.Length > 0 ? char.ToUpperInvariant(kind[0]) + kind[1..].ToLowerInvariant() : "Finding";
+            string questionText = questions.Count > 0
+                ? " · " + string.Join(", ", questions.OrderBy(q => q).Select(q => $"Q{q}"))
+                : string.Empty;
+            return $"- {label} · {FindingCategoryText(category)}{questionText} — {TableCell(text)}";
+        }
+
+        sb.AppendLine("## At a Glance");
+        sb.AppendLine();
+        sb.AppendLine("| Figure | Value |");
+        sb.AppendLine("|--------|-------|");
+        sb.AppendLine($"| Intelligence | {TableCell(intelligence)} |");
+        sb.AppendLine($"| Speed | {TableCell(speed)} |");
+        sb.AppendLine($"| Cost | {TableCell(cost)} |");
+        sb.AppendLine($"| Critical errors | {TableCell(criticalErrors)} |");
+        sb.AppendLine($"| Answered | {TableCell(answered)} |");
+        sb.AppendLine();
+
+        if (isPanelRun)
+        {
+            if (agreementLine != null)
+            {
+                sb.AppendLine(agreementLine);
+                sb.AppendLine();
+            }
+
+            var convergent = convergence.Where(r => r.Status == BenchmarkConvergenceStatus.Convergent).ToList();
+            if (convergent.Count > 0)
+            {
+                string shown = convergent.Count > AtAGlanceMaxConvergentFindings
+                    ? $"the first {AtAGlanceMaxConvergentFindings} of {convergent.Count}"
+                    : $"{convergent.Count.ToString(CultureInfo.InvariantCulture)} in all";
+                sb.AppendLine($"**Findings both members named** ({shown}; the full comparison is § 6.3):");
+                sb.AppendLine();
+                foreach (var row in convergent.Take(AtAGlanceMaxConvergentFindings))
+                {
+                    string rowText = string.Join(" / ", new[] { row.MemberAText, row.MemberBText }.Where(t => !string.IsNullOrWhiteSpace(t)));
+                    sb.AppendLine(FindingLine(row.Kind, row.Category, row.Questions, rowText));
+                }
+            }
+            else
+            {
+                sb.AppendLine("**Findings both members named:** none; the full comparison is § 6.3.");
+            }
+            sb.AppendLine();
+        }
+        else
+        {
+            var strengths = findings
+                .Where(f => string.Equals(f.Kind, "strength", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(f.Text))
+                .Take(AtAGlanceMaxFindingsPerKind)
+                .ToList();
+            var weaknesses = findings
+                .Where(f => string.Equals(f.Kind, "weakness", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(f.Text))
+                .Take(AtAGlanceMaxFindingsPerKind)
+                .ToList();
+            if (strengths.Count > 0 || weaknesses.Count > 0)
+            {
+                sb.AppendLine("**The assessor's leading findings** (the full synthesis is § 6):");
+                sb.AppendLine();
+                foreach (var f in strengths.Concat(weaknesses))
+                {
+                    sb.AppendLine(FindingLine(f.Kind.Trim(), f.Category, f.Questions, f.Text));
+                }
+            }
+            else
+            {
+                sb.AppendLine("**The assessor's leading findings:** none recorded as structured findings; the synthesis is § 6.");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("**Where to find what**");
+        sb.AppendLine();
+        sb.AppendLine("- *What was run, and is it comparable with another run?* § 1 Run Manifest");
+        sb.AppendLine("- *How good and how fast, and how certain is that?* § 2 Results Summary; the closing figures are § 7 Final Indices");
+        sb.AppendLine("- *What did the run cost?* § 2 Harness Cost");
+        sb.AppendLine("- *Did the run itself go wrong anywhere?* § 2 Run Integrity and § 5 Issues");
+        if (isPanelRun)
+        {
+            sb.AppendLine("- *Do the two graders agree?* § 2 Panel Agreement and § 6.3");
+        }
+        sb.AppendLine("- *Which questions did the model get wrong, and why?* § 3 Questions and Replies");
+        sb.AppendLine("- *How is a score computed?* § 4 Scoring Method & Configuration");
+        sb.AppendLine("- *What did the graders conclude overall?* § 6 Synthesis Assessment");
+        sb.AppendLine();
     }
 
     /// <summary>

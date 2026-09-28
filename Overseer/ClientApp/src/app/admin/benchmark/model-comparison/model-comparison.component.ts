@@ -157,6 +157,10 @@ import { PaneResizerComponent } from '../../../shared/pane-resizer/pane-resizer.
 import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
 import { showReasoningBadge } from '../../../utils/model-badge-format.util';
 import {
+  BenchmarkReportPackDialogComponent,
+  ReportPackContext
+} from '../report-pack/benchmark-report-pack-dialog.component';
+import {
   ComparisonTableCell,
   ComparisonTableModel,
   ComparisonTableProvenance,
@@ -534,7 +538,7 @@ export interface ComparisonFigureCard {
   imports: [
     CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent,
     FigureStylePanelComponent, ExportSizeSectionComponent, TableSettingsPanelComponent, ReorderableListComponent,
-    InfoTipComponent, PaneResizerComponent
+    InfoTipComponent, PaneResizerComponent, BenchmarkReportPackDialogComponent
   ],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
@@ -617,6 +621,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** The About dialog is open; its body renders only while it is. */
   aboutOpen = false;
+
+  /** The Report Pack dialog's *How the graders work* link; the host opens the guide at *Choosing grader models*. */
+  @Output() graderGuideRequested = new EventEmitter<void>();
+
+  @ViewChild('reportPack') reportPack?: BenchmarkReportPackDialogComponent;
+
+  /** The Report Pack dialog is open; it is created on opening and destroyed on closing. */
+  reportsOpen = false;
 
   /** The request has run past `SLOW_COMPARISON_MS`, and the footer says how to leave it. */
   slowLoading = false;
@@ -1729,6 +1741,64 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.aboutOpen = false;
     this.cdr.markForCheck();
     document.getElementById('mc-about-trigger')?.focus();
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The Report Pack dialog
+  //
+  // Created on opening, so nothing of it (its requests, its job polling) exists while it is closed.
+  // It stops its own close and cancel events, like the About dialog.
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * The computed comparison as the report-pack request carries it: the entries' own sources, so every
+   * subject key is one the server's recomputation produces, and the basis the comparison was computed on.
+   */
+  get reportPackContext(): ReportPackContext | null {
+    const comparison = this.comparison;
+    if (!comparison) {
+      return null;
+    }
+    const idsOf = (kind: string): number[] => {
+      const ids: number[] = [];
+      for (const entry of comparison.entries) {
+        if (entry.sourceKind.toLowerCase() === kind && !ids.includes(entry.sourceId)) {
+          ids.push(entry.sourceId);
+        }
+      }
+      return ids;
+    };
+    const basis = comparison.pricingBasis === 'AsRun' || comparison.pricingBasis === 'Current'
+      ? comparison.pricingBasis
+      : this.pricingBasis;
+    return {
+      runIds: idsOf('run'),
+      groupIds: idsOf('group'),
+      pricingBasis: basis,
+      entries: comparison.entries,
+      suiteId: comparison.baselineSuiteId ?? null,
+      suiteName: comparison.baselineSuiteName ?? null
+    };
+  }
+
+  openReports(): void {
+    const context = this.reportPackContext;
+    if (!context) {
+      return;
+    }
+    this.reportsOpen = true;
+    this.cdr.detectChanges();
+    this.reportPack?.open(context);
+  }
+
+  onReportsClosed(): void {
+    this.reportsOpen = false;
+    this.cdr.markForCheck();
+    document.getElementById('mc-reports-trigger')?.focus();
+  }
+
+  onReportsGraderGuideRequested(): void {
+    this.graderGuideRequested.emit();
   }
 
   /** One line on how much of the set can be charted together. */
