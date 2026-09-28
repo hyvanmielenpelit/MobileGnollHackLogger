@@ -567,9 +567,24 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       const emblem = host().querySelector<HTMLImageElement>('.dc-title-row > img.gnollbench-emblem')!;
       expect(emblem).not.toBeNull();
+      expect(emblem.classList).toContain('dc-emblem');
       expect(emblem.getAttribute('alt')).toBe('');
       expect(emblem.getAttribute('src')).toBe('/img/gnollbench/gnollbench-logo-v3-256.webp');
+      expect(emblem.getAttribute('width')).toBe('64');
+      expect(emblem.getAttribute('height')).toBe('64');
       expect(emblem.nextElementSibling!.querySelector('h3')!.textContent!.trim()).toBe('Downloads');
+    });
+
+    it('focuses the title on open, so the Close button\'s tooltip stays closed', () => {
+      openRun();
+
+      const title = byId(`${component.idPrefix}-title`)!;
+      expect(title.tagName).toBe('H3');
+      expect(title.getAttribute('tabindex')).toBe('-1');
+      expect(document.activeElement).toBe(title);
+      const tip = byId(`${component.idPrefix}-close-tip`)!;
+      expect(tip.matches(':popover-open')).toBeFalse();
+      expect(tip.classList.contains(':popover-open')).toBeFalse();
     });
 
     it('puts each package description behind an info button beside, not inside, its label', () => {

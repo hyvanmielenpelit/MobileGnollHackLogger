@@ -602,10 +602,11 @@ before the reports were written."* (`SettleInterruptedAsync`).
 **Writing on request.** `POST /api/admin/benchmark/runs/{runId}/report-documents` (§ 9) writes the
 missing documents of any finished run with a final synthesis — a run launched with *None*, a run from
 before this feature, or a run whose job failed — with the writer it is given, which it records on the run.
-The run report dialog's **AI-Written Reports** section, directly above *Assessor Calibration*, shows the
-status and one row per document (**View** opens the Full, named-peers PDF; **Downloads** opens the
-Download Center on the run), and offers a writer picker and **Write Reports** while a document is
-missing.
+The run report dialog's **AI Reports** tab lists both documents, written or not: a written one with its
+status, writer and date and **View**, which opens the Full, named-peers PDF; a missing one marked *Not
+written*. While a document is missing, a writer picker, preselected with the run's own writer or else the
+launcher's *Report Writer* when it qualifies for the run's candidate, and **Write Reports** follow the
+rows. Downloads go through the header's **Downloads**, which opens the Download Center on the run.
 
 **Written once.** A run-completion document is immutable like every other: downloads only render it. A
 later re-synthesis or re-score marks it *Run changed since this document was written* and does not

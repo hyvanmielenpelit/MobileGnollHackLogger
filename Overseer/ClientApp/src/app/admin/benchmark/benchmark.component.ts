@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, Output, EventEmitter, ChangeDetectorRef, ViewChild, ElementRef, inject } from '@angular/core';
-import { CommonModule, DecimalPipe, formatDate, formatNumber } from '@angular/common';
+import { CommonModule, DecimalPipe, formatDate } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   AdminBenchmarkService,
@@ -139,6 +139,25 @@ const RUN_REPORT_AUDIENCES: readonly BenchmarkReportAudience[] = [
   BenchmarkReportAudience.ExecutiveSummary,
   BenchmarkReportAudience.TechnicalReport
 ];
+
+/** The run report's tabs, in order. */
+const RUN_REPORT_TABS = [
+  { key: 'summary', label: 'Summary' },
+  { key: 'integrity', label: 'Integrity' },
+  { key: 'synthesis', label: 'Synthesis' },
+  { key: 'questions', label: 'Questions' },
+  { key: 'difficulty', label: 'Difficulty' },
+  { key: 'tools', label: 'Tools' },
+  { key: 'cost', label: 'Cost' },
+  { key: 'configuration', label: 'Configuration' },
+  { key: 'reports', label: 'AI Reports' },
+  { key: 'calibration', label: 'Calibration' }
+] as const;
+
+export type RunReportTabKey = typeof RUN_REPORT_TABS[number]['key'];
+
+/** Where the run report's chosen tab is remembered, per viewer. */
+export const RUN_REPORT_TAB_STORAGE_KEY = 'overseer.benchmark.runReport.tab';
 
 const SNAPSHOT_TEXT_EXPORT_FAILED = 'Exported without the snapshot text: it could not be loaded.';
 
@@ -367,6 +386,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('questionFormDialog') questionFormDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('runDetailDialog') runDetailDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('runDownloadCenter') runDownloadCenter?: BenchmarkDownloadCenterComponent;
+  @ViewChild(RunReportFrameComponent) runReportFrame?: RunReportFrameComponent;
   @ViewChild('rerunPopover') rerunPopover?: ElementRef<HTMLElement>;
   @ViewChild('rerunTrigger') rerunTrigger?: ElementRef<HTMLButtonElement>;
   @ViewChild('scoringProfileFormDialog') scoringProfileFormDialog!: ElementRef<HTMLDialogElement>;
@@ -5921,8 +5941,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.calibrationAssessorConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
     this.calibrationTarget = 'Assessor';
     this.resetRunReportDocuments();
-    // Re-scoring reloads the run into the dialog that is already open.
+    // Re-scoring reloads the run into the dialog that is already open, on the tab it shows.
     const dialog = this.runDetailDialog?.nativeElement;
+    if (!dialog?.open) {
+      this.runReportTab = this.storedRunReportTab();
+    }
     if (dialog && !dialog.open) {
       dialog.showModal();
     }
@@ -5933,10 +5956,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (token !== this.runDetailLoadToken) return;
         this.selectedRunDetail = data;
         this.loadingDetail = false;
-        const writerId = data.reportWriterModelConfigurationId ?? null;
-        this.runReportWriterConfigId = writerId != null && this.benchmarkCapableConfigs.some(c => c.id === writerId)
-          ? writerId
-          : null;
+        this.runReportWriterConfigId = this.defaultRunReportWriterId(data);
         this.loadRunReportDocuments(data.id);
         this.cdr.detectChanges();
         // The header's tooltips and the Re-run popover are new anchors to the polyfill.
@@ -5950,6 +5970,59 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /**
+   * The writer Write Reports starts with: the run's own writer while it qualifies, else the launcher's
+   * Report Writer when the server would accept it for this run's candidate, else none.
+   */
+  private defaultRunReportWriterId(run: BenchmarkRunDetailDto): number | null {
+    const own = run.reportWriterModelConfigurationId ?? null;
+    if (own != null && this.benchmarkCapableConfigs.some(c => c.id === own)) {
+      return own;
+    }
+    const launcher = this.benchmarkCapableConfigs.find(c => c.id === this.reportWriterConfigId);
+    const candidate = { provider: run.testedModelProviderUsed, modelId: run.testedModelIdUsed };
+    return launcher && AdminBenchmarkComponent.reportWriterRefusal(launcher, candidate) === '' ? launcher.id : null;
+  }
+
+  // --- Run report: tabs ---
+
+  readonly runReportTabs = RUN_REPORT_TABS;
+  runReportTab: RunReportTabKey = 'summary';
+
+  /** The remembered tab, or Summary when none is stored, it is unknown, or storage is unavailable. */
+  private storedRunReportTab(): RunReportTabKey {
+    try {
+      const stored = localStorage.getItem(RUN_REPORT_TAB_STORAGE_KEY);
+      return RUN_REPORT_TABS.find(tab => tab.key === stored)?.key ?? 'summary';
+    } catch {
+      return 'summary';
+    }
+  }
+
+  selectRunReportTab(key: RunReportTabKey): void {
+    this.runReportTab = key;
+    try {
+      localStorage.setItem(RUN_REPORT_TAB_STORAGE_KEY, key);
+    } catch {
+      // Storage unavailable: the choice lasts until the page reloads.
+    }
+    this.runReportFrame?.scrollBodyToTop();
+    this.cdr.markForCheck();
+  }
+
+  onRunReportTabKeydown(event: KeyboardEvent, index: number): void {
+    const count = RUN_REPORT_TABS.length;
+    const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return;
+    }
+    event.preventDefault();
+    const key = RUN_REPORT_TABS[(requested + count) % count].key;
+    this.selectRunReportTab(key);
+    document.getElementById(`rr-tab-${key}`)?.focus();
   }
 
   /** The run report's Try again after a failed load. */
@@ -6144,7 +6217,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /** The document list of the viewed run has answered. */
   runReportDocumentsLoaded = false;
   runReportDocumentsError: string | null = null;
-  /** The writer Write Reports sends; the run's own writer while it still qualifies. */
+  /** The writer Write Reports sends; see {@link defaultRunReportWriterId} for where it starts. */
   runReportWriterConfigId: number | null = null;
   runReportWriteSubmitting = false;
   runReportWriteError: string | null = null;
@@ -6152,9 +6225,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private runReportDocumentsSubscription: Subscription | null = null;
   private runReportDocumentsPoll: Subscription | null = null;
   private runReportDocumentsPollRunId: number | null = null;
-
-  readonly reportAudienceLabel = reportAudienceLabel;
-  readonly reportDocumentStatusLabel = reportDocumentStatusLabel;
 
   /** The run's documents status, read from its number or, from an older server, its name. */
   runReportDocumentsStatusOf(run: BenchmarkRunDetailDto | null | undefined): BenchmarkRunReportDocumentsStatus {
@@ -6215,19 +6285,33 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (!run.assessmentJson) {
       return 'The run has no final synthesis to write about. Re-run the final synthesis first.';
     }
-    if (this.runReportWriterConfigId == null) {
-      return 'Choose a report writer.';
-    }
     return this.runReportWriterRefusal;
   }
 
-  /** The newest of the run's documents, whose writer and date the status line names. */
-  get latestRunReportDocument(): BenchmarkReportDocumentListItemDto | null {
-    return this.runReportDocuments.reduce<BenchmarkReportDocumentListItemDto | null>(
-      (latest, doc) => (!latest || (doc.createdAtUtc ?? '') > (latest.createdAtUtc ?? '') ? doc : latest), null);
+  /** One row per run-completion audience, in the order the section lists them, with its stored document if any. */
+  get runReportDocumentRows(): { audience: BenchmarkReportAudience; label: string; doc: BenchmarkReportDocumentListItemDto | null }[] {
+    return RUN_REPORT_AUDIENCES.map(audience => ({
+      audience,
+      label: reportAudienceLabel(audience),
+      doc: this.runReportDocumentFor(audience) ?? null
+    }));
   }
 
-  /** The section's one-line status. */
+  runReportDocumentStatusLabel(doc: BenchmarkReportDocumentListItemDto): string {
+    switch (doc.status) {
+      case 'Completed': return 'Written';
+      case 'CompletedWithWarnings': return 'Written with warnings';
+      default: return reportDocumentStatusLabel(doc.status);
+    }
+  }
+
+  /** A written document's writer and date. */
+  runReportDocumentMeta(doc: BenchmarkReportDocumentListItemDto): string {
+    const writer = doc.writerDisplayName || this.selectedRunDetail?.reportWriterDisplayName || 'the report writer';
+    return `by ${writer} on ${this.formatRunReportDate(doc.createdAtUtc)}`;
+  }
+
+  /** The section's job state, or '' when the document rows already say everything. */
   runReportStatusText(run: BenchmarkRunDetailDto): string {
     const status = this.runReportDocumentsStatusOf(run);
     const message = run.reportDocumentsMessage?.trim();
@@ -6241,22 +6325,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       case BenchmarkRunReportDocumentsStatus.Skipped:
         return message ? `Skipped: ${message}` : 'Skipped';
     }
-    const latest = this.latestRunReportDocument;
-    if (latest) {
-      const writer = latest.writerDisplayName || run.reportWriterDisplayName || 'the report writer';
-      const when = this.formatRunReportDate(latest.createdAtUtc);
-      return status === BenchmarkRunReportDocumentsStatus.CompletedWithWarnings
-        ? `Written with warnings by ${writer} on ${when}`
-        : `Written by ${writer} on ${when}`;
-    }
     if (status === BenchmarkRunReportDocumentsStatus.NotRequested && run.reportWriterModelConfigurationId != null
       && this.formatStatus(run.status) === 'Running') {
       return `Not written yet: ${run.reportWriterDisplayName || 'the report writer'} writes them once the run is scored`;
     }
-    if (status === BenchmarkRunReportDocumentsStatus.Completed || status === BenchmarkRunReportDocumentsStatus.CompletedWithWarnings) {
-      return this.runReportDocumentsLoaded ? 'No AI-written reports are stored for this run' : '';
-    }
-    return 'Not requested';
+    return '';
   }
 
   private formatRunReportDate(value: string | null | undefined): string {
@@ -6468,22 +6541,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   // --- Run report: key-figures images ---
 
-  /** The collapsed strip's one line: the index, the speed card's lead figure and the cost. */
-  get keyFiguresSummary(): string {
-    const run = this.selectedRunDetail;
-    if (!run) return '';
-    const index = run.qualityIndex ?? run.finalScore;
-    const confidence = this.indexConfidenceLabel;
-    const speed = this.demoteSpeedIndex
-      ? `Median model time ${formatNumber(this.medianModelTimeMs ?? 0, 'en-US', '1.0-0')} ms`
-      : `Speed Index ${run.speedIndex ?? 'N/A'} / 100`;
-    return [
-      `Intelligence Index ${index ?? 'N/A'} / 100${confidence ? ' ' + confidence : ''}`,
-      speed,
-      `Estimated cost ${this.formatRunEstimatedCost(run)}`
-    ].join(' · ');
-  }
-
   /** What the images say about the run, from the fields the dialog header shows. */
   keyFiguresContext(detail: BenchmarkRunDetailDto): ImageContext {
     const assessor = detail.isPanelRun
@@ -6515,10 +6572,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.exportKeyFigures(request.action, request.card);
   }
 
-  /** Composes the strip (`card` null) or one card, copies or saves it, and announces the outcome. */
+  /**
+   * Composes the key figures (`card` null) or one card, copies or saves it, and announces the
+   * outcome. The cards are read from the Summary panel whichever tab is shown.
+   */
   private async exportKeyFigures(action: KeyFiguresAction, card: HTMLElement | null): Promise<void> {
     const run = this.selectedRunDetail;
-    const root = this.runDetailDialog?.nativeElement.querySelector('.rrf-figures');
+    const root = this.runDetailDialog?.nativeElement.querySelector('.rr-figures');
     if (!run || !root || this.keyFiguresExporting) return;
     this.keyFiguresExporting = true;
     this.cdr.markForCheck();
@@ -7540,6 +7600,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   jumpToAnswer(orderIndex: number, event?: Event): void {
     event?.preventDefault();
+    if (this.runReportTab !== 'questions') {
+      this.selectRunReportTab('questions');
+    }
     this.expandedQuestions.add(orderIndex);
     this.cdr.detectChanges();
     if (typeof document === 'undefined') return;
@@ -8260,6 +8323,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   get hasInstrumentMeasurements(): boolean {
     return this.hasCompletenessOutOfScopeMeasurement || this.hasReadabilityFormOnlyMeasurement;
+  }
+
+  /** Whether the viewed run's Run Integrity Notice has a clause; the Integrity tab and the notice both read it. */
+  get hasRunIntegrityNotice(): boolean {
+    const run = this.selectedRunDetail;
+    if (!run) return false;
+    return this.criticalErrorAnswerCount > 0 || (run.transportDefectAnswerCount ?? 0) > 0
+      || (run.recoveredAnswerCount ?? 0) > 0 || (run.toolStarvedAnswerCount ?? 0) > 0
+      || (run.advisoryFlagAnswerCount ?? 0) > 0 || this.disputedAnswerCount > 0
+      || (run.secondOpinionCriticalErrorSplitCount ?? 0) > 0 || this.contestedVerdictAnswerCount > 0
+      || (run.unevidencedDeductionAnswerCount ?? 0) > 0 || this.omissionAsAccuracyAnswerCount > 0
+      || this.refutedClaimAnswerCount > 0 || this.contestedCriticalErrorAnswerCount > 0
+      || (this.contestedAccuracyDeductionAnswerCount ?? 0) > 0 || (this.dimensionOutlierAnswerCount ?? 0) > 0
+      || this.claimVerificationFailedAnswerCount > 0 || this.secondOpinionSelectedButUnused
+      || this.secondOpinionFailedAnswerCount > 0 || this.reassessedAnswerCount > 0
+      || this.showRunProfileFitAdvisory || this.selectedRunMissingBoardQuotes.length > 0;
   }
 
   private memberBMeasurementCache: {

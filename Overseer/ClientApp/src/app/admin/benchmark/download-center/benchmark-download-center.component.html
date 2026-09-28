@@ -5,9 +5,10 @@
     <div class="dialog-header">
       <div class="dc-title-row">
         <!-- Decorative: the title beside it names the dialog. -->
-        <img class="gnollbench-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="28" height="28">
+        <img class="gnollbench-emblem dc-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="64" height="64">
         <div class="dialog-title-group">
-          <h3 [id]="idPrefix + '-title'">Downloads</h3>
+          <!-- The focus target on open, so the Close button's tooltip does not open by itself. -->
+          <h3 #downloadCenterHeading [id]="idPrefix + '-title'" tabindex="-1">Downloads</h3>
           <p class="dialog-subtitle">{{ subtitle }}</p>
         </div>
       </div>

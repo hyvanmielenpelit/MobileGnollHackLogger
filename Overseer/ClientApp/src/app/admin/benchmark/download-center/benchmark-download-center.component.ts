@@ -264,6 +264,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
   private readonly cdr = inject(ChangeDetectorRef);
 
   @ViewChild('downloadCenterDialog') dialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('downloadCenterHeading') heading?: ElementRef<HTMLElement>;
 
   /** Emitted when the dialog closes, however it was closed. */
   @Output() readonly closed = new EventEmitter<void>();
@@ -328,6 +329,8 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     if (dialog && !dialog.open) {
       dialog.showModal();
     }
+    // showModal() focuses the first focusable element, the Close button, whose hint tooltip opens on focus.
+    this.heading?.nativeElement.focus();
     this.cdr.markForCheck();
   }
 

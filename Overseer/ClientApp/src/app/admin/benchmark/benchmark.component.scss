@@ -2573,8 +2573,6 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 }
 
 .calibration-panel {
-  border-top: 1px solid #333;
-  padding-top: 15px;
   overflow-wrap: anywhere;
 
   .calibration-controls {
@@ -2594,12 +2592,12 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   .calibration-error { margin: 6px 0 0; color: #fbbf24; }
 }
 
-// The run report's AI-Written Reports section: a status line, a row per stored document, and the
+// The run report's AI Reports tab: a job status line, a row per document, written or not, and the
 // writer picker with Write Reports while a document is missing.
 .rr-ai-reports {
   overflow-wrap: anywhere;
 
-  .rr-ai-status { margin: 0 0 10px; }
+  .rr-ai-status { margin: 0 0 10px; &:empty { margin: 0; } }
   .rr-ai-doc-list { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
   .rr-ai-doc-row {
     display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
@@ -2612,10 +2610,11 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
     color: var(--nav-color);
 
     &.is-warning { border-color: var(--color-warning); color: var(--color-warning); }
+    &.is-missing { color: #888; }
   }
+  .rr-ai-doc-meta { font-size: 12px; color: #888; }
   // Its own line under the name, as .gh-tag-changed is everywhere else.
   .rr-ai-doc-text .gh-tag-changed { flex-basis: 100%; margin-top: 2px; }
-  .rr-ai-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .rr-ai-write {
     display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 14px;
     .form-group { margin-bottom: 0; }
@@ -2786,10 +2785,28 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   align-items: center;
 }
 
-// Run report dialog: app-run-report-frame lays out the header, strip and columns.
+// Run report dialog: app-run-report-frame lays out the header, the tab row and the panel body.
 .rr-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rr-status { font-size: 12px; color: #888; }
-.rr-figures { display: contents; }
+// The frame draws the row's rule across its full width.
+.rr-tabs { border-bottom: 0; }
+.rr-tab-flag {
+  padding: 0 6px; font-family: inherit; font-size: 10px;
+  border-color: var(--color-warning); color: var(--color-warning);
+}
+.rr-panel {
+  border-radius: 6px;
+  &[hidden] { display: none; }
+  &:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+}
+.rr-figures-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 10px; border-bottom: 1px solid var(--border-glass);
+  .gh-section-title { margin: 0; border-bottom: 0; }
+}
+.rr-figures {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 10px; margin-bottom: 20px;
+}
 .rr-figure-actions { display: flex; align-items: center; gap: 4px; .action-btn { margin: 0; } }
 // Each card's Copy and Download show while it is hovered or holds focus, always without hover.
 .score-card { position: relative; }

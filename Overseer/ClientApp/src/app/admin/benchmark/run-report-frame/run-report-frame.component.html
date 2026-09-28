@@ -1,39 +1,25 @@
-<!-- Narrow, .rrf-top is display: contents, so only the header sticks while the frame scrolls;
-     wide, header and figures stick together above the two scrolling columns. -->
+<!-- Columns, narrow: .rrf-top is display: contents, so only the header sticks while the frame
+     scrolls; wide, the top block sticks above the two scrolling columns. Single: the top block
+     stays put and the body scrolls. -->
 <div class="rrf-top">
   <header class="rrf-header">
     <div class="rrf-identity"><ng-content select="[runReportHeader]" /></div>
     <div class="rrf-actions"><ng-content select="[runReportActions]" /></div>
   </header>
-  <!-- A disclosure, not a <details>: the actions share the toggle's row, and a <summary> may not
-       hold interactive content. The summary slot is hidden rather than removed while expanded,
-       since projected content renders once. -->
-  @if (figuresCollapsible) {
-    <div class="rrf-figures-bar">
-      <button type="button" class="rrf-figures-toggle" [attr.aria-expanded]="!figuresCollapsed"
-              [attr.aria-controls]="figuresId" (click)="toggleFigures()">
-        @if (figuresCollapsed) {
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-        } @else {
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
-        }
-        {{ figuresLabel }}
-      </button>
-      <div class="rrf-figures-summary" [hidden]="!figuresCollapsed"><ng-content select="[runReportFiguresSummary]" /></div>
-      <div class="rrf-figures-actions"><ng-content select="[runReportFiguresActions]" /></div>
-    </div>
-  }
-  <div class="rrf-figures" [attr.id]="figuresCollapsible ? figuresId : null"
-       [hidden]="figuresCollapsible && figuresCollapsed"><ng-content select="[runReportFigures]" /></div>
+  <div class="rrf-tabs"><ng-content select="[runReportTabs]" /></div>
 </div>
 
-<div class="rrf-body" [attr.aria-busy]="busy ? 'true' : null">
-  <div class="rrf-columns">
-    <section class="rrf-main" tabindex="0" [attr.aria-label]="mainLabel">
-      <ng-content select="[runReportMain]" />
-    </section>
-    <section class="rrf-aside" tabindex="0" [attr.aria-label]="asideLabel">
-      <ng-content select="[runReportAside]" />
-    </section>
-  </div>
+<div #body class="rrf-body" [attr.aria-busy]="busy ? 'true' : null">
+  @if (layout === 'single') {
+    <div class="rrf-single"><ng-content select="[runReportBody]" /></div>
+  } @else {
+    <div class="rrf-columns">
+      <section class="rrf-main" tabindex="0" [attr.aria-label]="mainLabel">
+        <ng-content select="[runReportMain]" />
+      </section>
+      <section class="rrf-aside" tabindex="0" [attr.aria-label]="asideLabel">
+        <ng-content select="[runReportAside]" />
+      </section>
+    </div>
+  }
 </div>

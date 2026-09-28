@@ -1530,8 +1530,7 @@
 <dialog #runDetailDialog class="gh-dialog gh-dialog-fullscreen benchmark-run-detail-dialog"
         aria-labelledby="runDetailTitle" (close)="onRunDetailClosed($event)">
   @if (selectedRunDetail || runDetailRequestedId != null) {
-    <app-run-report-frame mainLabel="Findings and questions" asideLabel="Run details" [busy]="loadingDetail"
-                          [figuresCollapsible]="true" figuresStorageKey="overseer.benchmark.runReport.figuresCollapsed">
+    <app-run-report-frame layout="single" [busy]="loadingDetail">
       <div runReportHeader class="rr-identity">
         <!-- Decorative: the title beside it names the run. -->
         <img class="gnollbench-emblem rr-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="64" height="64">
@@ -1644,226 +1643,26 @@
         </button>
       </div>
 
-      <!-- Key figures: display: contents makes each score card a cell of the frame's strip. -->
+      <!-- One tab per group of the run's data; every panel stays rendered and only the chosen one shows. -->
       @if (selectedRunDetail) {
-        <div runReportFigures class="rr-figures">
-          <div class="score-card main-score">
-            <span class="score-label">Intelligence Index</span>
-            @if (selectedRunDetail.qualityIndex == null && selectedRunDetail.finalScore == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
-              <span class="score-value text-muted">Not computed</span>
-              <span class="score-note">{{ selectedRunDetail.terminalFailureAnswerCount }} question(s) failed at the provider</span>
-            } @else {
-              <span class="score-value" [class]="getScoreBadgeClass(selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)">
-                {{ selectedRunDetail.qualityIndex != null ? selectedRunDetail.qualityIndex : (selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A') }} / 100
-              </span>
-              @if (indexConfidenceLabel) {
-                <span class="score-note">{{ indexConfidenceLabel }} (95%)</span>
+        <div runReportTabs class="gh-tabs gh-tabs-secondary rr-tabs" role="tablist" aria-label="Run report sections">
+          @for (tab of runReportTabs; track tab.key; let i = $index) {
+            <button type="button" role="tab" class="gh-tab" [id]="'rr-tab-' + tab.key"
+                    [attr.aria-controls]="'rr-panel-' + tab.key"
+                    [attr.aria-selected]="runReportTab === tab.key"
+                    [attr.tabindex]="runReportTab === tab.key ? 0 : -1"
+                    (keydown)="onRunReportTabKeydown($event, i)" (click)="selectRunReportTab(tab.key)">
+              {{ tab.label }}{{ tab.key === 'questions' ? ' (' + selectedRunDetail.answers.length + ')' : '' }}
+              @if (tab.key === 'integrity' && hasRunIntegrityNotice) {
+                <span class="gh-tag rr-tab-flag">Notice</span>
               }
-              @if ((selectedRunDetail.unansweredQuestionCount ?? 0) > 0) {
-                <span class="score-note">{{ selectedRunDetail.unansweredQuestionCount }} question(s) unanswered — the model produced no text, and each scores 0 here</span>
-              }
-            }
-            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Intelligence Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-          </div>
-          @if (selectedRunDetail.rawQualityIndex != null && selectedRunDetail.rawQualityIndex !== (selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)) {
-            <div class="score-card">
-              <span class="score-label">Raw Quality Index</span>
-              <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.rawQualityIndex)">
-                {{ selectedRunDetail.rawQualityIndex }} / 100
-              </span>
-              <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Raw Quality Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-            </div>
+            </button>
           }
-          <!--
-            The plain mean beside the difficulty-weighted index, shown only where they differ.
-            The gap is what the weighting did to the headline, and it is invisible from either
-            number alone: on the 2026-09-03 run the weighted index read 94 and the mean 92,
-            because the model's two weakest answers were two of its easiest questions.
-          -->
-          @if (showUnweightedQualityTile) {
-            <div class="score-card">
-              <span class="score-label">Unweighted Mean</span>
-              <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.unweightedQualityIndex)">
-                {{ selectedRunDetail.unweightedQualityIndex }} / 100
-              </span>
-              <span class="score-note">weighting {{ weightingDeltaLabel }}</span>
-              <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Unweighted Mean" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-            </div>
-          }
-          <!--
-            Where the Speed Index cannot discriminate, the card leads with the figure that can and
-            the index moves to the sub-line. The demoted form is presentational: nothing about the
-            score, the profile or the scoring method version changes with it.
-          -->
-          <div class="score-card">
-            @if (demoteSpeedIndex) {
-              <span class="score-label">Median Model Time</span>
-              <span class="score-subvalue">
-                {{ medianModelTimeMs | number:'1.0-0' }} ms
-              </span>
-              <span class="score-note" [title]="showSpeedIndexSaturationAdvisory ? speedIndexSaturationAdvisoryTitle : runProfileFitAdvisoryTitle">
-                Speed Index {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100 &mdash;
-                advisory{{ showSpeedIndexSaturationAdvisory ? ' (saturated: ' + speedIndexCeilingAnswerCount + ' of ' + speedIndexScoredAnswerCount + ' at the ceiling)' : ' (profile latency target does not fit this thinking level)' }}
-              </span>
-            } @else if (selectedRunDetail.speedIndex == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
-              <span class="score-label">Speed Index</span>
-              <span class="score-subvalue text-muted">Not computed</span>
-              <span class="score-note">{{ selectedRunDetail.terminalFailureAnswerCount }} question(s) failed at the provider</span>
-            } @else {
-              <span class="score-label">Speed Index</span>
-              <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.speedIndex)">
-                {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100
-                @if (selectedRunDetail.speedMeasurementDegraded) {
-                  <span class="degraded-tag" title="Concurrency enabled; speed advisory">*</span>
-                }
-                <!--
-                  The other reason a Speed Index is advisory: a deliberating candidate measured
-                  against an interactive-latency profile. Reachable here only when there is no
-                  median to lead with, since otherwise the card is in its demoted form.
-                -->
-                @if (showRunProfileFitAdvisory) {
-                  <span class="degraded-tag" [title]="runProfileFitAdvisoryTitle">*</span>
-                }
-              </span>
-              @if (showSpeedIndexSaturationAdvisory) {
-                <span class="score-note" [title]="speedIndexSaturationAdvisoryTitle">saturated &mdash; {{ speedIndexCeilingAnswerCount }} of {{ speedIndexScoredAnswerCount }} at the ceiling; compare median model time</span>
-              }
-            }
-            <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="demoteSpeedIndex ? 'Median Model Time' : 'Speed Index'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-          </div>
-          <!--
-            Grader agreement, never without its coverage. A mean delta over trigger-selected
-            answers is conditioned on the first assessor's own uncertainty; the same figure over
-            every answer is an inter-rater agreement rate. Only the fraction tells them apart.
-          -->
-          <!--
-            The two panel members: each one's index alone over the answers both scored, their
-            absolute-agreement ICC and the mean B − A. The headline index above is the panel's.
-          -->
-          @if (selectedRunDetail.isPanelRun) {
-            <div class="score-card panel-tile">
-              <span class="score-label">Panel</span>
-              <span class="score-subvalue">
-                A {{ selectedRunDetail.assessorOnlyQualityIndex ?? 'N/A' }} · B {{ selectedRunDetail.coAssessorOnlyQualityIndex ?? 'N/A' }}
-              </span>
-              <span class="score-note">ICC {{ panelIccLabel }} · mean B − A {{ panelSignedDeltaLabel }}</span>
-              <span class="score-note">{{ selectedRunDetail.panelDisagreementCount ?? 0 }} disagreement(s) over {{ selectedRunDetail.panelGradedAnswerCount ?? 0 }} answers both scored</span>
-              <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Panel" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-            </div>
-          }
-          @if (showAgreementTile) {
-            <div class="score-card">
-              <span class="score-label">{{ selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement' }}</span>
-              <span class="score-subvalue">
-                {{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · ' + agreementMeanSignedDeltaLabel : '' }}
-                <!--
-                  H4. At n = 1 a displayed 0.0 is the arithmetic of a single point and currently reads as
-                  strong agreement. The same marker the Speed Index card uses, for the same reason: the
-                  number is real but does not mean what it looks like.
-                -->
-                @if (showAgreementAdvisory) {
-                  <span class="degraded-tag" [title]="agreementAdvisoryTitle">*</span>
-                }
-              </span>
-              <span class="score-note">{{ agreementCoverageLabel }} · {{ agreementModeLabel }} · {{ secondOpinionBlindLabel }}</span>
-              <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-            </div>
-          }
-          <div class="score-card">
-            <span class="score-label">Holistic Assessor Score</span>
-            <span class="score-subvalue">{{ selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A' }} / 100</span>
-            @if (selectedRunDetail.isPanelRun) {
-              <span class="score-note">member A; member B {{ selectedRunDetail.coAssessorFinalScore ?? 'N/A' }} / 100</span>
-            }
-            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Holistic Assessor Score" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-          </div>
-          <!--
-            The pair the report prints as Total Candidate Answer Time and Total Elapsed Wall Time.
-            Two cards rather than one because the gap between them is the grading pipeline: on run 24
-            the candidate answered for 12m 45s inside a 23m 39s run.
-          -->
-          <div class="score-card">
-            <span class="score-label">Answer Duration</span>
-            <span class="score-subvalue">{{ runAnswerDurationLabel(selectedRunDetail) }}</span>
-            <span class="score-note">{{ runAnswerDurationNote(selectedRunDetail) }}</span>
-            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Answer Duration" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-          </div>
-          <div class="score-card">
-            <span class="score-label">Elapsed Wall Time</span>
-            <span class="score-subvalue">{{ runWallClockLabel(selectedRunDetail) }}</span>
-            <span class="score-note">{{ runWallClockNote(selectedRunDetail) }}</span>
-            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Elapsed Wall Time" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-          </div>
-          <!--
-            H5. A pair: what the model under test cost, and the catalog total beside it. On run 13
-            the candidate was 28 % of the cost and grading plus verification 72 %, which inverts the
-            intuition that a benchmark's cost is the model under test, so the total alone misleads.
-            The rest of the per-role split is the cost panel in the side column. The candidate
-            card is absent on a run costed before that figure was recorded.
-          -->
-          @if (selectedRunDetail.estimatedCandidateCost != null) {
-            <div class="score-card">
-              <span class="score-label">Model Under Test</span>
-              <span class="score-subvalue">
-                {{ formatRunCandidateCost(selectedRunDetail) }}
-                @if (selectedRunDetail.pricingIncomplete) {
-                  <span class="degraded-tag" title="Some participating models lack pricing">*</span>
-                }
-              </span>
-              <span class="score-note">{{ candidateCostShareLabel(selectedRunDetail) }}</span>
-              <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Model Under Test" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-            </div>
-          }
-          <div class="score-card">
-            <span class="score-label">Estimated Cost</span>
-            <span class="score-subvalue">
-              {{ formatRunEstimatedCost(selectedRunDetail) }}
-              @if (selectedRunDetail.pricingIncomplete) {
-                <span class="degraded-tag" title="Some participating models lack pricing">*</span>
-              }
-            </span>
-            <span class="score-note">{{ selectedRunDetail.pricingSource || 'Pricing unknown' }}</span>
-            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Estimated Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
-          </div>
-        </div>
-      } @else if (loadingDetail) {
-        <div runReportFigures class="rr-figures" aria-hidden="true">
-          <div class="rr-skeleton"></div>
-          <div class="rr-skeleton"></div>
-          <div class="rr-skeleton"></div>
-          <div class="rr-skeleton"></div>
         </div>
       }
 
-      <!-- The key-figures bar. Separate blocks: a block projects by its selector only with one root. -->
-      @if (selectedRunDetail) {
-        <span runReportFiguresSummary>{{ keyFiguresSummary }}</span>
-      }
-      @if (selectedRunDetail) {
-        <div runReportFiguresActions class="rr-figure-actions" role="group" aria-label="Key figures actions">
-          <button type="button" class="action-btn" id="rr-figures-copy-btn"
-                  [attr.aria-label]="'Copy key figures of run ' + selectedRunDetail.id + ' as an image'"
-                  [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
-                  interestfor="rr-figures-copy-tip" [attr.style]="'anchor-name: --rr-figures-copy-tip'"
-                  (click)="copyKeyFigures()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-          </button>
-          <div popover="hint" class="gh-tooltip" id="rr-figures-copy-tip"
-               [attr.style]="'position-anchor: --rr-figures-copy-tip'">Copy key figures as an image</div>
-          <button type="button" class="action-btn" id="rr-figures-download-btn"
-                  [attr.aria-label]="'Download key figures of run ' + selectedRunDetail.id + ' as a PNG image'"
-                  [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
-                  interestfor="rr-figures-download-tip" [attr.style]="'anchor-name: --rr-figures-download-tip'"
-                  (click)="downloadKeyFigures()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-          </button>
-          <div popover="hint" class="gh-tooltip" id="rr-figures-download-tip"
-               [attr.style]="'position-anchor: --rr-figures-download-tip'">Download key figures as PNG</div>
-        </div>
-      }
-
-      <!-- Main column: notices, then findings, then questions. Below 60rem it comes first. -->
-      <div runReportMain>
+      <!-- The run-wide strips sit above the panels, on every tab. -->
+      <div runReportBody>
         @if (selectedRunDetail) {
           @if (actionErrorMessage) {
             <div class="alert alert-danger mb-20" role="alert" aria-live="assertive">
@@ -1875,38 +1674,6 @@
               <div class="alert-content">
                 <div class="alert-title">Action Error</div>
                 <div class="alert-message">{{ actionErrorMessage }}</div>
-              </div>
-            </div>
-          }
-
-          @if (failedAnswers().length > 0 && (formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled' || formatStatus(selectedRunDetail.status) === 'CompletedWithErrors')) {
-            <div class="alert mb-20"
-                 [class.alert-danger]="formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled'"
-                 [class.alert-warning]="formatStatus(selectedRunDetail.status) === 'CompletedWithErrors'"
-                 role="alert">
-              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-              </svg>
-              <div class="alert-content">
-                <div class="alert-heading"><strong>Run did not complete cleanly</strong></div>
-                <div class="alert-body">
-                  @if ((selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
-                    {{ selectedRunDetail.terminalFailureAnswerCount }} of {{ selectedRunDetail.totalQuestionCount }} questions failed at the provider — indexes are not computed for this run.
-                  } @else {
-                    {{ failedAnswers().length }} of {{ selectedRunDetail.totalQuestionCount }} questions produced no gradeable answer.
-                  }
-                  @for (group of failedAnswerGroups(); track group.message + group.questions[0]) {
-                    <div>{{ formatQuestionRanges(group.questions) }} — {{ group.httpStatusCode != null ? 'HTTP ' + group.httpStatusCode + ' — ' : '' }}{{ group.message }}</div>
-                  }
-                </div>
-                <div class="alert-actions">
-                  <button type="button" class="btn-gh" (click)="rerunFailedFromRunDetail(selectedRunDetail.id)" [disabled]="isRunBusy() || isAbortedRun(selectedRunDetail)">
-                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
-                    Re-run Failed Questions
-                  </button>
-                </div>
               </div>
             </div>
           }
@@ -1926,1063 +1693,1311 @@
             </div>
           }
 
-          @if (criticalErrorAnswerCount > 0 || (selectedRunDetail.transportDefectAnswerCount ?? 0) > 0 || (selectedRunDetail.recoveredAnswerCount ?? 0) > 0 || (selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0 || (selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0 || disputedAnswerCount > 0 || (selectedRunDetail.secondOpinionCriticalErrorSplitCount ?? 0) > 0 || contestedVerdictAnswerCount > 0 || (selectedRunDetail.unevidencedDeductionAnswerCount ?? 0) > 0 || omissionAsAccuracyAnswerCount > 0 || refutedClaimAnswerCount > 0 || contestedCriticalErrorAnswerCount > 0 || (contestedAccuracyDeductionAnswerCount ?? 0) > 0 || (dimensionOutlierAnswerCount ?? 0) > 0 || claimVerificationFailedAnswerCount > 0 || secondOpinionSelectedButUnused || secondOpinionFailedAnswerCount > 0 || reassessedAnswerCount > 0 || showRunProfileFitAdvisory || selectedRunMissingBoardQuotes.length > 0) {
-            <div class="alert alert-warning mb-20" role="alert">
-              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
-              <div class="alert-content">
-                <div class="alert-heading"><strong>Run Integrity Notice</strong></div>
-                <!--
-                  Separate causes, deliberately never summed into one "degraded" figure. A
-                  configured tool budget is not a transport defect, a repaired answer is not a
-                  damaged one, and an advisory flag is not a failure at all, so each clause is
-                  rendered only when it applies.
-                -->
-                <div class="alert-body">
-                  @if (selectedRunDetail.terminalFailureAnswerCount != null) {
-                    @if (selectedRunDetail.terminalFailureAnswerCount > 0) {
-                      <div>{{ selectedRunDetail.terminalFailureAnswerCount }} answer(s) failed at the provider (API error).</div>
+          <div role="tabpanel" class="rr-panel" id="rr-panel-summary" aria-labelledby="rr-tab-summary" tabindex="0"
+               [hidden]="runReportTab !== 'summary'">
+            <div class="rr-figures-head">
+              <h4 class="gh-section-title" id="rrFiguresTitle">Key figures</h4>
+              <div class="rr-figure-actions" role="group" aria-label="Key figures actions">
+                <button type="button" class="action-btn" id="rr-figures-copy-btn"
+                        [attr.aria-label]="'Copy key figures of run ' + selectedRunDetail.id + ' as an image'"
+                        [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
+                        interestfor="rr-figures-copy-tip" [attr.style]="'anchor-name: --rr-figures-copy-tip'"
+                        (click)="copyKeyFigures()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" id="rr-figures-copy-tip"
+                     [attr.style]="'position-anchor: --rr-figures-copy-tip'">Copy key figures as an image</div>
+                <button type="button" class="action-btn" id="rr-figures-download-btn"
+                        [attr.aria-label]="'Download key figures of run ' + selectedRunDetail.id + ' as a PNG image'"
+                        [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
+                        interestfor="rr-figures-download-tip" [attr.style]="'anchor-name: --rr-figures-download-tip'"
+                        (click)="downloadKeyFigures()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" id="rr-figures-download-tip"
+                     [attr.style]="'position-anchor: --rr-figures-download-tip'">Download key figures as PNG</div>
+              </div>
+            </div>
+            <div class="rr-figures" role="group" aria-labelledby="rrFiguresTitle">
+              <div class="score-card main-score">
+                <span class="score-label">Intelligence Index</span>
+                @if (selectedRunDetail.qualityIndex == null && selectedRunDetail.finalScore == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
+                  <span class="score-value text-muted">Not computed</span>
+                  <span class="score-note">{{ selectedRunDetail.terminalFailureAnswerCount }} question(s) failed at the provider</span>
+                } @else {
+                  <span class="score-value" [class]="getScoreBadgeClass(selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)">
+                    {{ selectedRunDetail.qualityIndex != null ? selectedRunDetail.qualityIndex : (selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A') }} / 100
+                  </span>
+                  @if (indexConfidenceLabel) {
+                    <span class="score-note">{{ indexConfidenceLabel }} (95%)</span>
+                  }
+                  @if ((selectedRunDetail.unansweredQuestionCount ?? 0) > 0) {
+                    <span class="score-note">{{ selectedRunDetail.unansweredQuestionCount }} question(s) unanswered — the model produced no text, and each scores 0 here</span>
+                  }
+                }
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Intelligence Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              @if (selectedRunDetail.rawQualityIndex != null && selectedRunDetail.rawQualityIndex !== (selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)) {
+                <div class="score-card">
+                  <span class="score-label">Raw Quality Index</span>
+                  <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.rawQualityIndex)">
+                    {{ selectedRunDetail.rawQualityIndex }} / 100
+                  </span>
+                  <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Raw Quality Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                </div>
+              }
+              <!--
+                The plain mean beside the difficulty-weighted index, shown only where they differ.
+                The gap is what the weighting did to the headline, and it is invisible from either
+                number alone: on the 2026-09-03 run the weighted index read 94 and the mean 92,
+                because the model's two weakest answers were two of its easiest questions.
+              -->
+              @if (showUnweightedQualityTile) {
+                <div class="score-card">
+                  <span class="score-label">Unweighted Mean</span>
+                  <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.unweightedQualityIndex)">
+                    {{ selectedRunDetail.unweightedQualityIndex }} / 100
+                  </span>
+                  <span class="score-note">weighting {{ weightingDeltaLabel }}</span>
+                  <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Unweighted Mean" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                </div>
+              }
+              <!--
+                Where the Speed Index cannot discriminate, the card leads with the figure that can and
+                the index moves to the sub-line. The demoted form is presentational: nothing about the
+                score, the profile or the scoring method version changes with it.
+              -->
+              <div class="score-card">
+                @if (demoteSpeedIndex) {
+                  <span class="score-label">Median Model Time</span>
+                  <span class="score-subvalue">
+                    {{ medianModelTimeMs | number:'1.0-0' }} ms
+                  </span>
+                  <span class="score-note" [title]="showSpeedIndexSaturationAdvisory ? speedIndexSaturationAdvisoryTitle : runProfileFitAdvisoryTitle">
+                    Speed Index {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100 &mdash;
+                    advisory{{ showSpeedIndexSaturationAdvisory ? ' (saturated: ' + speedIndexCeilingAnswerCount + ' of ' + speedIndexScoredAnswerCount + ' at the ceiling)' : ' (profile latency target does not fit this thinking level)' }}
+                  </span>
+                } @else if (selectedRunDetail.speedIndex == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
+                  <span class="score-label">Speed Index</span>
+                  <span class="score-subvalue text-muted">Not computed</span>
+                  <span class="score-note">{{ selectedRunDetail.terminalFailureAnswerCount }} question(s) failed at the provider</span>
+                } @else {
+                  <span class="score-label">Speed Index</span>
+                  <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.speedIndex)">
+                    {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100
+                    @if (selectedRunDetail.speedMeasurementDegraded) {
+                      <span class="degraded-tag" title="Concurrency enabled; speed advisory">*</span>
                     }
-                    @if (nonTerminalTransportDefectCount(selectedRunDetail) > 0) {
-                      <div>{{ nonTerminalTransportDefectCount(selectedRunDetail) }} answer(s) arrived empty or truncated.</div>
-                    }
-                  } @else if ((selectedRunDetail.transportDefectAnswerCount ?? 0) > 0) {
-                    <div>{{ selectedRunDetail.transportDefectAnswerCount }} answer(s) were corrupted beyond recovery (empty or truncated).</div>
-                  }
-                  @if ((selectedRunDetail.recoveredAnswerCount ?? 0) > 0) {
-                    <div>{{ selectedRunDetail.recoveredAnswerCount }} answer(s) were repaired by the harness before grading (leaked transport artifacts removed) and graded normally.</div>
-                  }
-                  @if ((selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0) {
-                    <!-- Named by question, like every other clause: a count alone gives an operator
-                         nothing to raise the budget for. -->
-                    <div>{{ selectedRunDetail.toolStarvedAnswerCount }} answer(s) hit a configured harness limit (tool budget)@if (toolBudgetQuestionNumbers) { <span> (question(s) {{ toolBudgetQuestionNumbers }})</span> }.</div>
-                  }
-                  @if (criticalErrorAnswerCount > 0) {
-                    <div>
-                      <strong>{{ criticalErrorAnswerCount }} answer(s) flagged with a critical error</strong>
-                      (question(s) {{ criticalErrorQuestionNumbers }})@if (criticalErrorCapBindingCount !== criticalErrorAnswerCount) {<span>, of which {{ criticalErrorCapBindingCount }} had their score lowered by the cap</span>}. The Intelligence Index weights by
-                      difficulty, so a critical error on an easy question barely moves it &mdash; read this
-                      count, not the index, for this failure mode.
-                    </div>
-                  }
-                  @if ((selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0) {
                     <!--
-                      The count is a run-level field while the numbers are derived from the answer
-                      rows, so the parenthetical is rendered only when those rows are actually loaded.
+                      The other reason a Speed Index is advisory: a deliberating candidate measured
+                      against an interactive-latency profile. Reachable here only when there is no
+                      median to lead with, since otherwise the card is in its demoted form.
                     -->
-                    <div>{{ selectedRunDetail.advisoryFlagAnswerCount }} answer(s) carry advisory flags@if (advisoryFlagQuestionNumbers) { <span> (question(s) {{ advisoryFlagQuestionNumbers }})</span> }.</div>
+                    @if (showRunProfileFitAdvisory) {
+                      <span class="degraded-tag" [title]="runProfileFitAdvisoryTitle">*</span>
+                    }
+                  </span>
+                  @if (showSpeedIndexSaturationAdvisory) {
+                    <span class="score-note" [title]="speedIndexSaturationAdvisoryTitle">saturated &mdash; {{ speedIndexCeilingAnswerCount }} of {{ speedIndexScoredAnswerCount }} at the ceiling; compare median model time</span>
                   }
-                  @if (disputedAnswerCount > 0) {
-                    <div>{{ disputedAnswerCount }} answer(s) were read by a {{ selectedRunDetail.isPanelRun ? 'reference reader' : 'second reader' }} that reached a materially different verdict. @if (selectedRunDetail.isPanelRun) {The panel score stands.} @else {The assessor's verdict is what scored.}@if (disputeVerificationLabel) { <span> {{ disputeVerificationLabel }}</span> }</div>
-                  }
-                  @if ((selectedRunDetail.secondOpinionCriticalErrorSplitCount ?? 0) > 0) {
-                    <div>
-                      <strong>{{ selectedRunDetail.secondOpinionCriticalErrorSplitCount }} critical-error split(s)</strong>@if (criticalErrorSplitQuestionNumbers) { <span> (question(s) {{ criticalErrorSplitQuestionNumbers }})</span> } &mdash;
-                      the two readers disagree on whether the answer contains a fabrication, which is the most severe disagreement this harness records.
-                    </div>
-                  }
-                  @if (contestedVerdictAnswerCount > 0) {
-                    <div>
-                      <strong>{{ contestedVerdictAnswerCount }} contested verdict(s)</strong>@if (contestedVerdictQuestionNumbers) { <span> (question(s) {{ contestedVerdictQuestionNumbers }})</span> } &mdash;
-                      the assessor's own comment describes a fabrication while its critical-error flag
-                      is false. Advisory; no scoring effect.
-                    </div>
-                  }
-                  @if ((selectedRunDetail.unevidencedDeductionAnswerCount ?? 0) > 0) {
-                    <div>
-                      <strong>{{ selectedRunDetail.unevidencedDeductionAnswerCount }} answer(s) carry a level docked below the rubric-match anchor with evidence that names no defect, or that rests only on unverifiability</strong>@if (unevidencedDeductionQuestionNumbers) { <span> (question(s) {{ unevidencedDeductionQuestionNumbers }})</span> }. Advisory; the verdict stands and no score changed.
-                    </div>
-                  }
-                  @if (omissionAsAccuracyAnswerCount > 0) {
-                    <div>
-                      <strong>{{ omissionAsAccuracyAnswerCount }} answer(s) carry an omission docked as accuracy</strong>@if (omissionAsAccuracyQuestionNumbers) { <span> (question(s) {{ omissionAsAccuracyQuestionNumbers }})</span> } &mdash;
-                      the deduction's stated evidence describes an omission, which Completeness already grades. Advisory; no scoring effect.
-                    </div>
-                  }
-                  @if (refutedClaimAnswerCount > 0) {
-                    <div>
-                      <strong>{{ refutedClaimAnswerCount }} answer(s) carry refuted claim(s)</strong>@if (refutedClaimQuestionNumbers) { <span> (question(s) {{ refutedClaimQuestionNumbers }})</span> } &mdash;
-                      a factual claim outside the rubric was checked against the source code/wiki by a claim verifier and refuted. Advisory; recorded after scoring and folded into no index.
-                    </div>
-                  }
-                  @if (contestedCriticalErrorAnswerCount > 0) {
-                    <div>
-                      <strong>{{ contestedCriticalErrorAnswerCount }} answer(s) carry a contested critical error</strong>@if (contestedCriticalErrorQuestionNumbers) { <span> (question(s) {{ contestedCriticalErrorQuestionNumbers }})</span> } &mdash;
-                      the quoted claim was checked against the source code/wiki by the claim verifier and supported. Advisory; the cap stands and no score changed. Re-assess from the run detail.
-                    </div>
-                  }
-                  @if ((contestedAccuracyDeductionAnswerCount ?? 0) > 0) {
-                    <div>
-                      <strong>{{ contestedAccuracyDeductionAnswerCount }} answer(s) carry a contested accuracy deduction</strong>@if (contestedAccuracyDeductionQuestionNumbers) { <span> (question(s) {{ contestedAccuracyDeductionQuestionNumbers }})</span> } &mdash;
-                      either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was refuted by the claim verifier, or a sentence the assessor quoted as false was supported by it. Advisory; the deduction stands and no score changed. Re-assess from the run detail.
-                    </div>
-                  }
-                  @if (selectedRunBoardFactsCheck && selectedRunBoardFactsCheck.missingLiterals.length > 0) {
-                    <div class="board-facts-notice">
-                      <strong>{{ selectedRunBoardFactsCheck.missingLiterals.length }} rubric quote(s) not found on this run's board</strong> &mdash;
-                      these rubrics quote text the board does not contain. Repair them before the next run: download the suite as YAML and hand it to an agent with the <code>server_rubric_handoff</code> skill.
-                      <ul class="board-facts-missing-list">
-                        @for (item of selectedRunMissingBoardQuotes; track item.questionId + ':' + item.orderIndex + ':' + item.literal) {
-                          <li>Q{{ item.orderIndex }}: "{{ item.literal }}"</li>
-                        }
-                        @if (selectedRunMissingBoardQuotesOverflow > 0) {
-                          <li>and {{ selectedRunMissingBoardQuotesOverflow }} more</li>
-                        }
-                      </ul>
-                    </div>
-                  }
-                  @if ((dimensionOutlierAnswerCount ?? 0) > 0) {
-                    <div>
-                      <strong>{{ dimensionOutlierAnswerCount }} answer(s) with a dimension outlier</strong>@if (dimensionOutlierQuestionNumbers) { <span> (question(s) {{ dimensionOutlierQuestionNumbers }})</span> } &mdash;
-                      one grading dimension scored &le; 1 while the other three scored &ge; 3, with no defect of that kind named in the assessor's comment. Advisory; routed to a second reader and no score changed.
-                    </div>
-                  }
-                  @if (claimVerificationFailedAnswerCount > 0) {
-                    <div>
-                      <strong>{{ claimVerificationFailedAnswerCount }} answer(s) had claim verification fail</strong>@if (claimVerificationFailedQuestionNumbers) { <span> (question(s) {{ claimVerificationFailedQuestionNumbers }})</span> } &mdash;
-                      the claim verifier was configured but returned no verdict, so their unverified claims were never checked. Advisory; no score changed.
-                    </div>
-                  }
-                  @if (secondOpinionSelectedButUnused && secondOpinionFailedAnswerCount === 0) {
-                    <div>
-                      A second reader was selected but no answer met a trigger, so nothing was graded twice and grader agreement is not measured for this run.
-                    </div>
-                  }
-                  @if (secondOpinionFailedAnswerCount > 0) {
-                    <div>
-                      <strong>{{ secondOpinionFailedAnswerCount }} answer(s) met a trigger but the second-reader call failed</strong>@if (secondOpinionFailedQuestionNumbers) { <span> (question(s) {{ secondOpinionFailedQuestionNumbers }})</span> }, so grader agreement @if (secondOpinionCompletedAnswerCount > 0) {is measured over the {{ secondOpinionCompletedAnswerCount }} answer(s) whose second reading completed} @else {is not measured for this run}. Advisory; the first verdict stands and no score changed.
-                    </div>
-                  }
-                  @if (reassessedAnswerCount > 0) {
-                    <div>
-                      {{ reassessedAnswerCount }} answer(s) were re-assessed after the run finished@if (reassessedQuestionNumbers) { <span> (question(s) {{ reassessedQuestionNumbers }})</span> },
-                      so this run's published index has moved since it completed.
-                    </div>
-                  }
-                  @if (showRunProfileFitAdvisory) {
-                    <div>
-                      The Speed Index is <strong>advisory</strong> for this run: the scoring profile
-                      targets interactive latency ({{ selectedRunDetail.scoringProfileSpeedTargetMs }} ms)
-                      while the candidate ran at thinking level
-                      <strong>{{ selectedRunDetail.testedModelThinkingLevelUsed }}</strong>. Compare it
-                      only against runs sharing both the profile and the thinking level.
-                    </div>
-                  }
+                }
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="demoteSpeedIndex ? 'Median Model Time' : 'Speed Index'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <!--
+                Grader agreement, never without its coverage. A mean delta over trigger-selected
+                answers is conditioned on the first assessor's own uncertainty; the same figure over
+                every answer is an inter-rater agreement rate. Only the fraction tells them apart.
+              -->
+              <!--
+                The two panel members: each one's index alone over the answers both scored, their
+                absolute-agreement ICC and the mean B − A. The headline index above is the panel's.
+              -->
+              @if (selectedRunDetail.isPanelRun) {
+                <div class="score-card panel-tile">
+                  <span class="score-label">Panel</span>
+                  <span class="score-subvalue">
+                    A {{ selectedRunDetail.assessorOnlyQualityIndex ?? 'N/A' }} · B {{ selectedRunDetail.coAssessorOnlyQualityIndex ?? 'N/A' }}
+                  </span>
+                  <span class="score-note">ICC {{ panelIccLabel }} · mean B − A {{ panelSignedDeltaLabel }}</span>
+                  <span class="score-note">{{ selectedRunDetail.panelDisagreementCount ?? 0 }} disagreement(s) over {{ selectedRunDetail.panelGradedAnswerCount ?? 0 }} answers both scored</span>
+                  <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Panel" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
+              }
+              @if (showAgreementTile) {
+                <div class="score-card">
+                  <span class="score-label">{{ selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement' }}</span>
+                  <span class="score-subvalue">
+                    {{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · ' + agreementMeanSignedDeltaLabel : '' }}
+                    <!--
+                      H4. At n = 1 a displayed 0.0 is the arithmetic of a single point and currently reads as
+                      strong agreement. The same marker the Speed Index card uses, for the same reason: the
+                      number is real but does not mean what it looks like.
+                    -->
+                    @if (showAgreementAdvisory) {
+                      <span class="degraded-tag" [title]="agreementAdvisoryTitle">*</span>
+                    }
+                  </span>
+                  <span class="score-note">{{ agreementCoverageLabel }} · {{ agreementModeLabel }} · {{ secondOpinionBlindLabel }}</span>
+                  <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                </div>
+              }
+              <div class="score-card">
+                <span class="score-label">Holistic Assessor Score</span>
+                <span class="score-subvalue">{{ selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A' }} / 100</span>
+                @if (selectedRunDetail.isPanelRun) {
+                  <span class="score-note">member A; member B {{ selectedRunDetail.coAssessorFinalScore ?? 'N/A' }} / 100</span>
+                }
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Holistic Assessor Score" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <!--
+                The pair the report prints as Total Candidate Answer Time and Total Elapsed Wall Time.
+                Two cards rather than one because the gap between them is the grading pipeline: on run 24
+                the candidate answered for 12m 45s inside a 23m 39s run.
+              -->
+              <div class="score-card">
+                <span class="score-label">Answer Duration</span>
+                <span class="score-subvalue">{{ runAnswerDurationLabel(selectedRunDetail) }}</span>
+                <span class="score-note">{{ runAnswerDurationNote(selectedRunDetail) }}</span>
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Answer Duration" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <div class="score-card">
+                <span class="score-label">Elapsed Wall Time</span>
+                <span class="score-subvalue">{{ runWallClockLabel(selectedRunDetail) }}</span>
+                <span class="score-note">{{ runWallClockNote(selectedRunDetail) }}</span>
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Elapsed Wall Time" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <!--
+                H5. A pair: what the model under test cost, and the catalog total beside it. On run 13
+                the candidate was 28 % of the cost and grading plus verification 72 %, which inverts the
+                intuition that a benchmark's cost is the model under test, so the total alone misleads.
+                The rest of the per-role split is the cost panel in the side column. The candidate
+                card is absent on a run costed before that figure was recorded.
+              -->
+              @if (selectedRunDetail.estimatedCandidateCost != null) {
+                <div class="score-card">
+                  <span class="score-label">Model Under Test</span>
+                  <span class="score-subvalue">
+                    {{ formatRunCandidateCost(selectedRunDetail) }}
+                    @if (selectedRunDetail.pricingIncomplete) {
+                      <span class="degraded-tag" title="Some participating models lack pricing">*</span>
+                    }
+                  </span>
+                  <span class="score-note">{{ candidateCostShareLabel(selectedRunDetail) }}</span>
+                  <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Model Under Test" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                </div>
+              }
+              <div class="score-card">
+                <span class="score-label">Estimated Cost</span>
+                <span class="score-subvalue">
+                  {{ formatRunEstimatedCost(selectedRunDetail) }}
+                  @if (selectedRunDetail.pricingIncomplete) {
+                    <span class="degraded-tag" title="Some participating models lack pricing">*</span>
+                  }
+                </span>
+                <span class="score-note">{{ selectedRunDetail.pricingSource || 'Pricing unknown' }}</span>
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Estimated Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
             </div>
-          }
 
-          <!--
-            Measurements, not defects, so deliberately outside the integrity notice above: each
-            records a grading rule declining to charge the answer for something the rubric caused.
-            They are how much of a dimension's shortfall the instrument can account for, and they
-            are what a later rule change is checked against.
-          -->
-          <!-- In a panel run each count is given per member: member A's from the run, member B's
-               counted from its own verdicts. The docked subsets are member A's alone. -->
-          @if (hasInstrumentMeasurements) {
-            <div class="alert alert-info mb-20" role="note">
-              <div class="alert-content">
-                <div class="alert-heading"><strong>Instrument Measurements</strong></div>
-                <div class="alert-body">
-                  @if (hasCompletenessOutOfScopeMeasurement) {
-                    <div>
-                      @if (instrumentMeasurementsPerMember) {
-                        <strong>{{ completenessOutOfScopeCount }} (member A) and {{ memberBCompletenessOutOfScopeCount }} (member B) out-of-scope completeness deduction(s)</strong> &mdash;
-                        rubric points a panel member itself placed outside what the question asked, recorded
-                      } @else {
-                        <strong>{{ completenessOutOfScopeCount }} out-of-scope completeness deduction(s)</strong> &mdash;
-                        rubric points the assessor itself placed outside what the question asked, recorded
+            @if (failedAnswers().length > 0 && (formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled' || formatStatus(selectedRunDetail.status) === 'CompletedWithErrors')) {
+              <div class="alert mb-20"
+                   [class.alert-danger]="formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled'"
+                   [class.alert-warning]="formatStatus(selectedRunDetail.status) === 'CompletedWithErrors'"
+                   role="alert">
+                <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <div class="alert-content">
+                  <div class="alert-heading"><strong>Run did not complete cleanly</strong></div>
+                  <div class="alert-body">
+                    @if ((selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
+                      {{ selectedRunDetail.terminalFailureAnswerCount }} of {{ selectedRunDetail.totalQuestionCount }} questions failed at the provider — indexes are not computed for this run.
+                    } @else {
+                      {{ failedAnswers().length }} of {{ selectedRunDetail.totalQuestionCount }} questions produced no gradeable answer.
+                    }
+                    @for (group of failedAnswerGroups(); track group.message + group.questions[0]) {
+                      <div>{{ formatQuestionRanges(group.questions) }} — {{ group.httpStatusCode != null ? 'HTTP ' + group.httpStatusCode + ' — ' : '' }}{{ group.message }}</div>
+                    }
+                  </div>
+                  <div class="alert-actions">
+                    <button type="button" class="btn-gh" (click)="rerunFailedFromRunDetail(selectedRunDetail.id)" [disabled]="isRunBusy() || isAbortedRun(selectedRunDetail)">
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+                      Re-run Failed Questions
+                    </button>
+                  </div>
+                </div>
+              </div>
+            }
+
+            @if (hasDivergence(selectedRunDetail.finalScore, selectedRunDetail.qualityIndex ?? selectedRunDetail.computedScore)) {
+              <div class="alert alert-warning mb-20" role="alert">
+                <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <div class="alert-content">
+                  <div class="alert-heading"><strong>Index Divergence</strong></div>
+                  <div class="alert-body">
+                    The assessor's holistic score ({{ selectedRunDetail.finalScore }}) diverges significantly from the difficulty-weighted Intelligence Index ({{ selectedRunDetail.qualityIndex ?? selectedRunDetail.computedScore }}). Check assessor qualitative comments.
+                  </div>
+                </div>
+              </div>
+            }
+
+            @if (isAbortedRun(selectedRunDetail)) {
+              <p class="run-aborted-notice">This run stopped before finishing its suite, so it has no Intelligence Index or Speed Index. Re-scoring and re-running are unavailable: they would publish indices computed over only the questions that completed.</p>
+            }
+          </div>
+
+          <div role="tabpanel" class="rr-panel" id="rr-panel-integrity" aria-labelledby="rr-tab-integrity" tabindex="0"
+               [hidden]="runReportTab !== 'integrity'">
+            @if (hasRunIntegrityNotice) {
+              <div class="alert alert-warning mb-20" role="alert">
+                <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                  <line x1="12" y1="9" x2="12" y2="13"></line>
+                  <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+                <div class="alert-content">
+                  <div class="alert-heading"><strong>Run Integrity Notice</strong></div>
+                  <!--
+                    Separate causes, deliberately never summed into one "degraded" figure. A
+                    configured tool budget is not a transport defect, a repaired answer is not a
+                    damaged one, and an advisory flag is not a failure at all, so each clause is
+                    rendered only when it applies.
+                  -->
+                  <div class="alert-body">
+                    @if (selectedRunDetail.terminalFailureAnswerCount != null) {
+                      @if (selectedRunDetail.terminalFailureAnswerCount > 0) {
+                        <div>{{ selectedRunDetail.terminalFailureAnswerCount }} answer(s) failed at the provider (API error).</div>
                       }
-                      under the <code>OUT-OF-SCOPE:</code> marker &mdash; the instruction is not to deduct
-                      for them. The instrument's share of the Accuracy-to-Completeness gap.
-                    </div>
-                    @if (completenessOutOfScopeDeductedCount > 0) {
+                      @if (nonTerminalTransportDefectCount(selectedRunDetail) > 0) {
+                        <div>{{ nonTerminalTransportDefectCount(selectedRunDetail) }} answer(s) arrived empty or truncated.</div>
+                      }
+                    } @else if ((selectedRunDetail.transportDefectAnswerCount ?? 0) > 0) {
+                      <div>{{ selectedRunDetail.transportDefectAnswerCount }} answer(s) were corrupted beyond recovery (empty or truncated).</div>
+                    }
+                    @if ((selectedRunDetail.recoveredAnswerCount ?? 0) > 0) {
+                      <div>{{ selectedRunDetail.recoveredAnswerCount }} answer(s) were repaired by the harness before grading (leaked transport artifacts removed) and graded normally.</div>
+                    }
+                    @if ((selectedRunDetail.toolStarvedAnswerCount ?? 0) > 0) {
+                      <!-- Named by question, like every other clause: a count alone gives an operator
+                           nothing to raise the budget for. -->
+                      <div>{{ selectedRunDetail.toolStarvedAnswerCount }} answer(s) hit a configured harness limit (tool budget)@if (toolBudgetQuestionNumbers) { <span> (question(s) {{ toolBudgetQuestionNumbers }})</span> }.</div>
+                    }
+                    @if (criticalErrorAnswerCount > 0) {
                       <div>
-                        {{ completenessOutOfScopeDeductedCount }} of {{ instrumentMeasurementsPerMember ? "member A's" : 'them' }} sit beside a Completeness level
-                        below 6 with no in-scope defect named &mdash; flagged for a second reading.
+                        <strong>{{ criticalErrorAnswerCount }} answer(s) flagged with a critical error</strong>
+                        (question(s) {{ criticalErrorQuestionNumbers }})@if (criticalErrorCapBindingCount !== criticalErrorAnswerCount) {<span>, of which {{ criticalErrorCapBindingCount }} had their score lowered by the cap</span>}. The Intelligence Index weights by
+                        difficulty, so a critical error on an easy question barely moves it &mdash; read this
+                        count, not the index, for this failure mode.
                       </div>
                     }
-                  }
-                  @if (hasReadabilityFormOnlyMeasurement) {
-                    <div>
-                      @if (instrumentMeasurementsPerMember) {
-                        <strong>{{ readabilityFormOnlyCount }} (member A) and {{ memberBReadabilityFormOnlyCount }} (member B) rubric format suggestion(s) not followed</strong> &mdash;
-                      } @else {
-                        <strong>{{ readabilityFormOnlyCount }} rubric format suggestion(s) not followed</strong> &mdash;
-                      }
-                      rubric FORM criteria naming a presentation the answer did not adopt, recorded under
-                      the <code>FORM:</code> marker &mdash; the instruction is not to deduct for them.
-                      Readability is graded on its level anchors alone.
-                    </div>
-                    @if (readabilityFormOnlyDeductedCount > 0) {
+                    @if ((selectedRunDetail.advisoryFlagAnswerCount ?? 0) > 0) {
+                      <!--
+                        The count is a run-level field while the numbers are derived from the answer
+                        rows, so the parenthetical is rendered only when those rows are actually loaded.
+                      -->
+                      <div>{{ selectedRunDetail.advisoryFlagAnswerCount }} answer(s) carry advisory flags@if (advisoryFlagQuestionNumbers) { <span> (question(s) {{ advisoryFlagQuestionNumbers }})</span> }.</div>
+                    }
+                    @if (disputedAnswerCount > 0) {
+                      <div>{{ disputedAnswerCount }} answer(s) were read by a {{ selectedRunDetail.isPanelRun ? 'reference reader' : 'second reader' }} that reached a materially different verdict. @if (selectedRunDetail.isPanelRun) {The panel score stands.} @else {The assessor's verdict is what scored.}@if (disputeVerificationLabel) { <span> {{ disputeVerificationLabel }}</span> }</div>
+                    }
+                    @if ((selectedRunDetail.secondOpinionCriticalErrorSplitCount ?? 0) > 0) {
                       <div>
-                        {{ readabilityFormOnlyDeductedCount }} of {{ instrumentMeasurementsPerMember ? "member A's" : 'them' }} sit beside a Readability level
-                        below 6 with no other basis named.
+                        <strong>{{ selectedRunDetail.secondOpinionCriticalErrorSplitCount }} critical-error split(s)</strong>@if (criticalErrorSplitQuestionNumbers) { <span> (question(s) {{ criticalErrorSplitQuestionNumbers }})</span> } &mdash;
+                        the two readers disagree on whether the answer contains a fabrication, which is the most severe disagreement this harness records.
                       </div>
                     }
-                  }
+                    @if (contestedVerdictAnswerCount > 0) {
+                      <div>
+                        <strong>{{ contestedVerdictAnswerCount }} contested verdict(s)</strong>@if (contestedVerdictQuestionNumbers) { <span> (question(s) {{ contestedVerdictQuestionNumbers }})</span> } &mdash;
+                        the assessor's own comment describes a fabrication while its critical-error flag
+                        is false. Advisory; no scoring effect.
+                      </div>
+                    }
+                    @if ((selectedRunDetail.unevidencedDeductionAnswerCount ?? 0) > 0) {
+                      <div>
+                        <strong>{{ selectedRunDetail.unevidencedDeductionAnswerCount }} answer(s) carry a level docked below the rubric-match anchor with evidence that names no defect, or that rests only on unverifiability</strong>@if (unevidencedDeductionQuestionNumbers) { <span> (question(s) {{ unevidencedDeductionQuestionNumbers }})</span> }. Advisory; the verdict stands and no score changed.
+                      </div>
+                    }
+                    @if (omissionAsAccuracyAnswerCount > 0) {
+                      <div>
+                        <strong>{{ omissionAsAccuracyAnswerCount }} answer(s) carry an omission docked as accuracy</strong>@if (omissionAsAccuracyQuestionNumbers) { <span> (question(s) {{ omissionAsAccuracyQuestionNumbers }})</span> } &mdash;
+                        the deduction's stated evidence describes an omission, which Completeness already grades. Advisory; no scoring effect.
+                      </div>
+                    }
+                    @if (refutedClaimAnswerCount > 0) {
+                      <div>
+                        <strong>{{ refutedClaimAnswerCount }} answer(s) carry refuted claim(s)</strong>@if (refutedClaimQuestionNumbers) { <span> (question(s) {{ refutedClaimQuestionNumbers }})</span> } &mdash;
+                        a factual claim outside the rubric was checked against the source code/wiki by a claim verifier and refuted. Advisory; recorded after scoring and folded into no index.
+                      </div>
+                    }
+                    @if (contestedCriticalErrorAnswerCount > 0) {
+                      <div>
+                        <strong>{{ contestedCriticalErrorAnswerCount }} answer(s) carry a contested critical error</strong>@if (contestedCriticalErrorQuestionNumbers) { <span> (question(s) {{ contestedCriticalErrorQuestionNumbers }})</span> } &mdash;
+                        the quoted claim was checked against the source code/wiki by the claim verifier and supported. Advisory; the cap stands and no score changed. Re-assess from the run detail.
+                      </div>
+                    }
+                    @if ((contestedAccuracyDeductionAnswerCount ?? 0) > 0) {
+                      <div>
+                        <strong>{{ contestedAccuracyDeductionAnswerCount }} answer(s) carry a contested accuracy deduction</strong>@if (contestedAccuracyDeductionQuestionNumbers) { <span> (question(s) {{ contestedAccuracyDeductionQuestionNumbers }})</span> } &mdash;
+                        either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was refuted by the claim verifier, or a sentence the assessor quoted as false was supported by it. Advisory; the deduction stands and no score changed. Re-assess from the run detail.
+                      </div>
+                    }
+                    @if (selectedRunBoardFactsCheck && selectedRunBoardFactsCheck.missingLiterals.length > 0) {
+                      <div class="board-facts-notice">
+                        <strong>{{ selectedRunBoardFactsCheck.missingLiterals.length }} rubric quote(s) not found on this run's board</strong> &mdash;
+                        these rubrics quote text the board does not contain. Repair them before the next run: download the suite as YAML and hand it to an agent with the <code>server_rubric_handoff</code> skill.
+                        <ul class="board-facts-missing-list">
+                          @for (item of selectedRunMissingBoardQuotes; track item.questionId + ':' + item.orderIndex + ':' + item.literal) {
+                            <li>Q{{ item.orderIndex }}: "{{ item.literal }}"</li>
+                          }
+                          @if (selectedRunMissingBoardQuotesOverflow > 0) {
+                            <li>and {{ selectedRunMissingBoardQuotesOverflow }} more</li>
+                          }
+                        </ul>
+                      </div>
+                    }
+                    @if ((dimensionOutlierAnswerCount ?? 0) > 0) {
+                      <div>
+                        <strong>{{ dimensionOutlierAnswerCount }} answer(s) with a dimension outlier</strong>@if (dimensionOutlierQuestionNumbers) { <span> (question(s) {{ dimensionOutlierQuestionNumbers }})</span> } &mdash;
+                        one grading dimension scored &le; 1 while the other three scored &ge; 3, with no defect of that kind named in the assessor's comment. Advisory; routed to a second reader and no score changed.
+                      </div>
+                    }
+                    @if (claimVerificationFailedAnswerCount > 0) {
+                      <div>
+                        <strong>{{ claimVerificationFailedAnswerCount }} answer(s) had claim verification fail</strong>@if (claimVerificationFailedQuestionNumbers) { <span> (question(s) {{ claimVerificationFailedQuestionNumbers }})</span> } &mdash;
+                        the claim verifier was configured but returned no verdict, so their unverified claims were never checked. Advisory; no score changed.
+                      </div>
+                    }
+                    @if (secondOpinionSelectedButUnused && secondOpinionFailedAnswerCount === 0) {
+                      <div>
+                        A second reader was selected but no answer met a trigger, so nothing was graded twice and grader agreement is not measured for this run.
+                      </div>
+                    }
+                    @if (secondOpinionFailedAnswerCount > 0) {
+                      <div>
+                        <strong>{{ secondOpinionFailedAnswerCount }} answer(s) met a trigger but the second-reader call failed</strong>@if (secondOpinionFailedQuestionNumbers) { <span> (question(s) {{ secondOpinionFailedQuestionNumbers }})</span> }, so grader agreement @if (secondOpinionCompletedAnswerCount > 0) {is measured over the {{ secondOpinionCompletedAnswerCount }} answer(s) whose second reading completed} @else {is not measured for this run}. Advisory; the first verdict stands and no score changed.
+                      </div>
+                    }
+                    @if (reassessedAnswerCount > 0) {
+                      <div>
+                        {{ reassessedAnswerCount }} answer(s) were re-assessed after the run finished@if (reassessedQuestionNumbers) { <span> (question(s) {{ reassessedQuestionNumbers }})</span> },
+                        so this run's published index has moved since it completed.
+                      </div>
+                    }
+                    @if (showRunProfileFitAdvisory) {
+                      <div>
+                        The Speed Index is <strong>advisory</strong> for this run: the scoring profile
+                        targets interactive latency ({{ selectedRunDetail.scoringProfileSpeedTargetMs }} ms)
+                        while the candidate ran at thinking level
+                        <strong>{{ selectedRunDetail.testedModelThinkingLevelUsed }}</strong>. Compare it
+                        only against runs sharing both the profile and the thinking level.
+                      </div>
+                    }
+                  </div>
                 </div>
               </div>
-            </div>
-          }
+            }
 
-          @if (hasDivergence(selectedRunDetail.finalScore, selectedRunDetail.qualityIndex ?? selectedRunDetail.computedScore)) {
-            <div class="alert alert-warning mb-20" role="alert">
-              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
-              <div class="alert-content">
-                <div class="alert-heading"><strong>Index Divergence</strong></div>
-                <div class="alert-body">
-                  The assessor's holistic score ({{ selectedRunDetail.finalScore }}) diverges significantly from the difficulty-weighted Intelligence Index ({{ selectedRunDetail.qualityIndex ?? selectedRunDetail.computedScore }}). Check assessor qualitative comments.
+            <!--
+              Measurements, not defects, so deliberately outside the integrity notice above: each
+              records a grading rule declining to charge the answer for something the rubric caused.
+              They are how much of a dimension's shortfall the instrument can account for, and they
+              are what a later rule change is checked against.
+            -->
+            <!-- In a panel run each count is given per member: member A's from the run, member B's
+                 counted from its own verdicts. The docked subsets are member A's alone. -->
+            @if (hasInstrumentMeasurements) {
+              <div class="alert alert-info mb-20" role="note">
+                <div class="alert-content">
+                  <div class="alert-heading"><strong>Instrument Measurements</strong></div>
+                  <div class="alert-body">
+                    @if (hasCompletenessOutOfScopeMeasurement) {
+                      <div>
+                        @if (instrumentMeasurementsPerMember) {
+                          <strong>{{ completenessOutOfScopeCount }} (member A) and {{ memberBCompletenessOutOfScopeCount }} (member B) out-of-scope completeness deduction(s)</strong> &mdash;
+                          rubric points a panel member itself placed outside what the question asked, recorded
+                        } @else {
+                          <strong>{{ completenessOutOfScopeCount }} out-of-scope completeness deduction(s)</strong> &mdash;
+                          rubric points the assessor itself placed outside what the question asked, recorded
+                        }
+                        under the <code>OUT-OF-SCOPE:</code> marker &mdash; the instruction is not to deduct
+                        for them. The instrument's share of the Accuracy-to-Completeness gap.
+                      </div>
+                      @if (completenessOutOfScopeDeductedCount > 0) {
+                        <div>
+                          {{ completenessOutOfScopeDeductedCount }} of {{ instrumentMeasurementsPerMember ? "member A's" : 'them' }} sit beside a Completeness level
+                          below 6 with no in-scope defect named &mdash; flagged for a second reading.
+                        </div>
+                      }
+                    }
+                    @if (hasReadabilityFormOnlyMeasurement) {
+                      <div>
+                        @if (instrumentMeasurementsPerMember) {
+                          <strong>{{ readabilityFormOnlyCount }} (member A) and {{ memberBReadabilityFormOnlyCount }} (member B) rubric format suggestion(s) not followed</strong> &mdash;
+                        } @else {
+                          <strong>{{ readabilityFormOnlyCount }} rubric format suggestion(s) not followed</strong> &mdash;
+                        }
+                        rubric FORM criteria naming a presentation the answer did not adopt, recorded under
+                        the <code>FORM:</code> marker &mdash; the instruction is not to deduct for them.
+                        Readability is graded on its level anchors alone.
+                      </div>
+                      @if (readabilityFormOnlyDeductedCount > 0) {
+                        <div>
+                          {{ readabilityFormOnlyDeductedCount }} of {{ instrumentMeasurementsPerMember ? "member A's" : 'them' }} sit beside a Readability level
+                          below 6 with no other basis named.
+                        </div>
+                      }
+                    }
+                  </div>
                 </div>
               </div>
-            </div>
-          }
+            }
 
-          @if (isAbortedRun(selectedRunDetail)) {
-            <p class="run-aborted-notice">This run stopped before finishing its suite, so it has no Intelligence Index or Speed Index. Re-scoring and re-running are unavailable: they would publish indices computed over only the questions that completed.</p>
-          }
+            @if (!hasRunIntegrityNotice && !hasInstrumentMeasurements) {
+              <p class="text-muted">No integrity notices for this run.</p>
+            }
+          </div>
 
-          <!-- Assessor synthesis: one card, or in a panel run one tab per member and an Agreement tab. -->
-          @if (synthesisViewsOf(selectedRunDetail); as syntheses) {
+          <div role="tabpanel" class="rr-panel" id="rr-panel-synthesis" aria-labelledby="rr-tab-synthesis" tabindex="0"
+               [hidden]="runReportTab !== 'synthesis'">
+            <!-- Assessor synthesis: one card, or in a panel run one tab per member and an Agreement tab. -->
+            @let syntheses = synthesisViewsOf(selectedRunDetail);
             @if (syntheses.length > 0) {
               <app-benchmark-synthesis-panel
                 [syntheses]="syntheses"
                 [convergence]="selectedRunDetail.synthesisConvergence ?? null"></app-benchmark-synthesis-panel>
+            } @else {
+              <p class="text-muted">This run has no assessor synthesis.</p>
             }
-          }
+          </div>
 
-          <!-- Questions & Answers -->
-          <section class="questions-detail-section" aria-labelledby="rrQuestionsTitle">
-            <h4 id="rrQuestionsTitle">Questions ({{ selectedRunDetail.answers.length }})</h4>
-            <!-- A card is shown when it matches any pressed filter. -->
-            <div class="rr-toolbar">
-              @for (filter of questionFiltersOf(selectedRunDetail); track filter.key) {
-                <button type="button" class="gh-filter-toggle" [attr.data-filter]="filter.key"
-                        [attr.aria-pressed]="questionFilters.has(filter.key)"
-                        (click)="toggleQuestionFilter(filter.key)">{{ filter.label }} ({{ questionFilterCount(selectedRunDetail, filter.key) }})</button>
-              }
-              <button type="button" class="btn-ghost" id="rr-expand-all" (click)="expandAllQuestions(selectedRunDetail)">Expand all</button>
-              <button type="button" class="btn-ghost" id="rr-collapse-all" (click)="collapseAllQuestions()">Collapse all</button>
-            </div>
-            <p class="section-note" role="status">
-              @if (questionFilters.size > 0) {
-                Showing {{ visibleAnswers(selectedRunDetail).length }} of {{ selectedRunDetail.answers.length }} questions, those matching any selected filter.
-              }
-            </p>
-            @for (ans of visibleAnswers(selectedRunDetail); track ans.orderIndex) {
-              <div class="question-detail-card mb-15">
-                <button type="button" class="question-card-header"
-                        [attr.aria-expanded]="expandedQuestions.has(ans.orderIndex)"
-                        [attr.aria-controls]="expandedQuestions.has(ans.orderIndex) ? 'bm-answer-body-' + ans.orderIndex : null"
-                        (click)="toggleQuestion(ans.orderIndex)">
-                  <span class="header-left">
-                    <span class="q-number">Q{{ ans.orderIndex }}</span>
-                    <!--
-                      A band shift is surfaced through the tooltip here and listed in full in the
-                      Band Agreement panel, so the badge itself stays compact.
-                    -->
-                    <span class="difficulty-badge" [class]="'diff-' + formatDifficulty(ans.difficulty).toLowerCase()"
-                          [title]="assessedBandOf(ans) ? 'Authored ' + formatDifficulty(ans.difficulty) + ', assessed ' + assessedBandOf(ans) : 'Authored and assessed band agree'">
-                      {{ formatDifficulty(ans.difficulty) }} ({{ ans.assessedDifficulty ?? 'Auto' }})
-                    </span>
-                    <span class="status-badge" [class]="'badge-status-' + formatAnswerStatus(ans.status).toLowerCase()">
-                      {{ formatAnswerStatus(ans.status) }}
-                    </span>
-                    @if (ans.toolBudgetExhausted) {
-                      <span class="badge-starved" title="Tool call budget exhausted on this question. This is a configured cap, not a defect.">
-                        Budget Hit ({{ ans.toolCallCount ?? 0 }}/{{ ans.toolCallBudgetUsed ?? '?' }})
+          <div role="tabpanel" class="rr-panel" id="rr-panel-questions" aria-labelledby="rr-tab-questions" tabindex="0"
+               [hidden]="runReportTab !== 'questions'">
+            <section class="questions-detail-section" aria-labelledby="rrQuestionsTitle">
+              <h4 id="rrQuestionsTitle">Questions ({{ selectedRunDetail.answers.length }})</h4>
+              <!-- A card is shown when it matches any pressed filter. -->
+              <div class="rr-toolbar">
+                @for (filter of questionFiltersOf(selectedRunDetail); track filter.key) {
+                  <button type="button" class="gh-filter-toggle" [attr.data-filter]="filter.key"
+                          [attr.aria-pressed]="questionFilters.has(filter.key)"
+                          (click)="toggleQuestionFilter(filter.key)">{{ filter.label }} ({{ questionFilterCount(selectedRunDetail, filter.key) }})</button>
+                }
+                <button type="button" class="btn-ghost" id="rr-expand-all" (click)="expandAllQuestions(selectedRunDetail)">Expand all</button>
+                <button type="button" class="btn-ghost" id="rr-collapse-all" (click)="collapseAllQuestions()">Collapse all</button>
+              </div>
+              <p class="section-note" role="status">
+                @if (questionFilters.size > 0) {
+                  Showing {{ visibleAnswers(selectedRunDetail).length }} of {{ selectedRunDetail.answers.length }} questions, those matching any selected filter.
+                }
+              </p>
+              @for (ans of visibleAnswers(selectedRunDetail); track ans.orderIndex) {
+                <div class="question-detail-card mb-15">
+                  <button type="button" class="question-card-header"
+                          [attr.aria-expanded]="expandedQuestions.has(ans.orderIndex)"
+                          [attr.aria-controls]="expandedQuestions.has(ans.orderIndex) ? 'bm-answer-body-' + ans.orderIndex : null"
+                          (click)="toggleQuestion(ans.orderIndex)">
+                    <span class="header-left">
+                      <span class="q-number">Q{{ ans.orderIndex }}</span>
+                      <!--
+                        A band shift is surfaced through the tooltip here and listed in full in the
+                        Band Agreement panel, so the badge itself stays compact.
+                      -->
+                      <span class="difficulty-badge" [class]="'diff-' + formatDifficulty(ans.difficulty).toLowerCase()"
+                            [title]="assessedBandOf(ans) ? 'Authored ' + formatDifficulty(ans.difficulty) + ', assessed ' + assessedBandOf(ans) : 'Authored and assessed band agree'">
+                        {{ formatDifficulty(ans.difficulty) }} ({{ ans.assessedDifficulty ?? 'Auto' }})
                       </span>
-                    }
-                    @if (ans.scrubbedArtifactCount > 0) {
-                      <span class="badge-scrubbed" [title]="ans.scrubbedArtifactCount + ' transport artifact block(s) removed before grading'">Scrubbed</span>
-                    }
-                    @if (ans.answerFlagNames && ans.answerFlagNames.length > 0) {
-                      @for (flag of ans.answerFlagNames; track flag) {
-                        <!--
-                          Advisory flags get badge-flag-advisory on top of their per-name class,
-                          which mutes them so they read as informational rather than as failures.
-                        -->
-                        <span class="badge-flag"
-                              [class]="'badge-flag-' + flag.toLowerCase() + (isAdvisoryFlagName(flag) ? ' badge-flag-advisory' : '')"
-                              [title]="flag === 'RefutedClaim' ? 'Advisory: a claim outside the rubric was checked against the source/wiki and refuted. Recorded after scoring; no score changed.' : flag === 'UnevidencedDeduction' ? 'Advisory: a level was docked with evidence that names no defect, or that rests only on unverifiability. The verdict stands and no score changed.' : flag === 'OmissionAsAccuracy' ? 'Advisory: an omission was docked as accuracy, which Completeness already grades. The verdict stands and no score changed.' : flag === 'ContestedCriticalError' ? 'Advisory: the critical-error quote was checked against the source/wiki by the claim verifier and supported. Contested, not overturned — the quality cap stands and no score changed.' : flag === 'ContestedAccuracyDeduction' ? 'Advisory: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was refuted by the claim verifier, or a sentence the assessor quoted as false was supported by it. Contested, not overturned — the deduction stands and no score changed.' : flag === 'DimensionOutlier' ? 'Advisory: one grading dimension scored ≤ 1 while the other three scored ≥ 3, with no defect of that kind named in the assessor comment. Routed to a second reader; no score changed.' : isAdvisoryFlagName(flag) ? 'Advisory only — this does not affect the run status or the clean answer count.' : 'Transport defect detected in this answer.'">{{ flagBadgeLabel(flag) }}</span>
+                      <span class="status-badge" [class]="'badge-status-' + formatAnswerStatus(ans.status).toLowerCase()">
+                        {{ formatAnswerStatus(ans.status) }}
+                      </span>
+                      @if (ans.toolBudgetExhausted) {
+                        <span class="badge-starved" title="Tool call budget exhausted on this question. This is a configured cap, not a defect.">
+                          Budget Hit ({{ ans.toolCallCount ?? 0 }}/{{ ans.toolCallBudgetUsed ?? '?' }})
+                        </span>
                       }
-                    }
-                    @if (formatAssessmentStatus(ans.assessmentStatus) !== 'Scored') {
-                      <span class="status-badge" [class]="'badge-status-' + formatAssessmentStatus(ans.assessmentStatus).toLowerCase()">
-                        Assessment: {{ formatAssessmentStatus(ans.assessmentStatus) }}
-                      </span>
-                    }
-                    @if (ans.criticalError) {
-                      <span class="critical-badge" title="Critical error cap applied (Quality capped at 25)">CRITICAL ERROR</span>
-                    }
-                    @if (ans.panelDisagreed) {
-                      <span class="panel-disagree-badge"
-                            title="The two panel members differ by more than 15 points or on critical error. The published score is still their mean.">MEMBERS DISAGREE</span>
-                    }
-                    @if (ans.secondOpinionDisagreed) {
-                      <span class="disputed-badge"
-                            [title]="selectedRunDetail.isPanelRun ? 'The reference reader reached a materially different verdict. It never scores; the panel score stands.' : 'The second reader reached a materially different verdict. The assessor\'s verdict is what scored.'">DISPUTED</span>
-                    }
-                    <span class="q-title">{{ ans.questionText }}</span>
-                  </span>
-                  <span class="header-right">
-                    @if (wasAssessedByOther(ans)) {
-                      <span class="assessor-tag" [title]="(ans.assessedByModelProviderUsed || '') + '/' + (ans.assessedByModelIdUsed || '')">
-                        Assessed by {{ ans.assessedByModelDisplayNameUsed }}
-                      </span>
-                    }
-                    <!-- In a panel run the published score is the panel chip; Q and B are the members'. -->
-                    @if (selectedRunDetail.isPanelRun && ans.panelQualityScore != null) {
-                      <span class="q-score-badge panel-score-chip" [class]="getQuestionScoreBadgeClass(ans.panelQualityScore)"
-                            title="Panel score: the mean of the two members' quality scores">
-                        Panel: {{ ans.panelQualityScore | number:'1.0-1' }}
-                      </span>
-                    }
-                    @if (ans.qualityScore != null) {
-                      <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.qualityScore)">
-                        {{ selectedRunDetail.isPanelRun ? 'A' : 'Q' }}: {{ ans.qualityScore }}
-                        @if (ans.rawQualityScore != null && ans.rawQualityScore !== ans.qualityScore) {
-                          <small class="q-raw-score" title="Raw Quality Score before cap">({{ ans.rawQualityScore }})</small>
-                        }
-                      </span>
-                    }
-                    @if (selectedRunDetail.isPanelRun && ans.coAssessmentQualityScore != null) {
-                      <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.coAssessmentQualityScore)">
-                        B: {{ ans.coAssessmentQualityScore }}
-                      </span>
-                    }
-                    @if (ans.speedScore != null) {
-                      <span class="q-score-badge badge-speed">S: {{ ans.speedScore }}</span>
-                    }
-                    <svg class="expand-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                  </span>
-                </button>
-
-                @if (expandedQuestions.has(ans.orderIndex)) {
-                  <div class="question-card-body" [id]="'bm-answer-body-' + ans.orderIndex">
-                    @if (isAnswerFailed(ans) && (ans.errorMessage || ans.providerErrorDetail)) {
-                      <div class="alert alert-danger mb-15" role="alert">
-                        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <line x1="12" y1="8" x2="12" y2="12"></line>
-                          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                        </svg>
-                        <div class="alert-content">
-                          <div class="alert-heading"><strong>Provider Outage/Error@if (ans.httpStatusCode != null) { (HTTP {{ ans.httpStatusCode }}) }</strong></div>
-                          <div class="alert-body">
-                            {{ ans.errorMessage }}
-                            @if (ans.providerErrorDetail) {
-                              <div class="mt-5 text-muted text-11">{{ ans.providerErrorDetail }}</div>
-                            }
-                          </div>
-                        </div>
-                      </div>
-                    }
-
-                    @if (isAssessmentFailed(ans) && ans.assessmentError) {
-                      <div class="alert alert-warning mb-15" role="alert">
-                        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                          <circle cx="12" cy="12" r="10"></circle>
-                          <line x1="12" y1="8" x2="12" y2="12"></line>
-                          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                        </svg>
-                        <div class="alert-content">
-                          <div class="alert-heading"><strong>Assessment Failed</strong></div>
-                          <div class="alert-body">{{ ans.assessmentError }}</div>
-                        </div>
-                      </div>
-                    }
-
-                    <!-- Evaluation Chips -->
-                    @if (ans.accuracyLevel != null) {
-                      <div class="evaluation-chip-row mb-15">
-                        <div class="eval-chip"><strong>Accuracy:</strong> Level {{ ans.accuracyLevel }}/6 ({{ ans.accuracyScore }} pts)</div>
-                        <div class="eval-chip"><strong>Completeness:</strong> Level {{ ans.completenessLevel }}/6 ({{ ans.completenessScore }} pts)</div>
-                        <div class="eval-chip"><strong>Conciseness:</strong> Level {{ ans.concisenessLevel }}/6 ({{ ans.concisenessScore }} pts)</div>
-                        <div class="eval-chip"><strong>Readability:</strong> Level {{ ans.readabilityLevel }}/6 ({{ ans.readabilityScore }} pts)</div>
-                      </div>
-                    }
-
-                    <!--
-                      What the deductions rest on, and what a second assessor made of them. A
-                      score argued from the authored rubric and one argued from the grader's own
-                      recall are different claims; only the record tells them apart later.
-                    -->
-                    @if (answerEvidence(ans); as evidence) {
-                      <div class="assessment-evidence mb-15">
-                        @if (evidence.accuracy) {
-                          <div><strong>Accuracy evidence:</strong> {{ evidence.accuracy }}</div>
-                        }
-                        @if (evidence.completeness) {
-                          <div><strong>Completeness evidence:</strong> {{ evidence.completeness }}</div>
-                        }
-                        @if (ans.criticalError && ans.criticalErrorQuote) {
-                          <div><strong>Critical error quote:</strong> “{{ ans.criticalErrorQuote }}”</div>
-                        }
-                        @if (evidence.criticalErrorDemoted) {
-                          <div>
-                            <strong>Critical error:</strong> claimed by the assessor but not applied — the quoted
-                            claim could not be found in the graded answer, and an omission is not a critical error.
-                          </div>
-                        }
-                      </div>
-                    }
-
-                    <!--
-                      Claims the assessor could neither confirm nor refute. From harness version 7
-                      these are recorded rather than deducted for, so they are shown as a finding
-                      about the rubric rather than as a mark against the answer.
-                    -->
-                    @if (unverifiedClaimsOf(ans); as claims) {
-                      @if (claims.length > 0) {
-                        <div class="assessment-evidence mb-15">
-                          <div><strong>Unverified claims ({{ claims.length }}):</strong></div>
-                          <ul class="unverified-claim-list">
-                            @for (claim of claims; track claim) {
-                              <li>“{{ claim }}”</li>
-                            }
-                          </ul>
-                          <div>
-                            Neither confirmed nor refuted against the rubric. Advisory: from harness
-                            version 7 these do not reduce Accuracy.
-                          </div>
-                        </div>
+                      @if (ans.scrubbedArtifactCount > 0) {
+                        <span class="badge-scrubbed" [title]="ans.scrubbedArtifactCount + ' transport artifact block(s) removed before grading'">Scrubbed</span>
                       }
-                    }
-
-                    <!--
-                      Panel member B's verdict, beside member A's above. Both grade blind to each other
-                      with the same prompt, and the published score is their mean.
-                    -->
-                    @if (selectedRunDetail.isPanelRun) {
-                      <div class="co-assessment-box mb-15" [class.is-disputed]="ans.panelDisagreed">
-                        <div>
-                          <strong>Co-assessor ({{ ans.coAssessedByModelDisplayNameUsed || selectedRunDetail.coAssessorModelDisplayNameUsed }}):</strong>
-                          @if (ans.coAssessmentQualityScore != null && !isCoAssessmentUnscored(ans)) {
-                            {{ ans.coAssessmentQualityScore }} / 100, critical error
-                            {{ ans.coAssessmentCriticalError ? 'yes' : 'no' }}
-                            @if (ans.coAssessmentRawQualityScore != null && ans.coAssessmentRawQualityScore !== ans.coAssessmentQualityScore) {
-                              <span class="text-muted">(raw {{ ans.coAssessmentRawQualityScore }})</span>
-                            }
-                          } @else {
-                            assessment {{ ans.coAssessmentStatus != null ? formatAssessmentStatus(ans.coAssessmentStatus) : 'not recorded' }}
+                      @if (ans.answerFlagNames && ans.answerFlagNames.length > 0) {
+                        @for (flag of ans.answerFlagNames; track flag) {
+                          <!--
+                            Advisory flags get badge-flag-advisory on top of their per-name class,
+                            which mutes them so they read as informational rather than as failures.
+                          -->
+                          <span class="badge-flag"
+                                [class]="'badge-flag-' + flag.toLowerCase() + (isAdvisoryFlagName(flag) ? ' badge-flag-advisory' : '')"
+                                [title]="flag === 'RefutedClaim' ? 'Advisory: a claim outside the rubric was checked against the source/wiki and refuted. Recorded after scoring; no score changed.' : flag === 'UnevidencedDeduction' ? 'Advisory: a level was docked with evidence that names no defect, or that rests only on unverifiability. The verdict stands and no score changed.' : flag === 'OmissionAsAccuracy' ? 'Advisory: an omission was docked as accuracy, which Completeness already grades. The verdict stands and no score changed.' : flag === 'ContestedCriticalError' ? 'Advisory: the critical-error quote was checked against the source/wiki by the claim verifier and supported. Contested, not overturned — the quality cap stands and no score changed.' : flag === 'ContestedAccuracyDeduction' ? 'Advisory: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was refuted by the claim verifier, or a sentence the assessor quoted as false was supported by it. Contested, not overturned — the deduction stands and no score changed.' : flag === 'DimensionOutlier' ? 'Advisory: one grading dimension scored ≤ 1 while the other three scored ≥ 3, with no defect of that kind named in the assessor comment. Routed to a second reader; no score changed.' : isAdvisoryFlagName(flag) ? 'Advisory only — this does not affect the run status or the clean answer count.' : 'Transport defect detected in this answer.'">{{ flagBadgeLabel(flag) }}</span>
+                        }
+                      }
+                      @if (formatAssessmentStatus(ans.assessmentStatus) !== 'Scored') {
+                        <span class="status-badge" [class]="'badge-status-' + formatAssessmentStatus(ans.assessmentStatus).toLowerCase()">
+                          Assessment: {{ formatAssessmentStatus(ans.assessmentStatus) }}
+                        </span>
+                      }
+                      @if (ans.criticalError) {
+                        <span class="critical-badge" title="Critical error cap applied (Quality capped at 25)">CRITICAL ERROR</span>
+                      }
+                      @if (ans.panelDisagreed) {
+                        <span class="panel-disagree-badge"
+                              title="The two panel members differ by more than 15 points or on critical error. The published score is still their mean.">MEMBERS DISAGREE</span>
+                      }
+                      @if (ans.secondOpinionDisagreed) {
+                        <span class="disputed-badge"
+                              [title]="selectedRunDetail.isPanelRun ? 'The reference reader reached a materially different verdict. It never scores; the panel score stands.' : 'The second reader reached a materially different verdict. The assessor\'s verdict is what scored.'">DISPUTED</span>
+                      }
+                      <span class="q-title">{{ ans.questionText }}</span>
+                    </span>
+                    <span class="header-right">
+                      @if (wasAssessedByOther(ans)) {
+                        <span class="assessor-tag" [title]="(ans.assessedByModelProviderUsed || '') + '/' + (ans.assessedByModelIdUsed || '')">
+                          Assessed by {{ ans.assessedByModelDisplayNameUsed }}
+                        </span>
+                      }
+                      <!-- In a panel run the published score is the panel chip; Q and B are the members'. -->
+                      @if (selectedRunDetail.isPanelRun && ans.panelQualityScore != null) {
+                        <span class="q-score-badge panel-score-chip" [class]="getQuestionScoreBadgeClass(ans.panelQualityScore)"
+                              title="Panel score: the mean of the two members' quality scores">
+                          Panel: {{ ans.panelQualityScore | number:'1.0-1' }}
+                        </span>
+                      }
+                      @if (ans.qualityScore != null) {
+                        <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.qualityScore)">
+                          {{ selectedRunDetail.isPanelRun ? 'A' : 'Q' }}: {{ ans.qualityScore }}
+                          @if (ans.rawQualityScore != null && ans.rawQualityScore !== ans.qualityScore) {
+                            <small class="q-raw-score" title="Raw Quality Score before cap">({{ ans.rawQualityScore }})</small>
                           }
-                        </div>
-                        @if (ans.panelQualityScore != null) {
-                          <div>
-                            <strong>Panel score:</strong> {{ ans.panelQualityScore | number:'1.0-1' }} / 100
-                            @if (ans.panelDisagreed) {
-                              <span class="panel-disagree-badge">members disagree</span>
-                            }
+                        </span>
+                      }
+                      @if (selectedRunDetail.isPanelRun && ans.coAssessmentQualityScore != null) {
+                        <span class="q-score-badge" [class]="getQuestionScoreBadgeClass(ans.coAssessmentQualityScore)">
+                          B: {{ ans.coAssessmentQualityScore }}
+                        </span>
+                      }
+                      @if (ans.speedScore != null) {
+                        <span class="q-score-badge badge-speed">S: {{ ans.speedScore }}</span>
+                      }
+                      <svg class="expand-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </span>
+                  </button>
+
+                  @if (expandedQuestions.has(ans.orderIndex)) {
+                    <div class="question-card-body" [id]="'bm-answer-body-' + ans.orderIndex">
+                      @if (isAnswerFailed(ans) && (ans.errorMessage || ans.providerErrorDetail)) {
+                        <div class="alert alert-danger mb-15" role="alert">
+                          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                          </svg>
+                          <div class="alert-content">
+                            <div class="alert-heading"><strong>Provider Outage/Error@if (ans.httpStatusCode != null) { (HTTP {{ ans.httpStatusCode }}) }</strong></div>
+                            <div class="alert-body">
+                              {{ ans.errorMessage }}
+                              @if (ans.providerErrorDetail) {
+                                <div class="mt-5 text-muted text-11">{{ ans.providerErrorDetail }}</div>
+                              }
+                            </div>
                           </div>
-                        }
-                        @if (coAssessmentOf(ans); as co) {
-                          @if (co.accuracyLevel != null) {
-                            <div class="evaluation-chip-row">
-                              <div class="eval-chip"><strong>Accuracy:</strong> Level {{ co.accuracyLevel }}/6</div>
-                              <div class="eval-chip"><strong>Completeness:</strong> Level {{ co.completenessLevel }}/6</div>
-                              <div class="eval-chip"><strong>Conciseness:</strong> Level {{ co.concisenessLevel }}/6</div>
-                              <div class="eval-chip"><strong>Readability:</strong> Level {{ co.readabilityLevel }}/6</div>
+                        </div>
+                      }
+
+                      @if (isAssessmentFailed(ans) && ans.assessmentError) {
+                        <div class="alert alert-warning mb-15" role="alert">
+                          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                          </svg>
+                          <div class="alert-content">
+                            <div class="alert-heading"><strong>Assessment Failed</strong></div>
+                            <div class="alert-body">{{ ans.assessmentError }}</div>
+                          </div>
+                        </div>
+                      }
+
+                      <!-- Evaluation Chips -->
+                      @if (ans.accuracyLevel != null) {
+                        <div class="evaluation-chip-row mb-15">
+                          <div class="eval-chip"><strong>Accuracy:</strong> Level {{ ans.accuracyLevel }}/6 ({{ ans.accuracyScore }} pts)</div>
+                          <div class="eval-chip"><strong>Completeness:</strong> Level {{ ans.completenessLevel }}/6 ({{ ans.completenessScore }} pts)</div>
+                          <div class="eval-chip"><strong>Conciseness:</strong> Level {{ ans.concisenessLevel }}/6 ({{ ans.concisenessScore }} pts)</div>
+                          <div class="eval-chip"><strong>Readability:</strong> Level {{ ans.readabilityLevel }}/6 ({{ ans.readabilityScore }} pts)</div>
+                        </div>
+                      }
+
+                      <!--
+                        What the deductions rest on, and what a second assessor made of them. A
+                        score argued from the authored rubric and one argued from the grader's own
+                        recall are different claims; only the record tells them apart later.
+                      -->
+                      @if (answerEvidence(ans); as evidence) {
+                        <div class="assessment-evidence mb-15">
+                          @if (evidence.accuracy) {
+                            <div><strong>Accuracy evidence:</strong> {{ evidence.accuracy }}</div>
+                          }
+                          @if (evidence.completeness) {
+                            <div><strong>Completeness evidence:</strong> {{ evidence.completeness }}</div>
+                          }
+                          @if (ans.criticalError && ans.criticalErrorQuote) {
+                            <div><strong>Critical error quote:</strong> “{{ ans.criticalErrorQuote }}”</div>
+                          }
+                          @if (evidence.criticalErrorDemoted) {
+                            <div>
+                              <strong>Critical error:</strong> claimed by the assessor but not applied — the quoted
+                              claim could not be found in the graded answer, and an omission is not a critical error.
                             </div>
                           }
-                          @if (co.criticalError && co.criticalErrorQuote) {
-                            <div><strong>Critical error quote:</strong> “{{ co.criticalErrorQuote }}”</div>
-                          }
-                          @if (co.criticalErrorDemoted) {
-                            <div><strong>Critical error:</strong> claimed but not applied — the quoted claim could not be found in the graded answer.</div>
-                          }
-                          @if (co.comment) {
-                            <div><strong>Verdict:</strong> {{ co.comment }}</div>
-                          }
-                          @if (co.accuracyEvidence) {
-                            <div><strong>Accuracy evidence:</strong> {{ co.accuracyEvidence }}</div>
-                          }
-                          @if (co.completenessEvidence) {
-                            <div><strong>Completeness evidence:</strong> {{ co.completenessEvidence }}</div>
-                          }
-                          @if (co.readabilityEvidence) {
-                            <div><strong>Readability evidence:</strong> {{ co.readabilityEvidence }}</div>
-                          }
-                          @if (co.unverifiedClaims && co.unverifiedClaims.length > 0) {
-                            <div><strong>Unverified claims ({{ co.unverifiedClaims.length }}):</strong></div>
+                        </div>
+                      }
+
+                      <!--
+                        Claims the assessor could neither confirm nor refute. From harness version 7
+                        these are recorded rather than deducted for, so they are shown as a finding
+                        about the rubric rather than as a mark against the answer.
+                      -->
+                      @if (unverifiedClaimsOf(ans); as claims) {
+                        @if (claims.length > 0) {
+                          <div class="assessment-evidence mb-15">
+                            <div><strong>Unverified claims ({{ claims.length }}):</strong></div>
                             <ul class="unverified-claim-list">
-                              @for (claim of co.unverifiedClaims; track $index) {
+                              @for (claim of claims; track claim) {
                                 <li>“{{ claim }}”</li>
                               }
                             </ul>
-                          }
-                        }
-                        @if (ans.coAssessmentError) {
-                          <div class="co-assessment-error">{{ ans.coAssessmentError }}</div>
-                        }
-                        <div class="second-opinion-note">
-                          Member B grades every answer beside member A, blind to its verdict; the published
-                          score is the mean of the two.
-                        </div>
-                      </div>
-                    }
-
-                    @if (ans.secondOpinionQualityScore != null) {
-                      <div class="second-opinion-box mb-15" [class.is-disputed]="ans.secondOpinionDisagreed">
-                        <div>
-                          <strong>{{ selectedRunDetail.isPanelRun ? 'Reference reader' : 'Second reader' }} ({{ ans.secondOpinionByModelDisplayNameUsed }}):</strong>
-                          {{ ans.secondOpinionQualityScore }} / 100, critical error
-                          {{ ans.secondOpinionCriticalError ? 'yes' : 'no' }} —
-                          {{ ans.secondOpinionDisagreed ? 'disagrees with' : 'agrees with' }} {{ selectedRunDetail.isPanelRun ? 'the panel' : 'the first verdict' }}.
-                          @if (ans.secondOpinionTrigger && !(selectedRunDetail.isPanelRun && ans.secondOpinionTrigger === 'All')) {
-                            <span class="second-opinion-trigger">(trigger: {{ secondOpinionTriggerLabel(ans.secondOpinionTrigger) }})</span>
-                          }
-                        </div>
-                        <div class="second-opinion-note">
-                          @if (selectedRunDetail.isPanelRun) {
-                            Advisory. The reference reader never scores; it is the neutral reading the panel is
-                            compared against.
-                          } @else {
-                            Advisory. The first verdict is what scored; re-assess this question if you want the
-                            second reading to replace it.
-                          }
-                        </div>
-                      </div>
-                    }
-
-                    @if (ans.evidenceInformedQualityScore != null) {
-                      <div class="second-opinion-box mb-15 evidence-informed-box">
-                        <div>
-                          <strong>Evidence-informed re-grade:</strong>
-                          {{ ans.evidenceInformedQualityScore }} / 100, critical error
-                          {{ ans.evidenceInformedCriticalError ? 'yes' : 'no' }} —
-                          withdrew: {{ evidenceInformedWithdrawn(ans).length > 0 ? evidenceInformedWithdrawn(ans).join('; ') : 'nothing' }}
-                        </div>
-                        <div class="second-opinion-note">
-                          Advisory. The primary assessor re-read this answer with the claim verifier's findings in hand;
-                          the first verdict is what scored.
-                        </div>
-                      </div>
-                    }
-
-                    @if (answerBoardChars(ans); as boardChars) {
-                      <div class="text-muted text-11 mb-15">Board characters sent — assessor / second reader / verifier: {{ boardChars }}</div>
-                    }
-
-                    @if (claimVerificationsOf(ans); as verifications) {
-                      @if (verifications.length > 0) {
-                        <div class="claim-verification-box mb-15">
-                          <div class="claim-verification-header">
                             <div>
-                              <strong>Claim verification ({{ ans.claimVerificationByModelDisplayNameUsed || selectedRunDetail?.claimVerifierDisplayNameUsed || 'claim verifier' }}):</strong>
-                              <span class="claim-verification-counts">
-                                {{ ans.claimsSupportedCount ?? 0 }} supported, {{ ans.claimsRefutedCount ?? 0 }} refuted, {{ ans.claimsIndeterminateCount ?? 0 }} indeterminate
-                              </span>
-                              @if (hasAdvisoryClaimRoles(verifications) || (ans.answerFlagNames && ans.answerFlagNames.includes('ContestedAccuracyDeduction'))) {
-                                <div class="text-muted text-11 claim-roles-note">Entries labeled below were sent by the harness to check the assessor — its critical-error quote, its out-of-rubric basis, or a sentence it charged as false — and are not claims the answer was marked down for leaving unverified; they are not counted here.</div>
+                              Neither confirmed nor refuted against the rubric. Advisory: from harness
+                              version 7 these do not reduce Accuracy.
+                            </div>
+                          </div>
+                        }
+                      }
+
+                      <!--
+                        Panel member B's verdict, beside member A's above. Both grade blind to each other
+                        with the same prompt, and the published score is their mean.
+                      -->
+                      @if (selectedRunDetail.isPanelRun) {
+                        <div class="co-assessment-box mb-15" [class.is-disputed]="ans.panelDisagreed">
+                          <div>
+                            <strong>Co-assessor ({{ ans.coAssessedByModelDisplayNameUsed || selectedRunDetail.coAssessorModelDisplayNameUsed }}):</strong>
+                            @if (ans.coAssessmentQualityScore != null && !isCoAssessmentUnscored(ans)) {
+                              {{ ans.coAssessmentQualityScore }} / 100, critical error
+                              {{ ans.coAssessmentCriticalError ? 'yes' : 'no' }}
+                              @if (ans.coAssessmentRawQualityScore != null && ans.coAssessmentRawQualityScore !== ans.coAssessmentQualityScore) {
+                                <span class="text-muted">(raw {{ ans.coAssessmentRawQualityScore }})</span>
+                              }
+                            } @else {
+                              assessment {{ ans.coAssessmentStatus != null ? formatAssessmentStatus(ans.coAssessmentStatus) : 'not recorded' }}
+                            }
+                          </div>
+                          @if (ans.panelQualityScore != null) {
+                            <div>
+                              <strong>Panel score:</strong> {{ ans.panelQualityScore | number:'1.0-1' }} / 100
+                              @if (ans.panelDisagreed) {
+                                <span class="panel-disagree-badge">members disagree</span>
                               }
                             </div>
-                            @if (ans.claimVerificationToolCallCount != null) {
-                              <span class="text-muted text-11">({{ ans.claimVerificationToolCallCount }} tool call(s))</span>
-                            }
-                          </div>
-                          <div class="claim-verification-list">
-                            @for (v of verifications; track v.claimIndex ?? v.claim) {
-                              <div class="claim-verification-item" [class.is-refuted]="v.verdict === 'Refuted'">
-                                <div class="claim-verification-title">
-                                  <span class="verdict-pill" [class.verdict-supported]="v.verdict === 'Supported'" [class.verdict-refuted]="v.verdict === 'Refuted'" [class.verdict-indeterminate]="v.verdict === 'Indeterminate'">
-                                    {{ v.verdict }}
-                                  </span>
-                                  <span class="claim-text">“{{ v.claim }}”</span>
-                                  @for (label of claimRoleLabels(v.roles, v.raisedBy); track label) {
-                                    <span class="claim-role-label text-muted text-11">({{ label }})</span>
-                                  }
-                                </div>
-                                @if (v.citation) {
-                                  <div class="claim-citation"><strong>Citation:</strong> {{ v.citation }}</div>
-                                }
-                                @if (v.basis) {
-                                  <div class="claim-basis"><strong>Basis:</strong> {{ v.basis }}</div>
-                                }
+                          }
+                          @if (coAssessmentOf(ans); as co) {
+                            @if (co.accuracyLevel != null) {
+                              <div class="evaluation-chip-row">
+                                <div class="eval-chip"><strong>Accuracy:</strong> Level {{ co.accuracyLevel }}/6</div>
+                                <div class="eval-chip"><strong>Completeness:</strong> Level {{ co.completenessLevel }}/6</div>
+                                <div class="eval-chip"><strong>Conciseness:</strong> Level {{ co.concisenessLevel }}/6</div>
+                                <div class="eval-chip"><strong>Readability:</strong> Level {{ co.readabilityLevel }}/6</div>
                               </div>
                             }
-                          </div>
-                          <div class="claim-verification-note">
-                            Advisory. Checked against source code and wiki using tools; does not alter scoring.
-                          </div>
-                        </div>
-                      }
-                    }
-
-                    @if (ans.claimVerificationError) {
-                      <div class="alert alert-warning mb-15" role="alert">
-                        <div class="alert-content">
-                          <div class="alert-heading"><strong>Claim Verification Failed</strong></div>
-                          <div class="alert-body">
-                            {{ ans.claimVerificationError }}
-                            @if (ans.claimVerificationRawText) {
-                              <div class="mt-5 text-muted text-11">
-                                (Raw verifier response captured &mdash; {{ ans.claimVerificationRawText.length }} characters)
-                              </div>
+                            @if (co.criticalError && co.criticalErrorQuote) {
+                              <div><strong>Critical error quote:</strong> “{{ co.criticalErrorQuote }}”</div>
                             }
-                          </div>
-                        </div>
-                      </div>
-                    }
-
-                    <!--
-                      A published index can move after publication. Where it did, the screen says so
-                      on the answer that moved, with the score it replaced.
-                    -->
-                    @if ((ans.reassessmentCount ?? 0) > 0) {
-                      <div class="assessment-evidence mb-15">
-                        <div>
-                          <strong>Re-assessed {{ ans.reassessmentCount }} time(s):</strong>
-                          the first verdict scored {{ ans.previousQualityScore ?? 'an unrecorded score' }}
-                          and this one replaced it@if (ans.reassessedByModelDisplayNameUsed) { <span>, graded by {{ ans.reassessedByModelDisplayNameUsed }}</span> }@if (ans.reassessedAtUtc) { <span> on {{ ans.reassessedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC</span> }.
-                        </div>
-                      </div>
-                    }
-
-                    <div class="section-title">Reply:</div>
-                    @if (ans.answerText) {
-                      <div class="answer-box mb-15">{{ ans.answerText }}</div>
-                    } @else {
-                      <div class="answer-box mb-15 text-muted">No answer text — the candidate failed at the provider before returning content. See the error above.</div>
-                    }
-
-                    @if (ans.thoughtText) {
-                      <button type="button" class="btn-link mb-10" (click)="toggleThought(ans.orderIndex)"
-                              [attr.aria-expanded]="expandedThoughts.has(ans.orderIndex)"
-                              [attr.aria-controls]="'bm-thought-' + ans.orderIndex">
-                        @if (expandedThoughts.has(ans.orderIndex)) { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg> } @else { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg> }
-                        {{ expandedThoughts.has(ans.orderIndex) ? 'Hide Model Reasoning' : 'Show Model Reasoning' }}
-                      </button>
-                      @if (expandedThoughts.has(ans.orderIndex)) {
-                        <div class="thought-box mb-15" [id]="'bm-thought-' + ans.orderIndex">{{ ans.thoughtText }}</div>
-                      }
-                    }
-
-                    <!--
-                      The verbatim material the artifact scrubber removed before the assessor saw
-                      the answer. Retained and shown so a scrubber that deletes authored text is
-                      detectable by inspection rather than invisible.
-                    -->
-                    @if (ans.scrubbedArtifactText) {
-                      <button type="button" class="btn-link mb-10" (click)="toggleArtifact(ans.orderIndex)"
-                              [attr.aria-expanded]="expandedArtifacts.has(ans.orderIndex)"
-                              [attr.aria-controls]="'bm-artifact-' + ans.orderIndex">
-                        @if (expandedArtifacts.has(ans.orderIndex)) { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg> } @else { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg> }
-                        {{ expandedArtifacts.has(ans.orderIndex) ? 'Hide Removed Transport Artifacts' : 'Show Removed Transport Artifacts' }}
-                        ({{ ans.scrubbedArtifactCount }} block(s))
-                      </button>
-                      @if (expandedArtifacts.has(ans.orderIndex)) {
-                        <div class="artifact-box mb-15" [id]="'bm-artifact-' + ans.orderIndex">{{ ans.scrubbedArtifactText }}</div>
-                      }
-                    }
-
-                    <!--
-                      Every tool call the candidate attempted, not only the ones that succeeded —
-                      toolCallSummary and the run-level Tool Usage Profile both list successes
-                      only, so a call the tool layer refused or that errored (most commonly a JSON
-                      result over the result cap) appears nowhere else. Recorded counts are shown on
-                      the toggle itself; a legacy answer (all three null) shows none of them rather
-                      than a fabricated zero.
-                    -->
-                    @if (hasToolCallData(ans)) {
-                      <button type="button" class="btn-link mb-10" (click)="toggleToolCalls(ans)"
-                              [attr.aria-expanded]="expandedToolCalls.has(ans.orderIndex)"
-                              [attr.aria-controls]="'bm-toolcalls-' + ans.orderIndex">
-                        @if (expandedToolCalls.has(ans.orderIndex)) { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg> } @else { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg> }
-                        {{ expandedToolCalls.has(ans.orderIndex) ? 'Hide Tool Calls' : 'Show Tool Calls' }}
-                        @if (toolCallCountsLabel(ans); as counts) {
-                          <span class="tool-call-counts">({{ counts }})</span>
-                        }
-                      </button>
-                      @if (expandedToolCalls.has(ans.orderIndex)) {
-                        <div class="tool-calls-box mb-15" [id]="'bm-toolcalls-' + ans.orderIndex">
-                          @if (loadingToolCalls.has(ans.orderIndex)) {
-                            <p class="text-muted">Loading tool calls...</p>
-                          } @else if (toolCallsErrorByAnswer.get(ans.orderIndex); as toolCallsErr) {
-                            <div class="alert alert-warning" role="alert">
-                              <div class="alert-content"><div class="alert-body">{{ toolCallsErr }}</div></div>
-                            </div>
-                          } @else if (toolCallsByAnswer.get(ans.orderIndex); as calls) {
-                            @if (calls.length === 0) {
-                              <p class="text-muted">No tool calls recorded for this answer.</p>
-                            } @else {
-                              <table class="gh-table tool-calls-table">
-                                <caption class="visually-hidden">Every tool call attempted while producing this answer, in emission order</caption>
-                                <thead>
-                                  <tr>
-                                    <th scope="col">#</th>
-                                    <th scope="col">Round</th>
-                                    <th scope="col">Tool</th>
-                                    <th scope="col">Status</th>
-                                    <th scope="col">Queue wait</th>
-                                    <th scope="col">Execution</th>
-                                    <th scope="col">Result size</th>
-                                    <th scope="col">Detail</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  @for (call of calls; track call.id) {
-                                    <tr [class.is-tool-call-failed]="!isToolCallSucceeded(call)">
-                                      <td>{{ call.sortOrder }}</td>
-                                      <td>{{ call.iterationIndex ?? '—' }}</td>
-                                      <td><code>{{ call.name ?? '—' }}</code>@if (call.agentName) { <span class="text-muted text-11"> ({{ call.agentName }})</span> }</td>
-                                      <td>
-                                        <span class="tool-call-status-badge" [class.is-succeeded]="isToolCallSucceeded(call)" [class.is-failed]="!isToolCallSucceeded(call)">
-                                          {{ call.status ?? 'Unknown' }}
-                                        </span>
-                                      </td>
-                                      <td>{{ call.queueWaitMs != null ? (call.queueWaitMs + ' ms') : '—' }}</td>
-                                      <td>{{ call.executionMs != null ? (call.executionMs + ' ms') : '—' }}</td>
-                                      <td>
-                                        {{ call.resultLengthChars }} chars
-                                        @if (call.resultTruncated) { <span class="text-muted text-11"> (stored truncated)</span> }
-                                      </td>
-                                      <td class="tool-call-detail-cell">
-                                        @if (call.argsText) {
-                                          <button type="button" class="btn-link" (click)="toggleToolCallField(ans.orderIndex, call.id, 'args')"
-                                                  [attr.aria-expanded]="isToolCallFieldExpanded(ans.orderIndex, call.id, 'args')"
-                                                  [attr.aria-controls]="'bm-toolcall-args-' + ans.orderIndex + '-' + call.id">
-                                            {{ isToolCallFieldExpanded(ans.orderIndex, call.id, 'args') ? 'Hide args' : 'Show args' }}
-                                          </button>
-                                        }
-                                        @if (toolCallResultState(call) === 'value') {
-                                          <button type="button" class="btn-link" (click)="toggleToolCallField(ans.orderIndex, call.id, 'result')"
-                                                  [attr.aria-expanded]="isToolCallFieldExpanded(ans.orderIndex, call.id, 'result')"
-                                                  [attr.aria-controls]="'bm-toolcall-result-' + ans.orderIndex + '-' + call.id">
-                                            {{ isToolCallFieldExpanded(ans.orderIndex, call.id, 'result') ? 'Hide result' : 'Show result' }}
-                                          </button>
-                                        } @else if (toolCallResultState(call) === 'pruned') {
-                                          <span class="text-muted" title="Retention removed the stored payload after 90 days. The true size is still recorded in Result size.">Pruned</span>
-                                        } @else {
-                                          <span class="text-muted">No result</span>
-                                        }
-                                      </td>
-                                    </tr>
-                                    @if (call.argsText && isToolCallFieldExpanded(ans.orderIndex, call.id, 'args')) {
-                                      <tr>
-                                        <td colspan="8">
-                                          <div class="tool-call-detail-box" [id]="'bm-toolcall-args-' + ans.orderIndex + '-' + call.id">
-                                            @if (call.argsTruncated) { <div class="tool-call-detail-note">Stored truncated.</div> }
-                                            {{ call.argsText }}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    }
-                                    @if (toolCallResultState(call) === 'value' && isToolCallFieldExpanded(ans.orderIndex, call.id, 'result')) {
-                                      <tr>
-                                        <td colspan="8">
-                                          <div class="tool-call-detail-box" [id]="'bm-toolcall-result-' + ans.orderIndex + '-' + call.id">
-                                            @if (call.resultTruncated) { <div class="tool-call-detail-note">Stored truncated — true length {{ call.resultLengthChars }} chars.</div> }
-                                            {{ call.result }}
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    }
-                                    @if (call.error) {
-                                      <tr>
-                                        <td colspan="8">
-                                          <div class="alert alert-warning tool-call-error" role="alert">
-                                            <div class="alert-content"><div class="alert-body">{{ call.error }}</div></div>
-                                          </div>
-                                        </td>
-                                      </tr>
-                                    }
-                                  }
-                                </tbody>
-                              </table>
+                            @if (co.criticalErrorDemoted) {
+                              <div><strong>Critical error:</strong> claimed but not applied — the quoted claim could not be found in the graded answer.</div>
+                            }
+                            @if (co.comment) {
+                              <div><strong>Verdict:</strong> {{ co.comment }}</div>
+                            }
+                            @if (co.accuracyEvidence) {
+                              <div><strong>Accuracy evidence:</strong> {{ co.accuracyEvidence }}</div>
+                            }
+                            @if (co.completenessEvidence) {
+                              <div><strong>Completeness evidence:</strong> {{ co.completenessEvidence }}</div>
+                            }
+                            @if (co.readabilityEvidence) {
+                              <div><strong>Readability evidence:</strong> {{ co.readabilityEvidence }}</div>
+                            }
+                            @if (co.unverifiedClaims && co.unverifiedClaims.length > 0) {
+                              <div><strong>Unverified claims ({{ co.unverifiedClaims.length }}):</strong></div>
+                              <ul class="unverified-claim-list">
+                                @for (claim of co.unverifiedClaims; track $index) {
+                                  <li>“{{ claim }}”</li>
+                                }
+                              </ul>
                             }
                           }
+                          @if (ans.coAssessmentError) {
+                            <div class="co-assessment-error">{{ ans.coAssessmentError }}</div>
+                          }
+                          <div class="second-opinion-note">
+                            Member B grades every answer beside member A, blind to its verdict; the published
+                            score is the mean of the two.
+                          </div>
                         </div>
                       }
-                    }
 
-                    @if (ans.reviewComment) {
-                      <div class="assessor-comment-box mb-15">
-                        <strong>Assessor Verdict:</strong> {{ ans.reviewComment }}
-                      </div>
-                    }
+                      @if (ans.secondOpinionQualityScore != null) {
+                        <div class="second-opinion-box mb-15" [class.is-disputed]="ans.secondOpinionDisagreed">
+                          <div>
+                            <strong>{{ selectedRunDetail.isPanelRun ? 'Reference reader' : 'Second reader' }} ({{ ans.secondOpinionByModelDisplayNameUsed }}):</strong>
+                            {{ ans.secondOpinionQualityScore }} / 100, critical error
+                            {{ ans.secondOpinionCriticalError ? 'yes' : 'no' }} —
+                            {{ ans.secondOpinionDisagreed ? 'disagrees with' : 'agrees with' }} {{ selectedRunDetail.isPanelRun ? 'the panel' : 'the first verdict' }}.
+                            @if (ans.secondOpinionTrigger && !(selectedRunDetail.isPanelRun && ans.secondOpinionTrigger === 'All')) {
+                              <span class="second-opinion-trigger">(trigger: {{ secondOpinionTriggerLabel(ans.secondOpinionTrigger) }})</span>
+                            }
+                          </div>
+                          <div class="second-opinion-note">
+                            @if (selectedRunDetail.isPanelRun) {
+                              Advisory. The reference reader never scores; it is the neutral reading the panel is
+                              compared against.
+                            } @else {
+                              Advisory. The first verdict is what scored; re-assess this question if you want the
+                              second reading to replace it.
+                            }
+                          </div>
+                        </div>
+                      }
 
-                    <div class="metrics-grid">
-                      <div><strong>Duration:</strong> {{ ans.durationMs }} ms (TTFT: {{ ans.timeToFirstTokenMs ?? 'N/A' }} ms)</div>
-                      <!--
-                        Speed is scored on model time, not whole-turn duration, so the split is
-                        shown wherever the harness recorded tool time. Runs from before harness
-                        version 3 have no tool time and keep the duration line alone.
-                      -->
-                      @if (ans.toolTimeMs != null) {
-                        <div><strong>Model Time:</strong> {{ ans.modelTimeMs }} ms (Tool Overhead: {{ ans.toolTimeMs }} ms)</div>
+                      @if (ans.evidenceInformedQualityScore != null) {
+                        <div class="second-opinion-box mb-15 evidence-informed-box">
+                          <div>
+                            <strong>Evidence-informed re-grade:</strong>
+                            {{ ans.evidenceInformedQualityScore }} / 100, critical error
+                            {{ ans.evidenceInformedCriticalError ? 'yes' : 'no' }} —
+                            withdrew: {{ evidenceInformedWithdrawn(ans).length > 0 ? evidenceInformedWithdrawn(ans).join('; ') : 'nothing' }}
+                          </div>
+                          <div class="second-opinion-note">
+                            Advisory. The primary assessor re-read this answer with the claim verifier's findings in hand;
+                            the first verdict is what scored.
+                          </div>
+                        </div>
                       }
-                      <div><strong>Tokens:</strong> In: {{ ans.inputTokens || 0 }}, Out: {{ ans.outputTokens || 0 }}, Cache: {{ ans.cacheReadInputTokens || 0 }}</div>
-                      @if (ans.modelCallCount != null || ans.toolCallCount != null) {
-                        <div><strong>Calls:</strong> {{ ans.modelCallCount ?? 1 }} model call(s), {{ ans.toolCallCount ?? 0 }} tool call(s)@if (blockedToolCallsOf(ans) > 0) { <span> ({{ blockedToolCallsOf(ans) }} blocked by budget)</span> }</div>
-                      }
-                      @if (ans.terminationReason) {
-                        <div><strong>Termination:</strong> {{ ans.terminationReason }}</div>
-                      }
-                      @if (ans.toolCallSummary) {
-                        <div><strong>Tools Called:</strong> <code>{{ ans.toolCallSummary }}</code></div>
-                      }
-                      @if (ans.assessedByModelDisplayNameUsed) {
-                        <div><strong>Assessed by:</strong> {{ ans.assessedByModelDisplayNameUsed }} ({{ ans.assessedByModelProviderUsed }}/{{ ans.assessedByModelIdUsed }})@if (ans.assessedAtUtc) { at {{ ans.assessedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC}</div>
-                      }
-                    </div>
 
-                    <div class="mt-15 flex-row gap-10 question-actions">
-                      <button type="button" class="btn-ghost" (click)="openRetryDialog('question', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || rerunningAnswerId === ans.id || isAbortedRun(selectedRunDetail)">
-                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                        {{ rerunningAnswerId === ans.id ? 'Re-running...' : 'Re-run Question' }}
-                      </button>
-                      <button type="button" class="btn-ghost" (click)="openRetryDialog('assessment', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || reassessingAnswerId === ans.id || isAbortedRun(selectedRunDetail)">
-                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                        {{ reassessingAnswerId === ans.id ? 'Re-assessing...' : (isAssessmentFailed(ans) ? 'Retry Assessment' : 'Re-assess Question') }}
-                      </button>
+                      @if (answerBoardChars(ans); as boardChars) {
+                        <div class="text-muted text-11 mb-15">Board characters sent — assessor / second reader / verifier: {{ boardChars }}</div>
+                      }
+
+                      @if (claimVerificationsOf(ans); as verifications) {
+                        @if (verifications.length > 0) {
+                          <div class="claim-verification-box mb-15">
+                            <div class="claim-verification-header">
+                              <div>
+                                <strong>Claim verification ({{ ans.claimVerificationByModelDisplayNameUsed || selectedRunDetail?.claimVerifierDisplayNameUsed || 'claim verifier' }}):</strong>
+                                <span class="claim-verification-counts">
+                                  {{ ans.claimsSupportedCount ?? 0 }} supported, {{ ans.claimsRefutedCount ?? 0 }} refuted, {{ ans.claimsIndeterminateCount ?? 0 }} indeterminate
+                                </span>
+                                @if (hasAdvisoryClaimRoles(verifications) || (ans.answerFlagNames && ans.answerFlagNames.includes('ContestedAccuracyDeduction'))) {
+                                  <div class="text-muted text-11 claim-roles-note">Entries labeled below were sent by the harness to check the assessor — its critical-error quote, its out-of-rubric basis, or a sentence it charged as false — and are not claims the answer was marked down for leaving unverified; they are not counted here.</div>
+                                }
+                              </div>
+                              @if (ans.claimVerificationToolCallCount != null) {
+                                <span class="text-muted text-11">({{ ans.claimVerificationToolCallCount }} tool call(s))</span>
+                              }
+                            </div>
+                            <div class="claim-verification-list">
+                              @for (v of verifications; track v.claimIndex ?? v.claim) {
+                                <div class="claim-verification-item" [class.is-refuted]="v.verdict === 'Refuted'">
+                                  <div class="claim-verification-title">
+                                    <span class="verdict-pill" [class.verdict-supported]="v.verdict === 'Supported'" [class.verdict-refuted]="v.verdict === 'Refuted'" [class.verdict-indeterminate]="v.verdict === 'Indeterminate'">
+                                      {{ v.verdict }}
+                                    </span>
+                                    <span class="claim-text">“{{ v.claim }}”</span>
+                                    @for (label of claimRoleLabels(v.roles, v.raisedBy); track label) {
+                                      <span class="claim-role-label text-muted text-11">({{ label }})</span>
+                                    }
+                                  </div>
+                                  @if (v.citation) {
+                                    <div class="claim-citation"><strong>Citation:</strong> {{ v.citation }}</div>
+                                  }
+                                  @if (v.basis) {
+                                    <div class="claim-basis"><strong>Basis:</strong> {{ v.basis }}</div>
+                                  }
+                                </div>
+                              }
+                            </div>
+                            <div class="claim-verification-note">
+                              Advisory. Checked against source code and wiki using tools; does not alter scoring.
+                            </div>
+                          </div>
+                        }
+                      }
+
+                      @if (ans.claimVerificationError) {
+                        <div class="alert alert-warning mb-15" role="alert">
+                          <div class="alert-content">
+                            <div class="alert-heading"><strong>Claim Verification Failed</strong></div>
+                            <div class="alert-body">
+                              {{ ans.claimVerificationError }}
+                              @if (ans.claimVerificationRawText) {
+                                <div class="mt-5 text-muted text-11">
+                                  (Raw verifier response captured &mdash; {{ ans.claimVerificationRawText.length }} characters)
+                                </div>
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      }
+
                       <!--
-                        One of these changes the published index and one does not, which is the most
-                        consequential distinction on this screen — so the trial is a separate,
-                        differently-styled action rather than a checkbox on the button above.
+                        A published index can move after publication. Where it did, the screen says so
+                        on the answer that moved, with the score it replaced.
                       -->
-                      <!--
-                        In a panel run the second-opinion slot holds the reference reader's verdict,
-                        which a trial may never replace, so the trial is offered only where it is empty.
-                      -->
-                      @if (canTrialReassess(ans)) {
-                        <button type="button" class="btn-ghost btn-gh-trial" (click)="openRetryDialog('trial', selectedRunDetail.id, ans)"
-                                [disabled]="isRunBusy() || trialReassessingAnswerId === ans.id"
-                                [attr.interestfor]="'tip-trial-' + ans.orderIndex"
-                                [attr.style]="'anchor-name: --tip-trial-' + ans.orderIndex">
-                          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6v5l4 9a2 2 0 0 1-1.8 3H6.8A2 2 0 0 1 5 17l4-9V3z"></path><line x1="9" y1="3" x2="15" y2="3"></line></svg>
-                          {{ trialReassessingAnswerId === ans.id ? 'Trying...' : 'Try another assessor (does not change the score)' }}
+                      @if ((ans.reassessmentCount ?? 0) > 0) {
+                        <div class="assessment-evidence mb-15">
+                          <div>
+                            <strong>Re-assessed {{ ans.reassessmentCount }} time(s):</strong>
+                            the first verdict scored {{ ans.previousQualityScore ?? 'an unrecorded score' }}
+                            and this one replaced it@if (ans.reassessedByModelDisplayNameUsed) { <span>, graded by {{ ans.reassessedByModelDisplayNameUsed }}</span> }@if (ans.reassessedAtUtc) { <span> on {{ ans.reassessedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC</span> }.
+                          </div>
+                        </div>
+                      }
+
+                      <div class="section-title">Reply:</div>
+                      @if (ans.answerText) {
+                        <div class="answer-box mb-15">{{ ans.answerText }}</div>
+                      } @else {
+                        <div class="answer-box mb-15 text-muted">No answer text — the candidate failed at the provider before returning content. See the error above.</div>
+                      }
+
+                      @if (ans.thoughtText) {
+                        <button type="button" class="btn-link mb-10" (click)="toggleThought(ans.orderIndex)"
+                                [attr.aria-expanded]="expandedThoughts.has(ans.orderIndex)"
+                                [attr.aria-controls]="'bm-thought-' + ans.orderIndex">
+                          @if (expandedThoughts.has(ans.orderIndex)) { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg> } @else { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg> }
+                          {{ expandedThoughts.has(ans.orderIndex) ? 'Hide Model Reasoning' : 'Show Model Reasoning' }}
                         </button>
-                        <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'tip-trial-' + ans.orderIndex"
-                             [attr.style]="'position-anchor: --tip-trial-' + ans.orderIndex">Records another assessor's verdict in the second-reader slot. Changes no score, level, flag or index.</div>
+                        @if (expandedThoughts.has(ans.orderIndex)) {
+                          <div class="thought-box mb-15" [id]="'bm-thought-' + ans.orderIndex">{{ ans.thoughtText }}</div>
+                        }
                       }
+
+                      <!--
+                        The verbatim material the artifact scrubber removed before the assessor saw
+                        the answer. Retained and shown so a scrubber that deletes authored text is
+                        detectable by inspection rather than invisible.
+                      -->
+                      @if (ans.scrubbedArtifactText) {
+                        <button type="button" class="btn-link mb-10" (click)="toggleArtifact(ans.orderIndex)"
+                                [attr.aria-expanded]="expandedArtifacts.has(ans.orderIndex)"
+                                [attr.aria-controls]="'bm-artifact-' + ans.orderIndex">
+                          @if (expandedArtifacts.has(ans.orderIndex)) { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg> } @else { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg> }
+                          {{ expandedArtifacts.has(ans.orderIndex) ? 'Hide Removed Transport Artifacts' : 'Show Removed Transport Artifacts' }}
+                          ({{ ans.scrubbedArtifactCount }} block(s))
+                        </button>
+                        @if (expandedArtifacts.has(ans.orderIndex)) {
+                          <div class="artifact-box mb-15" [id]="'bm-artifact-' + ans.orderIndex">{{ ans.scrubbedArtifactText }}</div>
+                        }
+                      }
+
+                      <!--
+                        Every tool call the candidate attempted, not only the ones that succeeded —
+                        toolCallSummary and the run-level Tool Usage Profile both list successes
+                        only, so a call the tool layer refused or that errored (most commonly a JSON
+                        result over the result cap) appears nowhere else. Recorded counts are shown on
+                        the toggle itself; a legacy answer (all three null) shows none of them rather
+                        than a fabricated zero.
+                      -->
+                      @if (hasToolCallData(ans)) {
+                        <button type="button" class="btn-link mb-10" (click)="toggleToolCalls(ans)"
+                                [attr.aria-expanded]="expandedToolCalls.has(ans.orderIndex)"
+                                [attr.aria-controls]="'bm-toolcalls-' + ans.orderIndex">
+                          @if (expandedToolCalls.has(ans.orderIndex)) { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg> } @else { <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg> }
+                          {{ expandedToolCalls.has(ans.orderIndex) ? 'Hide Tool Calls' : 'Show Tool Calls' }}
+                          @if (toolCallCountsLabel(ans); as counts) {
+                            <span class="tool-call-counts">({{ counts }})</span>
+                          }
+                        </button>
+                        @if (expandedToolCalls.has(ans.orderIndex)) {
+                          <div class="tool-calls-box mb-15" [id]="'bm-toolcalls-' + ans.orderIndex">
+                            @if (loadingToolCalls.has(ans.orderIndex)) {
+                              <p class="text-muted">Loading tool calls...</p>
+                            } @else if (toolCallsErrorByAnswer.get(ans.orderIndex); as toolCallsErr) {
+                              <div class="alert alert-warning" role="alert">
+                                <div class="alert-content"><div class="alert-body">{{ toolCallsErr }}</div></div>
+                              </div>
+                            } @else if (toolCallsByAnswer.get(ans.orderIndex); as calls) {
+                              @if (calls.length === 0) {
+                                <p class="text-muted">No tool calls recorded for this answer.</p>
+                              } @else {
+                                <table class="gh-table tool-calls-table">
+                                  <caption class="visually-hidden">Every tool call attempted while producing this answer, in emission order</caption>
+                                  <thead>
+                                    <tr>
+                                      <th scope="col">#</th>
+                                      <th scope="col">Round</th>
+                                      <th scope="col">Tool</th>
+                                      <th scope="col">Status</th>
+                                      <th scope="col">Queue wait</th>
+                                      <th scope="col">Execution</th>
+                                      <th scope="col">Result size</th>
+                                      <th scope="col">Detail</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    @for (call of calls; track call.id) {
+                                      <tr [class.is-tool-call-failed]="!isToolCallSucceeded(call)">
+                                        <td>{{ call.sortOrder }}</td>
+                                        <td>{{ call.iterationIndex ?? '—' }}</td>
+                                        <td><code>{{ call.name ?? '—' }}</code>@if (call.agentName) { <span class="text-muted text-11"> ({{ call.agentName }})</span> }</td>
+                                        <td>
+                                          <span class="tool-call-status-badge" [class.is-succeeded]="isToolCallSucceeded(call)" [class.is-failed]="!isToolCallSucceeded(call)">
+                                            {{ call.status ?? 'Unknown' }}
+                                          </span>
+                                        </td>
+                                        <td>{{ call.queueWaitMs != null ? (call.queueWaitMs + ' ms') : '—' }}</td>
+                                        <td>{{ call.executionMs != null ? (call.executionMs + ' ms') : '—' }}</td>
+                                        <td>
+                                          {{ call.resultLengthChars }} chars
+                                          @if (call.resultTruncated) { <span class="text-muted text-11"> (stored truncated)</span> }
+                                        </td>
+                                        <td class="tool-call-detail-cell">
+                                          @if (call.argsText) {
+                                            <button type="button" class="btn-link" (click)="toggleToolCallField(ans.orderIndex, call.id, 'args')"
+                                                    [attr.aria-expanded]="isToolCallFieldExpanded(ans.orderIndex, call.id, 'args')"
+                                                    [attr.aria-controls]="'bm-toolcall-args-' + ans.orderIndex + '-' + call.id">
+                                              {{ isToolCallFieldExpanded(ans.orderIndex, call.id, 'args') ? 'Hide args' : 'Show args' }}
+                                            </button>
+                                          }
+                                          @if (toolCallResultState(call) === 'value') {
+                                            <button type="button" class="btn-link" (click)="toggleToolCallField(ans.orderIndex, call.id, 'result')"
+                                                    [attr.aria-expanded]="isToolCallFieldExpanded(ans.orderIndex, call.id, 'result')"
+                                                    [attr.aria-controls]="'bm-toolcall-result-' + ans.orderIndex + '-' + call.id">
+                                              {{ isToolCallFieldExpanded(ans.orderIndex, call.id, 'result') ? 'Hide result' : 'Show result' }}
+                                            </button>
+                                          } @else if (toolCallResultState(call) === 'pruned') {
+                                            <span class="text-muted" title="Retention removed the stored payload after 90 days. The true size is still recorded in Result size.">Pruned</span>
+                                          } @else {
+                                            <span class="text-muted">No result</span>
+                                          }
+                                        </td>
+                                      </tr>
+                                      @if (call.argsText && isToolCallFieldExpanded(ans.orderIndex, call.id, 'args')) {
+                                        <tr>
+                                          <td colspan="8">
+                                            <div class="tool-call-detail-box" [id]="'bm-toolcall-args-' + ans.orderIndex + '-' + call.id">
+                                              @if (call.argsTruncated) { <div class="tool-call-detail-note">Stored truncated.</div> }
+                                              {{ call.argsText }}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      }
+                                      @if (toolCallResultState(call) === 'value' && isToolCallFieldExpanded(ans.orderIndex, call.id, 'result')) {
+                                        <tr>
+                                          <td colspan="8">
+                                            <div class="tool-call-detail-box" [id]="'bm-toolcall-result-' + ans.orderIndex + '-' + call.id">
+                                              @if (call.resultTruncated) { <div class="tool-call-detail-note">Stored truncated — true length {{ call.resultLengthChars }} chars.</div> }
+                                              {{ call.result }}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      }
+                                      @if (call.error) {
+                                        <tr>
+                                          <td colspan="8">
+                                            <div class="alert alert-warning tool-call-error" role="alert">
+                                              <div class="alert-content"><div class="alert-body">{{ call.error }}</div></div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      }
+                                    }
+                                  </tbody>
+                                </table>
+                              }
+                            }
+                          </div>
+                        }
+                      }
+
+                      @if (ans.reviewComment) {
+                        <div class="assessor-comment-box mb-15">
+                          <strong>Assessor Verdict:</strong> {{ ans.reviewComment }}
+                        </div>
+                      }
+
+                      <div class="metrics-grid">
+                        <div><strong>Duration:</strong> {{ ans.durationMs }} ms (TTFT: {{ ans.timeToFirstTokenMs ?? 'N/A' }} ms)</div>
+                        <!--
+                          Speed is scored on model time, not whole-turn duration, so the split is
+                          shown wherever the harness recorded tool time. Runs from before harness
+                          version 3 have no tool time and keep the duration line alone.
+                        -->
+                        @if (ans.toolTimeMs != null) {
+                          <div><strong>Model Time:</strong> {{ ans.modelTimeMs }} ms (Tool Overhead: {{ ans.toolTimeMs }} ms)</div>
+                        }
+                        <div><strong>Tokens:</strong> In: {{ ans.inputTokens || 0 }}, Out: {{ ans.outputTokens || 0 }}, Cache: {{ ans.cacheReadInputTokens || 0 }}</div>
+                        @if (ans.modelCallCount != null || ans.toolCallCount != null) {
+                          <div><strong>Calls:</strong> {{ ans.modelCallCount ?? 1 }} model call(s), {{ ans.toolCallCount ?? 0 }} tool call(s)@if (blockedToolCallsOf(ans) > 0) { <span> ({{ blockedToolCallsOf(ans) }} blocked by budget)</span> }</div>
+                        }
+                        @if (ans.terminationReason) {
+                          <div><strong>Termination:</strong> {{ ans.terminationReason }}</div>
+                        }
+                        @if (ans.toolCallSummary) {
+                          <div><strong>Tools Called:</strong> <code>{{ ans.toolCallSummary }}</code></div>
+                        }
+                        @if (ans.assessedByModelDisplayNameUsed) {
+                          <div><strong>Assessed by:</strong> {{ ans.assessedByModelDisplayNameUsed }} ({{ ans.assessedByModelProviderUsed }}/{{ ans.assessedByModelIdUsed }})@if (ans.assessedAtUtc) { at {{ ans.assessedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC}</div>
+                        }
+                      </div>
+
+                      <div class="mt-15 flex-row gap-10 question-actions">
+                        <button type="button" class="btn-ghost" (click)="openRetryDialog('question', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || rerunningAnswerId === ans.id || isAbortedRun(selectedRunDetail)">
+                          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                          {{ rerunningAnswerId === ans.id ? 'Re-running...' : 'Re-run Question' }}
+                        </button>
+                        <button type="button" class="btn-ghost" (click)="openRetryDialog('assessment', selectedRunDetail.id, ans)" [disabled]="isRunBusy() || reassessingAnswerId === ans.id || isAbortedRun(selectedRunDetail)">
+                          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                          {{ reassessingAnswerId === ans.id ? 'Re-assessing...' : (isAssessmentFailed(ans) ? 'Retry Assessment' : 'Re-assess Question') }}
+                        </button>
+                        <!--
+                          One of these changes the published index and one does not, which is the most
+                          consequential distinction on this screen — so the trial is a separate,
+                          differently-styled action rather than a checkbox on the button above.
+                        -->
+                        <!--
+                          In a panel run the second-opinion slot holds the reference reader's verdict,
+                          which a trial may never replace, so the trial is offered only where it is empty.
+                        -->
+                        @if (canTrialReassess(ans)) {
+                          <button type="button" class="btn-ghost btn-gh-trial" (click)="openRetryDialog('trial', selectedRunDetail.id, ans)"
+                                  [disabled]="isRunBusy() || trialReassessingAnswerId === ans.id"
+                                  [attr.interestfor]="'tip-trial-' + ans.orderIndex"
+                                  [attr.style]="'anchor-name: --tip-trial-' + ans.orderIndex">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3h6v5l4 9a2 2 0 0 1-1.8 3H6.8A2 2 0 0 1 5 17l4-9V3z"></path><line x1="9" y1="3" x2="15" y2="3"></line></svg>
+                            {{ trialReassessingAnswerId === ans.id ? 'Trying...' : 'Try another assessor (does not change the score)' }}
+                          </button>
+                          <div popover="hint" class="gh-tooltip gh-tooltip-multiline" [id]="'tip-trial-' + ans.orderIndex"
+                               [attr.style]="'position-anchor: --tip-trial-' + ans.orderIndex">Records another assessor's verdict in the second-reader slot. Changes no score, level, flag or index.</div>
+                        }
+                      </div>
                     </div>
-                  </div>
+                  }
+                </div>
+              } @empty {
+                @if (questionFilters.size > 0) {
+                  <p class="text-muted">
+                    No question matches the selected filters.
+                    <button type="button" class="gh-filter-clear" (click)="clearQuestionFilters()">Clear filters</button>
+                  </p>
                 }
-              </div>
-            } @empty {
-              @if (questionFilters.size > 0) {
-                <p class="text-muted">
-                  No question matches the selected filters.
-                  <button type="button" class="gh-filter-clear" (click)="clearQuestionFilters()">Clear filters</button>
-                </p>
               }
-            }
-          </section>
-        } @else if (runDetailLoadError) {
-          <div class="alert alert-danger" role="alert">
-            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="8" x2="12" y2="12"></line>
-              <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-            <div class="alert-content">
-              <div class="alert-heading"><strong>The run could not be loaded</strong></div>
-              <div class="alert-body">{{ runDetailLoadError }}</div>
-              <div class="alert-actions">
-                <button type="button" class="btn-gh" id="rr-retry-load" (click)="retryRunDetail()">Try again</button>
-              </div>
-            </div>
+            </section>
           </div>
-        } @else {
-          <p class="text-muted" role="status">Loading run #{{ runDetailRequestedId }}...</p>
-          <div class="rr-skeleton" aria-hidden="true"></div>
-          <div class="rr-skeleton" aria-hidden="true"></div>
-          <div class="rr-skeleton" aria-hidden="true"></div>
-        }
-      </div>
 
-      <!-- Side column: reference facts about the run. -->
-      <div runReportAside>
-        @if (selectedRunDetail) {
-          <section aria-labelledby="rrConfigTitle">
-            <h4 id="rrConfigTitle">Run Configuration</h4>
-            <dl class="rr-config">
-              @for (row of runConfigurationRows(selectedRunDetail); track row.term) {
-                <dt>{{ row.term }}</dt>
-                <dd>
-                  @if (row.code) {
-                    <code>{{ row.value }}</code>
-                  } @else {
-                    {{ row.value }}
-                  }
-                </dd>
-              }
-            </dl>
-          </section>
-
-          <!--
-            Band Agreement. The Difficulty Breakdown buckets by *assessed* difficulty, so its
-            counts can differ from the authored distribution; without naming which questions
-            moved, that difference is unexplainable to a reader.
-          -->
-          @if (bandDisagreements().length > 0) {
-            <div class="band-agreement-section">
-              <h4>Band Agreement</h4>
-              <p class="section-note">
-                {{ bandDisagreements().length }} of {{ selectedRunDetail.answers.length }} question(s)
-                were assessed outside their authored band.
-              </p>
-              <!--
-                Signed drift, before the per-question list. Assessed difficulty is the Intelligence
-                Index weight, so mismatches that all move one way shift the headline; the list alone
-                does not show that.
-              -->
-              @if (bandDriftSummary(); as drift) {
+          <div role="tabpanel" class="rr-panel" id="rr-panel-difficulty" aria-labelledby="rr-tab-difficulty" tabindex="0"
+               [hidden]="runReportTab !== 'difficulty'">
+            <!--
+              Band Agreement. The Difficulty Breakdown buckets by *assessed* difficulty, so its
+              counts can differ from the authored distribution; without naming which questions
+              moved, that difference is unexplainable to a reader.
+            -->
+            @if (bandDisagreements().length > 0) {
+              <div class="band-agreement-section">
+                <h4 class="gh-section-title">Band Agreement</h4>
                 <p class="section-note">
-                  {{ drift.up }} assessed harder than authored, {{ drift.down }} easier; mean signed
-                  delta {{ drift.meanDelta > 0 ? '+' : '' }}{{ drift.meanDelta | number:'1.1-1' }}
-                  points against the authored band midpoint.
-                  @if (drift.oneDirection === 'up') {
-                    <strong>Every mismatch moved the same way &mdash; upward</strong>, so the authored
-                    bands under-rate this suite systematically.
-                  } @else if (drift.oneDirection === 'down') {
-                    <strong>Every mismatch moved the same way &mdash; downward</strong>, so the authored
-                    bands over-rate this suite systematically.
-                  }
+                  {{ bandDisagreements().length }} of {{ selectedRunDetail.answers.length }} question(s)
+                  were assessed outside their authored band.
                 </p>
-              }
-              <ul class="band-shift-list">
-                @for (ans of bandDisagreements(); track ans.orderIndex) {
-                  <li>
-                    <strong>Q{{ ans.orderIndex }}:</strong>
-                    authored {{ formatDifficulty(ans.difficulty) }} &rarr;
-                    assessed {{ assessedBandOf(ans) }} ({{ ans.assessedDifficulty }})
-                  </li>
+                <!--
+                  Signed drift, before the per-question list. Assessed difficulty is the Intelligence
+                  Index weight, so mismatches that all move one way shift the headline; the list alone
+                  does not show that.
+                -->
+                @if (bandDriftSummary(); as drift) {
+                  <p class="section-note">
+                    {{ drift.up }} assessed harder than authored, {{ drift.down }} easier; mean signed
+                    delta {{ drift.meanDelta > 0 ? '+' : '' }}{{ drift.meanDelta | number:'1.1-1' }}
+                    points against the authored band midpoint.
+                    @if (drift.oneDirection === 'up') {
+                      <strong>Every mismatch moved the same way &mdash; upward</strong>, so the authored
+                      bands under-rate this suite systematically.
+                    } @else if (drift.oneDirection === 'down') {
+                      <strong>Every mismatch moved the same way &mdash; downward</strong>, so the authored
+                      bands over-rate this suite systematically.
+                    }
+                  </p>
                 }
-              </ul>
-            </div>
-          }
-
-          <!--
-            Tool Usage Profile. Knowing a budget was reached is not actionable on its own; the
-            operator needs to see which tools consumed it before tuning the cap.
-          -->
-          @if (totalToolCalls() > 0) {
-            <div class="tool-usage-section">
-              <h4>Tool Usage Profile</h4>
-              <p class="section-note">
-                {{ totalToolCalls() }} tool call(s) total, {{ meanToolCallsPerQuestion() | number:'1.1-1' }} per question on average.
-                @if (toolCallOutcomeSummary()) { <span>{{ toolCallOutcomeSummary() }}.</span> }
-              </p>
-              @if (toolRoundsSummary()) {
-                <p class="section-note">{{ toolRoundsSummary() }}.</p>
-              }
-              <table class="gh-table tool-usage-table">
-                <caption class="visually-hidden">Successful tool calls per tool across the run</caption>
-                <thead>
-                  <tr><th scope="col">Tool</th><th scope="col">Successful calls</th></tr>
-                </thead>
-                <tbody>
-                  @for (tool of toolUsageProfile(); track tool.name) {
-                    <tr>
-                      <td><code>{{ tool.name }}</code></td>
-                      <td>{{ tool.count }}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-              @if (budgetExhaustedAnswers().length > 0) {
-                <p class="section-note">Questions that reached their tool call budget:</p>
                 <ul class="band-shift-list">
-                  @for (ans of budgetExhaustedAnswers(); track ans.orderIndex) {
+                  @for (ans of bandDisagreements(); track ans.orderIndex) {
                     <li>
-                      <strong>Q{{ ans.orderIndex }}</strong>
-                      ({{ formatDifficulty(ans.difficulty) }}, assessed {{ ans.assessedDifficulty ?? 'Auto' }}):
-                      {{ ans.toolCallCount ?? 0 }} of {{ ans.toolCallBudgetUsed ?? '?' }} calls used
+                      <strong>Q{{ ans.orderIndex }}:</strong>
+                      authored {{ formatDifficulty(ans.difficulty) }} &rarr;
+                      assessed {{ assessedBandOf(ans) }} ({{ ans.assessedDifficulty }})
                     </li>
                   }
                 </ul>
-              }
-              <!--
-                Tool Routing: the same family classification the report's table uses, over the answered
-                questions, with the source-share correlations beside their sample size.
-              -->
-              @if (toolRoutingFamilies().length > 0) {
-                <h5>Tool Routing</h5>
-                <p class="section-note">{{ totalRoutedToolCalls() }} call(s) over the answered questions, by family.</p>
-                <table class="gh-table tool-routing-table">
-                  <caption class="visually-hidden">Tool calls by family, with each family's share of the run</caption>
+              </div>
+            } @else {
+              <p class="text-muted">Every question was assessed inside its authored band.</p>
+            }
+          </div>
+
+          <div role="tabpanel" class="rr-panel" id="rr-panel-tools" aria-labelledby="rr-tab-tools" tabindex="0"
+               [hidden]="runReportTab !== 'tools'">
+            <!--
+              Tool Usage Profile. Knowing a budget was reached is not actionable on its own; the
+              operator needs to see which tools consumed it before tuning the cap.
+            -->
+            @if (totalToolCalls() > 0) {
+              <div class="tool-usage-section">
+                <h4 class="gh-section-title">Tool Usage Profile</h4>
+                <p class="section-note">
+                  {{ totalToolCalls() }} tool call(s) total, {{ meanToolCallsPerQuestion() | number:'1.1-1' }} per question on average.
+                  @if (toolCallOutcomeSummary()) { <span>{{ toolCallOutcomeSummary() }}.</span> }
+                </p>
+                @if (toolRoundsSummary()) {
+                  <p class="section-note">{{ toolRoundsSummary() }}.</p>
+                }
+                <table class="gh-table tool-usage-table">
+                  <caption class="visually-hidden">Successful tool calls per tool across the run</caption>
                   <thead>
-                    <tr><th scope="col">Family</th><th scope="col">Calls</th><th scope="col">Share</th></tr>
+                    <tr><th scope="col">Tool</th><th scope="col">Successful calls</th></tr>
                   </thead>
                   <tbody>
-                    @for (row of toolRoutingFamilies(); track row.family) {
+                    @for (tool of toolUsageProfile(); track tool.name) {
                       <tr>
-                        <td>{{ row.label }}</td>
-                        <td>{{ row.count }}</td>
-                        <td>{{ row.sharePercentage | number:'1.0-1' }} %</td>
+                        <td><code>{{ tool.name }}</code></td>
+                        <td>{{ tool.count }}</td>
                       </tr>
                     }
                   </tbody>
                 </table>
-                @if (sourceShareCorrelations(); as correlations) {
-                  <p class="section-note">
-                    Source-code share against model time: r = {{ formatCorrelation(correlations.modelTimeR) }};
-                    against quality: r = {{ formatCorrelation(correlations.qualityR) }} (n = {{ correlations.sampleSize }}).
-                  </p>
+                @if (budgetExhaustedAnswers().length > 0) {
+                  <p class="section-note">Questions that reached their tool call budget:</p>
+                  <ul class="band-shift-list">
+                    @for (ans of budgetExhaustedAnswers(); track ans.orderIndex) {
+                      <li>
+                        <strong>Q{{ ans.orderIndex }}</strong>
+                        ({{ formatDifficulty(ans.difficulty) }}, assessed {{ ans.assessedDifficulty ?? 'Auto' }}):
+                        {{ ans.toolCallCount ?? 0 }} of {{ ans.toolCallBudgetUsed ?? '?' }} calls used
+                      </li>
+                    }
+                  </ul>
                 }
-              }
-            </div>
-          }
+                <!--
+                  Tool Routing: the same family classification the report's table uses, over the answered
+                  questions, with the source-share correlations beside their sample size.
+                -->
+                @if (toolRoutingFamilies().length > 0) {
+                  <h5>Tool Routing</h5>
+                  <p class="section-note">{{ totalRoutedToolCalls() }} call(s) over the answered questions, by family.</p>
+                  <table class="gh-table tool-routing-table">
+                    <caption class="visually-hidden">Tool calls by family, with each family's share of the run</caption>
+                    <thead>
+                      <tr><th scope="col">Family</th><th scope="col">Calls</th><th scope="col">Share</th></tr>
+                    </thead>
+                    <tbody>
+                      @for (row of toolRoutingFamilies(); track row.family) {
+                        <tr>
+                          <td>{{ row.label }}</td>
+                          <td>{{ row.count }}</td>
+                          <td>{{ row.sharePercentage | number:'1.0-1' }} %</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                  @if (sourceShareCorrelations(); as correlations) {
+                    <p class="section-note">
+                      Source-code share against model time: r = {{ formatCorrelation(correlations.modelTimeR) }};
+                      against quality: r = {{ formatCorrelation(correlations.qualityR) }} (n = {{ correlations.sampleSize }}).
+                    </p>
+                  }
+                }
+              </div>
+            } @else {
+              <p class="text-muted">The model under test made no tool calls.</p>
+            }
+          </div>
 
-          <!--
-            Where the Estimated Cost card's figure went. The roles and the grading subtotal are
-            visible rather than behind a hover, because the split is the point.
-          -->
-          <app-benchmark-cost-panel
-            variant="final"
-            [total]="selectedRunDetail.estimatedCost ?? null"
-            [candidate]="selectedRunDetail.estimatedCandidateCost ?? null"
-            [assessor]="selectedRunDetail.estimatedAssessorCost ?? null"
-            [coAssessor]="selectedRunDetail.estimatedCoAssessorCost ?? null"
-            [panel]="!!selectedRunDetail.isPanelRun"
-            [secondOpinion]="selectedRunDetail.estimatedSecondOpinionCost ?? null"
-            [claimVerifier]="selectedRunDetail.estimatedVerifierCost ?? null"
-            [synthesis]="selectedRunDetail.estimatedSynthesisCost ?? null"
-            [coSynthesis]="selectedRunDetail.estimatedCoSynthesisCost ?? null"
-            [grading]="selectedRunDetail.estimatedGradingCost ?? null"
-            [pricingSource]="selectedRunDetail.pricingSource ?? null"
-            [pricingIncomplete]="selectedRunDetail.pricingIncomplete ?? false"
-            [legacyRun]="isLegacyCostRun(selectedRunDetail)"></app-benchmark-cost-panel>
+          <div role="tabpanel" class="rr-panel" id="rr-panel-cost" aria-labelledby="rr-tab-cost" tabindex="0"
+               [hidden]="runReportTab !== 'cost'">
+            <!--
+              Where the Estimated Cost card's figure went. The roles and the grading subtotal are
+              visible rather than behind a hover, because the split is the point.
+            -->
+            <app-benchmark-cost-panel
+              variant="final"
+              [total]="selectedRunDetail.estimatedCost ?? null"
+              [candidate]="selectedRunDetail.estimatedCandidateCost ?? null"
+              [assessor]="selectedRunDetail.estimatedAssessorCost ?? null"
+              [coAssessor]="selectedRunDetail.estimatedCoAssessorCost ?? null"
+              [panel]="!!selectedRunDetail.isPanelRun"
+              [secondOpinion]="selectedRunDetail.estimatedSecondOpinionCost ?? null"
+              [claimVerifier]="selectedRunDetail.estimatedVerifierCost ?? null"
+              [synthesis]="selectedRunDetail.estimatedSynthesisCost ?? null"
+              [coSynthesis]="selectedRunDetail.estimatedCoSynthesisCost ?? null"
+              [grading]="selectedRunDetail.estimatedGradingCost ?? null"
+              [pricingSource]="selectedRunDetail.pricingSource ?? null"
+              [pricingIncomplete]="selectedRunDetail.pricingIncomplete ?? false"
+              [legacyRun]="isLegacyCostRun(selectedRunDetail)"></app-benchmark-cost-panel>
+          </div>
 
-          <!--
-            The run's AI-written reports: an Executive Summary and a Report for AI Researchers and
-            Developers, written once after scoring by the run's report writer and stored. View and
-            Downloads render the stored text; only Write Reports calls a model.
-          -->
-          <details class="gh-disclosure mt-20 rr-ai-reports" [open]="runReportDocuments.length > 0">
-            <summary>AI-Written Reports</summary>
-            <div class="gh-disclosure-body">
+          <div role="tabpanel" class="rr-panel" id="rr-panel-configuration" aria-labelledby="rr-tab-configuration" tabindex="0"
+               [hidden]="runReportTab !== 'configuration'">
+            <section aria-labelledby="rrConfigTitle">
+              <h4 id="rrConfigTitle" class="gh-section-title">Run Configuration</h4>
+              <dl class="rr-config">
+                @for (row of runConfigurationRows(selectedRunDetail); track row.term) {
+                  <dt>{{ row.term }}</dt>
+                  <dd>
+                    @if (row.code) {
+                      <code>{{ row.value }}</code>
+                    } @else {
+                      {{ row.value }}
+                    }
+                  </dd>
+                }
+              </dl>
+            </section>
+          </div>
+
+          <div role="tabpanel" class="rr-panel" id="rr-panel-reports" aria-labelledby="rr-tab-reports" tabindex="0"
+               [hidden]="runReportTab !== 'reports'">
+            <!--
+              The run's AI-written reports: an Executive Summary and a Report for AI Researchers and
+              Developers, written once after scoring by the run's report writer and stored. One row per
+              document, written or not; View renders the stored text and only Write Reports calls a model.
+            -->
+            <div class="rr-ai-reports">
               <p class="rr-ai-status" role="status">{{ runReportStatusText(selectedRunDetail) }}</p>
 
               @if (runReportDocumentsError) {
                 <p class="form-hint text-danger">{{ runReportDocumentsError }}</p>
-              }
-
-              @if (runReportDocuments.length > 0) {
+              } @else {
                 <ul class="rr-ai-doc-list">
-                  @for (doc of runReportDocuments; track doc.id) {
-                    <li class="rr-ai-doc-row" [attr.data-document-id]="doc.id">
+                  @for (row of runReportDocumentRows; track row.audience) {
+                    <li class="rr-ai-doc-row" [attr.data-audience]="row.audience" [attr.data-document-id]="row.doc?.id ?? null">
                       <div class="rr-ai-doc-text">
-                        <span class="rr-ai-doc-name">{{ reportAudienceLabel(doc.audience) }}</span>
-                        <span class="gh-tag rr-ai-doc-status" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ reportDocumentStatusLabel(doc.status) }}</span>
-                        @if (doc.runChangedSinceGeneration) {
-                          <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
+                        <span class="rr-ai-doc-name">{{ row.label }}</span>
+                        @if (row.doc; as doc) {
+                          <span class="gh-tag rr-ai-doc-status" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ runReportDocumentStatusLabel(doc) }}</span>
+                          <span class="rr-ai-doc-meta">{{ runReportDocumentMeta(doc) }}</span>
+                          @if (doc.runChangedSinceGeneration) {
+                            <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
+                          }
+                        } @else if (runReportDocumentsLoaded) {
+                          <span class="gh-tag rr-ai-doc-status is-missing">Not written</span>
                         }
                       </div>
-                      <button type="button" class="btn-gh btn-gh-small rr-ai-doc-view"
-                              [attr.aria-label]="'View the ' + reportAudienceLabel(doc.audience)"
-                              (click)="viewRunReportDocument(doc)">View</button>
+                      @if (row.doc; as doc) {
+                        <button type="button" class="btn-gh btn-gh-small rr-ai-doc-view"
+                                [attr.aria-label]="'View the ' + row.label"
+                                (click)="viewRunReportDocument(doc)">View</button>
+                      }
                     </li>
                   }
                 </ul>
@@ -2993,10 +3008,6 @@
                   <div class="alert-content"><div class="alert-body">{{ runReportViewError }}</div></div>
                 </div>
               }
-
-              <div class="rr-ai-actions">
-                <button type="button" class="btn-gh btn-gh-small rr-ai-downloads" (click)="openRunDownloads()">Downloads</button>
-              </div>
 
               @if (runReportDocumentsMissing) {
                 <div class="rr-ai-write">
@@ -3009,7 +3020,7 @@
                                       (selectionChange)="selectRunReportWriterModel($event.model)"></app-model-picker>
                   </div>
                   <button type="button" class="btn-gh rr-ai-write-btn"
-                          [disabled]="!!runReportWriteBlockedReason || runReportWriteSubmitting"
+                          [disabled]="runReportWriterConfigId == null || !!runReportWriteBlockedReason || runReportWriteSubmitting"
                           [attr.aria-busy]="runReportWriteSubmitting ? 'true' : null"
                           (click)="writeRunReports()">
                     {{ runReportWriteSubmitting ? 'Requesting…' : 'Write Reports' }}
@@ -3025,18 +3036,19 @@
                 }
               }
             </div>
-          </details>
+          </div>
 
-          <!--
-            Assessor calibration. Grades this finished run's answers with another model and records
-            only the agreement statistics: no score, level, flag or index moves, and none of it
-            reaches the Markdown report, where a calibration verdict could be mistaken for a
-            result. This is the screen where a prospective assessor earns its promotion, so cost is
-            shown beside agreement.
-          -->
-          <details class="gh-disclosure mt-20">
-            <summary>Assessor Calibration</summary>
-            <div class="gh-disclosure-body calibration-panel">
+          <div role="tabpanel" class="rr-panel" id="rr-panel-calibration" aria-labelledby="rr-tab-calibration" tabindex="0"
+               [hidden]="runReportTab !== 'calibration'">
+            <!--
+              Assessor calibration. Grades this finished run's answers with another model and records
+              only the agreement statistics: no score, level, flag or index moves, and none of it
+              reaches the Markdown report, where a calibration verdict could be mistaken for a
+              result. This is the screen where a prospective assessor earns its promotion, so cost is
+              shown beside agreement.
+            -->
+            <div class="calibration-panel">
+              <h4 class="gh-section-title">Assessor Calibration</h4>
               <p class="form-hint">
                 Re-grades every answer of this run with another model and reports how far it diverges
                 from the run's own assessor. Use it before replacing an assessor, to see whether the
@@ -3108,10 +3120,27 @@
                 </ul>
               }
             </div>
-          </details>
-        } @else if (loadingDetail) {
-          <div class="rr-skeleton" aria-hidden="true"></div>
-          <div class="rr-skeleton" aria-hidden="true"></div>
+          </div>
+        } @else if (runDetailLoadError) {
+          <div class="alert alert-danger" role="alert">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <div class="alert-content">
+              <div class="alert-heading"><strong>The run could not be loaded</strong></div>
+              <div class="alert-body">{{ runDetailLoadError }}</div>
+              <div class="alert-actions">
+                <button type="button" class="btn-gh" id="rr-retry-load" (click)="retryRunDetail()">Try again</button>
+              </div>
+            </div>
+          </div>
+        } @else {
+          <p class="text-muted" role="status">Loading run #{{ runDetailRequestedId }}...</p>
+          @for (i of [1, 2, 3, 4, 5, 6, 7]; track i) {
+            <div class="rr-skeleton" aria-hidden="true"></div>
+          }
         }
       </div>
     </app-run-report-frame>

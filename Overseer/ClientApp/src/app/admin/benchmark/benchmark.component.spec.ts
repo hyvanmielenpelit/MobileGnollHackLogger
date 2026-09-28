@@ -5,7 +5,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
 import { ModelPickerComponent } from '../../shared/model-picker/model-picker.component';
 import { of, throwError, Subject } from 'rxjs';
-import { AdminBenchmarkComponent, RUN_REPORT_DOCUMENTS_POLL_MS } from './benchmark.component';
+import { AdminBenchmarkComponent, RUN_REPORT_DOCUMENTS_POLL_MS, RUN_REPORT_TAB_STORAGE_KEY } from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
@@ -31,11 +31,12 @@ describe('AdminBenchmarkComponent', () => {
   const COMPARISON_SELECTION_KEY = 'overseer_admin_benchmark_comparison_selection';
 
   function clearStoredState(): void {
-    // Both are real browser state, so without this a spec that starts a run or picks a comparison
-    // leaks its selections into every spec that constructs the component afterwards.
+    // All are real browser state, so without this a spec that starts a run, picks a comparison or
+    // chooses a run report tab leaks its selections into every spec that constructs the component afterwards.
     try {
       localStorage.removeItem(RUN_SETTINGS_KEY);
       localStorage.removeItem(COMPARISON_SELECTION_KEY);
+      localStorage.removeItem(RUN_REPORT_TAB_STORAGE_KEY);
     } catch { /* private-browsing modes throw */ }
   }
 
@@ -10528,8 +10529,16 @@ describe('AdminBenchmarkComponent', () => {
         };
       }
 
-      function aiSection(): HTMLDetailsElement {
-        return fixture.nativeElement.querySelector('.benchmark-run-detail-dialog details.rr-ai-reports') as HTMLDetailsElement;
+      function aiSection(): HTMLElement {
+        return fixture.nativeElement.querySelector('.benchmark-run-detail-dialog #rr-panel-reports .rr-ai-reports') as HTMLElement;
+      }
+
+      function aiRows(): HTMLElement[] {
+        return Array.from(aiSection().querySelectorAll('.rr-ai-doc-row')) as HTMLElement[];
+      }
+
+      function rowText(row: HTMLElement, selector: string): string | undefined {
+        return row.querySelector(selector)?.textContent?.replace(/\s+/g, ' ').trim();
       }
 
       function aiStatus(): string {
@@ -10540,23 +10549,73 @@ describe('AdminBenchmarkComponent', () => {
         return aiSection().querySelector('.rr-ai-write-btn') as HTMLButtonElement;
       }
 
-      it('should sit directly above Assessor Calibration, closed and offering Write Reports while none exists', () => {
+      it('should be a plain section of the AI Reports panel, listing both documents as not written', () => {
+        component.reportWriterConfigId = null;
         openReport(reportRun({ assessmentJson: '{}' }));
 
         const section = aiSection();
-        expect(section.classList).toContain('gh-disclosure');
-        expect(section.querySelector('summary')?.textContent?.trim()).toBe('AI-Written Reports');
-        const next = section.nextElementSibling as HTMLElement;
-        expect(next.tagName).toBe('DETAILS');
-        expect(next.querySelector('summary')?.textContent?.trim()).toBe('Assessor Calibration');
-        expect(section.open).toBeFalse();
+        expect(section.tagName).toBe('DIV');
+        expect(fixture.nativeElement.querySelector('.benchmark-run-detail-dialog details.rr-ai-reports, .benchmark-run-detail-dialog details summary')).toBeNull();
 
         expect(benchmarkServiceMock.listReportDocuments).toHaveBeenCalledWith({ runId: 55 });
-        expect(aiStatus()).toBe('Not requested');
-        expect(section.querySelectorAll('.rr-ai-doc-row').length).toBe(0);
+        expect(aiStatus()).toBe('');
+        const rows = aiRows();
+        expect(rows.map(row => rowText(row, '.rr-ai-doc-name'))).toEqual(['Executive Summary', 'Report for AI Researchers and Developers']);
+        for (const row of rows) {
+          expect(rowText(row, '.rr-ai-doc-status.is-missing')).toBe('Not written');
+          expect(row.querySelector('button')).toBeNull();
+        }
         expect(section.querySelector('#rrReportWriterModelLabel')?.textContent?.trim()).toBe('Report writer');
         expect(writeButton().disabled).toBeTrue();
-        expect(section.querySelector('#rrReportWriterBlocked')?.textContent?.trim()).toBe('Choose a report writer.');
+        expect(section.querySelector('#rrReportWriterBlocked')).toBeNull();
+        expect(section.textContent).not.toContain('Choose a report writer.');
+        expect(fixture.nativeElement.querySelector('.benchmark-run-detail-dialog .rr-ai-downloads')).toBeNull();
+      });
+
+      it('should show only the names until the document list answers', () => {
+        const pending = new Subject<any>();
+        benchmarkServiceMock.listReportDocuments.and.returnValue(pending.asObservable());
+        openReport(reportRun({ assessmentJson: '{}' }));
+
+        expect(aiRows().length).toBe(2);
+        expect(aiSection().querySelector('.rr-ai-doc-status')).toBeNull();
+
+        pending.next([aiDoc(71, 1)]);
+        fixture.detectChanges();
+        expect(aiRows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written']);
+      });
+
+      it('should preselect the run\'s own writer over the launcher\'s', () => {
+        component.systemConfigs = [
+          ...component.systemConfigs,
+          { ...component.systemConfigs[0], id: 8, displayName: 'Other Writer', provider: 'Google', modelId: 'gemini-writer' }
+        ];
+        component.reportWriterConfigId = 8;
+        openReport(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+
+        expect(component.runReportWriterConfigId).toBe(1);
+        expect(writeButton().disabled).toBeFalse();
+      });
+
+      it('should preselect the launcher\'s writer when the run has none and it qualifies', () => {
+        component.reportWriterConfigId = 1;
+        openReport(reportRun({ assessmentJson: '{}' }));
+
+        expect(component.runReportWriterConfigId).toBe(1);
+        expect(writeButton().disabled).toBeFalse();
+      });
+
+      it('should leave the writer empty when the launcher\'s writer is refused for the run\'s candidate', () => {
+        component.systemConfigs = [
+          ...component.systemConfigs,
+          { ...component.systemConfigs[0], id: 9, displayName: 'GPT Writer', provider: 'OpenAI', modelId: 'gpt-writer' }
+        ];
+        component.reportWriterConfigId = 9;
+        openReport(reportRun({ assessmentJson: '{}' }));
+
+        expect(component.runReportWriterConfigId).toBeNull();
+        expect(writeButton().disabled).toBeTrue();
+        expect(aiSection().querySelector('#rrReportWriterBlocked')).toBeNull();
       });
 
       it('should write the missing reports with the chosen writer, then follow the job until they are written', fakeAsync(() => {
@@ -10585,27 +10644,35 @@ describe('AdminBenchmarkComponent', () => {
         tick(RUN_REPORT_DOCUMENTS_POLL_MS);
         fixture.detectChanges();
 
-        expect(aiStatus()).toBe('Written by Test Model on 2026-09-28 10:15 UTC');
-        expect(aiSection().querySelectorAll('.rr-ai-doc-row').length).toBe(2);
+        expect(aiStatus()).toBe('');
+        expect(aiRows().map(row => rowText(row, '.rr-ai-doc-meta')))
+          .toEqual(['by Test Model on 2026-09-28 10:15 UTC', 'by Test Model on 2026-09-28 10:15 UTC']);
+        expect(aiSection().querySelectorAll('.rr-ai-doc-view').length).toBe(2);
         expect(aiSection().querySelector('.rr-ai-write')).toBeNull();
         expect((component as any).runReportDocumentsPoll).toBeNull();
         flush();
         discardPeriodicTasks();
       }));
 
-      it('should list stored reports open by default, each with a View button named for it', () => {
+      it('should list stored reports with their writer and date, each with a View button named for it', () => {
         benchmarkServiceMock.listReportDocuments.and.returnValue(of([
-          aiDoc(72, 2, { runChangedSinceGeneration: true, createdAtUtc: '2026-09-28T11:00:00Z', writerDisplayName: 'Writer B' }),
+          aiDoc(72, 2, {
+            runChangedSinceGeneration: true, createdAtUtc: '2026-09-28T11:00:00Z', writerDisplayName: 'Writer B',
+            status: 'CompletedWithWarnings'
+          }),
           aiDoc(71, 1)
         ]));
         openReport(reportRun({ assessmentJson: '{}', reportDocumentsStatus: 4, reportWriterDisplayName: 'Writer B' }));
 
         const section = aiSection();
-        expect(section.open).toBeTrue();
-        expect(aiStatus()).toBe('Written with warnings by Writer B on 2026-09-28 11:00 UTC');
-        const rows = Array.from(section.querySelectorAll('.rr-ai-doc-row')) as HTMLElement[];
-        expect(rows.map(row => row.querySelector('.rr-ai-doc-name')?.textContent?.trim()))
+        expect(aiStatus()).toBe('');
+        const rows = aiRows();
+        expect(rows.map(row => rowText(row, '.rr-ai-doc-name')))
           .toEqual(['Executive Summary', 'Report for AI Researchers and Developers']);
+        expect(rows.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Written with warnings']);
+        expect(rows[1].querySelector('.rr-ai-doc-status')?.classList).toContain('is-warning');
+        expect(rows.map(row => rowText(row, '.rr-ai-doc-meta')))
+          .toEqual(['by Test Model on 2026-09-28 10:15 UTC', 'by Writer B on 2026-09-28 11:00 UTC']);
         const views = rows.map(row => row.querySelector('button.rr-ai-doc-view') as HTMLButtonElement);
         expect(views.map(button => button.getAttribute('aria-label')))
           .toEqual(['View the Executive Summary', 'View the Report for AI Researchers and Developers']);
@@ -10616,11 +10683,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(rows[0].querySelector('.gh-tag-changed')).toBeNull();
         expect(rows[1].querySelector('.gh-tag-changed')?.textContent?.trim()).toBe('Run changed since this document was written');
         expect(section.querySelector('.rr-ai-write')).toBeNull();
-
-        const open = spyOn(component.runDownloadCenter!, 'open');
-        (section.querySelector('.rr-ai-downloads') as HTMLButtonElement).click();
-        expect(open).toHaveBeenCalledTimes(1);
-        expect((open.calls.mostRecent().args[0] as any).run.id).toBe(55);
+        expect(section.querySelector('.rr-ai-downloads')).toBeNull();
       });
 
       it('should offer Write Reports for the one report that is missing', () => {
@@ -10628,8 +10691,12 @@ describe('AdminBenchmarkComponent', () => {
         openReport(reportRun({ assessmentJson: '{}', reportDocumentsStatus: 5, reportDocumentsMessage: 'The writer returned no usable text.' }));
 
         expect(aiStatus()).toBe('Failed: The writer returned no usable text.');
-        expect(aiSection().querySelectorAll('.rr-ai-doc-row').length).toBe(1);
+        const rows = aiRows();
+        expect(rows.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written']);
+        expect(rows[0].querySelector('.rr-ai-doc-view')).not.toBeNull();
+        expect(rows[1].querySelector('button')).toBeNull();
         expect(aiSection().querySelector('.rr-ai-write')).not.toBeNull();
+        expect(aiSection().querySelector('.rr-ai-write')?.previousElementSibling?.classList).toContain('rr-ai-doc-list');
       });
 
       it('should open a report as a PDF in a new tab at its fullest disclosure with peers named', () => {
@@ -10671,7 +10738,7 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
 
         expect(aiSection().querySelector('[role="alert"]')?.textContent?.trim()).toBe('The model under test cannot write its own reports.');
-        expect(aiStatus()).toBe('Not requested');
+        expect(aiStatus()).toBe('');
         expect(writeButton().disabled).toBeFalse();
       });
 
@@ -10731,7 +10798,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(status.textContent?.trim()).toBe('');
     }));
 
-    it('should list the run configuration and the tool routing table in the side column', () => {
+    it('should list the run configuration and the tool routing table in their tabs', () => {
       component.selectedRunDetail = reportRun({
         secondOpinionAssessorModelConfigurationId: 3, secondOpinionAssessorModelDisplayNameUsed: 'Reader',
         secondOpinionAssessorModelProviderUsed: 'OpenAI', secondOpinionAssessorModelIdUsed: 'gpt-reader',
@@ -10743,9 +10810,10 @@ describe('AdminBenchmarkComponent', () => {
       });
       fixture.detectChanges();
 
-      const aside = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog .rrf-aside') as HTMLElement;
-      const terms = Array.from(aside.querySelectorAll('.rr-config dt')).map((dt: any) => dt.textContent.trim());
-      const value = (term: string) => (aside.querySelectorAll('.rr-config dd')[terms.indexOf(term)]?.textContent || '')
+      const configuration = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog #rr-panel-configuration') as HTMLElement;
+      const tools = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog #rr-panel-tools') as HTMLElement;
+      const terms = Array.from(configuration.querySelectorAll('.rr-config dt')).map((dt: any) => dt.textContent.trim());
+      const value = (term: string) => (configuration.querySelectorAll('.rr-config dd')[terms.indexOf(term)]?.textContent || '')
         .replace(/\s+/g, ' ').trim();
       expect(value('Assessor')).toContain('Test Assessor (Google / gemini-test)');
       expect(value('Assessor')).toContain('different family from the model under test');
@@ -10754,26 +10822,207 @@ describe('AdminBenchmarkComponent', () => {
       expect(value('Harness version')).toBe('40');
       expect(value('Prompt SHA-256')).toBe('abc123');
 
-      const routing = aside.querySelector('.tool-routing-table') as HTMLTableElement;
+      const routing = tools.querySelector('.tool-routing-table') as HTMLTableElement;
       expect(routing).toBeTruthy();
       const rows = Array.from(routing.querySelectorAll('tbody tr')).map((tr: any) =>
         Array.from(tr.querySelectorAll('td')).map((td: any) => td.textContent.trim()));
       expect(rows).toEqual([['Source Code', '3', '50 %'], ['Wiki', '3', '50 %']]);
-      expect(aside.textContent).toContain('(n = 2)');
+      expect(tools.textContent).toContain('(n = 2)');
+    });
+
+    describe('tabs', () => {
+      const KEYS = ['summary', 'integrity', 'synthesis', 'questions', 'difficulty', 'tools', 'cost', 'configuration', 'reports', 'calibration'];
+
+      function tablist(): HTMLElement {
+        return fixture.nativeElement.querySelector('.benchmark-run-detail-dialog [role="tablist"][aria-label="Run report sections"]') as HTMLElement;
+      }
+
+      function tabs(): HTMLButtonElement[] {
+        return Array.from(tablist().querySelectorAll('[role="tab"]')) as HTMLButtonElement[];
+      }
+
+      function tab(key: string): HTMLButtonElement {
+        return fixture.nativeElement.querySelector(`#rr-tab-${key}`) as HTMLButtonElement;
+      }
+
+      function shownPanels(): HTMLElement[] {
+        return (Array.from(fixture.nativeElement.querySelectorAll('.benchmark-run-detail-dialog [role="tabpanel"].rr-panel')) as HTMLElement[])
+          .filter(panel => !panel.hidden);
+      }
+
+      function press(target: HTMLElement, key: string): KeyboardEvent {
+        const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+        target.dispatchEvent(event);
+        fixture.detectChanges();
+        return event;
+      }
+
+      /** A run with no integrity clause: no critical error, flag or second reading. */
+      function cleanRun(): any {
+        return reportRun({ answers: [reportAnswer(1), reportAnswer(2), reportAnswer(3)] });
+      }
+
+      it('should render ten tabs in order under the header, each controlling its own panel', () => {
+        openReport(reportRun());
+
+        const list = tablist();
+        expect(list.classList).toContain('gh-tabs');
+        expect(list.classList).toContain('gh-tabs-secondary');
+        expect(list.closest('.rrf-tabs')).not.toBeNull();
+        const all = tabs();
+        expect(all.map(t => t.id)).toEqual(KEYS.map(key => `rr-tab-${key}`));
+        expect(all.map(t => (t.textContent || '').replace(/\s+/g, ' ').trim())).toEqual([
+          'Summary', 'Integrity Notice', 'Synthesis', 'Questions (3)', 'Difficulty', 'Tools', 'Cost',
+          'Configuration', 'AI Reports', 'Calibration'
+        ]);
+        expect(list.querySelector('svg')).toBeNull();
+        expect(all.filter(t => t.getAttribute('tabindex') === '0').map(t => t.id)).toEqual(['rr-tab-summary']);
+        for (const t of all) {
+          expect(t.getAttribute('type')).toBe('button');
+          const panel = fixture.nativeElement.querySelector('#' + t.getAttribute('aria-controls')) as HTMLElement;
+          expect(panel.getAttribute('role')).withContext(t.id).toBe('tabpanel');
+          expect(panel.getAttribute('aria-labelledby')).withContext(t.id).toBe(t.id);
+          expect(panel.getAttribute('tabindex')).withContext(t.id).toBe('0');
+        }
+        expect(tab('summary').getAttribute('aria-selected')).toBe('true');
+        expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-summary']);
+      });
+
+      it('should show exactly the chosen panel, keep the others rendered, and remember the choice', () => {
+        openReport(reportRun());
+
+        tab('cost').click();
+        fixture.detectChanges();
+
+        expect(component.runReportTab).toBe('cost');
+        expect(tab('cost').getAttribute('aria-selected')).toBe('true');
+        expect(tab('cost').getAttribute('tabindex')).toBe('0');
+        expect(tab('summary').getAttribute('tabindex')).toBe('-1');
+        expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-cost']);
+        expect(getComputedStyle(fixture.nativeElement.querySelector('#rr-panel-summary')).display).toBe('none');
+        expect(fixture.nativeElement.querySelectorAll('#rr-panel-summary .score-card').length).toBeGreaterThan(0);
+        expect(localStorage.getItem(RUN_REPORT_TAB_STORAGE_KEY)).toBe('cost');
+      });
+
+      it('should wrap with the arrow keys, jump with Home and End, and move focus with the selection', () => {
+        openReport(reportRun());
+
+        let event = press(tab('summary'), 'ArrowLeft');
+        expect(event.defaultPrevented).toBeTrue();
+        expect(component.runReportTab).toBe('calibration');
+        expect(document.activeElement).toBe(tab('calibration'));
+
+        press(tab('calibration'), 'ArrowRight');
+        expect(component.runReportTab).toBe('summary');
+        expect(document.activeElement).toBe(tab('summary'));
+
+        press(tab('summary'), 'End');
+        expect(component.runReportTab).toBe('calibration');
+        press(tab('calibration'), 'Home');
+        expect(component.runReportTab).toBe('summary');
+        press(tab('summary'), 'ArrowRight');
+        expect(component.runReportTab).toBe('integrity');
+        expect(document.activeElement).toBe(tab('integrity'));
+
+        event = press(tab('integrity'), 'a');
+        expect(event.defaultPrevented).toBeFalse();
+        expect(component.runReportTab).toBe('integrity');
+      });
+
+      it('should reopen on the last tab chosen, but keep the shown tab when a re-score reloads the open report', async () => {
+        openReport(reportRun());
+        tab('tools').click();
+        fixture.detectChanges();
+
+        // A reload of the open dialog keeps the tab even if the stored one differs.
+        localStorage.setItem(RUN_REPORT_TAB_STORAGE_KEY, 'cost');
+        openReport(reportRun());
+        expect(component.runReportTab).toBe('tools');
+
+        const closed = nextEvent(reportDialog(), 'close');
+        component.closeRunDetail();
+        await closed;
+        openReport(reportRun());
+
+        expect(component.runReportTab).toBe('cost');
+        expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-cost']);
+      });
+
+      it('should fall back to Summary for an unknown stored tab or unreadable storage', async () => {
+        localStorage.setItem(RUN_REPORT_TAB_STORAGE_KEY, 'no-such-tab');
+        component.runReportTab = 'cost';
+        openReport(reportRun());
+        expect(component.runReportTab).toBe('summary');
+
+        const closed = nextEvent(reportDialog(), 'close');
+        reportDialog().close();
+        await closed;
+        spyOn(localStorage, 'getItem').and.throwError('denied');
+        component.runReportTab = 'cost';
+        openReport(reportRun());
+        expect(component.runReportTab).toBe('summary');
+      });
+
+      it('should mark the Integrity tab with Notice exactly while the Run Integrity Notice shows', () => {
+        openReport(reportRun());
+        expect(component.hasRunIntegrityNotice).toBeTrue();
+        expect(tab('integrity').querySelector('.gh-tag.rr-tab-flag')?.textContent?.trim()).toBe('Notice');
+        expect(fixture.nativeElement.querySelector('#rr-panel-integrity')?.textContent).toContain('Run Integrity Notice');
+
+        openReport(cleanRun());
+        expect(component.hasRunIntegrityNotice).toBeFalse();
+        expect(tab('integrity').querySelector('.rr-tab-flag')).toBeNull();
+        const panel = fixture.nativeElement.querySelector('#rr-panel-integrity') as HTMLElement;
+        expect(panel.textContent).not.toContain('Run Integrity Notice');
+        expect(panel.textContent).toContain('No integrity notices for this run.');
+      });
+
+      it('should select Questions when jumping to an answer', () => {
+        openReport(reportRun());
+
+        component.jumpToAnswer(3);
+        fixture.detectChanges();
+
+        expect(component.runReportTab).toBe('questions');
+        expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-questions']);
+        expect(component.expandedQuestions.has(3)).toBeTrue();
+      });
+
+      it('should keep the run-wide strips above the panels, outside every tab panel', () => {
+        component.selectedRunDetail = reportRun();
+        component.actionErrorMessage = 'Re-scoring failed.';
+        fixture.detectChanges();
+
+        const body = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog .rrf-single') as HTMLElement;
+        const alert = Array.from(body.querySelectorAll('[role="alert"]'))
+          .find(el => el.textContent?.includes('Re-scoring failed.')) as HTMLElement;
+        expect(alert.closest('[role="tabpanel"]')).toBeNull();
+        const firstPanel = body.querySelector('[role="tabpanel"]') as HTMLElement;
+        expect(alert.compareDocumentPosition(firstPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      });
+
+      it('should show no tab row while the run loads or after it failed to load', () => {
+        const pending = new Subject<any>();
+        benchmarkServiceMock.getRun.and.returnValue(pending.asObservable());
+        component.viewRunDetail(77);
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('.benchmark-run-detail-dialog [role="tablist"]')).toBeNull();
+        expect(fixture.nativeElement.querySelector('.benchmark-run-detail-dialog [role="tabpanel"]')).toBeNull();
+
+        spyOn(console, 'error');
+        pending.error({ status: 500 });
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('#rr-retry-load')).not.toBeNull();
+        expect(fixture.nativeElement.querySelector('.benchmark-run-detail-dialog [role="tablist"]')).toBeNull();
+      });
     });
 
     describe('key figures', () => {
-      const FIGURES_KEY = 'overseer.benchmark.runReport.figuresCollapsed';
       const NOW = new Date(2026, 8, 28, 12, 34, 56);
 
       beforeEach(() => {
-        localStorage.removeItem(FIGURES_KEY);
         spyOn(keyFiguresImageIo, 'loadImage').and.callFake(() => Promise.reject(new Error('404')));
         spyOn(keyFiguresImageIo, 'now').and.returnValue(NOW);
-      });
-
-      afterEach(() => {
-        localStorage.removeItem(FIGURES_KEY);
       });
 
       function dialog(): HTMLElement {
@@ -10812,23 +11061,16 @@ describe('AdminBenchmarkComponent', () => {
         expect(titleGroup.querySelector('#runDetailTitle')).toBeTruthy();
       });
 
-      it('should put a key-figures toggle, a summary and the strip actions in a bar above the cards', () => {
+      it('should head the Summary panel with Key figures, its Copy and Download beside it, then the cards', () => {
         component.selectedRunDetail = reportRun({ qualityIndex: 73, qualityIndexStandardError: 4, estimatedCost: 3.2322 });
         fixture.detectChanges();
 
-        const toggle = dialog().querySelector('.rrf-figures-toggle') as HTMLButtonElement;
-        const figures = dialog().querySelector('.rrf-figures') as HTMLElement;
-        const summary = dialog().querySelector('.rrf-figures-summary') as HTMLElement;
-        expect(toggle.getAttribute('aria-expanded')).toBe('true');
-        expect(toggle.getAttribute('aria-controls')).toBe(figures.id);
-        expect(summary.hidden).toBeTrue();
+        const panel = dialog().querySelector('#rr-panel-summary') as HTMLElement;
+        const title = panel.querySelector('.rr-figures-head > h4#rrFiguresTitle') as HTMLElement;
+        expect(title.textContent?.trim()).toBe('Key figures');
+        expect(title.classList).toContain('gh-section-title');
 
-        const text = (summary.textContent || '').trim();
-        expect(text).toBe(component.keyFiguresSummary);
-        expect(text).toContain('Intelligence Index 73 / 100 ± 8 · ');
-        expect(text).toContain(' · Estimated cost $3.2322');
-
-        const group = dialog().querySelector('.rrf-figures-actions [role="group"][aria-label="Key figures actions"]') as HTMLElement;
+        const group = panel.querySelector('.rr-figures-head > [role="group"][aria-label="Key figures actions"]') as HTMLElement;
         const names = Array.from(group.querySelectorAll('button')).map(b => b.getAttribute('aria-label'));
         expect(names).toEqual(['Copy key figures of run 55 as an image', 'Download key figures of run 55 as a PNG image']);
         for (const button of Array.from(group.querySelectorAll('button'))) {
@@ -10837,14 +11079,15 @@ describe('AdminBenchmarkComponent', () => {
           expect(button.getAttribute('style')).toContain('anchor-name: --' + tip.id);
           expect(tip.getAttribute('style')).toContain('position-anchor: --' + tip.id);
         }
+        expect(group.querySelector('#rr-figures-copy-tip')?.textContent?.trim()).toBe('Copy key figures as an image');
+        expect(group.querySelector('#rr-figures-download-tip')?.textContent?.trim()).toBe('Download key figures as PNG');
 
-        toggle.click();
-        fixture.detectChanges();
-        expect(toggle.getAttribute('aria-expanded')).toBe('false');
-        expect(figures.hidden).toBeTrue();
-        expect(summary.hidden).toBeFalse();
-        expect(figures.querySelectorAll('.score-card').length).toBeGreaterThan(0);
-        expect(localStorage.getItem(FIGURES_KEY)).toBe('1');
+        const figures = panel.querySelector('.rr-figures') as HTMLElement;
+        expect(figures.getAttribute('role')).toBe('group');
+        expect(figures.getAttribute('aria-labelledby')).toBe('rrFiguresTitle');
+        expect(figures.querySelectorAll(':scope > .score-card').length).toBeGreaterThan(0);
+        expect(getComputedStyle(figures).display).toBe('grid');
+        expect(dialog().querySelector('.rrf-figures-toggle, .rrf-figures, .rrf-figures-bar')).toBeNull();
       });
 
       it('should give every score card its own card actions, as its last child', () => {
@@ -10899,9 +11142,12 @@ describe('AdminBenchmarkComponent', () => {
         expect(status()).toBe('Intelligence Index copied as an image.');
       });
 
-      it('should download the strip through the IO holder', async () => {
+      it('should download the strip through the IO holder, whichever tab is shown', async () => {
         component.selectedRunDetail = reportRun();
         fixture.detectChanges();
+        component.selectRunReportTab('cost');
+        fixture.detectChanges();
+        expect((dialog().querySelector('#rr-panel-summary') as HTMLElement).hidden).toBeTrue();
         const save = spyOn(keyFiguresImageIo, 'save');
         const handler = spyOn(component, 'downloadKeyFigures').and.callThrough();
 

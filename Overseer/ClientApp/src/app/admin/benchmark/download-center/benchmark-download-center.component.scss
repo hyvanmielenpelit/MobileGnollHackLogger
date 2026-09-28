@@ -19,6 +19,27 @@
   align-items: center;
   gap: 12px;
   min-width: 0;
+
+  h3:focus {
+    outline: none;
+  }
+
+  h3:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+/* As tall as the title and subtitle together: the run report header's size. The global
+   .gnollbench-emblem stays 28 px for the Report Pack dialog's one-line title. */
+.dc-emblem {
+  width: 64px;
+  height: 64px;
+
+  @media (max-width: 600px) {
+    width: 40px;
+    height: 40px;
+  }
 }
 
 /* The body's positioning box: the overlay covers the body without scrolling with it, and leaves the

@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 
 import { RunReportFrameComponent } from './run-report-frame.component';
 
@@ -12,9 +13,6 @@ import { RunReportFrameComponent } from './run-report-frame.component';
       <app-run-report-frame mainLabel="Findings and questions" asideLabel="Run details" [busy]="busy">
         <h3 runReportHeader class="t-title">Run #7</h3>
         <button runReportActions type="button" class="t-action">Downloads</button>
-        <div runReportFigures class="t-figure">Quality 80</div>
-        <div runReportFigures class="t-figure">Cost $4</div>
-        <div runReportFigures class="t-figure">Speed 12 s</div>
         <p runReportMain class="t-main">Main content</p>
         <p runReportAside class="t-aside">Aside content</p>
       </app-run-report-frame>
@@ -49,9 +47,15 @@ describe('RunReportFrameComponent', () => {
   it('projects every slot into its place', () => {
     expect(q('.rrf-header .rrf-identity .t-title').textContent).toBe('Run #7');
     expect(q('.rrf-header .rrf-actions .t-action')).not.toBeNull();
-    expect(host.querySelectorAll('.rrf-figures > .t-figure').length).toBe(3);
     expect(q('section.rrf-main .t-main').textContent).toBe('Main content');
     expect(q('section.rrf-aside .t-aside').textContent).toBe('Aside content');
+  });
+
+  it('renders the two columns by default, with no single body and no tab row', () => {
+    expect(q('.rrf-columns')).not.toBeNull();
+    expect(host.querySelector('.rrf-single')).toBeNull();
+    expect(q('app-run-report-frame').classList.contains('rrf-layout-single')).toBeFalse();
+    expect(getComputedStyle(q('.rrf-tabs')).display).toBe('none');
   });
 
   it('names both sections and makes them focusable', () => {
@@ -92,14 +96,6 @@ describe('RunReportFrameComponent', () => {
     expect(getComputedStyle(q('.rrf-main')).overflowY).toBe('visible');
   });
 
-  it('lays the key figures out as an auto-fit grid', () => {
-    setWidth(1200);
-    const figures = getComputedStyle(q('.rrf-figures'));
-
-    expect(figures.display).toBe('grid');
-    expect(figures.gridTemplateColumns.split(' ').length).toBeGreaterThan(1);
-  });
-
   it('keeps the header sticky', () => {
     setWidth(700);
     expect(getComputedStyle(q('.rrf-header')).position).toBe('sticky');
@@ -107,142 +103,75 @@ describe('RunReportFrameComponent', () => {
     setWidth(1200);
     expect(getComputedStyle(q('.rrf-top')).position).toBe('sticky');
   });
-
-  it('has no key-figures bar unless the figures are collapsible', () => {
-    expect(host.querySelector('.rrf-figures-bar')).toBeNull();
-    expect(host.querySelector('.rrf-figures-toggle')).toBeNull();
-    expect(q('.rrf-figures').hasAttribute('id')).toBeFalse();
-    expect(q('.rrf-figures').hasAttribute('hidden')).toBeFalse();
-  });
 });
-
-const STORAGE_KEY = 'test.runReportFrame.figuresCollapsed';
 
 @Component({
   standalone: true,
   imports: [RunReportFrameComponent],
   changeDetection: ChangeDetectionStrategy.Eager,
   template: `
-    <app-run-report-frame [figuresCollapsible]="true" figuresLabel="Key figures" [figuresStorageKey]="storageKey">
-      <h3 runReportHeader>Run #7</h3>
-      <div runReportFigures class="t-figure">Quality 80</div>
-      <div runReportFigures class="t-figure">Cost $4</div>
-      <span runReportFiguresSummary class="t-summary">Quality 80 · Cost $4</span>
-      <div runReportFiguresActions class="t-figure-actions"><button type="button">Copy</button></div>
-      <p runReportMain>Main</p>
-      <p runReportAside>Aside</p>
-    </app-run-report-frame>
+    <div class="shell" [style.width.px]="width" style="height: 640px; display: flex; flex-direction: column;">
+      <app-run-report-frame layout="single">
+        <h3 runReportHeader class="t-title">Run #7</h3>
+        <div runReportTabs class="t-tabs" role="tablist" aria-label="Run report sections">
+          <button type="button" role="tab">Summary</button>
+        </div>
+        <div runReportBody class="t-body" style="height: 3000px;">Body content</div>
+      </app-run-report-frame>
+    </div>
   `
 })
-class CollapsibleHostComponent {
-  storageKey: string | null = STORAGE_KEY;
+class SingleHostComponent {
+  width = 1200;
 }
 
-describe('RunReportFrameComponent with collapsible figures', () => {
-  let fixture: ComponentFixture<CollapsibleHostComponent>;
+describe('RunReportFrameComponent in single layout', () => {
+  let fixture: ComponentFixture<SingleHostComponent>;
   let host: HTMLElement;
 
   const q = (selector: string): HTMLElement => host.querySelector<HTMLElement>(selector)!;
-  const toggle = (): HTMLButtonElement => q('.rrf-figures-toggle') as HTMLButtonElement;
-
-  function create(): void {
-    fixture = TestBed.createComponent(CollapsibleHostComponent);
-    host = fixture.nativeElement as HTMLElement;
-    fixture.detectChanges();
-  }
 
   beforeEach(async () => {
-    localStorage.removeItem(STORAGE_KEY);
-    await TestBed.configureTestingModule({ imports: [CollapsibleHostComponent] }).compileComponents();
-  });
-
-  afterEach(() => {
-    localStorage.removeItem(STORAGE_KEY);
-  });
-
-  it('puts a disclosure toggle, the summary and the actions in a bar above the strip, expanded by default', () => {
-    create();
-    const bar = q('.rrf-top .rrf-figures-bar');
-    const figures = q('.rrf-figures');
-
-    expect(bar).not.toBeNull();
-    expect(bar.nextElementSibling).toBe(figures);
-    expect(toggle().getAttribute('type')).toBe('button');
-    expect(toggle().textContent?.trim()).toBe('Key figures');
-    expect(toggle().getAttribute('aria-expanded')).toBe('true');
-    expect(toggle().getAttribute('aria-controls')).toBe(figures.id);
-    expect(figures.id).toMatch(/^rrf-figures-\d+$/);
-    expect(figures.hidden).toBeFalse();
-    expect(q('.rrf-figures-actions .t-figure-actions')).not.toBeNull();
-    expect(host.querySelectorAll('.rrf-figures > .t-figure').length).toBe(2);
-    expect(host.querySelector('details, summary')).toBeNull();
-  });
-
-  it('flips aria-expanded and hides the strip without removing its cards', () => {
-    create();
-    toggle().click();
+    await TestBed.configureTestingModule({ imports: [SingleHostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(SingleHostComponent);
+    host = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
-
-    expect(toggle().getAttribute('aria-expanded')).toBe('false');
-    expect(q('.rrf-figures').hidden).toBeTrue();
-    expect(getComputedStyle(q('.rrf-figures')).display).toBe('none');
-    expect(host.querySelectorAll('.rrf-figures > .t-figure').length).toBe(2);
-
-    toggle().click();
-    fixture.detectChanges();
-    expect(toggle().getAttribute('aria-expanded')).toBe('true');
-    expect(q('.rrf-figures').hidden).toBeFalse();
   });
 
-  it('shows the summary only while collapsed', () => {
-    create();
-    const summary = q('.rrf-figures-summary');
-    expect(summary.querySelector('.t-summary')).not.toBeNull();
-    expect(summary.hidden).toBeTrue();
-    expect(getComputedStyle(summary).display).toBe('none');
-
-    toggle().click();
-    fixture.detectChanges();
-    expect(summary.hidden).toBeFalse();
-    expect(getComputedStyle(summary).display).not.toBe('none');
-    expect(summary.textContent?.trim()).toBe('Quality 80 · Cost $4');
+  it('renders the body slot in .rrf-single, with no columns, and sets the host class', () => {
+    expect(q('.rrf-body > .rrf-single > .t-body').textContent).toBe('Body content');
+    expect(host.querySelector('.rrf-columns')).toBeNull();
+    expect(host.querySelector('.rrf-main, .rrf-aside')).toBeNull();
+    expect(q('app-run-report-frame').classList.contains('rrf-layout-single')).toBeTrue();
   });
 
-  it('gives every frame its own figures id', () => {
-    create();
-    const first = q('.rrf-figures').id;
-    create();
-    expect(q('.rrf-figures').id).not.toBe(first);
+  it('puts the tab row under the header, inside the top block', () => {
+    const tabs = q('.rrf-top > .rrf-tabs');
+
+    expect(tabs.querySelector('.t-tabs')).not.toBeNull();
+    expect(tabs.previousElementSibling).toBe(q('.rrf-header'));
+    expect(getComputedStyle(tabs).display).not.toBe('none');
   });
 
-  it('remembers the collapsed state and restores it', () => {
-    create();
-    toggle().click();
-    fixture.detectChanges();
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('1');
+  it('keeps the top block in place and scrolls the body, at every width', () => {
+    for (const width of [1200, 500]) {
+      fixture.componentInstance.width = width;
+      fixture.detectChanges();
 
-    create();
-    expect(toggle().getAttribute('aria-expanded')).toBe('false');
-    expect(q('.rrf-figures').hidden).toBeTrue();
-
-    toggle().click();
-    fixture.detectChanges();
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('0');
+      expect(getComputedStyle(q('.rrf-top')).display).withContext(`${width}`).toBe('block');
+      expect(getComputedStyle(q('app-run-report-frame')).overflowY).withContext(`${width}`).toBe('hidden');
+      expect(getComputedStyle(q('.rrf-body')).overflowY).withContext(`${width}`).toBe('auto');
+    }
   });
 
-  it('stays expanded, and still toggles, when storage throws', () => {
-    localStorage.setItem(STORAGE_KEY, '1');
-    const getItem = spyOn(Storage.prototype, 'getItem').and.throwError('denied');
-    const setItem = spyOn(Storage.prototype, 'setItem').and.throwError('denied');
+  it('scrollBodyToTop() resets the body scroll', () => {
+    const body = q('.rrf-body');
+    body.scrollTop = 400;
+    expect(body.scrollTop).toBeGreaterThan(0);
 
-    create();
-    expect(getItem).toHaveBeenCalled();
-    expect(toggle().getAttribute('aria-expanded')).toBe('true');
-    expect(q('.rrf-figures').hidden).toBeFalse();
+    const frame = fixture.debugElement.query(By.directive(RunReportFrameComponent)).componentInstance as RunReportFrameComponent;
+    frame.scrollBodyToTop();
 
-    toggle().click();
-    fixture.detectChanges();
-    expect(setItem).toHaveBeenCalled();
-    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(body.scrollTop).toBe(0);
   });
 });

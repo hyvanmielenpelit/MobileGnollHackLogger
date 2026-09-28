@@ -3159,6 +3159,42 @@ to make room. Without the logo, or with a logo narrower than the badge, it ends 
 option. The figure style stays `version: 1`, and a style stored before the option existed reads the
 default.
 
+### Run Report Tabs and AI-Written Reports (2026-09-28) — No Version Bump
+
+*The run report dialog as one tab row and one panel, and a simpler AI-written reports section.* Nothing
+here grades anything: no grading prompt, score, index or comparability key changes; `HarnessVersion`,
+`ScoringMethodVersion` and `ReportFormatVersion` do not move. No database change, no server change.
+
+**Tabs.** Under the header sits one `.gh-tabs-secondary` row, *Run report sections*, of ten tabs without
+icons: **Summary** (the key figures, the *Run did not complete cleanly* alert with **Re-run Failed
+Questions**, *Index Divergence* and the aborted-run notice), **Integrity** (the *Run Integrity Notice* and
+*Instrument Measurements*), **Synthesis**, **Questions (N)**, **Difficulty** (*Band Agreement*), **Tools**
+(*Tool Usage Profile* with *Tool Routing*), **Cost**, **Configuration**, **AI Reports** and
+**Calibration**. The two columns, the collapsible cards and the key-figures bar are gone. While the
+integrity notice has a clause, the Integrity tab carries a *Notice* tag, so a reader on another tab sees
+there is something to read. Only the transient *Action Error* alert and the *Retry in progress* strip sit
+above the panels, on every tab. Every panel is rendered and the unchosen ones are `hidden`, so the
+key-figures images, which are read from the Summary panel's cards, export from any tab. Arrow keys, Home
+and End move between tabs; the chosen tab is remembered in `localStorage['overseer.benchmark.runReport.tab']`
+and restored each time the dialog opens, while a re-score reload keeps the tab shown. Header and tab row
+stay put and the panel scrolls. The key figures' **Copy** and **Download** sit beside the *Key figures*
+heading; the old collapsed-state key `overseer.benchmark.runReport.figuresCollapsed` is no longer read.
+
+**AI Reports.** The tab lists both run-completion documents, *Executive Summary* and *Report for AI
+Researchers and Developers*, whether written or not: a written one with *Written* or *Written with
+warnings*, its writer and date, the *Run changed since this document was written* tag when flagged, and
+**View**; a missing one with *Not written*. The status line above says only the job state (waiting,
+writing, failed, skipped, or not written yet during a run). The section's own **Downloads** button is
+gone; the header's **Downloads** is the one entry to the Download Center. While a document is missing, the
+report writer picker and **Write Reports** follow the rows, and the picker starts on the run's own writer
+if it still qualifies, else on the launcher's *Report Writer* if the server would accept it for this run's
+candidate, else empty, with **Write Reports** disabled and no *Choose a report writer.* hint.
+
+**Download Center.** Opening it focuses the *Downloads* title rather than the header's Close button, so
+the *Close downloads* tooltip no longer opens by itself. Its GnollBench emblem is 64 px, 40 px under
+600 px of viewport, as tall as the title and subtitle beside it and the size of the run report's; the
+Report Pack dialog keeps the 28 px emblem beside its one-line title.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

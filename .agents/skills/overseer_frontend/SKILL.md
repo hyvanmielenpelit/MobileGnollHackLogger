@@ -240,38 +240,44 @@ To find specific popups, look in the corresponding component's `.html` template:
     named by a visually hidden *Score* word, not `aria-label`; the color repeats the number, never
     replaces it. The roster and banner say **Assessor** (never *Evaluator*); a panel run's banner says
     *Assessors*.
-  - `#runDetailDialog`: the run report dialog, **full-screen**. A sticky header holds *Run #N*, the
+  - `#runDetailDialog`: the run report dialog, **full-screen**. The header holds *Run #N*, the
     status and a `role="group"` *Run actions* (never `role="toolbar"`: it has no arrow-key roving):
     **Downloads** (opens the Download Center), **Re-run** (an action popover, `frontend_ui_controls`
     §4f: *Re-score run*, *Re-run final synthesis*, *Retry failed assessments*, *Retry claim
     verification*, *Re-run failed questions*, a disabled one showing its reason), the icon-only **View
     game snapshot** and **Copy diagnostics**, and **Close**; the decorative GnollBench emblem
-    (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. Under it a key-figures strip behind a
-    **Key figures** bar (`app-run-report-frame` with `figuresCollapsible`): a disclosure button
-    (`aria-expanded` / `aria-controls`, not a `<details>`, since the bar also holds buttons) that hides the
-    cards with `hidden` — they stay in the DOM, so an export reads them in either state — and shows the
-    `[runReportFiguresSummary]` slot's one-line summary instead; the state is in
-    `localStorage['overseer.benchmark.runReport.figuresCollapsed']`. The bar's `[runReportFiguresActions]`
-    slot holds icon-only **Copy** and **Download** for the whole strip, and every `.score-card` ends in an
-    `app-key-figure-card-actions` pair shown on hover or focus (opacity only). The PNGs come from
-    `run-report-frame/key-figures-image.ts`, which reads the rendered cards and composes them **square, or
-    landscape as near square as possible, never portrait**; the spec pins the layouts. Then a body of two
-    columns from `60rem` — findings and questions left; notices, run configuration, band
-    agreement, tool usage with the tool routing table, cost and assessor calibration right — and one
-    column below. **No footer.** Escape and the header Close both close it, and closing always stops
-    detail polling. Question cards have real `<button>` headers, filter toggles (*Critical errors*,
-    *Disputed*, *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*.
-    Directly above *Assessor Calibration*, an **AI-Written Reports** section (`<details
-    class="gh-disclosure">`, open by default when documents exist) shows the run's run-completion
-    documents: a `role="status"` line (*Not requested*, *Waiting for the report writer*, *Writing…*,
-    *Written by <writer> on <date>*, *Written with warnings*, *Failed: …*, *Skipped: …*), refreshed by
-    the run poll and, after completion, by a 5-second poll that stops when the dialog closes; one row
-    per document with its status badge, a *Run changed since this document was written* badge when the
-    list item says so, and a **View** button (`btn-gh btn-gh-small`, named *View the Executive Summary*
-    / *View the Report for AI Researchers and Developers*) that opens the Full, named-peers PDF in a new
-    tab; **Downloads** (opens the Download Center on this run); and, when the finished run lacks a
-    document, a **Report writer** picker with its refusals shown inline and **Write Reports**, disabled
-    while a job is Pending or Writing. The section is not a run action. The launcher's *Grading*
+    (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. `app-run-report-frame layout="single"`
+    keeps the header and a tab row (`[runReportTabs]`) in place and scrolls one body (`[runReportBody]`;
+    `scrollBodyToTop()` on a tab change). The row is `.gh-tabs .gh-tabs-secondary`, *Run report
+    sections*, ten tabs without icons from `runReportTabs` (`rr-tab-<key>` controlling
+    `rr-panel-<key>`): *Summary · Integrity · Synthesis · Questions (N) · Difficulty · Tools · Cost ·
+    Configuration · AI Reports · Calibration*, with arrow-key, Home and End roving. Every panel is
+    rendered and the unchosen ones are `hidden` — never `@if` — so the key-figures export reads the
+    Summary cards from any tab. The chosen tab is in `localStorage['overseer.benchmark.runReport.tab']`,
+    restored on every open (unknown → *Summary*); a re-score reload keeps the tab shown; `jumpToAnswer`
+    selects *Questions*. While `hasRunIntegrityNotice` — the one getter the notice and the tab both read —
+    the Integrity tab carries a `gh-tag` *Notice*. Only the *Action Error* alert and the *Retry in
+    progress* strip sit above the panels. *Summary* heads the key figures with an `h4.gh-section-title`
+    *Key figures* and, beside it, icon-only **Copy** and **Download** for the whole set; the cards sit in
+    `.rr-figures` (a grid), and every `.score-card` ends in an `app-key-figure-card-actions` pair shown on
+    hover or focus (opacity only). The PNGs come from `run-report-frame/key-figures-image.ts`, which
+    reads the rendered cards and composes them **square, or landscape as near square as possible, never
+    portrait**; the spec pins the layouts. While loading or after a failed load there is no tab row.
+    **No footer.** Escape and the header Close both close it, and closing always stops detail polling.
+    Question cards have real `<button>` headers, filter toggles (*Critical errors*, *Disputed*,
+    *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*. The **AI Reports**
+    tab lists the run's two run-completion documents, one row each, written or not: a written one with
+    a *Written* / *Written with warnings* tag, *by <writer> on <date>*, a *Run changed since this
+    document was written* badge when the list item says so, and a **View** button (`btn-gh
+    btn-gh-small`, named *View the Executive Summary* / *View the Report for AI Researchers and
+    Developers*) that opens the Full, named-peers PDF in a new tab; a missing one with a neutral *Not
+    written* tag (no tag at all until the list answers). A `role="status"` line above says only the job
+    state (*Waiting for the report writer*, *Writing…*, *Failed: …*, *Skipped: …*, *Not written yet: …*),
+    refreshed by the run poll and, after completion, by a 5-second poll that stops when the dialog
+    closes. When the finished run lacks a document, a **Report writer** picker — preselected with the
+    run's own writer, else the launcher's when the server would accept it for the run's candidate —
+    with its refusals shown inline and **Write Reports**, disabled with no writer and while a job is
+    Pending or Writing. The tab has no Downloads button of its own. The section is not a run action. The launcher's *Grading*
     fieldset has the matching optional **Report Writer** field after *Claim Verifier* (an
     `app-model-picker`, empty choice *None — no AI-written reports*, a click-mode info tip, remembered
     with the other launcher fields). Audience 2 is shown everywhere as **Report for AI Researchers and
@@ -290,7 +296,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     version 2). Run diagnostics are captured once per download, so the `.txt`, `.pdf` and `.docx` agree.
     While a package is prepared, an overlay over the body shows a ring spinner, the step and a progress
     bar. The dialog is `frame($width: 92rem)` and nearly full height, the GnollBench emblem
-    precedes its title, and its explanations are click-mode `app-info-tip`s; the *Internal only* tag, the
+    (`.dc-emblem`) precedes its title at 64 px, 40 px under 600 px — the run report's size, while the
+    Report Pack dialog keeps the global 28 px — and **its title is the focus target on open**
+    (`<h3 #downloadCenterHeading tabindex="-1">`, focused after `showModal()`), so the Close button's
+    `interestfor` tooltip does not open by itself. Its explanations are click-mode `app-info-tip`s; the *Internal only* tag, the
     *Peers are named* warning and failures stay visible. Its *Documents* heading and the two package
     legends use the shared `gh-section-title`; the legends keep a `dc-section-title` override only for
     what the global `.gh-choice > legend` rule would otherwise change.

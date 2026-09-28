@@ -309,6 +309,12 @@ per-card pair (`app-key-figure-card-actions`) revealed on hover or focus like th
 named for its card and run. The Download Center's explanations moved into click-mode info tips (§4b); the
 red *Internal only* tag remains the visible short reason a row cannot be chosen.*
 
+*Changed 2026-09-28 (run report tabs): the run report's sections are one `.gh-tabs-secondary` row of ten
+tabs without icons (§5, all or none), its panels rendered and `hidden` rather than removed. The key-figures
+disclosure bar is gone: the whole-set **Copy** and **Download** sit beside the *Key figures* heading of
+the Summary tab. The AI Reports tab lost its own **Downloads** button; the header's **Downloads** is the
+one entry to the Download Center.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
