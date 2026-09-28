@@ -1,0 +1,32 @@
+/* Over the card's top right corner, hidden until the host page reveals it; opacity only, so the
+   buttons stay in the tab order and focusing one reveals them. */
+:host {
+  position: absolute;
+  inset-block-start: 6px;
+  inset-inline-end: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+:host(:focus-within) {
+  opacity: 1;
+}
+
+.action-btn {
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  background: rgba(15, 15, 15, 0.8);
+
+  &[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host {
+    transition: none;
+  }
+}

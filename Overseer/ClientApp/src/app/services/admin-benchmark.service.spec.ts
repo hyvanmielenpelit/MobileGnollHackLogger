@@ -1,14 +1,16 @@
 import { TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import {
   AdminBenchmarkService,
+  BenchmarkBinaryFile,
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportPackPricingBasis,
   BenchmarkReportPackRequest,
   BenchmarkReportPeerNaming,
   BenchmarkTextFile,
+  decodeBinaryErrorBody,
   fileNameFromContentDisposition,
   reportDisclosureParam,
   reportPeerNamingParam
@@ -368,6 +370,81 @@ describe('AdminBenchmarkService', () => {
       httpMock.expectOne('/api/admin/benchmark/runs/42/tool-call-log').flush('log');
 
       expect(file?.fileName).toBe('benchmark_run42_tool_calls.md');
+    });
+
+    it('fetches a report document as a PDF with its options and paper, and the server file name', () => {
+      let file: BenchmarkBinaryFile | undefined;
+      service.getReportDocumentPdf(9, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized, 'letter')
+        .subscribe(res => file = res);
+
+      const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents/9/render/pdf');
+      expect(req.request.method).toBe('GET');
+      expect(req.request.responseType).toBe('arraybuffer');
+      expect(req.request.params.get('disclosure')).toBe('summary');
+      expect(req.request.params.get('peers')).toBe('anonymized');
+      expect(req.request.params.get('paper')).toBe('letter');
+      req.flush(new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer, {
+        headers: { 'Content-Disposition': 'attachment; filename="doc_summary_anonymized.pdf"' }
+      });
+
+      expect(Array.from(file!.bytes)).toEqual([0x25, 0x50, 0x44, 0x46]);
+      expect(file!.fileName).toBe('doc_summary_anonymized.pdf');
+    });
+
+    it('fetches the run report and tool-call log PDFs on the chosen paper, with a null name when none is given', () => {
+      let report: BenchmarkBinaryFile | undefined;
+      let log: BenchmarkBinaryFile | undefined;
+      service.getRunReportPdf(42, 'a4').subscribe(res => report = res);
+      service.getToolCallLogPdf(42, 'letter').subscribe(res => log = res);
+
+      const reportReq = httpMock.expectOne(request => request.url === '/api/admin/benchmark/runs/42/report/pdf');
+      expect(reportReq.request.responseType).toBe('arraybuffer');
+      expect(reportReq.request.params.get('paper')).toBe('a4');
+      reportReq.flush(new ArrayBuffer(3), { headers: { 'Content-Disposition': 'attachment; filename=Suite_Model_20260901_101500_INTERNAL.pdf' } });
+      const logReq = httpMock.expectOne(request => request.url === '/api/admin/benchmark/runs/42/tool-call-log/pdf');
+      expect(logReq.request.params.get('paper')).toBe('letter');
+      logReq.flush(new ArrayBuffer(2));
+
+      expect(report?.fileName).toBe('Suite_Model_20260901_101500_INTERNAL.pdf');
+      expect(report?.bytes.length).toBe(3);
+      expect(log?.fileName).toBeNull();
+    });
+
+    it('posts the captured diagnostics text and time for their PDF', () => {
+      service.renderDiagnosticsPdf(42, '=== DIAGNOSTICS ===\n', '2026-09-28T10:15:02Z', 'a4').subscribe();
+
+      const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/runs/42/diagnostics/pdf');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.responseType).toBe('arraybuffer');
+      expect(req.request.params.get('paper')).toBe('a4');
+      expect(req.request.body).toEqual({ text: '=== DIAGNOSTICS ===\n', capturedAtUtc: '2026-09-28T10:15:02Z' });
+      req.flush(new ArrayBuffer(1));
+    });
+
+    it('decodes a JSON error body of a PDF request, so its message can be shown', () => {
+      let error: HttpErrorResponse | undefined;
+      service.getToolCallLogPdf(42, 'a4').subscribe({ error: (e: HttpErrorResponse) => error = e });
+
+      const message = 'This document is too large for a PDF (4000001 characters); download the Markdown instead.';
+      const body = new TextEncoder().encode(JSON.stringify({ error: message }));
+      httpMock.expectOne(request => request.url === '/api/admin/benchmark/runs/42/tool-call-log/pdf')
+        .flush(body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength), { status: 413, statusText: 'Payload Too Large' });
+
+      expect(error).toBeInstanceOf(HttpErrorResponse);
+      expect(error!.status).toBe(413);
+      expect(error!.error).toEqual({ error: message });
+    });
+
+    it('decodes a non-JSON error body to its text and leaves other errors alone', () => {
+      const text = new TextEncoder().encode('Bad paper');
+      const decoded = decodeBinaryErrorBody(new HttpErrorResponse({ error: text.buffer, status: 400 })) as HttpErrorResponse;
+      expect(decoded.error).toBe('Bad paper');
+      expect(decoded.status).toBe(400);
+
+      const plain = new HttpErrorResponse({ error: null, status: 404 });
+      expect(decodeBinaryErrorBody(plain)).toBe(plain);
+      const other = new Error('x');
+      expect(decodeBinaryErrorBody(other)).toBe(other);
     });
 
     it('parses the Content-Disposition forms', () => {

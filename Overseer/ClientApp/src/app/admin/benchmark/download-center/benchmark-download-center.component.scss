@@ -1,7 +1,24 @@
 @use '../benchmark-dialog-frame' as frame;
 
+/* Wide and tall: at 1366 px of viewport and above the table fits without scrolling sideways. The
+   height leaves the viewport's 16 px inset, 8 px on a phone, as the full-height frame does. */
 .gh-dialog.benchmark-download-center-dialog {
-  @include frame.frame($width: 64rem);
+  @include frame.frame($width: 92rem);
+  height: min(60rem, calc(100dvh - 16px));
+  max-height: calc(100dvh - 16px);
+
+  @media (max-width: 600px) {
+    height: min(60rem, calc(100dvh - 8px));
+    max-height: calc(100dvh - 8px);
+  }
+}
+
+/* The emblem beside the title and subtitle, centered on them. */
+.dc-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
 }
 
 /* The body is the size container: the package column sits beside the table from 48rem. */
@@ -17,7 +34,7 @@
 
 @container download-center (inline-size >= 48rem) {
   .dc-layout {
-    grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
+    grid-template-columns: minmax(15rem, 17rem) minmax(0, 1fr);
     align-items: start;
   }
 }
@@ -27,7 +44,8 @@
   min-inline-size: 0;
 }
 
-/* The package radios as cards: a bordered block per option, gold while chosen. */
+/* The package radios as cards: a bordered block per option, gold while chosen. The label fills the
+   card, so the whole card but its info button chooses the package. */
 .dc-package-choice {
   flex-direction: column;
   flex-wrap: nowrap;
@@ -36,19 +54,13 @@
 
 .dc-package-card {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
+  align-items: center;
+  gap: 4px;
+  padding-inline-end: 8px;
   border: 1px solid var(--border-glass);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.18);
-  user-select: auto;
   transition: border-color 0.15s ease, background-color 0.15s ease;
-
-  input[type="radio"] {
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
 
   &:hover {
     border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
@@ -61,11 +73,16 @@
   }
 }
 
-.dc-package-text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+.dc-package-label {
+  flex: 1 1 auto;
   min-width: 0;
+  gap: 10px;
+  padding: 10px 12px;
+  user-select: auto;
+
+  input[type="radio"] {
+    flex-shrink: 0;
+  }
 }
 
 .dc-package-name {
@@ -73,10 +90,8 @@
   color: #f2f2f2;
 }
 
-.dc-package-desc {
-  font-size: 12px;
-  line-height: 1.45;
-  color: #a1a1aa;
+.dc-paper-choice {
+  margin-top: 16px;
 }
 
 .dc-named-warning {
@@ -127,8 +142,9 @@
   overflow-x: auto;
 }
 
+/* Fixed widths for the option columns; the document column takes the rest. */
 .dc-table {
-  min-width: 44rem;
+  min-width: 40rem;
 
   th,
   td {
@@ -139,6 +155,27 @@
   .dc-col-check {
     width: 2.5rem;
   }
+
+  .dc-col-sharing {
+    width: 8.5rem;
+  }
+
+  .dc-col-disclosure,
+  .dc-col-names {
+    width: 9.5rem;
+  }
+
+  .dc-col-formats {
+    width: 8.5rem;
+  }
+}
+
+/* A column header and its info button. */
+.dc-th {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
 }
 
 .dc-row.is-unselectable {
@@ -151,8 +188,15 @@
   margin: 0;
 }
 
+.dc-doc-label-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+}
+
 .dc-doc-label {
   display: block;
+  min-width: 0;
   font-weight: 600;
   color: #ececec;
   overflow-wrap: anywhere;
@@ -166,7 +210,13 @@
   overflow-wrap: anywhere;
 }
 
-.dc-reason {
+.dc-sharing {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.dc-format-none {
   display: block;
   margin-top: 4px;
   font-size: 12px;
@@ -174,15 +224,17 @@
 }
 
 .dc-select {
-  min-width: 8.5rem;
+  width: 100%;
+  min-width: 7rem;
   padding: 4px 6px;
   font-size: 13px;
 }
 
+/* One format per line, PDF first. */
 .dc-formats {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 14px;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .dc-format {

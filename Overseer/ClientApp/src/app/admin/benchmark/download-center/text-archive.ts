@@ -1,29 +1,34 @@
 import { ZipEntryOptions, zipWriterModule } from '../model-comparison/figure-export';
 
-/** One text file of an archive: its name, its content and the modification time it is stored with. */
-export interface TextArchiveEntry {
-  name: string;
-  text: string;
-  mtime: Date;
-}
+/**
+ * One file of an archive: its name, the modification time it is stored with, and its content —
+ * text, stored as UTF-8, or bytes, stored as they are.
+ */
+export type ArchiveEntry = { name: string; mtime: Date } & ({ text: string } | { bytes: Uint8Array });
 
 /** Deflate level for text: well compressed, and cheap enough for a synchronous zip on the main thread. */
 const TEXT_DEFLATE_LEVEL = 6;
 
+/** Bytes are stored, not deflated: a PDF's streams are already compressed. */
+const BYTES_DEFLATE_LEVEL = 0;
+
 /**
- * Packs text files into one deflated zip, each entry stamped with its own `mtime` (without one,
- * `fflate` stamps `Date.now()`, and two downloads of the same files would differ byte for byte).
+ * Packs files into one zip, text deflated and bytes stored, each entry stamped with its own `mtime`
+ * (without one, `fflate` stamps `Date.now()`, and two downloads of the same files would differ byte
+ * for byte).
  *
  * Asynchronous only because `fflate` is loaded on first use. The zip itself is `zipSync`, never the
  * worker-backed `zip()`: the Content-Security-Policy refuses the blob-URL workers that path builds.
  * Names must be unique; see `uniqueFileNames`.
  */
-export async function buildTextArchive(entries: readonly TextArchiveEntry[]): Promise<Blob> {
+export async function buildTextArchive(entries: readonly ArchiveEntry[]): Promise<Blob> {
   const writer = await zipWriterModule.load();
   const encoder = new TextEncoder();
   const files: Record<string, [Uint8Array, ZipEntryOptions]> = {};
   for (const entry of entries) {
-    files[entry.name] = [encoder.encode(entry.text), { level: TEXT_DEFLATE_LEVEL, mtime: entry.mtime }];
+    files[entry.name] = 'bytes' in entry
+      ? [entry.bytes, { level: BYTES_DEFLATE_LEVEL, mtime: entry.mtime }]
+      : [encoder.encode(entry.text), { level: TEXT_DEFLATE_LEVEL, mtime: entry.mtime }];
   }
   return new Blob([writer.zipSync(files) as unknown as BlobPart], { type: 'application/zip' });
 }
@@ -47,13 +52,20 @@ export function uniqueFileNames(names: readonly string[]): string[] {
   });
 }
 
+/** The paper a PDF is laid out on. */
+export type ManifestPaper = 'a4' | 'letter';
+
 /** One file as the manifest describes it. Null fields print as a dash. */
 export interface ManifestFile {
   name: string;
-  /** The exact text stored in the archive, hashed as UTF-8. */
-  text: string;
-  /** What the file is: `Executive Summary`, `Run report`, `Run diagnostics (captured now)`…. */
+  /** The exact content stored in the archive: text is hashed as UTF-8, bytes as they are. */
+  content: string | Uint8Array;
+  /** What the file is: `Executive Summary`, `Run report`, `Run diagnostics (…)`…. */
   description: string;
+  /** `PDF`, `Markdown`, `HTML` or `Text`. */
+  format: string;
+  /** The paper of a PDF; null for every other format. */
+  pdfPaper: ManifestPaper | null;
   documentId: number | null;
   audience: string | null;
   disclosure: string | null;
@@ -88,14 +100,18 @@ export const MANIFEST_FILE_NAME = 'MANIFEST.md';
 /** Why a hash is missing: the Web Crypto digest exists only in a secure context. */
 export const SHA256_UNAVAILABLE_NOTE = 'SHA-256 not computed: the browser offers no crypto.subtle in this context (it requires HTTPS).';
 
-/** The lower-case hex SHA-256 of the text's UTF-8 bytes, or null where `crypto.subtle` is unavailable. */
-export async function sha256Hex(text: string): Promise<string | null> {
+/**
+ * The lower-case hex SHA-256 of the content — a text's UTF-8 bytes, or the bytes themselves — or
+ * null where `crypto.subtle` is unavailable.
+ */
+export async function sha256Hex(content: string | Uint8Array): Promise<string | null> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle || typeof subtle.digest !== 'function') {
     return null;
   }
   try {
-    const digest = await subtle.digest('SHA-256', new TextEncoder().encode(text));
+    const bytes = typeof content === 'string' ? new TextEncoder().encode(content) : content;
+    const digest = await subtle.digest('SHA-256', bytes as unknown as BufferSource);
     return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
   } catch {
     return null;
@@ -103,12 +119,12 @@ export async function sha256Hex(text: string): Promise<string | null> {
 }
 
 /**
- * `MANIFEST.md`: when the package was made, then one block per file with its name, document id,
- * audience, disclosure, peer naming, renderer version, creation time, writer and SHA-256. The same
- * input always gives the same text.
+ * `MANIFEST.md`: when the package was made, then one block per file with its name, format, document
+ * id, audience, disclosure, peer naming, renderer version, creation time, writer and SHA-256, and for
+ * a PDF its conformance and paper. The same input always gives the same text.
  */
 export async function buildManifest(input: ManifestInput): Promise<string> {
-  const hashes = await Promise.all(input.files.map(file => sha256Hex(file.text)));
+  const hashes = await Promise.all(input.files.map(file => sha256Hex(file.content)));
   const anyMissing = hashes.some(hash => hash === null);
 
   const lines: string[] = [
@@ -131,6 +147,12 @@ export async function buildManifest(input: ManifestInput): Promise<string> {
       `## ${index + 1}. \`${code(file.name)}\``,
       '',
       `- **Content:** ${file.description}`,
+      `- **Format:** ${file.format}`
+    );
+    if (file.pdfPaper) {
+      lines.push(`- **PDF:** PDF/UA-1, PDF/A-3A, ${paperLabel(file.pdfPaper)}`);
+    }
+    lines.push(
       `- **Document id:** ${dash(file.documentId)}`,
       `- **Audience:** ${dash(file.audience)}`,
       `- **Disclosure:** ${dash(file.disclosure)}`,
@@ -152,6 +174,11 @@ export async function buildManifest(input: ManifestInput): Promise<string> {
   }
 
   return lines.join('\n');
+}
+
+/** `A4` or `US Letter`. */
+export function paperLabel(paper: ManifestPaper): string {
+  return paper === 'letter' ? 'US Letter' : 'A4';
 }
 
 /** `2026-09-28T10:15:00Z`: UTC, whole seconds. */

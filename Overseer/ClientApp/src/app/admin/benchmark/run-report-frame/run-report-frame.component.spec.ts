@@ -107,4 +107,142 @@ describe('RunReportFrameComponent', () => {
     setWidth(1200);
     expect(getComputedStyle(q('.rrf-top')).position).toBe('sticky');
   });
+
+  it('has no key-figures bar unless the figures are collapsible', () => {
+    expect(host.querySelector('.rrf-figures-bar')).toBeNull();
+    expect(host.querySelector('.rrf-figures-toggle')).toBeNull();
+    expect(q('.rrf-figures').hasAttribute('id')).toBeFalse();
+    expect(q('.rrf-figures').hasAttribute('hidden')).toBeFalse();
+  });
+});
+
+const STORAGE_KEY = 'test.runReportFrame.figuresCollapsed';
+
+@Component({
+  standalone: true,
+  imports: [RunReportFrameComponent],
+  changeDetection: ChangeDetectionStrategy.Eager,
+  template: `
+    <app-run-report-frame [figuresCollapsible]="true" figuresLabel="Key figures" [figuresStorageKey]="storageKey">
+      <h3 runReportHeader>Run #7</h3>
+      <div runReportFigures class="t-figure">Quality 80</div>
+      <div runReportFigures class="t-figure">Cost $4</div>
+      <span runReportFiguresSummary class="t-summary">Quality 80 · Cost $4</span>
+      <div runReportFiguresActions class="t-figure-actions"><button type="button">Copy</button></div>
+      <p runReportMain>Main</p>
+      <p runReportAside>Aside</p>
+    </app-run-report-frame>
+  `
+})
+class CollapsibleHostComponent {
+  storageKey: string | null = STORAGE_KEY;
+}
+
+describe('RunReportFrameComponent with collapsible figures', () => {
+  let fixture: ComponentFixture<CollapsibleHostComponent>;
+  let host: HTMLElement;
+
+  const q = (selector: string): HTMLElement => host.querySelector<HTMLElement>(selector)!;
+  const toggle = (): HTMLButtonElement => q('.rrf-figures-toggle') as HTMLButtonElement;
+
+  function create(): void {
+    fixture = TestBed.createComponent(CollapsibleHostComponent);
+    host = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    localStorage.removeItem(STORAGE_KEY);
+    await TestBed.configureTestingModule({ imports: [CollapsibleHostComponent] }).compileComponents();
+  });
+
+  afterEach(() => {
+    localStorage.removeItem(STORAGE_KEY);
+  });
+
+  it('puts a disclosure toggle, the summary and the actions in a bar above the strip, expanded by default', () => {
+    create();
+    const bar = q('.rrf-top .rrf-figures-bar');
+    const figures = q('.rrf-figures');
+
+    expect(bar).not.toBeNull();
+    expect(bar.nextElementSibling).toBe(figures);
+    expect(toggle().getAttribute('type')).toBe('button');
+    expect(toggle().textContent?.trim()).toBe('Key figures');
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().getAttribute('aria-controls')).toBe(figures.id);
+    expect(figures.id).toMatch(/^rrf-figures-\d+$/);
+    expect(figures.hidden).toBeFalse();
+    expect(q('.rrf-figures-actions .t-figure-actions')).not.toBeNull();
+    expect(host.querySelectorAll('.rrf-figures > .t-figure').length).toBe(2);
+    expect(host.querySelector('details, summary')).toBeNull();
+  });
+
+  it('flips aria-expanded and hides the strip without removing its cards', () => {
+    create();
+    toggle().click();
+    fixture.detectChanges();
+
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(q('.rrf-figures').hidden).toBeTrue();
+    expect(getComputedStyle(q('.rrf-figures')).display).toBe('none');
+    expect(host.querySelectorAll('.rrf-figures > .t-figure').length).toBe(2);
+
+    toggle().click();
+    fixture.detectChanges();
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(q('.rrf-figures').hidden).toBeFalse();
+  });
+
+  it('shows the summary only while collapsed', () => {
+    create();
+    const summary = q('.rrf-figures-summary');
+    expect(summary.querySelector('.t-summary')).not.toBeNull();
+    expect(summary.hidden).toBeTrue();
+    expect(getComputedStyle(summary).display).toBe('none');
+
+    toggle().click();
+    fixture.detectChanges();
+    expect(summary.hidden).toBeFalse();
+    expect(getComputedStyle(summary).display).not.toBe('none');
+    expect(summary.textContent?.trim()).toBe('Quality 80 · Cost $4');
+  });
+
+  it('gives every frame its own figures id', () => {
+    create();
+    const first = q('.rrf-figures').id;
+    create();
+    expect(q('.rrf-figures').id).not.toBe(first);
+  });
+
+  it('remembers the collapsed state and restores it', () => {
+    create();
+    toggle().click();
+    fixture.detectChanges();
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('1');
+
+    create();
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    expect(q('.rrf-figures').hidden).toBeTrue();
+
+    toggle().click();
+    fixture.detectChanges();
+    expect(localStorage.getItem(STORAGE_KEY)).toBe('0');
+  });
+
+  it('stays expanded, and still toggles, when storage throws', () => {
+    localStorage.setItem(STORAGE_KEY, '1');
+    const getItem = spyOn(Storage.prototype, 'getItem').and.throwError('denied');
+    const setItem = spyOn(Storage.prototype, 'setItem').and.throwError('denied');
+
+    create();
+    expect(getItem).toHaveBeenCalled();
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(q('.rrf-figures').hidden).toBeFalse();
+
+    toggle().click();
+    fixture.detectChanges();
+    expect(setItem).toHaveBeenCalled();
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+  });
 });

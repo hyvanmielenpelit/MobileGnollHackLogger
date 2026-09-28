@@ -279,6 +279,9 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRubricGapAuth
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportPackJobManager>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportPackService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportRenderService>();
+// Benchmark PDFs: the free Community license, and the embedded fonts registered once at startup.
+QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+Overseer.Services.Benchmarking.Pdf.BenchmarkPdfResources.EnsureRegistered();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysisService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparabilityIndexService>();

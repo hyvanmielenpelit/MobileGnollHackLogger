@@ -215,8 +215,10 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#confirmDialog`: Confirm
   - `#changelogDialog`: Changelog
 
-- **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — not an exhaustive
-  list of this component's dialogs, only the ones recorded here so far:
+- **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — the tab opens with a
+  brand row, the GnollBench wordmark (`.gnollbench-wordmark`, `alt="GnollBench"`, width and height set so
+  nothing shifts), above the benchmark tabs. Not an exhaustive list of this component's dialogs, only the
+  ones recorded here so far:
   - `#runProgressDialog`: the run progress dialog, **full-screen** (`gh-dialog-fullscreen`, no
     component sizing of its own). Its content wrapper is an inline-size container (`run-progress`)
     and its body holds two sections: `section.run-progress-overview` (everything but the questions,
@@ -235,8 +237,18 @@ To find specific popups, look in the corresponding component's `.html` template:
     **Downloads** (opens the Download Center), **Re-run** (an action popover, `frontend_ui_controls`
     §4f: *Re-score run*, *Re-run final synthesis*, *Retry failed assessments*, *Retry claim
     verification*, *Re-run failed questions*, a disabled one showing its reason), the icon-only **View
-    game snapshot** and **Copy diagnostics**, and **Close**. Under it a key-figures strip, then a body
-    of two columns from `60rem` — findings and questions left; notices, run configuration, band
+    game snapshot** and **Copy diagnostics**, and **Close**; the decorative GnollBench emblem
+    (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. Under it a key-figures strip behind a
+    **Key figures** bar (`app-run-report-frame` with `figuresCollapsible`): a disclosure button
+    (`aria-expanded` / `aria-controls`, not a `<details>`, since the bar also holds buttons) that hides the
+    cards with `hidden` — they stay in the DOM, so an export reads them in either state — and shows the
+    `[runReportFiguresSummary]` slot's one-line summary instead; the state is in
+    `localStorage['overseer.benchmark.runReport.figuresCollapsed']`. The bar's `[runReportFiguresActions]`
+    slot holds icon-only **Copy** and **Download** for the whole strip, and every `.score-card` ends in an
+    `app-key-figure-card-actions` pair shown on hover or focus (opacity only). The PNGs come from
+    `run-report-frame/key-figures-image.ts`, which reads the rendered cards and composes them **square, or
+    landscape as near square as possible, never portrait**; the spec pins the layouts. Then a body of two
+    columns from `60rem` — findings and questions left; notices, run configuration, band
     agreement, tool usage with the tool routing table, cost and assessor calibration right — and one
     column below. **No footer.** Escape and the header Close both close it, and closing always stops
     detail polling. Question cards have real `<button>` headers, filter toggles (*Critical errors*,
@@ -247,7 +259,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     per-document disclosure (*Summary* / *Detailed* / *Full*) and peer naming (*Named* /
     *Anonymized*); `_INTERNAL` file-name suffixes; several files as one ZIP with a `MANIFEST.md`. Its
     HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
-    ones. Run diagnostics in it are labeled *captured now*.
+    ones. Every row offers **PDF** first (rendered server-side, see `ai-benchmark-report-pack.md` § 8);
+    the Provider preset is PDF only and Internal PDF and Markdown, with a remembered *A4* / *US Letter*
+    paper size (stored settings version 2). Run diagnostics are captured once per download, so the `.txt`
+    and `.pdf` agree. The dialog is `frame($width: 92rem)` and nearly full height, the GnollBench emblem
+    precedes its title, and its explanations are click-mode `app-info-tip`s; the *Internal only* tag, the
+    *Peers are named* warning and failures stay visible.
   - `#importDefaultSuitesDialog`: Import Default Suites (Manage Suites tab) — a multi-select
     catalog of the default suite files under `Overseer/Data/DefaultSuites/`, opened by the
     toolbar's Import Default Suites button (from harness 24).

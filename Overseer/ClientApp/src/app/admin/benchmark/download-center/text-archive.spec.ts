@@ -1,6 +1,7 @@
 import { unzipSync } from 'fflate';
 
 import {
+  ArchiveEntry,
   MANIFEST_FILE_NAME,
   ManifestFile,
   SHA256_UNAVAILABLE_NOTE,
@@ -10,6 +11,27 @@ import {
   uniqueFileNames
 } from './text-archive';
 import { zipEntryTimes } from './zip-entry-times.testing';
+
+/** Each entry's compression method from the zip's central directory: 0 stored, 8 deflated. */
+function zipEntryMethods(zip: Uint8Array): Map<string, number> {
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  let end = zip.byteLength - 22;
+  while (end >= 0 && view.getUint32(end, true) !== 0x06054b50) {
+    end--;
+  }
+  const count = view.getUint16(end + 10, true);
+  let offset = view.getUint32(end + 16, true);
+  const methods = new Map<string, number>();
+  for (let i = 0; i < count; i++) {
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const name = new TextDecoder().decode(zip.subarray(offset + 46, offset + 46 + nameLength));
+    methods.set(name, view.getUint16(offset + 10, true));
+    offset += 46 + nameLength + extraLength + commentLength;
+  }
+  return methods;
+}
 
 describe('text-archive', () => {
   const created = new Date(2026, 8, 20, 9, 30, 12);
@@ -56,6 +78,27 @@ describe('text-archive', () => {
 
       expect(archive.size).toBeLessThan(text.length / 4);
     });
+
+    it('stores bytes uncompressed and exactly, beside deflated text', async () => {
+      const pdf = new Uint8Array(4096);
+      pdf.set(new TextEncoder().encode('%PDF-1.7\n'));
+      for (let i = 9; i < pdf.length; i++) {
+        pdf[i] = i % 7;
+      }
+      const mixed: ArchiveEntry[] = [
+        { name: 'report_INTERNAL.pdf', bytes: pdf, mtime: completed },
+        { name: 'report_INTERNAL.md', text: 'The same line of a long report.\n'.repeat(100), mtime: completed }
+      ];
+
+      const zip = new Uint8Array(await (await buildTextArchive(mixed)).arrayBuffer());
+
+      const methods = zipEntryMethods(zip);
+      expect(methods.get('report_INTERNAL.pdf')).toBe(0);
+      expect(methods.get('report_INTERNAL.md')).toBe(8);
+      const unzipped = unzipSync(zip);
+      expect(Array.from(unzipped['report_INTERNAL.pdf'])).toEqual(Array.from(pdf));
+      expect(zipEntryTimes(zip).get('report_INTERNAL.pdf')?.getTime()).toBe(completed.getTime());
+    });
   });
 
   describe('uniqueFileNames', () => {
@@ -69,14 +112,20 @@ describe('text-archive', () => {
     it('hashes the UTF-8 bytes', async () => {
       expect(await sha256Hex('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
     });
+
+    it('hashes bytes as they are', async () => {
+      expect(await sha256Hex(new Uint8Array([0x61, 0x62, 0x63]))).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+    });
   });
 
   describe('buildManifest', () => {
     const files: ManifestFile[] = [
       {
         name: 'gpt-model-executive-summary_summary_anonymized.html',
-        text: '<html>summary</html>',
+        content: '<html>summary</html>',
         description: 'Executive Summary',
+        format: 'HTML',
+        pdfPaper: null,
         documentId: 12,
         audience: 'Executive Summary',
         disclosure: 'Summary',
@@ -88,8 +137,10 @@ describe('text-archive', () => {
       },
       {
         name: 'Suite_Model_20260921_170500_INTERNAL.md',
-        text: 'abc',
+        content: 'abc',
         description: 'Run report',
+        format: 'Markdown',
+        pdfPaper: null,
         documentId: null,
         audience: null,
         disclosure: null,
@@ -121,6 +172,34 @@ describe('text-archive', () => {
       expect(manifest).toContain('- **SHA-256:** `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`');
       expect(manifest).toContain('_INTERNAL');
       expect(manifest).not.toContain(SHA256_UNAVAILABLE_NOTE);
+    });
+
+    it('names every file’s format, and a PDF’s conformance and paper, hashing its bytes', async () => {
+      const pdfFile: ManifestFile = {
+        ...files[1],
+        name: 'Suite_Model_20260921_170500_INTERNAL.pdf',
+        content: new Uint8Array([0x61, 0x62, 0x63]),
+        format: 'PDF',
+        pdfPaper: 'letter'
+      };
+      const manifest = await buildManifest({ packageName: 'Internal package', packagedAt: packaged, files: [files[0], pdfFile] });
+
+      const blocks = manifest.split('\n## ').slice(1);
+      expect(blocks[0]).toContain('- **Content:** Executive Summary\n- **Format:** HTML\n- **Document id:** 12');
+      expect(blocks[0]).not.toContain('**PDF:**');
+      expect(blocks[1]).toContain('- **Content:** Run report\n- **Format:** PDF\n- **PDF:** PDF/UA-1, PDF/A-3A, US Letter\n');
+      expect(blocks[1]).toContain('- **SHA-256:** `ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad`');
+
+      const a4 = await buildManifest({ packageName: 'Custom', packagedAt: packaged, files: [{ ...pdfFile, pdfPaper: 'a4' }] });
+      expect(a4).toContain('- **PDF:** PDF/UA-1, PDF/A-3A, A4\n');
+    });
+
+    it('prints a Format line and no PDF line for a download without a PDF', async () => {
+      const manifest = await buildManifest({ packageName: 'Custom', packagedAt: packaged, files });
+
+      expect(manifest.match(/- \*\*Format:\*\* /g)?.length).toBe(2);
+      expect(manifest).toContain('- **Format:** Markdown');
+      expect(manifest).not.toContain('PDF/UA');
     });
 
     it('lists the files that could not be prepared, only when there are any', async () => {

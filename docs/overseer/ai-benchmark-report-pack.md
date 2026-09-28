@@ -251,24 +251,68 @@ packages documents and run files for download.
 
 | Package | Contents | Disclosure | Peers | Formats |
 |---|---|---|---|---|
-| **Internal package** | Every available document: pack documents, the run report, the tool-call log, run diagnostics | Full | Named | Markdown and HTML |
-| **Provider package** | Executive Summary and Technical Report only; internal-only rows are listed but unselectable, with their reason | Summary (Detailed as an option) | Anonymized (Named as an option, with a warning) | HTML and Markdown |
-| **Custom** | Any selection | Per document | Per document | Either |
+| **Internal package** | Every available document: pack documents, the run report, the tool-call log, run diagnostics | Full | Named | PDF and Markdown (PDF and Text for the diagnostics) |
+| **Provider package** | Executive Summary and Technical Report only; internal-only rows are listed but unselectable, with their reason | Summary (Detailed as an option) | Anonymized (Named as an option, with a warning) | PDF |
+| **Custom** | Any selection | Per document | Per document | Any |
+
+Each row offers its formats PDF first: pack documents and the run report PDF, Markdown and HTML; the
+tool-call log PDF and Markdown; diagnostics PDF and Text. The choices are remembered per browser in
+settings **version 2**; a stored version 1 is ignored once, so every admin meets the PDF defaults. The
+dialog's explanations — each package's description, the column meanings, the paper size, a row's note
+and the full reason a row is internal-only — sit behind click-mode info buttons; the red *Internal only*
+tag, the *Peers are named* warning and the failure list stay on screen.
+
+**Paper size.** *A4* by default, *US Letter* as an option, remembered with the other settings and sent
+with every PDF request.
 
 **File names.** A pack document at Full, and every internal-only file (run report, tool-call log,
 diagnostics), gets an `_INTERNAL` file-name suffix. The run report and tool-call log are fetched from the
-existing run endpoints and keep the server's file name. Run diagnostics are a point-in-time capture,
-labeled *captured now*.
+existing run endpoints and keep the server's file name; their PDFs are named by the server, with
+`_INTERNAL.pdf`. Run diagnostics are a point-in-time capture, taken **once per download**: the `.txt` and
+the `.pdf` of one download hold the same text and the same capture time.
 
 **ZIP and manifest.** Several files download as one ZIP, `<model>_<package>_<yyyyMMdd_HHmmss>.zip`, with a
 `MANIFEST.md` listing each file's name, document id, audience, disclosure, naming, renderer version,
-creation time, writer and SHA-256. The packaging time appears only in the manifest and the ZIP name, so
-the documents themselves stay byte-identical across downloads.
+creation time, writer, format and SHA-256 — for a PDF, of its exact bytes, and with a
+`PDF: PDF/UA-1, PDF/A-3A, A4` (or `US Letter`) line. PDFs are stored in the ZIP uncompressed, since their
+streams already are. The packaging time appears only in the manifest and the ZIP name, so the Markdown
+documents stay byte-identical across downloads.
 
 **HTML.** HTML is built client-side from the rendered Markdown by a converter with its own private
 `marked` and DOMPurify instances — never the chat pipe's global ones, whose options and hooks belong to
-the chat. The output is self-contained, with print CSS, so *Print → Save as PDF* gives a document ready to
-send.
+the chat. The output is self-contained, with print CSS.
+
+### PDF
+
+PDFs are rendered **server-side** from the same Markdown every other format starts from, by
+`BenchmarkPdfRenderer` (`Overseer/Services/Benchmarking/Pdf/`): QuestPDF under its free Community license
+lays out the pages, and Markdig parses the Markdown with raw HTML disabled, so a tag in a model's answer
+prints as text. The renderer is a static class like `BenchmarkReportPackRenderer`, so the download path
+still reaches no model client, clock or configuration, and the architecture pins of § 7 stand.
+
+- **Conformance**: PDF/UA-1 (tagged: headings, tables with header cells, the logo's alternative text,
+  the language `en-US`) and PDF/A-3A; metadata title, author *GnollBench (Overseer)*, subject, keywords
+  and creator. The creation date is the stored one — the document's creation, the run's completion (else
+  its start), or the diagnostics capture — never the time of the request. PDF/UA makes QuestPDF write a
+  new document id each time, so a PDF is reproducible in content, not in bytes.
+- **Fonts**: Source Sans 3 and Source Code Pro (SIL OFL 1.1), with DejaVu Sans for arrows, math and box
+  drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
+  never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
+- **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
+  *Source {first 16 hex of the Markdown's SHA-256} · PDF layout 1*, and a classification banner — amber
+  *Confidential …* for a provider copy (the stamp of § 6), red *INTERNAL …* for everything else, the text
+  saying what the color says. A table of contents follows when a document other than the Executive
+  Summary has four or more `##` sections.
+- **Every page**: from page 2 a running header with the emblem, *GnollBench · {kind}* and the subject;
+  a footer with the short classification, the source hash and layout version, and *Page X of Y*; for
+  internal documents a diagonal *INTERNAL* watermark. Header, footer and watermark are artifacts, skipped
+  by screen readers.
+- **Content**: `#`–`###` headings are bookmarks; tables repeat their header row on every page, keep a row
+  on one page when it fits, right-align numeric columns and size columns by their content; code blocks
+  and the diagnostics text wrap anywhere.
+- **Limits**: a source over 6,000,000 characters is refused with 413 and a message to download the
+  Markdown instead; a render stops when the request is canceled. The diagnostics text is posted for
+  rendering and is **never stored or logged**.
 
 ---
 
@@ -307,7 +351,20 @@ The start's refusals, in the order they are checked:
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`:
   The rendered Markdown (`text/markdown; charset=utf-8`), deterministic, with no model call; 400 for a
   refused combination.
+- `GET /api/admin/benchmark/report-documents/{id}/render/pdf?disclosure=&peers=&paper=a4|letter`: The same
+  document as a PDF (`application/pdf`), named `<title>_<disclosure>_<peers>[_INTERNAL].pdf`; the same
+  refusals as `render`, 400 for another `paper`, 413 over the size limit.
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its run rows cascade.
+
+### Run files as PDF (`AdminBenchmarkController`)
+
+- `GET /api/admin/benchmark/runs/{id}/report/pdf?paper=`: The run report as a PDF, named after the
+  Markdown with `_INTERNAL.pdf`.
+- `GET /api/admin/benchmark/runs/{id}/tool-call-log/pdf?paper=`: The tool-call log as a PDF, named the same
+  way.
+- `POST /api/admin/benchmark/runs/{id}/diagnostics/pdf?paper=`: Body `{ text, capturedAtUtc }`, at most
+  4 MB. Renders the diagnostics the client captured, dated at the capture; 404 for an unknown run, 400 for
+  empty text or an unreadable time. The text is not stored or logged.
 
 ---
 

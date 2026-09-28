@@ -17,6 +17,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Benchmarking.Pdf;
 using Microsoft.Extensions.DependencyInjection;
 
 [Route("api/admin/benchmark")]
@@ -4499,28 +4500,26 @@ public class AdminBenchmarkController : ControllerBase
     [HttpGet("runs/{id}/report")]
     public async Task<IActionResult> GetRunReport(long id)
     {
-        // Load-bearing, not an optimisation: BenchmarkReportBuilder reads answer.ToolCalls for the
-        // run's tool-call outcome line and the per-question ordered call tables, and treats an
-        // empty collection as "this run predates the record". Without this ThenInclude every report
-        // would silently render as a legacy report, tool calls and all.
-        var run = await _dbContext.BenchmarkRuns
-            .Include(r => r.Answers)
-                .ThenInclude(a => a.ToolCalls)
-            .Include(r => r.StartedByUser)
-            .Include(r => r.ScoringProfile)
-            .FirstOrDefaultAsync(r => r.Id == id);
-
+        var (run, markdown, filename) = await BuildRunReportAsync(id);
         if (run == null) return NotFound();
 
-        // The report's provenance line is worthless as a hard-coded fallback: every report ever
-        // produced claimed "1.0.0" because this caller never passed a version.
-        BenchmarkRunPricing? runPricing = _modelPricingService != null
-            ? await _modelPricingService.ResolveForRunAsync(run)
-            : null;
-        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing);
-        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
+        return File(Encoding.UTF8.GetBytes(markdown!), "text/markdown; charset=utf-8", filename);
+    }
 
-        return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
+    /// <summary>The run report as a tagged PDF on <c>a4</c> (the default) or <c>letter</c> paper; always internal.</summary>
+    [HttpGet("runs/{id}/report/pdf")]
+    public async Task<IActionResult> GetRunReportPdf(long id, [FromQuery] string? paper, CancellationToken ct)
+    {
+        if (!BenchmarkPdfDocumentInfo.TryParsePaper(paper, out var pdfPaper))
+        {
+            return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
+        }
+
+        var (run, markdown, filename) = await BuildRunReportAsync(id);
+        if (run == null) return NotFound();
+
+        var info = BenchmarkPdfDocumentInfo.ForRunReport(run, GetOverseerVersion(), pdfPaper);
+        return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
     }
 
     /// <summary>
@@ -4533,17 +4532,129 @@ public class AdminBenchmarkController : ControllerBase
     [HttpGet("runs/{id}/tool-call-log")]
     public async Task<IActionResult> GetRunToolCallLog(long id)
     {
+        var (run, markdown, filename) = await BuildToolCallLogAsync(id);
+        if (run == null) return NotFound();
+
+        return File(Encoding.UTF8.GetBytes(markdown!), "text/markdown; charset=utf-8", filename);
+    }
+
+    /// <summary>The tool-call log as a tagged PDF on <c>a4</c> (the default) or <c>letter</c> paper; always internal.</summary>
+    [HttpGet("runs/{id}/tool-call-log/pdf")]
+    public async Task<IActionResult> GetRunToolCallLogPdf(long id, [FromQuery] string? paper, CancellationToken ct)
+    {
+        if (!BenchmarkPdfDocumentInfo.TryParsePaper(paper, out var pdfPaper))
+        {
+            return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
+        }
+
+        var (run, markdown, filename) = await BuildToolCallLogAsync(id);
+        if (run == null) return NotFound();
+
+        var info = BenchmarkPdfDocumentInfo.ForToolCallLog(run, pdfPaper);
+        return await PdfFileAsync(markdown!, plainText: false, info, BenchmarkPdfFileNames.InternalPdfName(filename!), ct);
+    }
+
+    /// <summary>
+    /// The run diagnostics text the client captured, as a tagged PDF. The text is rendered and
+    /// returned, never stored or logged. 404 for an unknown run, 400 for empty text or a capture
+    /// time that is not an ISO 8601 time.
+    /// </summary>
+    [HttpPost("runs/{id}/diagnostics/pdf")]
+    [RequestSizeLimit(4_000_000)]
+    public async Task<IActionResult> RenderRunDiagnosticsPdf(
+        long id, [FromQuery] string? paper, [FromBody] BenchmarkRunDiagnosticsPdfRequest? request, CancellationToken ct)
+    {
+        if (!BenchmarkPdfDocumentInfo.TryParsePaper(paper, out var pdfPaper))
+        {
+            return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
+        }
+
+        var run = await _dbContext.BenchmarkRuns
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (run == null) return NotFound();
+
+        if (request == null || string.IsNullOrWhiteSpace(request.Text))
+        {
+            return BadRequest(new { error = "text must not be empty." });
+        }
+        if (!BenchmarkRunDiagnosticsPdfRequest.TryParseCapturedAt(request.CapturedAtUtc, out DateTime capturedAtUtc))
+        {
+            return BadRequest(new { error = "capturedAtUtc must be an ISO 8601 time." });
+        }
+
+        var info = BenchmarkPdfDocumentInfo.ForDiagnostics(run, capturedAtUtc, GetOverseerVersion(), pdfPaper);
+        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_diagnostics_INTERNAL.pdf";
+        return await PdfFileAsync(request.Text, plainText: true, info, filename, ct);
+    }
+
+    /// <summary>
+    /// The run and its Markdown report, as <see cref="GetRunReport"/> serves it, with the report's
+    /// file name; all null for an unknown run.
+    /// </summary>
+    private async Task<(BenchmarkRun? Run, string? Markdown, string? FileName)> BuildRunReportAsync(long id)
+    {
+        // Load-bearing, not an optimisation: BenchmarkReportBuilder reads answer.ToolCalls for the
+        // run's tool-call outcome line and the per-question ordered call tables, and treats an
+        // empty collection as "this run predates the record". Without this ThenInclude every report
+        // would silently render as a legacy report, tool calls and all.
+        var run = await _dbContext.BenchmarkRuns
+            .Include(r => r.Answers)
+                .ThenInclude(a => a.ToolCalls)
+            .Include(r => r.StartedByUser)
+            .Include(r => r.ScoringProfile)
+            .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (run == null) return (null, null, null);
+
+        // The report's provenance line is worthless as a hard-coded fallback: every report ever
+        // produced claimed "1.0.0" because this caller never passed a version.
+        BenchmarkRunPricing? runPricing = _modelPricingService != null
+            ? await _modelPricingService.ResolveForRunAsync(run)
+            : null;
+        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing);
+        string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
+
+        return (run, markdown, filename);
+    }
+
+    /// <summary>
+    /// The run and its tool-call log Markdown, as <see cref="GetRunToolCallLog"/> serves it, with the
+    /// log's file name; all null for an unknown run.
+    /// </summary>
+    private async Task<(BenchmarkRun? Run, string? Markdown, string? FileName)> BuildToolCallLogAsync(long id)
+    {
         var run = await _dbContext.BenchmarkRuns
             .Include(r => r.Answers)
                 .ThenInclude(a => a.ToolCalls)
             .FirstOrDefaultAsync(r => r.Id == id);
 
-        if (run == null) return NotFound();
+        if (run == null) return (null, null, null);
 
         string markdown = BenchmarkToolCallLogBuilder.Build(run, run.Answers);
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_run{run.Id}_tool_calls.md";
 
-        return File(Encoding.UTF8.GetBytes(markdown), "text/markdown; charset=utf-8", filename);
+        return (run, markdown, filename);
+    }
+
+    /// <summary>
+    /// A source rendered as a PDF download, off the request thread and stopped by the request's
+    /// cancellation; 413 for a source above <see cref="BenchmarkPdfRenderer.MaxSourceCharacters"/>.
+    /// </summary>
+    private async Task<IActionResult> PdfFileAsync(
+        string source, bool plainText, BenchmarkPdfDocumentInfo info, string fileName, CancellationToken ct)
+    {
+        if (BenchmarkPdfRenderer.IsTooLarge(source))
+        {
+            return StatusCode(413, new { error = BenchmarkPdfRenderer.TooLargeMessage(source.Length) });
+        }
+
+        byte[] pdf = await Task.Run(
+            () => plainText
+                ? BenchmarkPdfRenderer.RenderPlainText(source, info, ct)
+                : BenchmarkPdfRenderer.RenderMarkdown(source, info, ct),
+            ct);
+        return File(pdf, "application/pdf", fileName);
     }
 
     [HttpGet("suites/{id}/runs/footprint")]

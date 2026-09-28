@@ -16,6 +16,7 @@ import { catchError } from 'rxjs/operators';
 
 import {
   AdminBenchmarkService,
+  BenchmarkPdfPaper,
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
@@ -25,15 +26,17 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { downloadTextFile, safeFileName } from '../../../utils/download.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { exportTimestamp, saveFigureBlob } from '../model-comparison/figure-export';
 import { markdownToPrintableHtml } from './printable-html';
 import {
+  ArchiveEntry,
   MANIFEST_FILE_NAME,
   ManifestFailure,
   ManifestFile,
-  TextArchiveEntry,
   buildManifest,
   buildTextArchive,
+  paperLabel,
   uniqueFileNames
 } from './text-archive';
 
@@ -63,7 +66,7 @@ export interface DownloadCenterDocumentsContext {
 export type DownloadCenterContext = DownloadCenterRunContext | DownloadCenterDocumentsContext;
 
 export type DownloadPackageId = 'internal' | 'provider' | 'custom';
-export type DownloadFormat = 'md' | 'html' | 'txt';
+export type DownloadFormat = 'pdf' | 'md' | 'html' | 'txt';
 export type DownloadRowKind = 'pack' | 'runReport' | 'toolCallLog' | 'diagnostics';
 
 /** What a remembered choice is keyed by: a pack document's audience, or a run file's kind. */
@@ -81,7 +84,10 @@ export interface DownloadRow {
   kind: DownloadRowKind;
   category: DownloadRowCategory;
   label: string;
+  /** What identifies the row: its subject, audience, writer and time. */
   detail: string;
+  /** An explanation shown behind the row's info button, or null. */
+  note: string | null;
   runId: number | null;
   doc: BenchmarkReportDocumentListItemDto | null;
   /** A subject run was re-scored, re-run or deleted since the document was written. */
@@ -113,14 +119,37 @@ export interface DownloadFailure {
   reason: string;
 }
 
+/** The text a row's text formats are made from; `capturedAt` is set for the diagnostics. */
+interface SourceText {
+  text: string;
+  fileName: string | null;
+  capturedAt: Date | null;
+}
+
+/** A PDF the server rendered, with the name it gave it. */
+interface SourcePdf {
+  bytes: Uint8Array;
+  fileName: string | null;
+  capturedAt: Date | null;
+}
+
+/** A finished file: a PDF's bytes, or the text of every other format. */
+type ProducedFile = { name: string; mime: string; mtime: Date; manifest: ManifestFile }
+  & ({ text: string } | { bytes: Uint8Array });
+
 /** Where finished files go. A holder, so a spec can stand fakes in for the browser download path. */
 export const downloadCenterIo = {
   saveText: (fileName: string, text: string, mimeType: string): void => downloadTextFile(fileName, text, mimeType),
+  saveBytes: (fileName: string, bytes: Uint8Array, mimeType: string): void =>
+    saveFigureBlob(new Blob([bytes as unknown as BlobPart], { type: mimeType }), fileName),
   saveBlob: (blob: Blob, fileName: string): void => saveFigureBlob(blob, fileName),
   now: (): Date => new Date()
 };
 
 export const DOWNLOAD_CENTER_STORAGE_KEY = 'overseer.benchmark.downloadCenter';
+
+/** The stored settings' version; settings of any other version read as absent. */
+const STORED_SETTINGS_VERSION = 2;
 
 /** One remembered row choice; every field is checked against the row before it is applied. */
 interface StoredChoice {
@@ -131,21 +160,22 @@ interface StoredChoice {
 }
 
 interface StoredSettings {
-  version: 1;
+  version: typeof STORED_SETTINGS_VERSION;
   package?: DownloadPackageId;
-  packages?: Partial<Record<DownloadPackageId, Partial<Record<DownloadRowCategory, StoredChoice>>>>;
+  paper?: BenchmarkPdfPaper;
+  packages?:Partial<Record<DownloadPackageId, Partial<Record<DownloadRowCategory, StoredChoice>>>>;
 }
 
 export const DOWNLOAD_PACKAGES: readonly DownloadPackage[] = [
   {
     id: 'internal',
     name: 'Internal package',
-    description: 'Every available file for the Overseer team: report documents at Full disclosure with peers named, the run report, the tool-call log and the diagnostics.'
+    description: 'Every available file for the Overseer team, as PDF and Markdown (Text for the diagnostics): report documents at Full disclosure with peers named, the run report, the tool-call log and the diagnostics.'
   },
   {
     id: 'provider',
     name: 'Provider package',
-    description: 'The Executive Summary and the Technical Report, to send to a model’s provider: Summary disclosure (Detailed optional), peers anonymized (named optional). Internal-only files cannot be chosen.'
+    description: 'The Executive Summary and the Technical Report as PDF, to send to a model’s provider: Summary disclosure (Detailed optional), peers anonymized (named optional). Internal-only files cannot be chosen.'
   },
   {
     id: 'custom',
@@ -163,12 +193,27 @@ export const INTERNAL_REASONS = {
 } as const;
 
 const MIME_TYPES: Record<DownloadFormat, string> = {
+  pdf: 'application/pdf',
   md: 'text/markdown;charset=utf-8',
   html: 'text/html;charset=utf-8',
   txt: 'text/plain;charset=utf-8'
 };
 
-const FORMAT_LABELS: Record<DownloadFormat, string> = { md: 'Markdown', html: 'HTML', txt: 'Text' };
+const FORMAT_LABELS: Record<DownloadFormat, string> = { pdf: 'PDF', md: 'Markdown', html: 'HTML', txt: 'Text' };
+
+/**
+ * The formats a package chooses where a row offers them: Provider the PDF alone; Internal, and Custom
+ * with nothing to keep, the PDF and the text it is made from (Markdown, or Text for the diagnostics).
+ */
+const PRESET_FORMATS: Record<'internal' | 'provider', readonly DownloadFormat[]> = {
+  internal: ['pdf', 'md', 'txt'],
+  provider: ['pdf']
+};
+
+export const PDF_PAPERS: readonly { id: BenchmarkPdfPaper; label: string }[] = [
+  { id: 'a4', label: paperLabel('a4') },
+  { id: 'letter', label: paperLabel('letter') }
+];
 
 const ALL_DISCLOSURES = [BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full];
 
@@ -179,12 +224,14 @@ let nextInstanceId = 0;
  * ZIP with `MANIFEST.md`. Three packages set the choices (Internal, Provider, Custom); the table
  * lists every available document with its options.
  *
- * It makes no request but the document list or detail that fills the table, the render endpoint and
- * the run report and tool-call log endpoints: nothing here can start generation.
+ * It makes no request but the document list or detail that fills the table, the render endpoints
+ * (Markdown and PDF), the run report and tool-call log endpoints and their PDFs, and the diagnostics
+ * PDF endpoint, which renders the captured text and stores nothing: nothing here can start generation.
  */
 @Component({
   selector: 'app-benchmark-download-center',
   standalone: true,
+  imports: [InfoTipComponent],
   templateUrl: './benchmark-download-center.component.html',
   styleUrls: ['./benchmark-download-center.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -200,9 +247,12 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
 
   readonly idPrefix = `dc${++nextInstanceId}`;
   readonly packages = DOWNLOAD_PACKAGES;
+  readonly papers = PDF_PAPERS;
 
   context: DownloadCenterContext | null = null;
   packageId: DownloadPackageId = 'internal';
+  /** The paper every PDF of a download is laid out on. */
+  paper: BenchmarkPdfPaper = 'a4';
   rows: DownloadRow[] = [];
   loadingDocuments = false;
   /** Notices above the table: runs that no longer exist, documents that could not be loaded. */
@@ -227,7 +277,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
   // Opening and closing
   // -------------------------------------------------------------------------------------------
 
-  /** Shows the dialog for a run or a set of pack documents, at the last package used. */
+  /** Shows the dialog for a run or a set of pack documents, at the last package and paper used. */
   open(context: DownloadCenterContext): void {
     this.generation++;
     this.context = context;
@@ -237,7 +287,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     this.failures = [];
     this.statusMessage = '';
     this.preparing = false;
-    this.packageId = readStoredSettings()?.package ?? 'internal';
+    const stored = readStoredSettings();
+    this.packageId = stored?.package ?? 'internal';
+    this.paper = stored?.paper ?? 'a4';
 
     if (context.kind === 'run') {
       this.addRows(runFileRows(context.run));
@@ -297,6 +349,14 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     }
     this.failures = [];
     this.statusMessage = '';
+    this.cdr.markForCheck();
+  }
+
+  selectPaper(paper: BenchmarkPdfPaper): void {
+    if (this.preparing || !PDF_PAPERS.some(p => p.id === paper)) {
+      return;
+    }
+    this.paper = paper;
     this.cdr.markForCheck();
   }
 
@@ -366,6 +426,19 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
 
   rowId(row: DownloadRow): string {
     return `${this.idPrefix}-${row.key.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+  }
+
+  /** The row checkbox's description: why it cannot be chosen, and the row's note. */
+  rowDescribedBy(row: DownloadRow): string | null {
+    const rid = this.rowId(row);
+    const ids: string[] = [];
+    if (!this.isSelectable(row)) {
+      ids.push(`${rid}-reason`);
+    }
+    if (row.note) {
+      ids.push(`${rid}-note`);
+    }
+    return ids.length > 0 ? ids.join(' ') : null;
   }
 
   toggleRow(row: DownloadRow, event: Event): void {
@@ -467,13 +540,14 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     const packagedAt = downloadCenterIo.now();
     const plan = this.plannedFiles.map(file => ({ ...file, state: { ...this.stateOf(file.row), formats: [...this.stateOf(file.row).formats] } }));
     const packageName = this.currentPackage.name;
-    const texts = new Map<string, Promise<{ text: string; fileName: string | null }>>();
+    const paper = this.paper;
+    const texts = new Map<string, Promise<SourceText>>();
 
     this.preparing = true;
     this.failures = [];
     this.persistSettings();
 
-    const produced: { name: string; text: string; mime: string; mtime: Date; manifest: ManifestFile }[] = [];
+    const produced: ProducedFile[] = [];
     const failures: DownloadFailure[] = [];
 
     for (let i = 0; i < plan.length; i++) {
@@ -481,11 +555,13 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       this.statusMessage = `Preparing ${i + 1} of ${plan.length}…`;
       this.cdr.markForCheck();
       try {
-        const source = await this.sourceText(row, state, context, texts);
+        const source = format === 'pdf'
+          ? await this.pdfSource(row, state, context, texts, paper)
+          : await this.sourceText(row, state, context, texts);
         if (generation !== this.generation) {
           return;
         }
-        produced.push(this.produceFile(row, state, format, source, context, packagedAt));
+        produced.push(this.produceFile(row, state, format, source, context, packagedAt, paper));
       } catch (error) {
         if (generation !== this.generation) {
           return;
@@ -497,7 +573,12 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     try {
       if (plan.length === 1) {
         if (produced.length === 1) {
-          downloadCenterIo.saveText(produced[0].name, produced[0].text, produced[0].mime);
+          const only = produced[0];
+          if ('bytes' in only) {
+            downloadCenterIo.saveBytes(only.name, only.bytes, only.mime);
+          } else {
+            downloadCenterIo.saveText(only.name, only.text, only.mime);
+          }
         }
       } else if (produced.length > 0) {
         const names = uniqueFileNames([MANIFEST_FILE_NAME, ...produced.map(file => file.name)]).slice(1);
@@ -508,7 +589,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
           files: manifestFiles,
           failures: failures as ManifestFailure[]
         });
-        const entries: TextArchiveEntry[] = produced.map((file, index) => ({ name: names[index], text: file.text, mtime: file.mtime }));
+        const entries: ArchiveEntry[] = produced.map((file, index): ArchiveEntry => 'bytes' in file
+          ? { name: names[index], bytes: file.bytes, mtime: file.mtime }
+          : { name: names[index], text: file.text, mtime: file.mtime });
         entries.push({ name: MANIFEST_FILE_NAME, text: manifest, mtime: packagedAt });
         const archive = await buildTextArchive(entries);
         if (generation !== this.generation) {
@@ -643,7 +726,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
         selected: this.isSelectableIn(row, pkg) && (row.category === 'executiveSummary' || row.category === 'technicalReport'),
         disclosure: options.includes(BenchmarkReportDisclosure.Summary) ? BenchmarkReportDisclosure.Summary : (options[0] ?? BenchmarkReportDisclosure.Summary),
         naming: BenchmarkReportPeerNaming.Anonymized,
-        formats: [...row.formats]
+        formats: presetFormats(row, 'provider')
       };
     }
     if (pkg === 'custom') {
@@ -661,7 +744,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       selected: true,
       disclosure: options[options.length - 1] ?? BenchmarkReportDisclosure.Full,
       naming: BenchmarkReportPeerNaming.Named,
-      formats: [...row.formats]
+      formats: presetFormats(row, 'internal')
     };
   }
 
@@ -693,7 +776,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     };
   }
 
-  /** Remembers the package used and, per category, the choice of its first row. */
+  /** Remembers the package and paper used and, per category, the choice of its first row. */
   private persistSettings(): void {
     const choices: Partial<Record<DownloadRowCategory, StoredChoice>> = {};
     for (const row of this.rows) {
@@ -710,8 +793,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     }
     const stored = readStoredSettings();
     const settings: StoredSettings = {
-      version: 1,
+      version: STORED_SETTINGS_VERSION,
       package: this.packageId,
+      paper: this.paper,
       packages: { ...(stored?.packages ?? {}), [this.packageId]: { ...(stored?.packages?.[this.packageId] ?? {}), ...choices } }
     };
     try {
@@ -721,13 +805,16 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** The text a row's files are made from, fetched once however many formats use it. */
+  /**
+   * The text a row's files are made from, fetched once however many formats use it: the diagnostics
+   * are captured once per download, and the same capture feeds their Text and their PDF.
+   */
   private sourceText(
     row: DownloadRow,
     state: DownloadRowState,
     context: DownloadCenterContext,
-    cache: Map<string, Promise<{ text: string; fileName: string | null }>>
-  ): Promise<{ text: string; fileName: string | null }> {
+    cache: Map<string, Promise<SourceText>>
+  ): Promise<SourceText> {
     const key = row.kind === 'pack'
       ? `render:${row.doc!.id}:${state.disclosure}:${state.naming}`
       : `${row.kind}:${row.runId}`;
@@ -743,22 +830,51 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     row: DownloadRow,
     state: DownloadRowState,
     context: DownloadCenterContext
-  ): Promise<{ text: string; fileName: string | null }> {
+  ): Promise<SourceText> {
     switch (row.kind) {
       case 'pack':
         return {
           text: await firstValueFrom(this.benchmarkService.renderReportDocument(row.doc!.id, state.disclosure, state.naming)),
-          fileName: null
+          fileName: null,
+          capturedAt: null
         };
       case 'runReport':
-        return firstValueFrom(this.benchmarkService.getRunReportText(row.runId!));
+        return { ...await firstValueFrom(this.benchmarkService.getRunReportText(row.runId!)), capturedAt: null };
       case 'toolCallLog':
-        return firstValueFrom(this.benchmarkService.getToolCallLogText(row.runId!));
+        return { ...await firstValueFrom(this.benchmarkService.getToolCallLogText(row.runId!)), capturedAt: null };
       case 'diagnostics':
         if (context.kind !== 'run') {
           throw new Error('Diagnostics exist only for a run.');
         }
-        return { text: context.diagnosticsText(), fileName: null };
+        return { text: context.diagnosticsText(), fileName: null, capturedAt: downloadCenterIo.now() };
+    }
+  }
+
+  /** A row's PDF, rendered by the server; the diagnostics PDF from the same capture as their Text. */
+  private async pdfSource(
+    row: DownloadRow,
+    state: DownloadRowState,
+    context: DownloadCenterContext,
+    cache: Map<string, Promise<SourceText>>,
+    paper: BenchmarkPdfPaper
+  ): Promise<SourcePdf> {
+    switch (row.kind) {
+      case 'pack':
+        return {
+          ...await firstValueFrom(this.benchmarkService.getReportDocumentPdf(row.doc!.id, state.disclosure, state.naming, paper)),
+          capturedAt: null
+        };
+      case 'runReport':
+        return { ...await firstValueFrom(this.benchmarkService.getRunReportPdf(row.runId!, paper)), capturedAt: null };
+      case 'toolCallLog':
+        return { ...await firstValueFrom(this.benchmarkService.getToolCallLogPdf(row.runId!, paper)), capturedAt: null };
+      case 'diagnostics': {
+        const captured = await this.sourceText(row, state, context, cache);
+        const capturedAt = captured.capturedAt ?? downloadCenterIo.now();
+        const pdf = await firstValueFrom(
+          this.benchmarkService.renderDiagnosticsPdf(row.runId!, captured.text, isoSeconds(capturedAt), paper));
+        return { ...pdf, capturedAt };
+      }
     }
   }
 
@@ -766,14 +882,16 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     row: DownloadRow,
     state: DownloadRowState,
     format: DownloadFormat,
-    source: { text: string; fileName: string | null },
+    source: SourceText | SourcePdf,
     context: DownloadCenterContext,
-    packagedAt: Date
-  ): { name: string; text: string; mime: string; mtime: Date; manifest: ManifestFile } {
+    packagedAt: Date,
+    paper: BenchmarkPdfPaper
+  ): ProducedFile {
     const internal = row.internalReason !== null
       || (row.kind === 'pack' && state.disclosure === BenchmarkReportDisclosure.Full);
+    const bytes = 'bytes' in source ? source.bytes : null;
+    let text = 'text' in source ? source.text : '';
     let name: string;
-    let text = source.text;
     let mtime: Date;
     let createdAtUtc: string | null;
 
@@ -782,33 +900,36 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       name = `${safeFileName(doc.title || row.label)}_${reportDisclosureParam(state.disclosure)}_${reportPeerNamingParam(state.naming)}`
         + `${internal ? '_INTERNAL' : ''}.${format}`;
       if (format === 'html') {
-        text = markdownToPrintableHtml(source.text, doc.title || row.label);
+        text = markdownToPrintableHtml(text, doc.title || row.label);
       }
       mtime = utcDate(doc.createdAtUtc) ?? packagedAt;
       createdAtUtc = isoSeconds(mtime);
     } else if (row.kind === 'diagnostics') {
       const run = (context as DownloadCenterRunContext).run;
-      name = `${safeFileName(run.suiteName)}_${safeFileName(run.modelLabel)}_run${run.id}_diagnostics_INTERNAL.txt`;
-      mtime = packagedAt;
-      createdAtUtc = isoSeconds(packagedAt);
+      name = format === 'pdf' && source.fileName
+        ? internalServerName(source.fileName, format)
+        : `${safeFileName(run.suiteName)}_${safeFileName(run.modelLabel)}_run${run.id}_diagnostics_INTERNAL.${format}`;
+      mtime = source.capturedAt ?? packagedAt;
+      createdAtUtc = isoSeconds(mtime);
     } else {
       const fallback = row.kind === 'runReport' ? `benchmark_run${row.runId}_report.md` : `benchmark_run${row.runId}_tool_calls.md`;
       name = internalServerName(source.fileName ?? fallback, format);
       if (format === 'html') {
-        text = markdownToPrintableHtml(source.text, `Benchmark run #${row.runId} report`);
+        text = markdownToPrintableHtml(text, `Benchmark run #${row.runId} report`);
       }
       mtime = runFileTime(row, context, source.fileName) ?? packagedAt;
       createdAtUtc = isoSeconds(mtime);
     }
 
-    return {
+    const common = {
       name,
-      text,
       mime: MIME_TYPES[format],
       mtime,
       manifest: {
         name,
-        text,
+        content: bytes ?? text,
+        format: FORMAT_LABELS[format],
+        pdfPaper: format === 'pdf' ? paper : null,
         description: row.kind === 'pack' ? audienceLabel(row.doc!.audience) : RUN_FILE_DESCRIPTIONS[row.kind],
         documentId: row.doc?.id ?? null,
         audience: row.doc ? audienceLabel(row.doc.audience) : null,
@@ -818,8 +939,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
         createdAtUtc,
         writer: row.doc?.writerDisplayName || null,
         internalOnly: internal
-      }
+      } satisfies ManifestFile
     };
+    return bytes ? { ...common, bytes } : { ...common, text };
   }
 
   /** `<model>_<package>_<yyyyMMdd_HHmmss>.zip`. */
@@ -838,8 +960,19 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
 const RUN_FILE_DESCRIPTIONS: Record<Exclude<DownloadRowKind, 'pack'>, string> = {
   runReport: 'Run report',
   toolCallLog: 'Tool-call log',
-  diagnostics: 'Run diagnostics (captured now)'
+  diagnostics: 'Run diagnostics (captured when the download was prepared)'
 };
+
+export const ROW_NOTES = {
+  toolCallLog: 'Can run to several megabytes; its PDF can be hundreds of pages.',
+  diagnostics: 'Captured when the download is prepared, not stored.'
+} as const;
+
+/** The package's formats that the row offers; every format the row offers where none of them is. */
+function presetFormats(row: DownloadRow, pkg: 'internal' | 'provider'): DownloadFormat[] {
+  const formats = row.formats.filter(format => PRESET_FORMATS[pkg].includes(format));
+  return formats.length > 0 ? formats : [...row.formats];
+}
 
 function runFileRows(run: DownloadCenterRunInfo): DownloadRow[] {
   const detail = `${run.suiteName} · ${run.modelLabel}`;
@@ -847,18 +980,18 @@ function runFileRows(run: DownloadCenterRunInfo): DownloadRow[] {
   return [
     {
       ...base, key: `report:${run.id}`, kind: 'runReport', category: 'runReport',
-      label: `Run report, run #${run.id}`, detail,
-      formats: ['md', 'html'], internalReason: INTERNAL_REASONS.runReport
+      label: `Run report, run #${run.id}`, detail, note: null,
+      formats: ['pdf', 'md', 'html'], internalReason: INTERNAL_REASONS.runReport
     },
     {
       ...base, key: `log:${run.id}`, kind: 'toolCallLog', category: 'toolCallLog',
-      label: `Tool-call log, run #${run.id}`, detail: `${detail} · can run to several megabytes`,
-      formats: ['md'], internalReason: INTERNAL_REASONS.toolCallLog
+      label: `Tool-call log, run #${run.id}`, detail, note: ROW_NOTES.toolCallLog,
+      formats: ['pdf', 'md'], internalReason: INTERNAL_REASONS.toolCallLog
     },
     {
       ...base, key: `diag:${run.id}`, kind: 'diagnostics', category: 'diagnostics',
-      label: `Run diagnostics, run #${run.id}`, detail: 'Captured now, when the download is prepared',
-      formats: ['txt'], internalReason: INTERNAL_REASONS.diagnostics
+      label: `Run diagnostics, run #${run.id}`, detail, note: ROW_NOTES.diagnostics,
+      formats: ['pdf', 'txt'], internalReason: INTERNAL_REASONS.diagnostics
     }
   ];
 }
@@ -870,11 +1003,12 @@ function subjectRunReportRow(runId: number, subjectLabel: string): DownloadRow {
     category: 'runReport',
     label: `Run report, run #${runId}`,
     detail: subjectLabel ? `A subject run of ${subjectLabel}` : 'A subject run',
+    note: null,
     runId,
     doc: null,
     runChanged: false,
     allowedDisclosures: [],
-    formats: ['md', 'html'],
+    formats: ['pdf', 'md', 'html'],
     internalReason: INTERNAL_REASONS.runReport
   };
 }
@@ -895,11 +1029,12 @@ function packRow(doc: BenchmarkReportDocumentListItemDto): DownloadRow {
       : doc.audience === BenchmarkReportAudience.TechnicalReport ? 'technicalReport' : 'internalBrief',
     label: doc.title || `${audienceLabel(doc.audience)}: ${doc.subjectLabel}`,
     detail: parts.join(' · '),
+    note: null,
     runId: null,
     doc,
     runChanged: !!doc.runChangedSinceGeneration,
     allowedDisclosures: allowed,
-    formats: ['md', 'html'],
+    formats: ['pdf', 'md', 'html'],
     internalReason: shareable ? null : INTERNAL_REASONS.internalBrief
   };
 }
@@ -932,14 +1067,15 @@ function disclosureLabel(disclosure: BenchmarkReportDisclosure): string {
 }
 
 /**
- * The server's file name with `_INTERNAL` before the extension, which becomes the chosen format's.
- * Its case is kept; only characters a file system refuses, and path separators, are replaced.
+ * The server's file name with `_INTERNAL` before the extension, unless it already ends so, and the
+ * chosen format's extension. Its case is kept; only characters a file system refuses, and path
+ * separators, are replaced.
  */
 export function internalServerName(serverName: string, format: DownloadFormat): string {
   const clean = serverName.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_');
   const dot = clean.lastIndexOf('.');
   const base = dot > 0 ? clean.slice(0, dot) : clean;
-  return `${base}_INTERNAL.${format}`;
+  return `${base.endsWith('_INTERNAL') ? base : `${base}_INTERNAL`}.${format}`;
 }
 
 /** An ISO date from the server, read as UTC when it carries no offset. */
@@ -959,13 +1095,14 @@ function isoSeconds(date: Date): string {
 /**
  * A run file's time: the run's completion, else its start, in run context. In document context the
  * run itself is not fetched, so the start time is read from the report's server file name
- * (`…_yyyyMMdd_HHmmss.md`, UTC), and null makes the caller use the packaging time.
+ * (`…_yyyyMMdd_HHmmss.md`, or `…_yyyyMMdd_HHmmss_INTERNAL.pdf`, UTC), and null makes the caller use
+ * the packaging time.
  */
 function runFileTime(row: DownloadRow, context: DownloadCenterContext, serverName: string | null): Date | null {
   if (context.kind === 'run' && context.run.id === row.runId) {
     return utcDate(context.run.completedAtUtc) ?? utcDate(context.run.startedAtUtc);
   }
-  const match = /_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})\.[A-Za-z0-9]+$/.exec(serverName ?? '');
+  const match = /_(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})(?:_INTERNAL)?\.[A-Za-z0-9]+$/.exec(serverName ?? '');
   if (!match) {
     return null;
   }
@@ -1018,12 +1155,13 @@ function readStoredSettings(): StoredSettings | null {
       return null;
     }
     const parsed = JSON.parse(raw) as Partial<StoredSettings> | null;
-    if (!parsed || typeof parsed !== 'object' || parsed.version !== 1) {
+    if (!parsed || typeof parsed !== 'object' || parsed.version !== STORED_SETTINGS_VERSION) {
       return null;
     }
     const pkg = DOWNLOAD_PACKAGES.some(p => p.id === parsed.package) ? parsed.package : undefined;
+    const paper = PDF_PAPERS.some(p => p.id === parsed.paper) ? parsed.paper : undefined;
     const packages = parsed.packages && typeof parsed.packages === 'object' ? parsed.packages : undefined;
-    return { version: 1, package: pkg, packages };
+    return { version: STORED_SETTINGS_VERSION, package: pkg, paper, packages };
   } catch {
     return null;
   }

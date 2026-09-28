@@ -2517,6 +2517,20 @@ app-table-pager {
   }
 }
 
+/* GnollBench brand images: the wordmark heading the AI Benchmark tab and the square emblem beside a
+   run report's title. */
+.gnollbench-wordmark {
+  display: block;
+  height: 32px;
+  width: auto;
+}
+
+.gnollbench-emblem {
+  width: 28px;
+  height: 28px;
+  flex: none;
+}
+
 /* Score Badges & Indicators
    Promoted from benchmark.component.scss for cross-component use (e.g. multi-run analysis). */
 .score-badge {

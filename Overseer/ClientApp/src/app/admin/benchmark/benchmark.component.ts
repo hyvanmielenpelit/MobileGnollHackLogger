@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, Output, EventEmitter, ChangeDetectorRef, ViewChild, ElementRef, inject } from '@angular/core';
-import { CommonModule, DecimalPipe } from '@angular/common';
+import { CommonModule, DecimalPipe, formatDate, formatNumber } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   AdminBenchmarkService,
@@ -108,6 +108,8 @@ import {
 } from './question-yaml/question-yaml-format';
 import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload-dialog.component';
 import { RunReportFrameComponent } from './run-report-frame/run-report-frame.component';
+import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from './run-report-frame/key-figure-card-actions.component';
+import { ImageContext, KeyFiguresAction, exportKeyFiguresImage } from './run-report-frame/key-figures-image';
 import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
 import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../utils/download.util';
@@ -310,7 +312,7 @@ interface BenchmarkRunSettings {
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
-    RunReportFrameComponent, BenchmarkDownloadCenterComponent
+    RunReportFrameComponent, KeyFigureCardActionsComponent, BenchmarkDownloadCenterComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -857,6 +859,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /** The run report's Copy diagnostics announcement. */
   runReportCopyStatus = '';
   private runReportCopyTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A key-figures image is being composed; another export is refused until it finishes. */
+  keyFiguresExporting = false;
   expandedQuestions = new Set<number>();
   expandedThoughts = new Set<number>();
   expandedArtifacts = new Set<number>();
@@ -6061,6 +6065,80 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.runReportCopyStatus = 'Could not copy the diagnostics to the clipboard.';
     }
     this.cdr.detectChanges();
+  }
+
+  // --- Run report: key-figures images ---
+
+  /** The collapsed strip's one line: the index, the speed card's lead figure and the cost. */
+  get keyFiguresSummary(): string {
+    const run = this.selectedRunDetail;
+    if (!run) return '';
+    const index = run.qualityIndex ?? run.finalScore;
+    const confidence = this.indexConfidenceLabel;
+    const speed = this.demoteSpeedIndex
+      ? `Median model time ${formatNumber(this.medianModelTimeMs ?? 0, 'en-US', '1.0-0')} ms`
+      : `Speed Index ${run.speedIndex ?? 'N/A'} / 100`;
+    return [
+      `Intelligence Index ${index ?? 'N/A'} / 100${confidence ? ' ' + confidence : ''}`,
+      speed,
+      `Estimated cost ${this.formatRunEstimatedCost(run)}`
+    ].join(' · ');
+  }
+
+  /** What the images say about the run, from the fields the dialog header shows. */
+  keyFiguresContext(detail: BenchmarkRunDetailDto): ImageContext {
+    const assessor = detail.isPanelRun
+      ? `${detail.assessorModelDisplayNameUsed} + ${detail.coAssessorModelDisplayNameUsed}`
+      : detail.assessorModelDisplayNameUsed;
+    const prompt = this.candidatePromptSummaryOf(detail);
+    return {
+      title: `Run #${detail.id} · ${detail.suiteName}`,
+      lines: [
+        [`Model: ${detail.testedModelDisplayNameUsed}`, `Assessor: ${assessor}`, ...(prompt ? [`Prompt: ${prompt}`] : [])].join(' · '),
+        `Started ${formatDate(detail.startedAtUtc, 'yyyy-MM-dd HH:mm:ss', 'en-US')} UTC · ${this.formatStatusLabel(detail.status)}`
+      ],
+      runId: detail.id,
+      overseerVersion: this.overseerBuildVersion,
+      suiteName: detail.suiteName,
+      modelName: detail.testedModelDisplayNameUsed
+    };
+  }
+
+  copyKeyFigures(): Promise<void> {
+    return this.exportKeyFigures('copy', null);
+  }
+
+  downloadKeyFigures(): Promise<void> {
+    return this.exportKeyFigures('download', null);
+  }
+
+  exportKeyFigureCard(request: KeyFigureCardExportRequest): Promise<void> {
+    return this.exportKeyFigures(request.action, request.card);
+  }
+
+  /** Composes the strip (`card` null) or one card, copies or saves it, and announces the outcome. */
+  private async exportKeyFigures(action: KeyFiguresAction, card: HTMLElement | null): Promise<void> {
+    const run = this.selectedRunDetail;
+    const root = this.runDetailDialog?.nativeElement.querySelector('.rrf-figures');
+    if (!run || !root || this.keyFiguresExporting) return;
+    this.keyFiguresExporting = true;
+    this.cdr.markForCheck();
+    try {
+      if (this.overseerBuildVersion === null) {
+        this.overseerBuildVersion = await firstValueFrom(this.systemService.getVersion()).catch(() => 'unknown');
+      }
+      const message = await exportKeyFiguresImage(action, root, card, this.keyFiguresContext(run));
+      if (this.runReportCopyTimer) clearTimeout(this.runReportCopyTimer);
+      this.runReportCopyStatus = message;
+      this.runReportCopyTimer = setTimeout(() => {
+        this.runReportCopyStatus = '';
+        this.runReportCopyTimer = null;
+        this.cdr.markForCheck();
+      }, COPY_STATUS_MS);
+    } finally {
+      this.keyFiguresExporting = false;
+      this.cdr.markForCheck();
+    }
   }
 
   // --- Run report: question filters ---

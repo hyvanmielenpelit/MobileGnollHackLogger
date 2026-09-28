@@ -1,6 +1,6 @@
 import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpParams, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
 import { unzipSync } from 'fflate';
 
@@ -13,10 +13,15 @@ import {
 import {
   BenchmarkDownloadCenterComponent,
   DOWNLOAD_CENTER_STORAGE_KEY,
+  DOWNLOAD_PACKAGES,
   DownloadCenterContext,
+  DownloadCenterRunContext,
+  DownloadFormat,
   DownloadRow,
   INTERNAL_REASONS,
-  downloadCenterIo
+  ROW_NOTES,
+  downloadCenterIo,
+  internalServerName
 } from './benchmark-download-center.component';
 import { sha256Hex } from './text-archive';
 import { zipEntryTimes } from './zip-entry-times.testing';
@@ -30,12 +35,22 @@ const ALLOWED_URLS = [
   /^\/api\/admin\/benchmark\/report-documents$/,
   /^\/api\/admin\/benchmark\/report-documents\/\d+$/,
   /^\/api\/admin\/benchmark\/report-documents\/\d+\/render$/,
+  /^\/api\/admin\/benchmark\/report-documents\/\d+\/render\/pdf$/,
   /^\/api\/admin\/benchmark\/runs\/\d+\/report$/,
-  /^\/api\/admin\/benchmark\/runs\/\d+\/tool-call-log$/
+  /^\/api\/admin\/benchmark\/runs\/\d+\/report\/pdf$/,
+  /^\/api\/admin\/benchmark\/runs\/\d+\/tool-call-log$/,
+  /^\/api\/admin\/benchmark\/runs\/\d+\/tool-call-log\/pdf$/,
+  /^\/api\/admin\/benchmark\/runs\/\d+\/diagnostics\/pdf$/
 ];
+
+/** The one request that is not a GET: the diagnostics PDF, which carries the captured text. */
+const POST_URL = /\/runs\/\d+\/diagnostics\/pdf$/;
 
 const REPORT_SERVER_NAME = 'Board_Suite_GPT_Model_X_20260921_160000.md';
 const LOG_SERVER_NAME = 'Board_Suite_GPT_Model_X_run42_tool_calls.md';
+const REPORT_PDF_NAME = 'Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.pdf';
+const LOG_PDF_NAME = 'Board_Suite_GPT_Model_X_run42_tool_calls_INTERNAL.pdf';
+const DIAG_PDF_NAME = 'Board_Suite_GPT_Model_X_run42_diagnostics_INTERNAL.pdf';
 
 function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
   const titles: Record<number, string> = {
@@ -72,19 +87,28 @@ function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<B
   };
 }
 
+/** The bytes of a fake PDF, as the ArrayBuffer an `arraybuffer` response carries. */
+function arrayBufferOf(text: string): ArrayBuffer {
+  const bytes = new TextEncoder().encode(text);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
 describe('BenchmarkDownloadCenterComponent', () => {
   let fixture: ComponentFixture<BenchmarkDownloadCenterComponent>;
   let component: BenchmarkDownloadCenterComponent;
   let httpMock: HttpTestingController;
   let saveText: jasmine.Spy;
+  let saveBytes: jasmine.Spy;
   let saveBlob: jasmine.Spy;
   let requested: string[];
   let unexpected: string[];
+  let pdfRequests: { url: string; method: string; params: HttpParams; body: unknown }[];
 
   /** Packaging time; whole even seconds, as a zip stores time in two-second steps. */
   const NOW = new Date(2026, 8, 28, 10, 15, 2);
+  const NOW_ISO = NOW.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
-  const runContext: DownloadCenterContext = {
+  const runContext: DownloadCenterRunContext = {
     kind: 'run',
     run: {
       id: 42,
@@ -109,10 +133,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
     fixture.detectChanges();
 
     saveText = spyOn(downloadCenterIo, 'saveText');
+    saveBytes = spyOn(downloadCenterIo, 'saveBytes');
     saveBlob = spyOn(downloadCenterIo, 'saveBlob');
     spyOn(downloadCenterIo, 'now').and.returnValue(NOW);
     requested = [];
     unexpected = [];
+    pdfRequests = [];
   });
 
   afterEach(() => {
@@ -129,8 +155,11 @@ describe('BenchmarkDownloadCenterComponent', () => {
     fixture.detectChanges();
   }
 
-  function openRun(documents: BenchmarkReportDocumentListItemDto[] = [doc(1, ExecutiveSummary), doc(2, TechnicalReport), doc(3, InternalBrief)]): void {
-    component.open(runContext);
+  function openRun(
+    documents: BenchmarkReportDocumentListItemDto[] = [doc(1, ExecutiveSummary), doc(2, TechnicalReport), doc(3, InternalBrief)],
+    context: DownloadCenterContext = runContext
+  ): void {
+    component.open(context);
     const list = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
     expect(list.request.method).toBe('GET');
     expect(list.request.params.get('runId')).toBe('42');
@@ -147,8 +176,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
     return host().querySelector<HTMLTableRowElement>(`tr[data-row-key="${key}"]`)!;
   }
 
+  function byId(id: string): HTMLElement | null {
+    return host().querySelector<HTMLElement>(`[id="${id}"]`);
+  }
+
   /** Chooses exactly the given rows, each with the given options. */
-  function choose(pkg: 'internal' | 'provider' | 'custom', picks: Record<string, Partial<{ disclosure: BenchmarkReportDisclosure; naming: BenchmarkReportPeerNaming; formats: ('md' | 'html' | 'txt')[] }>>): void {
+  function choose(pkg: 'internal' | 'provider' | 'custom', picks: Record<string, Partial<{ disclosure: BenchmarkReportDisclosure; naming: BenchmarkReportPeerNaming; formats: DownloadFormat[] }>>): void {
     component.selectPackage(pkg);
     for (const r of component.rows) {
       const state = component.stateOf(r);
@@ -164,14 +197,21 @@ describe('BenchmarkDownloadCenterComponent', () => {
   interface ServerOptions {
     reportStatus?: number;
     renderBody?: (id: number, disclosure: string | null, peers: string | null) => string;
+    /** A JSON error answer to every PDF request whose URL matches. */
+    pdfError?: { pattern: RegExp; status: number; body: unknown };
   }
 
   function respond(request: TestRequest, options: ServerOptions): void {
     const url = request.request.url;
+    const method = request.request.method;
     requested.push(url);
-    if (!ALLOWED_URLS.some(pattern => pattern.test(url)) || request.request.method !== 'GET') {
-      unexpected.push(`${request.request.method} ${url}`);
+    if (!ALLOWED_URLS.some(pattern => pattern.test(url)) || method !== (POST_URL.test(url) ? 'POST' : 'GET')) {
+      unexpected.push(`${method} ${url}`);
       request.flush(null, { status: 500, statusText: 'Unexpected' });
+      return;
+    }
+    if (url.endsWith('/pdf')) {
+      respondPdf(request, options);
       return;
     }
     const renderMatch = /report-documents\/(\d+)\/render$/.exec(url);
@@ -192,9 +232,35 @@ describe('BenchmarkDownloadCenterComponent', () => {
     } else if (/tool-call-log$/.test(url)) {
       request.flush('# Tool calls\n', { headers: { 'Content-Disposition': `attachment; filename="${LOG_SERVER_NAME}"` } });
     } else {
-      unexpected.push(`${request.request.method} ${url}`);
+      unexpected.push(`${method} ${url}`);
       request.flush(null, { status: 500, statusText: 'Unexpected' });
     }
+  }
+
+  function respondPdf(request: TestRequest, options: ServerOptions): void {
+    const url = request.request.url;
+    const params = request.request.params;
+    pdfRequests.push({ url, method: request.request.method, params, body: request.request.body });
+    expect(request.request.responseType).withContext(url).toBe('arraybuffer');
+
+    if (options.pdfError && options.pdfError.pattern.test(url)) {
+      request.flush(arrayBufferOf(JSON.stringify(options.pdfError.body)), { status: options.pdfError.status, statusText: 'Error' });
+      return;
+    }
+    if (/runs\/\d+\/report\/pdf$/.test(url) && options.reportStatus && options.reportStatus !== 200) {
+      request.flush(null, { status: options.reportStatus, statusText: 'Not Found' });
+      return;
+    }
+    const names: [RegExp, string][] = [
+      [/runs\/\d+\/report\/pdf$/, REPORT_PDF_NAME],
+      [/tool-call-log\/pdf$/, LOG_PDF_NAME],
+      [/diagnostics\/pdf$/, DIAG_PDF_NAME],
+      [/render\/pdf$/, `server-name_${params.get('disclosure')}_${params.get('peers')}.pdf`]
+    ];
+    const name = names.find(([pattern]) => pattern.test(url))![1];
+    request.flush(arrayBufferOf(`%PDF-1.7\n% ${url} ${params.get('paper')}\n`), {
+      headers: { 'Content-Disposition': `attachment; filename=${name}` }
+    });
   }
 
   /** Runs a download to its end, answering each request as the one-at-a-time preparation issues it. */
@@ -242,10 +308,24 @@ describe('BenchmarkDownloadCenterComponent', () => {
         expect(disclosure.disabled).toBeTrue();
         expect(names.disabled).toBeTrue();
       }
-      expect(component.summaryLine).toBe('10 files · 1 ZIP · Internal package');
+      expect(component.summaryLine).toBe('12 files · 1 ZIP · Internal package');
     });
 
-    it('lists internal-only rows in the Provider package but makes them unselectable, each with its reason', () => {
+    it('chooses the PDF and its text source in the Internal package, and the PDF alone in the Provider package', () => {
+      openRun();
+
+      expect(component.stateOf(row('doc:1')).formats).toEqual(['pdf', 'md']);
+      expect(component.stateOf(row('report:42')).formats).toEqual(['pdf', 'md']);
+      expect(component.stateOf(row('log:42')).formats).toEqual(['pdf', 'md']);
+      expect(component.stateOf(row('diag:42')).formats).toEqual(['pdf', 'txt']);
+
+      component.selectPackage('provider');
+
+      expect(component.stateOf(row('doc:1')).formats).toEqual(['pdf']);
+      expect(component.stateOf(row('doc:2')).formats).toEqual(['pdf']);
+    });
+
+    it('lists internal-only rows in the Provider package but makes them unselectable, each with its reason behind an info button', () => {
       openRun();
       host().querySelector<HTMLInputElement>(`#${component.idPrefix}-package-provider`)!.click();
       render();
@@ -259,13 +339,17 @@ describe('BenchmarkDownloadCenterComponent', () => {
       ];
       for (const [key, reason] of expectations) {
         const element = rowElement(key);
+        const rid = component.rowId(row(key));
         const check = element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
         expect(check.disabled).withContext(key).toBeTrue();
         expect(check.checked).withContext(key).toBeFalse();
-        const reasonElement = element.querySelector('.dc-reason')!;
-        expect(reasonElement.textContent!.trim()).toBe(reason);
-        expect(check.getAttribute('aria-describedby')).toBe(reasonElement.id);
-        expect(element.querySelector('.gh-tag-internal')).not.toBeNull();
+        expect(check.getAttribute('aria-describedby')!.split(' ')).withContext(key).toContain(`${rid}-reason`);
+        const reasonElement = element.querySelector(`[id="${rid}-reason"]`)!;
+        expect(reasonElement.textContent!.trim()).withContext(key).toBe(reason);
+        const popup = reasonElement.closest('.gh-info-popup')!;
+        expect(popup.querySelector('.gh-info-popup-title')!.textContent!.trim()).toBe(`Internal only: ${row(key).label}`);
+        expect(element.querySelector('.gh-tag-internal')).withContext(key).not.toBeNull();
+        expect(element.querySelector('.dc-reason')).withContext(key).toBeNull();
       }
       expect(INTERNAL_REASONS.internalBrief).toBe('Internal only: contains rubric text');
       expect(INTERNAL_REASONS.runReport).toBe('Internal only: contains questions, rubrics and answers');
@@ -280,7 +364,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         expect(disclosure.disabled).toBeFalse();
         expect(element.querySelector('.gh-tag-shareable')).not.toBeNull();
       }
-      expect(component.summaryLine).toBe('4 files · 1 ZIP · Provider package');
+      expect(component.summaryLine).toBe('2 files · 1 ZIP · Provider package');
     });
 
     it('warns, naming the compliance note, when a provider copy names its peers', () => {
@@ -307,6 +391,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       render();
 
       expect(component.stateOf(row('doc:1')).disclosure).toBe(Summary);
+      expect(component.stateOf(row('doc:1')).formats).toEqual(['pdf']);
       const [esDisclosure] = Array.from(rowElement('doc:1').querySelectorAll<HTMLSelectElement>('select'));
       expect(Array.from(esDisclosure.options).map(o => o.textContent!.trim())).toEqual(['Summary', 'Detailed', 'Full']);
       const [ibDisclosure] = Array.from(rowElement('doc:3').querySelectorAll<HTMLSelectElement>('select'));
@@ -316,18 +401,45 @@ describe('BenchmarkDownloadCenterComponent', () => {
   });
 
   describe('rows', () => {
-    it('offers formats by kind', () => {
+    it('offers formats by kind, PDF first, one per line', () => {
       openRun();
+
+      expect(row('doc:1').formats).toEqual(['pdf', 'md', 'html']);
+      expect(row('report:42').formats).toEqual(['pdf', 'md', 'html']);
+      expect(row('log:42').formats).toEqual(['pdf', 'md']);
+      expect(row('diag:42').formats).toEqual(['pdf', 'txt']);
 
       const formatNames = (key: string): string[] =>
         Array.from(rowElement(key).querySelectorAll<HTMLInputElement>('.dc-format input')).map(input => input.getAttribute('aria-label')!);
-      expect(formatNames('doc:1')).toEqual(['Markdown copy of Executive Summary: GPT Model X', 'HTML copy of Executive Summary: GPT Model X']);
-      expect(formatNames('report:42')).toEqual(['Markdown copy of Run report, run #42', 'HTML copy of Run report, run #42']);
-      expect(formatNames('log:42')).toEqual([]);
-      expect(rowElement('log:42').querySelector('.dc-format-fixed')!.textContent!.trim()).toBe('Markdown only');
-      expect(rowElement('diag:42').querySelector('.dc-format-fixed')!.textContent!.trim()).toBe('Text only');
-      expect(rowElement('diag:42').textContent).toContain('Captured now');
+      expect(formatNames('doc:1')).toEqual([
+        'PDF copy of Executive Summary: GPT Model X',
+        'Markdown copy of Executive Summary: GPT Model X',
+        'HTML copy of Executive Summary: GPT Model X'
+      ]);
+      expect(formatNames('report:42')).toEqual(['PDF copy of Run report, run #42', 'Markdown copy of Run report, run #42', 'HTML copy of Run report, run #42']);
+      expect(formatNames('log:42')).toEqual(['PDF copy of Tool-call log, run #42', 'Markdown copy of Tool-call log, run #42']);
+      expect(formatNames('diag:42')).toEqual(['PDF copy of Run diagnostics, run #42', 'Text copy of Run diagnostics, run #42']);
       expect(rowElement('report:42').querySelectorAll('select').length).toBe(0);
+    });
+
+    it('keeps a row’s detail visible and puts its note behind an info button the checkbox is described by', () => {
+      openRun();
+
+      const cases: [string, string][] = [['log:42', ROW_NOTES.toolCallLog], ['diag:42', ROW_NOTES.diagnostics]];
+      for (const [key, note] of cases) {
+        const rid = component.rowId(row(key));
+        const element = rowElement(key);
+        expect(element.querySelector('.dc-doc-detail')!.textContent!.trim()).withContext(key).toBe('Board Suite · GPT Model X');
+        const tip = element.querySelector(`[id="${rid}-note"]`)!;
+        expect(tip.textContent!.trim()).withContext(key).toBe(note);
+        expect(tip.closest('.gh-info-popup')!.querySelector('.gh-info-popup-title')!.textContent!.trim()).toBe(row(key).label);
+        const check = element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+        expect(check.getAttribute('aria-describedby')).withContext(key).toBe(`${rid}-note`);
+      }
+      expect(ROW_NOTES.toolCallLog).toBe('Can run to several megabytes; its PDF can be hundreds of pages.');
+      expect(ROW_NOTES.diagnostics).toBe('Captured when the download is prepared, not stored.');
+      expect(rowElement('report:42').querySelector(`[id="${component.rowId(row('report:42'))}-note"]`)).toBeNull();
+      expect(rowElement('report:42').querySelector('input[type="checkbox"]')!.hasAttribute('aria-describedby')).toBeFalse();
     });
 
     it('names each row checkbox after its document', () => {
@@ -344,35 +456,175 @@ describe('BenchmarkDownloadCenterComponent', () => {
         .toBe('Run changed since this document was written');
       expect(rowElement('doc:2').querySelector('.gh-tag-changed')).toBeNull();
     });
+
+    it('shows No format chosen while a row has none', () => {
+      openRun();
+      component.stateOf(row('doc:1')).formats = [];
+      render();
+
+      expect(rowElement('doc:1').querySelector('.dc-format-none')!.textContent!.trim()).toBe('No format chosen');
+    });
+  });
+
+  describe('explanations', () => {
+    it('shows the GnollBench emblem, decorative, beside the title', () => {
+      openRun();
+
+      const emblem = host().querySelector<HTMLImageElement>('.dc-title-row > img.gnollbench-emblem')!;
+      expect(emblem).not.toBeNull();
+      expect(emblem.getAttribute('alt')).toBe('');
+      expect(emblem.getAttribute('src')).toBe('/img/gnollbench/gnollbench-logo-v3-256.webp');
+      expect(emblem.nextElementSibling!.querySelector('h3')!.textContent!.trim()).toBe('Downloads');
+    });
+
+    it('puts each package description behind an info button beside, not inside, its label', () => {
+      openRun();
+
+      for (const pkg of DOWNLOAD_PACKAGES) {
+        const radio = host().querySelector<HTMLInputElement>(`#${component.idPrefix}-package-${pkg.id}`)!;
+        const label = radio.closest('label')!;
+        expect(label.querySelector('button')).withContext(pkg.id).toBeNull();
+        expect(label.textContent!.trim()).withContext(pkg.id).toBe(pkg.name);
+        const descriptionId = radio.getAttribute('aria-describedby')!;
+        expect(descriptionId).toBe(`${component.idPrefix}-package-${pkg.id}-desc`);
+        expect(byId(descriptionId)!.textContent!.trim()).withContext(pkg.id).toBe(pkg.description);
+        const card = label.closest('.dc-package-card')!;
+        expect(card.querySelector('button.gh-info-btn')!.getAttribute('aria-label')).toBe(`About ${pkg.name}`);
+      }
+    });
+
+    it('explains the columns with info buttons and definition lists', () => {
+      openRun();
+      const p = component.idPrefix;
+
+      const header = host().querySelector('thead')!;
+      for (const name of ['sharing', 'disclosure', 'names', 'formats']) {
+        expect(header.querySelector(`[id="${p}-${name}-tip"]`)).withContext(name).not.toBeNull();
+      }
+      expect(byId(`${p}-sharing-tip`)!.textContent).toContain('internal-only ones never leave the Overseer team');
+      const terms = (name: string): string[] =>
+        Array.from(byId(`${p}-${name}-tip`)!.querySelectorAll('dl > div > dt .gh-info-term')).map(term => term.textContent!.trim());
+      expect(terms('disclosure')).toEqual(['Summary', 'Detailed', 'Full']);
+      expect(terms('names')).toEqual(['Named', 'Anonymized']);
+      expect(terms('formats')).toEqual(['PDF', 'Markdown', 'HTML', 'Text']);
+      expect(host().querySelector('.dc-reason')).toBeNull();
+    });
+
+    it('gives every id once, from the instance prefix, and resolves every description', () => {
+      openRun();
+      component.selectPackage('provider');
+      render();
+
+      const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      for (const id of ids) {
+        expect(id.startsWith(`${component.idPrefix}-`)).withContext(id).toBeTrue();
+      }
+      const described = Array.from(host().querySelectorAll('[aria-describedby]'));
+      expect(described.length).toBeGreaterThan(0);
+      for (const element of described) {
+        for (const id of element.getAttribute('aria-describedby')!.split(' ')) {
+          expect(byId(id)).withContext(id).not.toBeNull();
+        }
+      }
+    });
+  });
+
+  describe('paper size', () => {
+    it('defaults to A4, and describes both radios with its info tip', () => {
+      openRun();
+
+      expect(component.paper).toBe('a4');
+      const a4 = host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-a4`)!;
+      const letter = host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-letter`)!;
+      expect(a4.checked).toBeTrue();
+      expect(letter.checked).toBeFalse();
+      expect(letter.closest('label')!.textContent!.trim()).toBe('US Letter');
+      for (const radio of [a4, letter]) {
+        expect(byId(radio.getAttribute('aria-describedby')!)!.textContent!.trim())
+          .toBe('Letter suits readers in North America; A4 everywhere else.');
+      }
+    });
+
+    it('sends the chosen paper to every PDF, names it in the manifest and remembers it', async () => {
+      openRun();
+      host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-letter`)!.click();
+      render();
+      expect(component.paper).toBe('letter');
+      choose('internal', {
+        'doc:1': { formats: ['pdf'] },
+        'report:42': { formats: ['pdf'] },
+        'log:42': { formats: ['pdf'] },
+        'diag:42': { formats: ['pdf'] }
+      });
+
+      await runDownload();
+
+      expect(pdfRequests.map(r => r.url).sort()).toEqual([
+        '/api/admin/benchmark/report-documents/1/render/pdf',
+        '/api/admin/benchmark/runs/42/diagnostics/pdf',
+        '/api/admin/benchmark/runs/42/report/pdf',
+        '/api/admin/benchmark/runs/42/tool-call-log/pdf'
+      ]);
+      for (const request of pdfRequests) {
+        expect(request.params.get('paper')).withContext(request.url).toBe('letter');
+      }
+      const zip = await savedZip();
+      expect(zip.files['MANIFEST.md'].match(/- \*\*PDF:\*\* PDF\/UA-1, PDF\/A-3A, US Letter/g)?.length).toBe(4);
+      expect(JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!).paper).toBe('letter');
+
+      component.close();
+      openRun();
+      expect(component.paper).toBe('letter');
+      expect(host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-letter`)!.checked).toBeTrue();
+    });
   });
 
   describe('remembered settings', () => {
-    it('restores the last package and its choices', () => {
+    it('restores the last package, paper and choices', () => {
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
-        version: 1,
+        version: 2,
         package: 'provider',
+        paper: 'letter',
         packages: { provider: { executiveSummary: { selected: true, disclosure: Detailed, naming: Named, formats: ['html'] } } }
       }));
 
       openRun();
 
       expect(component.packageId).toBe('provider');
+      expect(component.paper).toBe('letter');
       expect(component.stateOf(row('doc:1'))).toEqual({ selected: true, disclosure: Detailed, naming: Named, formats: ['html'] });
       expect(component.stateOf(row('doc:2')).disclosure).toBe(Summary);
     });
 
     it('never restores a remembered choice the package does not allow', () => {
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
-        version: 1,
+        version: 2,
         package: 'provider',
+        paper: 'tabloid',
         packages: { provider: { executiveSummary: { disclosure: Full, formats: ['txt'] }, runReport: { selected: true } } }
       }));
 
       openRun();
 
+      expect(component.paper).toBe('a4');
       expect(component.stateOf(row('doc:1')).disclosure).toBe(Summary);
-      expect(component.stateOf(row('doc:1')).formats).toEqual(['md', 'html']);
+      expect(component.stateOf(row('doc:1')).formats).toEqual(['pdf']);
       expect(component.isIncluded(row('report:42'))).toBeFalse();
+    });
+
+    it('ignores settings of version 1, so every admin starts from the PDF presets once', () => {
+      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
+        version: 1,
+        package: 'provider',
+        packages: { provider: { executiveSummary: { selected: true, formats: ['md', 'html'] } } }
+      }));
+
+      openRun();
+
+      expect(component.packageId).toBe('internal');
+      expect(component.paper).toBe('a4');
+      expect(component.stateOf(row('doc:1')).formats).toEqual(['pdf', 'md']);
     });
 
     it('tolerates corrupt, foreign-version and unreadable storage', () => {
@@ -381,7 +633,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.packageId).toBe('internal');
       component.close();
 
-      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 2, package: 'provider' }));
+      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 3, package: 'provider' }));
       openRun();
       expect(component.packageId).toBe('internal');
       component.close();
@@ -391,15 +643,16 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.packageId).toBe('internal');
     });
 
-    it('remembers the package and choices of a download', async () => {
+    it('remembers the package, paper and choices of a download', async () => {
       openRun();
       choose('provider', { 'doc:1': { disclosure: Detailed, naming: Named, formats: ['md'] } });
 
       await runDownload();
 
       const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
-      expect(stored.version).toBe(1);
+      expect(stored.version).toBe(2);
       expect(stored.package).toBe('provider');
+      expect(stored.paper).toBe('a4');
       expect(stored.packages.provider.executiveSummary).toEqual({ selected: true, disclosure: Detailed, naming: Named, formats: ['md'] });
       expect(stored.packages.provider.technicalReport.selected).toBeFalse();
     });
@@ -414,6 +667,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await runDownload();
 
       expect(saveBlob).not.toHaveBeenCalled();
+      expect(saveBytes).not.toHaveBeenCalled();
       expect(saveText).toHaveBeenCalledOnceWith(
         'executive-summary-gpt-model-x_summary_anonymized.md',
         '# Document 1 (summary, anonymized)\n\nCost $4 per question.\n',
@@ -422,28 +676,52 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(host().querySelector('[role="status"]')!.textContent!.trim()).toBe('Downloaded 1 file.');
     });
 
+    it('downloads one PDF as its bytes, rendered at the chosen options', async () => {
+      openRun();
+      choose('provider', { 'doc:1': {} });
+      expect(component.summaryLine).toBe('1 file · Provider package');
+
+      await runDownload();
+
+      expect(saveText).not.toHaveBeenCalled();
+      expect(saveBlob).not.toHaveBeenCalled();
+      expect(saveBytes).toHaveBeenCalledTimes(1);
+      const [name, bytes, mime] = saveBytes.calls.mostRecent().args as [string, Uint8Array, string];
+      expect(name).toBe('executive-summary-gpt-model-x_summary_anonymized.pdf');
+      expect(mime).toBe('application/pdf');
+      expect(new TextDecoder().decode(bytes)).toBe('%PDF-1.7\n% /api/admin/benchmark/report-documents/1/render/pdf a4\n');
+      expect(pdfRequests.length).toBe(1);
+      expect(pdfRequests[0].params.get('disclosure')).toBe('summary');
+      expect(pdfRequests[0].params.get('peers')).toBe('anonymized');
+      expect(pdfRequests[0].params.get('paper')).toBe('a4');
+      expect(requested.some(url => url.endsWith('/render'))).toBeFalse();
+    });
+
     it('downloads several files as one ZIP with a manifest, each entry carrying its stated time', async () => {
       openRun();
 
       await runDownload();
 
       expect(saveText).not.toHaveBeenCalled();
+      expect(saveBytes).not.toHaveBeenCalled();
       const zip = await savedZip();
       expect(zip.name).toBe('gpt-model-x_internal-package_20260928_101502.zip');
 
       const documentTime = new Date('2026-09-20T09:30:12Z').getTime();
       const runTime = new Date('2026-09-21T17:05:44Z').getTime();
       const expected: Record<string, number> = {
+        [REPORT_PDF_NAME]: runTime,
         'Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.md': runTime,
-        'Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.html': runTime,
+        [LOG_PDF_NAME]: runTime,
         'Board_Suite_GPT_Model_X_run42_tool_calls_INTERNAL.md': runTime,
+        [DIAG_PDF_NAME]: NOW.getTime(),
         'board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt': NOW.getTime(),
+        'executive-summary-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
         'executive-summary-gpt-model-x_full_named_INTERNAL.md': documentTime,
-        'executive-summary-gpt-model-x_full_named_INTERNAL.html': documentTime,
+        'technical-report-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
         'technical-report-gpt-model-x_full_named_INTERNAL.md': documentTime,
-        'technical-report-gpt-model-x_full_named_INTERNAL.html': documentTime,
+        'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
         'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.md': documentTime,
-        'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.html': documentTime,
         'MANIFEST.md': NOW.getTime()
       };
       expect(Object.keys(zip.files).sort()).toEqual(Object.keys(expected).sort());
@@ -454,10 +732,11 @@ describe('BenchmarkDownloadCenterComponent', () => {
       // One fetch per source, however many formats use it.
       expect(requested.filter(url => url.endsWith('/runs/42/report')).length).toBe(1);
       expect(requested.filter(url => url.endsWith('/render')).length).toBe(3);
+      expect(requested.filter(url => url.endsWith('/render/pdf')).length).toBe(3);
 
       const manifest = zip.files['MANIFEST.md'];
       expect(manifest).toContain('- **Package:** Internal package');
-      expect(manifest).toContain('- **Files:** 10');
+      expect(manifest).toContain('- **Files:** 12');
       for (const name of Object.keys(expected).filter(n => n !== 'MANIFEST.md')) {
         expect(manifest).toContain(`\`${name}\``);
       }
@@ -465,11 +744,37 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(manifest).toContain('- **Renderer version:** 3');
       expect(manifest).toContain('- **Writer:** Claude Opus');
       expect(manifest).toContain('- **Created:** 2026-09-20T09:30:12Z');
-      expect(manifest).toContain('Run diagnostics (captured now)');
+      expect(manifest).toContain('Run diagnostics (captured when the download was prepared)');
+      expect(manifest.match(/- \*\*Format:\*\* PDF\n- \*\*PDF:\*\* PDF\/UA-1, PDF\/A-3A, A4\n/g)?.length).toBe(6);
+      expect(manifest.match(/- \*\*Format:\*\* Markdown\n/g)?.length).toBe(5);
+      expect(manifest).toContain('- **Format:** Text\n');
       const hash = await sha256Hex(zip.files['executive-summary-gpt-model-x_full_named_INTERNAL.md']);
       expect(manifest).toContain(`\`${hash}\``);
+      const pdfHash = await sha256Hex(zip.files[REPORT_PDF_NAME]);
+      expect(manifest).toContain(`\`${pdfHash}\``);
+      expect(zip.files[REPORT_PDF_NAME].startsWith('%PDF-1.7\n')).toBeTrue();
       expect(zip.files['board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt']).toBe('=== BENCHMARK RUN DIAGNOSTICS ===\n');
-      expect(host().querySelector('[role="status"]')!.textContent!.trim()).toBe('Downloaded 10 files as one ZIP.');
+      expect(host().querySelector('[role="status"]')!.textContent!.trim()).toBe('Downloaded 12 files as one ZIP.');
+    });
+
+    it('captures the diagnostics once, feeding the Text and the PDF the same text and time', async () => {
+      const diagnosticsText = jasmine.createSpy('diagnosticsText').and.returnValue('=== BENCHMARK RUN DIAGNOSTICS ===\nCaptured once.\n');
+      openRun(undefined, { ...runContext, diagnosticsText });
+      choose('internal', { 'diag:42': {} });
+      expect(component.stateOf(row('diag:42')).formats).toEqual(['pdf', 'txt']);
+
+      await runDownload();
+
+      expect(diagnosticsText).toHaveBeenCalledTimes(1);
+      const zip = await savedZip();
+      const text = zip.files['board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt'];
+      expect(text).toBe('=== BENCHMARK RUN DIAGNOSTICS ===\nCaptured once.\n');
+      expect(pdfRequests.length).toBe(1);
+      expect(pdfRequests[0].method).toBe('POST');
+      expect(pdfRequests[0].body).toEqual({ text, capturedAtUtc: NOW_ISO });
+      expect(zip.times.get(DIAG_PDF_NAME)?.getTime()).toBe(NOW.getTime());
+      expect(zip.times.get('board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt')?.getTime()).toBe(NOW.getTime());
+      expect(zip.files['MANIFEST.md'].match(new RegExp(`- \\*\\*Created:\\*\\* ${NOW_ISO}\\n`, 'g'))?.length).toBe(2);
     });
 
     it('marks _INTERNAL in every package, after safeFileName, so the suffix keeps its case', async () => {
@@ -488,23 +793,41 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(saveText.calls.mostRecent().args[0]).toBe('technical-report-gpt-model-x_summary_anonymized.md');
       expect(saveText.calls.mostRecent().args[0]).not.toContain('INTERNAL');
 
-      choose('internal', { 'diag:42': {} });
+      choose('internal', { 'diag:42': { formats: ['txt'] } });
       await runDownload();
       expect(saveText.calls.mostRecent().args[0]).toBe('board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt');
       expect(saveText.calls.mostRecent().args[2]).toBe('text/plain;charset=utf-8');
+
+      choose('custom', { 'doc:1': { disclosure: Full, naming: Named, formats: ['pdf'] } });
+      await runDownload();
+      expect(saveBytes.calls.mostRecent().args[0]).toBe('executive-summary-gpt-model-x_full_named_INTERNAL.pdf');
     });
 
-    it('keeps the server file name of the run report and tool-call log, with _INTERNAL', async () => {
+    it('keeps the server file name of the run files, with _INTERNAL once', async () => {
       openRun();
       choose('custom', { 'report:42': { formats: ['html'] } });
       await runDownload();
       expect(saveText.calls.mostRecent().args[0]).toBe('Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.html');
       expect(saveText.calls.mostRecent().args[1]).toContain('<!DOCTYPE html>');
 
-      choose('custom', { 'log:42': {} });
+      choose('custom', { 'log:42': { formats: ['md'] } });
       await runDownload();
       expect(saveText.calls.mostRecent().args[0]).toBe('Board_Suite_GPT_Model_X_run42_tool_calls_INTERNAL.md');
       expect(saveText.calls.mostRecent().args[1]).toBe('# Tool calls\n');
+
+      const pdfs: [string, string][] = [['report:42', REPORT_PDF_NAME], ['log:42', LOG_PDF_NAME], ['diag:42', DIAG_PDF_NAME]];
+      for (const [key, name] of pdfs) {
+        choose('custom', { [key]: { formats: ['pdf'] } });
+        await runDownload();
+        expect(saveBytes.calls.mostRecent().args[0]).withContext(key).toBe(name);
+        expect(saveBytes.calls.mostRecent().args[2]).withContext(key).toBe('application/pdf');
+      }
+    });
+
+    it('never doubles _INTERNAL on a server name that already carries it', () => {
+      expect(internalServerName('Suite_Model_run42_tool_calls_INTERNAL.pdf', 'pdf')).toBe('Suite_Model_run42_tool_calls_INTERNAL.pdf');
+      expect(internalServerName('Suite_Model_20260921_160000.md', 'html')).toBe('Suite_Model_20260921_160000_INTERNAL.html');
+      expect(internalServerName('Suite_Model_20260921_160000.md', 'pdf')).toBe('Suite_Model_20260921_160000_INTERNAL.pdf');
     });
 
     it('lists a file that fails and still downloads the rest', async () => {
@@ -513,16 +836,30 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await runDownload({ reportStatus: 404 });
 
       const zip = await savedZip();
-      expect(Object.keys(zip.files).length).toBe(9);
+      expect(Object.keys(zip.files).length).toBe(11);
       expect(Object.keys(zip.files).some(name => name.startsWith('Board_Suite_GPT_Model_X_2026'))).toBeFalse();
       expect(zip.files['MANIFEST.md']).toContain('## Not included');
       expect(zip.files['MANIFEST.md']).toContain('Run report, run #42 (Markdown): the run no longer exists');
       expect(component.failures.map(f => `${f.label}: ${f.reason}`)).toEqual([
-        'Run report, run #42 (Markdown): the run no longer exists',
-        'Run report, run #42 (HTML): the run no longer exists'
+        'Run report, run #42 (PDF): the run no longer exists',
+        'Run report, run #42 (Markdown): the run no longer exists'
       ]);
       expect(host().querySelector('.dc-failures')!.textContent).toContain('the run no longer exists');
-      expect(host().querySelector('[role="status"]')!.textContent!.trim()).toBe('Downloaded 8 of 10 files as one ZIP; 2 failed.');
+      expect(host().querySelector('[role="status"]')!.textContent!.trim()).toBe('Downloaded 10 of 12 files as one ZIP; 2 failed.');
+    });
+
+    it('shows the server’s message when a PDF is refused as too large', async () => {
+      const message = 'This document is too large for a PDF (4000001 characters); download the Markdown instead.';
+      openRun();
+      choose('custom', { 'log:42': { formats: ['pdf', 'md'] } });
+
+      await runDownload({ pdfError: { pattern: /tool-call-log\/pdf$/, status: 413, body: { error: message } } });
+
+      expect(component.failures).toEqual([{ label: 'Tool-call log, run #42 (PDF)', reason: message }]);
+      expect(host().querySelector('.dc-failures')!.textContent).toContain(message);
+      const zip = await savedZip();
+      expect(Object.keys(zip.files).sort()).toEqual(['Board_Suite_GPT_Model_X_run42_tool_calls_INTERNAL.md', 'MANIFEST.md']);
+      expect(zip.files['MANIFEST.md']).toContain(`- Tool-call log, run #42 (PDF): ${message}`);
     });
 
     it('sanitizes HTML through the private converter', async () => {
@@ -556,6 +893,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await component.download();
 
       expect(saveText).not.toHaveBeenCalled();
+      expect(saveBytes).not.toHaveBeenCalled();
       expect(saveBlob).not.toHaveBeenCalled();
     });
   });
@@ -584,6 +922,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       expect(component.rows.map(r => r.key)).toEqual(['doc:1', 'doc:2', 'report:42']);
       expect(component.rows.some(r => r.kind === 'diagnostics' || r.kind === 'toolCallLog')).toBeFalse();
+      expect(row('report:42').formats).toEqual(['pdf', 'md', 'html']);
       const notices = Array.from(host().querySelectorAll('.dc-notice')).map(n => n.textContent!.trim());
       expect(notices).toContain('Run #43 no longer exists, so its run report is not listed.');
       expect(notices).toContain('Report document #9 is no longer available.');
@@ -598,8 +937,9 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(requested.every(url => ALLOWED_URLS.some(pattern => pattern.test(url)))).toBeTrue();
       const zip = await savedZip();
       expect(zip.name).toBe('gpt-model-x_internal-package_20260928_101502.zip');
-      expect(zip.times.get('Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.md')?.getTime())
-        .toBe(new Date('2026-09-21T16:00:00Z').getTime());
+      const started = new Date('2026-09-21T16:00:00Z').getTime();
+      expect(zip.times.get('Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.md')?.getTime()).toBe(started);
+      expect(zip.times.get(REPORT_PDF_NAME)?.getTime()).toBe(started);
     });
 
     it('fails a deleted run’s report gracefully', async () => {

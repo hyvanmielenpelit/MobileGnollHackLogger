@@ -3079,6 +3079,39 @@ Collapse all. The Re-run popover is the first use of the global action popover (
 **The Markdown run report** gains an unnumbered `## At a Glance` section above `## 1. Run Manifest`. The
 numbered sections keep their numbers.
 
+### Key Figures, GnollBench Branding and PDF Downloads (2026-09-28) — No Version Bump
+
+*The run report's key figures as shareable images, and every downloadable document as a typeset PDF.*
+Nothing here grades anything: no grading prompt, score, index or comparability key changes;
+`HarnessVersion`, `ScoringMethodVersion` and `ReportFormatVersion` do not move, and the Markdown every
+existing download produces is byte-identical. No database change.
+
+**Key figures.** The run report dialog's key-figures strip sits under a **Key figures** bar, a disclosure
+button (`aria-expanded`, `aria-controls`) that collapses the strip to a one-line summary — *Intelligence
+Index … · Median model time … · Estimated cost …* — and remembers the choice in
+`localStorage['overseer.benchmark.runReport.figuresCollapsed']`. The bar's **Copy** and **Download** buttons
+export the whole strip as a PNG, and every card carries its own pair, shown while the card is hovered or
+holds focus. The images are read from the rendered cards, so they say what the dialog says, and carry the
+GnollBench logo, the run, suite, model under test, assessors, prompt, start time and status, footnotes for
+degraded figures and an export line. They are composed **square**, or landscape as near square as the
+content allows, never portrait: the strip's column count and card width are chosen for the ratio nearest
+1 : 1, and a single card widens from 640 × 640 up to 4 : 3 only for long notes.
+
+**GnollBench branding.** The GnollBench wordmark heads the AI Benchmark tab; the square emblem stands
+before *Run #N* in the run report and before the Download Center's and Report Pack dialog's titles, and
+both logos are in every PDF.
+
+**PDF downloads.** Every document in the Download Center — the three pack documents, the run report, the
+tool-call log and the run diagnostics — downloads as a PDF rendered server-side by a static QuestPDF and
+Markdig renderer: PDF/UA-1 and PDF/A-3A, embedded Source Sans 3 and Source Code Pro fonts, a title block
+with a classification banner, a running header, *Page X of Y*, bookmarks, a table of contents for the long
+documents and an *INTERNAL* watermark on internal ones. The **Provider package** now defaults to PDF only
+and the **Internal package** to PDF and Markdown (PDF and Text for the diagnostics); a paper-size choice,
+A4 or US Letter, is remembered per browser. The Download Center's stored settings move to version 2, so
+every admin meets the new defaults once. The dialog is wider and taller, and its explanations moved behind
+click-mode info buttons. The layout, endpoints and limits are in
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 8–9.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

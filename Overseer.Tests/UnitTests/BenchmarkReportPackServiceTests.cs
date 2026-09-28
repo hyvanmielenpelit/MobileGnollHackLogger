@@ -309,6 +309,55 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
+    public async Task RenderPdf_AnswersAsRenderDoes_AndRefusesAnUnknownPaper()
+    {
+        BenchmarkPdfTestSetup.Configure();
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        await using var db = new ApplicationDbContext(options);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.InternalBrief);
+        document.Id = 0;
+        db.BenchmarkReportDocuments.Add(document);
+        await db.SaveChangesAsync();
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+
+        Assert.IsType<NotFoundResult>(await controller.RenderPdf(document.Id + 1000, "full", "named", null, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await controller.RenderPdf(document.Id, "summary", "named", null, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await controller.RenderPdf(document.Id, "everything", "named", null, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await controller.RenderPdf(document.Id, "3", "named", null, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await controller.RenderPdf(document.Id, "full", "pseudonymous", null, CancellationToken.None));
+        Assert.IsType<BadRequestObjectResult>(await controller.RenderPdf(document.Id, "full", "named", "a3", CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RenderPdf_ReturnsAPdf_NamedAsTheDownloadCenterNamesTheMarkdown()
+    {
+        BenchmarkPdfTestSetup.Configure();
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        await using var db = new ApplicationDbContext(options);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        document.Id = 0;
+        db.BenchmarkReportDocuments.Add(document);
+        await db.SaveChangesAsync();
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+
+        var provider = Assert.IsType<FileContentResult>(
+            await controller.RenderPdf(document.Id, "detailed", "anonymized", "letter", CancellationToken.None));
+        var full = Assert.IsType<FileContentResult>(
+            await controller.RenderPdf(document.Id, "Full", "Named", null, CancellationToken.None));
+
+        Assert.Equal("application/pdf", provider.ContentType);
+        Assert.Equal(
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_detailed_anonymized.pdf",
+            provider.FileDownloadName);
+        Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(provider.FileContents, 0, 5));
+        Assert.Equal(
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-technical-report_full_named_INTERNAL.pdf",
+            full.FileDownloadName);
+    }
+
+    [Fact]
     public async Task List_FlagsADocumentWhoseRunWasRescoredOrDeleted()
     {
         await using var h = await Harness.CreateAsync();

@@ -303,6 +303,12 @@ snapshot** (*map*, new) and **Copy diagnostics** (*copy*). Model Comparison's **
 the AI-generation glyph of Generate Questions. Report documents are previewed with *eye* and deleted
 with *trash* on an `.action-btn-danger`.*
 
+*Changed 2026-09-28 (key figures and PDF downloads): *copy* and *download* also serve the run report's
+key-figures images — icon-only **Copy** and **Download** for the whole strip on the Key figures bar, and a
+per-card pair (`app-key-figure-card-actions`) revealed on hover or focus like the All-charts tiles, each
+named for its card and run. The Download Center's explanations moved into click-mode info tips (§4b); the
+red *Internal only* tag remains the visible short reason a row cannot be chosen.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |

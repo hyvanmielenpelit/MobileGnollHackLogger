@@ -16,6 +16,7 @@ import { BenchmarkBackgroundActivityService } from '../../services/benchmark-bac
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.component';
+import { keyFiguresImageIo } from './run-report-frame/key-figures-image';
 
 describe('AdminBenchmarkComponent', () => {
   let component: AdminBenchmarkComponent;
@@ -10254,6 +10255,183 @@ describe('AdminBenchmarkComponent', () => {
         Array.from(tr.querySelectorAll('td')).map((td: any) => td.textContent.trim()));
       expect(rows).toEqual([['Source Code', '3', '50 %'], ['Wiki', '3', '50 %']]);
       expect(aside.textContent).toContain('(n = 2)');
+    });
+
+    describe('key figures', () => {
+      const FIGURES_KEY = 'overseer.benchmark.runReport.figuresCollapsed';
+      const NOW = new Date(2026, 8, 28, 12, 34, 56);
+
+      beforeEach(() => {
+        localStorage.removeItem(FIGURES_KEY);
+        spyOn(keyFiguresImageIo, 'loadImage').and.callFake(() => Promise.reject(new Error('404')));
+        spyOn(keyFiguresImageIo, 'now').and.returnValue(NOW);
+      });
+
+      afterEach(() => {
+        localStorage.removeItem(FIGURES_KEY);
+      });
+
+      function dialog(): HTMLElement {
+        return fixture.nativeElement.querySelector('.benchmark-run-detail-dialog') as HTMLElement;
+      }
+
+      function status(): string {
+        return (runActions().querySelector('.rr-status[role="status"]')?.textContent || '').trim();
+      }
+
+      /** Clicks a button whose handler is async, and waits for the handler to finish. */
+      async function clickAndSettle(button: HTMLButtonElement, handler: jasmine.Spy): Promise<void> {
+        button.click();
+        await handler.calls.mostRecent().returnValue;
+        fixture.detectChanges();
+      }
+
+      it('should show the GnollBench wordmark above the tab row and the emblem before the run title', () => {
+        component.selectedRunDetail = reportRun();
+        fixture.detectChanges();
+
+        const wordmark = fixture.nativeElement.querySelector('.benchmark-container > .bm-brand > img.gnollbench-wordmark') as HTMLImageElement;
+        expect(wordmark).toBeTruthy();
+        expect(wordmark.getAttribute('alt')).toBe('GnollBench');
+        expect(wordmark.getAttribute('width')).toBe('978');
+        expect(wordmark.getAttribute('height')).toBe('256');
+        const tabs = fixture.nativeElement.querySelector('.gh-tabs[role="tablist"]') as HTMLElement;
+        expect(wordmark.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+        const emblem = dialog().querySelector('.dialog-title-row > img.gnollbench-emblem') as HTMLImageElement;
+        expect(emblem).toBeTruthy();
+        expect(emblem.getAttribute('alt')).toBe('');
+        expect(emblem.getAttribute('src')).toBe('/img/gnollbench/gnollbench-logo-v3-256.webp');
+        expect(emblem.nextElementSibling?.id).toBe('runDetailTitle');
+      });
+
+      it('should put a key-figures toggle, a summary and the strip actions in a bar above the cards', () => {
+        component.selectedRunDetail = reportRun({ qualityIndex: 73, qualityIndexStandardError: 4, estimatedCost: 3.2322 });
+        fixture.detectChanges();
+
+        const toggle = dialog().querySelector('.rrf-figures-toggle') as HTMLButtonElement;
+        const figures = dialog().querySelector('.rrf-figures') as HTMLElement;
+        const summary = dialog().querySelector('.rrf-figures-summary') as HTMLElement;
+        expect(toggle.getAttribute('aria-expanded')).toBe('true');
+        expect(toggle.getAttribute('aria-controls')).toBe(figures.id);
+        expect(summary.hidden).toBeTrue();
+
+        const text = (summary.textContent || '').trim();
+        expect(text).toBe(component.keyFiguresSummary);
+        expect(text).toContain('Intelligence Index 73 / 100 ± 8 · ');
+        expect(text).toContain(' · Estimated cost $3.2322');
+
+        const group = dialog().querySelector('.rrf-figures-actions [role="group"][aria-label="Key figures actions"]') as HTMLElement;
+        const names = Array.from(group.querySelectorAll('button')).map(b => b.getAttribute('aria-label'));
+        expect(names).toEqual(['Copy key figures of run 55 as an image', 'Download key figures of run 55 as a PNG image']);
+        for (const button of Array.from(group.querySelectorAll('button'))) {
+          const tip = group.querySelector('#' + button.getAttribute('interestfor')) as HTMLElement;
+          expect(tip.getAttribute('popover')).toBe('hint');
+          expect(button.getAttribute('style')).toContain('anchor-name: --' + tip.id);
+          expect(tip.getAttribute('style')).toContain('position-anchor: --' + tip.id);
+        }
+
+        toggle.click();
+        fixture.detectChanges();
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
+        expect(figures.hidden).toBeTrue();
+        expect(summary.hidden).toBeFalse();
+        expect(figures.querySelectorAll('.score-card').length).toBeGreaterThan(0);
+        expect(localStorage.getItem(FIGURES_KEY)).toBe('1');
+      });
+
+      it('should give every score card its own card actions, as its last child', () => {
+        component.selectedRunDetail = reportRun({ estimatedCandidateCost: 1, pricingIncomplete: true });
+        fixture.detectChanges();
+
+        const cards = Array.from(dialog().querySelectorAll('.score-card')) as HTMLElement[];
+        expect(cards.length).toBeGreaterThan(5);
+        for (const card of cards) {
+          const label = (card.querySelector('.score-label')?.textContent || '').trim();
+          const actions = card.querySelectorAll(':scope > app-key-figure-card-actions');
+          expect(actions.length).withContext(label).toBe(1);
+          expect(card.lastElementChild?.tagName.toLowerCase()).withContext(label).toBe('app-key-figure-card-actions');
+          const copy = actions[0].querySelector('button') as HTMLButtonElement;
+          expect(copy.getAttribute('aria-label')).withContext(label).toBe(`Copy ${label} of run 55 as an image`);
+        }
+      });
+
+      it('should copy the strip and announce each copy outcome', async () => {
+        component.selectedRunDetail = reportRun();
+        fixture.detectChanges();
+        const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
+        const handler = spyOn(component, 'copyKeyFigures').and.callThrough();
+        const button = dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement;
+
+        await clickAndSettle(button, handler);
+        expect(copy).toHaveBeenCalledTimes(1);
+        expect((copy.calls.mostRecent().args[0] as Blob).type).toBe('image/png');
+        expect(status()).toBe('Key figures copied as an image.');
+
+        copy.and.resolveTo('unsupported');
+        await clickAndSettle(button, handler);
+        expect(status()).toBe('This browser cannot copy images here; use Download instead.');
+
+        copy.and.resolveTo('denied');
+        await clickAndSettle(button, handler);
+        expect(status()).toBe('Could not copy the image.');
+        expect(component.keyFiguresExporting).toBeFalse();
+      });
+
+      it('should copy one card and name it in the status line', async () => {
+        component.selectedRunDetail = reportRun();
+        fixture.detectChanges();
+        const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
+        const handler = spyOn(component, 'exportKeyFigureCard').and.callThrough();
+        const card = dialog().querySelector('.score-card.main-score') as HTMLElement;
+
+        await clickAndSettle(card.querySelector('app-key-figure-card-actions button') as HTMLButtonElement, handler);
+
+        expect(handler.calls.mostRecent().args[0]).toEqual({ action: 'copy', card });
+        expect(copy).toHaveBeenCalledTimes(1);
+        expect(status()).toBe('Intelligence Index copied as an image.');
+      });
+
+      it('should download the strip through the IO holder', async () => {
+        component.selectedRunDetail = reportRun();
+        fixture.detectChanges();
+        const save = spyOn(keyFiguresImageIo, 'save');
+        const handler = spyOn(component, 'downloadKeyFigures').and.callThrough();
+
+        await clickAndSettle(dialog().querySelector('#rr-figures-download-btn') as HTMLButtonElement, handler);
+
+        expect(save).toHaveBeenCalledTimes(1);
+        const [blob, fileName] = save.calls.mostRecent().args;
+        expect(blob.type).toBe('image/png');
+        expect(fileName).toBe('gnollbench_run55_default-suite_test-model_key-figures_20260928_123456.png');
+        expect(status()).toBe('Image downloaded.');
+      });
+
+      it('should refuse a second export while one runs, and mark the buttons aria-disabled', async () => {
+        component.selectedRunDetail = reportRun();
+        component.keyFiguresExporting = true;
+        fixture.detectChanges();
+        const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
+
+        const strip = dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement;
+        expect(strip.getAttribute('aria-disabled')).toBe('true');
+        const cardCopy = dialog().querySelector('.score-card app-key-figure-card-actions button') as HTMLButtonElement;
+        expect(cardCopy.getAttribute('aria-disabled')).toBe('true');
+
+        await component.copyKeyFigures();
+        cardCopy.click();
+        expect(copy).not.toHaveBeenCalled();
+        component.keyFiguresExporting = false;
+      });
+
+      it('should describe the run in the image context as the dialog header does', () => {
+        const run = reportRun({ isPanelRun: true, coAssessorModelDisplayNameUsed: 'Second Assessor' });
+        const context = component.keyFiguresContext(run);
+        expect(context.title).toBe('Run #55 · Default Suite');
+        expect(context.lines[0]).toBe('Model: Test Model · Assessor: Test Assessor + Second Assessor');
+        expect(context.lines[1]).toMatch(/^Started \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC · Completed$/);
+        expect([context.runId, context.suiteName, context.modelName]).toEqual([55, 'Default Suite', 'Test Model']);
+      });
     });
   });
 });

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable, map } from 'rxjs';
+import { HttpClient, HttpErrorResponse, HttpParams, HttpResponse } from '@angular/common/http';
+import { Observable, catchError, map, throwError } from 'rxjs';
 
 // The comparison wire contract lives beside the view that renders it, so both consumers read one
 // declaration. The reverse edge in that file is an `import type`, which TypeScript erases, so the
@@ -2240,6 +2240,43 @@ export interface BenchmarkTextFile {
   fileName: string;
 }
 
+/** The paper a PDF is laid out on. */
+export type BenchmarkPdfPaper = 'a4' | 'letter';
+
+/** A binary file fetched from the server, with the name its `Content-Disposition` gave it, if any. */
+export interface BenchmarkBinaryFile {
+  bytes: Uint8Array;
+  fileName: string | null;
+}
+
+/**
+ * An error of an `arraybuffer` request with its body decoded: JSON (`{ error }`) where it parses,
+ * else the text. Anything else is returned unchanged.
+ */
+export function decodeBinaryErrorBody(error: unknown): unknown {
+  if (!(error instanceof HttpErrorResponse) || !(error.error instanceof ArrayBuffer)) {
+    return error;
+  }
+  let body: unknown = null;
+  try {
+    const text = new TextDecoder().decode(new Uint8Array(error.error));
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = text;
+    }
+  } catch {
+    body = null;
+  }
+  return new HttpErrorResponse({
+    error: body,
+    headers: error.headers,
+    status: error.status,
+    statusText: error.statusText,
+    url: error.url ?? undefined
+  });
+}
+
 /**
  * The file name a `Content-Disposition` header carries: `filename*=UTF-8''…` first (RFC 5987,
  * percent-decoded), then `filename="…"` or a bare `filename=…`, else the fallback.
@@ -2857,6 +2894,49 @@ export class AdminBenchmarkService {
         text: response.body ?? '',
         fileName: fileNameFromContentDisposition(response.headers.get('Content-Disposition'), fallbackName)
       }))
+    );
+  }
+
+  // PDFs, rendered by the server on a4 or letter paper. A 413 means the source is too large for one.
+
+  /** The document as a PDF at the given disclosure and peer naming. */
+  getReportDocumentPdf(
+    id: number,
+    disclosure: BenchmarkReportDisclosure,
+    peers: BenchmarkReportPeerNaming,
+    paper: BenchmarkPdfPaper
+  ): Observable<BenchmarkBinaryFile> {
+    const params = new HttpParams()
+      .set('disclosure', reportDisclosureParam(disclosure))
+      .set('peers', reportPeerNamingParam(peers))
+      .set('paper', paper);
+    return this.binaryFile(this.http.get(`/api/admin/benchmark/report-documents/${id}/render/pdf`,
+      { params, observe: 'response', responseType: 'arraybuffer' }));
+  }
+
+  getRunReportPdf(runId: number, paper: BenchmarkPdfPaper): Observable<BenchmarkBinaryFile> {
+    return this.binaryFile(this.http.get(`${this.getRunReportUrl(runId)}/pdf`,
+      { params: new HttpParams().set('paper', paper), observe: 'response', responseType: 'arraybuffer' }));
+  }
+
+  getToolCallLogPdf(runId: number, paper: BenchmarkPdfPaper): Observable<BenchmarkBinaryFile> {
+    return this.binaryFile(this.http.get(`${this.getToolCallLogUrl(runId)}/pdf`,
+      { params: new HttpParams().set('paper', paper), observe: 'response', responseType: 'arraybuffer' }));
+  }
+
+  /** The diagnostics text the client captured, as a PDF; the server renders it and stores nothing. */
+  renderDiagnosticsPdf(runId: number, text: string, capturedAtUtc: string, paper: BenchmarkPdfPaper): Observable<BenchmarkBinaryFile> {
+    return this.binaryFile(this.http.post(`/api/admin/benchmark/runs/${runId}/diagnostics/pdf`, { text, capturedAtUtc },
+      { params: new HttpParams().set('paper', paper), observe: 'response', responseType: 'arraybuffer' }));
+  }
+
+  private binaryFile(request: Observable<HttpResponse<ArrayBuffer>>): Observable<BenchmarkBinaryFile> {
+    return request.pipe(
+      map(response => ({
+        bytes: new Uint8Array(response.body ?? new ArrayBuffer(0)),
+        fileName: fileNameFromContentDisposition(response.headers.get('Content-Disposition'), '') || null
+      })),
+      catchError((error: unknown) => throwError(() => decodeBinaryErrorBody(error)))
     );
   }
 }

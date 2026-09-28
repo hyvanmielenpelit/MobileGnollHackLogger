@@ -3,9 +3,13 @@
         (close)="onDialogClose()">
   <div class="dialog-content">
     <div class="dialog-header">
-      <div class="dialog-title-group">
-        <h3 [id]="idPrefix + '-title'">Downloads</h3>
-        <p class="dialog-subtitle">{{ subtitle }}</p>
+      <div class="dc-title-row">
+        <!-- Decorative: the title beside it names the dialog. -->
+        <img class="gnollbench-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="28" height="28">
+        <div class="dialog-title-group">
+          <h3 [id]="idPrefix + '-title'">Downloads</h3>
+          <p class="dialog-subtitle">{{ subtitle }}</p>
+        </div>
       </div>
       <button type="button" class="btn-icon-action" aria-label="Close downloads"
               [attr.interestfor]="idPrefix + '-close-tip'"
@@ -22,21 +26,39 @@
 
     <div class="dialog-body dc-body">
       <div class="dc-layout">
-        <!-- Left: the package, which sets every row's choices. -->
+        <!-- Left: the package, which sets every row's choices, and the PDF paper size. -->
         <section class="dc-package" [attr.aria-labelledby]="idPrefix + '-package-legend'">
           <fieldset class="gh-choice dc-package-choice" [disabled]="preparing">
             <legend [id]="idPrefix + '-package-legend'">Package</legend>
             @for (pkg of packages; track pkg.id) {
-              <label class="gh-radio dc-package-card" [class.is-selected]="packageId === pkg.id">
-                <input type="radio" [name]="idPrefix + '-package'" [value]="pkg.id"
-                       [id]="idPrefix + '-package-' + pkg.id"
-                       [checked]="packageId === pkg.id"
-                       [attr.aria-describedby]="idPrefix + '-package-' + pkg.id + '-desc'"
-                       (change)="selectPackage(pkg.id)">
-                <span class="dc-package-text">
+              <!-- The info button sits beside the label: a button may not sit inside a <label>. -->
+              <div class="dc-package-card" [class.is-selected]="packageId === pkg.id">
+                <label class="gh-radio dc-package-label">
+                  <input type="radio" [name]="idPrefix + '-package'" [value]="pkg.id"
+                         [id]="idPrefix + '-package-' + pkg.id"
+                         [checked]="packageId === pkg.id"
+                         [attr.aria-describedby]="idPrefix + '-package-' + pkg.id + '-desc'"
+                         (change)="selectPackage(pkg.id)">
                   <span class="dc-package-name">{{ pkg.name }}</span>
-                  <span class="dc-package-desc" [id]="idPrefix + '-package-' + pkg.id + '-desc'">{{ pkg.description }}</span>
-                </span>
+                </label>
+                <app-info-tip trigger="click" [tipId]="idPrefix + '-package-' + pkg.id + '-desc'" [subject]="pkg.name">{{ pkg.description }}</app-info-tip>
+              </div>
+            }
+          </fieldset>
+
+          <fieldset class="gh-choice dc-paper-choice" [disabled]="preparing">
+            <legend [id]="idPrefix + '-paper-legend'">
+              PDF paper size
+              <app-info-tip trigger="click" [tipId]="idPrefix + '-paper-tip'" subject="PDF paper size">Letter suits readers in North America; A4 everywhere else.</app-info-tip>
+            </legend>
+            @for (option of papers; track option.id) {
+              <label class="gh-radio">
+                <input type="radio" [name]="idPrefix + '-paper'" [value]="option.id"
+                       [id]="idPrefix + '-paper-' + option.id"
+                       [checked]="paper === option.id"
+                       [attr.aria-describedby]="idPrefix + '-paper-tip'"
+                       (change)="selectPaper(option.id)">
+                {{ option.label }}
               </label>
             }
           </fieldset>
@@ -87,11 +109,76 @@
               <thead>
                 <tr>
                   <th scope="col" class="dc-col-check"><span class="visually-hidden">Include</span></th>
-                  <th scope="col">Document</th>
-                  <th scope="col">Sharing</th>
-                  <th scope="col">Disclosure</th>
-                  <th scope="col">Names</th>
-                  <th scope="col">Formats</th>
+                  <th scope="col" class="dc-col-document">Document</th>
+                  <th scope="col" class="dc-col-sharing">
+                    <span class="dc-th">
+                      Sharing
+                      <app-info-tip trigger="click" [tipId]="idPrefix + '-sharing-tip'" subject="Sharing">Shareable documents may go to a model&rsquo;s provider; internal-only ones never leave the Overseer team.</app-info-tip>
+                    </span>
+                  </th>
+                  <th scope="col" class="dc-col-disclosure">
+                    <span class="dc-th">
+                      Disclosure
+                      <app-info-tip trigger="click" [tipId]="idPrefix + '-disclosure-tip'" subject="Disclosure">
+                        <dl>
+                          <div>
+                            <dt><span class="gh-info-term">Summary</span></dt>
+                            <dd>Questions described by topic, never quoted; no rubrics, answers or grader evidence.</dd>
+                          </div>
+                          <div>
+                            <dt><span class="gh-info-term">Detailed</span></dt>
+                            <dd>The questions discussed, verbatim, with answer excerpts; no rubrics or grader evidence.</dd>
+                          </div>
+                          <div>
+                            <dt><span class="gh-info-term">Full</span></dt>
+                            <dd>Every question, rubric and grader evidence verbatim, with answer excerpts; internal only.</dd>
+                          </div>
+                        </dl>
+                      </app-info-tip>
+                    </span>
+                  </th>
+                  <th scope="col" class="dc-col-names">
+                    <span class="dc-th">
+                      Names
+                      <app-info-tip trigger="click" [tipId]="idPrefix + '-names-tip'" subject="Names">
+                        <dl>
+                          <div>
+                            <dt><span class="gh-info-term">Named</span></dt>
+                            <dd>Peer models appear under their own names and providers.</dd>
+                          </div>
+                          <div>
+                            <dt><span class="gh-info-term">Anonymized</span></dt>
+                            <dd>Peers appear as Model A, Model B&hellip; without providers; the subject is always named.</dd>
+                          </div>
+                        </dl>
+                      </app-info-tip>
+                    </span>
+                  </th>
+                  <th scope="col" class="dc-col-formats">
+                    <span class="dc-th">
+                      Formats
+                      <app-info-tip trigger="click" [tipId]="idPrefix + '-formats-tip'" subject="Formats">
+                        <dl>
+                          <div>
+                            <dt><span class="gh-info-term">PDF</span></dt>
+                            <dd>For reading and sending: accessible (PDF/UA) and archival (PDF/A).</dd>
+                          </div>
+                          <div>
+                            <dt><span class="gh-info-term">Markdown</span></dt>
+                            <dd>For tools and AI agents.</dd>
+                          </div>
+                          <div>
+                            <dt><span class="gh-info-term">HTML</span></dt>
+                            <dd>For reading in a browser.</dd>
+                          </div>
+                          <div>
+                            <dt><span class="gh-info-term">Text</span></dt>
+                            <dd>The run diagnostics, as captured.</dd>
+                          </div>
+                        </dl>
+                      </app-info-tip>
+                    </span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -106,23 +193,29 @@
                                [checked]="selectable && state.selected"
                                [disabled]="!selectable || preparing"
                                [attr.aria-label]="'Include ' + row.label"
-                               [attr.aria-describedby]="!selectable ? rid + '-reason' : null"
+                               [attr.aria-describedby]="rowDescribedBy(row)"
                                (change)="toggleRow(row, $event)">
                       </label>
                     </td>
                     <td class="dc-col-document">
-                      <span class="dc-doc-label">{{ row.label }}</span>
+                      <span class="dc-doc-label-row">
+                        <span class="dc-doc-label">{{ row.label }}</span>
+                        @if (row.note) {
+                          <app-info-tip trigger="click" [tipId]="rid + '-note'" [subject]="row.label">{{ row.note }}</app-info-tip>
+                        }
+                      </span>
                       <span class="dc-doc-detail">{{ row.detail }}</span>
                       @if (row.runChanged) {
                         <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
                       }
-                      @if (!selectable) {
-                        <span class="dc-reason" [id]="rid + '-reason'">{{ internalReasonOf(row) }}</span>
-                      }
                     </td>
                     <td class="dc-col-sharing">
                       @if (isInternalOnly(row)) {
-                        <span class="gh-tag gh-tag-internal">Internal only</span>
+                        <!-- The tag stays on screen: it is the short form of why the row may be unselectable. -->
+                        <span class="dc-sharing">
+                          <span class="gh-tag gh-tag-internal">Internal only</span>
+                          <app-info-tip trigger="click" [tipId]="rid + '-reason'" [subject]="'Internal only: ' + row.label">{{ internalReasonOf(row) }}</app-info-tip>
+                        </span>
                       } @else {
                         <span class="gh-tag gh-tag-shareable">Shareable</span>
                       }
@@ -172,7 +265,7 @@
                           }
                         </span>
                         @if (state.formats.length === 0) {
-                          <span class="dc-reason">No format chosen</span>
+                          <span class="dc-format-none">No format chosen</span>
                         }
                       } @else {
                         <span class="dc-format-fixed">{{ formatLabel(row.formats[0]) }} only</span>

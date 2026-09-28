@@ -34,10 +34,18 @@
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
   </ItemGroup>
 
+  <!-- PDF export of benchmark documents. QuestPDF (Community license) lays out and tags the
+       PDF and carries native SkiaSharp binaries; Markdig parses the Markdown it renders. -->
+  <ItemGroup>
+    <PackageReference Include="QuestPDF" Version="2026.9.1" />
+    <PackageReference Include="Markdig" Version="1.4.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <Content Include="ToolGuides\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Update="Data\**" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="Services\ModelCatalogs\*.json" />
+    <EmbeddedResource Include="Resources\Pdf\**" />
   </ItemGroup>
 
   <ItemGroup>

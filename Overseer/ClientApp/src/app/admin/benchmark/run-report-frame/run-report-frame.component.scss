@@ -64,9 +64,73 @@
   border-block-end: 1px solid var(--border-glass);
   background: var(--rrf-surface);
 
-  &:empty {
+  &:empty,
+  &[hidden] {
     display: none;
   }
+}
+
+/* The key-figures bar: the disclosure toggle, a one-line summary while the strip is collapsed, and
+   the actions right-aligned. The strip shows and hides without a height animation. */
+.rrf-figures-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-block-size: 36px;
+  padding: 0 max(var(--rrf-pad-inline), env(safe-area-inset-right)) 0 max(var(--rrf-pad-inline), env(safe-area-inset-left));
+  border-block-end: 1px solid var(--border-glass);
+  background: var(--rrf-surface);
+}
+
+.rrf-figures-toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-inline-start: -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--title-color, var(--primary-color));
+  font-family: "Cinzel", serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.rrf-figures-summary {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: #888;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.rrf-figures-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
 }
 
 .rrf-body {

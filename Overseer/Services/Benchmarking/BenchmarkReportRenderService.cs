@@ -127,19 +127,30 @@ public class BenchmarkReportRenderService
     public async Task<(string? Markdown, bool NotFound, string? Refusal)> RenderAsync(
         long id, BenchmarkReportRenderOptions options, CancellationToken ct)
     {
+        var (markdown, _, notFound, refusal) = await RenderWithDocumentAsync(id, options, ct);
+        return (markdown, notFound, refusal);
+    }
+
+    /// <summary>
+    /// As <see cref="RenderAsync"/>, with the stored row the Markdown was rendered from, which the
+    /// PDF download takes its title block and metadata from.
+    /// </summary>
+    public async Task<(string? Markdown, BenchmarkReportDocument? Document, bool NotFound, string? Refusal)> RenderWithDocumentAsync(
+        long id, BenchmarkReportRenderOptions options, CancellationToken ct)
+    {
         var d = await _db.BenchmarkReportDocuments
             .AsNoTracking()
             .IgnoreAutoIncludes()
             .FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (d == null) return (null, true, null);
+        if (d == null) return (null, null, true, null);
 
         if (!BenchmarkReportPackRenderer.IsAllowed(d.Audience, options))
         {
-            return (null, false,
+            return (null, d, false,
                 $"The {AudienceName(d.Audience)} does not render at {options.Disclosure} disclosure.");
         }
 
-        return (BenchmarkReportPackRenderer.Render(d, options), false, null);
+        return (BenchmarkReportPackRenderer.Render(d, options), d, false, null);
     }
 
     public async Task<bool> DeleteAsync(long id, CancellationToken ct)

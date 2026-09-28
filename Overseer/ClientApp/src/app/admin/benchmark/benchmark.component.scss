@@ -2637,6 +2637,12 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .rr-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .rr-status { font-size: 12px; color: #888; }
 .rr-figures { display: contents; }
+.rr-figure-actions { display: flex; align-items: center; gap: 4px; .action-btn { margin: 0; } }
+// Each card's Copy and Download show while it is hovered or holds focus, always without hover.
+.score-card { position: relative; }
+.score-card:is(:hover, :focus-within) app-key-figure-card-actions { opacity: 1; }
+@media (hover: none) { .score-card app-key-figure-card-actions { opacity: 1; } }
+.bm-brand { padding: 4px 0 12px; }
 .rr-skeleton { min-height: 64px; margin-bottom: 12px; border-radius: 6px; background: #1c1c1c; }
 .rr-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .question-actions { flex-wrap: wrap; }

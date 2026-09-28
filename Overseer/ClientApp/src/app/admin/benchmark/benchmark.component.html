@@ -1,4 +1,7 @@
 <div class="benchmark-container">
+  <!-- The width and height attributes reserve the wordmark's box, so nothing shifts on load. -->
+  <div class="bm-brand"><img class="gnollbench-wordmark" src="/img/gnollbench/gnollbench-wide-v3-h256.webp" alt="GnollBench" width="978" height="256"></div>
+
   <!-- Benchmark Sub-Navigation -->
   <div class="gh-tabs gh-tabs-secondary" role="tablist" aria-label="Benchmark sections">
     <button
@@ -1497,9 +1500,12 @@
 <dialog #runDetailDialog class="gh-dialog gh-dialog-fullscreen benchmark-run-detail-dialog"
         aria-labelledby="runDetailTitle" (close)="onRunDetailClosed($event)">
   @if (selectedRunDetail || runDetailRequestedId != null) {
-    <app-run-report-frame mainLabel="Findings and questions" asideLabel="Run details" [busy]="loadingDetail">
+    <app-run-report-frame mainLabel="Findings and questions" asideLabel="Run details" [busy]="loadingDetail"
+                          [figuresCollapsible]="true" figuresStorageKey="overseer.benchmark.runReport.figuresCollapsed">
       <div runReportHeader class="dialog-title-group">
         <div class="dialog-title-row">
+          <!-- Decorative: the title beside it names the run. -->
+          <img class="gnollbench-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="28" height="28">
           @if (selectedRunDetail) {
             <h3 id="runDetailTitle">Run #{{ selectedRunDetail.id }}: {{ selectedRunDetail.suiteName }}</h3>
             <div class="dialog-title-badges">
@@ -1625,6 +1631,7 @@
                 <span class="score-note">{{ selectedRunDetail.unansweredQuestionCount }} question(s) unanswered — the model produced no text, and each scores 0 here</span>
               }
             }
+            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Intelligence Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
           </div>
           @if (selectedRunDetail.rawQualityIndex != null && selectedRunDetail.rawQualityIndex !== (selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)) {
             <div class="score-card">
@@ -1632,6 +1639,7 @@
               <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.rawQualityIndex)">
                 {{ selectedRunDetail.rawQualityIndex }} / 100
               </span>
+              <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Raw Quality Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
             </div>
           }
           <!--
@@ -1647,6 +1655,7 @@
                 {{ selectedRunDetail.unweightedQualityIndex }} / 100
               </span>
               <span class="score-note">weighting {{ weightingDeltaLabel }}</span>
+              <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Unweighted Mean" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
             </div>
           }
           <!--
@@ -1688,6 +1697,7 @@
                 <span class="score-note" [title]="speedIndexSaturationAdvisoryTitle">saturated &mdash; {{ speedIndexCeilingAnswerCount }} of {{ speedIndexScoredAnswerCount }} at the ceiling; compare median model time</span>
               }
             }
+            <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="demoteSpeedIndex ? 'Median Model Time' : 'Speed Index'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
           </div>
           <!--
             Grader agreement, never without its coverage. A mean delta over trigger-selected
@@ -1706,6 +1716,7 @@
               </span>
               <span class="score-note">ICC {{ panelIccLabel }} · mean B − A {{ panelSignedDeltaLabel }}</span>
               <span class="score-note">{{ selectedRunDetail.panelDisagreementCount ?? 0 }} disagreement(s) over {{ selectedRunDetail.panelGradedAnswerCount ?? 0 }} answers both scored</span>
+              <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Panel" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
             </div>
           }
           @if (showAgreementTile) {
@@ -1723,6 +1734,7 @@
                 }
               </span>
               <span class="score-note">{{ agreementCoverageLabel }} · {{ agreementModeLabel }} · {{ secondOpinionBlindLabel }}</span>
+              <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
             </div>
           }
           <div class="score-card">
@@ -1731,6 +1743,7 @@
             @if (selectedRunDetail.isPanelRun) {
               <span class="score-note">member A; member B {{ selectedRunDetail.coAssessorFinalScore ?? 'N/A' }} / 100</span>
             }
+            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Holistic Assessor Score" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
           </div>
           <!--
             The pair the report prints as Total Candidate Answer Time and Total Elapsed Wall Time.
@@ -1741,11 +1754,13 @@
             <span class="score-label">Answer Duration</span>
             <span class="score-subvalue">{{ runAnswerDurationLabel(selectedRunDetail) }}</span>
             <span class="score-note">{{ runAnswerDurationNote(selectedRunDetail) }}</span>
+            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Answer Duration" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
           </div>
           <div class="score-card">
             <span class="score-label">Elapsed Wall Time</span>
             <span class="score-subvalue">{{ runWallClockLabel(selectedRunDetail) }}</span>
             <span class="score-note">{{ runWallClockNote(selectedRunDetail) }}</span>
+            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Elapsed Wall Time" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
           </div>
           <!--
             H5. A pair: what the model under test cost, and the catalog total beside it. On run 13
@@ -1764,6 +1779,7 @@
                 }
               </span>
               <span class="score-note">{{ candidateCostShareLabel(selectedRunDetail) }}</span>
+              <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Model Under Test" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
             </div>
           }
           <div class="score-card">
@@ -1775,6 +1791,7 @@
               }
             </span>
             <span class="score-note">{{ selectedRunDetail.pricingSource || 'Pricing unknown' }}</span>
+            <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Estimated Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
           </div>
         </div>
       } @else if (loadingDetail) {
@@ -1783,6 +1800,33 @@
           <div class="rr-skeleton"></div>
           <div class="rr-skeleton"></div>
           <div class="rr-skeleton"></div>
+        </div>
+      }
+
+      <!-- The key-figures bar. Separate blocks: a block projects by its selector only with one root. -->
+      @if (selectedRunDetail) {
+        <span runReportFiguresSummary>{{ keyFiguresSummary }}</span>
+      }
+      @if (selectedRunDetail) {
+        <div runReportFiguresActions class="rr-figure-actions" role="group" aria-label="Key figures actions">
+          <button type="button" class="action-btn" id="rr-figures-copy-btn"
+                  [attr.aria-label]="'Copy key figures of run ' + selectedRunDetail.id + ' as an image'"
+                  [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
+                  interestfor="rr-figures-copy-tip" [attr.style]="'anchor-name: --rr-figures-copy-tip'"
+                  (click)="copyKeyFigures()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" id="rr-figures-copy-tip"
+               [attr.style]="'position-anchor: --rr-figures-copy-tip'">Copy key figures as an image</div>
+          <button type="button" class="action-btn" id="rr-figures-download-btn"
+                  [attr.aria-label]="'Download key figures of run ' + selectedRunDetail.id + ' as a PNG image'"
+                  [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
+                  interestfor="rr-figures-download-tip" [attr.style]="'anchor-name: --rr-figures-download-tip'"
+                  (click)="downloadKeyFigures()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" id="rr-figures-download-tip"
+               [attr.style]="'position-anchor: --rr-figures-download-tip'">Download key figures as PNG</div>
         </div>
       }
 

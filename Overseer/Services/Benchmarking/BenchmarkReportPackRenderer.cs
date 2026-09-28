@@ -1028,7 +1028,7 @@ public static class BenchmarkReportPackRenderer
         return copy;
     }
 
-    private static string Stamp(BenchmarkReportDisclosure disclosure) => disclosure switch
+    internal static string Stamp(BenchmarkReportDisclosure disclosure) => disclosure switch
     {
         BenchmarkReportDisclosure.Summary => SummaryStamp,
         BenchmarkReportDisclosure.Detailed => DetailedStamp,

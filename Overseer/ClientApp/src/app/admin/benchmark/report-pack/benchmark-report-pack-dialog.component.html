@@ -10,7 +10,11 @@
   <app-run-report-frame mainLabel="New report pack" asideLabel="Documents"
                         [busy]="documentsLoading || writersLoading">
     <div runReportHeader class="rp-identity">
-      <h3 #reportPackHeading id="rp-title" tabindex="-1">Report packs</h3>
+      <div class="dialog-title-group align-items-center">
+        <!-- Decorative: the title beside it names the dialog. -->
+        <img class="gnollbench-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="28" height="28">
+        <h3 #reportPackHeading id="rp-title" tabindex="-1">Report packs</h3>
+      </div>
       <p class="rp-subtitle">{{ subtitle }}</p>
     </div>
 
