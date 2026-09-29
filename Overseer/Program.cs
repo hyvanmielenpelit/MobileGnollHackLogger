@@ -136,6 +136,10 @@ builder.Services.AddHttpClient("AiProvider", client =>
     client.Timeout = TimeSpan.FromSeconds(
         builder.Configuration.GetValue<int>("AiRateLimitSettings:RequestTimeoutSeconds", 600));
 });
+builder.Services.AddHttpClient("ApiKeyValidation", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
 builder.Services.AddSingleton<WikiService>();
 builder.Services.AddSingleton<NetHackWikiService>();
 builder.Services.AddSingleton<SourceCodeService>();
@@ -299,6 +303,8 @@ builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkSeriesOrch
 // compliance guard per call rather than capturing scoped services.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.DefaultSuiteCatalogService>();
 builder.Services.AddScoped<SettingsService>();
+builder.Services.AddSingleton<Overseer.Services.IApiKeyValidator, Overseer.Services.ApiKeyValidator>();
+builder.Services.AddScoped<Overseer.Services.SystemDefaultApiKeyService>();
 builder.Services.AddScoped<Overseer.Services.ChatRetentionService>();
 builder.Services.AddScoped<Overseer.Services.DatabaseStorageMetricsService>();
 builder.Services.AddHostedService<Overseer.Services.DatabaseMaintenanceBackgroundService>();

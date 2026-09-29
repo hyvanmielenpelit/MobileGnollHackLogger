@@ -1,0 +1,88 @@
+@use '../../admin/benchmark/benchmark-dialog-frame' as frame;
+
+/* The key verification warning dialog.
+ *
+ * Layout and component-local presentation only. .btn-gh and its variants, .btn-icon-action,
+ * .gh-tooltip and .gh-dialog come from styles.scss and are never redefined here.
+ */
+
+.gh-dialog.kv-dialog {
+  @include frame.frame($width: 36rem);
+}
+
+.dialog-body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.dialog-title-group h3:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
+}
+
+.kv-lead {
+  margin: 0 0 16px;
+  color: #e4e4e7;
+}
+
+.kv-subheading {
+  margin: 0 0 8px;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.kv-detail {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+
+  > div {
+    display: grid;
+    grid-template-columns: minmax(7rem, auto) 1fr;
+    gap: 12px;
+  }
+
+  dt {
+    color: #a1a1aa;
+  }
+
+  dd {
+    margin: 0;
+    min-width: 0;
+    color: #e4e4e7;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 480px) {
+    > div {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+  }
+}
+
+.kv-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
+}
+
+.kv-pre {
+  white-space: pre-wrap;
+}
+
+.kv-message {
+  margin: 0 0 16px;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+}
+
+.kv-note {
+  margin: 0;
+  color: #a1a1aa;
+  font-size: var(--text-secondary);
+}
+
+.kv-save-anyway[aria-disabled="true"] {
+  cursor: progress;
+}

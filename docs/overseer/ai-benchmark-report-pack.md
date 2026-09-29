@@ -46,7 +46,7 @@ is omitted from ranking, and the fact sheet marks the affected facts unavailable
 
 | Document | Reader | Disclosure | Skeleton |
 |---|---|---|---|
-| **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Any level | Headline (one sentence) · key figures · *What it did well* (at most 3, each at most 30 words) · *Where it fell short* (at most 3, each at most 30 words) · *What this means for use as a game assistant* (at most 90 words) · *How reliable this result is* (at most 60 words) · *Evaluation terms* |
+| **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Summary or Full (§ 6) | Headline (one sentence) · key figures · *What it did well* (at most 3, each at most 30 words) · *Where it fell short* (at most 3, each at most 30 words) · *What this means for use as a game assistant* (at most 90 words) · *How reliable this result is* (at most 60 words) · *Evaluation terms* |
 | **Report for AI Researchers and Developers** (stored as `TechnicalReport`) | AI researchers and model developers. Precise and neutral | Any level | Headline · abstract (at most 150 words) · figures against the peers · *Speed and cost* · *Why it scored this way* (the patterns and causes behind the weaknesses, by category, at most 300 words) then *Weaknesses* · *What worked well* (the patterns behind the strengths, at most 150 words) then *Strengths* (at most 8 of each) · question topics for every question · a note for each question more than 15 points below the peer mean or with a critical error (with no peers: scoring below 50 or with a critical error) · at most 6 recommendations for the model's next iteration, each naming the change proposed and, in a few words, the weakness it answers, with its evidence · *Evaluation terms* |
 | **Internal Improvement Brief** | The Overseer team and its AI agents. Direct and practical | **Full only**; internal | Headline · three parts in the order of *What the Benchmark Is For*: the Overseer chat and its tools, the benchmarking system, the model's result · strengths and weaknesses · question topics and notes · recommendations for the chat, the benchmark or model developers · **leads** |
 
@@ -306,7 +306,7 @@ Both are chosen **at download, per document**; the stored row is the same whatev
 | Level | Question text | Rubric | Model's answer | Grader evidence | Stamp |
 |---|---|---|---|---|---|
 | **Summary** | Topic only | Never | Never | Never | *Confidential. Prepared for the model's provider. Questions are described, not quoted.* |
-| **Detailed** | Verbatim, for the questions the notes discuss | Never | Excerpts | Never | *Confidential. Prepared for the model's provider. Contains benchmark questions — do not publish.* |
+| **Detailed** | Verbatim, every question | Never | Excerpts, every question | Never | *Confidential. Prepared for the model's provider. Contains benchmark questions — do not publish.* |
 | **Full** | Verbatim, every question | Verbatim | Excerpts | Verbatim | *INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.* |
 
 The stamps are audience-aware (`BenchmarkReportPackRenderer.Stamp(audience, disclosure)`). The Executive
@@ -315,12 +315,19 @@ the model's provider. Review before sharing.* and its Full stamp *INTERNAL — u
 results. Do not share outside the Overseer team.*; its Summary stamp is the one above. The PDF and Word
 classification banners use the same text.
 
+In the Report for AI Researchers and Developers, Detailed prints every question and each run's answer
+excerpt in one *Questions and answers* section; Full prints the same section as *Question details*, with
+each question's rubric, the graders' scores and notes and the claim verifier's rulings added. The notes
+on individual questions never quote them at any level: the section does.
+
 **Peer naming** is *Named* or *Anonymized*. Anonymized prints peers as *Model A*, *Model B*…, removes the
 provider column, and replaces the peers' model ids and providers in every table. The subject is always
 named.
 
-The Executive Summary and the Report for AI Researchers and Developers render at any level with either
-naming. The Internal Brief
+The Report for AI Researchers and Developers renders at any level with either naming. The Executive
+Summary is **offered** at Summary and Full only (`BenchmarkReportPackRenderer.AllowedDisclosures`, which
+fills each list item's `allowedDisclosures`), since its Detailed text is its Summary text; it still
+**renders** at Detailed (`IsAllowed`), with its own stamp, so older links keep working. The Internal Brief
 renders at **Full only**; any other combination answers 400.
 
 Why provider copies default to Summary with anonymized peers is recorded in `ai-benchmark.md` § 7
@@ -357,7 +364,12 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 3** (the current one, 2026-09-29) came from a review of the run-completion documents
+**Format version 4** (the current one, 2026-09-29) makes the disclosure levels differ visibly (§ 6): at
+Detailed the Report for AI Researchers and Developers prints every question and answer excerpt in a
+*Questions and answers* section, and the quote under each noted question is gone at Detailed and Full,
+where the section carries it. Nothing stored changed, so a format 3 document renders the same way.
+
+**Format version 3** (2026-09-29) came from a review of the run-completion documents
 written for run 73, which found the evidence repeated under every item, raw fact keys in the text, the
 quality index printed as *±* a half-width, refuted grader statements read as errors of the answer, rubric
 source notes and cut-off tables leaking into the writer's input, and the slots restating their lists:
@@ -777,8 +789,9 @@ administrator does it:
   on the run, and focus returns to the button when it closes.
 - **The write panel**, while a finished run lacks a document: one checkbox per missing document (the
   button reads **Write Report** for one and **Write Reports** for two; a written one is named as already
-  written), the report writer picker with an info tip of per-document advice (§ 4), and a live cost
-  estimate from the estimate endpoint. The picker starts on the run's own writer, else on the launcher's
+  written), the report writer picker with an (i) button that opens the per-document advice (§ 4) as a
+  modal *Choosing a report writer* dialog, and a live cost estimate from the estimate endpoint, shown as
+  an *Estimated cost* panel with the total and, for two documents, the cost of each. The picker starts on the run's own writer, else on the launcher's
   *Report Writer* when it needs neither a refusal nor a warning for this run. A refusal (the model under
   test, an unusable configuration, a run without a final synthesis) shows in red and disables the button;
   a same-provider writer shows an amber warning and, on **Write Reports**, a *Same-Provider Report
@@ -791,12 +804,18 @@ administrator does it:
   and a *Diagnostics* disclosure with **Copy** and **Download**
   (`run-<id>_ai-report-writing-diagnostics_<yyyyMMdd-HHmmss>.txt`). It polls the job every 2 s and backs
   off on failures (2, 4, 8, 16, then 30 s). **Run in Background** and the close button only stop
-  following the job, never cancel it; **Cancel Writing** asks first. When the job endpoint answers 204
-  the dialog shows the run's stored status instead. The finished dialog sums up what was written, in
+  following the job, never cancel it; **Cancel Writing** asks first. From the moment a write is accepted
+  the job endpoint answers with at least a *Queued* starting view, and a run's earlier finished job never
+  answers a new job's poll. When the endpoint answers 204 while the run's stored status is Pending or
+  Writing, the dialog keeps polling for up to 30 s after it opened; otherwise it shows the run's stored
+  status. The finished dialog sums up what was written, in
   what time and at what cost, with **Open Download Center** and **Done**.
 - **The PDF viewer** (`app-pdf-viewer-dialog`): **View** opens the stored document in a full-screen
   in-app viewer, rendered by pdf.js from the server's PDF with peers named, at the fullest disclosure the
-  document allows, and the others offered as *Summary* / *Detailed* / *Full* tabs. It has page
+  document allows, and the others offered as *Summary* / *Detailed* / *Full* tabs (*Summary* / *Full*
+  for the Executive Summary). An (i) button after the tabs opens *What Summary, Detailed and Full mean*,
+  a modal explanation of the three levels (`report-disclosure-guide.ts`, shared with the Download
+  Center's *Disclosure* column). It has page
   navigation, zoom, a selectable text layer, **Download PDF** (under the server's file name) and **Open
   in new tab**, a real same-origin URL with `inline=true`. No PDF is framed or embedded, so the CSP is
   unchanged.

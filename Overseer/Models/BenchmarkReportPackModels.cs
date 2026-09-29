@@ -24,7 +24,7 @@ public enum BenchmarkReportDisclosure
     /// <summary>Questions described by topic; no question text, rubric, answer or grader evidence.</summary>
     Summary = 1,
 
-    /// <summary>Verbatim question text and answer excerpts for the questions the notes discuss.</summary>
+    /// <summary>Verbatim text and answer excerpts for every question; no rubric or grader evidence.</summary>
     Detailed = 2,
 
     /// <summary>Everything, rubrics and grader evidence included. Internal only.</summary>

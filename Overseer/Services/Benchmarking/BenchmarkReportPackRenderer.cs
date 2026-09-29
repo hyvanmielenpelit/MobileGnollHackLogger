@@ -96,7 +96,7 @@ public static class BenchmarkReportJson
 /// </summary>
 public static class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 3;
+    public const int ReportFormatVersion = 4;
 
     private const string ProductName = "Overseer GnollHack Assistant Benchmark";
     private const string TokenPattern = @"\{\{([^{}]+)\}\}";
@@ -123,19 +123,29 @@ public static class BenchmarkReportPackRenderer
     private const string LeadsBanner = "Provisional and un-triaged. A lead is not a finding: it must go through the triage, "
         + "evidence bar and tool-layer diagnostics of `server_benchmark_to_chat_transfer` before anything is changed.";
 
-    public static IReadOnlyList<BenchmarkReportDisclosure> AllowedDisclosures(BenchmarkReportAudience audience)
-        => audience == BenchmarkReportAudience.InternalBrief
-            ? new[] { BenchmarkReportDisclosure.Full }
-            : new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full };
+    /// <summary>
+    /// The levels offered for an audience: every level for the Report for AI Researchers and
+    /// Developers, Summary and Full for the Executive Summary, whose Detailed text is its Summary
+    /// text, and Full alone for the Internal Improvement Brief. <see cref="IsAllowed"/> also accepts
+    /// the Executive Summary at Detailed.
+    /// </summary>
+    public static IReadOnlyList<BenchmarkReportDisclosure> AllowedDisclosures(BenchmarkReportAudience audience) => audience switch
+    {
+        BenchmarkReportAudience.InternalBrief => new[] { BenchmarkReportDisclosure.Full },
+        BenchmarkReportAudience.ExecutiveSummary => new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Full },
+        _ => new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full }
+    };
 
     /// <summary>
-    /// Executive Summary and Report for AI Researchers and Developers render at every level; the
-    /// Internal Improvement Brief at Full only. Either peer naming is allowed for all three.
+    /// The levels a document renders at: those <see cref="AllowedDisclosures"/> offers, and the
+    /// Executive Summary at Detailed too, which prints its Summary text under its own Detailed stamp.
+    /// Either peer naming is allowed for all three audiences.
     /// </summary>
     public static bool IsAllowed(BenchmarkReportAudience audience, BenchmarkReportRenderOptions options)
     {
         if (options == null) return false;
         if (!Enum.IsDefined(audience) || !Enum.IsDefined(options.PeerNaming) || !Enum.IsDefined(options.Disclosure)) return false;
+        if (audience == BenchmarkReportAudience.ExecutiveSummary && options.Disclosure == BenchmarkReportDisclosure.Detailed) return true;
         return AllowedDisclosures(audience).Contains(options.Disclosure);
     }
 
@@ -762,33 +772,21 @@ public static class BenchmarkReportPackRenderer
             Line(sb, "**Q" + Inv(q.Number) + "**" + (topic != null ? " (" + topic + ")" : string.Empty) + ": "
                 + (note != null ? Prose(ctx, note.Note) : "No note was written for this question."));
             Line(sb);
-
-            if (ctx.Options.Disclosure >= BenchmarkReportDisclosure.Detailed)
-            {
-                var blocks = ContentFor(ctx, q.Number);
-                if (blocks.Count > 0)
-                {
-                    Quote(sb, "**Question:** " + blocks[0].Question.QuestionText);
-                    foreach (var (runId, item) in blocks)
-                    {
-                        Line(sb, ">");
-                        Quote(sb, "**Answer excerpt" + (ctx.Content.Runs.Count > 1 ? " (run " + Inv(runId) + ")" : string.Empty) + ":** "
-                            + item.AnswerExcerpt);
-                    }
-                    Line(sb);
-                }
-            }
         }
 
-        if (ctx.Options.Disclosure == BenchmarkReportDisclosure.Full)
+        if (ctx.Options.Disclosure >= BenchmarkReportDisclosure.Detailed)
         {
-            QuestionDetails(sb, ctx, questions);
+            QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full);
         }
     }
 
-    private static void QuestionDetails(StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions)
+    /// <summary>
+    /// Every question with each run's answer excerpt; with <paramref name="grading"/>, also its
+    /// rubric, the graders' verdicts and the claim verifier's rulings.
+    /// </summary>
+    private static void QuestionDetails(StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool grading)
     {
-        Heading(sb, "### Question details");
+        Heading(sb, grading ? "### Question details" : "### Questions and answers");
 
         foreach (var q in questions)
         {
@@ -809,21 +807,24 @@ public static class BenchmarkReportPackRenderer
             Quote(sb, first.QuestionText);
             Line(sb);
 
-            Line(sb, "**Rubric:**");
-            Line(sb);
-            if (!first.ExpectedPointsRecorded)
+            if (grading)
             {
-                Line(sb, "*Rubric not recorded for this answer.*");
+                Line(sb, "**Rubric:**");
+                Line(sb);
+                if (!first.ExpectedPointsRecorded)
+                {
+                    Line(sb, "*Rubric not recorded for this answer.*");
+                }
+                else if (string.IsNullOrWhiteSpace(first.ExpectedPoints))
+                {
+                    Line(sb, "*No rubric points.*");
+                }
+                else
+                {
+                    Quote(sb, first.ExpectedPoints);
+                }
+                Line(sb);
             }
-            else if (string.IsNullOrWhiteSpace(first.ExpectedPoints))
-            {
-                Line(sb, "*No rubric points.*");
-            }
-            else
-            {
-                Quote(sb, first.ExpectedPoints);
-            }
-            Line(sb);
 
             foreach (var (runId, item) in blocks)
             {
@@ -836,6 +837,8 @@ public static class BenchmarkReportPackRenderer
                 Line(sb);
                 Quote(sb, item.AnswerExcerpt);
                 Line(sb);
+
+                if (!grading) continue;
 
                 Line(sb, "**Graders:**");
                 Line(sb);

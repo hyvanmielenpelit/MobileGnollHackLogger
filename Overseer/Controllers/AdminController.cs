@@ -225,6 +225,7 @@ public class AdminController : ControllerBase
                 OrderIndex = c.OrderIndex,
                 IsEnabled = c.IsEnabled,
                 HasApiKey = !string.IsNullOrEmpty(c.EncryptedApiKey),
+                UseDefaultApiKey = c.UseDefaultApiKey,
                 IsSystemWide = c.IsSystemWide,
                 MaxDailyChatRequests = c.MaxDailyChatRequests,
                 MaxMonthlyChatRequests = c.MaxMonthlyChatRequests,
@@ -322,7 +323,8 @@ public class AdminController : ControllerBase
     }
 
     [HttpPost("systemconfigs")]
-    public async Task<IActionResult> CreateSystemConfig([FromBody] CreateSystemAiApiConfigurationRequest request)
+    public async Task<IActionResult> CreateSystemConfig(
+        [FromBody] CreateSystemAiApiConfigurationRequest request, CancellationToken ct = default)
     {
         if (request.ModelRole < 1 || request.ModelRole > 7)
         {
@@ -347,6 +349,9 @@ public class AdminController : ControllerBase
 
         if (!TryNormalizePosture(request.ConfidentialityPosture, out var newPosture, out var postureError))
             return BadRequest(postureError);
+
+        if (request.UseDefaultApiKey && !string.IsNullOrWhiteSpace(request.BaseUrl))
+            return BadRequest(DefaultKeyNeedsOfficialEndpoint);
 
         /* Full validation, DNS included, because this is an administrator saving a
            configuration rather than a per-turn resolve. An endpoint that fails here is
@@ -402,10 +407,16 @@ public class AdminController : ControllerBase
             PricingMode = normalizedPricingMode,
             InputPricePerMillion = request.InputPricePerMillion,
             OutputPricePerMillion = request.OutputPricePerMillion,
-            CachedInputPricePerMillion = request.CachedInputPricePerMillion
+            CachedInputPricePerMillion = request.CachedInputPricePerMillion,
+            UseDefaultApiKey = request.UseDefaultApiKey
         };
 
-        if (!string.IsNullOrWhiteSpace(request.ApiKey))
+        if (request.UseDefaultApiKey)
+        {
+            if (!await SystemDefaultApiKeyService.ApplyDefaultKeyAsync(_dbContext, _cryptoService, config, ct))
+                return BadRequest(NoDefaultKeyMessage(config.Provider));
+        }
+        else if (!string.IsNullOrWhiteSpace(request.ApiKey))
         {
             EncryptApiKey(config, request.ApiKey);
         }
@@ -417,7 +428,8 @@ public class AdminController : ControllerBase
     }
 
     [HttpPut("systemconfigs/{id}")]
-    public async Task<IActionResult> UpdateSystemConfig(long id, [FromBody] UpdateSystemAiApiConfigurationRequest request)
+    public async Task<IActionResult> UpdateSystemConfig(
+        long id, [FromBody] UpdateSystemAiApiConfigurationRequest request, CancellationToken ct = default)
     {
         if (request.ModelRole < 1 || request.ModelRole > 7)
         {
@@ -443,6 +455,9 @@ public class AdminController : ControllerBase
         if (!TryNormalizePosture(request.ConfidentialityPosture, out var updatedPosture, out var postureError))
             return BadRequest(postureError);
 
+        if (request.UseDefaultApiKey && !string.IsNullOrWhiteSpace(request.BaseUrl))
+            return BadRequest(DefaultKeyNeedsOfficialEndpoint);
+
         var endpointCheck = _endpointPolicy.Validate(
             request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
         if (!endpointCheck.IsValid)
@@ -450,6 +465,8 @@ public class AdminController : ControllerBase
 
         var config = await _dbContext.SystemAiApiConfigurations.FindAsync(id);
         if (config == null) return NotFound();
+
+        bool wasUsingDefaultKey = config.UseDefaultApiKey;
 
         config.DisplayName = request.DisplayName;
         config.DisplayNameMode = DisplayNameModes.Normalize(request.DisplayNameMode);
@@ -493,14 +510,27 @@ public class AdminController : ControllerBase
         config.InputPricePerMillion = request.InputPricePerMillion;
         config.OutputPricePerMillion = request.OutputPricePerMillion;
         config.CachedInputPricePerMillion = request.CachedInputPricePerMillion;
+        config.UseDefaultApiKey = request.UseDefaultApiKey;
 
-        if (request.ApiKey != null)
+        if (request.UseDefaultApiKey)
+        {
+            // A fresh copy of the default key of the provider the configuration now has.
+            if (!await SystemDefaultApiKeyService.ApplyDefaultKeyAsync(_dbContext, _cryptoService, config, ct))
+                return BadRequest(NoDefaultKeyMessage(config.Provider));
+        }
+        else if (wasUsingDefaultKey)
+        {
+            // The copied default key never stays behind as a custom key.
+            if (string.IsNullOrWhiteSpace(request.ApiKey))
+                ClearApiKey(config);
+            else
+                EncryptApiKey(config, request.ApiKey);
+        }
+        else if (request.ApiKey != null)
         {
             if (string.IsNullOrWhiteSpace(request.ApiKey))
             {
-                config.EncryptedApiKey = null;
-                config.ApiKeyNonce = null;
-                config.ApiKeyTag = null;
+                ClearApiKey(config);
             }
             else
             {
@@ -1271,6 +1301,18 @@ public class AdminController : ControllerBase
         config.ApiKeyNonce = nonce;
         config.ApiKeyTag = tag;
     }
+
+    private static void ClearApiKey(SystemAiApiConfiguration config)
+    {
+        config.EncryptedApiKey = null;
+        config.ApiKeyNonce = null;
+        config.ApiKeyTag = null;
+    }
+
+    private const string DefaultKeyNeedsOfficialEndpoint = "A default key works only with the provider's own endpoint.";
+
+    private static string NoDefaultKeyMessage(string provider)
+        => $"There is no default {provider} key. Add one in the API Keys tab, or choose Custom.";
 
     [HttpGet("system-alerts")]
     public IActionResult GetSystemAlerts([FromServices] ConfigHealthService configHealthService)

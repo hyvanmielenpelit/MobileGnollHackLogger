@@ -85,6 +85,64 @@
   gap: 10px;
 }
 
+/* Key Saved, the verification label and Verify Again. */
+.provider-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.key-verification {
+  cursor: help;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.key-verification-tip {
+  white-space: pre-wrap;
+  max-width: min(28rem, 90vw);
+}
+
+.key-verify-again[aria-disabled="true"],
+.save-key-btn[aria-disabled="true"] {
+  cursor: progress;
+}
+
+.key-error {
+  margin-top: 10px;
+}
+
+.key-error-message,
+.key-error-detail {
+  display: block;
+}
+
+.key-error-detail {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.key-warning {
+  margin: 10px 0 0;
+}
+
+.key-status-line {
+  margin: 10px 0 0;
+  color: #d4d4d8;
+  font-size: var(--text-secondary);
+
+  /* An empty live region stays rendered, so its first message is announced; it takes no space. */
+  &:empty {
+    margin: 0;
+  }
+}
+
 .advanced-settings {
   margin-top: 15px;
 

@@ -2,15 +2,16 @@
  * components. benchmark.component.scss gives its own dialogs the same frame, but its selectors are
  * scoped to that component and never reach a child component's <dialog>.
  */
-@mixin frame($width: 640px, $full-height: false) {
+@mixin frame($width: 640px, $full-height: false, $max-height: 85dvh) {
   width: min($width, 94vw);
   max-width: min($width, 94vw);
-  /* Full height mirrors .gh-dialog-fullscreen: viewport minus a 16px inset, 8px on a phone. */
+  /* Full height mirrors .gh-dialog-fullscreen: viewport minus a 16px inset, 8px on a phone.
+     Otherwise the dialog grows with its content up to $max-height. */
   @if $full-height {
     height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
   } @else {
-    max-height: 85dvh;
+    max-height: $max-height;
   }
   padding: 0;
   overflow: hidden;

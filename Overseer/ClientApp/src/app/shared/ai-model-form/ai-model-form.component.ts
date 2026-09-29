@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, inject, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -10,6 +10,16 @@ import {
 import { AdminService, EndpointPolicySummaryDto } from '../../services/admin.service';
 
 export type DisplayNameMode = 'model_name' | 'model_id' | 'custom';
+
+/** Admin only: where a system configuration's key comes from. */
+export type ApiKeyChoice = 'default' | 'custom';
+
+/** What the form knows about one provider's default key. `verified` is false only for Not verified. */
+export interface DefaultKeyInfo {
+  hasKey: boolean;
+  keyHint: string | null;
+  verified: boolean;
+}
 
 export interface AiModelFormResult {
   displayName: string;
@@ -23,6 +33,8 @@ export interface AiModelFormResult {
   maxInputTokens: number | null;
   maxOutputTokens: number | null;
   apiKey?: string;
+  /** Admin only. True uses the provider's default key; `apiKey` is then left out. */
+  useDefaultApiKey?: boolean;
   isEnabled?: boolean;
   isSystemWide?: boolean;
   modelRole?: number;
@@ -51,7 +63,7 @@ export interface AiModelFormResult {
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './ai-model-form.component.scss'
 })
-export class AiModelFormComponent implements OnInit {
+export class AiModelFormComponent implements OnInit, OnChanges {
   private settingsService = inject(SettingsService);
   private adminService = inject(AdminService);
 
@@ -63,6 +75,8 @@ export class AiModelFormComponent implements OnInit {
   @Input() saving: boolean = false;
   /** The server's refusal text from the last save attempt. The host clears it on the next one. */
   @Input() serverError: string | null = null;
+  /** Admin only: provider → its default key, for the Default / Custom key choice. */
+  @Input() defaultKeys: Record<string, DefaultKeyInfo> = {};
 
   @Output() save = new EventEmitter<AiModelFormResult>();
   @Output() cancel = new EventEmitter<void>();
@@ -100,6 +114,51 @@ export class AiModelFormComponent implements OnInit {
   roleBenchmark = false;
   parallelExecutionMode: number = 2;
   note: string | null = null;
+
+  /** Admin only. Default is offered only while the provider has a default key and no Base URL is set. */
+  apiKeyChoice: ApiKeyChoice = 'custom';
+  /** Set once the administrator picks a choice; until then the form prefers Default where it may. */
+  private apiKeyChoiceTouched = false;
+  private initialized = false;
+  /** The inline error when a configuration moved from Default to Custom is saved without a key. */
+  customKeyError: string | null = null;
+
+  /** The selected provider's default key, or null when it has none. */
+  get defaultKeyInfo(): DefaultKeyInfo | null {
+    const info = this.defaultKeys?.[this.provider];
+    return info?.hasKey ? info : null;
+  }
+
+  /** Why Default cannot be chosen, or null when it can. */
+  get defaultKeyUnavailableReason(): string | null {
+    if (!this.defaultKeyInfo) {
+      return `No default ${this.provider} key. Add one in Admin → API Keys.`;
+    }
+    if ((this.baseUrl || '').trim()) {
+      return 'A default key works only with the provider\'s own endpoint.';
+    }
+    return null;
+  }
+
+  /** The Default option's description: which key, and whether it is verified. */
+  get defaultKeyDescription(): string {
+    const info = this.defaultKeyInfo;
+    if (!info) {
+      return `the ${this.provider} default key`;
+    }
+    const hint = info.keyHint ? `, …${info.keyHint}` : '';
+    return `the ${this.provider} default key${hint}${info.verified ? '' : ' (not verified)'}`;
+  }
+
+  get usesDefaultKey(): boolean {
+    return this.isAdmin && this.apiKeyChoice === 'default';
+  }
+
+  /** An existing configuration set to Default that is being moved to Custom: it needs its own key. */
+  get customKeyRequired(): boolean {
+    return this.isAdmin && this.mode === 'edit' && !!this.initialData?.useDefaultApiKey
+      && this.apiKeyChoice === 'custom';
+  }
 
   // Admin provider-trust fields. Nothing here is derived from the model; each records something
   // agreed with the provider account behind this configuration's key.
@@ -370,6 +429,8 @@ export class AiModelFormComponent implements OnInit {
         this.baseUrl = this.initialData.baseUrl || null;
         this.customHeadersJson = this.initialData.customHeadersJson || null;
         this.apiVersion = this.initialData.apiVersion || null;
+        this.apiKeyChoice = this.initialData.useDefaultApiKey ? 'default' : 'custom';
+        this.reevaluateApiKeyChoice();
       }
 
       this.pickerModelSelect = this.modelId;
@@ -388,10 +449,69 @@ export class AiModelFormComponent implements OnInit {
       // Add mode
       if (!this.isAdmin) {
         this.fetchModels();
+      } else {
+        this.reevaluateApiKeyChoice();
       }
     }
 
     this.advancedOpen = this.hasNonDefaultAdvancedValues();
+    this.initialized = true;
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['defaultKeys'] && this.initialized) {
+      this.reevaluateApiKeyChoice();
+    }
+  }
+
+  /**
+   * Keeps the key choice possible: Default moves to Custom when it becomes unavailable. Until the
+   * administrator picks, Default is preferred wherever it is available — for a new configuration,
+   * and for one already set to Default.
+   */
+  private reevaluateApiKeyChoice(): void {
+    if (!this.isAdmin) {
+      return;
+    }
+    const available = this.defaultKeyUnavailableReason === null;
+    if (this.apiKeyChoice === 'default' && !available) {
+      this.setApiKeyChoice('custom');
+      return;
+    }
+    const prefersDefault = !this.apiKeyChoiceTouched
+      && (this.mode === 'add' || !!this.initialData?.useDefaultApiKey);
+    if (this.apiKeyChoice === 'custom' && available && prefersDefault) {
+      this.setApiKeyChoice('default');
+    }
+  }
+
+  private setApiKeyChoice(choice: ApiKeyChoice): void {
+    this.apiKeyChoice = choice;
+    this.customKeyError = null;
+    if (this.customKeyRequired) {
+      // Its stored key is the default key's copy, so it needs a key of its own.
+      this.editingApiKey = true;
+      this.deleteApiKey = false;
+    }
+  }
+
+  onApiKeyChoiceChange(choice: ApiKeyChoice): void {
+    if (choice === 'default' && this.defaultKeyUnavailableReason !== null) {
+      return;
+    }
+    this.apiKeyChoiceTouched = true;
+    this.setApiKeyChoice(choice);
+  }
+
+  onBaseUrlChange(value: string | null): void {
+    this.baseUrl = value;
+    this.reevaluateApiKeyChoice();
+  }
+
+  onApiKeyInput(value: string): void {
+    if (this.customKeyError && (value || '').trim()) {
+      this.customKeyError = null;
+    }
   }
 
   /** Whether anything inside the Advanced section departs from its default. Read once, in ngOnInit. */
@@ -443,14 +563,15 @@ export class AiModelFormComponent implements OnInit {
     if (!this.isAdmin) {
       this.fetchModels();
     } else {
-      if (this.apiKey) {
+      this.reevaluateApiKeyChoice();
+      if (this.usesDefaultKey || this.apiKey) {
         this.fetchModels();
       }
     }
   }
 
   onCheckModels() {
-    if (this.isAdmin && !this.apiKey && !this.hasApiKey) {
+    if (this.isAdmin && !this.usesDefaultKey && !this.apiKey && !this.hasApiKey) {
        this.modelError = 'Please enter an API Key first.';
        return;
     }
@@ -458,7 +579,7 @@ export class AiModelFormComponent implements OnInit {
   }
 
   fetchModels(isInitializingEdit = false) {
-    if (this.isAdmin && !this.apiKey && !this.hasApiKey && this.mode === 'add') {
+    if (this.isAdmin && !this.usesDefaultKey && !this.apiKey && !this.hasApiKey && this.mode === 'add') {
        if (!isInitializingEdit) {
            this.modelError = 'Please enter an API Key first.';
        }
@@ -468,7 +589,8 @@ export class AiModelFormComponent implements OnInit {
     this.loadingModels = true;
     this.modelError = '';
     
-    const keyToSend = this.isAdmin ? this.apiKey : '';
+    // With Default the server uses the provider's default key, never one typed here.
+    const keyToSend = this.isAdmin && !this.usesDefaultKey ? this.apiKey : '';
     const systemConfigId = this.isAdmin ? this.initialData?.id : undefined;
 
     /* The endpoint as it stands in the form, so the check interrogates what is about to be
@@ -483,7 +605,8 @@ export class AiModelFormComponent implements OnInit {
         }
       : undefined;
 
-    this.settingsService.getAvailableModels(this.provider, keyToSend, systemConfigId, endpoint).subscribe({
+    this.settingsService.getAvailableModels(
+      this.provider, keyToSend, systemConfigId, endpoint, this.usesDefaultKey || undefined).subscribe({
       next: (models) => {
         this.availableModels = models;
         this.loadingModels = false;
@@ -835,6 +958,10 @@ export class AiModelFormComponent implements OnInit {
           : `The resolved name "${finalDisplayName}" contains characters that are not allowed. Choose Custom and enter a name.`;
         return;
       }
+      if (this.customKeyRequired && !this.apiKey.trim()) {
+        this.customKeyError = 'Enter a key for this configuration, or choose Default key.';
+        return;
+      }
     }
 
     const result: AiModelFormResult = {
@@ -855,10 +982,14 @@ export class AiModelFormComponent implements OnInit {
     };
 
     if (this.isAdmin) {
-      if (this.deleteApiKey) {
-        result.apiKey = '';
-      } else if (this.editingApiKey) {
-        result.apiKey = this.apiKey;
+      // With Default the server copies the provider's default key, so no key is sent.
+      result.useDefaultApiKey = this.usesDefaultKey;
+      if (!this.usesDefaultKey) {
+        if (this.deleteApiKey) {
+          result.apiKey = '';
+        } else if (this.editingApiKey) {
+          result.apiKey = this.apiKey;
+        }
       }
       result.isEnabled = this.isEnabled;
       result.isSystemWide = this.isSystemWide;

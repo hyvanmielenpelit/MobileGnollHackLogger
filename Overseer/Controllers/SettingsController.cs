@@ -364,16 +364,96 @@ public class SettingsController : ControllerBase
         return Ok(statuses);
     }
 
+    /// <summary>
+    /// Checks the key with its provider and stores it according to the key-save contract:
+    /// a rejected key is refused (400), an unverifiable one is refused (409) unless
+    /// <see cref="SaveApiKeyRequest.SaveUnverified"/> is set, in which case it is stored as
+    /// not verified. Save Anyway runs the check again.
+    /// </summary>
     [HttpPut("apikeys")]
-    public async Task<IActionResult> SaveApiKey([FromBody] SaveApiKeyRequest request)
+    public async Task<IActionResult> SaveApiKey(
+        [FromBody] SaveApiKeyRequest request,
+        [FromServices] IApiKeyValidator validator,
+        CancellationToken ct = default)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (userId == null) return Unauthorized();
-        if (string.IsNullOrEmpty(request.Provider) || string.IsNullOrEmpty(request.ApiKey)) return BadRequest();
 
-        await _settingsService.SaveApiKeyForProviderAsync(userId, request.Provider, request.ApiKey);
-        return Ok();
+        if (!TryMatchProvider(request.Provider ?? string.Empty, out var provider, out var providerError))
+            return BadRequest(new { message = providerError });
+
+        var apiKey = request.ApiKey?.Trim();
+        if (string.IsNullOrEmpty(apiKey))
+            return BadRequest(new { message = "An API key is required." });
+
+        var check = await validator.ValidateAsync(provider, apiKey, ct);
+
+        if (check.Verdict == ApiKeyVerdict.Invalid)
+            return BadRequest(ApiKeyRefusalDto.From(check));
+
+        if (check.Verdict == ApiKeyVerdict.Unverifiable && !request.SaveUnverified)
+            return Conflict(ApiKeyRefusalDto.From(check));
+
+        var (status, message) = check.Verdict switch
+        {
+            ApiKeyVerdict.Unverifiable => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified, DescribeCheck(check)),
+            ApiKeyVerdict.ValidWithWarning => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, check.Message),
+            _ => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, (string?)null)
+        };
+
+        var entry = await _settingsService.SaveApiKeyForProviderAsync(userId, provider, apiKey, status, message);
+
+        return Ok(new
+        {
+            verification = ToVerificationDto(entry),
+            warning = check.Verdict == ApiKeyVerdict.ValidWithWarning ? check.Message : null
+        });
     }
+
+    /// <summary>
+    /// Verify Again: checks the caller's stored key with its provider and records the outcome.
+    /// The key itself is never changed or deleted here.
+    /// </summary>
+    [HttpPost("apikeys/{provider}/verify")]
+    public async Task<IActionResult> VerifyApiKey(
+        string provider,
+        [FromServices] IApiKeyValidator validator,
+        CancellationToken ct = default)
+    {
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId == null) return Unauthorized();
+
+        if (!TryMatchProvider(provider, out var matchedProvider, out var providerError))
+            return BadRequest(new { message = providerError });
+
+        var apiKey = await _settingsService.GetDecryptedApiKeyForProviderAsync(userId, matchedProvider);
+        if (string.IsNullOrEmpty(apiKey))
+            return NotFound(new { message = $"No {matchedProvider} key is stored." });
+
+        var check = await validator.ValidateAsync(matchedProvider, apiKey, ct);
+
+        var (status, message) = check.Verdict switch
+        {
+            ApiKeyVerdict.Valid => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, (string?)null),
+            ApiKeyVerdict.ValidWithWarning => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.Verified, check.Message),
+            ApiKeyVerdict.Invalid => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified,
+                $"{matchedProvider} now rejects this key. " + DescribeCheck(check)),
+            _ => (MobileGnollHackLogger.Data.ApiKeyVerificationStatus.NotVerified, DescribeCheck(check))
+        };
+
+        var entry = await _settingsService.SetApiKeyVerificationAsync(userId, matchedProvider, status, message);
+        if (entry == null)
+            return NotFound(new { message = $"No {matchedProvider} key is stored." });
+
+        return Ok(new { verification = ToVerificationDto(entry) });
+    }
+
+    private static string DescribeCheck(ApiKeyValidationResult check)
+        => check.Detail?.ToText() ?? check.Message;
+
+    private static ApiKeyVerificationDto ToVerificationDto(MobileGnollHackLogger.Data.UserAiApiKey entry)
+        => ApiKeyVerificationDto.From(
+            entry.ApiKeyVerification, entry.ApiKeyVerificationCheckedAtUtc, entry.ApiKeyVerificationMessage);
 
     [HttpDelete("apikeys/{provider}")]
     public async Task<IActionResult> DeleteApiKeyForProvider(string provider)
@@ -951,6 +1031,18 @@ public class SettingsController : ControllerBase
 
         bool isAdmin = (await _authorizationService.AuthorizeAsync(User, "AdminOnly")).Succeeded;
 
+        /* A form set to the default key checks the default key, never the key the saved
+           configuration happens to hold nor the administrator's own. */
+        bool usesDefaultKey = string.IsNullOrEmpty(apiKey) && request.UseDefaultApiKey && isAdmin;
+        if (usesDefaultKey)
+        {
+            apiKey = await _settingsService.GetDecryptedSystemDefaultApiKeyAsync(provider);
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                return BadRequest(new { message = $"There is no default {provider} key. Add one in the API Keys tab, or choose Custom." });
+            }
+        }
+
         if (string.IsNullOrEmpty(apiKey) && request.SystemConfigId.HasValue && isAdmin)
         {
             apiKey = await _settingsService.GetDecryptedSystemApiKeyAsync(request.SystemConfigId.Value);
@@ -984,6 +1076,11 @@ public class SettingsController : ControllerBase
                 return BadRequest(new { message = endpointCheck.Error });
 
             endpoint = _endpointPolicy.Resolve(request.BaseUrl, request.CustomHeadersJson, request.ApiVersion);
+        }
+        else if (usesDefaultKey)
+        {
+            // A default key works only with the provider's own endpoint.
+            endpoint = AiEndpointDescriptor.Official;
         }
         else if (request.SystemConfigId.HasValue && isAdmin)
         {
@@ -1251,6 +1348,9 @@ public class SaveApiKeyRequest
 {
     public string Provider { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>Save Anyway: store the key as not verified when its provider cannot confirm it.</summary>
+    public bool SaveUnverified { get; set; }
 }
 
 public class SetApiKeyEndpointRequest
@@ -1334,6 +1434,10 @@ public class GetModelsRequest
        form editing a configuration whose endpoint has just been cleared cannot be told apart
        from a caller that simply did not send them. */
     public bool UseRequestEndpoint { get; set; }
+
+    /* Administrator only: list the models with the provider's default key when no ApiKey is
+       given. Ignored for anyone else. */
+    public bool UseDefaultApiKey { get; set; }
 }
 
 public class UpdateTitleModelRequest

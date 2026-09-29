@@ -13,6 +13,7 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { BenchmarkPollTickerHandle, BenchmarkPollTickerService } from '../../../services/benchmark-poll-ticker.service';
 import {
+  RUN_REPORT_JOB_START_GRACE_MS,
   RUN_REPORT_JOB_UNKNOWN_NOTE,
   RunReportWritingContext,
   RunReportWritingDialogComponent,
@@ -558,7 +559,8 @@ describe('RunReportWritingDialogComponent', () => {
     open();
 
     expect(text('.rw-status')).toBe(RUN_REPORT_JOB_UNKNOWN_NOTE);
-    expect(RUN_REPORT_JOB_UNKNOWN_NOTE).toBe('Details of this job are no longer available (Overseer restarted).');
+    expect(RUN_REPORT_JOB_UNKNOWN_NOTE).toBe('Live details of this job are not available on this server. ' +
+      'Overseer may have restarted while it ran. The stored status is shown below.');
     expect(service.getRun).toHaveBeenCalledOnceWith(42);
     expect(text('.rw-fallback-status')).toBe('Completed');
     expect(finished).toEqual([null]);
@@ -572,10 +574,10 @@ describe('RunReportWritingDialogComponent', () => {
     stop();
   }));
 
-  it('falls back when a job that was seen is no longer known', fakeAsync(() => {
+  it('falls back when a job that was seen is no longer known after the start grace', fakeAsync(() => {
     const finished: (BenchmarkRunReportJobDto | null)[] = [];
     component.finished.subscribe(value => finished.push(value));
-    service.getRunReportJob.and.returnValues(of(jobView()), of(null));
+    service.getRunReportJob.and.returnValue(of(jobView()));
     service.getRun.and.returnValue(of({
       id: 42,
       reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing,
@@ -583,11 +585,138 @@ describe('RunReportWritingDialogComponent', () => {
     } as unknown as BenchmarkRunDetailDto));
     open();
     expect(text('.rw-status')).toBe('Writing the reports');
+    tick(RUN_REPORT_JOB_START_GRACE_MS);
+    fixture.detectChanges();
+    expect(finished).toEqual([]);
+
+    service.getRunReportJob.and.returnValue(of(null));
     tick(2000);
     fixture.detectChanges();
     expect(text('.rw-status')).toBe(RUN_REPORT_JOB_UNKNOWN_NOTE);
     expect(text('.rw-fallback-status')).toBe('Writing');
     expect(finished).toEqual([null]);
+    stop();
+  }));
+
+  it('keeps polling on a 204 while the stored status is Pending and the dialog opened under 30 s ago', fakeAsync(() => {
+    const finished: (BenchmarkRunReportJobDto | null)[] = [];
+    component.finished.subscribe(value => finished.push(value));
+    service.getRunReportJob.and.returnValues(
+      of(null),
+      of(null),
+      of(jobView({ phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null }))
+    );
+    service.getRun.and.returnValue(of({
+      id: 42,
+      reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending,
+      reportDocumentsMessage: null
+    } as unknown as BenchmarkRunDetailDto));
+    open();
+
+    expect(service.getRun).toHaveBeenCalledOnceWith(42);
+    expect(component.unknownJob).toBeFalse();
+    expect(text('.rw-status')).toBe('Checking the report writing job…');
+    expect(el('.rw-fallback')).toBeNull();
+    expect(ticker.running).toBe(1);
+
+    tick(2000);
+    fixture.detectChanges();
+    expect(service.getRunReportJob).toHaveBeenCalledTimes(2);
+    expect(service.getRun).toHaveBeenCalledTimes(2);
+    expect(component.unknownJob).toBeFalse();
+
+    tick(2000);
+    fixture.detectChanges();
+    expect(service.getRunReportJob).toHaveBeenCalledTimes(3);
+    expect(text('.rw-status')).toBe('Queued');
+    expect(finished).toEqual([]);
+    expect(ticker.running).toBe(1);
+    stop();
+  }));
+
+  it('settles on a 204 once 30 s have passed, even while the stored status says Writing', fakeAsync(() => {
+    const finished: (BenchmarkRunReportJobDto | null)[] = [];
+    component.finished.subscribe(value => finished.push(value));
+    service.getRunReportJob.and.returnValue(of(null));
+    service.getRun.and.returnValue(of({
+      id: 42,
+      reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing,
+      reportDocumentsMessage: null
+    } as unknown as BenchmarkRunDetailDto));
+    open();
+    expect(component.unknownJob).toBeFalse();
+
+    tick(RUN_REPORT_JOB_START_GRACE_MS - 2000);
+    fixture.detectChanges();
+    expect(component.unknownJob).toBeFalse();
+    expect(finished).toEqual([]);
+
+    tick(2000);
+    fixture.detectChanges();
+    expect(text('.rw-status')).toBe(RUN_REPORT_JOB_UNKNOWN_NOTE);
+    expect(text('.rw-fallback-status')).toBe('Writing');
+    expect(finished).toEqual([null]);
+    expect(ticker.running).toBe(0);
+
+    const calls = service.getRunReportJob.calls.count();
+    tick(10000);
+    expect(service.getRunReportJob.calls.count()).toBe(calls);
+    stop();
+  }));
+
+  it('shows the starting view as Queued, with no writer, documents or job id yet', fakeAsync(() => {
+    const finished: (BenchmarkRunReportJobDto | null)[] = [];
+    component.finished.subscribe(value => finished.push(value));
+    const starting = jobView({
+      phase: 'Queued',
+      status: BenchmarkRunReportDocumentsStatus.Pending,
+      slotAcquiredAtUtc: null,
+      audiences: [],
+      writerConfigId: 0,
+      writerDisplayName: '',
+      writerProvider: '',
+      writerModelId: '',
+      writerThinkingLevel: null
+    }, {
+      id: '', packId: '', subjectKey: '', subjectLabel: '', suiteId: null, suiteName: '', writerConfigId: 0,
+      writerDisplayName: '', startedByUserId: null, startedAtUtc: '', status: '', totalModelCalls: 0,
+      inputTokens: 0, outputTokens: 0, costUsd: null, documents: [], log: []
+    });
+    service.getRunReportJob.and.returnValue(of(starting));
+    service.cancelRunReportJob.and.returnValue(throwError(() => new HttpErrorResponse({
+      status: 409, error: { error: 'No report writing is in progress for this run.' }
+    })));
+    open();
+
+    expect(text('.rw-status')).toBe('Queued');
+    expect(text('.rw-stat-writer dd')).toBe('—');
+    expect(el('.rw-stat-writer .model-name')).toBeNull();
+    expect(el('.rw-stat-writer app-provider-badge')).toBeNull();
+    expect(el('.rw-stat-writer .thinking-badge')).toBeNull();
+    expect(host.querySelectorAll('.rw-document-row').length).toBe(0);
+    expect(Array.from(host.querySelectorAll('.run-stage-name')).map(n => n.textContent?.trim()))
+      .toEqual(['Queued', 'Preparing', 'Done']);
+    expect(el('.run-stage.is-current')?.getAttribute('data-stage')).toBe('queued');
+    expect(el('progress')).not.toBeNull();
+    expect(el('.rw-cancel')).not.toBeNull();
+    expect(component.diagnosticsText()).toContain('Job status: not recorded');
+    expect(finished).toEqual([]);
+
+    // Canceling before the job is registered is refused; the refusal shows and polling carries on.
+    el<HTMLButtonElement>('.rw-cancel')!.click();
+    el<HTMLButtonElement>('.rw-confirm-cancel')!.click();
+    fixture.detectChanges();
+    expect(text('.rw-cancel-error')).toBe('No report writing is in progress for this run.');
+    expect(text('.rw-cancel')).toBe('Cancel Writing');
+    expect(dialog().open).toBeTrue();
+
+    const calls = service.getRunReportJob.calls.count();
+    service.getRunReportJob.and.returnValue(of(jobView({ phase: 'Preparing' })));
+    tick(2000);
+    fixture.detectChanges();
+    expect(service.getRunReportJob.calls.count()).toBeGreaterThan(calls);
+    expect(text('.rw-status')).toBe('Preparing the fact sheet');
+    expect(text('.rw-stat-writer .model-name')).toBe('Claude Opus writer');
     stop();
   }));
 });

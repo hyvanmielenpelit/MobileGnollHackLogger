@@ -30,6 +30,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<Group> Groups { get; set; } = null!;
         public DbSet<UserGroup> UserGroups { get; set; } = null!;
         public DbSet<SystemAiApiConfiguration> SystemAiApiConfigurations { get; set; } = null!;
+        public DbSet<SystemDefaultApiKey> SystemDefaultApiKeys { get; set; } = null!;
         public DbSet<UserSystemAiApiConfiguration> UserSystemAiApiConfigurations { get; set; } = null!;
         public DbSet<UserSystemModelConfidentialTrust> UserSystemModelConfidentialTrusts { get; set; } = null!;
         public DbSet<GroupSystemAiApiConfiguration> GroupSystemAiApiConfigurations { get; set; } = null!;
@@ -65,6 +66,10 @@ namespace MobileGnollHackLogger.Data
             
             modelBuilder.Entity<UserAiApiKey>()
                 .HasIndex(k => new { k.AspNetUserId, k.Provider })
+                .IsUnique();
+
+            modelBuilder.Entity<SystemDefaultApiKey>()
+                .HasIndex(k => k.Provider)
                 .IsUnique();
 
             /* One decision per user per model. The unique index is what makes the absence of a

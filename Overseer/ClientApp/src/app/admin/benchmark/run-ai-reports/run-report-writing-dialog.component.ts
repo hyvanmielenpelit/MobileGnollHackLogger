@@ -86,7 +86,14 @@ export function runReportWritingBackoffMs(consecutiveFailures: number): number {
 }
 
 /** The D7 note: finished jobs are kept in the server's memory only. */
-export const RUN_REPORT_JOB_UNKNOWN_NOTE = 'Details of this job are no longer available (Overseer restarted).';
+export const RUN_REPORT_JOB_UNKNOWN_NOTE =
+  'Live details of this job are not available on this server. Overseer may have restarted while it ran. The stored status is shown below.';
+
+/**
+ * How long after opening a 204 from the job endpoint is taken for a job still being registered, as
+ * long as the run's stored status says its reports are pending or being written.
+ */
+export const RUN_REPORT_JOB_START_GRACE_MS = 30000;
 
 /** The clipboard and file side effects, held in an object so a spec can observe them. */
 export const runReportWritingIo = {
@@ -151,6 +158,12 @@ function reportsWord(n: number): string {
   return n === 1 ? 'report' : 'reports';
 }
 
+/** The run's stored report status is Pending or Writing, given as its number or its name. */
+function storedStatusInProgress(status: unknown): boolean {
+  return status === BenchmarkRunReportDocumentsStatus.Pending || status === BenchmarkRunReportDocumentsStatus.Writing ||
+    status === 'Pending' || status === 'Writing';
+}
+
 type PollResult = { ok: true; view: BenchmarkRunReportJobDto | null } | { ok: false; error: unknown };
 
 /**
@@ -199,7 +212,6 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
 
   /** The job endpoint answered 204: the job is not known to this server process. */
   unknownJob = false;
-  fallbackLoading = false;
   fallbackRun: BenchmarkRunDetailDto | null = null;
   fallbackError: string | null = null;
 
@@ -218,6 +230,8 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   copyError: string | null = null;
 
   private finishedEmitted = false;
+  /** When the dialog was last opened (client clock), for the start grace of a 204. */
+  private openedAtMs = 0;
   /** Bumped on every open and teardown, so a response for an earlier opening never lands. */
   private generation = 0;
   private readonly pollTrigger$ = new Subject<void>();
@@ -246,7 +260,6 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.view = null;
     this.viewReceivedAtMs = 0;
     this.unknownJob = false;
-    this.fallbackLoading = false;
     this.fallbackRun = null;
     this.fallbackError = null;
     this.pollCount = 0;
@@ -259,6 +272,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.copyStatus = '';
     this.copyError = null;
     this.finishedEmitted = false;
+    this.openedAtMs = Date.now();
 
     this.elapsedSub = interval(1000).subscribe(() => this.cdr.markForCheck());
     this.startPolling(context.runId);
@@ -351,13 +365,48 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.consecutiveFailures = 0;
     this.retryDelayMs = null;
     if (view === null) {
-      this.enterUnknownJob();
+      this.onJobUnknown();
       return;
     }
     this.applyView(view);
     if (recovering && !this.isFinished) {
       this.startTicker(RUN_REPORT_WRITING_POLL_MS);
     }
+  }
+
+  /**
+   * 204: the run's stored status is read with the ticker paused. Within the start grace a Pending
+   * or Writing run is a job not registered yet, and polling resumes; otherwise the dialog settles
+   * on the stored status.
+   */
+  private onJobUnknown(): void {
+    const runId = this.runId;
+    if (runId === null) {
+      this.enterUnknownJob(null, null);
+      return;
+    }
+    this.stopTicker();
+    this.fallbackSub?.unsubscribe();
+    const generation = this.generation;
+    this.fallbackSub = this.benchmarkService.getRun(runId).subscribe({
+      next: run => {
+        if (generation !== this.generation) {
+          return;
+        }
+        if (storedStatusInProgress(run?.reportDocumentsStatus) &&
+          Date.now() - this.openedAtMs < RUN_REPORT_JOB_START_GRACE_MS) {
+          this.startTicker(RUN_REPORT_WRITING_POLL_MS);
+          return;
+        }
+        this.enterUnknownJob(run, null);
+      },
+      error: () => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.enterUnknownJob(null, 'The run’s report status could not be read.');
+      }
+    });
   }
 
   private onPollError(error: unknown): void {
@@ -382,38 +431,14 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** 204: fall back to the run's stored status, read once. */
-  private enterUnknownJob(): void {
-    const runId = this.runId;
-    this.stopPolling();
+  /** The job is not known to the server: the dialog settles on the run's stored status, or on why it could not be read. */
+  private enterUnknownJob(run: BenchmarkRunDetailDto | null, error: string | null): void {
     this.unknownJob = true;
     this.canceling = false;
-    if (runId === null) {
-      this.settle(null);
-      return;
-    }
-    this.fallbackLoading = true;
-    const generation = this.generation;
-    this.fallbackSub = this.benchmarkService.getRun(runId).subscribe({
-      next: run => {
-        if (generation !== this.generation) {
-          return;
-        }
-        this.fallbackLoading = false;
-        this.fallbackRun = run;
-        this.settle(null);
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        if (generation !== this.generation) {
-          return;
-        }
-        this.fallbackLoading = false;
-        this.fallbackError = 'The run’s report status could not be read.';
-        this.settle(null);
-        this.cdr.markForCheck();
-      }
-    });
+    this.fallbackRun = run;
+    this.fallbackError = error;
+    this.settle(null);
+    this.cdr.markForCheck();
   }
 
   /** The job is over: polling and the elapsed tick stop, and `finished` fires once. */
@@ -571,6 +596,12 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     const view = this.view;
     const ms = view ? this.spanToNow(view.queuedAtUtc, view.finishedAtUtc) : null;
     return ms === null ? '—' : formatElapsed(ms);
+  }
+
+  /** The writer's name, or '' before the server has named it (the view right after a write is requested). */
+  get writerName(): string {
+    const view = this.view;
+    return (view?.writerDisplayName || view?.writerModelId || '').trim();
   }
 
   get costLabel(): string {

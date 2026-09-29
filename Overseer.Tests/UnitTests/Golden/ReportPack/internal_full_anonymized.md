@@ -67,10 +67,6 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 **Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters; the rubric says it can survive.
 
-> **Question:** Will my gem break if I throw it at a unicorn?
->
-> **Answer excerpt:** Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for…
-
 ### Question details
 
 #### Q1: Throwing gems at unicorns
@@ -795,6 +791,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 3 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
+*Document ID 101 · format version 4 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*

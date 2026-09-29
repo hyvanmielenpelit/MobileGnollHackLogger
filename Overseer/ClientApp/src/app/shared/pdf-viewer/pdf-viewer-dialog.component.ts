@@ -18,12 +18,29 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
 import type { EventBus, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { safeFileName } from '../../utils/download.util';
+import { InfoTipComponent } from '../info-tip/info-tip.component';
 import { PDFJS_LOADER, PdfJsModules } from './pdfjs-loader';
 
 /** One selectable version of a document, such as a disclosure level. */
 export interface PdfViewerVariant {
   key: string;
   label: string;
+}
+
+/** One term of a variants explanation and what it means. */
+export interface PdfViewerVariantsInfoItem {
+  term: string;
+  text: string;
+}
+
+/** What the variants mean, behind an info button after the variant tab row. */
+export interface PdfViewerVariantsInfo {
+  /** The explanation dialog's title. */
+  title: string;
+  /** Shown as a definition list. */
+  items: PdfViewerVariantsInfoItem[];
+  /** A paragraph after the list. */
+  note?: string;
 }
 
 /** A loaded PDF: its bytes and the file name the server gave it, if any. */
@@ -41,6 +58,8 @@ export interface PdfViewerRequest {
   variants?: PdfViewerVariant[];
   /** The variant shown first; the first variant when absent or unknown. */
   initialVariant?: string;
+  /** What the variants mean; its info button is shown only with variants. */
+  variantsInfo?: PdfViewerVariantsInfo;
   /** Fetches the PDF; `variant` is null when there are no variants. An error shows the server's message. */
   load(variant: string | null): Observable<PdfViewerFile>;
   /** A real same-origin URL for the same PDF, opened by "Open in new tab"; that control is absent without it. */
@@ -131,6 +150,7 @@ export function pdfLoadErrorMessage(error: unknown): string {
 @Component({
   selector: 'app-pdf-viewer-dialog',
   standalone: true,
+  imports: [InfoTipComponent],
   templateUrl: './pdf-viewer-dialog.component.html',
   styleUrl: './pdf-viewer-dialog.component.scss',
   encapsulation: ViewEncapsulation.None,
@@ -179,6 +199,10 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
 
   get variants(): PdfViewerVariant[] {
     return this.request?.variants ?? [];
+  }
+
+  get variantsInfo(): PdfViewerVariantsInfo | null {
+    return this.variants.length > 0 ? this.request?.variantsInfo ?? null : null;
   }
 
   get isReady(): boolean {

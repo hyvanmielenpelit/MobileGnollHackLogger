@@ -971,4 +971,169 @@ describe('AiModelFormComponent', () => {
       expect(errors.some(t => t.includes('The configuration was not saved'))).toBe(true);
     });
   });
+
+  describe('Default / Custom API key choice', () => {
+    const el = () => fixture.nativeElement as HTMLElement;
+    const defaultRadio = () => el().querySelector('#apiKeyChoiceDefault') as HTMLInputElement;
+    const customRadio = () => el().querySelector('#apiKeyChoiceCustom') as HTMLInputElement;
+    const reason = () => el().querySelector('#apiKeyChoiceDefaultReason') as HTMLElement | null;
+
+    beforeEach(() => {
+      component.isAdmin = true;
+      component.providers = ['Anthropic', 'Google', 'OpenAI'];
+      component.initialProvider = 'Anthropic';
+      component.defaultKeys = { Anthropic: { hasKey: true, keyHint: 'ab12', verified: true } };
+    });
+
+    it('preselects Default for a new configuration when the provider has a default key', () => {
+      component.mode = 'add';
+      fixture.detectChanges();
+
+      expect(component.apiKeyChoice).toBe('default');
+      expect(defaultRadio().checked).toBeTrue();
+      expect(defaultRadio().disabled).toBeFalse();
+      expect(defaultRadio().closest('label')!.textContent).toContain('the Anthropic default key, …ab12');
+      expect(customRadio().closest('label')!.textContent).toContain('a key for this configuration only');
+      expect(el().querySelector('.custom-api-key-input')).toBeNull();
+      expect(reason()).toBeNull();
+    });
+
+    it('keeps a default key that is not verified selectable, and says so', () => {
+      component.defaultKeys = { Anthropic: { hasKey: true, keyHint: 'ab12', verified: false } };
+      component.mode = 'add';
+      fixture.detectChanges();
+
+      expect(defaultRadio().disabled).toBeFalse();
+      expect(defaultRadio().checked).toBeTrue();
+      expect(defaultRadio().closest('label')!.textContent).toContain('…ab12 (not verified)');
+    });
+
+    it('moves to Custom and disables Default with its reason on a provider without a default key', () => {
+      component.mode = 'add';
+      fixture.detectChanges();
+
+      component.provider = 'Google';
+      component.onProviderChange();
+      fixture.detectChanges();
+
+      expect(component.apiKeyChoice).toBe('custom');
+      expect(customRadio().checked).toBeTrue();
+      expect(defaultRadio().disabled).toBeTrue();
+      expect(defaultRadio().getAttribute('aria-describedby')).toBe('apiKeyChoiceDefaultReason');
+      expect(reason()!.textContent!.trim()).toBe('No default Google key. Add one in Admin → API Keys.');
+    });
+
+    it('disables Default while a Base URL is filled, and offers it again once it is cleared', () => {
+      component.mode = 'add';
+      fixture.detectChanges();
+
+      component.onBaseUrlChange('https://gateway.example.com/anthropic');
+      fixture.detectChanges();
+      expect(component.apiKeyChoice).toBe('custom');
+      expect(defaultRadio().disabled).toBeTrue();
+      expect(reason()!.textContent!.trim()).toBe('A default key works only with the provider\'s own endpoint.');
+
+      component.onBaseUrlChange('');
+      fixture.detectChanges();
+      expect(component.apiKeyChoice).toBe('default');
+      expect(defaultRadio().disabled).toBeFalse();
+    });
+
+    it('checks models with the default key and saves without sending a key', async () => {
+      component.mode = 'add';
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const picker = el().querySelector('.picker-model-select') as HTMLSelectElement;
+      expect(picker.disabled).toBeFalse();
+
+      (settingsService.getAvailableModels as jasmine.Spy).calls.reset();
+      (el().querySelector('.check-models-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const args = (settingsService.getAvailableModels as jasmine.Spy).calls.mostRecent().args;
+      expect(args[0]).toBe('Anthropic');
+      expect(args[1]).toBe('');
+      expect(args[4]).toBeTrue();
+
+      let saved: AiModelFormResult | undefined;
+      component.save.subscribe(result => saved = result);
+      component.onSave();
+
+      expect(saved).toBeDefined();
+      expect(saved!.useDefaultApiKey).toBeTrue();
+      expect(saved!.apiKey).toBeUndefined();
+    });
+
+    it('sends useDefaultApiKey false with Custom', () => {
+      component.mode = 'add';
+      // The admin page always passes the new configuration's defaults as initialData.
+      component.initialData = { provider: 'Anthropic', isEnabled: true, modelRole: 3 };
+      fixture.detectChanges();
+      expect(component.apiKeyChoice).toBe('default');
+
+      customRadio().click();
+      fixture.detectChanges();
+
+      expect(component.apiKeyChoice).toBe('custom');
+      expect(el().querySelector('.custom-api-key-input')).not.toBeNull();
+
+      component.apiKey = 'test-key-not-real-0001';
+      component.fetchModels();
+      let saved: AiModelFormResult | undefined;
+      component.save.subscribe(result => saved = result);
+      component.onSave();
+
+      expect(saved!.useDefaultApiKey).toBeFalse();
+      expect(saved!.apiKey).toBe('test-key-not-real-0001');
+    });
+
+    it('opens an existing Default configuration on Default, and needs a key before saving it as Custom', () => {
+      component.mode = 'edit';
+      component.initialData = {
+        id: 9, provider: 'Anthropic', modelId: 'claude-3-5-sonnet', displayName: 'claude-3-5-sonnet',
+        displayNameMode: 'model_id', hasApiKey: true, useDefaultApiKey: true, modelRole: 3
+      };
+      fixture.detectChanges();
+
+      expect(defaultRadio().checked).toBeTrue();
+
+      customRadio().click();
+      fixture.detectChanges();
+      expect(el().querySelector('.custom-api-key-input')).not.toBeNull();
+
+      let emitted = 0;
+      component.save.subscribe(() => emitted++);
+      component.onSave();
+      fixture.detectChanges();
+
+      expect(emitted).toBe(0);
+      const error = el().querySelector('#customApiKeyError') as HTMLElement;
+      expect(error.textContent!.trim()).toBe('Enter a key for this configuration, or choose Default key.');
+      expect((el().querySelector('.custom-api-key-input') as HTMLInputElement).getAttribute('aria-describedby'))
+        .toBe('customApiKeyError');
+    });
+
+    it('opens a Default configuration on Custom when its default key is gone', () => {
+      component.defaultKeys = {};
+      component.mode = 'edit';
+      component.initialData = {
+        id: 10, provider: 'Anthropic', modelId: 'claude-3-5-sonnet', hasApiKey: false, useDefaultApiKey: true
+      };
+      fixture.detectChanges();
+
+      expect(component.apiKeyChoice).toBe('custom');
+      expect(defaultRadio().disabled).toBeTrue();
+      expect(el().querySelector('.custom-api-key-input')).not.toBeNull();
+    });
+
+    it('does not show the key choice outside admin mode', () => {
+      component.isAdmin = false;
+      fixture.detectChanges();
+
+      expect(defaultRadio()).toBeNull();
+      expect(customRadio()).toBeNull();
+    });
+  });
 });

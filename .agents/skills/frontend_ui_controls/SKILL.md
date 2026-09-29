@@ -575,6 +575,34 @@ short list (a `<dl>` of options, say); a multi-step or interactive explanation s
   the label would stretch, and with it the checkbox's click target.
 - **Visible text stays visible.** A warning, an advisory, the reason a control is disabled, or a
   note that changes the decision (a condition that currently holds) is not moved into the popup.
+- **The popup caps its height** at `min(32rem, 100dvh - 32px)` and scrolls, so no click tip leaves the
+  screen; content that needs the scroll is a sign it belongs in dialog mode.
+
+**Dialog mode: `trigger="dialog"`.** For an explanation longer than a click tip holds — several
+paragraphs, or a `<dl>` of long entries (the report writer advice in the AI Reports tab, the three
+disclosure levels in the PDF viewer and the Download Center).
+
+```html
+<app-info-tip trigger="dialog" tipId="rrReportWriterHint" subject="Report writer"
+              dialogTitle="Choosing a report writer">...</app-info-tip>
+```
+
+- **The button** is `.gh-info-btn gh-info-btn--click` named *About {subject}*, with
+  `aria-haspopup="dialog"` and no `popovertarget`; a click calls `showModal()`.
+- **The dialog** is `<dialog class="gh-dialog gh-info-dialog" closedby="any">`, rendered inside the
+  `app-info-tip` host and kept in the DOM while closed. It is labelled by its `<h3 id="{tipId}-title"
+  tabindex="-1">` (`dialogTitle`, else `subject`), which is focused on open; a close
+  `.btn-icon-action` named *Close {title}* has an `interestfor` tooltip (`{tipId}-close-tip`); the
+  scrolling body `.gh-info-dialog-body` is `{tipId}` and shares `.gh-info-popup-body`'s `<dl>` rules.
+  Every id derives from `tipId`. A backdrop click closes it where `closedby` is unsupported.
+- **Nested-dialog rule**: its `close`, `cancel` and `click` events stop propagating, because these
+  tips sit inside other dialogs (run report, PDF viewer, Download Center) and inside table headers.
+  Escape closes only the tip. Do not put a dialog-mode tip inside a `<label>`: stopping propagation
+  cannot prevent label activation.
+- **No `aria-describedby` at `tipId`.** The text is long; a control that pointed at it would read
+  paragraphs on every focus. The (i) button is the way in.
+- It resets the typography it would inherit (weight, size, color, white-space, text-transform,
+  letter-spacing), so it reads as body text even inside a `<th>`.
 
 ### 4c. Reorderable lists: `app-reorderable-list`
 
@@ -1203,7 +1231,8 @@ Diff this against your markup before calling button, tab or table work finished.
 **Info buttons and settings sections**
 - [ ] A hint moved out of a paragraph is an `app-info-tip` (§4b) named *About {subject}*, with a
       document-unique `tipId`.
-- [ ] The control the hint describes keeps `aria-describedby` pointing at that `tipId`.
+- [ ] The control the hint describes keeps `aria-describedby` pointing at that `tipId` — except in
+      dialog mode (`trigger="dialog"`), where nothing points at it.
 - [ ] A click-mode tip (`trigger="click"`) follows its control in a `.gh-field-row`; its popup has
       no `role`, no `interestfor` and no close button, and the button's `aria-expanded` follows it.
 - [ ] Warnings, advisories and the reason a control is disabled stay visible, never in a popup.

@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Subject } from 'rxjs';
+import { ApiKeyVerification } from '../shared/key-verification/key-verification';
 
 export interface ModelPricingDto {
   inputPerMillion: number;
@@ -402,6 +403,14 @@ export interface ApiKeyStatus {
   /** `true` accepts the key for confidential chats, `false` refuses it, `null` is undecided. */
   userTrustsForConfidential?: boolean | null;
   confidentialTrustDecidedUtc?: string | null;
+  /** The last check of the key with its provider. A null status means it was never checked. */
+  verification?: ApiKeyVerification | null;
+}
+
+/** A saved personal key's verification, and a warning when the key is rate-limited or out of credit. */
+export interface ApiKeySaveResult {
+  verification: ApiKeyVerification;
+  warning?: string | null;
 }
 
 /**
@@ -506,8 +515,18 @@ export class SettingsService {
     });
   }
 
-  saveApiKey(provider: string, apiKey: string) {
-    return this.http.put('/api/settings/apikeys', { provider, apiKey });
+  /**
+   * Checks the key with its provider, then saves it. A rejected key is a 400 refusal; an
+   * unanswered check is a 409 refusal unless `saveUnverified` is set.
+   */
+  saveApiKey(provider: string, apiKey: string, saveUnverified = false) {
+    return this.http.put<ApiKeySaveResult>('/api/settings/apikeys', { provider, apiKey, saveUnverified });
+  }
+
+  /** Re-checks the stored key and updates only its verification. 404 when there is no key. */
+  verifyApiKey(provider: string) {
+    return this.http.post<{ verification: ApiKeyVerification }>(
+      `/api/settings/apikeys/${encodeURIComponent(provider)}/verify`, {});
   }
 
   saveApiKeyParallelMode(provider: string, mode: number) {
@@ -587,9 +606,14 @@ export class SettingsService {
     provider: string,
     apiKey: string,
     systemConfigId?: number,
-    endpoint?: { baseUrl: string | null; customHeadersJson: string | null; apiVersion: string | null }
+    endpoint?: { baseUrl: string | null; customHeadersJson: string | null; apiVersion: string | null },
+    useDefaultApiKey?: boolean
   ) {
     const body: any = { provider, apiKey, systemConfigId };
+    // Admin only: with no key in the form, the listing uses the provider's default key.
+    if (useDefaultApiKey) {
+      body.useDefaultApiKey = true;
+    }
     if (endpoint) {
       body.baseUrl = endpoint.baseUrl;
       body.customHeadersJson = endpoint.customHeadersJson;

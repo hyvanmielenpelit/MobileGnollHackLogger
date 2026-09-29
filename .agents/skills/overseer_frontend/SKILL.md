@@ -189,7 +189,9 @@ The Angular application's routes are defined in `app.routes.ts`. The primary pag
   `chats`; a bare `/settings` or an unknown section shows General.
 - `/api-keys` (`api-keys.component`): Management of user API keys.
 - `/models` (`models.component`): AI Model selection and configuration.
-- `/admin` (`admin.component`): System administration (groups, configs, rate limits).
+- `/admin` (`admin.component`): System administration (groups, configs, rate limits). Tabs, in
+  order: Users, Groups, **API Keys** (`app-admin-api-keys`, the per-provider default keys), System
+  Configs, Database, AI Telemetry, AI Benchmark, Developer Tools.
 - `/debug-log` (`debug-log.component`): Developer debug logs.
 - `/login` (`login.component`): Authentication entry point.
 
@@ -208,8 +210,26 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#rateLimitsDialog`: Rate Limits
   - `#analyticsDialog`: Analytics
 
+- **Admin API Keys Component (`admin/admin-api-keys/admin-api-keys.component.html`, Admin → API Keys)**
+  - `#deleteDefaultKeyDialog`: *Delete the default <Provider> key?* — the count and names of the
+    system AI configurations that use it (from `deletion-check`, fetched on open), which a delete
+    disables; **Delete Key** (`.btn-gh btn-gh-delete`, trash).
+  - `app-key-verification-dialog` (below), opened by a 409 on **Verify and Save**.
+
 - **API Keys Component (`api-keys.component.html`)**
   - `#apiKeyInfoDialog`: API Key Info
+  - `app-key-verification-dialog` (below), opened by a 409 on **Save Key**.
+
+- **Key Verification Dialog (`shared/key-verification/key-verification-dialog.component.html`)** —
+  *Could not verify the key*, shared by the admin API Keys tab and the user API Keys page. Opened with
+  `open(provider, refusal)` for a 409 `unverifiable` refusal: one sentence, *What failed* as a `dl` of
+  the detail parts present (*Check*, *Response*, *Error*, *Provider's message*, *Time*), and **Cancel** /
+  **Save Anyway**, which emits `(saveAnyway)`; the host resends with `saveUnverified: true` and the
+  dialog shows *Saving…* until the host closes it. It stops its own `close` and `cancel` events. The
+  types and `readApiKeyRefusal()` are in `shared/key-verification/key-verification.ts`. A saved key
+  carries a *Verified* (`status-badge badge-success`) or *Not verified* (`status-badge badge-warning`)
+  label with an `interestfor` tooltip (*Checked <date>* and the stored message), no label while never
+  checked, and **Verify Again** beside *Not verified*.
 
 - **Chat Component (`chat.component.html`)**
   - `#deleteConfirmDialog`: Delete Confirm
@@ -307,9 +327,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     closes. When the finished run lacks a document, the *Write missing reports* fieldset holds a
     checkbox per missing document, the **Report writer** picker — preselected with the run's own
     writer, else the launcher's when it needs neither a refusal nor a warning for the run's candidate —
-    with a click-mode info tip of per-document advice, **Write Report** / **Write Reports** (*zap*)
-    vertically centered beside the picker, a live cost estimate (debounced, from the estimate
-    endpoint), a refusal as a red `.gh-field-error` line that disables the button, a same-provider
+    with a dialog-mode info tip (*Choosing a report writer*) of per-document advice, **Write Report** /
+    **Write Reports** (*zap*) vertically centered beside the picker, a live cost estimate (debounced,
+    from the estimate endpoint) shown as the `#rrWriteEstimate` *Estimated cost* panel — a quiet
+    `.rr-ai-estimate` block with a gold start border, the total, a per-document `dl` breakdown when two
+    documents are checked, and a note; `role="status"`, always rendered so the live region exists, and
+    named by the Write button's `aria-describedby` — a refusal as a red `.gh-field-error` line that disables the button, a same-provider
     writer as an amber `alert-warning` that leaves it enabled and opens a nested *Same-Provider Report
     Writer* confirmation (**Write Anyway**, *zap*) on every write, and server errors as
     `alert-danger`. Write is disabled with no writer, no document checked, a refusal, and while a job
@@ -353,15 +376,21 @@ To find specific popups, look in the corresponding component's `.html` template:
     **Copy** (*copy*) and **Download** (*file-with-arrow*,
     `run-<id>_ai-report-writing-diagnostics_<yyyyMMdd-HHmmss>.txt`). It polls through the worker
     ticker every 2 s, backing off 2 → 4 → 8 → 16 → 30 s on failures. **Run in Background** and the
-    close button never cancel; **Cancel Writing** opens a nested confirmation. A 204 from the job
-    endpoint shows the run's stored status instead. Finished, it offers **Open Download Center** and
-    **Done**. It and its confirmation stop their own `close` and `cancel` events.
+    close button never cancel; **Cancel Writing** opens a nested confirmation. The server answers with a
+    *Queued* starting view (empty writer, shown as *—*) from the moment a write is accepted; a 204 while
+    the run's stored status is Pending or Writing keeps polling for up to 30 s after `open()`
+    (`RUN_REPORT_JOB_START_GRACE_MS`), and otherwise shows the run's stored status. It is
+    `frame($width: 60rem, $max-height: 92dvh)`, so the finished documents table fits with **View**.
+    Finished, it offers **Open Download Center** and **Done**. It and its confirmation stop their own
+    `close` and `cancel` events.
   - `app-pdf-viewer-dialog` (`shared/pdf-viewer/`): a **generic, shared** full-screen PDF viewer; the
     caller supplies the title, subtitle, variants, a loader returning the bytes and, optionally, a
     same-origin URL for *Open in new tab*. pdf.js (`pdfjs-dist`, loaded only through the dynamic
     `import()` in `pdfjs-loader.ts`, behind the `PDFJS_LOADER` token specs replace) draws canvases and a
     selectable text layer. The toolbar holds the variants as a segmented `gh-tabs` row (the AI Reports
-    tab passes the document's allowed disclosures), page navigation, zoom, **Download PDF** (the server's
+    tab passes the document's allowed disclosures) followed, when the caller passes `variantsInfo`, by a
+    dialog-mode `app-info-tip` (*Versions*; the AI Reports tab passes `reportDisclosureInfo(audience)`
+    from `admin/benchmark/report-disclosure-guide.ts`), page navigation, zoom, **Download PDF** (the server's
     file name) and **Open in new tab** (*external-link*), with **Close** in the header. **It uses
     `ViewEncapsulation.None`**, because pdf.js builds the page DOM outside Angular's templates, where
     emulated encapsulation cannot reach; every rule in its stylesheet is therefore scoped under `.pdfv`,
@@ -372,7 +401,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     *External* (the Executive Summary and the Report for AI Researchers and Developers; internal-only
     rows listed but unselectable, with their reason) and *Custom*; a run context lists every document
     whose subject includes the run, run-completion documents included;
-    per-document disclosure (*Summary* / *Detailed* / *Full*) and peer naming (*Named* /
+    per-document disclosure (*Summary* / *Detailed* / *Full*, from each row's server-supplied
+    `allowedDisclosures`: the Executive Summary offers *Summary* / *Full*) and peer naming (*Named* /
     *Anonymized*); `_INTERNAL` file-name suffixes, and a `run-<id>_` prefix for a document whose subject
     is one run (`reportDocumentFileStem`, matching the server's PDF and Word names); several files as one
     ZIP with a `MANIFEST.md`. Its
@@ -386,7 +416,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     (`.dc-emblem`) precedes its title at 64 px, 40 px under 600 px — the run report's size, while the
     Report Pack dialog keeps the global 28 px — and **its title is the focus target on open**
     (`<h3 #downloadCenterHeading tabindex="-1">`, focused after `showModal()`), so the Close button's
-    `interestfor` tooltip does not open by itself. Its explanations are click-mode `app-info-tip`s; the *Internal only* tag, the
+    `interestfor` tooltip does not open by itself. Its explanations are click-mode `app-info-tip`s,
+    except the *Disclosure* column's, a dialog-mode tip with the three levels from
+    `report-disclosure-guide.ts` (the same text the PDF viewer shows); the *Internal only* tag, the
     *Peers are named* warning and failures stay visible. Its *Documents* heading and the two package
     legends use the shared `gh-section-title`; the legends keep a `dc-section-title` override only for
     what the global `.gh-choice > legend` rule would otherwise change.

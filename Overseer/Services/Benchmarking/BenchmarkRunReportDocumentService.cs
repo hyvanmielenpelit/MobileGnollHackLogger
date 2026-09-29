@@ -86,6 +86,9 @@ public sealed class BenchmarkRunReportDocumentService
         public string? WriterThinkingLevel { get; init; }
     }
 
+    /// <summary>A claimed run whose job is not registered yet; empty <see cref="Audiences"/> requests every missing one.</summary>
+    private sealed record RunClaim(DateTime ClaimedAtUtc, List<BenchmarkReportAudience> Audiences);
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BenchmarkReportPackJobManager _jobManager;
     private readonly ILogger<BenchmarkRunReportDocumentService> _logger;
@@ -93,6 +96,7 @@ public sealed class BenchmarkRunReportDocumentService
     private readonly object _lock = new();
     private readonly HashSet<long> _active = new();
     private readonly Dictionary<long, RunReportJobState> _jobs = new();
+    private readonly Dictionary<long, RunClaim> _claims = new();
 
     public BenchmarkRunReportDocumentService(
         IServiceScopeFactory scopeFactory,
@@ -264,13 +268,13 @@ public sealed class BenchmarkRunReportDocumentService
         bool sameProviderAcknowledged,
         out Task completion)
     {
-        if (!TryClaim(runId))
+        var requested = audiences?.ToList();
+        if (!TryClaim(runId, requested))
         {
             completion = Task.CompletedTask;
             return false;
         }
 
-        var requested = audiences?.ToList();
         completion = Task.Run(() => RunClaimedAsync(runId, userId, requested, sameProviderAcknowledged));
         return true;
     }
@@ -311,7 +315,8 @@ public sealed class BenchmarkRunReportDocumentService
 
     /// <summary>
     /// The run's current or last job, or null when this process knows none, or its finished job is
-    /// older than <see cref="FinishedJobRetention"/>. The persisted
+    /// older than <see cref="FinishedJobRetention"/>. A claimed run whose job is still being created
+    /// shows as Queued since the claim, with the requested audiences and no writer yet. The persisted
     /// <see cref="BenchmarkRunReportJobDto.Status"/> and <see cref="BenchmarkRunReportJobDto.Message"/>
     /// are the caller's to fill from the run row.
     /// </summary>
@@ -324,7 +329,10 @@ public sealed class BenchmarkRunReportDocumentService
         lock (_lock)
         {
             Prune(nowUtc);
-            if (!_jobs.TryGetValue(runId, out var found)) return null;
+            if (!_jobs.TryGetValue(runId, out var found))
+            {
+                return _claims.TryGetValue(runId, out var claim) ? StartingView(runId, claim, nowUtc) : null;
+            }
             state = found;
             phase = state.Phase;
             queuedAt = state.QueuedAtUtc;
@@ -357,6 +365,22 @@ public sealed class BenchmarkRunReportDocumentService
             ServerTimeUtc = nowUtc
         };
     }
+
+    /// <summary>The view of a claimed run before its job is registered: Queued since the claim, with no writer and no progress.</summary>
+    private static BenchmarkRunReportJobDto StartingView(long runId, RunClaim claim, DateTime nowUtc) => new()
+    {
+        RunId = runId,
+        Phase = nameof(JobPhase.Queued),
+        QueuedAtUtc = claim.ClaimedAtUtc,
+        Audiences = claim.Audiences.ToList(),
+        WriterConfigId = 0,
+        WriterDisplayName = string.Empty,
+        WriterProvider = string.Empty,
+        WriterModelId = string.Empty,
+        WriterThinkingLevel = null,
+        Job = new BenchmarkReportPackJobDto(),
+        ServerTimeUtc = nowUtc
+    };
 
     /// <summary>
     /// Settles runs a previous process left Pending or Writing: no job survives a restart, so each is
@@ -430,7 +454,7 @@ public sealed class BenchmarkRunReportDocumentService
                 if (anyWritten) return;
             }
 
-            if (!TryClaim(runId)) return;
+            if (!TryClaim(runId, audiences: null)) return;
             await RunClaimedAsync(runId, userId: null, audiences: null, sameProviderAcknowledged: null);
         }
         catch (Exception ex)
@@ -667,7 +691,7 @@ public sealed class BenchmarkRunReportDocumentService
             : "Report Pack: " + running.SubjectLabel;
     }
 
-    /// <summary>Makes the job the run's current one, replacing its previous entry, and prunes old finished ones.</summary>
+    /// <summary>Makes the job the run's current one, replacing its previous entry and its claim, and prunes old finished ones.</summary>
     private void Register(RunReportJobState state)
     {
         lock (_lock)
@@ -677,6 +701,7 @@ public sealed class BenchmarkRunReportDocumentService
             state.Phase = JobPhase.Queued;
             state.QueuedAtUtc = now;
             _jobs[state.RunId] = state;
+            _claims.Remove(state.RunId);
         }
         state.Job.AddLog("Queued for the report writer.");
     }
@@ -742,11 +767,23 @@ public sealed class BenchmarkRunReportDocumentService
         }
     }
 
-    private bool TryClaim(long runId)
+    /// <summary>
+    /// Claims the run for one job and records the claim the job view shows until the job is
+    /// registered. The run's finished previous job leaves the view at once. Null or empty
+    /// <paramref name="audiences"/> requests every missing one.
+    /// </summary>
+    private bool TryClaim(long runId, IReadOnlyCollection<BenchmarkReportAudience>? audiences)
     {
         lock (_lock)
         {
-            return _active.Add(runId);
+            if (!_active.Add(runId)) return false;
+
+            _claims[runId] = new RunClaim(UtcNow, audiences?.ToList() ?? new List<BenchmarkReportAudience>());
+            if (_jobs.TryGetValue(runId, out var previous) && previous.Phase == JobPhase.Finished)
+            {
+                _jobs.Remove(runId);
+            }
+            return true;
         }
     }
 
@@ -755,6 +792,7 @@ public sealed class BenchmarkRunReportDocumentService
         lock (_lock)
         {
             _active.Remove(runId);
+            _claims.Remove(runId);
         }
     }
 

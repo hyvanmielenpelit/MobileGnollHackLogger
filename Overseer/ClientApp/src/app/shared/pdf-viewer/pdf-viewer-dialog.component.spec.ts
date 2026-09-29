@@ -2,7 +2,13 @@ import { Component, ElementRef, ViewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Observable, Subject, of, throwError } from 'rxjs';
-import { PdfViewerDialogComponent, PdfViewerFile, PdfViewerRequest, pdfLoadErrorMessage } from './pdf-viewer-dialog.component';
+import {
+  PdfViewerDialogComponent,
+  PdfViewerFile,
+  PdfViewerRequest,
+  PdfViewerVariantsInfo,
+  pdfLoadErrorMessage
+} from './pdf-viewer-dialog.component';
 import { PDFJS_LOADER, PdfJsModules } from './pdfjs-loader';
 
 // ---------------------------------------------------------------------------------------------
@@ -466,5 +472,90 @@ describe('PdfViewerDialogComponent', () => {
     await openReady();
 
     expect(dialog().querySelector('a.action-btn')).toBeNull();
+  });
+
+  describe('Versions explanation', () => {
+    const VARIANTS = [{ key: 'summary', label: 'Summary' }, { key: 'full', label: 'Full' }];
+    const INFO: PdfViewerVariantsInfo = {
+      title: 'What the versions mean',
+      items: [
+        { term: 'Summary', text: 'The short version.' },
+        { term: 'Full', text: 'Everything, for the team.' }
+      ],
+      note: 'Both come from one stored document.'
+    };
+
+    const versionsButton = () => dialog().querySelector<HTMLButtonElement>('button[aria-label="About Versions"]');
+
+    it('has no Versions button without an explanation', async () => {
+      host.viewer.open(request({ variants: VARIANTS }));
+      await settle();
+
+      expect(dialog().querySelector('[role="tablist"]')).not.toBeNull();
+      expect(versionsButton()).toBeNull();
+      expect(dialog().querySelector('app-info-tip')).toBeNull();
+    });
+
+    it('has no Versions button without variants, even with an explanation', async () => {
+      host.viewer.open(request({ variantsInfo: INFO }));
+      await settle();
+
+      expect(dialog().querySelector('[role="tablist"]')).toBeNull();
+      expect(versionsButton()).toBeNull();
+    });
+
+    it('puts the Versions button right after the variant tabs, and opens the explanation in a dialog', async () => {
+      host.viewer.open(request({ variants: VARIANTS, variantsInfo: INFO }));
+      await settle();
+
+      const tablist = dialog().querySelector<HTMLElement>('[role="tablist"]')!;
+      const tip = tablist.nextElementSibling!;
+      expect(tip.tagName.toLowerCase()).toBe('app-info-tip');
+      const button = versionsButton()!;
+      expect(tip.contains(button)).toBeTrue();
+      expect(button.hasAttribute('title')).toBeFalse();
+
+      button.click();
+      fixture.detectChanges();
+
+      const infoDialog = tip.querySelector<HTMLDialogElement>('dialog')!;
+      expect(infoDialog.open).toBeTrue();
+      expect(infoDialog.textContent).toContain(INFO.title);
+      const pairs = Array.from(infoDialog.querySelectorAll('dl > div')).map(group => [
+        group.querySelector('dt')!.textContent!.trim(),
+        group.querySelector('dd')!.textContent!.trim()
+      ]);
+      expect(pairs).toEqual([['Summary', 'The short version.'], ['Full', 'Everything, for the team.']]);
+      expect(infoDialog.querySelector('p.pdfv-variants-info-note')!.textContent!.trim()).toBe(INFO.note!);
+
+      // In dialog mode nothing is described by the tip.
+      const tipId = `${host.viewer.idPrefix}-variants-info`;
+      const describedByTip = Array.from(el.querySelectorAll('[aria-describedby]'))
+        .filter(element => element.getAttribute('aria-describedby')!.split(' ').includes(tipId));
+      expect(describedByTip).toEqual([]);
+
+      // Closing the explanation leaves the viewer open.
+      const closeEvent = new Promise<void>(resolve => infoDialog.addEventListener('close', () => resolve(), { once: true }));
+      infoDialog.close();
+      await closeEvent;
+      await settle();
+
+      expect(infoDialog.open).toBeFalse();
+      expect(dialog().open).toBeTrue();
+      expect(host.closedCount).toBe(0);
+    });
+
+    it('leaves out the note paragraph when the explanation has none', async () => {
+      host.viewer.open(request({ variants: VARIANTS, variantsInfo: { title: INFO.title, items: INFO.items } }));
+      await settle();
+
+      versionsButton()!.click();
+      fixture.detectChanges();
+
+      const infoDialog = dialog().querySelector<HTMLDialogElement>('app-info-tip dialog')!;
+      expect(infoDialog.querySelectorAll('dl > div').length).toBe(2);
+      expect(infoDialog.querySelector('p.pdfv-variants-info-note')).toBeNull();
+      infoDialog.close();
+    });
   });
 });

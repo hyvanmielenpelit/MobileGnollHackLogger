@@ -28,6 +28,7 @@ import { downloadTextFile, safeFileName } from '../../../utils/download.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { exportTimestamp, saveFigureBlob } from '../model-comparison/figure-export';
+import { REPORT_DISCLOSURE_GUIDE } from '../report-disclosure-guide';
 import { markdownToPrintableHtml } from './printable-html';
 import {
   ArchiveEntry,
@@ -272,6 +273,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
   readonly idPrefix = `dc${++nextInstanceId}`;
   readonly packages = DOWNLOAD_PACKAGES;
   readonly papers = PDF_PAPERS;
+  readonly disclosureGuide = REPORT_DISCLOSURE_GUIDE;
 
   context: DownloadCenterContext | null = null;
   packageId: DownloadPackageId = 'internal';
@@ -1084,10 +1086,19 @@ function subjectRunReportRow(runId: number, subjectLabel: string): DownloadRow {
   };
 }
 
+/** The levels a document renders at when the server sends none: its audience's own set. */
+function fallbackDisclosures(audience: BenchmarkReportAudience): BenchmarkReportDisclosure[] {
+  switch (audience) {
+    case BenchmarkReportAudience.InternalBrief: return [BenchmarkReportDisclosure.Full];
+    case BenchmarkReportAudience.ExecutiveSummary: return [BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Full];
+    default: return [...ALL_DISCLOSURES];
+  }
+}
+
 function packRow(doc: BenchmarkReportDocumentListItemDto): DownloadRow {
   const allowed = doc.allowedDisclosures && doc.allowedDisclosures.length > 0
     ? doc.allowedDisclosures
-    : doc.audience === BenchmarkReportAudience.InternalBrief ? [BenchmarkReportDisclosure.Full] : [...ALL_DISCLOSURES];
+    : fallbackDisclosures(doc.audience);
   const shareable = doc.audience !== BenchmarkReportAudience.InternalBrief
     && allowed.some(d => d !== BenchmarkReportDisclosure.Full);
   const created = utcDate(doc.createdAtUtc);

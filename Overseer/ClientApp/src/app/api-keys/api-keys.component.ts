@@ -2,12 +2,29 @@ import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy, ViewChil
 
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   SettingsService,
   ApiKeyStatus,
+  ApiKeySaveResult,
   CONFIDENTIALITY_POSTURES,
   confidentialityPostureLabel
 } from '../services/settings.service';
+import { KeyVerificationDialogComponent } from '../shared/key-verification/key-verification-dialog.component';
+import {
+  ApiKeyVerification,
+  readApiKeyRefusal,
+  readServerMessage,
+  verificationLabel,
+  verificationTooltip
+} from '../shared/key-verification/key-verification';
+import { ensureOverlayPolyfills } from '../utils/polyfills.util';
+
+/** An inline error under a provider's key input: the message, then the failure detail when there is one. */
+export interface ApiKeyFieldError {
+  message: string;
+  detail: string | null;
+}
 
 /** The three states of the per-key confidential-trust decision, as the `<select>` carries them. */
 export type ConfidentialTrustChoice = 'yes' | 'no' | 'undecided';
@@ -20,7 +37,7 @@ const POSTURE_SAVED_MS = 3000;
 
 @Component({
     selector: 'app-api-keys',
-    imports: [FormsModule, RouterModule],
+    imports: [FormsModule, RouterModule, KeyVerificationDialogComponent],
     templateUrl: './api-keys.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './api-keys.component.scss'
@@ -29,11 +46,25 @@ export class ApiKeysComponent implements OnInit, OnDestroy {
   settingsService = inject(SettingsService);
   @ViewChild('deleteConfirmDialog') deleteConfirmDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('advancedInfoDialog') advancedInfoDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild(KeyVerificationDialogComponent) verificationDialog?: KeyVerificationDialogComponent;
 
   providers = ['Anthropic', 'Google', 'OpenAI'];
   keyStatuses: Record<string, boolean> = {};
   keyParallelModes: Record<string, number> = {};
   newKeys: Record<string, string> = {};
+
+  /** The last check of each saved key. A null status (a key saved before checks existed) has no label. */
+  keyVerifications: Record<string, ApiKeyVerification | null> = {};
+  keyErrors: Record<string, ApiKeyFieldError | null> = {};
+  keyWarnings: Record<string, string | null> = {};
+  /** The `role="status"` line of each provider card. */
+  keyStatusLines: Record<string, string> = {};
+  verifyingProvider: string | null = null;
+  /** The provider the key verification dialog is about. */
+  private pendingProvider: string | null = null;
+
+  readonly verificationLabel = verificationLabel;
+  readonly verificationTooltip = verificationTooltip;
 
   // Rebuilt only when a saved posture changes, so the <select> is not handed a fresh array on
   // every change-detection pass, which would re-render its options and drop the selection.
@@ -63,6 +94,7 @@ export class ApiKeysComponent implements OnInit, OnDestroy {
   private postureSavedTimer?: ReturnType<typeof setTimeout>;
 
   ngOnInit() {
+    ensureOverlayPolyfills();
     this.loadStatuses();
   }
 
@@ -85,9 +117,11 @@ export class ApiKeysComponent implements OnInit, OnDestroy {
         this.keyPostureDeclaredUtc = {};
         this.keyTrusts = {};
         this.keyTrustDecidedUtc = {};
+        this.keyVerifications = {};
         for (const status of statuses) {
           this.keyStatuses[status.provider] = status.hasKey;
           this.keyParallelModes[status.provider] = status.parallelExecutionMode ?? 2;
+          this.keyVerifications[status.provider] = status.hasKey ? (status.verification ?? null) : null;
           this.applyPostureState(status);
         }
         this.loading = false;
@@ -256,18 +290,103 @@ export class ApiKeysComponent implements OnInit, OnDestroy {
     });
   }
 
-  saveKey(provider: string) {
-    const key = this.newKeys[provider];
-    if (!key) return;
+  keyInputId(provider: string): string {
+    return 'key-' + provider;
+  }
+
+  keyErrorId(provider: string): string {
+    return 'key-error-' + provider;
+  }
+
+  onKeyInput(provider: string) {
+    if (this.keyErrors[provider]) {
+      this.keyErrors[provider] = null;
+    }
+  }
+
+  /** Checks the key with its provider, then saves it. The input keeps the key until a save succeeds. */
+  saveKey(provider: string, saveUnverified = false) {
+    const key = (this.newKeys[provider] || '').trim();
+    if (!key || this.savingProvider) return;
 
     this.savingProvider = provider;
-    this.settingsService.saveApiKey(provider, key).subscribe({
-      next: () => {
-        this.keyStatuses[provider] = true;
-        this.newKeys[provider] = '';
-        this.savingProvider = '';
+    this.keyErrors[provider] = null;
+    this.keyWarnings[provider] = null;
+    this.keyStatusLines[provider] = `Checking the key with ${provider}…`;
+    this.settingsService.saveApiKey(provider, key, saveUnverified).subscribe({
+      next: (result) => this.onKeySaved(provider, result),
+      error: (err: HttpErrorResponse) => this.onKeySaveFailed(provider, err)
+    });
+  }
+
+  private onKeySaved(provider: string, result: ApiKeySaveResult | null) {
+    this.savingProvider = '';
+    this.keyStatuses[provider] = true;
+    this.newKeys[provider] = '';
+    this.keyVerifications[provider] = result?.verification ?? null;
+    this.keyWarnings[provider] = result?.warning?.trim() || null;
+    this.keyStatusLines[provider] = result?.verification?.status === 'NotVerified'
+      ? `The ${provider} key was saved as Not verified.`
+      : `The ${provider} key was saved.`;
+    this.pendingProvider = null;
+    this.verificationDialog?.close();
+  }
+
+  private onKeySaveFailed(provider: string, err: HttpErrorResponse) {
+    this.savingProvider = '';
+    this.keyStatusLines[provider] = '';
+    const refusal = readApiKeyRefusal(err);
+
+    if (refusal?.verdict === 'unverifiable') {
+      this.pendingProvider = provider;
+      this.verificationDialog?.open(provider, refusal);
+      return;
+    }
+
+    this.pendingProvider = null;
+    this.verificationDialog?.close();
+    this.keyErrors[provider] = refusal
+      ? { message: refusal.message || `${provider} rejected the key.`, detail: refusal.detail?.text?.trim() || null }
+      : { message: readServerMessage(err) ?? `The ${provider} key could not be saved.`, detail: null };
+  }
+
+  /** Save Anyway in the key verification dialog: the same key again, with `saveUnverified`. */
+  onSaveAnyway() {
+    if (this.pendingProvider) {
+      this.saveKey(this.pendingProvider, true);
+    }
+  }
+
+  onVerificationDialogClosed() {
+    const provider = this.pendingProvider;
+    this.pendingProvider = null;
+    if (provider && this.savingProvider !== provider) {
+      document.getElementById(this.keyInputId(provider))?.focus();
+    }
+  }
+
+  /** Re-checks the stored key; the label updates in place and the outcome is announced. */
+  verifyKey(provider: string) {
+    if (this.verifyingProvider) return;
+    this.verifyingProvider = provider;
+    this.keyErrors[provider] = null;
+    this.keyStatusLines[provider] = `Checking the key with ${provider}…`;
+    this.settingsService.verifyApiKey(provider).subscribe({
+      next: (result) => {
+        this.verifyingProvider = null;
+        this.keyVerifications[provider] = result.verification;
+        this.keyStatusLines[provider] = result.verification?.status === 'Verified'
+          ? `The ${provider} key is verified.`
+          : `The ${provider} key is still not verified.`;
       },
-      error: () => this.savingProvider = ''
+      error: (err: HttpErrorResponse) => {
+        this.verifyingProvider = null;
+        this.keyStatusLines[provider] = '';
+        this.keyErrors[provider] = {
+          message: readServerMessage(err) ?? `The ${provider} key could not be checked.`,
+          detail: null
+        };
+      }
     });
   }
 
@@ -289,6 +408,9 @@ export class ApiKeysComponent implements OnInit, OnDestroy {
     this.settingsService.deleteApiKeyForProvider(provider).subscribe({
       next: () => {
         this.keyStatuses[provider] = false;
+        this.keyVerifications[provider] = null;
+        this.keyWarnings[provider] = null;
+        this.keyStatusLines[provider] = '';
         this.savingProvider = '';
       },
       error: () => this.savingProvider = ''

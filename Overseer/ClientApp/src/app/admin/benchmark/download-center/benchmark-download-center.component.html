@@ -125,21 +125,16 @@
                     <th scope="col" class="dc-col-disclosure">
                       <span class="dc-th">
                         Disclosure
-                        <app-info-tip trigger="click" [tipId]="idPrefix + '-disclosure-tip'" subject="Disclosure">
-                          <dl>
-                            <div>
-                              <dt><span class="gh-info-term">Summary</span></dt>
-                              <dd>Questions described by topic, never quoted; no rubrics, answers or grader evidence.</dd>
-                            </div>
-                            <div>
-                              <dt><span class="gh-info-term">Detailed</span></dt>
-                              <dd>The questions discussed, verbatim, with answer excerpts; no rubrics or grader evidence.</dd>
-                            </div>
-                            <div>
-                              <dt><span class="gh-info-term">Full</span></dt>
-                              <dd>Every question, rubric and grader evidence verbatim, with answer excerpts; internal only.</dd>
-                            </div>
+                        <app-info-tip trigger="dialog" [tipId]="idPrefix + '-disclosure-tip'" subject="Disclosure" [dialogTitle]="disclosureGuide.title">
+                          <dl class="dc-disclosure-guide">
+                            @for (item of disclosureGuide.items; track item.term) {
+                              <div>
+                                <dt><span class="gh-info-term">{{ item.term }}</span></dt>
+                                <dd>{{ item.text }}</dd>
+                              </div>
+                            }
                           </dl>
+                          <p class="dc-disclosure-guide-note">{{ disclosureGuide.executiveSummaryNote }}</p>
                         </app-info-tip>
                       </span>
                     </th>

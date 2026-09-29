@@ -60,6 +60,9 @@ public class SystemAiApiConfiguration : IRateLimitedEntity
     [MaxLength(32)]
     public string? ApiKeyTag { get; set; }
 
+    /// <summary>The key columns hold a copy of the provider's default key (<see cref="SystemDefaultApiKey"/>).</summary>
+    public bool UseDefaultApiKey { get; set; }
+
     public bool IsSystemWide { get; set; }
 
     public ParallelExecutionMode ParallelExecutionMode { get; set; } = ParallelExecutionMode.Enabled;

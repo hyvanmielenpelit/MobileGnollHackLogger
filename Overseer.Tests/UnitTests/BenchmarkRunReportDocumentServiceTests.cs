@@ -832,6 +832,56 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Equal(2, (await h.DocumentsAsync()).Count);
     }
 
+    [Fact]
+    public async Task TryGetJob_RightAfterTryStart_IsNeverNull()
+    {
+        await using var h = await Harness.CreateAsync();
+        var running = new BenchmarkReportPackJob { SubjectLabel = "Other", SuiteName = "Isolation Suite", Cts = new CancellationTokenSource() };
+        Assert.True(h.Jobs.TryStart(running, out _));
+        var requested = new[] { BenchmarkReportAudience.TechnicalReport };
+
+        Assert.True(h.Service.TryStart(h.RunId, "user-1", requested, false, out var completion));
+        var view = h.Service.TryGetJob(h.RunId);
+
+        // Before or after the job registers, the busy slot keeps it Queued with the requested document.
+        Assert.NotNull(view);
+        Assert.Equal("Queued", view.Phase);
+        Assert.Equal(requested, view.Audiences);
+        Assert.Equal(h.Clock.UtcNow, view.QueuedAtUtc);
+        Assert.Equal(h.Clock.UtcNow, view.ServerTimeUtc);
+        Assert.NotNull(view.Job);
+
+        running.SetStatus(BenchmarkReportPackJobStatus.Completed);
+        await completion.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal("Finished", h.Service.TryGetJob(h.RunId)!.Phase);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+    }
+
+    [Fact]
+    public async Task TryStart_AfterAFinishedJob_TheFirstViewIsTheNewJob()
+    {
+        await using var h = await Harness.CreateAsync();
+        Assert.True(h.Service.TryStart(h.RunId, "user-1", new[] { BenchmarkReportAudience.ExecutiveSummary }, false, out var first));
+        await first.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal("Finished", h.Service.TryGetJob(h.RunId)!.Phase);
+
+        var running = new BenchmarkReportPackJob { SubjectLabel = "Other", SuiteName = "Isolation Suite", Cts = new CancellationTokenSource() };
+        Assert.True(h.Jobs.TryStart(running, out _));
+        Assert.True(h.Service.TryStart(h.RunId, "user-1", new[] { BenchmarkReportAudience.TechnicalReport }, false, out var second));
+        var view = h.Service.TryGetJob(h.RunId);
+
+        Assert.NotNull(view);
+        Assert.NotEqual("Finished", view.Phase);
+        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, view.Audiences);
+
+        running.SetStatus(BenchmarkReportPackJobStatus.Completed);
+        await second.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        var finished = h.Service.TryGetJob(h.RunId)!;
+        Assert.Equal("Finished", finished.Phase);
+        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, finished.Audiences);
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
+    }
+
     // --- Estimate ------------------------------------------------------------------------------------
 
     [Fact]

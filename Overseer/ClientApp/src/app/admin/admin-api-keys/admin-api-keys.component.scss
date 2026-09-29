@@ -1,0 +1,175 @@
+@use '../benchmark/benchmark-dialog-frame' as frame;
+
+/* Admin → API Keys.
+ *
+ * Layout and component-local presentation only. .btn-gh and its variants, .btn-ghost,
+ * .status-badge, .gh-tooltip, .gh-field-error, .gh-disclosure, .alert and .gh-dialog come from
+ * styles.scss and are never redefined here.
+ */
+
+.aak {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.aak-intro {
+  margin: 0 0 16px;
+  color: #ccc;
+}
+
+.aak-loading {
+  margin: 0 0 12px;
+  color: #a1a1aa;
+  font-size: var(--text-secondary);
+}
+
+.aak-cards {
+  display: grid;
+  gap: 16px;
+  max-width: 48rem;
+}
+
+.aak-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.aak-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.aak-card-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #e4e4e7;
+}
+
+.aak-key-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.aak-hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
+  color: #d4d4d8;
+}
+
+.aak-verification {
+  cursor: help;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.aak-verification-tip {
+  white-space: pre-wrap;
+  max-width: min(28rem, 90vw);
+}
+
+.aak-verify-again[aria-disabled="true"],
+.aak-save[aria-disabled="true"],
+.aak-delete-confirm[aria-disabled="true"] {
+  cursor: progress;
+}
+
+.aak-used-by summary,
+.aak-used-by-none {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.aak-used-by-none {
+  margin: 0;
+}
+
+.aak-config-list {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+}
+
+.aak-config-disabled {
+  color: #a1a1aa;
+  font-size: var(--text-secondary);
+}
+
+.aak-input-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.aak-input-label {
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: #ccc;
+}
+
+.aak-input-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.aak-input {
+  flex: 1 1 16rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.aak-input-actions,
+.aak-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.aak-error-message,
+.aak-error-detail {
+  display: block;
+}
+
+.aak-error-detail {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.aak-warning {
+  margin: 0;
+}
+
+.aak-status {
+  margin: 0;
+  color: #d4d4d8;
+  font-size: var(--text-secondary);
+
+  /* An empty live region stays rendered, so its first message is announced; it takes no gap. */
+  &:empty {
+    margin-block-start: -12px;
+  }
+}
+
+.gh-dialog.aak-delete-dialog {
+  @include frame.frame($width: 34rem);
+  @include frame.confirm;
+}
+
+.aak-delete-configs {
+  margin-top: 8px;
+}

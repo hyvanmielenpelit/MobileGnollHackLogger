@@ -167,6 +167,14 @@
             }
           </div>
         }
+        <!-- API KEYS TAB -->
+        @if (activeTab === 'apikeys') {
+          <div role="tabpanel" id="admin-panel-apikeys" aria-labelledby="admin-tab-apikeys" tabindex="0">
+            <app-admin-api-keys [statuses]="defaultApiKeys"
+                                [loading]="defaultApiKeysLoading"
+                                (changed)="onDefaultApiKeysChanged()"></app-admin-api-keys>
+          </div>
+        }
         <!-- CONFIGS TAB -->
         @if (activeTab === 'configs') {
           <div role="tabpanel" id="admin-panel-configs" aria-labelledby="admin-tab-configs" tabindex="0">
@@ -237,9 +245,8 @@
                           @if (!config.isEnabled) {
                             <span class="badge-disabled">Disabled</span>
                           }
-                          <span class="status-badge" [class.badge-success]="config.hasApiKey" [class.badge-warning]="!config.hasApiKey">
-                            {{ config.hasApiKey ? 'Key Saved' : 'No Key' }}
-                          </span>
+                          @let keyBadge = configKeyBadge(config);
+                          <span class="status-badge config-key-badge" [ngClass]="keyBadge.cssClass">{{ keyBadge.label }}</span>
                         </div>
                         @if (config.thinkingLevel) {
                           <div>
@@ -1180,6 +1187,7 @@
       [providers]="adminProviders"
       [initialProvider]="editingConfig.provider"
       [initialData]="editingConfig"
+      [defaultKeys]="defaultKeysForForm"
       [saving]="savingConfig"
       [serverError]="configSaveError"
       (save)="onConfigSave($event)"

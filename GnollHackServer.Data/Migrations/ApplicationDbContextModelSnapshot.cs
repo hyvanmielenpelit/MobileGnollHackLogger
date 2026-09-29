@@ -3318,6 +3318,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<long>("TotalTitleTokensCount")
                         .HasColumnType("bigint");
 
+                    b.Property<bool>("UseDefaultApiKey")
+                        .HasColumnType("bit");
+
                     b.HasKey("Id");
 
                     b.ToTable("SystemAiApiConfigurations");
@@ -3512,6 +3515,59 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("SystemAiUsageLogs");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.SystemDefaultApiKey", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ApiKeyNonce")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ApiKeyTag")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("ApiKeyVerification")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ApiKeyVerificationCheckedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApiKeyVerificationMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EncryptedApiKey")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<string>("KeyHint")
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Provider")
+                        .IsUnique();
+
+                    b.ToTable("SystemDefaultApiKeys");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.UserAiApiKey", b =>
                 {
                     b.Property<long>("Id")
@@ -3527,6 +3583,16 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("ApiKeyTag")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("ApiKeyVerification")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ApiKeyVerificationCheckedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApiKeyVerificationMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
 
                     b.Property<string>("ApiVersion")
                         .HasMaxLength(64)

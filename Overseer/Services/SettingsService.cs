@@ -272,14 +272,25 @@ public class SettingsService
                 ConfidentialityNote = key?.ConfidentialityNote,
                 PostureDeclaredUtc = key?.PostureDeclaredUtc,
                 UserTrustsForConfidential = key?.UserTrustsForConfidential,
-                ConfidentialTrustDecidedUtc = key?.ConfidentialTrustDecidedUtc
+                ConfidentialTrustDecidedUtc = key?.ConfidentialTrustDecidedUtc,
+                Verification = ApiKeyVerificationDto.From(
+                    key?.ApiKeyVerification, key?.ApiKeyVerificationCheckedAtUtc, key?.ApiKeyVerificationMessage)
             });
         }
         
         return statuses;
     }
 
-    public async Task SaveApiKeyForProviderAsync(string userId, string provider, string apiKey)
+    /// <summary>
+    /// Stores the user's key for a provider together with the outcome of its check. A null
+    /// <paramref name="verificationStatus"/> records the key as not checked.
+    /// </summary>
+    public async Task<UserAiApiKey> SaveApiKeyForProviderAsync(
+        string userId,
+        string provider,
+        string apiKey,
+        ApiKeyVerificationStatus? verificationStatus = null,
+        string? verificationMessage = null)
     {
         var entry = await _dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
         if (entry == null)
@@ -292,8 +303,46 @@ public class SettingsService
         entry.EncryptedApiKey = ciphertext;
         entry.ApiKeyNonce = nonce;
         entry.ApiKeyTag = tag;
+        ApplyVerification(entry, verificationStatus, verificationMessage);
 
         await _dbContext.SaveChangesAsync();
+        return entry;
+    }
+
+    /// <summary>
+    /// Records a new check of the user's stored key, leaving the key itself alone. Returns null
+    /// when no key is stored for the provider.
+    /// </summary>
+    public async Task<UserAiApiKey?> SetApiKeyVerificationAsync(
+        string userId, string provider, ApiKeyVerificationStatus? status, string? message)
+    {
+        var entry = await _dbContext.UserAiApiKeys.FirstOrDefaultAsync(k => k.AspNetUserId == userId && k.Provider == provider);
+        if (entry == null || string.IsNullOrEmpty(entry.EncryptedApiKey))
+            return null;
+
+        ApplyVerification(entry, status, message);
+
+        await _dbContext.SaveChangesAsync();
+        return entry;
+    }
+
+    private static void ApplyVerification(UserAiApiKey entry, ApiKeyVerificationStatus? status, string? message)
+    {
+        entry.ApiKeyVerification = status;
+        entry.ApiKeyVerificationCheckedAtUtc = status.HasValue ? DateTime.UtcNow : null;
+        entry.ApiKeyVerificationMessage = TruncateVerificationMessage(message);
+    }
+
+    private const int MaxVerificationMessageLength = 1000;
+
+    private static string? TruncateVerificationMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return null;
+
+        return message.Length <= MaxVerificationMessageLength
+            ? message
+            : message.Substring(0, MaxVerificationMessageLength);
     }
 
     public async Task SaveApiKeyParallelModeAsync(string userId, string provider, int mode)
@@ -317,6 +366,9 @@ public class SettingsService
             entry.EncryptedApiKey = null;
             entry.ApiKeyNonce = null;
             entry.ApiKeyTag = null;
+            entry.ApiKeyVerification = null;
+            entry.ApiKeyVerificationCheckedAtUtc = null;
+            entry.ApiKeyVerificationMessage = null;
             await _dbContext.SaveChangesAsync();
         }
     }
@@ -705,6 +757,21 @@ public class SettingsService
         if (config != null && !string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
         {
             return _cryptoService.Decrypt(config.EncryptedApiKey, config.ApiKeyNonce, config.ApiKeyTag, "SYSTEM_API_KEY");
+        }
+        return null;
+    }
+
+    /// <summary>The provider's default API key in clear, or null when none is stored. Administrator paths only.</summary>
+    public async Task<string?> GetDecryptedSystemDefaultApiKeyAsync(string provider)
+    {
+        var canonical = SupportedProviders.FirstOrDefault(p => p.Equals(provider, StringComparison.OrdinalIgnoreCase));
+        if (canonical == null)
+            return null;
+
+        var row = await _dbContext.SystemDefaultApiKeys.FirstOrDefaultAsync(k => k.Provider == canonical);
+        if (row != null && !string.IsNullOrEmpty(row.EncryptedApiKey) && !string.IsNullOrEmpty(row.ApiKeyNonce) && !string.IsNullOrEmpty(row.ApiKeyTag))
+        {
+            return _cryptoService.Decrypt(row.EncryptedApiKey, row.ApiKeyNonce, row.ApiKeyTag, "SYSTEM_DEFAULT_API_KEY:" + canonical);
         }
         return null;
     }

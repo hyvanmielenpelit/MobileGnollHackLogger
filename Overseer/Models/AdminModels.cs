@@ -45,6 +45,9 @@ public class SystemAiApiConfigurationDto
     public int OrderIndex { get; set; }
     public bool IsEnabled { get; set; }
     public bool HasApiKey { get; set; }
+
+    /// <summary>The config's key columns hold a copy of the provider's default key.</summary>
+    public bool UseDefaultApiKey { get; set; }
     public bool IsSystemWide { get; set; }
     public int? MaxDailyChatRequests { get; set; }
     public int? MaxMonthlyChatRequests { get; set; }
@@ -140,6 +143,9 @@ public class CreateSystemAiApiConfigurationRequest
     public int? MaxOutputTokens { get; set; }
     public bool IsEnabled { get; set; }
     public string? ApiKey { get; set; }
+
+    /// <summary>Use the provider's default key instead of <see cref="ApiKey"/>, which is then ignored.</summary>
+    public bool UseDefaultApiKey { get; set; }
     public bool IsSystemWide { get; set; }
     public int? MaxDailyChatRequests { get; set; }
     public int? MaxMonthlyChatRequests { get; set; }
@@ -427,4 +433,64 @@ public class SystemConfigDeletionCheckDto
 
     /// <summary>Users' confidentiality decisions for this model. Removed with the configuration.</summary>
     public int ConfidentialTrustCount { get; set; }
+}
+
+/// <summary>One provider's default API key, as the API Keys tab shows it. Never carries the key.</summary>
+public class DefaultApiKeyStatusDto
+{
+    public string Provider { get; set; } = string.Empty;
+    public bool HasKey { get; set; }
+
+    /// <summary>The last four characters of the key, or null when none is stored.</summary>
+    public string? KeyHint { get; set; }
+    public DateTime? UpdatedAtUtc { get; set; }
+    public Overseer.Services.ApiKeyVerificationDto Verification { get; set; } = default!;
+
+    /// <summary>System configurations of this provider set to use the default key.</summary>
+    public List<DefaultApiKeyUserDto> UsedBy { get; set; } = new();
+}
+
+/// <summary>A system configuration that uses a default key.</summary>
+public class DefaultApiKeyUserDto
+{
+    public long Id { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; }
+}
+
+public class SaveDefaultApiKeyRequest
+{
+    public string ApiKey { get; set; } = string.Empty;
+
+    /// <summary>Save the key even if its provider cannot confirm it (Save Anyway). The check still runs.</summary>
+    public bool SaveUnverified { get; set; }
+}
+
+public class DefaultApiKeySaveResultDto
+{
+    public DefaultApiKeyStatusDto Status { get; set; } = new();
+
+    /// <summary>System configurations whose copy of the key was rewritten.</summary>
+    public int UpdatedConfigCount { get; set; }
+
+    /// <summary>The provider's warning about a key it accepted, such as a rate limit; otherwise null.</summary>
+    public string? Warning { get; set; }
+}
+
+public class DefaultApiKeyVerifyResultDto
+{
+    public DefaultApiKeyStatusDto Status { get; set; } = new();
+}
+
+/// <summary>What deleting a default key would disable.</summary>
+public class DefaultApiKeyDeletionCheckDto
+{
+    public int Count { get; set; }
+    public List<DefaultApiKeyUserDto> Configs { get; set; } = new();
+}
+
+public class DefaultApiKeyDeleteResultDto
+{
+    /// <summary>System configurations disabled because their copy of the key was removed.</summary>
+    public int DisabledCount { get; set; }
 }

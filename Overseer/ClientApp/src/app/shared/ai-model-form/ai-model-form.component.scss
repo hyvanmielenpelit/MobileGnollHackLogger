@@ -398,3 +398,34 @@
   resize: vertical;
   font-family: var(--font-monospace, monospace);
 }
+
+/* Default / Custom key choice. The radios are .gh-choice / .gh-radio from styles.scss. */
+.api-key-choice {
+  margin-bottom: 15px;
+
+  .gh-radio {
+    align-items: flex-start;
+
+    input[type="radio"] {
+      margin-top: 2px;
+    }
+
+    input[type="radio"]:disabled {
+      cursor: not-allowed;
+    }
+  }
+
+  .gh-radio:has(input:disabled) {
+    color: #8a8a8a;
+    cursor: not-allowed;
+  }
+}
+
+.api-key-choice-detail {
+  color: #a1a1aa;
+}
+
+.api-key-choice-reason {
+  width: 100%;
+  margin: 2px 0 0;
+}

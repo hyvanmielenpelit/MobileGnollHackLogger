@@ -18,6 +18,40 @@
   <div class="gh-info-popup-title" [id]="tipId + '-title'">{{ subject }}</div>
   <div class="gh-info-popup-body" [id]="tipId"><ng-container [ngTemplateOutlet]="content"></ng-container></div>
 </div>
+} @else if (trigger === 'dialog') {
+<button type="button" class="gh-info-btn gh-info-btn--click"
+        [attr.aria-label]="'About ' + subject"
+        aria-haspopup="dialog"
+        (click)="openDialog()">
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="10"></circle>
+    <line x1="12" y1="16" x2="12" y2="12"></line>
+    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+  </svg>
+</button>
+<!-- Nested in other dialogs, so its own close and cancel events stop here. -->
+<dialog #infoDialog class="gh-dialog gh-info-dialog" closedby="any"
+        [attr.aria-labelledby]="tipId + '-title'"
+        (click)="onDialogClick($event)"
+        (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
+  <div class="dialog-header">
+    <h3 #infoDialogTitle [id]="tipId + '-title'" tabindex="-1" autofocus>{{ title }}</h3>
+    <button type="button" class="btn-icon-action"
+            [attr.aria-label]="'Close ' + title"
+            [attr.interestfor]="tipId + '-close-tip'"
+            [attr.style]="'anchor-name: --' + tipId + '-close-tip'"
+            (click)="closeDialog()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="tipId + '-close-tip'"
+         [attr.style]="'position-anchor: --' + tipId + '-close-tip'">Close</div>
+  </div>
+  <div class="gh-info-dialog-body" [id]="tipId" role="region" tabindex="0"
+       [attr.aria-labelledby]="tipId + '-title'"><ng-container [ngTemplateOutlet]="content"></ng-container></div>
+</dialog>
 } @else {
 <button type="button" class="gh-info-btn"
         [attr.aria-label]="'About ' + subject"

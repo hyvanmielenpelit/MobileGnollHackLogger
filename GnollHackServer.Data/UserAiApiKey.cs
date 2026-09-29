@@ -25,6 +25,19 @@ public class UserAiApiKey
 
     public ParallelExecutionMode ParallelExecutionMode { get; set; } = ParallelExecutionMode.Enabled;
 
+    /// <summary>Outcome of the last check of the key with its provider; null = never checked.</summary>
+    public ApiKeyVerificationStatus? ApiKeyVerification { get; set; }
+
+    /// <summary>When the key was last checked with its provider, whatever the outcome.</summary>
+    public DateTime? ApiKeyVerificationCheckedAtUtc { get; set; }
+
+    /// <summary>
+    /// The failure detail of a <see cref="ApiKeyVerificationStatus.NotVerified"/> key, or a provider
+    /// warning for a verified one. Never holds the key.
+    /// </summary>
+    [MaxLength(1000)]
+    public string? ApiKeyVerificationMessage { get; set; }
+
     /// <summary>
     /// The posture the user declares for their own provider account, as a
     /// ProviderConfidentialityPosture name. Null = never declared, treated as "Unknown".

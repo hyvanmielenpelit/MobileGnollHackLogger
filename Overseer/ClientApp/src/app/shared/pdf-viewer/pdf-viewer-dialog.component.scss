@@ -73,9 +73,47 @@
     }
   }
 
-  .pdfv-variants {
+  /* The variant tab row, then the info button explaining the variants. */
+  .pdfv-variants-group {
     grid-area: variants;
+    display: flex;
+    align-items: center;
+    gap: 6px;
     min-width: 0;
+  }
+
+  .pdfv-variants {
+    min-width: 0;
+  }
+
+  /* The variants explanation, projected into the info button's dialog. */
+  .pdfv-variants-info-list {
+    margin: 0;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+
+    > div + div {
+      margin-block-start: 10px;
+      padding-block-start: 10px;
+      border-block-start: 1px solid var(--border-glass);
+    }
+
+    dt {
+      font-weight: 700;
+      color: var(--primary-color);
+    }
+
+    dd {
+      margin: 2px 0 0;
+      color: var(--nav-color);
+    }
+  }
+
+  .pdfv-variants-info-note {
+    margin: 12px 0 0;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+    color: var(--nav-color);
   }
 
   .pdfv-nav {

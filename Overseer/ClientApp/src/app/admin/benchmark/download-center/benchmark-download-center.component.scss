@@ -357,6 +357,40 @@
   white-space: nowrap;
 }
 
+/* The Disclosure explanation, in its info button's dialog. The dialog sits inside the column header,
+   whose weight, color and no-wrap it would otherwise inherit. */
+.dc-disclosure-guide,
+.dc-disclosure-guide-note {
+  font-size: var(--text-body);
+  font-weight: 400;
+  line-height: var(--leading-body);
+  white-space: normal;
+  color: var(--nav-color);
+}
+
+.dc-disclosure-guide {
+  margin: 0;
+
+  > div + div {
+    margin-block-start: 10px;
+    padding-block-start: 10px;
+    border-block-start: 1px solid var(--border-glass);
+  }
+
+  dt {
+    font-weight: 700;
+    color: var(--primary-color);
+  }
+
+  dd {
+    margin: 2px 0 0;
+  }
+}
+
+.dc-disclosure-guide-note {
+  margin: 12px 0 0;
+}
+
 .dc-row.is-unselectable {
   .dc-doc-label {
     color: #a1a1aa;

@@ -27,6 +27,7 @@ import {
   internalServerName,
   reportDocumentFileStem
 } from './benchmark-download-center.component';
+import { REPORT_DISCLOSURE_GUIDE, reportDisclosureInfo } from '../report-disclosure-guide';
 import { sha256Hex } from './text-archive';
 import { zipEntryTimes } from './zip-entry-times.testing';
 
@@ -457,6 +458,29 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(rowElement('report:42').querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBeFalse();
     });
 
+    it('offers the Executive Summary at the levels the server allows, never adding Detailed', () => {
+      openRun([doc(1, ExecutiveSummary, { allowedDisclosures: [Summary, Full] }), doc(2, TechnicalReport)]);
+      const options = (key: string): string[] =>
+        Array.from(rowElement(key).querySelectorAll<HTMLSelectElement>('select')[0].options).map(o => o.textContent!.trim());
+
+      component.selectPackage('provider');
+      render();
+      expect(options('doc:1')).toEqual(['Summary']);
+      expect(options('doc:2')).toEqual(['Summary', 'Detailed']);
+
+      component.selectPackage('custom');
+      render();
+      expect(options('doc:1')).toEqual(['Summary', 'Full']);
+      expect(options('doc:2')).toEqual(['Summary', 'Detailed', 'Full']);
+    });
+
+    it('falls back to Summary and Full for an Executive Summary listed without its levels', () => {
+      openRun([doc(1, ExecutiveSummary, { allowedDisclosures: [] }), doc(2, TechnicalReport, { allowedDisclosures: [] })]);
+
+      expect(row('doc:1').allowedDisclosures).toEqual([Summary, Full]);
+      expect(row('doc:2').allowedDisclosures).toEqual([Summary, Detailed, Full]);
+    });
+
     it('names the presets Internal, External and Custom, and stores External as provider', async () => {
       openRun();
 
@@ -609,19 +633,73 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const p = component.idPrefix;
 
       const header = host().querySelector('thead')!;
-      for (const name of ['sharing', 'disclosure', 'names', 'formats']) {
+      for (const name of ['sharing', 'names', 'formats']) {
         expect(header.querySelector(`[id="${p}-${name}-tip"]`)).withContext(name).not.toBeNull();
       }
+      expect(header.querySelector('button.gh-info-btn[aria-label="About Disclosure"]')).not.toBeNull();
       expect(byId(`${p}-sharing-tip`)!.textContent).toContain('internal-only ones never leave the Overseer team');
       const terms = (name: string): string[] =>
         Array.from(byId(`${p}-${name}-tip`)!.querySelectorAll('dl > div > dt .gh-info-term')).map(term => term.textContent!.trim());
-      expect(terms('disclosure')).toEqual(['Summary', 'Detailed', 'Full']);
       expect(terms('names')).toEqual(['Named', 'Anonymized']);
       expect(terms('formats')).toEqual(['PDF', 'Word', 'Markdown', 'HTML', 'Text']);
       const word = byId(`${p}-formats-tip`)!.querySelectorAll('dl > div')[1];
       expect(word.querySelector('dd')!.textContent!.trim())
         .toBe('For editing: a standard Word document with real headings, lists and tables.');
       expect(host().querySelector('.dc-reason')).toBeNull();
+    });
+
+    it('explains the disclosure levels in a dialog, from the shared guide, the Executive Summary note included', async () => {
+      openRun();
+      const p = component.idPrefix;
+
+      const button = host().querySelector<HTMLButtonElement>('thead button.gh-info-btn[aria-label="About Disclosure"]')!;
+      const tip = button.closest('app-info-tip')!;
+      expect(tip.querySelector('.gh-info-popup')).toBeNull();
+      expect(button.hasAttribute('popovertarget')).toBeFalse();
+
+      button.click();
+      render();
+
+      const infoDialog = tip.querySelector<HTMLDialogElement>('dialog')!;
+      expect(infoDialog.open).toBeTrue();
+      expect(infoDialog.classList).toContain('gh-info-dialog');
+      expect(infoDialog.textContent).toContain('What Summary, Detailed and Full mean');
+      expect(REPORT_DISCLOSURE_GUIDE.title).toBe('What Summary, Detailed and Full mean');
+      const pairs = Array.from(infoDialog.querySelectorAll('dl > div')).map(group => ({
+        term: group.querySelector('dt .gh-info-term')!.textContent!.trim(),
+        text: group.querySelector('dd')!.textContent!.trim()
+      }));
+      expect(pairs).toEqual(REPORT_DISCLOSURE_GUIDE.items.map(item => ({ term: item.term, text: item.text })));
+      expect(pairs.map(pair => pair.term)).toEqual(['Summary', 'Detailed', 'Full', 'Every level']);
+      expect(pairs[0].text).toContain('Safe to send to the model’s company.');
+      expect(pairs[2].text).toContain('never share it outside the Overseer team');
+      expect(pairs[3].text).toBe('The stored document is the same; the level only decides what is printed.');
+      expect(infoDialog.querySelector('p.dc-disclosure-guide-note')!.textContent!.trim())
+        .toBe(REPORT_DISCLOSURE_GUIDE.executiveSummaryNote);
+      expect(REPORT_DISCLOSURE_GUIDE.executiveSummaryNote).toContain('Summary (for the model’s company) or Full');
+
+      // In dialog mode no control is described by the tip.
+      const describedByTip = Array.from(host().querySelectorAll('[aria-describedby]'))
+        .filter(element => element.getAttribute('aria-describedby')!.split(' ').includes(`${p}-disclosure-tip`));
+      expect(describedByTip).toEqual([]);
+
+      const closeEvent = new Promise<void>(resolve => infoDialog.addEventListener('close', () => resolve(), { once: true }));
+      infoDialog.close();
+      await closeEvent;
+      await settle();
+      expect(component.dialog!.nativeElement.open).toBeTrue();
+    });
+
+    it('builds the viewer explanation from the guide, with the Executive Summary note for that audience only', () => {
+      const executive = reportDisclosureInfo(ExecutiveSummary);
+      expect(executive.title).toBe('What Summary, Detailed and Full mean');
+      expect(executive.items).toEqual(REPORT_DISCLOSURE_GUIDE.items.map(item => ({ ...item })));
+      expect(executive.note).toBe(REPORT_DISCLOSURE_GUIDE.executiveSummaryNote);
+
+      const researcher = reportDisclosureInfo(TechnicalReport);
+      expect(researcher.items).toEqual(executive.items);
+      expect(researcher.note).toBeUndefined();
+      expect(reportDisclosureInfo(InternalBrief).note).toBeUndefined();
     });
 
     it('gives every id once, from the instance prefix, and resolves every description', () => {

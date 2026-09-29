@@ -2083,7 +2083,7 @@ export enum BenchmarkReportAudience {
 export enum BenchmarkReportDisclosure {
   /** Questions described by topic; no question text, rubric, answer or grader evidence. */
   Summary = 1,
-  /** Verbatim question text and answer excerpts for the questions the notes discuss. */
+  /** Verbatim text and answer excerpts for every question; no rubric or grader evidence. */
   Detailed = 2,
   /** Everything, rubrics and grader evidence included. Internal only. */
   Full = 3

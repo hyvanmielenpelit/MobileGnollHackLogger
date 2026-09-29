@@ -39,6 +39,7 @@ import { parseServerUtcDate } from '../../../utils/date.util';
 import { safeFileName } from '../../../utils/download.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { audienceLabel, rememberedPdfPaper } from '../download-center/benchmark-download-center.component';
+import { reportDisclosureInfo } from '../report-disclosure-guide';
 import {
   disclosureLabel,
   formatCostUsd,
@@ -83,6 +84,18 @@ export interface RunAiReportRow {
 
 /** How the status line is drawn. */
 export type RunAiReportStatusKind = 'plain' | 'progress' | 'failed' | 'skipped';
+
+/**
+ * The cost estimate block: waiting for the estimate, failed, no price card for the writer, or the
+ * total with, for two documents, the cost of each.
+ */
+export interface RunReportEstimateView {
+  state: 'loading' | 'failed' | 'noPrice' | 'ready';
+  /** The total, formatted; null unless ready. */
+  total: string | null;
+  /** One entry per document, only when there are two. */
+  parts: { name: string; cost: string }[];
+}
 
 interface EstimateRequest {
   key: string;
@@ -130,11 +143,6 @@ function runStatusName(status: string | number | null | undefined): string {
     case 6: case 'CompletedWithLimits': return 'CompletedWithLimits';
     default: return String(status ?? '');
   }
-}
-
-/** The short name an estimate line gives a document. */
-function estimateLabel(audience: BenchmarkReportAudience): string {
-  return audience === BenchmarkReportAudience.TechnicalReport ? 'Researcher report' : audienceLabel(audience);
 }
 
 /** The server's own message from an error body: a plain string, or `{ error }`. */
@@ -468,11 +476,14 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
     return server ? reportWriterWarningText(server.assessorModelDisplayName, server.provider) : '';
   }
 
-  /** The picker's description: the info tip, then the refusal or the warning while there is one. */
-  get writerDescribedBy(): string {
-    return ['rrReportWriterHint', this.writeRefusal ? 'rrReportWriterBlocked' : '', this.writerWarning ? 'rrReportWriterWarning' : '']
-      .filter(id => id !== '')
-      .join(' ');
+  /**
+   * The picker's description: the refusal or the warning while there is one. The report writer
+   * info is a dialog, too long to be read out as a description.
+   */
+  get writerDescribedBy(): string | null {
+    const ids = [this.writeRefusal ? 'rrReportWriterBlocked' : '', this.writerWarning ? 'rrReportWriterWarning' : '']
+      .filter(id => id !== '');
+    return ids.length > 0 ? ids.join(' ') : null;
   }
 
   get writeDisabled(): boolean {
@@ -480,20 +491,20 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
       this.jobInProgress || this.writeSubmitting;
   }
 
-  /** The cost line under the write row, or '' when there is nothing to say. */
-  get estimateText(): string {
-    if (this.estimateLoading) return 'Estimating…';
-    if (this.estimateFailed) return 'The cost could not be estimated.';
+  /** The cost estimate block under the write row, or null when there is nothing to say. */
+  get estimateView(): RunReportEstimateView | null {
+    if (this.estimateLoading) return { state: 'loading', total: null, parts: [] };
+    if (this.estimateFailed) return { state: 'failed', total: null, parts: [] };
     const estimate = this.estimate;
-    if (!estimate || estimate.refusal) return '';
+    if (!estimate || estimate.refusal) return null;
     const total = estimate.estimatedTotalCostUsd;
     if (total === null || total === undefined) {
-      return 'No price card for this model; the cost cannot be estimated.';
+      return { state: 'noPrice', total: null, parts: [] };
     }
     const parts = estimate.estimates.length > 1
-      ? ` (${estimate.estimates.map(e => `${estimateLabel(e.audience)} ${formatCostUsd(e.estimatedCostUsd)}`).join(' · ')})`
-      : '';
-    return `Estimated cost: about ${formatCostUsd(total)}${parts}. The actual cost is shown while it writes.`;
+      ? estimate.estimates.map(e => ({ name: audienceLabel(e.audience), cost: formatCostUsd(e.estimatedCostUsd) }))
+      : [];
+    return { state: 'ready', total: formatCostUsd(total), parts };
   }
 
   documentStatusLabel(doc: BenchmarkReportDocumentListItemDto): string {
@@ -700,7 +711,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
 
   /**
    * Opens a stored document in the PDF viewer with peers named, at the fullest disclosure it allows
-   * and with the others offered as versions.
+   * and with the others offered as versions, which the viewer's info dialog explains.
    */
   viewDocument(doc: BenchmarkReportDocumentListItemDto): void {
     const run = this.run;
@@ -722,7 +733,8 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
       load: variant => this.benchmarkService.getReportDocumentPdf(doc.id, disclosureOf(variant), BenchmarkReportPeerNaming.Named, paper),
       tabUrl: variant => this.benchmarkService.reportDocumentPdfUrl(
         doc.id, disclosureOf(variant), BenchmarkReportPeerNaming.Named, paper, true),
-      fallbackFileName: `run-${run.id}_${safeFileName(label)}.pdf`
+      fallbackFileName: `run-${run.id}_${safeFileName(label)}.pdf`,
+      variantsInfo: reportDisclosureInfo(doc.audience)
     });
   }
 

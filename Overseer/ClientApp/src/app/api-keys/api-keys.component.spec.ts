@@ -1,10 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { provideHttpClient } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ApiKeysComponent } from './api-keys.component';
 import { SettingsService } from '../services/settings.service';
-import { of } from 'rxjs';
+import { ApiKeyRefusal } from '../shared/key-verification/key-verification';
+import { of, throwError } from 'rxjs';
 
 describe('ApiKeysComponent', () => {
   let component: ApiKeysComponent;
@@ -177,5 +178,177 @@ describe('ApiKeysComponent', () => {
     for (const disclosure of disclosures) {
       expect(disclosure.open).toBeFalse();
     }
+  });
+
+  describe('key verification', () => {
+    /** Obviously fake; never a real key's shape. */
+    const FAKE_KEY = 'test-key-not-real-0001';
+
+    const unverifiable: ApiKeyRefusal = {
+      verdict: 'unverifiable',
+      message: 'OpenAI did not answer the key check.',
+      detail: {
+        request: 'GET https://api.openai.com/v1/models',
+        httpStatus: 502,
+        httpReason: 'Bad Gateway',
+        providerError: 'upstream connect error',
+        exception: null,
+        elapsedMs: 900,
+        text: 'GET https://api.openai.com/v1/models\nHTTP 502 Bad Gateway\nupstream connect error'
+      }
+    };
+
+    const card = (provider: string) =>
+      (Array.from(fixture.nativeElement.querySelectorAll('.provider-card')) as HTMLElement[])
+        .find(c => c.querySelector('h3')!.textContent!.trim() === provider)!;
+    const verificationDialog = () => fixture.nativeElement.querySelector('dialog.kv-dialog') as HTMLDialogElement;
+
+    function nextClose(dialog: HTMLDialogElement): Promise<void> {
+      return new Promise<void>(resolve => dialog.addEventListener('close', () => resolve(), { once: true }));
+    }
+
+    function showNoKeys() {
+      spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+        { provider: 'Anthropic', hasKey: false }, { provider: 'Google', hasKey: false }, { provider: 'OpenAI', hasKey: false }
+      ]));
+      component.loadStatuses();
+      fixture.detectChanges();
+    }
+
+    function clickSave(provider: string) {
+      component.newKeys[provider] = FAKE_KEY;
+      fixture.detectChanges();
+      (card(provider).querySelector('.save-key-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
+    afterEach(() => {
+      if (verificationDialog()?.open) {
+        verificationDialog().close();
+      }
+    });
+
+    it('says in the intro that each key is checked before it is saved', () => {
+      expect(fixture.nativeElement.querySelector('.settings-description').textContent)
+        .toContain('Each key is checked with its provider before it is saved.');
+    });
+
+    it('shows an invalid refusal under the input with its detail, and keeps the key', async () => {
+      showNoKeys();
+      const save = spyOn(settingsService, 'saveApiKey').and.returnValue(throwError(() => new HttpErrorResponse({
+        status: 400,
+        error: {
+          verdict: 'invalid',
+          message: 'Anthropic rejected the key: invalid x-api-key.',
+          detail: { ...unverifiable.detail!, httpStatus: 401, httpReason: 'Unauthorized', text: 'GET x\nHTTP 401 Unauthorized' }
+        }
+      })));
+
+      clickSave('Anthropic');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(save).toHaveBeenCalledWith('Anthropic', FAKE_KEY, false);
+      const error = card('Anthropic').querySelector('.key-error') as HTMLElement;
+      expect(error.querySelector('.key-error-message')!.textContent).toContain('invalid x-api-key');
+      expect(error.querySelector('.key-error-detail')!.textContent).toContain('HTTP 401 Unauthorized');
+      const input = card('Anthropic').querySelector('#key-Anthropic') as HTMLInputElement;
+      expect(input.getAttribute('aria-describedby')).toBe(error.id);
+      expect(input.value).toBe(FAKE_KEY);
+      expect(component.keyStatuses['Anthropic']).toBeFalse();
+
+      // Typing clears the error.
+      input.value = FAKE_KEY + 'x';
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      expect(card('Anthropic').querySelector('.key-error')).toBeNull();
+    });
+
+    it('shows a plain 400 message the same way', () => {
+      showNoKeys();
+      spyOn(settingsService, 'saveApiKey').and.returnValue(throwError(() => new HttpErrorResponse({
+        status: 400, error: { message: 'Unknown provider.' }
+      })));
+
+      clickSave('Google');
+
+      expect(card('Google').querySelector('.key-error-message')!.textContent).toBe('Unknown provider.');
+      expect(card('Google').querySelector('.key-error-detail')).toBeNull();
+    });
+
+    it('opens the verification dialog on a 409; Save Anyway resends and the key shows Not verified', async () => {
+      showNoKeys();
+      const save = spyOn(settingsService, 'saveApiKey').and.returnValues(
+        throwError(() => new HttpErrorResponse({ status: 409, error: unverifiable })),
+        of({ verification: { status: 'NotVerified', checkedAtUtc: '2026-09-29T10:00:00Z', message: unverifiable.detail!.text }, warning: null }));
+
+      clickSave('OpenAI');
+
+      expect(verificationDialog().open).toBeTrue();
+      const terms = Array.from(verificationDialog().querySelectorAll('.kv-detail dt')).map(dt => dt.textContent!.trim());
+      expect(terms).toEqual(['Check', 'Response', "Provider's message", 'Time']);
+      expect(verificationDialog().textContent).toContain('HTTP 502 Bad Gateway');
+
+      const closing = nextClose(verificationDialog());
+      (verificationDialog().querySelector('.kv-save-anyway') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await closing;
+      fixture.detectChanges();
+
+      expect(save.calls.mostRecent().args).toEqual(['OpenAI', FAKE_KEY, true]);
+      expect(component.keyStatuses['OpenAI']).toBeTrue();
+      const label = card('OpenAI').querySelector('.key-verification') as HTMLElement;
+      expect(label.textContent!.trim()).toBe('Not verified');
+      const tip = fixture.nativeElement.querySelector('#' + label.getAttribute('interestfor')) as HTMLElement;
+      expect(tip.textContent).toContain('HTTP 502 Bad Gateway');
+      expect(card('OpenAI').querySelector('.key-verify-again')).not.toBeNull();
+      expect(card('OpenAI').querySelector('.key-status-line')!.textContent).toBe('The OpenAI key was saved as Not verified.');
+    });
+
+    it('shows a returned warning as an amber alert and a Verified label', () => {
+      showNoKeys();
+      spyOn(settingsService, 'saveApiKey').and.returnValue(of({
+        verification: { status: 'Verified', checkedAtUtc: '2026-09-29T10:00:00Z', message: 'Rate limited' },
+        warning: 'Google answered 429: the key works but is rate-limited.'
+      }));
+
+      clickSave('Google');
+
+      expect(card('Google').querySelector('.alert-warning')!.textContent).toContain('rate-limited');
+      expect(card('Google').querySelector('.key-verification')!.textContent!.trim()).toBe('Verified');
+      expect(card('Google').querySelector('.key-verify-again')).toBeNull();
+    });
+
+    it('Verify Again updates the label in place and announces the outcome', () => {
+      spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+        { provider: 'Anthropic', hasKey: true, verification: { status: 'NotVerified', checkedAtUtc: '2026-09-29T09:00:00Z', message: 'No response' } }
+      ]));
+      const verify = spyOn(settingsService, 'verifyApiKey').and.returnValue(of({
+        verification: { status: 'Verified', checkedAtUtc: '2026-09-29T10:00:00Z', message: null }
+      }));
+      component.loadStatuses();
+      fixture.detectChanges();
+
+      expect(card('Anthropic').querySelector('.key-verification')!.textContent!.trim()).toBe('Not verified');
+      (card('Anthropic').querySelector('.key-verify-again') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(verify).toHaveBeenCalledWith('Anthropic');
+      expect(card('Anthropic').querySelector('.key-verification')!.textContent!.trim()).toBe('Verified');
+      expect(card('Anthropic').querySelector('.key-verify-again')).toBeNull();
+      expect(card('Anthropic').querySelector('.key-status-line')!.textContent).toBe('The Anthropic key is verified.');
+    });
+
+    it('shows no label on a key saved before keys were checked', () => {
+      spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+        { provider: 'Anthropic', hasKey: true, verification: { status: null, checkedAtUtc: null, message: null } }
+      ]));
+      component.loadStatuses();
+      fixture.detectChanges();
+
+      expect(card('Anthropic').querySelector('.status-badge')!.textContent!.trim()).toBe('Key Saved');
+      expect(card('Anthropic').querySelector('.key-verification')).toBeNull();
+      expect(card('Anthropic').querySelector('.key-verify-again')).toBeNull();
+    });
   });
 });

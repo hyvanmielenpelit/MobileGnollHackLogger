@@ -27,15 +27,32 @@
   <div class="pdfv-toolbar-frame">
     <div class="pdfv-toolbar" [class.has-variants]="variants.length > 0">
       @if (variants.length > 0) {
-        <div class="gh-tabs gh-tabs-segmented pdfv-variants" role="tablist" [attr.aria-label]="title + ' versions'">
-          @for (option of variants; track option.key; let i = $index) {
-            <button type="button" role="tab" class="gh-tab"
-                    [id]="variantTabId(option.key)"
-                    [attr.aria-controls]="idPrefix + '-body'"
-                    [attr.aria-selected]="variant === option.key"
-                    [attr.tabindex]="variant === option.key ? 0 : -1"
-                    (keydown)="onVariantKeydown($event, i)"
-                    (click)="selectVariant(option.key)">{{ option.label }}</button>
+        <div class="pdfv-variants-group">
+          <div class="gh-tabs gh-tabs-segmented pdfv-variants" role="tablist" [attr.aria-label]="title + ' versions'">
+            @for (option of variants; track option.key; let i = $index) {
+              <button type="button" role="tab" class="gh-tab"
+                      [id]="variantTabId(option.key)"
+                      [attr.aria-controls]="idPrefix + '-body'"
+                      [attr.aria-selected]="variant === option.key"
+                      [attr.tabindex]="variant === option.key ? 0 : -1"
+                      (keydown)="onVariantKeydown($event, i)"
+                      (click)="selectVariant(option.key)">{{ option.label }}</button>
+            }
+          </div>
+          @if (variantsInfo; as info) {
+            <app-info-tip trigger="dialog" [tipId]="idPrefix + '-variants-info'" subject="Versions" [dialogTitle]="info.title">
+              <dl class="pdfv-variants-info-list">
+                @for (item of info.items; track item.term) {
+                  <div>
+                    <dt><span class="gh-info-term">{{ item.term }}</span></dt>
+                    <dd>{{ item.text }}</dd>
+                  </div>
+                }
+              </dl>
+              @if (info.note) {
+                <p class="pdfv-variants-info-note">{{ info.note }}</p>
+              }
+            </app-info-tip>
           }
         </div>
       }

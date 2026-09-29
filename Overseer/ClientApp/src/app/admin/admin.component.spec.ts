@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, Subject, throwError } from 'rxjs';
 import { AdminComponent } from './admin.component';
-import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, AiGovernorKeyStatusDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto } from '../services/admin.service';
+import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, AiGovernorKeyStatusDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto, DefaultApiKeyStatus } from '../services/admin.service';
 import { createEmptyFilter } from './config-filter/config-filter.model';
 
 describe('AdminComponent', () => {
@@ -26,6 +26,7 @@ describe('AdminComponent', () => {
     spyOn(adminService, 'getUsers').and.returnValue(of({ rows: [], totalCount: 0 }));
     spyOn(adminService, 'getGroups').and.returnValue(of([]));
     spyOn(adminService, 'getSystemConfigs').and.returnValue(of([]));
+    spyOn(adminService, 'getDefaultApiKeys').and.returnValue(of([]));
 
     fixture = TestBed.createComponent(AdminComponent);
     component = fixture.componentInstance;
@@ -1002,6 +1003,121 @@ describe('AdminComponent', () => {
       expect(toastSpy).toHaveBeenCalledWith(
         "Deleted 'Prod GPT-5'. Benchmark history and usage logs are kept.", 'success'
       );
+    });
+  });
+
+  describe('default API keys', () => {
+    const keyStatus = (provider: string, overrides: Partial<DefaultApiKeyStatus> = {}): DefaultApiKeyStatus => ({
+      provider, hasKey: false, keyHint: null, updatedAtUtc: null,
+      verification: { status: null, checkedAtUtc: null, message: null },
+      usedBy: [],
+      ...overrides
+    });
+
+    const config = (id: number, displayName: string, overrides: Partial<SystemAiConfigDto> = {}): SystemAiConfigDto => ({
+      id, displayName, provider: 'Anthropic', modelId: 'claude-x',
+      thinkingLevel: null, reasoningMode: null, reasoningSummary: null, serviceTier: null,
+      maxInputTokens: null, maxOutputTokens: null, orderIndex: id, isEnabled: true, hasApiKey: true,
+      isSystemWide: false,
+      maxDailyChatRequests: null, maxMonthlyChatRequests: null, maxTotalChatRequests: null,
+      dailyChatRequestsCount: 0, monthlyChatRequestsCount: 0, totalChatRequestsCount: 0,
+      maxDailyTitleRequests: null, maxMonthlyTitleRequests: null, maxTotalTitleRequests: null,
+      dailyTitleRequestsCount: 0, monthlyTitleRequestsCount: 0, totalTitleRequestsCount: 0,
+      maxDailyChatTokens: null, maxMonthlyChatTokens: null, maxTotalChatTokens: null,
+      dailyChatTokensCount: 0, monthlyChatTokensCount: 0, totalChatTokensCount: 0,
+      maxDailyTitleTokens: null, maxMonthlyTitleTokens: null, maxTotalTitleTokens: null,
+      dailyTitleTokensCount: 0, monthlyTitleTokensCount: 0, totalTitleTokensCount: 0,
+      modelRole: 1, parallelExecutionMode: 2,
+      ...overrides
+    });
+
+    it('places API Keys after Groups and before System Configs', () => {
+      const ids = component.tabs.map(t => t.id);
+      expect(ids.indexOf('apikeys')).toBe(ids.indexOf('groups') + 1);
+      expect(ids.indexOf('configs')).toBe(ids.indexOf('apikeys') + 1);
+      expect(component.tabs.find(t => t.id === 'apikeys')!.label).toBe('API Keys');
+    });
+
+    it('renders the API Keys panel with the loaded keys and reloads them when the tab is chosen', () => {
+      (adminService.getDefaultApiKeys as jasmine.Spy).and.returnValue(of([
+        keyStatus('Anthropic', { hasKey: true, keyHint: 'ab12' }), keyStatus('Google'), keyStatus('OpenAI')
+      ]));
+      fixture.detectChanges();
+      (adminService.getDefaultApiKeys as jasmine.Spy).calls.reset();
+
+      (fixture.nativeElement.querySelector('#admin-tab-apikeys') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(adminService.getDefaultApiKeys).toHaveBeenCalledTimes(1);
+      const panel = fixture.nativeElement.querySelector('#admin-panel-apikeys') as HTMLElement;
+      expect(panel.getAttribute('role')).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby')).toBe('admin-tab-apikeys');
+      expect(panel.querySelector('app-admin-api-keys')).not.toBeNull();
+      expect(panel.querySelector('.aak-card[data-provider="Anthropic"] .aak-key-badge')!.textContent!.trim())
+        .toBe('Default key saved');
+    });
+
+    it('passes the configuration form each provider\'s default key, unverified only when Not verified', () => {
+      (adminService.getDefaultApiKeys as jasmine.Spy).and.returnValue(of([
+        keyStatus('Anthropic', { hasKey: true, keyHint: 'ab12', verification: { status: 'NotVerified', checkedAtUtc: null, message: 'No response' } }),
+        keyStatus('Google'),
+        keyStatus('OpenAI', { hasKey: true, keyHint: 'zz99' })
+      ]));
+
+      component.loadDefaultApiKeys();
+
+      expect(component.defaultKeysForForm).toEqual({
+        Anthropic: { hasKey: true, keyHint: 'ab12', verified: false },
+        Google: { hasKey: false, keyHint: null, verified: true },
+        OpenAI: { hasKey: true, keyHint: 'zz99', verified: true }
+      });
+    });
+
+    it('labels each configuration\'s key: Default Key, Default Key Missing, Key Saved or No Key', () => {
+      (adminService.getSystemConfigs as jasmine.Spy).and.returnValue(of([
+        config(1, 'Uses Default', { useDefaultApiKey: true, hasApiKey: true }),
+        config(2, 'Default Gone', { useDefaultApiKey: true, hasApiKey: false, isEnabled: false }),
+        config(3, 'Own Key', { useDefaultApiKey: false, hasApiKey: true }),
+        config(4, 'Nothing', { hasApiKey: false })
+      ]));
+      component.selectTab('configs');
+      fixture.detectChanges();
+
+      const badges = Array.from(fixture.nativeElement.querySelectorAll('.config-key-badge')) as HTMLElement[];
+      expect(badges.map(b => b.textContent!.trim())).toEqual(['Default Key', 'Default Key Missing', 'Key Saved', 'No Key']);
+      expect(badges[1].classList).toContain('badge-warning');
+      expect(badges[0].classList).toContain('badge-success');
+    });
+
+    it('reloads the keys and the configurations after the tab changes a key', () => {
+      fixture.detectChanges();
+      (adminService.getDefaultApiKeys as jasmine.Spy).calls.reset();
+      (adminService.getSystemConfigs as jasmine.Spy).calls.reset();
+      (adminService.getSystemConfigs as jasmine.Spy).and.returnValue(of([config(2, 'Default Gone', { useDefaultApiKey: true, hasApiKey: false, isEnabled: false })]));
+
+      component.onDefaultApiKeysChanged();
+
+      expect(adminService.getDefaultApiKeys).toHaveBeenCalledTimes(1);
+      expect(adminService.getSystemConfigs).toHaveBeenCalledTimes(1);
+      expect(component.configs.length).toBe(1);
+      expect(component.visibleConfigs.length).toBe(1);
+    });
+
+    it('sends useDefaultApiKey with a saved configuration', () => {
+      const create = spyOn(adminService, 'createSystemConfig').and.returnValue(of(config(5, 'New')));
+      fixture.detectChanges();
+      component.isNewConfig = true;
+      component.editingConfig = { provider: 'Anthropic', isEnabled: true };
+      spyOn(component.configDialog.nativeElement, 'close');
+
+      component.onConfigSave({
+        displayName: 'New', displayNameMode: 'model_id', provider: 'Anthropic', modelId: 'claude-x',
+        thinkingLevel: null, reasoningMode: null, reasoningSummary: null, serviceTier: null,
+        maxInputTokens: null, maxOutputTokens: null, useDefaultApiKey: true
+      });
+
+      expect(create.calls.mostRecent().args[0].useDefaultApiKey).toBeTrue();
+      expect(create.calls.mostRecent().args[0].apiKey).toBeUndefined();
     });
   });
 });

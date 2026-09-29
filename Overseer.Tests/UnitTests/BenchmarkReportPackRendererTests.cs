@@ -58,14 +58,45 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void AllowedDisclosures_AreEveryLevel_ExceptForTheInternalBrief()
+    public void AllowedDisclosures_AreEveryLevelForTheResearcherReport_AndFullAloneForTheInternalBrief()
     {
         var all = new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full };
 
-        Assert.Equal(all, BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.ExecutiveSummary));
         Assert.Equal(all, BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.TechnicalReport));
         Assert.Equal(new[] { BenchmarkReportDisclosure.Full }, BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.InternalBrief));
-        Assert.Equal(14, Combinations().Count());
+        Assert.Equal(12, Combinations().Count());
+    }
+
+    [Fact]
+    public void TheExecutiveSummary_OffersSummaryAndFull_AndStillRendersDetailed()
+    {
+        Assert.Equal(
+            new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Full },
+            BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.ExecutiveSummary));
+
+        foreach (var naming in new[] { BenchmarkReportPeerNaming.Named, BenchmarkReportPeerNaming.Anonymized })
+        {
+            var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = naming };
+            Assert.True(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.ExecutiveSummary, options));
+
+            string detailed = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Detailed, naming);
+            string summary = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, naming);
+
+            // The same text as Summary, under the Executive Summary's own Detailed stamp and footer.
+            Assert.Contains("*Confidential. Prepared for the model's provider. Review before sharing.*\n", detailed);
+            Assert.Contains(" · disclosure Detailed · ", detailed);
+            string sameBody = summary
+                .Replace(BenchmarkReportPackRenderer.Stamp(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary),
+                    BenchmarkReportPackRenderer.Stamp(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Detailed), StringComparison.Ordinal)
+                .Replace(" · disclosure Summary · ", " · disclosure Detailed · ", StringComparison.Ordinal);
+            AssertSameText(sameBody, detailed, "Executive Summary at Detailed");
+            Assert.DoesNotContain(Q1Text, detailed);
+            Assert.DoesNotContain(Q3Text, detailed);
+        }
+
+        Assert.False(BenchmarkReportPackRenderer.IsAllowed(
+            BenchmarkReportAudience.InternalBrief,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed }));
     }
 
     [Theory]
@@ -136,6 +167,7 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     private const string Q1Text = "What happens if I throw a gem at a co-aligned unicorn?";
+    private const string Q1Excerpt = "A real gem of your alignment raises your Luck";
     private const string Q3Text = "Will my gem break if I throw it at a unicorn?";
     private const string Q3Excerpt = "A thrown gem always shatters on impact, so never throw";
     private const string Q1Rubric = "A valuable gem raises Luck; worthless glass does not.";
@@ -163,17 +195,31 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AtDetailed_OnlyTheDiscussedQuestionsAreQuoted_WithAnswerExcerpts_AndNoRubricOrEvidence()
+    public void AtDetailed_EveryQuestionAndAnswerExcerptIsQuoted_AndNoRubricOrEvidence()
     {
         string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
 
-        Assert.Contains("> **Question:** " + Q3Text, text);
+        Assert.Contains("### Questions and answers\n", text);
+        Assert.DoesNotContain("### Question details", text);
+        foreach (var question in Content().Runs.SelectMany(r => r.Questions))
+        {
+            Assert.Single(AllIndexesOf(text, "> " + question.QuestionText + "\n"));
+            Assert.Single(AllIndexesOf(text, "> " + question.AnswerExcerpt + "\n"));
+        }
+        Assert.Contains(Q1Text, text);
+        Assert.Contains(Q1Excerpt, text);
+        Assert.Contains(Q3Text, text);
         Assert.Contains(Q3Excerpt, text);
-        // Q1 has no note, and a finding's evidence line never quotes the question it cites.
-        Assert.DoesNotContain(Q1Text, text);
+        // A noted question keeps its note, and a finding's evidence line never quotes the question it cites.
+        Assert.Contains("Claimed a thrown gem always shatters; the rubric says it can survive.", text);
+        Assert.DoesNotContain("> **Question:**", text);
         Assert.DoesNotContain("as asked", text);
+        Assert.DoesNotContain("**Rubric:**", text);
+        Assert.DoesNotContain("*Rubric not recorded for this answer.*", text);
         Assert.DoesNotContain(Q1Rubric, text);
+        Assert.DoesNotContain("\n**Graders:**\n", text);
         Assert.DoesNotContain(Q1Evidence, text);
+        Assert.DoesNotContain("**Claim verifier:**", text);
         Assert.DoesNotContain(Q3Ruling, text);
         Assert.DoesNotContain("Slightly below the peers.", text);
         Assert.Contains("Contains benchmark questions — do not publish.", text);
@@ -184,6 +230,12 @@ public class BenchmarkReportPackRendererTests
     {
         string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
+        Assert.Contains("### Question details\n", text);
+        Assert.DoesNotContain("### Questions and answers", text);
+        foreach (var question in Content().Runs.SelectMany(r => r.Questions))
+        {
+            Assert.Single(AllIndexesOf(text, question.QuestionText));
+        }
         Assert.Contains(Q1Text, text);
         Assert.Contains(Q3Text, text);
         Assert.Contains(Q1Rubric, text);
@@ -196,7 +248,7 @@ public class BenchmarkReportPackRendererTests
     [Fact]
     public void TheExecutiveSummary_NeverQuotesQuestions_AtAnyLevel()
     {
-        foreach (var disclosure in BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.ExecutiveSummary))
+        foreach (var disclosure in Enum.GetValues<BenchmarkReportDisclosure>())
         {
             string text = Render(BenchmarkReportAudience.ExecutiveSummary, disclosure, BenchmarkReportPeerNaming.Named);
 
@@ -544,7 +596,7 @@ public class BenchmarkReportPackRendererTests
     [Fact]
     public void TheExecutiveSummary_PrintsNoEvidenceLine_AndPlainSupportLabels_AtEveryLevel()
     {
-        foreach (var disclosure in BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.ExecutiveSummary))
+        foreach (var disclosure in Enum.GetValues<BenchmarkReportDisclosure>())
         {
             string text = Render(BenchmarkReportAudience.ExecutiveSummary, disclosure, BenchmarkReportPeerNaming.Named);
 

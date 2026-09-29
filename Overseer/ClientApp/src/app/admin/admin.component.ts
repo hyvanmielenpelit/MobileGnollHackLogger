@@ -2,8 +2,9 @@ import { Component, OnInit, OnDestroy, AfterViewInit, inject, ViewChild, Element
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
-import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto } from '../services/admin.service';
-import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form/ai-model-form.component';
+import { AdminService, UserDto, GroupDto, SystemAiConfigDto, UserSystemAiConfigDto, GroupSystemAiConfigDto, DatabaseStorageMetrics, MaintenanceResult, MaintenanceRunLog, AiTelemetrySummaryDto, AiGovernorStatusDto, SystemConfigDeletionCheckDto, SystemConfigBlockerDto, DefaultApiKeyStatus } from '../services/admin.service';
+import { AiModelFormComponent, AiModelFormResult, DefaultKeyInfo } from '../shared/ai-model-form/ai-model-form.component';
+import { AdminApiKeysComponent } from './admin-api-keys/admin-api-keys.component';
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { ConfigAnalyticsComponent } from './config-analytics/config-analytics.component';
 import { AdminBenchmarkComponent } from './benchmark/benchmark.component';
@@ -19,7 +20,7 @@ import { catchError, debounceTime } from 'rxjs/operators';
 
 /** The admin dashboard's top-level tabs, in display order. */
 export type AdminTabId =
-  'users' | 'groups' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark';
+  'users' | 'groups' | 'apikeys' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark';
 
 /** Page sizes offered by the maintenance history pager; the first is the default. */
 export const MAINTENANCE_HISTORY_PAGE_SIZES: readonly number[] = [10, 50, 100, 500, 1000];
@@ -29,7 +30,7 @@ export type MaintenanceRunPhase = 'running' | 'completed' | 'failed';
 
 @Component({
     selector: 'app-admin',
-    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent, ConfigFilterComponent, ProviderBadgeComponent, TablePagerComponent],
+    imports: [CommonModule, FormsModule, RouterModule, AiModelFormComponent, AdminApiKeysComponent, ConfigAnalyticsComponent, AdminBenchmarkComponent, ConfigFilterComponent, ProviderBadgeComponent, TablePagerComponent],
     templateUrl: './admin.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
     styleUrl: './admin.component.scss'
@@ -44,6 +45,7 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
   readonly tabs: { id: AdminTabId; label: string }[] = [
     { id: 'users',     label: 'Users' },
     { id: 'groups',    label: 'Groups' },
+    { id: 'apikeys',   label: 'API Keys' },
     { id: 'configs',   label: 'System Configs' },
     { id: 'database',  label: 'Database' },
     { id: 'telemetry', label: 'AI Telemetry' },
@@ -108,6 +110,12 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
   users: UserDto[] = [];
   groups: GroupDto[] = [];
   configs: SystemAiConfigDto[] = [];
+
+  /** The per-provider default keys, for the API Keys tab and the configuration form. */
+  defaultApiKeys: DefaultApiKeyStatus[] = [];
+  defaultApiKeysLoading = false;
+  /** Provider → what the configuration form needs to offer Default; rebuilt only when the keys load. */
+  defaultKeysForForm: Record<string, DefaultKeyInfo> = {};
   configFilter: ConfigFilter = createEmptyFilter();
   visibleConfigs: SystemAiConfigDto[] = [];
 
@@ -448,6 +456,7 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
 
   loadData() {
     this.loading = true;
+    this.loadDefaultApiKeys();
     this.adminService.getUsers(this.page, this.pageSize, this.usernameFilter, this.sortColumn, this.sortOrder).subscribe({
       next: (res) => {
         this.users = res.rows;
@@ -475,6 +484,49 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
         this.loading = false;
       }
     });
+  }
+
+  /** A failed load keeps the keys already shown. */
+  loadDefaultApiKeys() {
+    this.defaultApiKeysLoading = true;
+    this.adminService.getDefaultApiKeys().subscribe({
+      next: (keys) => {
+        this.defaultApiKeys = keys;
+        this.defaultKeysForForm = Object.fromEntries(keys.map(k => [k.provider, {
+          hasKey: k.hasKey,
+          keyHint: k.keyHint,
+          verified: k.verification?.status !== 'NotVerified'
+        }]));
+        this.defaultApiKeysLoading = false;
+      },
+      error: () => {
+        this.defaultApiKeysLoading = false;
+      }
+    });
+  }
+
+  /** A saved, verified or deleted default key: a delete disables configurations, so they reload too. */
+  onDefaultApiKeysChanged() {
+    this.loadDefaultApiKeys();
+    this.adminService.getSystemConfigs().subscribe({
+      next: (c) => {
+        this.configs = c;
+        this.applyConfigFilters();
+      },
+      error: () => {}
+    });
+  }
+
+  /** The configuration list's key badge. */
+  configKeyBadge(config: SystemAiConfigDto): { label: string; cssClass: string } {
+    if (config.useDefaultApiKey) {
+      return config.hasApiKey
+        ? { label: 'Default Key', cssClass: 'badge-success' }
+        : { label: 'Default Key Missing', cssClass: 'badge-warning' };
+    }
+    return config.hasApiKey
+      ? { label: 'Key Saved', cssClass: 'badge-success' }
+      : { label: 'No Key', cssClass: 'badge-warning' };
   }
 
   // --- Users & Groups ---
@@ -620,6 +672,7 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
     const payload = {
       ...(this.editingConfig || {}),
       ...formData,
+      useDefaultApiKey: formData.useDefaultApiKey ?? false,
       pricingMode: formData.pricingMode,
       inputPricePerMillion: formData.inputPricePerMillion,
       outputPricePerMillion: formData.outputPricePerMillion,
@@ -1555,6 +1608,9 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
     this.activeTab = tab;
     if (tab !== 'telemetry') {
       this.stopGovernorCountdown();
+    }
+    if (tab === 'configs' || tab === 'apikeys') {
+      this.loadDefaultApiKeys();
     }
     if (tab === 'configs') {
       setTimeout(() => refreshAnchorPositioning(), 0);

@@ -31,19 +31,59 @@
       </select>
     </div>
 
-    <!-- Admin only: API Key -->
+    <!-- Admin only: where the key comes from -->
     @if (isAdmin) {
+      <fieldset class="gh-choice api-key-choice">
+        <legend>API key</legend>
+        <label class="gh-radio">
+          <input type="radio" name="aiModelFormApiKeyChoice" id="apiKeyChoiceDefault" value="default"
+                 [checked]="apiKeyChoice === 'default'"
+                 [disabled]="defaultKeyUnavailableReason !== null"
+                 [attr.aria-describedby]="defaultKeyUnavailableReason !== null ? 'apiKeyChoiceDefaultReason' : null"
+                 (change)="onApiKeyChoiceChange('default')">
+          <span><strong>Default key</strong>
+            @if (defaultKeyInfo) {
+              <span class="api-key-choice-detail">{{ defaultKeyDescription }}</span>
+            }
+          </span>
+        </label>
+        <label class="gh-radio">
+          <input type="radio" name="aiModelFormApiKeyChoice" id="apiKeyChoiceCustom" value="custom"
+                 [checked]="apiKeyChoice === 'custom'"
+                 (change)="onApiKeyChoiceChange('custom')">
+          <span><strong>Custom key</strong> <span class="api-key-choice-detail">a key for this configuration only</span></span>
+        </label>
+        @if (defaultKeyUnavailableReason !== null) {
+          <p id="apiKeyChoiceDefaultReason" class="form-hint api-key-choice-reason">{{ defaultKeyUnavailableReason }}</p>
+        }
+      </fieldset>
+    }
+
+    @if (isAdmin && usesDefaultKey) {
+      <div class="form-group flex-col">
+        <div class="api-key-row mt-5">
+          <button type="button" class="btn-gh check-models-btn" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
+        </div>
+      </div>
+    }
+
+    <!-- Admin only: the configuration's own API Key -->
+    @if (isAdmin && !usesDefaultKey) {
       <div class="form-group flex-col">
         <div class="flex-between">
           <label>API Key
-            @if (hasApiKey && !deleteApiKey) {
-              <span class="status-badge badge-success">Key Saved</span>
-            }
-            @if (hasApiKey && deleteApiKey) {
-              <span class="status-badge badge-danger">Will Be Deleted</span>
-            }
-            @if (!hasApiKey) {
-              <span class="status-badge badge-warning">No Key</span>
+            @if (customKeyRequired) {
+              <span class="status-badge badge-warning">Key Required</span>
+            } @else {
+              @if (hasApiKey && !deleteApiKey) {
+                <span class="status-badge badge-success">Key Saved</span>
+              }
+              @if (hasApiKey && deleteApiKey) {
+                <span class="status-badge badge-danger">Will Be Deleted</span>
+              }
+              @if (!hasApiKey) {
+                <span class="status-badge badge-warning">No Key</span>
+              }
             }
           </label>
           <button class="icon-btn" (click)="toggleApiKeyInfo()" title="Provider Instructions">
@@ -51,7 +91,7 @@
           </button>
         </div>
         <!-- API Key Actions (if key exists) -->
-        @if (hasApiKey) {
+        @if (hasApiKey && !customKeyRequired) {
           <div class="api-key-actions mt-5" style="display: flex; align-items: center; gap: 8px;">
             @if (!deleteApiKey) {
               <button class="btn-gh" (click)="editingApiKey = !editingApiKey; deleteApiKey = false">
@@ -79,10 +119,21 @@
         @if (!deleteApiKey) {
           <div class="api-key-row mt-5">
             @if (editingApiKey) {
-              <input type="password" class="gh-input w-100" [(ngModel)]="apiKey" placeholder="Enter API Key" (keyup.enter)="onCheckModels()" />
+              <input type="password" class="gh-input w-100 custom-api-key-input" [(ngModel)]="apiKey" placeholder="Enter API Key"
+                     aria-label="API key for this configuration" autocomplete="off"
+                     [attr.aria-invalid]="customKeyError ? 'true' : null"
+                     [attr.aria-describedby]="customKeyError ? 'customApiKeyError' : null"
+                     (ngModelChange)="onApiKeyInput($event)"
+                     (keyup.enter)="onCheckModels()" />
             }
-            <button class="btn-gh" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
+            <button type="button" class="btn-gh check-models-btn" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
           </div>
+        }
+        @if (customKeyError) {
+          <p id="customApiKeyError" class="gh-field-error mt-5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ customKeyError }}</span>
+          </p>
         }
         <!-- Instructions Expandable -->
         @if (showApiKeyInfo) {
@@ -143,7 +194,7 @@
       <select class="gh-input w-100 picker-model-select" size="8"
         [(ngModel)]="pickerModelSelect"
         (change)="onPickerModelSelect()"
-        [disabled]="loadingModels || (isAdmin && !apiKey && !hasApiKey)">
+        [disabled]="loadingModels || (isAdmin && !usesDefaultKey && !apiKey && !hasApiKey)">
         @for (model of sortedModels; track model) {
           <option [value]="model.id">
             {{ model.displayName || model.id }} {{ model.isRecommended ? '⭐' : '' }}
@@ -534,7 +585,8 @@
           <div class="form-group flex-col mt-10">
             <label for="baseUrlInput">Base URL</label>
             <input id="baseUrlInput" type="url" class="gh-input w-100" maxlength="2048"
-                   [(ngModel)]="baseUrl"
+                   [ngModel]="baseUrl"
+                   (ngModelChange)="onBaseUrlChange($event)"
                    [disabled]="!customEndpointsEnabled"
                    aria-describedby="baseUrlHint"
                    placeholder="https://acme.openai.azure.com">

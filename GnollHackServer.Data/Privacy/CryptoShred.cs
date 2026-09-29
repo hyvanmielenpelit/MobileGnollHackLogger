@@ -92,7 +92,10 @@ public static class CryptoShred
             .ExecuteUpdateAsync(k => k
                 .SetProperty(x => x.EncryptedApiKey, (string?)null)
                 .SetProperty(x => x.ApiKeyNonce, (string?)null)
-                .SetProperty(x => x.ApiKeyTag, (string?)null), cancellationToken);
+                .SetProperty(x => x.ApiKeyTag, (string?)null)
+                .SetProperty(x => x.ApiKeyVerification, (ApiKeyVerificationStatus?)null)
+                .SetProperty(x => x.ApiKeyVerificationCheckedAtUtc, (DateTime?)null)
+                .SetProperty(x => x.ApiKeyVerificationMessage, (string?)null), cancellationToken);
     }
 
     /// <summary>

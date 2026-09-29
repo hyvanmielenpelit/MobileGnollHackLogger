@@ -1203,6 +1203,20 @@ may be seeded from the same value so a deployment starts with one secret, but th
 independent. Folding the API-key path onto the keyring is a reasonable future change and is
 deliberately out of scope: it needs its own migration and its own re-wrap pass.
 
+**What `AesEncryptionKey` protects.** A user's own key (`UserAiApiKey`) is encrypted with the user id
+as associated data; a system AI configuration's key (`SystemAiApiConfiguration`) with
+`SYSTEM_API_KEY`; the per-provider **default key** (`SystemDefaultApiKey`, Admin → API Keys) with
+`SYSTEM_DEFAULT_API_KEY:<provider>`, which binds each cipher to its provider. A configuration set to
+*Default* holds its **own copy** of the default key, re-encrypted with `SYSTEM_API_KEY`, and every save
+or delete of the default key rewrites or clears those copies in the same transaction
+(`SystemDefaultApiKeyService`); deleting it also disables them. Two things about these keys are stored
+in clear, deliberately: a default key's last four characters as a hint (`KeyHint`, never more), and the
+verification columns on both key tables — the outcome of the last check with the provider, its time,
+and, for a key saved as *Not verified*, the failure detail (the request line, the HTTP status, the
+exception text and the provider's error message). `ApiKeyValidator` replaces the key, and every run of
+eight or more of its characters, with `[key]` in that detail before it leaves the validator, and
+crypto-shredding a user's key material clears the verification columns too.
+
 **Key material goes in User Secrets, never `appsettings.json`.** A missing, malformed or
 incoherent ring is reported by `ConfigHealthService` as a startup alert rather than thrown —
 throwing from the constructor would take down an application whose non-confidential

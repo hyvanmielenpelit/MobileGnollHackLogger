@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { ApiKeyVerification } from '../shared/key-verification/key-verification';
 
 export interface UserDto {
   id: string;
@@ -52,7 +53,10 @@ export interface SystemAiConfigDto {
   maxOutputTokens: number | null;
   orderIndex: number;
   isEnabled: boolean;
+  /** True when the configuration holds a key, its own or a copy of the provider's default key. */
   hasApiKey: boolean;
+  /** The configuration uses its provider's default key, which is copied into it. */
+  useDefaultApiKey?: boolean;
   isSystemWide: boolean;
   maxDailyChatRequests: number | null;
   maxMonthlyChatRequests: number | null;
@@ -128,6 +132,46 @@ export interface SystemAiConfigDto {
   baseUrl?: string | null;
   customHeadersJson?: string | null;
   apiVersion?: string | null;
+}
+
+/** A system configuration named by a default key's status or deletion check. */
+export interface DefaultApiKeyConfigRef {
+  id: number;
+  displayName: string;
+  isEnabled: boolean;
+}
+
+/** One provider's default key. Never carries the key itself, only its last four characters. */
+export interface DefaultApiKeyStatus {
+  provider: string;
+  hasKey: boolean;
+  keyHint: string | null;
+  updatedAtUtc: string | null;
+  verification: ApiKeyVerification;
+  /** The system configurations set to Default for this provider. */
+  usedBy: DefaultApiKeyConfigRef[];
+}
+
+/** A saved default key, and how many configurations received the copy. */
+export interface DefaultApiKeySaveResult {
+  status: DefaultApiKeyStatus;
+  updatedConfigCount: number;
+  /** A rate limit or an exhausted quota: the key exists and is saved as verified. */
+  warning: string | null;
+}
+
+export interface DefaultApiKeyVerifyResult {
+  status: DefaultApiKeyStatus;
+}
+
+/** The configurations a delete of the default key would disable. */
+export interface DefaultApiKeyDeletionCheck {
+  count: number;
+  configs: DefaultApiKeyConfigRef[];
+}
+
+export interface DefaultApiKeyDeleteResult {
+  disabledCount: number;
 }
 
 /** Something using a system configuration right now, which a delete would interrupt. */
@@ -547,6 +591,38 @@ export class AdminService {
 
   reorderSystemConfigs(ids: number[]): Observable<void> {
     return this.http.put<void>('/api/admin/systemconfigs/reorder', { orderedIds: ids });
+  }
+
+  // Default API keys, one per provider, in the order Anthropic, Google, OpenAI
+  getDefaultApiKeys(): Observable<DefaultApiKeyStatus[]> {
+    return this.http.get<DefaultApiKeyStatus[]>('/api/admin/default-api-keys');
+  }
+
+  /**
+   * Checks the key with its provider, then saves it. A rejected key is a 400 refusal; an
+   * unanswered check is a 409 refusal unless `saveUnverified` is set, which saves it as Not verified
+   * when the repeated check is still unanswered.
+   */
+  saveDefaultApiKey(provider: string, apiKey: string, saveUnverified = false): Observable<DefaultApiKeySaveResult> {
+    return this.http.put<DefaultApiKeySaveResult>(
+      `/api/admin/default-api-keys/${encodeURIComponent(provider)}`, { apiKey, saveUnverified });
+  }
+
+  /** Re-checks the stored key and updates only its verification. 404 when there is no key. */
+  verifyDefaultApiKey(provider: string): Observable<DefaultApiKeyVerifyResult> {
+    return this.http.post<DefaultApiKeyVerifyResult>(
+      `/api/admin/default-api-keys/${encodeURIComponent(provider)}/verify`, {});
+  }
+
+  getDefaultApiKeyDeletionCheck(provider: string): Observable<DefaultApiKeyDeletionCheck> {
+    return this.http.get<DefaultApiKeyDeletionCheck>(
+      `/api/admin/default-api-keys/${encodeURIComponent(provider)}/deletion-check`);
+  }
+
+  /** Deletes the key and disables the configurations that used it. 404 when there is no key. */
+  deleteDefaultApiKey(provider: string): Observable<DefaultApiKeyDeleteResult> {
+    return this.http.delete<DefaultApiKeyDeleteResult>(
+      `/api/admin/default-api-keys/${encodeURIComponent(provider)}`);
   }
 
   // User System AI Configs

@@ -123,7 +123,8 @@
                               placeholder="Select a model" [emptyHint]="pickerEmptyHint" [showPrice]="true"
                               [options]="pickerOptions" [selectedKey]="writerConfigId"
                               (selectionChange)="selectWriter($event.model)"></app-model-picker>
-            <app-info-tip trigger="click" tipId="rrReportWriterHint" subject="Report writer">
+            <app-info-tip trigger="dialog" tipId="rrReportWriterHint" subject="Report writer"
+                          dialogTitle="Choosing a report writer">
               <dl>
                 <div>
                   <dt><span class="gh-info-term">Executive Summary</span> <span class="gh-info-badge">Short</span></dt>
@@ -151,6 +152,7 @@
           </div>
           <button #writeButton type="button" class="btn-gh rr-ai-write-btn"
                   [disabled]="writeDisabled"
+                  aria-describedby="rrWriteEstimate"
                   [attr.aria-busy]="writeSubmitting ? 'true' : null"
                   (click)="requestWrite()">
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
@@ -177,9 +179,42 @@
         </div>
       }
 
-      @if (estimateText) {
-        <p class="rr-ai-estimate" [class.is-muted]="estimateLoading || estimateFailed">{{ estimateText }}</p>
-      }
+      <!-- Always rendered, so the live region is in place before an estimate arrives. -->
+      <div id="rrWriteEstimate" class="rr-ai-estimate" role="status"
+           [class.is-empty]="!estimateView"
+           [class.is-muted]="estimateView !== null && estimateView.state !== 'ready'"
+           [attr.aria-busy]="estimateView?.state === 'loading' ? 'true' : null">
+        @if (estimateView; as est) {
+          @switch (est.state) {
+            @case ('ready') {
+              <div class="rr-ai-estimate-head">
+                <span class="rr-ai-estimate-label">Estimated cost</span>
+                <span class="rr-ai-estimate-total">about {{ est.total }}</span>
+              </div>
+              @if (est.parts.length > 1) {
+                <dl class="rr-ai-estimate-parts">
+                  @for (part of est.parts; track part.name) {
+                    <div>
+                      <dt>{{ part.name }}</dt>
+                      <dd>{{ part.cost }}</dd>
+                    </div>
+                  }
+                </dl>
+              }
+              <p class="rr-ai-estimate-note">The actual cost is shown while the reports are written.</p>
+            }
+            @case ('loading') {
+              <p class="rr-ai-estimate-note">Estimating…</p>
+            }
+            @case ('failed') {
+              <p class="rr-ai-estimate-note">The cost could not be estimated.</p>
+            }
+            @default {
+              <p class="rr-ai-estimate-note">No price card for this model; the cost cannot be estimated.</p>
+            }
+          }
+        }
+      </div>
 
       @if (writeError) {
         <div class="alert alert-danger rr-ai-alert" role="alert">

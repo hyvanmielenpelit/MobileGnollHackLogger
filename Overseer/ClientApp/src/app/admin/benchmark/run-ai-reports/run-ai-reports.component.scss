@@ -163,8 +163,7 @@
 }
 
 .rr-ai-writer-note,
-.rr-ai-write-blocked,
-.rr-ai-estimate {
+.rr-ai-write-blocked {
   margin: 8px 0 0;
 }
 
@@ -172,12 +171,79 @@
   margin: 10px 0 0;
 }
 
+/* The cost estimate: a quiet panel with a gold edge. It stays in the DOM as the live region and
+   takes no space while there is nothing to say. */
 .rr-ai-estimate {
-  font-size: var(--text-secondary);
-  color: var(--nav-color);
+  margin: 0.75rem 0 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-inline-start: 3px solid var(--primary-color);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-body);
+
+  &.is-empty {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+  }
 
   &.is-muted {
-    color: #aaa;
+    border-inline-start-color: var(--border-glass);
+  }
+}
+
+.rr-ai-estimate-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+
+.rr-ai-estimate-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.rr-ai-estimate-total {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.rr-ai-estimate-parts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 0.125rem 1rem;
+  max-inline-size: 28rem;
+  margin: 0.375rem 0 0;
+  font-size: var(--text-secondary);
+
+  > div {
+    display: contents;
+  }
+
+  dt {
+    font-weight: 400;
+    color: #d4d4d8;
+  }
+
+  dd {
+    margin: 0;
+    text-align: end;
+    color: #e4e4e7;
+  }
+}
+
+.rr-ai-estimate-note {
+  margin: 0.375rem 0 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  &:first-child {
+    margin-top: 0;
   }
 }
 

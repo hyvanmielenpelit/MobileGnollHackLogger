@@ -9,7 +9,7 @@
  */
 
 .gh-dialog.run-writing-dialog {
-  @include frame.frame($width: 44rem);
+  @include frame.frame($width: 60rem, $max-height: 92dvh);
 }
 
 .gh-dialog.rw-confirm-dialog {
@@ -109,10 +109,12 @@
   }
 
   th[scope="row"] {
+    min-inline-size: 14rem;
     background: transparent;
     color: #e4e4e7;
   }
 
+  /* Durations, counts, tokens and costs stay on one line. */
   .rw-num {
     white-space: nowrap;
   }

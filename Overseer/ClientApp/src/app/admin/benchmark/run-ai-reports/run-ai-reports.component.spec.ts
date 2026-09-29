@@ -13,6 +13,7 @@ import { toModelPickerOptions } from '../../../shared/model-picker/model-picker.
 import { PdfViewerDialogComponent, PdfViewerRequest } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { PDFJS_LOADER } from '../../../shared/pdf-viewer/pdfjs-loader';
 import { rememberedPdfPaper } from '../download-center/benchmark-download-center.component';
+import { reportDisclosureInfo } from '../report-disclosure-guide';
 import {
   RUN_REPORT_DOCUMENTS_POLL_MS,
   RUN_REPORT_ESTIMATE_DEBOUNCE_MS,
@@ -383,6 +384,8 @@ describe('RunAiReportsComponent', () => {
     expect(service.getReportDocumentPdf.calls.mostRecent().args).toEqual([71, 2, 1, paper]);
     expect(request.tabUrl!('summary')).toBe(`/pdf/71/1/1/${paper}/inline`);
     expect(service.reportDocumentPdfUrl.calls.mostRecent().args).toEqual([71, 1, 1, paper, true]);
+    expect(request.variantsInfo).toEqual(reportDisclosureInfo(1));
+    expect(request.variantsInfo?.title).toBe('What Summary, Detailed and Full mean');
   });
 
   it('should refuse the model under test as its own writer inline, in red, joined to the picker\'s description', () => {
@@ -395,7 +398,7 @@ describe('RunAiReportsComponent', () => {
     expect(blocked.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(writeButton().disabled).toBeTrue();
     expect(section().querySelector('.rr-report-writer-model-selector .selector-trigger')?.getAttribute('aria-describedby'))
-      .toBe('rrReportWriterHint rrReportWriterBlocked');
+      .toBe('rrReportWriterBlocked');
     expect(section().querySelector('.rr-ai-writer-warning')).toBeNull();
   });
 
@@ -545,6 +548,12 @@ describe('RunAiReportsComponent', () => {
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
 
     expect(estimateLine()).toBe('Estimating…');
+    const block = section().querySelector('#rrWriteEstimate') as HTMLElement;
+    expect(block.classList).toContain('rr-ai-estimate');
+    expect(block.getAttribute('role')).toBe('status');
+    expect(block.getAttribute('aria-busy')).toBe('true');
+    expect(block.classList).toContain('is-muted');
+    expect(writeButton().getAttribute('aria-describedby')).toBe('rrWriteEstimate');
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS - 1);
     expect(service.estimateRunReports).not.toHaveBeenCalled();
 
@@ -560,11 +569,48 @@ describe('RunAiReportsComponent', () => {
 
     pending.next(estimateDto());
     fixture.detectChanges();
-    expect(estimateLine()).toBe(
-      'Estimated cost: about $0.18 (Executive Summary $0.04 · Researcher report $0.14). The actual cost is shown while it writes.');
+    const ready = section().querySelector('#rrWriteEstimate') as HTMLElement;
+    expect(ready.hasAttribute('aria-busy')).toBeFalse();
+    expect(ready.classList).not.toContain('is-muted');
+    expect(ready.classList).not.toContain('is-empty');
+    expect(ready.querySelector('.rr-ai-estimate-label')?.textContent?.trim()).toBe('Estimated cost');
+    expect(ready.querySelector('.rr-ai-estimate-total')?.textContent?.trim()).toBe('about $0.18');
+    const parts = Array.from(ready.querySelectorAll('.rr-ai-estimate-parts > div')) as HTMLElement[];
+    expect(parts.map(part => [part.querySelector('dt')?.textContent?.trim(), part.querySelector('dd')?.textContent?.trim()]))
+      .toEqual([['Executive Summary', '$0.04'], ['Report for AI Researchers and Developers', '$0.14']]);
+    expect(ready.querySelector('.rr-ai-estimate-note')?.textContent?.trim())
+      .toBe('The actual cost is shown while the reports are written.');
     flush();
     discardPeriodicTasks();
   }));
+
+  it('should show the estimate of one document without a breakdown', fakeAsync(() => {
+    service.estimateRunReports.and.returnValue(of(estimateDto({
+      estimates: [{ audience: 2, promptChars: 3000, estimatedInputTokens: 2700, estimatedOutputTokens: 7000, estimatedCostUsd: 0.14 }],
+      estimatedTotalCostUsd: 0.14
+    })));
+    setUp();
+    load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+    checkbox(1).click();
+    fixture.detectChanges();
+    tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+    fixture.detectChanges();
+
+    const block = section().querySelector('#rrWriteEstimate') as HTMLElement;
+    expect(block.querySelector('.rr-ai-estimate-total')?.textContent?.trim()).toBe('about $0.14');
+    expect(block.querySelector('.rr-ai-estimate-parts')).toBeNull();
+    flush();
+    discardPeriodicTasks();
+  }));
+
+  it('should keep the estimate block empty while no writer is chosen', () => {
+    setUp();
+    load(reportRun({ assessmentJson: '{}' }));
+    const block = section().querySelector('#rrWriteEstimate') as HTMLElement;
+    expect(block.getAttribute('role')).toBe('status');
+    expect(block.classList).toContain('is-empty');
+    expect(estimateLine()).toBe('');
+  });
 
   it('should say when the writer has no price card, and when the estimate failed without blocking the write', fakeAsync(() => {
     service.estimateRunReports.and.returnValue(of(estimateDto({ estimatedTotalCostUsd: null })));
@@ -573,6 +619,9 @@ describe('RunAiReportsComponent', () => {
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
     fixture.detectChanges();
     expect(estimateLine()).toBe('No price card for this model; the cost cannot be estimated.');
+    expect(section().querySelector('.rr-ai-estimate .rr-ai-estimate-note')).not.toBeNull();
+    expect(section().querySelector('.rr-ai-estimate .rr-ai-estimate-total')).toBeNull();
+    expect(section().querySelector('.rr-ai-estimate')?.classList).toContain('is-muted');
 
     service.estimateRunReports.and.returnValue(throwError(() => ({ status: 500 })));
     checkbox(1).click();
@@ -620,6 +669,35 @@ describe('RunAiReportsComponent', () => {
     expect(section().querySelector('#rrReportWriterModelLabel')?.closest('.rr-ai-write-row')).toBeNull();
   });
 
+  it('should explain the report writer in a dialog, not as the picker\'s description', () => {
+    setUp();
+    load(reportRun({ assessmentJson: '{}' }));
+
+    const infoButton = section().querySelector('app-info-tip button.gh-info-btn') as HTMLButtonElement;
+    expect(infoButton.getAttribute('aria-label')).toBe('About Report writer');
+    expect(infoButton.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(section().querySelector('.gh-info-popup')).toBeNull();
+    expect(section().querySelector('.rr-report-writer-model-selector .selector-trigger')?.hasAttribute('aria-describedby'))
+      .toBeFalse();
+
+    infoButton.click();
+    fixture.detectChanges();
+    const infoDialog = section().querySelector('dialog.gh-info-dialog') as HTMLDialogElement;
+    expect(infoDialog.open).toBeTrue();
+    expect(infoDialog.getAttribute('aria-labelledby')).toBe('rrReportWriterHint-title');
+    expect(section().querySelector('#rrReportWriterHint-title')?.textContent?.trim()).toBe('Choosing a report writer');
+    expect(document.activeElement).toBe(section().querySelector('#rrReportWriterHint-title'));
+    expect(infoDialog.contains(section().querySelector('#rrReportWriterHint'))).toBeTrue();
+
+    // Escape and the close button end at the info dialog; the run report dialog never hears of it.
+    const reached: string[] = [];
+    section().addEventListener('cancel', () => reached.push('cancel'));
+    section().addEventListener('close', () => reached.push('close'));
+    infoDialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+    infoDialog.dispatchEvent(new Event('close', { bubbles: true }));
+    expect(reached).toEqual([]);
+  });
+
   it('should warn about a writer from the candidate\'s provider and write only after the confirmation', () => {
     service.writeRunReportDocuments.and.returnValue(of({ runId: 55, status: 1 }));
     setUp();
@@ -633,7 +711,7 @@ describe('RunAiReportsComponent', () => {
     expect(alert.querySelector('svg.alert-icon')?.getAttribute('aria-hidden')).toBe('true');
     expect(alert.textContent?.trim()).toBe(warning);
     expect(section().querySelector('.rr-report-writer-model-selector .selector-trigger')?.getAttribute('aria-describedby'))
-      .toBe('rrReportWriterHint rrReportWriterWarning');
+      .toBe('rrReportWriterWarning');
     expect(writeButton().disabled).toBeFalse();
 
     writeButton().click();

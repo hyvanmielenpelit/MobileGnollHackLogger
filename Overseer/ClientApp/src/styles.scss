@@ -485,6 +485,9 @@ a:hover {
   #{'position-try'}: flip-block, flip-inline;
   inline-size: max-content;
   max-inline-size: min(24rem, calc(100vw - 32px));
+  max-block-size: min(32rem, calc(100dvh - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(20, 20, 20, 0.96);
   color: var(--info-popup-text);
   border: 1px solid var(--border-glass);
@@ -514,7 +517,8 @@ a:hover {
   border-block-end: 1px solid var(--border-glass);
 }
 
-.gh-info-popup-body {
+.gh-info-popup-body,
+.gh-info-dialog-body {
   text-wrap: pretty;
 
   p {
@@ -555,6 +559,86 @@ a:hover {
     margin-block-start: 10px;
     padding-block-start: 10px;
     border-block-start: 1px solid var(--info-popup-rule);
+  }
+}
+
+/* The modal of `app-info-tip trigger="dialog"`, for an explanation longer than a popup holds: a
+   header with the title and a close button over a scrolling body. The <dialog> sits inside the
+   control it explains (a label, a table header), so it resets the text styles it would otherwise
+   inherit from there. */
+.gh-dialog.gh-info-dialog {
+  --info-popup-text: #e4e4e7;
+  --info-popup-muted: #a1a1aa;
+  --info-popup-rule: rgba(255, 255, 255, 0.08);
+
+  width: min(40rem, 94vw);
+  max-width: min(40rem, 94vw);
+  max-height: 85dvh;
+  padding: 0;
+  overflow: hidden;
+  flex-direction: column;
+  color: var(--info-popup-text);
+  font-family: "Lato", sans-serif;
+  font-size: var(--text-body);
+  font-style: normal;
+  font-weight: 400;
+  line-height: var(--leading-body);
+  letter-spacing: normal;
+  text-align: start;
+  text-transform: none;
+  white-space: normal;
+  cursor: auto;
+
+  &[open],
+  &:modal {
+    display: flex;
+  }
+
+  .dialog-header {
+    flex-shrink: 0;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.75rem 0.75rem 0.75rem 1.5rem;
+
+    h3 {
+      min-width: 0;
+      margin: 0;
+      font-size: 1.125rem;
+      overflow-wrap: anywhere;
+
+      &:focus {
+        outline: none;
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+        border-radius: 4px;
+      }
+    }
+  }
+}
+
+.gh-info-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1.5rem 1.25rem;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: -2px;
+  }
+}
+
+@media (max-width: 600px) {
+  .gh-dialog.gh-info-dialog .dialog-header {
+    padding-inline-start: 1rem;
+  }
+
+  .gh-info-dialog-body {
+    padding-inline: 1rem;
   }
 }
 

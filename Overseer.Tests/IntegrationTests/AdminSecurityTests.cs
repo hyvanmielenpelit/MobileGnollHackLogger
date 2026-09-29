@@ -74,6 +74,46 @@ namespace Overseer.Tests.IntegrationTests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
+        public static TheoryData<string, string> DefaultApiKeyRoutes => new()
+        {
+            { "GET", "/api/admin/default-api-keys" },
+            { "PUT", "/api/admin/default-api-keys/OpenAI" },
+            { "POST", "/api/admin/default-api-keys/OpenAI/verify" },
+            { "GET", "/api/admin/default-api-keys/OpenAI/deletion-check" },
+            { "DELETE", "/api/admin/default-api-keys/OpenAI" }
+        };
+
+        private static HttpRequestMessage DefaultApiKeyRequest(string method, string url)
+        {
+            var request = new HttpRequestMessage(new HttpMethod(method), url);
+            if (method == "PUT")
+            {
+                request.Content = JsonContent.Create(new SaveDefaultApiKeyRequest { ApiKey = "test-key-not-real-0001" });
+            }
+            return request;
+        }
+
+        [Theory]
+        [MemberData(nameof(DefaultApiKeyRoutes))]
+        public async Task DefaultApiKeys_Unauthenticated_Returns401(string method, string url)
+        {
+            var request = DefaultApiKeyRequest(method, url);
+
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        [Theory]
+        [MemberData(nameof(DefaultApiKeyRoutes))]
+        public async Task DefaultApiKeys_NonAdmin_Returns403(string method, string url)
+        {
+            var request = DefaultApiKeyRequest(method, url);
+            request.Headers.Add("X-Test-User", "NormalUser");
+
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+
         private async Task<long> SeedSystemConfigAsync()
         {
             using var scope = _factory.Services.CreateScope();

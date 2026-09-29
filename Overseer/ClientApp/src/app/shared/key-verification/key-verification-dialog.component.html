@@ -1,0 +1,57 @@
+<dialog #kvDialog class="gh-dialog kv-dialog" aria-labelledby="kvTitle" closedby="closerequest"
+        (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 #kvHeading id="kvTitle" tabindex="-1">Could not verify the key</h3>
+      </div>
+      <button type="button" class="btn-icon-action kv-close"
+              aria-label="Close the key verification warning"
+              interestfor="kv-close-tip" style="anchor-name: --kv-close-tip" (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="kv-close-tip" style="position-anchor: --kv-close-tip">Close</div>
+    </div>
+
+    <div class="dialog-body">
+      <p class="kv-lead">{{ provider }} could not confirm this key, so it is not known whether it works.</p>
+
+      <h4 class="kv-subheading">What failed</h4>
+      @if (refusal?.detail; as detail) {
+        <dl class="kv-detail">
+          @if (detail.request) {
+            <div><dt>Check</dt><dd class="kv-mono">{{ detail.request }}</dd></div>
+          }
+          <div><dt>Response</dt><dd>{{ describeResponse(detail) }}</dd></div>
+          @if (detail.exception) {
+            <div><dt>Error</dt><dd class="kv-pre">{{ detail.exception }}</dd></div>
+          }
+          @if (detail.providerError) {
+            <div><dt>Provider's message</dt><dd class="kv-pre">{{ detail.providerError }}</dd></div>
+          }
+          @if (formatElapsed(detail.elapsedMs)) {
+            <div><dt>Time</dt><dd>{{ formatElapsed(detail.elapsedMs) }}</dd></div>
+          }
+        </dl>
+      } @else {
+        <p class="kv-pre kv-message">{{ refusal?.message }}</p>
+      }
+
+      <p class="kv-note">
+        If you save it anyway, it is marked Not verified until a check succeeds. You can run the check
+        again at any time with Verify Again.
+      </p>
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel kv-cancel" (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh kv-save-anyway"
+              [attr.aria-busy]="saving ? 'true' : null"
+              [attr.aria-disabled]="saving ? 'true' : null"
+              (click)="onSaveAnyway()">{{ saving ? 'Saving…' : 'Save Anyway' }}</button>
+    </div>
+  </div>
+</dialog>

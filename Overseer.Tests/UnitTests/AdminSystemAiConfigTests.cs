@@ -71,7 +71,7 @@ public class AdminSystemAiConfigTests
             ApiKey = "sk-test-secret-key-123"
         };
 
-        var result = await controller.CreateSystemConfig(request);
+        var result = await controller.CreateSystemConfig(request, TestContext.Current.CancellationToken);
         var okResult = Assert.IsType<OkObjectResult>(result);
         Assert.NotNull(okResult.Value);
 
@@ -107,7 +107,7 @@ public class AdminSystemAiConfigTests
             ApiKey = null
         };
 
-        var result = await controller.CreateSystemConfig(request);
+        var result = await controller.CreateSystemConfig(request, TestContext.Current.CancellationToken);
         Assert.IsType<OkObjectResult>(result);
 
         var saved = await db.SystemAiApiConfigurations.FirstOrDefaultAsync(ct);
@@ -149,7 +149,7 @@ public class AdminSystemAiConfigTests
             ApiKey = "google-new-api-key"
         };
 
-        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest);
+        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         Assert.IsType<OkResult>(updateResult);
 
         var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
@@ -198,7 +198,7 @@ public class AdminSystemAiConfigTests
             ApiKey = "   " // Whitespace to clear
         };
 
-        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest);
+        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         Assert.IsType<OkResult>(updateResult);
 
         var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
@@ -244,7 +244,7 @@ public class AdminSystemAiConfigTests
             ApiKey = null // null means do not modify key
         };
 
-        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest);
+        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         Assert.IsType<OkResult>(updateResult);
 
         var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
@@ -282,7 +282,7 @@ public class AdminSystemAiConfigTests
             CachedInputPricePerMillion = 0.50m
         };
 
-        var result = await controller.CreateSystemConfig(request);
+        var result = await controller.CreateSystemConfig(request, TestContext.Current.CancellationToken);
         Assert.IsType<OkObjectResult>(result);
 
         var saved = await db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.DisplayName == "Custom Pricing Config", ct);
@@ -319,7 +319,7 @@ public class AdminSystemAiConfigTests
             OutputPricePerMillion = 10.00m
         };
 
-        var result = await controller.CreateSystemConfig(request);
+        var result = await controller.CreateSystemConfig(request, TestContext.Current.CancellationToken);
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal("Prices cannot be negative.", badRequest.Value);
     }
@@ -340,7 +340,7 @@ public class AdminSystemAiConfigTests
             OutputPricePerMillion = null
         };
 
-        var result = await controller.CreateSystemConfig(request);
+        var result = await controller.CreateSystemConfig(request, TestContext.Current.CancellationToken);
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
         Assert.Equal("Custom pricing requires both input and output prices per million.", badRequest.Value);
     }
@@ -375,7 +375,7 @@ public class AdminSystemAiConfigTests
             CachedInputPricePerMillion = 0.40m
         };
 
-        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest);
+        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         Assert.IsType<OkResult>(updateResult);
 
         var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
@@ -414,7 +414,7 @@ public class AdminSystemAiConfigTests
             OutputPricePerMillion = -5.00m
         };
 
-        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest);
+        var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         var badRequest = Assert.IsType<BadRequestObjectResult>(updateResult);
         Assert.Equal("Prices cannot be negative.", badRequest.Value);
     }
@@ -537,5 +537,190 @@ public class AdminSystemAiConfigTests
 
         var errors = Assert.IsAssignableFrom<IEnumerable<SystemAiErrorLogDto>>(Assert.IsType<OkObjectResult>(await controller.GetErrors()).Value);
         Assert.Equal("Doomed Model", Assert.Single(errors).ConfigurationName);
+    }
+
+    // -- Default API keys -----------------------------------------------------------------------
+
+    private const string OpenAiDefaultKey = "test-key-not-real-0001";
+    private const string AnthropicDefaultKey = "test-key-not-real-0002";
+
+    private static async Task SeedDefaultKeyAsync(ApplicationDbContext db, CryptoService crypto, string provider, string apiKey)
+    {
+        var (ciphertext, nonce, tag) = crypto.Encrypt(apiKey, "SYSTEM_DEFAULT_API_KEY:" + provider);
+        db.SystemDefaultApiKeys.Add(new SystemDefaultApiKey
+        {
+            Provider = provider,
+            EncryptedApiKey = ciphertext,
+            ApiKeyNonce = nonce,
+            ApiKeyTag = tag,
+            KeyHint = apiKey[^4..]
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private static string DecryptConfigKey(CryptoService crypto, SystemAiApiConfiguration config)
+        => crypto.Decrypt(config.EncryptedApiKey!, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
+
+    private static async Task<SystemAiApiConfiguration> CreateDefaultKeyConfigAsync(
+        AdminController controller, ApplicationDbContext db, string provider)
+    {
+        var result = await controller.CreateSystemConfig(new CreateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Default Key Config",
+            Provider = provider,
+            ModelId = "model-x",
+            IsEnabled = true,
+            UseDefaultApiKey = true
+        }, TestContext.Current.CancellationToken);
+        Assert.IsType<OkObjectResult>(result);
+        return await db.SystemAiApiConfigurations.SingleAsync(
+            c => c.DisplayName == "Default Key Config", TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task CreateSystemConfig_WithDefaultKey_StoresACopyOfTheDefaultKey_AndIgnoresTheRequestKey()
+    {
+        var (controller, db, crypto) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+        await SeedDefaultKeyAsync(db, crypto, "OpenAI", OpenAiDefaultKey);
+
+        var result = await controller.CreateSystemConfig(new CreateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Default Key Config",
+            Provider = "OpenAI",
+            ModelId = "gpt-5",
+            IsEnabled = true,
+            UseDefaultApiKey = true,
+            ApiKey = "test-key-not-real-ignored"
+        }, ct);
+        Assert.IsType<OkObjectResult>(result);
+
+        var saved = await db.SystemAiApiConfigurations.SingleAsync(ct);
+        Assert.True(saved.UseDefaultApiKey);
+        Assert.Equal(OpenAiDefaultKey, DecryptConfigKey(crypto, saved));
+
+        var configs = Assert.IsAssignableFrom<IEnumerable<SystemAiApiConfigurationDto>>(
+            Assert.IsType<OkObjectResult>(await controller.GetSystemConfigs()).Value);
+        var dto = configs.Single();
+        Assert.True(dto.UseDefaultApiKey);
+        Assert.True(dto.HasApiKey);
+    }
+
+    [Fact]
+    public async Task CreateSystemConfig_WithDefaultKey_WhenNoneIsStored_ReturnsBadRequest()
+    {
+        var (controller, db, _) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+
+        var result = await controller.CreateSystemConfig(new CreateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Default Key Config",
+            Provider = "OpenAI",
+            ModelId = "gpt-5",
+            IsEnabled = true,
+            UseDefaultApiKey = true
+        }, ct);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("There is no default OpenAI key. Add one in the API Keys tab, or choose Custom.", badRequest.Value);
+        Assert.False(await db.SystemAiApiConfigurations.AnyAsync(ct));
+    }
+
+    [Fact]
+    public async Task CreateSystemConfig_WithDefaultKey_AndABaseUrl_ReturnsBadRequest()
+    {
+        var (controller, db, crypto) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+        await SeedDefaultKeyAsync(db, crypto, "OpenAI", OpenAiDefaultKey);
+
+        var result = await controller.CreateSystemConfig(new CreateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Default Key Config",
+            Provider = "OpenAI",
+            ModelId = "gpt-5",
+            IsEnabled = true,
+            UseDefaultApiKey = true,
+            BaseUrl = "https://llm.example.com/v1"
+        }, ct);
+
+        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Equal("A default key works only with the provider's own endpoint.", badRequest.Value);
+        Assert.False(await db.SystemAiApiConfigurations.AnyAsync(ct));
+    }
+
+    [Fact]
+    public async Task UpdateSystemConfig_FromDefaultToCustom_WithoutAKey_ClearsTheCopy()
+    {
+        var (controller, db, crypto) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+        await SeedDefaultKeyAsync(db, crypto, "OpenAI", OpenAiDefaultKey);
+        var config = await CreateDefaultKeyConfigAsync(controller, db, "OpenAI");
+
+        var result = await controller.UpdateSystemConfig(config.Id, new UpdateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Default Key Config",
+            Provider = "OpenAI",
+            ModelId = "model-x",
+            IsEnabled = true,
+            UseDefaultApiKey = false,
+            ApiKey = null
+        }, ct);
+        Assert.IsType<OkResult>(result);
+
+        var updated = await db.SystemAiApiConfigurations.SingleAsync(ct);
+        Assert.False(updated.UseDefaultApiKey);
+        Assert.Null(updated.EncryptedApiKey);
+        Assert.Null(updated.ApiKeyNonce);
+        Assert.Null(updated.ApiKeyTag);
+    }
+
+    [Fact]
+    public async Task UpdateSystemConfig_FromDefaultToCustom_WithAKey_StoresThatKey()
+    {
+        var (controller, db, crypto) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+        await SeedDefaultKeyAsync(db, crypto, "OpenAI", OpenAiDefaultKey);
+        var config = await CreateDefaultKeyConfigAsync(controller, db, "OpenAI");
+
+        var result = await controller.UpdateSystemConfig(config.Id, new UpdateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Default Key Config",
+            Provider = "OpenAI",
+            ModelId = "model-x",
+            IsEnabled = true,
+            UseDefaultApiKey = false,
+            ApiKey = "test-key-not-real-custom"
+        }, ct);
+        Assert.IsType<OkResult>(result);
+
+        var updated = await db.SystemAiApiConfigurations.SingleAsync(ct);
+        Assert.False(updated.UseDefaultApiKey);
+        Assert.Equal("test-key-not-real-custom", DecryptConfigKey(crypto, updated));
+    }
+
+    [Fact]
+    public async Task UpdateSystemConfig_ProviderChangeOnADefaultConfig_CopiesTheNewProvidersDefaultKey()
+    {
+        var (controller, db, crypto) = CreateTestController();
+        var ct = TestContext.Current.CancellationToken;
+        await SeedDefaultKeyAsync(db, crypto, "OpenAI", OpenAiDefaultKey);
+        await SeedDefaultKeyAsync(db, crypto, "Anthropic", AnthropicDefaultKey);
+        var config = await CreateDefaultKeyConfigAsync(controller, db, "OpenAI");
+        Assert.Equal(OpenAiDefaultKey, DecryptConfigKey(crypto, config));
+
+        var result = await controller.UpdateSystemConfig(config.Id, new UpdateSystemAiApiConfigurationRequest
+        {
+            DisplayName = "Default Key Config",
+            Provider = "Anthropic",
+            ModelId = "model-x",
+            IsEnabled = true,
+            UseDefaultApiKey = true
+        }, ct);
+        Assert.IsType<OkResult>(result);
+
+        var updated = await db.SystemAiApiConfigurations.SingleAsync(ct);
+        Assert.True(updated.UseDefaultApiKey);
+        Assert.Equal("Anthropic", updated.Provider);
+        Assert.Equal(AnthropicDefaultKey, DecryptConfigKey(crypto, updated));
     }
 }
