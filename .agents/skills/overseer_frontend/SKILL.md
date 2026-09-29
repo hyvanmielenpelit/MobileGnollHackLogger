@@ -288,7 +288,13 @@ To find specific popups, look in the corresponding component's `.html` template:
     `badge-score-mid` (≥ 50) or `badge-score-low`, colored from the `--score-*` tokens on `:root` —
     named by a visually hidden *Score* word, not `aria-label`; the color repeats the number, never
     replaces it. The roster and banner say **Assessor** (never *Evaluator*); a panel run's banner says
-    *Assessors*.
+    *Assessors*. **When the run names a report writer**, the model strip gains a *Report writer* row,
+    the rail a fourth stage *Writing reports* (stage labels read *of 4*; a run without a writer keeps
+    *of 3*), the stat strip a *Reports* cell, and the cost panel a *Report writer* row and *Run total
+    with reports*. The dialog keeps polling after *Completed* while the documents are *Pending* or
+    *Writing* (a 30-s grace for *NotRequested*), and the completion chime fires at the end of stage 4,
+    not at *Completed*. The Download Center, opened on such a run, shows a *being written* notice and
+    polls the run's report job every 5 s until it finishes.
   - `#runDetailDialog`: the run report dialog, **full-screen**. The header holds *Run #N*, the
     status and a `role="group"` *Run actions* (never `role="toolbar"`: it has no arrow-key roving):
     **Downloads** (opens the Download Center), **Re-run** (an action popover, `frontend_ui_controls`

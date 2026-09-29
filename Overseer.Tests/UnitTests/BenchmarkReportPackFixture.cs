@@ -50,16 +50,29 @@ internal static class BenchmarkReportPackFixture
 
     /// <summary>
     /// <see cref="Document"/> as format version 2 stored it: the index display with its half-width,
-    /// no pricing-basis kind, catalog date, interval span, token or 90th-percentile facts, no
-    /// refuted-answer-sentence counts, no ruling roles, no complete answers and the "family" wording of
-    /// the single-grader support label.
+    /// no pricing-basis kind, catalog date, interval span, token, 90th-percentile or reference-reader
+    /// facts, the response-style, scored-question and knowledge-base displays of before format
+    /// version 6, no refuted-answer-sentence counts, no ruling roles, no complete answers and the
+    /// "family" wording of the single-grader support label.
     /// </summary>
     public static BenchmarkReportDocument StoredV2Document(BenchmarkReportAudience audience)
     {
         var sheet = Sheet();
-        string[] added = { "comparison.pricedOn", "comparison.pricingBasisKind", "cost.perRun", "quality.intervalSpan", "speed.modelTimeP90", "tokens.inputPerQuestion", "tokens.outputPerQuestion" };
+        string[] added =
+        {
+            "comparison.pricedOn", "comparison.pricingBasisKind", "cost.perRun", "panel.referenceReaderIndex", "panel.referenceReaderOffset",
+            "quality.intervalSpan", "speed.modelTimeP90", "tokens.inputPerQuestion", "tokens.outputPerQuestion"
+        };
         sheet.Facts = sheet.Facts.Where(f => !added.Contains(f.Key)).ToList();
         sheet.Facts.Single(f => f.Key == "quality.index").Display = "80 ± 3 / 100";
+        var style = sheet.Facts.Single(f => f.Key == "style.responseStyleConflict");
+        style.Display = "no";
+        style.Value = null;
+        sheet.Facts.Single(f => f.Key == "quality.scoredItems").Display = "4 of 4";
+        var knowledgeBase = sheet.Facts.Single(f => f.Key == "tools.zeroKnowledgeBaseAnswers");
+        knowledgeBase.Display = "4 of 4";
+        knowledgeBase.Available = true;
+        knowledgeBase.UnavailableReason = null;
         foreach (var q in sheet.Questions) q.RefutedAnswerSentences = null;
         sheet.Rows.Single(r => r.Id == "R2").SupportLabel = LegacyDifferentFamilyLabel;
 
@@ -179,6 +192,7 @@ internal static class BenchmarkReportPackFixture
         {
             new() { Role = "Panel member A", Label = "Gemini 3.8 Flash", Provider = "Google", ModelId = "gemini-3.8-flash", ThinkingLevel = "medium" },
             new() { Role = "Panel member B", Label = "Claude Haiku 5", Provider = "Anthropic", ModelId = "claude-haiku-5" },
+            new() { Role = "Reference reader", Label = "DeepSeek V4", Provider = "DeepSeek", ModelId = "deepseek-v4" },
             new() { Role = "Claim verifier", Label = "Gemini 3.8 Flash", Provider = "Google", ModelId = "gemini-3.8-flash", ThinkingLevel = "medium" }
         },
         Facts = Facts(),
@@ -212,9 +226,9 @@ internal static class BenchmarkReportPackFixture
         },
         KnownNames = new List<string>
         {
-            "Anthropic", "Claude Haiku 5", "GPT-5.6 Luna", "Gemini 3.8 Flash", "GnollHack Core Suite", "Google", "Grok 5",
-            "Mistral", "Mistral Large 4", "OpenAI", "claude-haiku-5", "gemini-3.8-flash", "gpt-5.6-luna", "grok-5",
-            "mistral-large-4", "xAI"
+            "Anthropic", "Claude Haiku 5", "DeepSeek", "DeepSeek V4", "GPT-5.6 Luna", "Gemini 3.8 Flash", "GnollHack Core Suite",
+            "Google", "Grok 5", "Mistral", "Mistral Large 4", "OpenAI", "claude-haiku-5", "deepseek-v4", "gemini-3.8-flash",
+            "gpt-5.6-luna", "grok-5", "mistral-large-4", "xAI"
         },
         NoSignificanceSummary = "Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none.",
         NoSignificanceInstead = "Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and choose the other under Compare with group.",
@@ -289,12 +303,14 @@ internal static class BenchmarkReportPackFixture
             Fact("panel.meanAbsDelta", "6.5 points"),
             Fact("panel.memberAAlone", "81 / 100"),
             Fact("panel.memberBAlone", "79 / 100"),
+            Fact("panel.referenceReaderIndex", "90 / 100", JsonValue.Create(90.0)),
+            Fact("panel.referenceReaderOffset", "+16.8 points", JsonValue.Create(16.8)),
             Fact("quality.index", "80 / 100", JsonValue.Create(80.4)),
             Fact("quality.interval", "77–83"),
             Fact("quality.intervalBasis", "Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two."),
             Fact("quality.intervalOverlap", "its 95 % interval overlaps those of Models A and B"),
             Fact("quality.intervalSpan", "6 points", JsonValue.Create(6)),
-            Fact("quality.scoredItems", "4 of 4", JsonValue.Create(4)),
+            Fact("quality.scoredItems", "4 of 4 questions", JsonValue.Create(4)),
             Fact("quality.rank", "2nd of 3"),
             Fact("run.dates", "2026-09-20"),
             Fact("run.harnessVersion", "41"),
@@ -308,7 +324,7 @@ internal static class BenchmarkReportPackFixture
             Fact("speed.modelTimeP50", "12.3 s"),
             Fact("speed.modelTimeP90", "15.0 s"),
             Fact("speed.rank", "2nd of 2"),
-            Fact("style.responseStyleConflict", "no"),
+            Fact("style.responseStyleConflict", "No response-style conflict", JsonValue.Create(false)),
             Fact("suite.questions", "4"),
             Fact("tokens.inputPerQuestion", "18,250"),
             Fact("tokens.outputPerQuestion", "1,140"),
@@ -321,7 +337,13 @@ internal static class BenchmarkReportPackFixture
             Fact("tools.share.sourceCode", "57 %"),
             Fact("tools.share.structuredLookup", "14 %"),
             Fact("tools.share.wiki", "29 %"),
-            Fact("tools.zeroKnowledgeBaseAnswers", "4 of 4")
+            new BenchmarkReportFact
+            {
+                Key = "tools.zeroKnowledgeBaseAnswers",
+                Display = BenchmarkReportFacts.NotAvailable,
+                Available = false,
+                UnavailableReason = BenchmarkReportFacts.NoKnowledgeBaseTopicReason
+            }
         };
 
         return facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
@@ -653,6 +675,31 @@ internal static class BenchmarkReportPackFixture
             run.Answers.Add(Answer(run, spec));
         }
 
+        return run;
+    }
+
+    /// <summary>
+    /// <paramref name="run"/> made a panel run: member B, of another provider than member A, scored
+    /// every answer at the given levels, and member A's stored scores and levels are kept.
+    /// </summary>
+    public static BenchmarkRun AsPanelRun(
+        BenchmarkRun run, int accuracyLevel, int completenessLevel, int concisenessLevel, int readabilityLevel)
+    {
+        run.CoAssessorModelConfigurationId = 2;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-haiku-5", displayName: "Claude Haiku 5");
+        foreach (var answer in run.Answers)
+        {
+            answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+            answer.CoAssessmentQualityScore = answer.QualityScore;
+            answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+            {
+                AccuracyLevel = accuracyLevel,
+                CompletenessLevel = completenessLevel,
+                ConcisenessLevel = concisenessLevel,
+                ReadabilityLevel = readabilityLevel,
+                QualityScore = answer.QualityScore
+            }.Serialize();
+        }
         return run;
     }
 

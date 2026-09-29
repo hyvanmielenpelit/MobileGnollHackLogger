@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFortyTwo()
+    public void HarnessVersion_IsFortyThree()
     {
-        Assert.Equal("42", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("43", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -493,6 +493,73 @@ public class BenchmarkAssessmentPromptTests
         string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1 });
 
         Assert.DoesNotContain("CLAIM VERIFICATION TOTALS", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_PanelRun_PrintsTheMembersClaimsAndTheRunsUnion()
+    {
+        // Run 74: each panel synthesis was handed its own member's totals (52 and 77 claims) and
+        // quoted them as the run's, while the report printed the union (87).
+        var q1 = Verdict(1, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 1;
+        q1.ClaimsRefutedCount = 1;
+        q1.ClaimsIndeterminateCount = 0;
+        var totals = new BenchmarkRunClaimTotals(Claims: 5, Answers: 3, Supported: 3, Refuted: 1, Indeterminate: 1);
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1 }, panelRunClaimTotals: totals);
+
+        Assert.Contains("Claims you raised: 2 across 1 answer(s); verified: 1 supported, 1 refuted, 0 indeterminate", prompt);
+        Assert.Contains(
+            "All claims checked in this run (both members, each counted once): 5 across 3 answer(s); verified: 3 supported, 1 refuted, 1 indeterminate",
+            prompt);
+        Assert.DoesNotContain("Unverified claims: ", prompt);
+        Assert.Contains("When you state a run-wide claim total, copy the 'All claims checked' line.", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_SingleAssessorRun_HasNoRunWideClaimLine()
+    {
+        var q1 = Verdict(1, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+        q1.UnverifiedClaimCount = 2;
+        q1.ClaimsSupportedCount = 2;
+        q1.ClaimsRefutedCount = 0;
+        q1.ClaimsIndeterminateCount = 0;
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { q1 });
+
+        Assert.Contains("Unverified claims: 2 across 1 answer(s); verified: 2 supported, 0 refuted, 0 indeterminate", prompt);
+        Assert.DoesNotContain("Claims you raised", prompt);
+        Assert.DoesNotContain("All claims checked", prompt);
+    }
+
+    [Fact]
+    public void BenchmarkRunClaimTotals_CountsEachAnswersOwnClaimsOnce()
+    {
+        static string Json(params BenchmarkClaimVerification[] items) => JsonSerializer.Serialize(items);
+        var claim = new[] { BenchmarkClaimRoles.UnverifiedClaim };
+        var answers = new[]
+        {
+            new BenchmarkRunAnswer
+            {
+                OrderIndex = 1,
+                ClaimVerificationJson = Json(
+                    new BenchmarkClaimVerification(0, "Raised by both.", BenchmarkClaimVerdict.Supported, "src/a.c", null) { Roles = claim, RaisedBy = new[] { "A", "B" } },
+                    new BenchmarkClaimVerification(1, "Raised by B.", BenchmarkClaimVerdict.Refuted, "src/b.c", null) { Roles = claim, RaisedBy = new[] { "B" } },
+                    new BenchmarkClaimVerification(2, "An accused sentence.", BenchmarkClaimVerdict.Supported, "src/c.c", null) { Roles = new[] { BenchmarkClaimRoles.AccusedQuote }, RaisedBy = new[] { "A" } }),
+            },
+            new BenchmarkRunAnswer
+            {
+                OrderIndex = 2,
+                ClaimVerificationJson = Json(
+                    new BenchmarkClaimVerification(0, "Raised by A.", BenchmarkClaimVerdict.Indeterminate, null, null) { Roles = claim, RaisedBy = new[] { "A" } }),
+            },
+            new BenchmarkRunAnswer { OrderIndex = 3 },
+        };
+
+        var totals = BenchmarkRunClaimTotals.FromAnswers(answers);
+
+        Assert.Equal(new BenchmarkRunClaimTotals(Claims: 3, Answers: 2, Supported: 1, Refuted: 1, Indeterminate: 1), totals);
     }
 
     [Fact]
@@ -793,18 +860,16 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs42_ScoringMethodIs12()
+    public void Versions_HarnessIs43_ScoringMethodIs12()
     {
-        Assert.Equal("42", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("43", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 42 keeps scoring method 12: the level anchors and deduction rules do not change.
-        // The assessor prompt gains one sentence saying the rubric's SOURCE line is provenance, not
-        // the list of correct citations. Around the verdict: a definition-line citation carries no
-        // note when the claim names that definition and a nearby line, and the verifier's
-        // instruction 5 says so; a trivial or minor qualifier and an Accuracy above 4 keep a verdict
-        // from being contested; a synthesis list sentence charges only its own item; and the report
-        // and diagnostics share one knowledge-base topic guard that skips the rubric's SOURCE list.
-        // No answer flag is added, and the tool guides and the chat prompt do not move.
+        // Harness 43 keeps scoring method 12: nothing in it moves a score. 43: verifier context
+        // line and instruction 3m, manifest containment merge, panel synthesis totals; around them,
+        // the fabrication detector skips claim-verification sentences, the knowledge-base guard
+        // reads question text only, "other" findings never converge, and the reference reader gains
+        // an offset-adjusted disagreement count. No answer flag is added; the chat prompt does not
+        // move, and the get_item_stats tool guide moves ToolGuidesSha256.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

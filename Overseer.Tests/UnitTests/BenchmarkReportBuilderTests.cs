@@ -2178,9 +2178,10 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
-    public void KnowledgeBaseRouting_ReadsTheRubricTheAnswerRecorded()
+    public void KnowledgeBaseRouting_DoesNotReadTheRubricTheAnswerRecorded()
     {
-        // The question text names no knowledge-base topic; only the recorded rubric does.
+        // The question text names no knowledge-base topic; only the recorded rubric does, and the
+        // rubric describes the expected answer, not the question's topic.
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         q1.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
         q1.ToolCallSummary = "wiki_search×1";
@@ -2189,16 +2190,7 @@ public class BenchmarkReportBuilderTests
         var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
         BenchmarkRunFinalizer.Apply(run, new[] { q1 });
 
-        Assert.Contains("Knowledge base under-use:", BenchmarkReportBuilder.BuildMarkdownReport(run));
-
-        // Nothing recorded: no rubric to read, so no routing line.
-        var q2 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q2.QuestionText = "In GnollHack, what do Exceptional and Elite give to body armor?";
-        q2.ToolCallSummary = "wiki_search×1";
-        var runWithout = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q2);
-        BenchmarkRunFinalizer.Apply(runWithout, new[] { q2 });
-
-        Assert.DoesNotContain("Knowledge base under-use:", BenchmarkReportBuilder.BuildMarkdownReport(runWithout));
+        Assert.DoesNotContain("Knowledge base under-use:", BenchmarkReportBuilder.BuildMarkdownReport(run));
     }
 
     [Fact]
@@ -3283,6 +3275,30 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, a1, a2, a3));
 
         Assert.Contains("Median (P50) = 2,000 ms", report);
+    }
+
+    [Fact]
+    public void P90_IsInterpolated_AsTheReportPackAndTheComparisonComputeIt()
+    {
+        var answers = new[] { 1000L, 2000L, 3000L, 4000L }
+            .Select((ms, i) =>
+            {
+                var a = ScoredAnswer(i + 1, BenchmarkDifficulty.Simple, 25, 80);
+                a.DurationMs = ms;
+                a.ToolTimeMs = 0;
+                a.TimeToFirstTokenMs = ms / 10;
+                return a;
+            })
+            .ToArray();
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, answers));
+
+        // Rank 0.9 · (4 − 1) = 2.7 between 3,000 and 4,000: 3,000 + 0.7 · 1,000 = 3,700 ms, where the
+        // nearest-rank pick was 4,000. Time to first token: 300 + 0.7 · 100 = 370 ms.
+        Assert.Equal(3700.0, BenchmarkGroupStatistics.Percentile(new[] { 1000.0, 2000.0, 3000.0, 4000.0 }, 90.0)!.Value, 6);
+        Assert.Contains("- **Turn Duration Percentiles:** Median (P50) = 2,500 ms, P90 = 3,700 ms, Max = 4,000 ms", report);
+        Assert.Contains("- **Model Time Percentiles:** Median (P50) = 2,500 ms, P90 = 3,700 ms, Max = 4,000 ms", report);
+        Assert.Contains("- **Time to First Token:** Median (P50) = 250 ms, P90 = 370 ms, Max = 400 ms", report);
     }
 
     // -------------------------------------------------------------------------------------
@@ -4607,6 +4623,63 @@ public class BenchmarkReportBuilderTests
         // Reader − panel: −1 −5 0 1 0.
         Assert.Contains("### Reference Reader Agreement", report);
         Assert.Contains("- **Mean absolute difference from the panel:** 1.4 points.", report);
+        Assert.Contains("- **Disagreements after removing the reader's mean offset (-1.0):** 0 of 5. *Advisory; the definition above is unchanged.*", report);
+    }
+
+    [Fact]
+    public void PanelRun_ReferenceReader_CountsDisagreementsAfterRemovingItsMeanOffset()
+    {
+        // Panel 75 75 82 89 55; reader 95 95 100 100 100, so reader − panel is 20 20 18 11 45 and the
+        // mean offset +22.8. Less the offset: 2.8 2.8 4.8 11.8 22.2, so Q5 alone exceeds 15; Q1 is
+        // named too, for the reader's critical-error flag that differs from both members'.
+        var run = PanelReportRun();
+        int[] readers = { 95, 95, 100, 100, 100 };
+        for (int i = 0; i < readers.Length; i++)
+        {
+            run.Answers[i].SecondOpinionQualityScore = readers[i];
+        }
+        run.Answers[0].SecondOpinionCriticalError = true;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Mean signed difference from the panel:** +22.8 points", report);
+        Assert.Contains("- **Disagreements:** 4 of 5 (80.0%) — Q1, Q2, Q3, Q5.", report);
+        Assert.Contains("- **Disagreements after removing the reader's mean offset (+22.8):** 2 of 5 — Q1, Q5. *Advisory; the definition above is unchanged.*", report);
+    }
+
+    [Fact]
+    public void PanelRun_ReferenceReader_OmitsTheOffsetLineBelowFiveReadAnswers()
+    {
+        var run = PanelReportRun();
+        run.Answers[4].SecondOpinionQualityScore = null;
+        run.Answers[4].SecondOpinionCriticalError = null;
+        run.Answers[4].SecondOpinionTrigger = null;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Reference Reader Agreement", report);
+        Assert.Contains("- **Mean absolute difference from the panel:**", report);
+        Assert.DoesNotContain("after removing the reader's mean offset", report);
+    }
+
+    [Fact]
+    public void SingleAssessorRun_AssessorAgreement_HasNoOffsetLine()
+    {
+        var answers = Enumerable.Range(1, 6).Select(i =>
+        {
+            var answer = ScoredAnswer(i, BenchmarkDifficulty.Intermediate, 50, 60);
+            answer.SecondOpinionQualityScore = 85;
+            answer.SecondOpinionCriticalError = false;
+            answer.SecondOpinionTrigger = "All";
+            return answer;
+        }).ToArray();
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.All, answers);
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("### Assessor Agreement", report);
+        Assert.DoesNotContain("after removing the reader's mean offset", report);
     }
 
     [Fact]
@@ -4911,6 +4984,54 @@ public class BenchmarkReportBuilderTests
             EditMemberB(a, r => r.CompletenessLevel = 2);
         }
         Assert.Contains("Completeness is the weakest dimension by 34.5 points", BenchmarkReportBuilder.BuildMarkdownReport(run));
+    }
+
+    /// <summary>The report pack's fact sheet of one panel run, compared with nothing else.</summary>
+    private static Overseer.Models.BenchmarkReportFactSheet PackSheetOf(BenchmarkRun run)
+    {
+        var comparison = BenchmarkReportPackFixture.Comparison(
+            BenchmarkReportPackFixture.Entry("run:" + run.Id, new[] { run.Id }, "Claude Candidate", "Anthropic", 75));
+        var result = BenchmarkReportFacts.Build(BenchmarkReportPackFixture.Input(comparison, "run:" + run.Id, run));
+        Assert.Null(result.Refusal);
+        return result.Sheet!;
+    }
+
+    [Fact]
+    public void PanelRun_TheReportPackStatesThePanelRow_TheReferenceReaderAndTheStyleConflict_AsTheRunReportDoes()
+    {
+        var run = PanelReportRunWithVerification();
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        var sheet = PackSheetOf(run);
+        Overseer.Models.BenchmarkReportFact FactOf(string key) => sheet.Facts.Single(f => f.Key == key);
+
+        // | Panel | 79.5 | 87.0 | 93.5 | 87.0 |, not member A's 87 on every dimension.
+        Assert.Contains("| Panel | 79.5 / 100 (level 4.5) | 87.0 / 100 (level 5.0) | 93.5 / 100 (level 5.5) | 87.0 / 100 (level 5.0) |", report);
+        Assert.Equal(79.5, FactOf("dimension.accuracy").Value!.GetValue<double>(), 6);
+        Assert.Equal(87.0, FactOf("dimension.completeness").Value!.GetValue<double>(), 6);
+        Assert.Equal(93.5, FactOf("dimension.conciseness").Value!.GetValue<double>(), 6);
+        Assert.Equal(87.0, FactOf("dimension.readability").Value!.GetValue<double>(), 6);
+
+        // The reader scored 74 70 82 90 55 against panel scores of 75 75 82 89 55: index 74, offset −1.0.
+        Assert.Contains("Reference reader (advisory): 74 / 100.", report);
+        Assert.Contains("- **Mean signed difference from the panel:** -1.0 points", report);
+        Assert.Equal("74 / 100", FactOf("panel.referenceReaderIndex").Display);
+        Assert.Equal("-1.0 points", FactOf("panel.referenceReaderOffset").Display);
+
+        Assert.DoesNotContain("Response-style conflict", report);
+        Assert.False(FactOf("style.responseStyleConflict").Value!.GetValue<bool>());
+        Assert.Equal("No response-style conflict", FactOf("style.responseStyleConflict").Display);
+
+        // Member B's Completeness of 35 beside member A's 55 leaves the panel's at 45, 34.5 below its Accuracy.
+        foreach (var a in run.Answers)
+        {
+            a.CompletenessLevel = 3;
+            a.CompletenessScore = 55;
+            EditMemberB(a, r => r.CompletenessLevel = 2);
+        }
+        Assert.Contains("Completeness is the weakest dimension by 34.5 points", BenchmarkReportBuilder.BuildMarkdownReport(run));
+        var conflict = PackSheetOf(run).Facts.Single(f => f.Key == "style.responseStyleConflict");
+        Assert.True(conflict.Value!.GetValue<bool>());
+        Assert.Equal("Completeness is the lowest dimension, 34.5 points below Accuracy", conflict.Display);
     }
 
     [Fact]

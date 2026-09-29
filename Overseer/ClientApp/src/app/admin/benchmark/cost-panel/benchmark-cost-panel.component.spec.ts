@@ -304,6 +304,68 @@ describe('BenchmarkCostPanelComponent', () => {
     });
   });
 
+  describe('report writer', () => {
+    function reportRow(modifier: string): HTMLElement | null {
+      return (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(`.gh-cost-role--${modifier}`);
+    }
+
+    it('should render no report writer rows without a report writer figure', () => {
+      fillEveryRole();
+      fixture.detectChanges();
+
+      expect(reportRow('report-writer')).toBeNull();
+      expect(reportRow('with-reports')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.gh-cost-panel__reports-note')).toBeNull();
+    });
+
+    it('should show the report writer after the grading rows, outside the grading subtotal and the total', () => {
+      fillEveryRole();
+      setInputs({ reportWriter: 0.25 });
+      fixture.detectChanges();
+
+      const rows = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>('.gh-cost-role'));
+      const subtotalIndex = rows.findIndex(row => row.textContent!.includes('Grading subtotal'));
+      const writerIndex = rows.indexOf(reportRow('report-writer')!);
+      expect(writerIndex).toBeGreaterThan(subtotalIndex);
+
+      expect(reportRow('report-writer')!.querySelector('.gh-cost-role__name')!.textContent!.trim()).toBe('Report writer');
+      expect(reportRow('report-writer')!.querySelector('.gh-cost-role__amount')!.textContent!.trim()).toBe('$0.2500');
+      // The role lines, their shares, the grading subtotal and the headline total are unchanged.
+      expect(roleNames()).not.toContain('Report writer');
+      expect(roleShares().reduce((running, share) => running + share, 0)).toBe(100);
+      expect(component.gradingLabel).toBe('$3.0000');
+      expect(fixture.nativeElement.querySelector('.gh-cost-panel__amount')!.textContent!.trim()).toBe('$4.0000');
+    });
+
+    it('should add the report writer to the total in a separately labeled line', () => {
+      fillEveryRole();
+      setInputs({ reportWriter: 0.25 });
+      fixture.detectChanges();
+
+      const withReports = reportRow('with-reports')!;
+      expect(withReports.querySelector('.gh-cost-role__name')!.textContent!.trim()).toBe('Run total with reports');
+      expect(withReports.querySelector('.gh-cost-role__amount')!.textContent!.trim()).toBe('$4.2500');
+      expect(fixture.nativeElement.querySelector('.gh-cost-panel__reports-note')!.textContent)
+        .toContain("outside the benchmark's own cost");
+    });
+
+    it('should show a dash for the total with reports while the run total is unknown', () => {
+      fillEveryRole();
+      setInputs({ total: null, reportWriter: 0.25 });
+      fixture.detectChanges();
+
+      expect(reportRow('with-reports')!.querySelector('.gh-cost-role__amount')!.textContent!.trim()).toBe('-');
+    });
+
+    it('should show a zero report writer figure', () => {
+      fillEveryRole();
+      setInputs({ reportWriter: 0 });
+      fixture.detectChanges();
+
+      expect(reportRow('report-writer')!.querySelector('.gh-cost-role__amount')!.textContent!.trim()).toBe('$0.0000');
+    });
+  });
+
   describe('apportionWholePercentShares', () => {
     it('should sum to exactly 100 for figures that do not round cleanly', () => {
       const shares = apportionWholePercentShares([0.6926, 0.80, 0.10, 1.10, 0.0321]);

@@ -124,9 +124,13 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("weakest evidence", system);
         Assert.Contains("Never put it in the headline", system);
         Assert.Contains("Conflicting row means the graders disagree", system);
-        Assert.Contains("verifier refuted is the verifier's advisory finding", system);
-        Assert.Contains("verifier supported is a fact of the game", system);
+        Assert.Contains("A claim-verifier ruling is an advisory judgment by an AI model that is sometimes wrong. "
+            + "Attribute it ('the claim verifier judged …'), never state it as a fact about the game, and never list refuted "
+            + "claims in the abstract or the one-sentence result.", system);
+        Assert.Contains("Never describe a claim the claim verifier supported as a mistake", system);
+        Assert.DoesNotContain("is a fact of the game", system);
         Assert.Contains("response-style conflict", system);
+        Assert.Contains("The response-style note is Overseer's own observation. Never attribute it to a grader.", system);
         Assert.Contains("Never re-grade", system);
         Assert.Contains("never invent a cause", system);
     }
@@ -422,7 +426,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("The weaknesses list is printed right after this text; do not restate its items.", system);
         Assert.Contains("- whatWorked: Explain the patterns and causes across the strengths, grouped by category, in at most 150 words.", system);
         Assert.Contains("The strengths list is printed right after this text; do not restate its items.", system);
-        Assert.Contains("Name every error the claim verifier refuted among the main reasons.", system);
+        Assert.Contains("Do not list claims the claim verifier refuted here", system);
     }
 
     [Fact]
@@ -461,18 +465,31 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("| critical error: yes | refuted answer sentences: 1 |", message);
         Assert.Contains("| critical error: no | refuted claims: 0 |", message);
         Assert.Contains("    - Answer sentence — refuted: Praying now is safe.", message);
-        Assert.Contains("    - Grader's statement — refuted (the answer was right): The prayer timeout is always one thousand turns.", message);
+        Assert.Contains("    - Grader's statement — refuted (the verifier sided with the answer): The prayer timeout is always one thousand turns.", message);
     }
 
     [Fact]
-    public void TheConfidenceSlot_AsksForTheIntervalAndItsSpanTokens_NotItsWidth()
+    public void TheConfidenceSlot_LeavesTheIntervalToTheAppendedSentence_AndNeverCallsItsWidth()
     {
         string system = Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt;
         string confidence = system.Split('\n').Single(l => l.StartsWith("- confidence:", StringComparison.Ordinal));
 
-        Assert.Contains("stating the quality interval as {{quality.interval}} and its span as {{quality.intervalSpan}}, "
-            + "without calling it narrow, wide, tight or broad", confidence);
+        Assert.Contains("Code appends one sentence right after this paragraph that states the quality interval, its span and how many "
+            + "questions the result rests on; do not restate any of them.", confidence);
+        Assert.Contains("without calling the interval narrow, wide, tight or broad", confidence);
+        Assert.DoesNotContain("{{quality.interval}}", confidence);
+        Assert.DoesNotContain("{{quality.intervalSpan}}", confidence);
         Assert.DoesNotContain("width", confidence);
+    }
+
+    [Fact]
+    public void TheAbstract_NeverListsTheClaimVerifiersRefutations()
+    {
+        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
+        string abstractSlot = system.Split('\n').Single(l => l.StartsWith("- abstract:", StringComparison.Ordinal));
+
+        Assert.Contains("Do not list claims the claim verifier refuted here; they belong in the weaknesses, attributed to the claim verifier.", abstractSlot);
+        Assert.DoesNotContain("Name every error", system);
     }
 
     [Fact]

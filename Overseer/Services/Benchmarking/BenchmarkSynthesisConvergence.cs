@@ -56,7 +56,8 @@ public static class BenchmarkSynthesisConvergence
     /// A finding without a match is <see cref="BenchmarkConvergenceStatus.Conflicting"/> when the
     /// other member raised the opposite kind (strength against weakness) in the same category on an
     /// intersecting question set and that finding has no match either; otherwise it is its member's
-    /// alone. Rows are ordered by first question (run-wide first), then kind (weaknesses, then
+    /// alone. A finding in the <c>other</c> category never matches or conflicts, so it is always its
+    /// member's alone. Rows are ordered by first question (run-wide first), then kind (weaknesses, then
     /// strengths, then any other kind alphabetically), then category in schema order. Kind and
     /// category are compared trimmed and case-insensitively and reported in lower case.
     /// </summary>
@@ -121,14 +122,17 @@ public static class BenchmarkSynthesisConvergence
     };
 
     private static bool SameKindMatch(Item x, Item y) =>
-        x.Kind == y.Kind && x.Category == y.Category && QuestionsOverlap(x, y);
+        x.Kind == y.Kind && x.Category == y.Category && !IsOther(x.Category) && QuestionsOverlap(x, y);
 
     private static bool OppositeKindConflict(Item x, Item y) =>
-        x.Category == y.Category
+        x.Category == y.Category && !IsOther(x.Category)
         && IsStrengthOrWeakness(x.Kind) && IsStrengthOrWeakness(y.Kind) && x.Kind != y.Kind
         && QuestionsOverlap(x, y);
 
     private static bool IsStrengthOrWeakness(string kind) => kind is "strength" or "weakness";
+
+    /// <summary>The catch-all category, which says nothing two findings share; its findings never link.</summary>
+    private static bool IsOther(string category) => category == "other";
 
     /// <summary>Both run-wide, or at least one question in common.</summary>
     private static bool QuestionsOverlap(Item x, Item y) =>

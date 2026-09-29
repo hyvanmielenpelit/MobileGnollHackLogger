@@ -1200,6 +1200,20 @@ export interface BenchmarkRunDetailDto {
   reportDocumentsStatus?: BenchmarkRunReportDocumentsStatus;
   /** Why the documents failed or were skipped; null otherwise. */
   reportDocumentsMessage?: string | null;
+  /** The report writer configuration's current provider, model id and thinking level; null when none or deleted. */
+  reportWriterProvider?: string | null;
+  reportWriterModelId?: string | null;
+  reportWriterThinkingLevel?: string | null;
+  /** How many run-completion documents of this run are stored. */
+  reportDocumentsWrittenCount?: number;
+  /**
+   * Sums over the run's stored run-completion documents; null when there is none. The cost is also
+   * null when any document's cost is unknown. None of these is part of the run's own cost.
+   */
+  reportDocumentsDurationMs?: number | null;
+  reportDocumentsCostUsd?: number | null;
+  reportDocumentsInputTokens?: number | null;
+  reportDocumentsOutputTokens?: number | null;
 
   startedByUserId?: string | null;
   startedByUserName?: string | null;

@@ -96,6 +96,13 @@
               <p class="dc-notice">{{ notice }}</p>
             }
 
+            <!-- Always rendered, so the live region exists before the notice appears in it. -->
+            <div class="dc-report-job-status" role="status">
+              @if (reportJobNotice; as reportJobText) {
+                <p class="dc-notice dc-report-job-notice">{{ reportJobText }}</p>
+              }
+            </div>
+
             @if (failures.length > 0) {
               <div class="alert alert-danger dc-failures">
                 <div class="alert-content">

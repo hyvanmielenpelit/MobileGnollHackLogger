@@ -2293,8 +2293,9 @@
   white-space: nowrap;
 }
 
-/* The run's three stages (.run-stage-rail, in styles.scss). The server's Verifying and
-   SecondOpinion share the middle item because they are two passes of one serial tail and the
+/* The run's three stages, and a fourth when it names a report writer (.run-stage-rail, in
+   styles.scss). The server's Verifying and SecondOpinion share the middle item because they are
+   two passes of one serial tail and the
    server marks Verifying again after the second-opinion pass — one item each would step the rail
    backwards. */
 

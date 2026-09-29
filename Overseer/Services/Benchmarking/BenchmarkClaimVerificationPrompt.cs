@@ -51,6 +51,9 @@ public static class BenchmarkClaimVerificationPrompt
     /// contributed items; with more than one, the adjudication wording names no assessor's position
     /// and each member's evidence is printed in its own block, labeled <c>Assessor 1</c>,
     /// <c>Assessor 2</c> in list order, in place of <paramref name="assessorEvidence"/>.
+    /// <paramref name="claimAntecedents"/> carries, per claim, the answer sentence before a claim whose
+    /// first word refers back to it, printed above the claim as a context line
+    /// (<see cref="AntecedentShown"/>).
     /// </summary>
     public static string BuildPrompt(
         string suiteName,
@@ -72,7 +75,8 @@ public static class BenchmarkClaimVerificationPrompt
         ToolCallLeads? toolCallLeads = null,
         IReadOnlyList<string?>? claimCharges = null,
         IReadOnlyList<IReadOnlyList<string>?>? claimChargedParts = null,
-        IReadOnlyList<string?>? assessorEvidenceByMember = null)
+        IReadOnlyList<string?>? assessorEvidenceByMember = null,
+        IReadOnlyList<string?>? claimAntecedents = null)
     {
         bool HasRole(int i, string role) => claimRoles != null && i < claimRoles.Count
             && claimRoles[i] != null && claimRoles[i].Contains(role);
@@ -129,6 +133,7 @@ public static class BenchmarkClaimVerificationPrompt
         sb.AppendLine("3j. Values passed are settled where they are assigned. When the code you cite only passes variables on (for example a `case` block that calls a function with `duration` or `cures_sick`), read where those variables are computed, and the object's data entry they come from, before you refute a number, a die roll or a cure.");
         sb.AppendLine("3k. When a claim joins several statements, a verdict about it is a verdict about the statement at issue: the charged part of an accused sentence, or the part the assessor's evidence names for a critical-error quote. Say in your basis which statement you checked. For an item that names a charged part, chargedPartVerdict is your verdict on that part alone, with its own citation in chargedPartBasis; the item's verdict field is ignored for such an item.");
         sb.AppendLine("3l. When a GnollHack wiki page states the property a claim is about — a spell's casting time, an item's effect, a stat block value — and your reading of the source seems to contradict it, name the wiki statement in your basis and cite the code that overrides it; the wiki's stat blocks are printed from the same game data. Without both, the verdict is Indeterminate.");
+        sb.AppendLine("3m. A sentence that reports what a source says — the wiki says, the game's screen shows, the manual says — is checked against that source. It is Supported when the source says it, whether or not the source is right; if the source is wrong, say so in the basis. Refute it only when the source does not say it.");
         sb.AppendLine("4. Possible verdicts for each claim:");
         sb.AppendLine("   - Supported: Concrete evidence was found in the source code or wiki that the claim is true.");
         sb.AppendLine("   - Refuted: Concrete evidence was found in the source code or wiki that the claim is false.");
@@ -316,6 +321,11 @@ public static class BenchmarkClaimVerificationPrompt
             {
                 sb.AppendLine(panel ? "Stated by an assessor (not part of the answer)." : "Stated by the first assessor (not part of the answer).");
             }
+            string? antecedent = claimAntecedents != null && i < claimAntecedents.Count ? AntecedentShown(claimAntecedents[i]) : null;
+            if (antecedent != null)
+            {
+                sb.AppendLine($"{AntecedentLabel}: {antecedent}");
+            }
             sb.AppendLine(claims[i]);
             sb.AppendLine($"=== END CLAIM {i} ===");
             sb.AppendLine();
@@ -354,6 +364,30 @@ public static class BenchmarkClaimVerificationPrompt
     /// <summary>The label an accused claim's block carries.</summary>
     private static string ChargedLabel(bool panel)
         => panel ? "Charged by an assessor as false or imprecise" : "Charged by the assessor as false or imprecise";
+
+    /// <summary>The label of the context line that carries a claim's antecedent sentence.</summary>
+    public const string AntecedentLabel = "Context (the sentence before this one in the answer, for what the first word refers to; it is not part of the claim)";
+
+    /// <summary>The most characters of an antecedent sentence the context line shows.</summary>
+    public const int AntecedentMaxLength = 300;
+
+    /// <summary>
+    /// An antecedent sentence as its context line shows it: whitespace runs collapsed to one space,
+    /// and above <see cref="AntecedentMaxLength"/> characters its end kept behind an ellipsis, the
+    /// ellipsis counted. Null when blank.
+    /// </summary>
+    public static string? AntecedentShown(string? antecedent)
+    {
+        if (string.IsNullOrWhiteSpace(antecedent))
+        {
+            return null;
+        }
+
+        string text = string.Join(' ', antecedent.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+        return text.Length > AntecedentMaxLength
+            ? "…" + text.Substring(text.Length - (AntecedentMaxLength - 1))
+            : text;
+    }
 
     /// <summary>A claim's number as the verifier reads it: its ClaimIndex plus one.</summary>
     private static string Number(int position) => (position + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);

@@ -140,7 +140,9 @@ public static class BenchmarkVerdictConsistency
     /// hallucination to every question mentioned near it. A missed match costs an advisory line;
     /// a false match accuses a clean verdict, so the narrower scope is the right error to make.
     /// A sentence that introduces a list with a colon is narrowed further, to its list items
-    /// (<see cref="FabricationScopes"/>).
+    /// (<see cref="FabricationScopes"/>). A sentence reporting the claim verifier's results
+    /// (<see cref="ReportsClaimVerification"/>) names no question: a refuted claim is advisory, not
+    /// the synthesis's own fabrication charge.
     /// </summary>
     public static IReadOnlyList<int> QuestionsNamedWithFabrication(
         string? synthesisText,
@@ -160,7 +162,7 @@ public static class BenchmarkVerdictConsistency
         var found = new HashSet<int>();
         foreach (string sentence in SplitSentences(synthesisText))
         {
-            if (!HasUndeniedFabrication(sentence)) continue;
+            if (ReportsClaimVerification(sentence) || !HasUndeniedFabrication(sentence)) continue;
 
             foreach (string scope in FabricationScopes(sentence))
             {
@@ -177,6 +179,20 @@ public static class BenchmarkVerdictConsistency
         }
 
         return found.OrderBy(i => i).ToList();
+    }
+
+    /// <summary>
+    /// True when <paramref name="sentence"/> reports claim-verification results: it names the
+    /// verifier or verification ("claim verification", "claim verifier", "verifier",
+    /// "verification") and a verdict ("refut…", "supported"), case-insensitive.
+    /// </summary>
+    private static bool ReportsClaimVerification(string sentence)
+    {
+        bool namesVerification = sentence.Contains("verifier", StringComparison.OrdinalIgnoreCase)
+            || sentence.Contains("verification", StringComparison.OrdinalIgnoreCase);
+        bool namesVerdict = sentence.Contains("refut", StringComparison.OrdinalIgnoreCase)
+            || sentence.Contains("supported", StringComparison.OrdinalIgnoreCase);
+        return namesVerification && namesVerdict;
     }
 
     /// <summary>

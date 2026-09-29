@@ -24,7 +24,7 @@ public static class BenchmarkReportContent
     // A claim ruling's role, from the stored verification's BenchmarkClaimRoles. The answer's own
     // text: an unverified claim, a sentence a grader accused (accusedQuote) and the quote a critical
     // error rests on. The grader's text: a sentence of its own evidence (assessorStatement) and the
-    // basis of an out-of-rubric deduction, where Refuted means the grader was wrong.
+    // basis of an out-of-rubric deduction, where Refuted means the verifier sided with the answer.
     public const string ClaimRole = "claim";
     public const string AccusedSentenceRole = "accusedSentence";
     public const string CriticalErrorQuoteRole = "criticalErrorQuote";
@@ -63,9 +63,9 @@ public static class BenchmarkReportContent
     }
 
     /// <summary>
-    /// A ruling's verdict with its role in words, and who was right where the role makes that plain:
-    /// <c>Answer sentence accused by a grader — supported (the grader was wrong)</c>. A ruling without
-    /// a role is its verdict alone.
+    /// A ruling's verdict with its role in words, and whose side the verifier took where the role
+    /// makes that plain: <c>Answer sentence accused by a grader — supported (the verifier sided with
+    /// the answer)</c>. A ruling without a role is its verdict alone.
     /// </summary>
     public static string RulingLabel(string? role, string? verdict)
     {
@@ -73,17 +73,20 @@ public static class BenchmarkReportContent
         bool refuted = string.Equals(v, "refuted", StringComparison.Ordinal);
         bool supported = string.Equals(v, "supported", StringComparison.Ordinal);
 
+        const string SidedWithGrader = " (the verifier sided with the grader)";
+        const string SidedWithAnswer = " (the verifier sided with the answer)";
+
         return role switch
         {
             ClaimRole => "Answer sentence — " + v,
             AccusedSentenceRole => "Answer sentence accused by a grader — " + v
-                + (refuted ? " (the grader was right)" : supported ? " (the grader was wrong)" : string.Empty),
+                + (refuted ? SidedWithGrader : supported ? SidedWithAnswer : string.Empty),
             CriticalErrorQuoteRole => "Answer sentence a grader flagged as a critical error — " + v
-                + (refuted ? " (the grader was right)" : supported ? " (the grader was wrong)" : string.Empty),
+                + (refuted ? SidedWithGrader : supported ? SidedWithAnswer : string.Empty),
             AssessorStatementRole => "Grader's statement — " + v
-                + (refuted ? " (the answer was right)" : supported ? " (the grader was right)" : string.Empty),
+                + (refuted ? SidedWithAnswer : supported ? SidedWithGrader : string.Empty),
             OutOfRubricBasisRole => "Grader's basis for an out-of-rubric deduction — " + v
-                + (refuted ? " (the grader was wrong)" : supported ? " (the grader was right)" : string.Empty),
+                + (refuted ? SidedWithAnswer : supported ? SidedWithGrader : string.Empty),
             _ => v
         };
     }

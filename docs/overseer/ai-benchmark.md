@@ -31,11 +31,11 @@ The benchmark framework consists of:
 
 Starting a run opens a modal progress dialog, reachable again at any time from the **Show Progress** button on the active-run banner.
 
-The dialog header carries the run number, the suite and the scoring profile. The models are **not** in the header: they appear directly below it in a roster (*Model under test*, *Assessor*, and in a panel run *Co-assessor* and *Reference reader*), badged exactly as the model selectors in the AI Benchmark tab badge them — thinking level, reasoning mode, provider, requested service tier, and parallel tool calls — so the configuration under test is legible without opening the report. The active-run banner names the grader as *Assessor:*, or *Assessors:* in a panel run.
+The dialog header carries the run number, the suite and the scoring profile. The models are **not** in the header: they appear directly below it in a roster (*Model under test*, *Assessor*, in a panel run *Co-assessor* and *Reference reader*, and *Report writer* when the run names one), badged exactly as the model selectors in the AI Benchmark tab badge them — thinking level, reasoning mode, provider, requested service tier, and parallel tool calls — so the configuration under test is legible without opening the report. The active-run banner names the grader as *Assessor:*, or *Assessors:* in a panel run.
 
 **Layout.** The dialog is full-screen (`gh-dialog-fullscreen`). Its body holds two sections: the **overview** — alerts, roster, stage rail, progress bars, statistics, cost panel, failed-questions alert and diagnostics, in that order, with no heading of its own — and **Questions**, the per-question list under the shared gold section heading (`gh-section-title`) with its count in a small pill. The dialog title is the focus target when the dialog opens, and while the run detail is loading the subtitle reads *Starting benchmark run…*. The content wrapper is an inline-size container (`run-progress`): below `60rem` of dialog content width the two sections stack in one column and the body scrolls as a whole; at `60rem` and wider the body is a two-column grid (`minmax(0, 3fr) minmax(22rem, 2fr)`) in which each section scrolls on its own, with `overscroll-behavior: contain` and a stable scrollbar gutter. The Questions section is focusable (`tabindex="0"`, with a visible focus ring) so a keyboard user can scroll it. The overview stays a block container, because the cost panel relies on margin collapse. A scored question row shows its published score beside its status chip — the panel score in a panel run (once both members have scored), otherwise the quality score — in tabular figures, as a badge colored by the Run History tiers (green from 80, amber from 50, red below), which repeats what the number says.
 
-It presents the run as **three** stages, which is how `BenchmarkService.ExecuteRunAsync` (and `RunFailedQuestionsAsync` for a re-run) actually sequences the work:
+It presents the run as **three** stages, which is how `BenchmarkService.ExecuteRunAsync` (and `RunFailedQuestionsAsync` for a re-run) actually sequences the work; a run that names a report writer has a fourth, *Writing reports*, after it (*Stage 4* below):
 
 1. **Answering and grading** — every question is answered, in parallel up to `MaxParallelQuestionsUsed`, and each answer is then assessed, its unverified claims checked, and a second reading taken on it by the second reader (the reference reader in a panel run), all before the loop moves on. Most claim checks and most second readings of a run happen here, not later.
 2. **Follow-up grading passes** — once every answer is graded, a serial tail runs: the remaining claim checks (mainly contested verdicts and critical-error splits), then the outlier sweep or the sample top-up in the modes that have one, then the remaining claim checks again for any split the sweep created.
@@ -44,6 +44,17 @@ It presents the run as **three** stages, which is how `BenchmarkService.ExecuteR
 Stage 1 is one stage and not three because the executor pipelines assessment, verification and the second reader behind each answer inside the same loop, in both the sequential and the parallel branch, so no instant of it belongs to only one of them. (The one exception is a credential collision between the candidate and assessor configurations, which serialises the assessments behind all the answering; that still falls inside stage 1.) Stage 2 is one rail item and not two because the server marks `Verifying` **twice** — before and after the second-reader pass — so an item per pass would step the rail backwards near the end of a run. In `Flagged` mode with no contested verdicts the tail makes no model call at all and stage 2 may be visible for a single poll or none; that is truthful, and stage 1's counters already carried the work.
 
 The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there is one, because nothing in the answer rows moves during the tail and no client-side derivation can see it. The derivation is the fallback for a run this process is not executing, or a detail from a server predating the field, and it can only reach stage 1 or stage 3. **Diagnostics** name the pass the rail collapses away: `Stage: 2 of 3 (verifying)` or `2 of 3 (second reader)` (`reference reader` in a panel run), and `(server)` or `(derived)` for its source. Two determinate progress bars — Answers and Assessments — stay visible throughout, so a full Answers bar during grading does not read as a hang.
+
+**Stage 4 — Writing reports.** When the run names a report writer (`reportWriterModelConfigurationId`), the roster has a *Report writer* row (name, thinking level, provider badge, from `ReportWriterDisplayName`, `ReportWriterThinkingLevel` and `ReportWriterProvider`), the stage rail has a fourth item, *Writing reports*, and every stage label reads *Stage n of 4* (*of 3* without a writer, the diagnostics' `Stage:` line included). The run itself is not in this stage: it ends **Completed** when scoring ends, and stage 4 follows it, driven by the run's `reportDocumentsStatus` (the automatic run-completion documents of [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 11).
+
+- **Current** while a Completed run's status is *Pending* or *Writing*, and — because the server queues the job just after scoring — while it is still *NotRequested* for up to `RUN_REPORT_STAGE_GRACE_MS` = 30 s after the dialog first saw the run terminal. Stages 1–3 then show as done. The dialog keeps polling the run, and polls the run's report job (`GET …/runs/{runId}/report-documents/job`) beside it; the status line reads, for example, *"Stage 4 of 4 — Writing reports: waiting for the report writer (1 job ahead)"*, *"… preparing the fact sheet"* or *"… writing the Executive Summary (1 of 2)"* (*repairing* during a repair turn).
+- **Done** at *Completed* or *CompletedWithWarnings*: the status line appends *"Reports written: 2 documents, 1m 12s."* (*"Reports written with warnings: …"*) to the run's own result. *Failed*, *Skipped* and *Canceled* end the stage without marking it done, and the status line appends *"Report writing failed: <message>."*, *"Report writing skipped: <message>."* or *"Report writing canceled: <message>."*. A run that did not end Completed, or whose writing never appeared within the grace, gets no stage-4 sentence.
+- **The stat strip** has a *Reports* cell: *Waiting*, then the live elapsed time since the writer took the report-pack slot (*"1m 05s · writing"*, on the server's clock from the job view), then the stored count and duration (*"2 documents, 1m 12s"*), *None written* or *Not written*.
+- **The cost panel** has a *Report writer* row — the job's running cost while writing, then `ReportDocumentsCostUsd` — and *Run total with reports*, in a block of its own under the note that the AI-written reports are outside the benchmark's own cost. The run's stored `EstimatedCost` and every figure above that block are unchanged.
+- **Completion signal.** The chime, the tab-title mark and the desktop notification fire when stage 4 ends (or its 30-s grace passes with nothing queued), not when scoring ends.
+- **Diagnostics** gain a `--- REPORTS ---` block: writer (provider / model id, thinking), status, message, documents written, duration, tokens and cost, marked as outside the run's own cost.
+
+The writing is not part of the run by design. Writing the reports inside the run was rejected: a writer failure would blemish a run whose scoring succeeded, a queue behind a running Report Pack would delay the run's end, and every run's duration would change with the writer.
 
 The per-question list merges the suite's questions (fetched once when the dialog opens) with the run's answers, and distinguishes five states:
 
@@ -4992,7 +5003,8 @@ run-completion documents (below), which need one EF Core migration, `AddBenchmar
   still read) and ignores a keyword preceded by `/`, `\` or `.`, or followed by `.` and a letter, as part
   of a file name. The diagnostics capture prints the prompt-compliant parenthesis beside a zero
   knowledge-base count only when the guard is false; otherwise it prints *"(the suite has knowledge-base
-  topics; see the report's Tool Routing section)"*.
+  topics; see the report's Tool Routing section)"*. From harness 43 the guard reads the question text
+  only (Harness Version 43 Updates, H5).
 - **H6 — per-member Instrument Measurements (client only).** The run view's notice showed member A's
   counts alone (*"8 rubric format suggestion(s) not followed"*; the report had A 8, B 4). In a panel run
   each line now reads *"8 (member A) and 4 (member B) …"*, member B's counts are taken from its
@@ -5043,6 +5055,107 @@ prompt, validation and rendering changes are its §§ 1, 3 and 7.
 on run 73's configuration, is **Tier C** against run 73. The report writer is **not** a comparability
 key and is not part of `BenchmarkComparabilityKey`: two runs that differ only in their writer compare as
 Tier A, because the writer grades nothing and writes after the run is scored.
+
+### Harness Version 43 Updates
+
+The run-74 round (2026-09-29). Seven grading, detector and report defects are fixed, one tool correction reaches
+the production chat, and the run progress dialog follows the run-completion documents as a fourth stage.
+`HarnessVersion` moves to **"43"**, and `ToolGuidesSha256` moves (the `get_item_stats` guide, T3 below).
+`ScoringMethodVersion` stays **12**: no anchor, weight or level mapping changes. `CandidateSystemPromptSha256`,
+the chat system prompt and `_policy.md` do not move. No EF Core migration: the new run-detail fields are
+computed from stored rows when the detail is read.
+
+**Grading and verification.**
+
+- **H1 — a claim that begins with a referring word carries its antecedent.** A claim item whose first
+  word — past a list marker, a bold label, markup and an opening quotation mark or parenthesis — is *It*,
+  *Its*, *This*, *That*, *These*, *Those*, *They*, *Their*, *He* or *She*, in any case and with or without
+  a contraction (*It's*, *They're*), reaches the claim verifier with the answer sentence before it
+  (`BenchmarkService.StartsWithReferringWord`, `AntecedentSentence`). The sentence is found as accused
+  sentences are found, and printed above the claim as *"Context (the sentence before this one in the
+  answer, for what the first word refers to; it is not part of the claim): …"*, its whitespace collapsed
+  and capped at `AntecedentMaxLength` = 300 characters, keeping the end behind an ellipsis
+  (`BenchmarkClaimVerificationPrompt.AntecedentShown`). `WithAntecedents` sets it only on items with the
+  unverified-claim role that are not also accused sentences, whose context block already names the text
+  before them; `BuildPrompt(..., claimAntecedents)` prints it. Nothing is printed when the claim is not
+  found in the answer or nothing precedes it. The verifier also gains instruction **3m**: *"A sentence
+  that reports what a source says — the wiki says, the game's screen shows, the manual says — is checked
+  against that source. It is Supported when the source says it, whether or not the source is right; if
+  the source is wrong, say so in the basis. Refute it only when the source does not say it."*
+- **H2 — a contained item merges into the longer one.** `BuildUnionClaimManifest` ends with
+  `MergeContainedItems`: an item whose `ItemKey` occurs, ignoring case, inside the longer key of another
+  item of the same kind in the same answer — both only unverified claims, or both only accused sentences —
+  is dropped, and the longer item keeps its text and place and takes the dropped item's raising members.
+  An unverified claim also takes the dropped item's suspected-false record when it has none; an accused
+  sentence combines the quoted fragments and the charges (and keeps a context). A critical-error quote,
+  an out-of-rubric basis, an assessor statement and an item with more than one role never merge. Shorter
+  items merge first, each into the first containing item in manifest order, so a chain ends in its
+  longest item.
+- **H3 — the run-wide claim total in a panel synthesis.** A panel member's synthesis prompt printed only
+  the claims that member raised, which is not the run's total. The *CLAIM VERIFICATION
+  TOTALS* block of a panel run now prints two lines: *"Claims you raised: …"* (the member's own, as
+  before) and *"All claims checked in this run (both members, each counted once): N across K answer(s);
+  verified: … supported, … refuted, … indeterminate"*, from `BenchmarkRunClaimTotals.FromAnswers` — the
+  ordinary claims of each answer's verifier record, the figures the report's *Assessor Findings* line
+  prints. Instruction 6 adds *"When you state a run-wide claim total, copy the 'All claims checked'
+  line."* A single-assessor synthesis prompt is unchanged.
+- **H4 — a verification report is not a fabrication charge.** `BenchmarkVerdictConsistency.QuestionsNamedWithFabrication`
+  skips a sentence that reports claim-verification results (`ReportsClaimVerification`): one naming the
+  *verifier* or *verification* and a verdict (*refut…* or *supported*), case-insensitive. A refuted
+  claim is advisory, not a fabrication the synthesis found.
+- **H5 — the knowledge-base topic guard reads the question only.** `BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion`
+  reads each answer's question text and no longer the rubric: the rubric describes the expected answer,
+  whose game terms (*"Escape options on this level"*) are not the question's topic. The keyword *options*
+  is replaced by *options menu* and *game options*. The file-name exclusion of harness 42 is kept.
+- **H6 — "other" findings stand alone.** In `BenchmarkSynthesisConvergence` a finding of category
+  `other` never matches or conflicts with another member's finding, so each is its own member's row: two
+  unrelated findings filed under *other* are no longer one Convergent or Conflicting row.
+- **H7 — the reference reader's offset-adjusted disagreements.** The run report's *Reference Reader
+  Agreement* section adds, in a panel run with at least 5 read answers that carry a panel score,
+  *"Disagreements after removing the reader's mean offset (±x.x): N of M — Qx, … Advisory; the definition
+  above is unchanged."* An answer counts when |reader − panel − offset| is above the disagreement
+  threshold (15 points), or when the reader splits from the panel on critical error under the existing
+  rule. A reader that grades uniformly higher or lower is therefore not counted as disagreeing throughout;
+  the *Disagreements* line and its definition are unchanged.
+
+**Report (all runs).**
+
+- **R2 — one P90.** The run report's *Turn Duration Percentiles*, *Model Time Percentiles* and *Time to
+  First Token* P90 values are interpolated between order statistics (`BenchmarkGroupStatistics.Percentile`,
+  rounded to whole milliseconds), as the report pack computes them, so the run report and the report pack
+  print the same P90. A re-rendered report of an older run can print a different P90 from the one it
+  printed before.
+
+**Chat and benchmark alike (the production tools).**
+
+- **T3 — `get_item_stats` resolves a class-word name.** When no `src/objects.c` entry has the requested
+  name, `get_item_stats` looks for the one item named *"… of <name>"* (case-insensitive, restricted to
+  `object_class` when it is given), so `experience` finds `ioun stone of experience`, and returns its
+  stats with the message *"Resolved 'X' to 'Y': no item is named 'X'."* before any message of its own.
+  No match or more than one keeps the usual miss with its suggestions. The tool guide
+  `Overseer/ToolGuides/get_item_stats.md` states the naming rule by class — wands, rings, potions,
+  scrolls and spellbooks drop their class word; every other class keeps its full name — so
+  `ToolGuidesSha256` moves.
+
+**Run detail and the run progress dialog.**
+
+- **New `BenchmarkRunDetailDto` fields**: `ReportWriterProvider`, `ReportWriterModelId` and
+  `ReportWriterThinkingLevel` (the writer configuration's current values; null without a writer or when
+  it was deleted), and `ReportDocumentsWrittenCount`, `ReportDocumentsDurationMs`,
+  `ReportDocumentsCostUsd`, `ReportDocumentsInputTokens` and `ReportDocumentsOutputTokens`, summed over the
+  run's stored run-completion documents (`SubjectKey` `run:<id>`, `Origin = RunCompletion`). The count is
+  0 and the sums are null when there is none; the cost is also null when any document's cost is null.
+  None of them is part of the run's own cost.
+- **Stage 4 in the run progress dialog** — the report writer's row, the *Writing reports* rail item, the
+  status line, the *Reports* stat cell, the cost panel's *Report writer* and *Run total with reports*,
+  the completion signal and the diagnostics' `--- REPORTS ---` block — is described under *Run Progress
+  Dialog* (§ 1). The run still ends Completed when scoring ends.
+
+The report pack's format version 6 (panel dimensions, one P90, the reference-reader facts and the other
+rendering and prompt changes of this round) is in [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 7.
+
+**Comparability.** `HarnessVersion` and `ToolGuidesSha256` both move, so a run after this round is two
+Instrument keys from a harness-42 run and is NotComparable with it.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

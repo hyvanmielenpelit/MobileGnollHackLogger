@@ -1,5 +1,5 @@
 import { ChangeDetectorRef } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HttpParams, provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
 import { unzipSync } from 'fflate';
@@ -8,10 +8,14 @@ import {
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
-  BenchmarkReportPeerNaming
+  BenchmarkReportPeerNaming,
+  BenchmarkRunReportDocumentsStatus,
+  BenchmarkRunReportJobDto,
+  BenchmarkRunReportJobPhase
 } from '../../../services/admin-benchmark.service';
 import {
   BenchmarkDownloadCenterComponent,
+  DOWNLOAD_CENTER_REPORT_JOB_POLL_MS,
   DOWNLOAD_CENTER_STORAGE_KEY,
   DOWNLOAD_PACKAGES,
   DownloadCenterContext,
@@ -172,9 +176,23 @@ describe('BenchmarkDownloadCenterComponent', () => {
     fixture.detectChanges();
   }
 
+  const JOB_URL = '/api/admin/benchmark/runs/42/report-documents/job';
+
+  /** Answers the run's report writing job request: a job view, or 204 for none. */
+  function flushJob(job: BenchmarkRunReportJobDto | null): void {
+    const request = httpMock.expectOne(JOB_URL);
+    expect(request.request.method).toBe('GET');
+    if (job) {
+      request.flush(job);
+    } else {
+      request.flush(null, { status: 204, statusText: 'No Content' });
+    }
+  }
+
   function openRun(
     documents: BenchmarkReportDocumentListItemDto[] = [doc(1, ExecutiveSummary), doc(2, TechnicalReport), doc(3, InternalBrief)],
-    context: DownloadCenterContext = runContext
+    context: DownloadCenterContext = runContext,
+    job: BenchmarkRunReportJobDto | null = null
   ): void {
     component.open(context);
     const list = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
@@ -182,6 +200,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     expect(list.request.params.get('runId')).toBe('42');
     requested.push(list.request.url);
     list.flush(documents);
+    flushJob(job);
     render();
   }
 
@@ -1011,7 +1030,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         '# Document 1 (summary, anonymized)\n\nCost $4 per question.\n',
         'text/markdown;charset=utf-8');
       expect(requested.filter(url => url.endsWith('/render')).length).toBe(1);
-      expect(host().querySelector('[role="status"]')!.textContent!.trim()).toBe('Downloaded 1 file.');
+      expect(host().querySelector('.dc-status[role="status"]')!.textContent!.trim()).toBe('Downloaded 1 file.');
     });
 
     it('downloads one PDF as its bytes, rendered at the chosen options', async () => {
@@ -1103,7 +1122,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(zip.files[REPORT_PDF_NAME].startsWith('%PDF-1.7\n')).toBeTrue();
       expect(zip.files[REPORT_DOCX_NAME]).toBe('PK\u0003\u0004 /api/admin/benchmark/runs/42/report/docx a4\n');
       expect(zip.files['board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt']).toBe('=== BENCHMARK RUN DIAGNOSTICS ===\n');
-      expect(host().querySelector('[role="status"]')!.textContent!.trim()).toBe('Downloaded 18 files as one ZIP.');
+      expect(host().querySelector('.dc-status[role="status"]')!.textContent!.trim()).toBe('Downloaded 18 files as one ZIP.');
     });
 
     it('captures the diagnostics once, feeding the Text, the PDF and the Word document the same text and time', async () => {
@@ -1278,7 +1297,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         'Run report, run #42 (Markdown): the run no longer exists'
       ]);
       expect(host().querySelector('.dc-failures')!.textContent).toContain('the run no longer exists');
-      expect(host().querySelector('[role="status"]')!.textContent!.trim()).toBe('Downloaded 15 of 18 files as one ZIP; 3 failed.');
+      expect(host().querySelector('.dc-status[role="status"]')!.textContent!.trim()).toBe('Downloaded 15 of 18 files as one ZIP; 3 failed.');
     });
 
     it('shows the server’s message when a PDF is refused as too large', async () => {
@@ -1334,7 +1353,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
   describe('preparing', () => {
     const overlay = (): HTMLElement | null => host().querySelector<HTMLElement>('.dc-preparing');
     const downloadButton = (): HTMLButtonElement => host().querySelector<HTMLButtonElement>('.dc-download')!;
-    const status = (): string => host().querySelector('[role="status"]')!.textContent!.trim();
+    const status = (): string => host().querySelector('.dc-status[role="status"]')!.textContent!.trim();
 
     it('shows each step over the body and in the status line, advances the progress, and clears both when done', async () => {
       openRun();
@@ -1441,6 +1460,115 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.progress).toBeNull();
       expect(saveBytes).not.toHaveBeenCalled();
     });
+  });
+
+  describe('report writing job', () => {
+    function job(phase: BenchmarkRunReportJobPhase, status = BenchmarkRunReportDocumentsStatus.Writing): BenchmarkRunReportJobDto {
+      return {
+        runId: 42,
+        status,
+        message: null,
+        phase,
+        queuedAtUtc: '2026-09-21T17:05:45Z',
+        slotAcquiredAtUtc: phase === 'Queued' ? null : '2026-09-21T17:05:46Z',
+        finishedAtUtc: phase === 'Finished' ? '2026-09-21T17:07:00Z' : null,
+        cancelRequestedAtUtc: null,
+        jobsAhead: phase === 'Queued' ? 1 : null,
+        blockingJobLabel: null,
+        audiences: [ExecutiveSummary, TechnicalReport],
+        writerConfigId: 7,
+        writerDisplayName: 'Claude Opus',
+        writerProvider: 'Anthropic',
+        writerModelId: 'claude-opus',
+        writerThinkingLevel: 'medium',
+        job: {
+          id: 'job-1',
+          packId: 'pack-1',
+          subjectKey: 'run:42',
+          subjectLabel: 'GPT Model X',
+          suiteId: 1,
+          suiteName: 'Board Suite',
+          writerConfigId: 7,
+          writerDisplayName: 'Claude Opus',
+          startedByUserId: null,
+          startedAtUtc: '2026-09-21T17:05:46Z',
+          completedAtUtc: null,
+          status: 'Running',
+          totalModelCalls: 1,
+          inputTokens: 100,
+          outputTokens: 50,
+          costUsd: 0.01,
+          documents: [],
+          log: []
+        },
+        serverTimeUtc: '2026-09-21T17:06:00Z'
+      };
+    }
+
+    const notice = (): HTMLElement | null => host().querySelector<HTMLElement>('.dc-report-job-notice');
+
+    it('shows nothing when the run has no report writing job', () => {
+      openRun();
+
+      expect(component.reportJobPhase).toBeNull();
+      expect(notice()).toBeNull();
+      expect(host().querySelector('.dc-report-job-status')!.getAttribute('role')).toBe('status');
+    });
+
+    it('shows nothing when the job request fails', () => {
+      component.open(runContext);
+      httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents').flush([doc(1, ExecutiveSummary)]);
+      httpMock.expectOne(JOB_URL).flush({ error: 'Not found' }, { status: 404, statusText: 'Not Found' });
+      render();
+
+      expect(notice()).toBeNull();
+      httpMock.expectNone(JOB_URL);
+    });
+
+    it('shows nothing when the job has already finished', () => {
+      openRun(undefined, undefined, job('Finished', BenchmarkRunReportDocumentsStatus.Completed));
+
+      expect(notice()).toBeNull();
+      httpMock.expectNone(request => request.url === '/api/admin/benchmark/report-documents');
+    });
+
+    it('shows a notice while the reports are being written and polls the job every 5 s', fakeAsync(() => {
+      openRun([], undefined, job('Queued', BenchmarkRunReportDocumentsStatus.Pending));
+
+      expect(notice()!.textContent!.trim()).toBe(
+        'The AI-written reports of this run are being written (waiting for the report writer). They appear here when they are done.');
+
+      tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS - 1);
+      httpMock.expectNone(JOB_URL);
+      tick(1);
+      flushJob(job('Writing'));
+      render();
+      expect(notice()!.textContent).toContain('(writing)');
+
+      // Finished: the documents are listed again, and the notice goes.
+      tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
+      flushJob(job('Finished', BenchmarkRunReportDocumentsStatus.Completed));
+      const reload = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
+      expect(reload.request.params.get('runId')).toBe('42');
+      reload.flush([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+      render();
+
+      expect(notice()).toBeNull();
+      expect(component.rows.map(r => r.key)).toEqual(['report:42', 'log:42', 'diag:42', 'doc:1', 'doc:2']);
+      tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS * 2);
+      httpMock.expectNone(JOB_URL);
+    }));
+
+    it('stops polling the job when the dialog closes', fakeAsync(() => {
+      openRun([], undefined, job('Writing'));
+      expect(notice()).not.toBeNull();
+
+      component.close();
+      fixture.nativeElement.querySelector('dialog')!.dispatchEvent(new Event('close'));
+      tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS * 2);
+
+      httpMock.expectNone(JOB_URL);
+    }));
   });
 
   describe('document context', () => {

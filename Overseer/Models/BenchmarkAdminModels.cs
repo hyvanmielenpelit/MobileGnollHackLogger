@@ -902,6 +902,23 @@ public class BenchmarkRunDetailDto
     /// <summary>Why the documents failed or were skipped; null otherwise.</summary>
     public string? ReportDocumentsMessage { get; set; }
 
+    /// <summary>The report writer configuration's current provider, model id and thinking level; null when none was chosen or it was deleted.</summary>
+    public string? ReportWriterProvider { get; set; }
+    public string? ReportWriterModelId { get; set; }
+    public string? ReportWriterThinkingLevel { get; set; }
+
+    /// <summary>How many run-completion documents of this run are stored.</summary>
+    public int ReportDocumentsWrittenCount { get; set; }
+
+    /// <summary>
+    /// Sums over the run's stored run-completion documents; null when there is none. The cost is also
+    /// null when any document's cost is unknown. None of these is part of the run's own cost.
+    /// </summary>
+    public long? ReportDocumentsDurationMs { get; set; }
+    public decimal? ReportDocumentsCostUsd { get; set; }
+    public long? ReportDocumentsInputTokens { get; set; }
+    public long? ReportDocumentsOutputTokens { get; set; }
+
     public string? StartedByUserId { get; set; }
     public string? StartedByUserName { get; set; }
     public BenchmarkRunStatus Status { get; set; }
@@ -1142,7 +1159,7 @@ public class BenchmarkRunDetailDto
     public int? ZeroKnowledgeBaseAnswerCount { get; set; }
 
     /// <summary>
-    /// A question or its rubric, the SOURCE list aside, is about a topic the knowledge base covers
+    /// A question's text is about a topic the knowledge base covers
     /// (BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion), so answers without a knowledge-base
     /// call are not by themselves prompt-compliant.
     /// </summary>

@@ -321,6 +321,37 @@ public class BenchmarkVerdictConsistencyTests
             synthesis, Enumerable.Range(1, 18)));
     }
 
+    [Fact]
+    public void QuestionsNamedWithFabrication_ASentenceReportingClaimVerification_NamesNoQuestion()
+    {
+        // Member A's synthesis in run 74.
+        const string synthesis =
+            "Claim verification refuted 9 claims across seven answers (advisory), including a wand-of-digging " +
+            "grave claim on Q9, a non-existent skill prerequisite on Q14 and a sacrifice-gift claim on Q12.";
+
+        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
+    [Theory]
+    [InlineData("The verifier refuted a claim, and Q9 fabricated a grave mechanic.")]
+    [InlineData("Q9's invented grave mechanic was supported by the claim verifier.")]
+    public void QuestionsNamedWithFabrication_AVerificationSentenceWithAVerdict_NamesNoQuestion(string sentence)
+    {
+        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            sentence, Enumerable.Range(1, 18)));
+    }
+
+    [Fact]
+    public void QuestionsNamedWithFabrication_AVerificationSentenceWithoutAVerdict_StillNamesTheQuestion()
+    {
+        // Naming the verifier alone is not a report of its results.
+        const string synthesis = "Before any verification, Q9 fabricated a grave mechanic.";
+
+        Assert.Equal(new[] { 9 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
+    }
+
     [Theory]
     [InlineData("Matches rubric.", true)]
     [InlineData("matches the rubric", true)]

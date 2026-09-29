@@ -44,6 +44,23 @@
     </dl>
   }
 
+  @if (hasReportWriter) {
+    <dl class="gh-cost-panel__roles gh-cost-panel__reports">
+      <div class="gh-cost-role gh-cost-role--subtotal gh-cost-role--report-writer">
+        <dt class="gh-cost-role__name">Report writer</dt>
+        <dd class="gh-cost-role__amount">{{ reportWriterLabel }}</dd>
+      </div>
+      <div class="gh-cost-role gh-cost-role--subtotal gh-cost-role--with-reports">
+        <dt class="gh-cost-role__name">Run total with reports</dt>
+        <dd class="gh-cost-role__amount">{{ totalWithReportsLabel }}</dd>
+      </div>
+    </dl>
+    <p class="gh-cost-panel__note gh-cost-panel__reports-note">
+      The AI-written reports are outside the benchmark's own cost: the estimate above does not include
+      the report writer.
+    </p>
+  }
+
   @if (pricingIncomplete) {
     <p class="gh-cost-panel__note">
       <span aria-hidden="true">*</span>

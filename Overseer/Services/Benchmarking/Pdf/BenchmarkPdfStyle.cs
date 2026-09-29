@@ -44,8 +44,17 @@ internal static class BenchmarkPdfStyle
     /// <summary>Space between consecutive blocks of the body, in points.</summary>
     public const float BlockSpacing = 6f;
 
-    /// <summary>Room a heading needs below it on its page, in points, or it moves to the next page.</summary>
-    public const float KeepWithNextHeight = 72f;
+    /// <summary>
+    /// Room a run of headings needs below it on its page for the block that follows, in points: three
+    /// lines of body text. Without it the run moves to the next page.
+    /// </summary>
+    public const float KeepWithNextHeight = 3 * BaseSize * LineHeight;
+
+    /// <summary>
+    /// <see cref="KeepWithNextHeight"/> for a table: its header row and first body row, each allowed
+    /// to wrap onto a few lines.
+    /// </summary>
+    public const float KeepWithTableHeight = 72f;
 
     /// <summary>Hairline and table rule thickness, in points.</summary>
     public const float Hairline = 0.5f;

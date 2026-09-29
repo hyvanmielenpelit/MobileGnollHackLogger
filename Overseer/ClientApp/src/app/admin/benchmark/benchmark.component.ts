@@ -44,7 +44,9 @@ import {
   ImportBenchmarkQuestionsResultDto,
   CaptureBenchmarkSnapshotResponse,
   BoardFactsCheckDto,
-  BoardFactIssueDto
+  BoardFactIssueDto,
+  BenchmarkRunReportDocumentsStatus,
+  BenchmarkRunReportJobDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
@@ -112,7 +114,7 @@ import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload
 import { RunReportFrameComponent } from './run-report-frame/run-report-frame.component';
 import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from './run-report-frame/key-figure-card-actions.component';
 import { ImageContext, KeyFiguresAction, exportKeyFiguresImage } from './run-report-frame/key-figures-image';
-import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
+import { BenchmarkDownloadCenterComponent, audienceLabel } from './download-center/benchmark-download-center.component';
 import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/run-ai-reports.component';
 import { reportWriterRefusal, reportWriterWarning } from './run-ai-reports/report-writer-policy';
 import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
@@ -617,6 +619,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * One shared field would let whichever poller stops last detach the other's listener.
    */
   private runVisibilityChangeHandler: (() => void) | null = null;
+
+  /**
+   * How long after a run that names a report writer is first seen Completed its poll continues while
+   * the run's report status is still NotRequested: the server queues the writing job just after
+   * scoring, and a job that never appears must not keep the poll going.
+   */
+  static readonly RUN_REPORT_STAGE_GRACE_MS = 30000;
+  /** When the active run was first seen terminal (client clock), for the report stage's start grace. */
+  private runTerminalSeenAt: { runId: number; atMs: number } | null = null;
+  /** The report stage's start grace was still open at the last terminal poll. */
+  private runReportGraceOpen = false;
+  /** The active run's report writing job, polled alongside the run while stage 4 is current. */
+  activeRunReportJob: BenchmarkRunReportJobDto | null = null;
+  /** When the last job view arrived (client clock), to advance the server's clock between polls. */
+  private activeRunReportJobReceivedAtMs = 0;
+  private runReportJobSub: Subscription | null = null;
 
   // Run Progress Dialog
   isRunProgressDialogOpen = false;
@@ -4055,6 +4073,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private startPolling(runId: number) {
     this.stopPolling();
     this.runPollFailureCount = 0;
+    if (this.activeRunReportJob?.runId !== runId) {
+      this.activeRunReportJob = null;
+    }
     if (this.lockedSeriesId === null) {
       this.backgroundActivity.acquireForRun(runId);
     }
@@ -4087,6 +4108,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.pollTickerHandle();
       this.pollTickerHandle = null;
     }
+    this.runReportJobSub?.unsubscribe();
+    this.runReportJobSub = null;
     if (this.runVisibilityChangeHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.runVisibilityChangeHandler);
       this.runVisibilityChangeHandler = null;
@@ -4323,6 +4346,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           this.runsSeenLive.add(run.id);
           this.rerunLaunchPending = false;
           this.rerunLaunchedAtMs = null;
+          if (this.runTerminalSeenAt?.runId === run.id) {
+            this.runTerminalSeenAt = null;
+          }
           if (this.isRunProgressDialogOpen && !this.runElapsedInterval) {
             this.startRunElapsedTicker();
           }
@@ -4341,19 +4367,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
               this.runErrorMessage = 'The failed-question re-run did not report starting within 60 seconds. '
                 + 'Check the run history; if the run is still listed as running, reopen it from the banner.';
             }
-            this.stopPolling();
-            this.stopRunElapsedTicker();
-            this.loadHistory();
-            this.maybeSignalRunCompletion(run);
+            // The re-run's own terminal status: its report stage's grace starts now.
+            this.runTerminalSeenAt = null;
+            this.onRunTerminalPoll(run);
           } else {
             this.cdr.detectChanges();
             return;
           }
         } else {
-          this.stopPolling();
-          this.stopRunElapsedTicker();
-          this.loadHistory();
-          this.maybeSignalRunCompletion(run);
+          this.onRunTerminalPoll(run);
         }
         this.cdr.detectChanges();
       },
@@ -4376,6 +4398,78 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     });
   }
 
+  /**
+   * A terminal poll. A Completed run that names a report writer keeps its poll going through stage 4,
+   * the writing of its AI-written reports, and its completion signal waits for that stage to end;
+   * every other run stops polling and signals at once.
+   */
+  private onRunTerminalPoll(run: BenchmarkRunDetailDto): void {
+    const firstSeen = this.runTerminalSeenAt?.runId !== run.id;
+    if (firstSeen) {
+      this.runTerminalSeenAt = { runId: run.id, atMs: Date.now() };
+    }
+    this.runReportGraceOpen = Date.now() - this.runTerminalSeenAt!.atMs < AdminBenchmarkComponent.RUN_REPORT_STAGE_GRACE_MS;
+
+    if (this.runAwaitsReports(run)) {
+      if (firstSeen) {
+        this.loadHistory();
+      }
+      this.pollActiveRunReportJob(run.id);
+      return;
+    }
+
+    this.stopPolling();
+    this.stopRunElapsedTicker();
+    this.loadHistory();
+    this.maybeSignalRunCompletion(run);
+  }
+
+  /**
+   * The run's stage 4 is still to come or under way: it ended Completed, names a report writer, and its
+   * reports are Pending or Writing, or still NotRequested within the start grace.
+   */
+  private runAwaitsReports(run: BenchmarkRunDetailDto): boolean {
+    if (run.reportWriterModelConfigurationId == null || this.formatStatus(run.status) !== 'Completed') {
+      return false;
+    }
+    const status = this.reportDocumentsStatusOf(run);
+    if (status === BenchmarkRunReportDocumentsStatus.Pending || status === BenchmarkRunReportDocumentsStatus.Writing) {
+      return true;
+    }
+    return status === BenchmarkRunReportDocumentsStatus.NotRequested
+      && this.runReportGraceOpen
+      && this.runTerminalSeenAt?.runId === run.id;
+  }
+
+  /** One request at a time: a slow answer is superseded by the next poll's. A failure leaves the last view. */
+  private pollActiveRunReportJob(runId: number): void {
+    this.runReportJobSub?.unsubscribe();
+    this.runReportJobSub = this.benchmarkService.getRunReportJob(runId).subscribe({
+      next: view => {
+        if (this.activeRunDetail?.id !== runId) return;
+        this.activeRunReportJob = view;
+        this.activeRunReportJobReceivedAtMs = Date.now();
+        this.cdr.detectChanges();
+      },
+      error: err => console.warn('Failed to poll the run report writing job', err)
+    });
+  }
+
+  /** The run's report status as its enum value, whether the server sent the number or the name. */
+  reportDocumentsStatusOf(run: BenchmarkRunDetailDto | null | undefined): BenchmarkRunReportDocumentsStatus {
+    const status: unknown = run?.reportDocumentsStatus;
+    if (typeof status === 'number') {
+      return status;
+    }
+    if (typeof status === 'string') {
+      const value = (BenchmarkRunReportDocumentsStatus as unknown as Record<string, unknown>)[status];
+      if (typeof value === 'number') {
+        return value;
+      }
+    }
+    return BenchmarkRunReportDocumentsStatus.NotRequested;
+  }
+
   // --- Run Progress Dialog ---
 
   /**
@@ -4385,7 +4479,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * answer being graded is a serial tail of run-level passes: remaining claim checks, then the
    * outlier sweep or the sample top-up, then remaining claim checks again, then the synthesis.
    *
-   * The rail built on this shows three stages, not five, because 'verifying' and 'secondopinion'
+   * The rail built on this shows three scoring stages, not five, because 'verifying' and 'secondopinion'
    * are both part of that one tail and the server marks `Verifying` a second time after the
    * second-opinion pass — a rail with an item each would step backwards. The pass name survives
    * in `runStageLabel` and in the diagnostics, where a backwards step is information, not a bug.
@@ -4421,16 +4515,172 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * The rail item the run is on, or 0 for a terminal run, which highlights nothing. Both follow-up
-   * passes map to item 2 so the rail cannot move backwards when the server revisits `Verifying`.
+   * The rail item the run is on: 4 while a terminal run's reports are being written, otherwise 0 for
+   * a terminal run, which highlights nothing. Both follow-up passes map to item 2 so the rail cannot
+   * move backwards when the server revisits `Verifying`.
    */
-  get runRailStage(): 0 | 1 | 2 | 3 {
+  get runRailStage(): 0 | 1 | 2 | 3 | 4 {
     switch (this.runStage) {
       case 'answering': return 1;
       case 'verifying':
       case 'secondopinion': return 2;
       case 'finalizing': return 3;
-      default: return 0;
+      default: return this.runReportStage === 'current' ? 4 : 0;
+    }
+  }
+
+  /** The active run names a report writer, so the rail and the stage labels have a fourth stage. */
+  get runHasReportStage(): boolean {
+    return this.activeRunDetail?.reportWriterModelConfigurationId != null;
+  }
+
+  /** The stage labels' denominator: 4 with a report writer, else 3. */
+  get runStageCount(): 3 | 4 {
+    return this.runHasReportStage ? 4 : 3;
+  }
+
+  /**
+   * Where stage 4, the writing of the run's AI-written reports, stands. `none` without a writer;
+   * `pending` until the run is terminal; `current` while the poll follows it; `done` once written;
+   * `ended` when it failed, was skipped or was canceled; `notWritten` when no writing followed the
+   * run (another terminal status, or nothing queued within the start grace).
+   */
+  get runReportStage(): 'none' | 'pending' | 'current' | 'done' | 'ended' | 'notWritten' {
+    const run = this.activeRunDetail;
+    if (!run || run.reportWriterModelConfigurationId == null) return 'none';
+    if (!this.runIsTerminal) return 'pending';
+    if (this.runAwaitsReports(run)) return 'current';
+    switch (this.reportDocumentsStatusOf(run)) {
+      case BenchmarkRunReportDocumentsStatus.Completed:
+      case BenchmarkRunReportDocumentsStatus.CompletedWithWarnings:
+        return 'done';
+      case BenchmarkRunReportDocumentsStatus.Failed:
+      case BenchmarkRunReportDocumentsStatus.Skipped:
+      case BenchmarkRunReportDocumentsStatus.Canceled:
+        return 'ended';
+      default:
+        return 'notWritten';
+    }
+  }
+
+  /** Stages 1 to 3 are behind the run: stage 4 is current, or it has ended one way or another. */
+  get runRailReportsReached(): boolean {
+    const stage = this.runReportStage;
+    return stage === 'current' || stage === 'done' || stage === 'ended';
+  }
+
+  /** What stage 4 is doing, from the job view polled alongside the run. */
+  private get runReportWritingDetail(): string {
+    const job = this.activeRunReportJob;
+    const status = this.reportDocumentsStatusOf(this.activeRunDetail);
+    if (!job || job.runId !== this.activeRunDetail?.id) {
+      return status === BenchmarkRunReportDocumentsStatus.Writing ? 'writing the reports' : 'waiting for the report writer';
+    }
+    switch (job.phase) {
+      case 'Queued': {
+        const ahead = job.jobsAhead;
+        return ahead != null && ahead > 0
+          ? `waiting for the report writer (${ahead} ${ahead === 1 ? 'job' : 'jobs'} ahead)`
+          : 'waiting for the report writer';
+      }
+      case 'Preparing':
+        return 'preparing the fact sheet';
+      case 'Writing': {
+        const documents = job.job?.documents ?? [];
+        const audiences = job.audiences?.length ? job.audiences : documents.map(doc => doc.audience);
+        const active = documents.find(doc => doc.status === 'Writing' || doc.status === 'Repairing');
+        if (!active) return 'writing the reports';
+        const position = audiences.indexOf(active.audience) + 1;
+        const verb = active.status === 'Repairing' ? 'repairing' : 'writing';
+        const count = position > 0 ? ` (${position} of ${audiences.length})` : '';
+        return `${verb} the ${audienceLabel(active.audience)}${count}`;
+      }
+      default:
+        return 'finishing';
+    }
+  }
+
+  /** The documents stored, and how long they took: `2 documents, 1m 12s`. */
+  private get runReportsWrittenSummary(): string {
+    const run = this.activeRunDetail;
+    const count = run?.reportDocumentsWrittenCount ?? 0;
+    const documents = `${count} ${count === 1 ? 'document' : 'documents'}`;
+    const durationMs = run?.reportDocumentsDurationMs;
+    return durationMs != null ? `${documents}, ${this.formatDuration(durationMs)}` : documents;
+  }
+
+  /** The status line's report sentence once stage 4 is over, or null while it is not. */
+  private get runReportOutcomeSentence(): string | null {
+    const run = this.activeRunDetail;
+    const message = run?.reportDocumentsMessage?.trim();
+    const sentence = (text: string): string => /[.!?]$/.test(text) ? text : `${text}.`;
+    switch (this.runReportStage) {
+      case 'done':
+        return this.reportDocumentsStatusOf(run) === BenchmarkRunReportDocumentsStatus.CompletedWithWarnings
+          ? `Reports written with warnings: ${this.runReportsWrittenSummary}.`
+          : `Reports written: ${this.runReportsWrittenSummary}.`;
+      case 'ended':
+        switch (this.reportDocumentsStatusOf(run)) {
+          case BenchmarkRunReportDocumentsStatus.Failed:
+            return sentence(`Report writing failed: ${message || 'no reason was recorded'}`);
+          case BenchmarkRunReportDocumentsStatus.Skipped:
+            return sentence(`Report writing skipped: ${message || 'no reason was recorded'}`);
+          default:
+            return sentence(message ? `Report writing canceled: ${message}` : 'Report writing canceled');
+        }
+      default:
+        return null;
+    }
+  }
+
+  /** The server's clock now: the job view's reading plus the client time since it arrived. */
+  private runReportServerNowMs(): number | null {
+    const job = this.activeRunReportJob;
+    if (!job?.serverTimeUtc) return null;
+    const server = parseServerUtcDate(job.serverTimeUtc).getTime();
+    if (Number.isNaN(server)) return null;
+    return server + Math.max(0, Date.now() - this.activeRunReportJobReceivedAtMs);
+  }
+
+  /**
+   * The stat strip's Reports cell: live elapsed since the writer took the slot while stage 4 is
+   * current, then the stored documents' duration and count.
+   */
+  get runReportsStatLabel(): string {
+    switch (this.runReportStage) {
+      case 'current': {
+        const job = this.activeRunReportJob;
+        const now = this.runReportServerNowMs();
+        if (job?.runId === this.activeRunDetail?.id && job?.slotAcquiredAtUtc && now !== null) {
+          const started = parseServerUtcDate(job.slotAcquiredAtUtc).getTime();
+          if (!Number.isNaN(started)) {
+            return `${this.formatElapsed(Math.max(0, now - started))} · writing`;
+          }
+        }
+        return 'Waiting';
+      }
+      case 'done':
+      case 'ended':
+        return (this.activeRunDetail?.reportDocumentsWrittenCount ?? 0) > 0 ? this.runReportsWrittenSummary : 'None written';
+      case 'notWritten':
+        return 'Not written';
+      default:
+        return '—';
+    }
+  }
+
+  /** The cost panel's report writer figure: the job's running cost while writing, then the stored documents' total. */
+  get runReportWriterCost(): number | null {
+    switch (this.runReportStage) {
+      case 'current': {
+        const job = this.activeRunReportJob;
+        return job?.runId === this.activeRunDetail?.id ? (job?.job?.costUsd ?? null) : null;
+      }
+      case 'done':
+      case 'ended':
+        return this.activeRunDetail?.reportDocumentsCostUsd ?? null;
+      default:
+        return null;
     }
   }
 
@@ -4485,39 +4735,47 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.rerunLaunchPending) return 'Starting failed-question re-run…';
     const total = this.runTotalQuestionCount;
     const scoped = this.runHasRerunScope;
+    const stageCount = this.runStageCount;
     switch (this.runStage) {
       case 'answering':
         return scoped
-          ? `Re-run stage 1 of 3 — Answering and grading. Answered ${this.runMeterAnswered} of ${this.runMeterTotal} re-run questions, scored ${this.runMeterScored} of ${this.runMeterTotal}.`
-          : `Stage 1 of 3 — Answering and grading. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
+          ? `Re-run stage 1 of ${stageCount} — Answering and grading. Answered ${this.runMeterAnswered} of ${this.runMeterTotal} re-run questions, scored ${this.runMeterScored} of ${this.runMeterTotal}.`
+          : `Stage 1 of ${stageCount} — Answering and grading. Answered ${this.runAnsweredCount} of ${total}, scored ${this.runScoredCount} of ${total}.`;
       case 'verifying':
         // The label names the pass the rail's stage 2 cannot, and carries a count so it moves
         // during the minutes the answer rows are static. runVerifiedCount is itself scoped to
         // a re-run, so this needs no wording change under one.
-        return `Stage 2 of 3 — Follow-up grading passes: verifying remaining claims. ${this.runVerifiedCount} claims verified so far.`;
+        return `Stage 2 of ${stageCount} — Follow-up grading passes: verifying remaining claims. ${this.runVerifiedCount} claims verified so far.`;
       case 'secondopinion':
         return run.isPanelRun
-          ? `Stage 2 of 3 — Follow-up grading passes: reference-reader sweep. ${this.runSecondOpinionCount} reference readings so far.`
-          : `Stage 2 of 3 — Follow-up grading passes: second-reader sweep. ${this.runSecondOpinionCount} second readings so far.`;
+          ? `Stage 2 of ${stageCount} — Follow-up grading passes: reference-reader sweep. ${this.runSecondOpinionCount} reference readings so far.`
+          : `Stage 2 of ${stageCount} — Follow-up grading passes: second-reader sweep. ${this.runSecondOpinionCount} second readings so far.`;
       case 'finalizing':
         return scoped
-          ? `Stage 3 of 3 — Synthesis and scoring. All ${this.runMeterTotal} re-run answers assessed.`
-          : `Stage 3 of 3 — Synthesis and scoring. All ${total} answers assessed.`;
+          ? `Stage 3 of ${stageCount} — Synthesis and scoring. All ${this.runMeterTotal} re-run answers assessed.`
+          : `Stage 3 of ${stageCount} — Synthesis and scoring. All ${total} answers assessed.`;
       default: {
+        if (this.runReportStage === 'current') {
+          return `Stage 4 of 4 — Writing reports: ${this.runReportWritingDetail}`;
+        }
         const status = this.formatStatus(run.status);
         const label = status === 'CompletedWithErrors'
           ? 'Completed with errors'
           : (status === 'CompletedWithLimits' ? 'Completed with limits' : status);
+        let result: string;
         if (scoped) {
           const failed = this.runMeterFailed;
-          return failed > 0
+          result = failed > 0
             ? `${label}. Re-run answered ${this.runMeterAnswered} of ${this.runMeterTotal}, ${failed} failed.`
             : `${label}. Re-run answered ${this.runMeterAnswered} of ${this.runMeterTotal}.`;
+        } else {
+          const failed = this.runFailedAnswerCount;
+          result = failed > 0
+            ? `${label}. Answered ${this.runAnsweredCount} of ${total}, ${failed} failed.`
+            : `${label}. Answered ${this.runAnsweredCount} of ${total}.`;
         }
-        const failed = this.runFailedAnswerCount;
-        return failed > 0
-          ? `${label}. Answered ${this.runAnsweredCount} of ${total}, ${failed} failed.`
-          : `${label}. Answered ${this.runAnsweredCount} of ${total}.`;
+        const reports = this.runReportOutcomeSentence;
+        return reports ? `${result} ${reports}` : result;
       }
     }
   }
@@ -4945,9 +5203,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       // The rail's stage number, plus the pass the rail collapses away, plus whether the server
       // reported it or the client derived it — the derivation cannot see the follow-up passes at
       // all, so which of the two produced the figure changes how much it is worth.
+      const stageCount = run.reportWriterModelConfigurationId != null ? 4 : 3;
       const stageNumbers: Record<string, string> = {
-        answering: '1 of 3', verifying: '2 of 3 (verifying)',
-        secondopinion: `2 of 3 (${readerName})`, finalizing: '3 of 3'
+        answering: `1 of ${stageCount}`, verifying: `2 of ${stageCount} (verifying)`,
+        secondopinion: `2 of ${stageCount} (${readerName})`, finalizing: `3 of ${stageCount}`
       };
       const stageStr = stage === 'terminal'
         ? 'terminal'
@@ -5260,7 +5519,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         // denominators for one run.
         lines.push(`answers with 0 knowledge base calls: ${zeroKbAnswers} of ${facts.gradeable} gradeable (${run.answers.length} answer row(s))`);
         // A suite that asks a knowledge-base topic (the server's HasKnowledgeBaseRoutingQuestion, over the
-        // questions and rubric bodies) gets no compliance qualification: the report judges it instead.
+        // question texts) gets no compliance qualification: the report judges it instead.
         if (run.hasKnowledgeBaseRoutingQuestion) {
           lines.push("  (the suite has knowledge-base topics; see the report's Tool Routing section)");
         } else {
@@ -5268,6 +5527,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           lines.push('   knowledge base to app navigation, settings, controls, replay, vault and troubleshooting)');
         }
         lines.push('');
+      }
+
+      // --- REPORTS ---
+      if (run.reportWriterModelConfigurationId != null) {
+        lines.push(...this.reportsDiagnosticsLines(run, live));
       }
 
       // --- FLAGS ---
@@ -5532,6 +5796,37 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
+  /**
+   * The diagnostics' REPORTS block for a run that names a report writer: the writer, the stored status
+   * and message, and the sums over the stored run-completion documents. The progress dialog's own run
+   * adds the stage and the job view it polls.
+   */
+  private reportsDiagnosticsLines(run: BenchmarkRunDetailDto, live: boolean): string[] {
+    const lines: string[] = ['--- REPORTS ---'];
+    const writerName = run.reportWriterDisplayName ?? `configuration ${run.reportWriterModelConfigurationId} (deleted)`;
+    lines.push(`Writer: ${writerName} (${run.reportWriterProvider ?? 'n/a'} / ${run.reportWriterModelId ?? 'n/a'}), thinking: ${run.reportWriterThinkingLevel ?? 'default'}`);
+    lines.push(`Status: ${BenchmarkRunReportDocumentsStatus[this.reportDocumentsStatusOf(run)] ?? 'unknown'}`);
+    lines.push(`Message: ${run.reportDocumentsMessage?.trim() || 'none'}`);
+    lines.push(`Documents written: ${run.reportDocumentsWrittenCount ?? 0}`);
+    lines.push(`Duration: ${run.reportDocumentsDurationMs != null ? this.formatDuration(run.reportDocumentsDurationMs) : 'n/a'}`);
+    const tokens = run.reportDocumentsInputTokens != null || run.reportDocumentsOutputTokens != null
+      ? `input ${run.reportDocumentsInputTokens ?? 0}, output ${run.reportDocumentsOutputTokens ?? 0}`
+      : 'n/a';
+    lines.push(`Tokens: ${tokens}`);
+    lines.push(`Cost: ${run.reportDocumentsCostUsd != null ? `$${run.reportDocumentsCostUsd.toFixed(4)}` : 'n/a'} (outside the run's own cost)`);
+    if (live) {
+      lines.push(`Stage 4: ${this.runReportStage}`);
+      const job = this.activeRunReportJob;
+      if (job && job.runId === run.id) {
+        lines.push(`Job: phase ${job.phase}, queued ${job.queuedAtUtc}, slot acquired ${job.slotAcquiredAtUtc ?? 'n/a'}, finished ${job.finishedAtUtc ?? 'n/a'}, jobs ahead ${job.jobsAhead ?? 'n/a'}, cost so far ${job.job?.costUsd != null ? `$${job.job.costUsd.toFixed(4)}` : 'n/a'}`);
+      } else {
+        lines.push('Job: not polled');
+      }
+    }
+    lines.push('');
+    return lines;
+  }
+
   /** Suite, model and run, in the order of the server's report and tool-call-log file names. */
   get runDiagnosticsFileName(): string {
     const run = this.activeRunDetail;
@@ -5561,7 +5856,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       });
     }
 
-    if (this.runIsRunning) {
+    if (this.runIsRunning || this.runReportStage === 'current') {
       this.startRunElapsedTicker();
     }
 

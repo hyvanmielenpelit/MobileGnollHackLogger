@@ -484,28 +484,31 @@ public class BenchmarkReportFactsTests
         Assert.Contains("- **Intelligence:** 77 / 100 (interval 73–82).\n", text);
     }
 
+    private static BenchmarkClaimVerification Verification(string claim, BenchmarkClaimVerdict verdict, params string[] roles)
+        => new(0, claim, verdict, null, null) { Roles = roles.Length == 0 ? null : roles };
+
     [Fact]
     public void RefutedAnswerSentences_CountTheAnswersOwnText_AndNeverAGradersStatement()
     {
-        static BenchmarkClaimVerification V(BenchmarkClaimVerdict verdict, params string[] roles)
-            => new(0, "A sentence.", verdict, null, null) { Roles = roles.Length == 0 ? null : roles };
+        static BenchmarkClaimVerification V(string claim, BenchmarkClaimVerdict verdict, params string[] roles)
+            => Verification(claim, verdict, roles);
 
         var run = Run(1, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 40), new AnswerSpec(12, 2, 1, 70), new AnswerSpec(13, 3, 1, 90));
         run.Answers[0].ClaimsRefutedCount = 2;
         run.Answers[0].ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new[]
         {
-            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.UnverifiedClaim),
-            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote),
-            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.CriticalErrorQuote),
-            V(BenchmarkClaimVerdict.Refuted),
-            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AssessorStatement),
-            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.OutOfRubricBasis),
-            V(BenchmarkClaimVerdict.Supported, BenchmarkClaimRoles.UnverifiedClaim),
-            V(BenchmarkClaimVerdict.Indeterminate, BenchmarkClaimRoles.AccusedQuote)
+            V("Sentence one.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.UnverifiedClaim),
+            V("Sentence two.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote),
+            V("Sentence three.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.CriticalErrorQuote),
+            V("Sentence four.", BenchmarkClaimVerdict.Refuted),
+            V("A grader's statement.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AssessorStatement),
+            V("A grader's basis.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.OutOfRubricBasis),
+            V("Sentence five.", BenchmarkClaimVerdict.Supported, BenchmarkClaimRoles.UnverifiedClaim),
+            V("Sentence six.", BenchmarkClaimVerdict.Indeterminate, BenchmarkClaimRoles.AccusedQuote)
         });
         // Stored before harness 31: no roles, so the count cannot be told apart from the grader's.
         run.Answers[1].ClaimsRefutedCount = 1;
-        run.Answers[1].ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new[] { V(BenchmarkClaimVerdict.Refuted) });
+        run.Answers[1].ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new[] { V("A sentence.", BenchmarkClaimVerdict.Refuted) });
 
         var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 60)), "run:1", run));
 
@@ -514,6 +517,156 @@ public class BenchmarkReportFactsTests
         Assert.Null(sheet.Questions[1].RefutedAnswerSentences);
         Assert.Equal(1, sheet.Questions[1].RefutedClaims);
         Assert.Equal(0, sheet.Questions[2].RefutedAnswerSentences);
+    }
+
+    [Fact]
+    public void RefutedAnswerSentences_CountASentenceOnce_ThoughItWasAccusedAndQuotedAsACriticalError()
+    {
+        var run = Run(1, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 25), new AnswerSpec(12, 2, 1, 70));
+        // Run 74's shape: one sentence ruled on as the critical-error quote and as the accused
+        // sentence, the two copies differing only in markup and case, beside one other sentence.
+        run.Answers[0].ClaimsRefutedCount = 3;
+        run.Answers[0].ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            Verification("A thrown gem always shatters on impact.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.CriticalErrorQuote),
+            Verification("- **A thrown gem** always shatters on  impact.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote),
+            Verification("a thrown gem always shatters on impact.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.UnverifiedClaim),
+            Verification("Glass is always destroyed.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.UnverifiedClaim)
+        });
+        // The same sentence on another answer is another answer's sentence.
+        run.Answers[1].ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            Verification("A thrown gem always shatters on impact.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote)
+        });
+
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 60)), "run:1", run));
+
+        Assert.Equal(2, sheet.Questions[0].RefutedAnswerSentences);
+        Assert.Equal(3, sheet.Questions[0].RefutedClaims);
+        Assert.Equal(1, sheet.Questions[1].RefutedAnswerSentences);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Panel runs: dimensions, response style and the reference reader
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A two-answer panel run whose member A scores every dimension 80 at level 5 and whose member B
+    /// grades Accuracy, Conciseness and Readability at level 6 (100) and Completeness at level 2 (35).
+    /// </summary>
+    private static BenchmarkRun PanelRun(long id = 1)
+    {
+        var run = AsPanelRun(Run(id, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 80), new AnswerSpec(12, 2, 1, 80)),
+            accuracyLevel: 6, completenessLevel: 2, concisenessLevel: 6, readabilityLevel: 6);
+        run.AssessorOnlyQualityIndex = 80;
+        run.CoAssessorOnlyQualityIndex = 84;
+        return run;
+    }
+
+    [Fact]
+    public void APanelRunsDimensionFacts_AreThePanelRow_TheMeanOfBothMembersAverages()
+    {
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", PanelRun()));
+
+        // Member A 80 everywhere; member B 100, 35, 100, 100 on the default level table.
+        Assert.Equal("90", FactOf(sheet, "dimension.accuracy").Display);
+        Assert.Equal(57.5, FactOf(sheet, "dimension.completeness").Value!.GetValue<double>());
+        Assert.Equal("58", FactOf(sheet, "dimension.completeness").Display);
+        Assert.Equal("90", FactOf(sheet, "dimension.conciseness").Display);
+        Assert.Equal("90", FactOf(sheet, "dimension.readability").Display);
+
+        var subject = Assert.Single(sheet.Entries, e => e.IsSubject);
+        Assert.Equal("58", Assert.Single(subject.Extra, f => f.Key == "dimension.completeness").Display);
+
+        var averages = BenchmarkPanelDimensions.Averages(PanelRun().Answers.ToList(), null)!;
+        Assert.Equal(new[] { 80.0, 80.0, 80.0, 80.0 }, averages.MemberA.Select(d => d.Points));
+        Assert.Equal(new[] { 100.0, 35.0, 100.0, 100.0 }, averages.MemberB!.Select(d => d.Points));
+        Assert.Equal(new[] { 5.5, 3.5, 5.5, 5.5 }, averages.Panel!.Select(d => d.Level));
+        Assert.Equal(2, averages.MemberBAnswerCount);
+        Assert.Null(BenchmarkPanelDimensions.Averages(new List<BenchmarkRunAnswer>(), null));
+    }
+
+    [Fact]
+    public void APanelRunsDimensionFacts_AreUnavailable_WhenMemberBRecordedNoLevels()
+    {
+        var run = PanelRun();
+        foreach (var answer in run.Answers) answer.CoAssessmentJson = null;
+
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", run));
+
+        var accuracy = FactOf(sheet, "dimension.accuracy");
+        Assert.False(accuracy.Available);
+        Assert.Contains("member B", accuracy.UnavailableReason);
+    }
+
+    [Fact]
+    public void TheResponseStyleConflict_OfAPanelRun_IsReadOnThePanelRow_AndItsDisplayIsAClause()
+    {
+        var panel = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", PanelRun()));
+
+        // Member A alone (80 everywhere) has no conflict; the panel row's Completeness is 32.5 below Accuracy.
+        var style = FactOf(panel, "style.responseStyleConflict");
+        Assert.True(style.Value!.GetValue<bool>());
+        Assert.Equal("Completeness is the lowest dimension, 32.5 points below Accuracy", style.Display);
+        Assert.True(BenchmarkReportPackPrompt.IsTrue(style));
+
+        var single = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+        var none = FactOf(single, "style.responseStyleConflict");
+        Assert.False(none.Value!.GetValue<bool>());
+        Assert.Equal("No response-style conflict", none.Display);
+        Assert.False(BenchmarkReportPackPrompt.IsTrue(none));
+    }
+
+    [Fact]
+    public void TheReferenceReader_OfAPanelRun_HasItsIndexAndMeanOffset_AsTheRunReportComputesThem()
+    {
+        var run = PanelRun();
+        run.SecondOpinionAssessorModelConfigurationId = 3;
+        run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "DeepSeek", modelId: "deepseek-v4", displayName: "DeepSeek V4");
+        foreach (var answer in run.Answers) answer.SecondOpinionQualityScore = 90;
+
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", run));
+
+        Assert.Equal("90 / 100", FactOf(sheet, "panel.referenceReaderIndex").Display);
+        // 90 against a panel score of 80 on both answers.
+        Assert.Equal("+10.0 points", FactOf(sheet, "panel.referenceReaderOffset").Display);
+        Assert.Contains(sheet.Graders, g => g.Role == BenchmarkReportFacts.ReferenceReaderRole && g.Provider == "DeepSeek");
+        Assert.Equal("Reference reader (advisory, third provider)", BenchmarkReportFactLabels.Label("panel.referenceReaderIndex"));
+        Assert.Equal("Reference reader's mean offset from the panel", BenchmarkReportFactLabels.Label("panel.referenceReaderOffset"));
+
+        var withoutReader = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", PanelRun()));
+        Assert.False(FactOf(withoutReader, "panel.referenceReaderIndex").Available);
+        Assert.False(FactOf(withoutReader, "panel.referenceReaderOffset").Available);
+
+        var notPanel = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+        Assert.Equal("The model was not graded by an assessor panel in every run.", FactOf(notPanel, "panel.referenceReaderIndex").UnavailableReason);
+    }
+
+    [Fact]
+    public void TheKnowledgeBaseCount_IsStated_OnlyWhenSomeQuestionIsAKnowledgeBaseTopic()
+    {
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+        var none = FactOf(sheet, "tools.zeroKnowledgeBaseAnswers");
+        Assert.False(none.Available);
+        Assert.Equal("No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base.", none.UnavailableReason);
+
+        var run = SimpleRun(1, "OpenAI");
+        run.Answers[0].QuestionText = "Where do I change the sound settings?";
+        var topical = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", run));
+        var count = FactOf(topical, "tools.zeroKnowledgeBaseAnswers");
+        Assert.True(count.Available);
+        Assert.Equal("2 of 2", count.Display);
+    }
+
+    [Fact]
+    public void TheScoredQuestions_CarryTheirNoun()
+    {
+        var sheet = BuildSheet(Input(Comparison(Entry("group:9", new long[] { 1, 2 }, "Subject", "OpenAI", 80)), "group:9",
+            SimpleRun(1, "OpenAI"), SimpleRun(2, "OpenAI")));
+        Assert.Equal("2 of 2 questions", FactOf(sheet, "quality.scoredItems").Display);
+
+        var one = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+        Assert.Equal("1 of 1 question", FactOf(one, "quality.scoredItems").Display);
     }
 
     [Fact]

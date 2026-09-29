@@ -990,6 +990,123 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.All(union, m => Assert.Equal(new[] { "A" }, m.RaisedBy));
     }
 
+    // Run 74, Q12: one member raised a sentence, the other a two-sentence item containing it.
+    private const string Cheapest = "It's cheapest before you level up again.";
+    private const string DonateAndCheapest = "Donate for protection now. It's cheapest before you level up again.";
+    private const string DonationAnswerText = "Buy the divination first.\n\n" + DonateAndCheapest;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void UnionManifest_AClaimContainedInTheOtherMembersLongerClaim_IsOneItemRaisedByBoth(bool shortFromA)
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { shortFromA ? Cheapest : DonateAndCheapest }),
+            Contribution(BenchmarkPanelMember.B, new[] { shortFromA ? DonateAndCheapest : Cheapest })
+        }, DonationAnswerText);
+
+        var item = Assert.Single(manifest);
+        Assert.Equal(DonateAndCheapest, item.Text);
+        Assert.Equal(new[] { BenchmarkClaimRoles.UnverifiedClaim }, item.Roles);
+        Assert.Equal(new[] { "A", "B" }, item.RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_AContainedClaim_MergesWhateverItsMarkupAndCase_AndOtherItemsKeepTheirOrder()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool, "- **it's CHEAPEST** before you level up again." }),
+            Contribution(BenchmarkPanelMember.B, new[] { DonateAndCheapest, Regenerate })
+        }, DonationAnswerText);
+
+        Assert.Equal(new[] { Spelltool, DonateAndCheapest, Regenerate }, manifest.Select(m => m.Text));
+        Assert.Equal(new[] { "A" }, manifest[0].RaisedBy);
+        Assert.Equal(new[] { "A", "B" }, manifest[1].RaisedBy);
+        Assert.Equal(new[] { "B" }, manifest[2].RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_AnAccusedSentenceContainedInAClaim_IsNotMerged()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { DonateAndCheapest }),
+            Contribution(BenchmarkPanelMember.B, accused: new[]
+            {
+                new BenchmarkService.AccusedQuote(Cheapest, null, new[] { "cheapest" }, "B: the price does not change.")
+            })
+        }, DonationAnswerText);
+
+        Assert.Equal(new[] { DonateAndCheapest, Cheapest }, manifest.Select(m => m.Text));
+        Assert.Equal(new[] { BenchmarkClaimRoles.UnverifiedClaim }, manifest[0].Roles);
+        Assert.Equal(new[] { BenchmarkClaimRoles.AccusedQuote }, manifest[1].Roles);
+        Assert.Equal(new[] { "A" }, manifest[0].RaisedBy);
+        Assert.Equal(new[] { "B" }, manifest[1].RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_ACriticalErrorQuoteContainedInAClaim_IsNotMerged()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { DonateAndCheapest }),
+            Contribution(BenchmarkPanelMember.B, quote: Cheapest)
+        }, DonationAnswerText);
+
+        Assert.Equal(2, manifest.Count);
+        var quote = Assert.Single(manifest, m => m.Roles.Contains(BenchmarkClaimRoles.CriticalErrorQuote));
+        Assert.Equal(Cheapest, quote.Text);
+        Assert.Equal(new[] { "B" }, quote.RaisedBy);
+        var claim = Assert.Single(manifest, m => m.Roles.Contains(BenchmarkClaimRoles.UnverifiedClaim));
+        Assert.Equal(DonateAndCheapest, claim.Text);
+        Assert.Equal(new[] { "A" }, claim.RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_AnAccusedSentenceContainedInTheOtherMembersLongerOne_IsOneItemWithBothChargesAndFragments()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, accused: new[]
+            {
+                new BenchmarkService.AccusedQuote(Cheapest, null, new[] { "cheapest" }, "A: the price does not change.")
+            }),
+            Contribution(BenchmarkPanelMember.B, accused: new[]
+            {
+                new BenchmarkService.AccusedQuote(DonateAndCheapest, "Preceded by: \"Buy the divination first.\"", new[] { "Donate for protection" }, "B: donate later.")
+            })
+        }, DonationAnswerText);
+
+        var item = Assert.Single(manifest);
+        Assert.Equal(DonateAndCheapest, item.Text);
+        Assert.Equal(new[] { BenchmarkClaimRoles.AccusedQuote }, item.Roles);
+        Assert.Equal("Preceded by: \"Buy the divination first.\"", item.Context);
+        Assert.Equal(new[] { "Donate for protection", "cheapest" }, item.QuotedFragments);
+        Assert.Equal("B: donate later. A: the price does not change.", item.Charge);
+        Assert.Equal(new[] { "A", "B" }, item.RaisedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_ClaimsOfDifferentAnswers_AreNotMerged()
+    {
+        const string otherAnswerText = "Pray first. " + Cheapest;
+        var first = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Cheapest })
+        }, otherAnswerText);
+        var second = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.B, new[] { DonateAndCheapest })
+        }, DonationAnswerText);
+
+        Assert.Equal(Cheapest, Assert.Single(first).Text);
+        Assert.Equal(new[] { "A" }, first[0].RaisedBy);
+        Assert.Equal(DonateAndCheapest, Assert.Single(second).Text);
+        Assert.Equal(new[] { "B" }, second[0].RaisedBy);
+    }
+
     [Fact]
     public void StampRoles_CarriesRaisedByFromAUnionManifest_AndNoneFromASingleAssessorManifest()
     {

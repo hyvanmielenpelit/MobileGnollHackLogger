@@ -14,7 +14,7 @@ Most tool calls went to the source code (57 %).
 
 ### Recommendations for the Overseer chat
 
-- Send item-destruction questions to the source code first. *(Computed)*
+- Send item-destruction questions to the source code first. *(From per-question results)*
 
 ## 2. The benchmarking system
 
@@ -42,7 +42,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 ### Weaknesses
 
 - Asserted a false outcome on Q3, where Model A scored well. *(Both graders)*
-- Scored lowest on intermediate questions (49). *(Computed)*
+- Scored lowest on intermediate questions (49). *(From per-question results)*
 
 ### Recommendations for model developers
 
@@ -92,7 +92,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 **Claim verifier:**
 
-- **Grader's statement — refuted (the answer was right):** "Worthless glass angers the unicorn." — Glass is caught and returned without anger (dothrow.c).
+- **Grader's statement — refuted (the verifier sided with the answer):** "Worthless glass angers the unicorn." — Glass is caught and returned without anger (dothrow.c).
 
 #### Q2: Prayer timeout
 
@@ -143,7 +143,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 **Claim verifier:**
 
-- **Answer sentence accused by a grader — refuted (the grader was right):** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
+- **Answer sentence accused by a grader — refuted (the verifier sided with the grader):** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
 
 #### Q4: Wand of wishing charges
 
@@ -428,6 +428,18 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     },
     {
       "available": true,
+      "display": "90 / 100",
+      "key": "panel.referenceReaderIndex",
+      "value": 90
+    },
+    {
+      "available": true,
+      "display": "+16.8 points",
+      "key": "panel.referenceReaderOffset",
+      "value": 16.8
+    },
+    {
+      "available": true,
       "display": "80 / 100",
       "key": "quality.index",
       "value": 80.4
@@ -460,7 +472,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     },
     {
       "available": true,
-      "display": "4 of 4",
+      "display": "4 of 4 questions",
       "key": "quality.scoredItems",
       "value": 4
     },
@@ -526,8 +538,9 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     },
     {
       "available": true,
-      "display": "no",
-      "key": "style.responseStyleConflict"
+      "display": "No response-style conflict",
+      "key": "style.responseStyleConflict",
+      "value": false
     },
     {
       "available": true,
@@ -590,9 +603,10 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "key": "tools.share.wiki"
     },
     {
-      "available": true,
-      "display": "4 of 4",
-      "key": "tools.zeroKnowledgeBaseAnswers"
+      "available": false,
+      "display": "not available",
+      "key": "tools.zeroKnowledgeBaseAnswers",
+      "unavailableReason": "No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base."
     }
   ],
   "graders": [
@@ -612,6 +626,13 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "sameFamilyAsSubject": false
     },
     {
+      "label": "DeepSeek V4",
+      "modelId": "deepseek-v4",
+      "provider": "DeepSeek",
+      "role": "Reference reader",
+      "sameFamilyAsSubject": false
+    },
+    {
       "label": "Gemini 3.8 Flash",
       "modelId": "gemini-3.8-flash",
       "provider": "Google",
@@ -623,12 +644,15 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
   "knownNames": [
     "Anthropic",
     "Claude Haiku 5",
+    "DeepSeek",
+    "DeepSeek V4",
     "GPT-5.6 Luna",
     "Gemini 3.8 Flash",
     "GnollHack Core Suite",
     "Google",
     "OpenAI",
     "claude-haiku-5",
+    "deepseek-v4",
     "gemini-3.8-flash",
     "gpt-5.6-luna"
   ],
@@ -805,6 +829,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 5 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
+*Document ID 101 · format version 6 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's interpretations.*

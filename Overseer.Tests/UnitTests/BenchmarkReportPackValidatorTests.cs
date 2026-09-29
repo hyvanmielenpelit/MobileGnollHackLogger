@@ -1127,7 +1127,8 @@ public class BenchmarkReportPackValidatorTests
         Assert.Equal(13, note.Rule);
         Assert.Equal("sections.confidence[p1]", note.Location);
         Assert.Contains(word, note.Message);
-        Assert.Contains("{{quality.intervalSpan}}", note.Message);
+        Assert.Contains("the sentence appended after this paragraph states the interval and its span", note.Message);
+        Assert.DoesNotContain("{{quality.intervalSpan}}", note.Message);
     }
 
     [Fact]
@@ -1158,6 +1159,68 @@ public class BenchmarkReportPackValidatorTests
         var note = Assert.Single(result.Notes);
         Assert.Equal(BenchmarkReportPackValidator.IntervalWidthRule, note.Rule);
         Assert.False(note.Dropped);
+    }
+
+    // Rule 14 -----------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("{{subject}} answered well, but the claim verifier refuted two of its claims.", "verifier")]
+    [InlineData("{{subject}} scored {{quality.index}}; the Verifier found errors.", "Verifier")]
+    [InlineData("{{subject}} scored {{quality.index}}, and both verifiers disagreed.", "verifiers")]
+    public void Rule14_TheHeadlineNeverMentionsTheClaimVerifier(string headline, string word)
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Headline = headline;
+
+        var note = Assert.Single(Validate(Es, output));
+
+        Assert.Equal(BenchmarkReportPackValidator.VerifierInSummaryRule, note.Rule);
+        Assert.Equal(14, note.Rule);
+        Assert.Equal("headline", note.Location);
+        Assert.Contains("\"" + word + "\"", note.Message);
+        Assert.Contains("attributed to the claim verifier", note.Message);
+    }
+
+    [Fact]
+    public void Rule14_TheAbstractNeverMentionsTheClaimVerifier_ButOtherSlotsMay()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Sections[BenchmarkReportSlots.Abstract] = "{{subject}} scored {{quality.index}} on the benchmark."
+            + "\n\nThe claim verifier judged one answer sentence false on Q3.";
+
+        var note = Assert.Single(Validate(Tr, output));
+        Assert.Equal(BenchmarkReportPackValidator.VerifierInSummaryRule, note.Rule);
+        Assert.Equal("sections.abstract[p2]", note.Location);
+
+        var elsewhere = ReportPackWriterTestData.ValidOutput(Tr);
+        elsewhere.Sections[BenchmarkReportSlots.WhyItScored] = "The claim verifier judged one answer sentence false on Q3.";
+        Assert.Empty(Validate(Tr, elsewhere));
+
+        // A word merely containing the letters is not the verifier.
+        var unrelated = ReportPackWriterTestData.ValidOutput(Es);
+        unrelated.Headline = "{{subject}} gave verifiable answers across the benchmark.";
+        Assert.Empty(Validate(Es, unrelated));
+    }
+
+    [Fact]
+    public void Drop_KeepsAMentionOfTheVerifier_AndRecordsItsNote()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Headline = "{{subject}} answered well, but the claim verifier refuted two of its claims.";
+        output.Sections[BenchmarkReportSlots.Abstract] = "The claim verifier judged one answer sentence false on Q3.";
+
+        var result = Drop(Tr, output);
+
+        Assert.False(result.Fatal);
+        Assert.Equal(output.Headline, result.Output.Headline);
+        Assert.Equal("The claim verifier judged one answer sentence false on Q3.", result.Output.Sections[BenchmarkReportSlots.Abstract]);
+        Assert.Contains(result.Notes, n => n.Rule == 14 && n.Location == "headline" && !n.Dropped);
+        Assert.Contains(result.Notes, n => n.Rule == 14 && n.Location == "sections.abstract[p1]" && !n.Dropped);
+        Assert.DoesNotContain(result.Notes, n => n.Dropped);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(14));
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(12));
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(13));
+        Assert.False(BenchmarkReportPackValidator.IsWarningRule(9));
     }
 
     [Fact]

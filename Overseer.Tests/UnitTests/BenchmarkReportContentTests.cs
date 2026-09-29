@@ -200,15 +200,19 @@ public class BenchmarkReportContentTests
     [Theory]
     [InlineData(null, "refuted", "refuted")]
     [InlineData(BenchmarkReportContent.ClaimRole, "refuted", "Answer sentence — refuted")]
-    [InlineData(BenchmarkReportContent.AccusedSentenceRole, "supported", "Answer sentence accused by a grader — supported (the grader was wrong)")]
-    [InlineData(BenchmarkReportContent.AccusedSentenceRole, "refuted", "Answer sentence accused by a grader — refuted (the grader was right)")]
+    [InlineData(BenchmarkReportContent.AccusedSentenceRole, "supported", "Answer sentence accused by a grader — supported (the verifier sided with the answer)")]
+    [InlineData(BenchmarkReportContent.AccusedSentenceRole, "refuted", "Answer sentence accused by a grader — refuted (the verifier sided with the grader)")]
+    [InlineData(BenchmarkReportContent.CriticalErrorQuoteRole, "refuted", "Answer sentence a grader flagged as a critical error — refuted (the verifier sided with the grader)")]
     [InlineData(BenchmarkReportContent.CriticalErrorQuoteRole, "indeterminate", "Answer sentence a grader flagged as a critical error — indeterminate")]
-    [InlineData(BenchmarkReportContent.AssessorStatementRole, "refuted", "Grader's statement — refuted (the answer was right)")]
-    [InlineData(BenchmarkReportContent.AssessorStatementRole, "supported", "Grader's statement — supported (the grader was right)")]
-    [InlineData(BenchmarkReportContent.OutOfRubricBasisRole, "refuted", "Grader's basis for an out-of-rubric deduction — refuted (the grader was wrong)")]
-    public void RulingLabel_NamesTheRole_AndWhoWasRight(string? role, string verdict, string expected)
+    [InlineData(BenchmarkReportContent.AssessorStatementRole, "refuted", "Grader's statement — refuted (the verifier sided with the answer)")]
+    [InlineData(BenchmarkReportContent.AssessorStatementRole, "supported", "Grader's statement — supported (the verifier sided with the grader)")]
+    [InlineData(BenchmarkReportContent.OutOfRubricBasisRole, "refuted", "Grader's basis for an out-of-rubric deduction — refuted (the verifier sided with the answer)")]
+    [InlineData(BenchmarkReportContent.OutOfRubricBasisRole, "supported", "Grader's basis for an out-of-rubric deduction — supported (the verifier sided with the grader)")]
+    public void RulingLabel_NamesTheRole_AndWhichSideTheVerifierTook(string? role, string verdict, string expected)
     {
         Assert.Equal(expected, BenchmarkReportContent.RulingLabel(role, verdict));
+        Assert.DoesNotContain("was right", BenchmarkReportContent.RulingLabel(role, verdict));
+        Assert.DoesNotContain("was wrong", BenchmarkReportContent.RulingLabel(role, verdict));
     }
 
     [Theory]

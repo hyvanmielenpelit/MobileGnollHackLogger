@@ -3549,7 +3549,8 @@ public class BenchmarkService
             toolCallLeads: toolCallLeads,
             claimCharges: manifest.Select(m => m.Charge).ToList(),
             claimChargedParts: manifest.Select(m => m.QuotedFragments).ToList(),
-            assessorEvidenceByMember: plan.EvidenceByMember);
+            assessorEvidenceByMember: plan.EvidenceByMember,
+            claimAntecedents: manifest.Select(m => m.Antecedent).ToList());
 
         var chargedPartItems = BenchmarkClaimVerificationPrompt.ChargedPartItems(
             claims,
@@ -4029,12 +4030,14 @@ public class BenchmarkService
         // come from this manifest, never from model output.
         bool isCriticalErrorAdjudication = IsCriticalErrorAdjudication(answer);
         string? outOfRubricBasis = OutOfRubricBasisOf(answer);
-        var manifest = BuildClaimManifest(
-            claims,
-            isCriticalErrorAdjudication ? answer.CriticalErrorQuote : null,
-            outOfRubricBasis,
-            AccusedQuotesFor(answer),
-            assessorStatements,
+        var manifest = WithAntecedents(
+            BuildClaimManifest(
+                claims,
+                isCriticalErrorAdjudication ? answer.CriticalErrorQuote : null,
+                outOfRubricBasis,
+                AccusedQuotesFor(answer),
+                assessorStatements,
+                answer.AnswerText),
             answer.AnswerText);
 
         return new ClaimPlan(
@@ -4106,7 +4109,7 @@ public class BenchmarkService
             evidenceByMember.Add(view.AccuracyEvidence);
         }
 
-        var manifest = BuildUnionClaimManifest(contributions, answer.AnswerText);
+        var manifest = WithAntecedents(BuildUnionClaimManifest(contributions, answer.AnswerText), answer.AnswerText);
         bool isCriticalErrorAdjudication = contributions.Any(c => c.CriticalErrorQuote != null);
         string? firstQuote = manifest.FirstOrDefault(m => m.Roles.Contains(BenchmarkClaimRoles.CriticalErrorQuote))?.Text;
 
@@ -6050,7 +6053,8 @@ public class BenchmarkService
     /// <summary>
     /// The run's final synthesis. In a panel run each member writes its own, from its own verdicts
     /// only, one after the other: member A's to the synthesis columns, member B's to the
-    /// <c>CoAssessor*</c> ones. A panel synthesis carries no reference-reader or re-grade data.
+    /// <c>CoAssessor*</c> ones; each is also given the run's union claim totals. A panel synthesis
+    /// carries no reference-reader or re-grade data.
     /// </summary>
     private async Task ExecuteFinalSynthesisAsync(
         ApplicationDbContext db,
@@ -6069,6 +6073,7 @@ public class BenchmarkService
             .ToListAsync(cancellationToken);
 
         bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
+        var panelRunClaimTotals = isPanelRun ? BenchmarkRunClaimTotals.FromAnswers(answers) : null;
 
         var summaries = answers
             .Select(a => BuildVerdictSummary(run, a, BenchmarkPanelMember.A, includeAdvisory: !isPanelRun))
@@ -6076,7 +6081,7 @@ public class BenchmarkService
         var outcome = await RunSynthesisAsync(
             run, summaries, assessorConfig, assessorApiKey,
             GraderOutputCap(assessorConfig, run.AssessorModelSnapshotId, run.AssessorEffectiveMaxOutputTokens),
-            "Assessor", cancellationToken);
+            "Assessor", panelRunClaimTotals, cancellationToken);
         var parseResult = outcome.Parse;
         var runResult = outcome.LastResult;
 
@@ -6142,7 +6147,7 @@ public class BenchmarkService
         var coOutcome = await RunSynthesisAsync(
             run, coSummaries, coAssessorConfig, coAssessorApiKey,
             GraderOutputCap(coAssessorConfig, run.CoAssessorModelSnapshotId, run.CoAssessorEffectiveMaxOutputTokens),
-            "Co-assessor", cancellationToken);
+            "Co-assessor", panelRunClaimTotals, cancellationToken);
         var coParse = coOutcome.Parse;
         var coResult = coOutcome.LastResult;
 
@@ -6207,13 +6212,14 @@ public class BenchmarkService
         string apiKey,
         int maxOutputTokens,
         string logLabel,
+        BenchmarkRunClaimTotals? panelRunClaimTotals,
         CancellationToken cancellationToken)
     {
         var board = BenchmarkRunExamRecord.Board(run);
         string? boardName = board != null ? run.GameSnapshotNameUsed : null;
         string? boardDigest = board?.DigestText;
 
-        string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries, boardName, boardDigest);
+        string synthesisPrompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(run.SuiteName, summaries, boardName, boardDigest, panelRunClaimTotals);
         // No board block: the synthesis reads the board's digest inside its prompt, never the whole board.
         var (gradingPrompt, gradingSeedHistory) = BuildGradingPrompt(
             "You are an objective AI benchmark evaluator synthesizing a final report. Strictly adhere to the requested JSON response format.",
@@ -8384,6 +8390,12 @@ public class BenchmarkService
         public string? Suspicion { get; init; }
         public string? RecordedClaim { get; init; }
 
+        /// <summary>
+        /// For an unverified claim whose first word refers back, the answer text before it that the
+        /// word refers to (<see cref="AntecedentSentence"/>); otherwise null.
+        /// </summary>
+        public string? Antecedent { get; init; }
+
         /// <summary>The panel members that raised the item, <c>"A"</c> before <c>"B"</c>; null in a single-assessor run.</summary>
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<string>? RaisedBy { get; init; }
@@ -9122,6 +9134,75 @@ public class BenchmarkService
         };
     }
 
+    private static readonly Regex ReferringFirstWordRegex = new(
+        @"^(?:it|its|this|that|these|those|they|their|he|she)(?:['’][a-z]{1,2})?(?![\p{L}\p{N}'’])",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Whether the first word of <paramref name="text"/>, past a list marker, a bold label, markup and
+    /// an opening quotation mark or parenthesis, is one that takes its referent from the text before:
+    /// It, Its, This, That, These, Those, They, Their, He or She, in any case, with or without a
+    /// contraction (<c>It's</c>, <c>They're</c>).
+    /// </summary>
+    internal static bool StartsWithReferringWord(string? text)
+    {
+        string key = ItemKey(text).TrimStart('"', '“', '‘', '\'', '(', ' ');
+        return key.Length > 0 && ReferringFirstWordRegex.IsMatch(key);
+    }
+
+    /// <summary>
+    /// For a claim whose first word refers back (<see cref="StartsWithReferringWord"/>), what that
+    /// word refers to: the sentence of <paramref name="answerText"/> immediately before the claim,
+    /// found as accused sentences are found (<see cref="NormalizeWithMap"/>) and bounded as
+    /// <see cref="AccusedQuoteContext"/> bounds its preceding text, without a leading list marker.
+    /// Null when the first word does not refer back, when the claim is not in the answer, or when
+    /// nothing precedes it.
+    /// </summary>
+    internal static string? AntecedentSentence(string? answerText, string? claim)
+    {
+        if (string.IsNullOrWhiteSpace(answerText) || !StartsWithReferringWord(claim))
+        {
+            return null;
+        }
+
+        var (normalizedAnswer, map) = NormalizeWithMap(answerText);
+        string normalizedClaim = NormalizeWithMap(ItemKey(claim)).Normalized;
+        if (normalizedClaim.Length == 0)
+        {
+            return null;
+        }
+
+        int at = normalizedAnswer.IndexOf(normalizedClaim, StringComparison.OrdinalIgnoreCase);
+        if (at < 0)
+        {
+            return null;
+        }
+
+        string prefix = answerText.Substring(0, map[at]).Replace("\r\n", "\n");
+        prefix = TrailingListMarkerRegex.Replace(prefix.TrimEnd(), string.Empty).TrimEnd();
+        if (prefix.Length == 0)
+        {
+            return null;
+        }
+
+        var boundary = PrecedingSentenceBoundaryRegex.Match(prefix, prefix.Length - 1);
+        string sentence = (boundary.Success ? prefix.Substring(boundary.Index + 1) : prefix).Trim();
+        sentence = LeadingListMarkerRegex.Replace(sentence, string.Empty).Trim();
+        return sentence.Length > 0 ? sentence : null;
+    }
+
+    /// <summary>
+    /// <paramref name="manifest"/> with <see cref="ClaimSubmission.Antecedent"/> set on every item that
+    /// carries the <see cref="BenchmarkClaimRoles.UnverifiedClaim"/> role (<see cref="AntecedentSentence"/>),
+    /// unless it is also an accused sentence, whose context already names the text before it.
+    /// </summary>
+    internal static List<ClaimSubmission> WithAntecedents(List<ClaimSubmission> manifest, string? answerText)
+        => manifest
+            .Select(m => m.Roles.Contains(BenchmarkClaimRoles.UnverifiedClaim) && !m.Roles.Contains(BenchmarkClaimRoles.AccusedQuote)
+                ? m with { Antecedent = AntecedentSentence(answerText, m.Text) }
+                : m)
+            .ToList();
+
     /// <summary>
     /// <paramref name="claims"/> with a later entry dropped when its text — the answer sentence
     /// <see cref="BenchmarkSuspectedFalseClaim.TryParse"/> extracts from it, or the entry itself when
@@ -9326,6 +9407,8 @@ public class BenchmarkService
     /// assigned by item match. Assessor statements and accused sentences follow in member order under
     /// <see cref="BuildClaimManifest"/>'s rules, matched to listed items by <see cref="ItemKey"/>; an
     /// accused sentence another member also charged adds its fragments and charge to the item.
+    /// Last, an item contained in a longer item of the same kind is merged into it
+    /// (<see cref="MergeContainedItems"/>).
     /// </summary>
     internal static List<ClaimSubmission> BuildUnionClaimManifest(
         IReadOnlyList<ClaimContribution> contributions,
@@ -9543,7 +9626,89 @@ public class BenchmarkService
             }
         }
 
-        return items;
+        return MergeContainedItems(items);
+    }
+
+    /// <summary>
+    /// <paramref name="items"/> without an item whose <see cref="ItemKey"/> occurs, ignoring case,
+    /// inside the longer key of another item of the same kind: both only unverified claims, or both
+    /// only accused sentences. A critical-error quote, an out-of-rubric basis, an assessor statement
+    /// or an item with more than one role is never merged. The containing item keeps its text and
+    /// place and takes the contained item's raising members; an unverified claim also takes its
+    /// suspected-false record when it has none, and an accused sentence its quoted fragments and
+    /// charge. Shorter items are merged first, each into the first containing item in manifest
+    /// order, so a chain of contained items ends in its longest one.
+    /// </summary>
+    internal static List<ClaimSubmission> MergeContainedItems(List<ClaimSubmission> items)
+    {
+        static string? KindOf(ClaimSubmission item)
+            => item.Roles.Count == 1
+               && (item.Roles[0] == BenchmarkClaimRoles.UnverifiedClaim || item.Roles[0] == BenchmarkClaimRoles.AccusedQuote)
+                ? item.Roles[0]
+                : null;
+
+        static ClaimSubmission Absorb(ClaimSubmission container, ClaimSubmission contained)
+        {
+            IReadOnlyList<string>? raisedBy = container.RaisedBy == null && contained.RaisedBy == null
+                ? null
+                : new SortedSet<string>(
+                    (container.RaisedBy ?? Array.Empty<string>()).Concat(contained.RaisedBy ?? Array.Empty<string>()),
+                    StringComparer.Ordinal).ToList();
+            var merged = container with { RaisedBy = raisedBy };
+
+            if (!merged.SuspectedFalse && contained.SuspectedFalse)
+            {
+                merged = merged with { SuspectedFalse = true, Suspicion = contained.Suspicion, RecordedClaim = contained.RecordedClaim };
+            }
+
+            if (merged.Roles.Contains(BenchmarkClaimRoles.AccusedQuote))
+            {
+                var fragments = (container.QuotedFragments ?? Array.Empty<string>())
+                    .Concat(contained.QuotedFragments ?? Array.Empty<string>())
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                string? charge = container.Charge ?? contained.Charge;
+                if (!string.IsNullOrWhiteSpace(container.Charge) && !string.IsNullOrWhiteSpace(contained.Charge)
+                    && !container.Charge.Contains(contained.Charge, StringComparison.Ordinal))
+                {
+                    charge = CapWithEllipsis(container.Charge + " " + contained.Charge, AccusedQuoteChargeMaxLength * 2);
+                }
+                merged = merged with
+                {
+                    Context = container.Context ?? contained.Context,
+                    QuotedFragments = container.QuotedFragments == null && contained.QuotedFragments == null ? null : fragments,
+                    Charge = charge
+                };
+            }
+
+            return merged;
+        }
+
+        var result = items.ToList();
+        var keys = result.Select(i => ItemKey(i.Text)).ToList();
+        var removed = new bool[result.Count];
+        var shortestFirst = Enumerable.Range(0, result.Count)
+            .OrderBy(i => keys[i].Length)
+            .ThenBy(i => i)
+            .ToList();
+
+        foreach (int i in shortestFirst)
+        {
+            string? kind = KindOf(result[i]);
+            if (kind == null || keys[i].Length == 0) continue;
+
+            for (int j = 0; j < result.Count; j++)
+            {
+                if (j == i || removed[j] || KindOf(result[j]) != kind) continue;
+                if (keys[j].Length <= keys[i].Length || !keys[j].Contains(keys[i], StringComparison.OrdinalIgnoreCase)) continue;
+
+                result[j] = Absorb(result[j], result[i]);
+                removed[i] = true;
+                break;
+            }
+        }
+
+        return result.Where((_, index) => !removed[index]).ToList();
     }
 
     /// <summary>

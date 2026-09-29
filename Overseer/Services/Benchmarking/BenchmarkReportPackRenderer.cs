@@ -97,7 +97,12 @@ public static class BenchmarkReportJson
 /// </summary>
 public static class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 5;
+    public const int ReportFormatVersion = 6;
+
+    /// <summary>A finding's text in the findings table below Full disclosure is cut to this many characters.</summary>
+    private const int FindingTextChars = 160;
+
+    private const string ReferenceReaderCaveat = "It never scores; its neutrality between the two panel families is an assumption.";
 
     private const string ProductName = "Overseer GnollHack Assistant Benchmark";
     private const string TokenPattern = @"\{\{([^{}]+)\}\}";
@@ -221,7 +226,7 @@ public static class BenchmarkReportPackRenderer
         KeyFigures(sb, ctx, "## Key figures");
 
         Heading(sb, "## What it did well");
-        Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.");
+        Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.", strengths: true);
 
         Heading(sb, "## Where it fell short");
         Items(sb, ctx, ctx.Writer.Weaknesses, "No weaknesses were recorded.");
@@ -272,7 +277,7 @@ public static class BenchmarkReportPackRenderer
         Heading(sb, "## What worked well");
         Slot(sb, ctx, BenchmarkReportSlots.WhatWorked);
         Heading(sb, "### Strengths");
-        Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.");
+        Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.", strengths: true);
 
         Heading(sb, "## Recommendations for model developers");
         Recommendations(sb, ctx, BenchmarkReportSlots.TargetModelDevelopers);
@@ -302,7 +307,7 @@ public static class BenchmarkReportPackRenderer
         Slot(sb, ctx, BenchmarkReportSlots.ModelResult);
         KeyFigures(sb, ctx, "### Key figures");
         Heading(sb, "### Strengths");
-        Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.");
+        Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.", strengths: true);
         Heading(sb, "### Weaknesses");
         Items(sb, ctx, ctx.Writer.Weaknesses, "No weaknesses were recorded.");
         Heading(sb, "### Recommendations for model developers");
@@ -319,7 +324,7 @@ public static class BenchmarkReportPackRenderer
         {
             foreach (var lead in ctx.Writer.Leads)
             {
-                Line(sb, "- **[" + lead.Triage + "]** " + Prose(ctx, lead.Text) + " *(" + Support(ctx, lead.Evidence) + ")*");
+                Line(sb, "- **[" + lead.Triage + "]** " + Prose(ctx, lead.Text) + " *(" + SupportText(ctx, lead.Evidence) + ")*");
             }
         }
         Line(sb);
@@ -423,15 +428,28 @@ public static class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// The interval, its span and the scored questions in one code-rendered sentence; nothing on a
-    /// document stored without the span fact.
+    /// The interval, its span and the scored questions in one code-rendered sentence after the
+    /// writer's reliability paragraph; nothing on a document stored without the span fact, or whose
+    /// paragraph already places the interval token, as writers before format version 6 were asked to.
     /// </summary>
     private static void IntervalSpanLine(StringBuilder sb, Context ctx)
     {
         if (!IsAvailable(ctx, "quality.interval") || !IsAvailable(ctx, "quality.intervalSpan") || !IsAvailable(ctx, "quality.scoredItems")) return;
+        if (ctx.Writer.Sections.TryGetValue(BenchmarkReportSlots.Confidence, out var confidence)
+            && Regex.IsMatch(confidence ?? string.Empty, @"\{\{\s*quality\.interval\s*\}\}", RegexOptions.CultureInvariant))
+        {
+            return;
+        }
+
+        // A display stored before format version 6 carries no noun.
+        string scored = D(ctx, "quality.scoredItems");
+        if (!scored.EndsWith(" question", StringComparison.Ordinal) && !scored.EndsWith(" questions", StringComparison.Ordinal))
+        {
+            scored += " questions";
+        }
 
         Line(sb, "The 95 % interval is " + D(ctx, "quality.interval") + ", a span of " + D(ctx, "quality.intervalSpan")
-            + ", and rests on " + D(ctx, "quality.scoredItems") + " questions with a scored answer.");
+            + ", and rests on " + scored + " with a scored answer.");
         Line(sb);
     }
 
@@ -944,6 +962,8 @@ public static class BenchmarkReportPackRenderer
             "tools.zeroKnowledgeBaseAnswers", "tools.failed", "tools.refusedByBudget"
         })
         {
+            // The knowledge-base count is stated only where some question is a knowledge-base topic.
+            if (key == "tools.zeroKnowledgeBaseAnswers" && !IsAvailable(ctx, key)) continue;
             LabeledLine(sb, ctx, key);
         }
         Line(sb);
@@ -968,13 +988,12 @@ public static class BenchmarkReportPackRenderer
         int runCount = sheet.SubjectRunIds.Count;
 
         Heading(sb, "## Grader reliability");
-        foreach (string key in new[]
-        {
-            "panel.meanAbsDelta", "panel.icc", "panel.disagreements", "panel.memberAAlone", "panel.memberBAlone", "style.responseStyleConflict"
-        })
+        foreach (string key in new[] { "panel.meanAbsDelta", "panel.icc", "panel.disagreements", "panel.memberAAlone", "panel.memberBAlone" })
         {
             LabeledLine(sb, ctx, key);
         }
+        ReferenceReaderLines(sb, ctx);
+        StyleLine(sb, ctx);
         Line(sb);
 
         var rows = OrderedRows(sheet);
@@ -985,18 +1004,34 @@ public static class BenchmarkReportPackRenderer
             return;
         }
 
-        Line(sb, "| Row | Finding | Questions | Support | Recurrence |");
-        Line(sb, "|---|---|---|---|---|");
+        // The findings' own wording may quote questions and answers, which Summary disclosure never prints.
+        if (ctx.Options.Disclosure == BenchmarkReportDisclosure.Summary)
+        {
+            Line(sb, "*The graders' findings are listed at Detailed and Full disclosure only, since their wording may quote the benchmark's questions and answers.*");
+            Line(sb);
+            return;
+        }
+
+        // Full lists each finding's whole text below the table; Detailed carries it in the table, cut.
+        bool textInTable = ctx.Options.Disclosure != BenchmarkReportDisclosure.Full;
+        bool recurrence = runCount > 1;
+        Line(sb, "| Row | Finding | Questions | Support |" + (recurrence ? " Recurrence |" : string.Empty));
+        Line(sb, "|---|---|---|---|" + (recurrence ? "---|" : string.Empty));
         foreach (var row in rows)
         {
             string kind = row.Status == nameof(BenchmarkConvergenceStatus.Conflicting)
                 ? row.Kind + " (A) vs " + BenchmarkSynthesisConvergence.OppositeKind(row.Kind) + " (B)"
                 : row.Kind;
+            string finding = kind + " · " + row.Category.Replace('_', ' ');
+            if (textInTable && FindingText(row) is string text)
+            {
+                finding += ": " + text;
+            }
             string questions = row.Questions.Count > 0
                 ? string.Join(", ", row.Questions.OrderBy(n => n).Select(n => "Q" + Inv(n)))
                 : NoValue;
-            Line(sb, "| " + row.Id + " | " + Cell(kind + " · " + row.Category.Replace('_', ' ')) + " | " + questions + " | "
-                + row.SupportLabel + " | " + Inv(row.Recurrence) + " of " + Inv(runCount) + (runCount == 1 ? " run" : " runs") + " |");
+            Line(sb, "| " + row.Id + " | " + Cell(finding) + " | " + questions + " | " + row.SupportLabel + " |"
+                + (recurrence ? " " + Inv(row.Recurrence) + " of " + Inv(runCount) + " runs |" : string.Empty));
         }
         Line(sb);
 
@@ -1018,6 +1053,51 @@ public static class BenchmarkReportPackRenderer
             }
             Line(sb);
         }
+    }
+
+    /// <summary>
+    /// A finding row's text on one line, cut to <see cref="FindingTextChars"/> characters: member A's,
+    /// with member B's beside it when the members disagree; null when none is recorded.
+    /// </summary>
+    private static string? FindingText(BenchmarkReportFindingRow row)
+    {
+        string a = OneLine(row.MemberAText).Trim();
+        string b = OneLine(row.MemberBText).Trim();
+        string text = row.Status == nameof(BenchmarkConvergenceStatus.Conflicting) && a.Length > 0 && b.Length > 0
+            ? "A: " + a + " B: " + b
+            : a.Length > 0 ? a : b;
+        return text.Length == 0 ? null : BenchmarkReportContent.Excerpt(text, FindingTextChars).Excerpt;
+    }
+
+    /// <summary>
+    /// The reference reader's index and its mean offset from the panel, each where the sheet states
+    /// it, the last followed by <see cref="ReferenceReaderCaveat"/>; nothing without either.
+    /// </summary>
+    private static void ReferenceReaderLines(StringBuilder sb, Context ctx)
+    {
+        var lines = new[] { "panel.referenceReaderIndex", "panel.referenceReaderOffset" }
+            .Where(key => IsAvailable(ctx, key))
+            .Select(key => "- **" + Label(key) + ":** " + D(ctx, key))
+            .ToList();
+
+        for (int i = 0; i < lines.Count; i++)
+        {
+            Line(sb, i == lines.Count - 1 ? lines[i] + ". " + ReferenceReaderCaveat : lines[i]);
+        }
+    }
+
+    /// <summary>The response-style line: the conflict as a clause, <c>none</c> without one.</summary>
+    private static void StyleLine(StringBuilder sb, Context ctx)
+    {
+        const string key = "style.responseStyleConflict";
+        var fact = Fact(ctx, key);
+        if (fact is { Available: true } && !BenchmarkReportPackPrompt.IsTrue(fact)
+            && !fact.Display.StartsWith("yes", StringComparison.OrdinalIgnoreCase))
+        {
+            Line(sb, "- **" + Label(key) + ":** none");
+            return;
+        }
+        LabeledLine(sb, ctx, key);
     }
 
     private static void ThreatsToValidity(StringBuilder sb, Context ctx)
@@ -1183,7 +1263,9 @@ public static class BenchmarkReportPackRenderer
     // Building blocks
     // ---------------------------------------------------------------------------------------------
 
-    private static void Items(StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportWriterItem> items, string emptyText)
+    /// <summary>The items, each with its support label and, where the document prints them, its evidence line.</summary>
+    private static void Items(
+        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportWriterItem> items, string emptyText, bool strengths = false)
     {
         if (items.Count == 0)
         {
@@ -1191,20 +1273,27 @@ public static class BenchmarkReportPackRenderer
         }
         foreach (var item in items)
         {
-            string support = Support(ctx, item.Evidence);
-            if (ctx.Document.Audience == BenchmarkReportAudience.ExecutiveSummary)
-            {
-                support = PlainSupportLabel(support);
-            }
-
-            Line(sb, "- " + Prose(ctx, item.Text) + " *(" + support + ")*");
+            Line(sb, "- " + Prose(ctx, item.Text) + " *(" + SupportText(ctx, item.Evidence) + ")*");
             if (ctx.PrintsEvidence)
             {
-                EvidenceLine(sb, ctx, item);
+                EvidenceLine(sb, ctx, item, listsRefutations: !strengths);
             }
         }
         Line(sb);
     }
+
+    /// <summary>An item's support label as the document prints it: plain words in the Executive Summary.</summary>
+    private static string SupportText(Context ctx, IReadOnlyList<string> evidence)
+    {
+        string label = BenchmarkReportFacts.SupportLabelFor(evidence, ctx.Sheet);
+        return ctx.Document.Audience == BenchmarkReportAudience.ExecutiveSummary ? PlainSupportLabel(label) : SupportLabelText(label);
+    }
+
+    /// <summary>A support label as printed: <see cref="BenchmarkReportFacts.SupportComputed"/> reads <see cref="BenchmarkReportFacts.SupportComputedDisplay"/>.</summary>
+    internal static string SupportLabelText(string supportLabel)
+        => string.Equals(supportLabel, BenchmarkReportFacts.SupportComputed, StringComparison.Ordinal)
+            ? BenchmarkReportFacts.SupportComputedDisplay
+            : supportLabel;
 
     /// <summary>A support label in the Executive Summary's plain words.</summary>
     internal static string PlainSupportLabel(string supportLabel) => BenchmarkReportFacts.NormalizeSupportLabel(supportLabel) switch
@@ -1214,17 +1303,18 @@ public static class BenchmarkReportPackRenderer
         BenchmarkReportFacts.SupportOneGraderSameProvider => "raised by one grader, from the model's own company",
         BenchmarkReportFacts.SupportGradersDisagree => "the graders disagree",
         BenchmarkReportFacts.SupportSingleAssessor => "raised by the grader",
-        BenchmarkReportFacts.SupportComputed => "computed from the figures",
+        BenchmarkReportFacts.SupportComputed => "from per-question results",
         _ => supportLabel
     };
 
     /// <summary>
     /// One line under an item: <c>Both graders — accuracy · Q6 (59 / 100), Q10 (57 / 100) · the claim
     /// verifier refuted an answer sentence on Q6</c>. The rows it cites, the facts it cites by label,
-    /// its questions with their scores, and the questions on which the verifier refuted the answer's
-    /// own text; each part only where it applies.
+    /// its questions with their scores, and, with <paramref name="listsRefutations"/>, the questions on
+    /// which the verifier refuted the answer's own text; each part only where it applies. A strength's
+    /// line lists no refutation.
     /// </summary>
-    private static void EvidenceLine(StringBuilder sb, Context ctx, BenchmarkReportWriterItem item)
+    private static void EvidenceLine(StringBuilder sb, Context ctx, BenchmarkReportWriterItem item, bool listsRefutations)
     {
         var ids = (item.Evidence ?? new List<string>())
             .Where(id => !string.IsNullOrWhiteSpace(id))
@@ -1251,7 +1341,7 @@ public static class BenchmarkReportPackRenderer
             if (QuestionNumber(id) != null || rows.Any(r => string.Equals(r.Id, id, StringComparison.Ordinal))) continue;
 
             var fact = Fact(ctx, id);
-            parts.Add(Label(id) + (fact == null ? string.Empty : ": " + (fact.Available ? fact.Display : BenchmarkReportFacts.NotAvailable)));
+            parts.Add(Label(id) + (fact == null ? string.Empty : ": " + (fact.Available ? DisplayOf(fact) : BenchmarkReportFacts.NotAvailable)));
         }
 
         var numbers = CitedQuestions(ctx, item, ids);
@@ -1261,6 +1351,7 @@ public static class BenchmarkReportPackRenderer
         }
 
         foreach (var group in numbers
+            .Where(_ => listsRefutations)
             .Select(n => (Number: n, Kind: RefutedKind(ctx, n)))
             .Where(x => x.Kind != null)
             .GroupBy(x => x.Kind!)
@@ -1425,16 +1516,31 @@ public static class BenchmarkReportPackRenderer
         return topic == null || string.IsNullOrWhiteSpace(topic.Topic) ? null : OneLine(Prose(ctx, topic.Topic));
     }
 
-    private static string Support(Context ctx, IReadOnlyList<string> evidence)
-        => BenchmarkReportFacts.SupportLabelFor(evidence, ctx.Sheet);
-
     private static BenchmarkReportFact? Fact(Context ctx, string key)
         => ctx.Sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
 
     private static bool IsAvailable(Context ctx, string key) => Fact(ctx, key) is { Available: true };
 
     /// <summary>The fact's display, or "not available" when the sheet has no such fact.</summary>
-    private static string D(Context ctx, string key) => Fact(ctx, key)?.Display ?? BenchmarkReportFacts.NotAvailable;
+    private static string D(Context ctx, string key) => Fact(ctx, key) is { } fact ? DisplayOf(fact) : BenchmarkReportFacts.NotAvailable;
+
+    /// <summary>
+    /// A fact's display as printed. A response-style display stored before format version 6 loses its
+    /// leading <c>yes: </c>, so it reads as a clause in prose.
+    /// </summary>
+    private static string DisplayOf(BenchmarkReportFact fact)
+    {
+        const string LegacyYes = "yes: ";
+        string display = fact.Display ?? string.Empty;
+        if (fact.Key.Contains(BenchmarkReportPackPrompt.ResponseStyleConflictKeyFragment, StringComparison.OrdinalIgnoreCase)
+            && display.StartsWith(LegacyYes, StringComparison.OrdinalIgnoreCase)
+            && display.Length > LegacyYes.Length)
+        {
+            string rest = display[LegacyYes.Length..];
+            return char.ToUpperInvariant(rest[0]) + rest[1..];
+        }
+        return display;
+    }
 
     /// <summary>A numeric table cell: the fact's display, or <see cref="NoValue"/> when it is unavailable or missing.</summary>
     private static string Num(Context ctx, string key) => Fact(ctx, key) is { Available: true } fact ? Cell(fact.Display) : NoValue;
@@ -1465,7 +1571,7 @@ public static class BenchmarkReportPackRenderer
             return ctx.Anonymized ? "Model " + peer.Letter : peer.Label;
         }
 
-        return Fact(ctx, token)?.Display ?? match.Value;
+        return Fact(ctx, token) is { } fact ? DisplayOf(fact) : match.Value;
     }
 
     /// <summary>

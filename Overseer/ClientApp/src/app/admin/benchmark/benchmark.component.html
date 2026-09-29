@@ -4370,6 +4370,20 @@
                 </dd>
               </div>
             }
+            @if (activeRunDetail.reportWriterModelConfigurationId != null) {
+              <div class="run-model-row run-model-row-report-writer">
+                <dt>Report writer</dt>
+                <dd>
+                  <span class="model-name">{{ activeRunDetail.reportWriterDisplayName || activeRunDetail.reportWriterModelId || 'Deleted configuration' }}</span>
+                  @if (activeRunDetail.reportWriterThinkingLevel) {
+                    <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.reportWriterThinkingLevel) }}</span>
+                  }
+                  @if (activeRunDetail.reportWriterProvider) {
+                    <app-provider-badge [provider]="activeRunDetail.reportWriterProvider"></app-provider-badge>
+                  }
+                </dd>
+              </div>
+            }
             @if (candidatePromptSummaryOf(activeRunDetail); as promptSummary) {
               <div class="run-model-row">
                 <dt>Chat prompt</dt>
@@ -4381,28 +4395,37 @@
           </dl>
         }
 
-        <!-- Stage rail: three stages. Stage 1 is everything the answering loop does — answer,
-             assess, then check that answer's claims and take a second opinion on it. Stage 2 is
-             the serial tail of run-level passes that follows every answer being graded, and both
-             of the server's middle stages map to it because the server marks Verifying again
-             after the second-opinion pass; an item each would step the rail backwards. Which pass
-             is running is in the status line and the diagnostics. -->
+        <!-- Stage rail: three stages, and a fourth when the run names a report writer. Stage 1 is
+             everything the answering loop does — answer, assess, then check that answer's claims
+             and take a second opinion on it. Stage 2 is the serial tail of run-level passes that
+             follows every answer being graded, and both of the server's middle stages map to it
+             because the server marks Verifying again after the second-opinion pass; an item each
+             would step the rail backwards. Which pass is running is in the status line and the
+             diagnostics. Stage 4 is the writing of the AI-written reports after the run ended
+             Completed; the run itself does not change during it. -->
         <ol class="run-stage-rail" aria-label="Run stages">
-          <li class="run-stage" [class.is-current]="runRailStage === 1" [class.is-done]="runRailStage > 1"
+          <li class="run-stage" [class.is-current]="runRailStage === 1" [class.is-done]="runRailStage > 1 || runRailReportsReached"
               [attr.aria-current]="runRailStage === 1 ? 'step' : null">
             <span class="run-stage-index" aria-hidden="true">1</span>
             <span class="run-stage-name">Answering and grading</span>
           </li>
-          <li class="run-stage" [class.is-current]="runRailStage === 2" [class.is-done]="runRailStage > 2"
+          <li class="run-stage" [class.is-current]="runRailStage === 2" [class.is-done]="runRailStage > 2 || runRailReportsReached"
               [attr.aria-current]="runRailStage === 2 ? 'step' : null">
             <span class="run-stage-index" aria-hidden="true">2</span>
             <span class="run-stage-name">Follow-up grading passes</span>
           </li>
-          <li class="run-stage" [class.is-current]="runRailStage === 3"
+          <li class="run-stage" [class.is-current]="runRailStage === 3" [class.is-done]="runHasReportStage && runRailReportsReached"
               [attr.aria-current]="runRailStage === 3 ? 'step' : null">
             <span class="run-stage-index" aria-hidden="true">3</span>
             <span class="run-stage-name">Synthesis and scoring</span>
           </li>
+          @if (runHasReportStage) {
+            <li class="run-stage run-stage-reports" [class.is-current]="runRailStage === 4" [class.is-done]="runReportStage === 'done'"
+                [attr.aria-current]="runRailStage === 4 ? 'step' : null">
+              <span class="run-stage-index" aria-hidden="true">4</span>
+              <span class="run-stage-name">Writing reports</span>
+            </li>
+          }
         </ol>
 
         @if (runHasRerunScope) {
@@ -4475,6 +4498,12 @@
               <dd>{{ runSecondOpinionCount | number }}@if (runSecondOpinionInFlightCount > 0) {<span class="run-stat-inflight"> · {{ runSecondOpinionInFlightCount }} in progress</span>}</dd>
             </div>
           }
+          @if (runHasReportStage) {
+            <div class="run-stat run-stat-reports">
+              <dt>Reports</dt>
+              <dd>{{ runReportsStatLabel }}</dd>
+            </div>
+          }
         </dl>
 
         <!--
@@ -4493,6 +4522,7 @@
           [synthesis]="activeRunDetail?.estimatedSynthesisCost ?? null"
           [coSynthesis]="activeRunDetail?.estimatedCoSynthesisCost ?? null"
           [grading]="activeRunDetail?.estimatedGradingCost ?? null"
+          [reportWriter]="runReportWriterCost"
           [pricingSource]="activeRunDetail?.pricingSource ?? null"
           [pricingIncomplete]="activeRunDetail?.pricingIncomplete ?? false"
           [legacyRun]="isLegacyCostRun(activeRunDetail)"></app-benchmark-cost-panel>

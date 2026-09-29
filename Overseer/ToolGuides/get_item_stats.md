@@ -13,9 +13,11 @@ Returns a unified JSON response with these fields:
   no entry carries that name
 - "message": informational message (null if none)
 
-Look items up by the **bare name as src/objects.c writes it**, not by the display name:
-`digging`, not `wand of digging`; `identify`, not `scroll of identify`. Spelling and
-hyphenation are literal.
+Look items up by the **name as src/objects.c writes it**, not by the display name. Wands,
+rings, potions, scrolls and spellbooks drop their class word: `digging`, not `wand of
+digging`; `identify`, not `scroll of identify`; `adornment`, not `ring of adornment`. Every
+other class keeps its full name: `amulet of reflection`, `belt of hill giant strength`,
+`ioun stone of experience`, `triple-headed flail`. Spelling and hyphenation are literal.
 
 Some names belong to entries in more than one object class — the same word can name a scroll,
 a wand and a spellbook. When that happens the result carries `ambiguous_object_classes` and a

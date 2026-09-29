@@ -314,7 +314,8 @@ public class BenchmarkChatTransferTests
 
     [Theory]
     [InlineData("How do I change the tileset settings in GnollHack?")]
-    [InlineData("Where are the Options in the main menu?")]
+    [InlineData("Where is the options menu in GnollHack?")]
+    [InlineData("Which game options make travel faster?")]
     [InlineData("How do I export a save file?")]
     [InlineData("What does get_knowledge_article say about the vault?")]
     [InlineData("Does the game crash when the replay ends?")]
@@ -323,36 +324,25 @@ public class BenchmarkChatTransferTests
         Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { RoutingAnswer(question) }));
     }
 
-    [Fact]
-    public void HasKnowledgeBaseRoutingQuestion_FindsATopicInTheRubricBody()
+    [Theory]
+    [InlineData("What are my options if I am surrounded by soldier ants?")]
+    [InlineData("What does src/vault.c decide about the guard?")]
+    [InlineData("Which flag in include\\vault.h and vault.guard sets the guard's gold?")]
+    public void HasKnowledgeBaseRoutingQuestion_IgnoresBareOptionsAndFileNamesInTheQuestion(string question)
     {
-        var answer = RoutingAnswer(
-            "In GnollHack, what do Exceptional and Elite give to body armor?",
-            "**REQUIRED**\n- Points the player to the Settings menu.\n\n**SOURCE** — src/objnam.c:40");
-
-        Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { answer }));
+        Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { RoutingAnswer(question) }));
     }
 
     [Theory]
-    [InlineData("**REQUIRED**\n- Exceptional adds one enchantment level.\n\n**SOURCE** — src/options.c:139")]
-    [InlineData("**REQUIRED**\n- Exceptional adds one enchantment level.\n\n**SOURCE**: the settings table in the wiki")]
-    [InlineData("**REQUIRED**\n- Exceptional adds one enchantment level, as `src/options.c` sets it.")]
-    [InlineData("**REQUIRED**\n- The flag lives in include\\options.h and flag.options.")]
-    public void HasKnowledgeBaseRoutingQuestion_IgnoresTheSourceSectionAndFileNames(string rubric)
+    // Run 74's Q3: the rubric's game term made an all-mechanics suite read as a knowledge-base suite.
+    [InlineData("**REQUIRED**\n- Escape options on this level: the up stairs and a scroll of teleportation.")]
+    [InlineData("**REQUIRED**\n- Points the player to the Settings menu.\n\n**SOURCE** — src/objnam.c:40")]
+    [InlineData("**REQUIRED**\n- Exceptional adds one enchantment level.\n**SOURCE** — src/objnam.c:40\n**CRITICAL ERROR**\n- Sends the player to the options menu.")]
+    public void HasKnowledgeBaseRoutingQuestion_DoesNotReadTheRubric(string rubric)
     {
         var answer = RoutingAnswer("In GnollHack, what do Exceptional and Elite give to body armor?", rubric);
 
         Assert.False(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { answer }));
-    }
-
-    [Fact]
-    public void HasKnowledgeBaseRoutingQuestion_ReadsASectionAfterTheSourceSection()
-    {
-        var answer = RoutingAnswer(
-            "In GnollHack, what do Exceptional and Elite give to body armor?",
-            "**REQUIRED**\n- Exceptional adds one enchantment level.\n**SOURCE** — src/objnam.c:40\n**CRITICAL ERROR**\n- Sends the player to the settings menu.");
-
-        Assert.True(BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(new[] { answer }));
     }
 
     [Fact]

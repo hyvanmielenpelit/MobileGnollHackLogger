@@ -169,6 +169,36 @@ public class BenchmarkSynthesisConvergenceTests
     }
 
     [Fact]
+    public void TwoOtherFindings_OnePerMember_AreEachTheirMembersAlone()
+    {
+        // The catch-all category says nothing the two findings share.
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[] { Finding("strength", "other", "Consistent tone across answers.", 2) },
+            new[] { Finding("strength", " Other ", "Good use of the board digest.", 2) });
+
+        Assert.Equal(
+            new[] { BenchmarkConvergenceStatus.MemberAOnly, BenchmarkConvergenceStatus.MemberBOnly },
+            rows.Select(r => r.Status));
+        Assert.Equal("Consistent tone across answers.", rows[0].MemberAText);
+        Assert.Null(rows[0].MemberBText);
+        Assert.Null(rows[1].MemberAText);
+        Assert.Equal("Good use of the board digest.", rows[1].MemberBText);
+    }
+
+    [Fact]
+    public void OppositeKindsInTheOtherCategory_AreNotConflicting()
+    {
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[] { Finding("strength", "other", "A praises Q3.", 3) },
+            new[] { Finding("weakness", "other", "B faults Q3.", 3) });
+
+        Assert.Equal(2, rows.Count);
+        Assert.DoesNotContain(rows, r => r.Status == BenchmarkConvergenceStatus.Conflicting);
+        Assert.Equal(BenchmarkConvergenceStatus.MemberAOnly, rows.Single(r => r.Kind == "strength").Status);
+        Assert.Equal(BenchmarkConvergenceStatus.MemberBOnly, rows.Single(r => r.Kind == "weakness").Status);
+    }
+
+    [Fact]
     public void TwoFindingsOfOneMemberUnderOneKey_JoinTheirDistinctTexts()
     {
         var rows = BenchmarkSynthesisConvergence.Compute(

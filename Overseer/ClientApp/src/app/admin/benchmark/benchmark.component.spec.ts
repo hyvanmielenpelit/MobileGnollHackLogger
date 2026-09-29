@@ -8,7 +8,7 @@ import { of, throwError, Subject } from 'rxjs';
 import { AdminBenchmarkComponent, RUN_REPORT_TAB_STORAGE_KEY } from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
-import { AdminBenchmarkService, BenchmarkRunAnswerDto } from '../../services/admin-benchmark.service';
+import { AdminBenchmarkService, BenchmarkRunAnswerDto, BenchmarkRunReportDocumentsStatus } from '../../services/admin-benchmark.service';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 import { BenchmarkCompletionNotificationService } from '../../services/benchmark-completion-notification.service';
@@ -3880,6 +3880,301 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(runStatText('Claims verified')).toBeNull();
       expect(runStatText('Second readings')).toBeNull();
+    });
+
+    describe('report writing stage', () => {
+      const WRITER = {
+        reportWriterModelConfigurationId: 9,
+        reportWriterDisplayName: 'Report Writer Model',
+        reportWriterProvider: 'Anthropic',
+        reportWriterModelId: 'claude-writer',
+        reportWriterThinkingLevel: 'high'
+      };
+
+      function writerRun(overrides: any = {}): any {
+        return buildCompletedRun({
+          ...WRITER,
+          totalQuestionCount: 2,
+          answeredQuestionCount: 2,
+          answers: [buildScoredAnswer(1), buildScoredAnswer(2)],
+          ...overrides
+        });
+      }
+
+      /** A job view writing the first of two documents; the writer took the slot 72 s before the server's clock. */
+      function reportJob(overrides: any = {}): any {
+        return {
+          runId: 55,
+          status: BenchmarkRunReportDocumentsStatus.Writing,
+          message: null,
+          phase: 'Writing',
+          queuedAtUtc: '2026-09-03T07:10:01Z',
+          slotAcquiredAtUtc: '2026-09-03T07:10:05Z',
+          finishedAtUtc: null,
+          cancelRequestedAtUtc: null,
+          jobsAhead: null,
+          blockingJobLabel: null,
+          audiences: [1, 2],
+          writerConfigId: 9,
+          writerDisplayName: 'Report Writer Model',
+          writerProvider: 'Anthropic',
+          writerModelId: 'claude-writer',
+          writerThinkingLevel: 'high',
+          job: {
+            id: 'job-1', packId: 'pack-1', subjectKey: 'run:55', subjectLabel: 'Test Model', suiteId: 1,
+            suiteName: 'Default Suite', writerConfigId: 9, writerDisplayName: 'Report Writer Model',
+            startedByUserId: null, startedAtUtc: '2026-09-03T07:10:05Z', completedAtUtc: null, status: 'Running',
+            totalModelCalls: 1, inputTokens: 1000, outputTokens: 200, costUsd: 0.05,
+            documents: [
+              { audience: 1, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1 },
+              { audience: 2, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0 }
+            ],
+            log: []
+          },
+          serverTimeUtc: '2026-09-03T07:11:17Z',
+          ...overrides
+        };
+      }
+
+      /** Starts the real poll on a run seen Running, with the lock and the document's visibility held still. */
+      function startWatching(): jasmine.Spy {
+        const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
+        spyOn(lockService, 'acquireForRun');
+        spyOn(lockService, 'release');
+        spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
+        const playSpy = spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').and.returnValue(Promise.resolve('played'));
+        component.completionSound = true;
+        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({ status: 'Running', stage: 'Synthesizing', completedAtUtc: null })));
+        (component as any).startPolling(55);
+        return playSpy;
+      }
+
+      function pollTicker(): unknown {
+        return (component as any).pollTickerHandle;
+      }
+
+      it('should show the report writer in the model strip after the claim verifier', () => {
+        component.activeRunDetail = writerRun({
+          status: 'Running', stage: 'Answering', claimVerifierDisplayNameUsed: 'Test Verifier'
+        });
+        fixture.detectChanges();
+
+        const rows: HTMLElement[] = Array.from(
+          fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-model-strip .run-model-row'));
+        const terms = rows.map(row => (row.querySelector('dt')?.textContent || '').trim());
+        expect(terms.indexOf('Report writer')).toBe(terms.indexOf('Claim verifier') + 1);
+
+        const writerRow = rows[terms.indexOf('Report writer')];
+        expect(writerRow.querySelector('.model-name')?.textContent?.trim()).toBe('Report Writer Model');
+        expect(writerRow.querySelector('.thinking-badge')).toBeTruthy();
+        expect(writerRow.querySelector('app-provider-badge')).toBeTruthy();
+      });
+
+      it('should show no report writer row, no fourth rail item and no Reports cell for a run without a writer', () => {
+        component.activeRunDetail = buildCompletedRun({
+          status: 'Running', stage: 'Verifying', totalQuestionCount: 2,
+          answers: [buildScoredAnswer(1), buildScoredAnswer(2)]
+        });
+        fixture.detectChanges();
+
+        const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog') as HTMLElement;
+        expect(dialog.textContent).not.toContain('Report writer');
+        expect(dialog.querySelectorAll('.run-stage-rail .run-stage').length).toBe(3);
+        expect(runStatText('Reports')).toBeNull();
+        expect(component.runStageLabel).toContain('Stage 2 of 3 — Follow-up grading passes');
+      });
+
+      it('should render a fourth rail item and count the stages of 4 when the run names a writer', () => {
+        component.activeRunDetail = writerRun({ status: 'Running', stage: 'Verifying' });
+        fixture.detectChanges();
+
+        const items: HTMLElement[] = Array.from(
+          fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-stage-rail .run-stage'));
+        expect(items.length).toBe(4);
+        expect(items[3].querySelector('.run-stage-name')?.textContent?.trim()).toBe('Writing reports');
+        expect(items[3].classList).not.toContain('is-current');
+        expect(items[3].classList).not.toContain('is-done');
+        expect(items[1].classList).toContain('is-current');
+        expect(component.runStageLabel).toContain('Stage 2 of 4 — Follow-up grading passes');
+        expect(component.runDiagnosticsText).toContain('Stage: 2 of 4 (verifying) (server)');
+      });
+
+      it('should make stage 4 current while the reports are written, with the job in the status line, stat strip and cost panel', () => {
+        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+          status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing
+        })));
+        benchmarkServiceMock.getRunReportJob.and.returnValue(of(reportJob()));
+
+        (component as any).pollRunDetail(55);
+        fixture.detectChanges();
+
+        expect(benchmarkServiceMock.getRunReportJob).toHaveBeenCalledWith(55);
+        expect(component.runRailStage).toBe(4);
+        expect(component.runStageLabel).toBe('Stage 4 of 4 — Writing reports: writing the Executive Summary (1 of 2)');
+
+        const items: HTMLElement[] = Array.from(
+          fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-stage-rail .run-stage'));
+        expect(items.length).toBe(4);
+        expect(items[0].classList).toContain('is-done');
+        expect(items[1].classList).toContain('is-done');
+        expect(items[2].classList).toContain('is-done');
+        expect(items[3].classList).toContain('is-current');
+        expect(items[3].getAttribute('aria-current')).toBe('step');
+
+        expect(runStatText('Reports')).toBe('1m 12s · writing');
+        const writerCost = fixture.nativeElement.querySelector(
+          '.benchmark-run-progress-dialog .gh-cost-role--report-writer .gh-cost-role__amount') as HTMLElement;
+        expect(writerCost.textContent?.trim()).toBe('$0.0500');
+        (component as any).stopPolling();
+      });
+
+      it('should name the queue position while the job waits for the report writer', () => {
+        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+          status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending
+        })));
+        benchmarkServiceMock.getRunReportJob.and.returnValue(of(reportJob({
+          phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null, jobsAhead: 1
+        })));
+
+        (component as any).pollRunDetail(55);
+
+        expect(component.runStageLabel).toBe('Stage 4 of 4 — Writing reports: waiting for the report writer (1 job ahead)');
+        expect(component.runReportsStatLabel).toBe('Waiting');
+        (component as any).stopPolling();
+      });
+
+      it('should keep polling through Pending and Writing, then stop and chime once the reports are written', fakeAsync(() => {
+        const playSpy = startWatching();
+        expect(pollTicker()).not.toBeNull();
+
+        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+          status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending
+        })));
+        benchmarkServiceMock.getRunReportJob.and.returnValue(of(reportJob({
+          phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null, jobsAhead: 0
+        })));
+        tick(2000);
+        expect(component.runReportStage).toBe('current');
+        expect(component.runStageLabel).toBe('Stage 4 of 4 — Writing reports: waiting for the report writer');
+        expect(pollTicker()).not.toBeNull();
+        expect(playSpy).not.toHaveBeenCalled();
+
+        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+          status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing
+        })));
+        benchmarkServiceMock.getRunReportJob.and.returnValue(of(reportJob()));
+        tick(2000);
+        expect(component.runStageLabel).toBe('Stage 4 of 4 — Writing reports: writing the Executive Summary (1 of 2)');
+        expect(pollTicker()).not.toBeNull();
+        expect(playSpy).not.toHaveBeenCalled();
+
+        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+          status: 'Completed',
+          reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Completed,
+          reportDocumentsWrittenCount: 2,
+          reportDocumentsDurationMs: 72000,
+          reportDocumentsCostUsd: 0.12
+        })));
+        tick(2000);
+        expect(component.runReportStage).toBe('done');
+        expect(component.runStageLabel).toBe('Completed. Answered 2 of 2. Reports written: 2 documents, 1m 12s.');
+        expect(component.runReportsStatLabel).toBe('2 documents, 1m 12s');
+        expect(component.runReportWriterCost).toBe(0.12);
+        expect(pollTicker()).toBeNull();
+        expect(playSpy).toHaveBeenCalledOnceWith('run:55');
+
+        const polls = benchmarkServiceMock.getRun.calls.count();
+        tick(10000);
+        expect(benchmarkServiceMock.getRun.calls.count()).toBe(polls);
+        discardPeriodicTasks();
+      }));
+
+      it('should stop polling a run whose writer never starts once the 30-second grace has passed, and chime then', fakeAsync(() => {
+        const playSpy = startWatching();
+
+        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+          status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.NotRequested
+        })));
+        tick(2000);
+        // First seen terminal at 2 s: the grace runs to 32 s.
+        expect(component.runReportStage).toBe('current');
+        expect(component.runStageLabel).toBe('Stage 4 of 4 — Writing reports: waiting for the report writer');
+        expect(playSpy).not.toHaveBeenCalled();
+
+        tick(28000);
+        expect(pollTicker()).not.toBeNull();
+        expect(playSpy).not.toHaveBeenCalled();
+
+        tick(2000);
+        expect(pollTicker()).toBeNull();
+        expect(component.runReportStage).toBe('notWritten');
+        expect(component.runStageLabel).toBe('Completed. Answered 2 of 2.');
+        expect(playSpy).toHaveBeenCalledOnceWith('run:55');
+
+        const polls = benchmarkServiceMock.getRun.calls.count();
+        tick(10000);
+        expect(benchmarkServiceMock.getRun.calls.count()).toBe(polls);
+        discardPeriodicTasks();
+      }));
+
+      it('should stop at once and chime for a writer run that ends with another terminal status', fakeAsync(() => {
+        const playSpy = startWatching();
+        benchmarkServiceMock.getRunReportJob.calls.reset();
+
+        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+          status: 'CompletedWithErrors', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending
+        })));
+        tick(2000);
+
+        expect(pollTicker()).toBeNull();
+        expect(component.runReportStage).toBe('notWritten');
+        expect(benchmarkServiceMock.getRunReportJob).not.toHaveBeenCalled();
+        expect(playSpy).toHaveBeenCalledOnceWith('run:55');
+        discardPeriodicTasks();
+      }));
+
+      it('should put a failed report stage in the status line with its message', () => {
+        component.activeRunDetail = writerRun({
+          status: 'Completed',
+          reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Failed,
+          reportDocumentsMessage: 'The writer refused.',
+          reportDocumentsWrittenCount: 1,
+          reportDocumentsDurationMs: 30000,
+          reportDocumentsCostUsd: 0.04
+        });
+
+        expect(component.runReportStage).toBe('ended');
+        expect(component.runRailStage).toBe(0);
+        expect(component.runStageLabel).toBe('Completed. Answered 2 of 2. Report writing failed: The writer refused.');
+        expect(component.runReportWriterCost).toBe(0.04);
+      });
+
+      it('should add a REPORTS block to the diagnostics of a run that names a writer', () => {
+        component.activeRunDetail = writerRun({
+          status: 'Completed',
+          reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Completed,
+          reportDocumentsMessage: null,
+          reportDocumentsWrittenCount: 2,
+          reportDocumentsDurationMs: 72000,
+          reportDocumentsInputTokens: 1000,
+          reportDocumentsOutputTokens: 500,
+          reportDocumentsCostUsd: 0.12
+        });
+
+        const text = component.runDiagnosticsText;
+        expect(text).toContain('--- REPORTS ---');
+        expect(text).toContain('Writer: Report Writer Model (Anthropic / claude-writer), thinking: high');
+        expect(text).toContain('Status: Completed');
+        expect(text).toContain('Message: none');
+        expect(text).toContain('Documents written: 2');
+        expect(text).toContain('Duration: 1m 12s');
+        expect(text).toContain('Tokens: input 1000, output 500');
+        expect(text).toContain("Cost: $0.1200 (outside the run's own cost)");
+        expect(text.indexOf('--- REPORTS ---')).toBeLessThan(text.indexOf('--- FLAGS ---'));
+
+        component.activeRunDetail = buildCompletedRun();
+        expect(component.runDiagnosticsText).not.toContain('--- REPORTS ---');
+      });
     });
 
     it('should chip a re-graded row as Verifying or Second opinion rather than Scored', () => {

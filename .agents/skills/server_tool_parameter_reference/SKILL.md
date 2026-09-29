@@ -846,7 +846,11 @@ filename there. `ToolGuidesSha256` did not move.
 
 **`get_monster_stats` / `get_item_stats` / `get_artifact_stats`** — `name` (required, exact as
 written in the source: `src/monst.c`, `src/objects.c`, `include/artilist.h` respectively). For
-`get_item_stats` that is the bare `oc_name` — `digging`, not `wand of digging` — and it also takes
+`get_item_stats` that is the `oc_name`, whose form depends on the class: wands, rings, potions,
+scrolls and spellbooks drop their class word (`digging`, `identify`, `adornment`), and every other
+class keeps its full name (`amulet of reflection`, `belt of hill giant strength`, `ioun stone of
+experience`, `triple-headed flail`); a unique *"… of <name>"* match is resolved by the tool itself
+(see the callout at the end of this section). It also takes
 an optional **`object_class`** (`WAND_CLASS`, `SCROLL_CLASS`, …) which selects among the object
 classes that hold an entry of that name; the other two take `name` only.
 All three guard on `SourceCodeService.IsIndexingComplete`
@@ -969,8 +973,9 @@ exists for all three tools, by two different mechanisms:**
   **`RawDefinition` beside them** rather than instead of them, and
   `PopulateFlagDescriptions(response, resolution.FlagTokens)`. So `stats` and `raw_definition` are
   populated together on an item, which they never are on a monster or an artifact.
-  - **The lookup key is the bare `oc_name`.** `digging`, not `wand of digging`; `dwarvish mattock`,
-    not `mattock`. It is the same string the entry-matching regex matches in `objects.c`, so one
+  - **The lookup key is the `oc_name`.** `digging`, not `wand of digging`; `dwarvish mattock`,
+    not `mattock`; `amulet of reflection`, not `reflection`. Wands, rings, potions, scrolls and
+    spellbooks drop their class word; every other class keeps its full name. It is the same string the entry-matching regex matches in `objects.c`, so one
     `name` argument serves both the Level 1 resolver and the Level 2 raw dump.
   - **A name several object classes share is reported, not resolved away.** `objects.c` holds 947
     entries under 904 distinct names (the exact figures move with the game source;
@@ -1024,6 +1029,17 @@ exists for all three tools, by two different mechanisms:**
 > `_objectsResolver` is describing a field that does not exist on `SourceCodeService`. A stored miss
 > carrying neither the `Did you mean:` line nor the appearance sentence is a run recorded **before**
 > the harness-29 round.
+
+> 🛑 **From harness 43 `get_item_stats` resolves a unique *"… of <name>"* match itself.** When no
+> `objects.c` entry is named `<name>`, `SourceCodeService.FindUniqueOfSuffixItemName` looks for item
+> names that end in `" of " + <name>` (case-insensitive, the name trimmed; restricted to
+> `object_class` when one is given). If **exactly one** matches, `GetItemStats` returns that item's
+> ordinary success with `message` beginning *"Resolved 'X' to 'Y': no item is named 'X'."*, ahead of
+> any other message text (so `experience` returns `ioun stone of experience`). **Zero or two or more**
+> such names return the usual miss with its `Did you mean:` list, above. A resolved call is a success,
+> not a miss: read the `Resolved '…'` opening, and check that the item it names is the one the
+> question was about. In a run stamped 42 or earlier a name such as `reflection` or `experience` is a
+> plain miss, whose `Did you mean:` list usually names the full name (run 74 Q17: two such misses).
 
 ---
 

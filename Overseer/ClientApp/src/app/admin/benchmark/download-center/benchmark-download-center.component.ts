@@ -11,8 +11,8 @@ import {
   inject
 } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { firstValueFrom, forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { Observable, Subscription, firstValueFrom, forkJoin, of, timer } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 
 import {
   AdminBenchmarkService,
@@ -21,6 +21,8 @@ import {
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportPeerNaming,
+  BenchmarkRunReportJobDto,
+  BenchmarkRunReportJobPhase,
   reportDisclosureParam,
   reportPeerNamingParam
 } from '../../../services/admin-benchmark.service';
@@ -245,6 +247,21 @@ export const PDF_PAPERS: readonly { id: BenchmarkPdfPaper; label: string }[] = [
 
 const ALL_DISCLOSURES = [BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full];
 
+/** The interval of the run's report writing job poll while its reports are being written. */
+export const DOWNLOAD_CENTER_REPORT_JOB_POLL_MS = 5000;
+
+/** A report writing job phase inside the notice's parentheses. */
+export function reportJobPhaseText(phase: BenchmarkRunReportJobPhase): string {
+  switch (phase) {
+    case 'Queued': return 'waiting for the report writer';
+    case 'Preparing': return 'preparing the fact sheet';
+    case 'Writing': return 'writing';
+    default: return 'finishing';
+  }
+}
+
+type ReportJobPoll = { ok: true; view: BenchmarkRunReportJobDto | null } | { ok: false };
+
 let nextInstanceId = 0;
 
 /**
@@ -296,9 +313,13 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
   statusMessage = '';
   failures: DownloadFailure[] = [];
 
+  /** The phase of the run's report writing job while it is not finished; null when there is none to wait for. */
+  reportJobPhase: BenchmarkRunReportJobPhase | null = null;
+
   private readonly states = new Map<string, DownloadRowState>();
   /** Bumped on every open and close, so a closed dialog's download never lands. */
   private generation = 0;
+  private reportJobSub: Subscription | null = null;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
@@ -306,6 +327,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.generation++;
+    this.stopReportJobPoll();
   }
 
   // -------------------------------------------------------------------------------------------
@@ -323,6 +345,8 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     this.statusMessage = '';
     this.preparing = false;
     this.progress = null;
+    this.reportJobPhase = null;
+    this.stopReportJobPoll();
     const stored = readStoredSettings();
     this.packageId = stored?.package ?? 'internal';
     this.paper = stored?.paper ?? 'a4';
@@ -330,6 +354,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     if (context.kind === 'run') {
       this.addRows(runFileRows(context.run));
       this.loadRunDocuments(context.run.id, this.generation);
+      this.pollRunReportJob(context.run.id, this.generation, 0);
     } else {
       this.loadChosenDocuments(context.documentIds, this.generation);
     }
@@ -354,10 +379,19 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       return;
     }
     this.generation++;
+    this.stopReportJobPoll();
     this.preparing = false;
     this.progress = null;
     this.cdr.markForCheck();
     this.closed.emit();
+  }
+
+  /** The notice above the table while the run's AI-written reports are being written, or null. */
+  get reportJobNotice(): string | null {
+    const phase = this.reportJobPhase;
+    return phase === null
+      ? null
+      : `The AI-written reports of this run are being written (${reportJobPhaseText(phase)}). They appear here when they are done.`;
   }
 
   get subtitle(): string {
@@ -702,6 +736,53 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       }
     });
+  }
+
+  /**
+   * Asks for the run's report writing job after `delayMs`. While it is not finished the notice shows
+   * its phase and the job is asked again every 5 s; once it finishes the run's documents are reloaded
+   * and the notice goes. No job (204) or a failed first request shows nothing.
+   */
+  private pollRunReportJob(runId: number, generation: number, delayMs: number): void {
+    this.stopReportJobPoll();
+    const request$: Observable<ReportJobPoll> = this.benchmarkService.getRunReportJob(runId).pipe(
+      map((view): ReportJobPoll => ({ ok: true, view })),
+      catchError(() => of<ReportJobPoll>({ ok: false }))
+    );
+    this.reportJobSub = (delayMs > 0 ? timer(delayMs).pipe(switchMap(() => request$)) : request$)
+      .subscribe(result => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.onRunReportJob(result, runId, generation);
+        this.cdr.markForCheck();
+      });
+  }
+
+  private onRunReportJob(result: ReportJobPoll, runId: number, generation: number): void {
+    const waiting = this.reportJobPhase !== null;
+    if (!result.ok) {
+      // A failed tick while waiting is skipped; a failed first request shows nothing.
+      if (waiting) {
+        this.pollRunReportJob(runId, generation, DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
+      }
+      return;
+    }
+    const view = result.view;
+    if (view === null || view.phase === 'Finished') {
+      this.reportJobPhase = null;
+      if (waiting) {
+        this.loadRunDocuments(runId, generation);
+      }
+      return;
+    }
+    this.reportJobPhase = view.phase;
+    this.pollRunReportJob(runId, generation, DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
+  }
+
+  private stopReportJobPoll(): void {
+    this.reportJobSub?.unsubscribe();
+    this.reportJobSub = null;
   }
 
   private loadChosenDocuments(ids: readonly number[], generation: number): void {

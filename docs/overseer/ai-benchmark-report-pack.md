@@ -153,11 +153,11 @@ finding rows it cites, never written by the model:
 | *One grader — same provider as the model* | One member found it, from the subject's own provider |
 | *Graders disagree* | The cited rows are Conflicting |
 | *Single assessor* | A single-assessor run |
-| *Computed* | The item cites facts or questions only, no finding row |
+| *Computed*, printed *From per-question results* | The item cites facts or questions only, no finding row |
 
 The Executive Summary prints the same label in plain words (`BenchmarkReportPackRenderer.PlainSupportLabel`):
 *both graders agreed*, *raised by one grader*, *raised by one grader, from the model's own company*, *the
-graders disagree*, *raised by the grader* and *computed from the figures*.
+graders disagree*, *raised by the grader* and *from per-question results*.
 
 **Fact labels.** A rendered document never prints a raw fact key: every key has a human label in
 `BenchmarkReportFactLabels` (*Intelligence Index*, *95 % interval*, *Critical errors*…), used by the
@@ -177,7 +177,7 @@ whether that member shares the subject's provider.
 
 ## 3. Validation, Repair and Drops
 
-`BenchmarkReportPackValidator` checks the writer's JSON against thirteen rules. Each failure is a
+`BenchmarkReportPackValidator` checks the writer's JSON against fourteen rules. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message.
 
@@ -195,11 +195,12 @@ whether that member shares the subject's provider.
 | 10 | No peer names, model ids or providers in prose |
 | 11 | No significance language: *significant*, *significantly*, *statistically*, *reliably better* or *worse*, *clearly outperforms* |
 | 12 | US English: no word of the fixed British-spelling list (`BenchmarkReportPackValidator.BritishSpellings`: *colour, behaviour, analyse, analysed, organise, recognise, favour, honour, centre, defence, catalogue, programme, grey, travelled, modelling, labelled, cancelled, judgement*), matched as whole words ignoring case, in any prose |
-| 13 | In the Executive Summary's `confidence` slot only: the quality interval is not called *narrow*, *narrower*, *wide*, *wider*, *tight*, *tighter* or *broad* (`BenchmarkReportPackValidator.IntervalWidthWords`, whole words ignoring case); the slot states the span as `{{quality.intervalSpan}}` instead |
+| 13 | In the Executive Summary's `confidence` slot only: the quality interval is not called *narrow*, *narrower*, *wide*, *wider*, *tight*, *tighter* or *broad* (`BenchmarkReportPackValidator.IntervalWidthWords`, whole words ignoring case); the code-rendered sentence after the slot states the interval and its span |
+| 14 | The headline and the abstract do not mention the claim verifier: *verifier* or *verifiers*, as a whole word ignoring case (`VerifierInSummaryRule`). A claim-verifier ruling is advisory and belongs, attributed, among the weaknesses |
 
 Rules 2, 3, 8, 9, 10, 11 and 12 apply to every prose string: the headline, each paragraph of each slot,
 and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive Summary's
-`confidence` slot.
+`confidence` slot, and rule 14 to the headline and each paragraph of the abstract.
 
 **Repair and drop policy.**
 
@@ -209,11 +210,13 @@ and the text of every item, topic and note. Rule 13 applies to each paragraph of
    output, the note records `Dropped`, and the document is stored as **CompletedWithWarnings**. An
    over-cap slot with a word limit (the abstract, `meaning`, `confidence`, `whyItScored`, `whatWorked`)
    loses its last paragraphs until it fits.
-3. **Rules 12 and 13 never drop.** A spelling slip or an interval adjective is not worth losing a
-   finding or the one paragraph of a required slot: after the repair turn, text that still uses a British
-   spelling or calls the interval narrow or wide is **kept**, its note is recorded without `Dropped`, and
-   the document is stored as **CompletedWithWarnings**. The Executive Summary states the interval's span
-   in a code-rendered sentence whatever the writer wrote (§ 6).
+3. **Rules 12, 13 and 14 never drop** (`BenchmarkReportPackValidator.IsWarningRule`). A spelling slip,
+   an interval adjective or a mention of the claim verifier is not worth losing a finding or the one
+   paragraph of a required slot: after the repair turn, text that still uses a British spelling, calls
+   the interval narrow or wide, or names the verifier in the headline or the abstract is **kept**, its
+   note is recorded without `Dropped`, and the document is stored as **CompletedWithWarnings**. The
+   Executive Summary states the interval's span in a code-rendered sentence whatever the writer wrote
+   (§ 6).
 4. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
    row is stored. A headline whose only fault is rule 12 is kept.
 
@@ -344,8 +347,8 @@ reliable this result is* and the technical report's *Threats to validity* print 
 naming the writer and the shared provider, whatever the writer returned. The Internal Improvement Brief
 does not print it. The Executive Summary's reliability section also prints *"The 95 % interval is 73–82,
 a span of 9 points, and rests on 4 of 4 questions with a scored answer."* from the `quality.interval`,
-`quality.intervalSpan` and `quality.scoredItems` facts; a document stored without the span fact prints
-nothing there.
+`quality.intervalSpan` and `quality.scoredItems` facts; a document stored without the span fact, or whose
+reliability paragraph already places `{{quality.interval}}`, prints nothing there.
 
 **Peer naming** is *Named* or *Anonymized*. Anonymized prints peers as *Model A*, *Model B*…, removes the
 provider column, and replaces the peers' model ids and providers in every table. The subject is always
@@ -391,7 +394,67 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 5** (the current one, 2026-09-29) comes from a review of the run-73 Executive Summary
+**Format version 6** (the current one, 2026-09-29, with harness 43 in `ai-benchmark.md`) makes the
+documents read the same figures as the run report and tightens what the writer may say about the claim
+verifier:
+
+- **Panel dimensions (R1)**: in a panel entry (every run a panel run) the `dimension.<d>` facts are the
+  panel row — the mean of both members' dimension averages, from `BenchmarkPanelDimensions.Averages`, the
+  function the run report's *Dimensional Score Averages* table uses — instead of member A's figures, and
+  the response-style fact reads the panel averages.
+- **One P90 (R2)**: the run report now uses the same interpolated percentile as the `speed.modelTimeP90`
+  fact (`BenchmarkGroupStatistics.Percentile`), so the two print the same P90.
+- **Refuted answer sentences (R3)** count distinct sentences per answer: rulings on one sentence count
+  once under the union manifest's key (`BenchmarkService.ItemKey`, ignoring case), so a sentence both
+  accused and quoted as a critical error is one sentence.
+- **Ruling labels (R4)** name the side the verifier took: *(the verifier sided with the grader)* or *(the
+  verifier sided with the answer)*, instead of *(the grader was wrong)* and its counterpart.
+- **Displays (R5)**: the response-style fact reads *"Completeness is the lowest dimension, X points below
+  Accuracy"* or *"No response-style conflict"*; its value stays the boolean, and a display stored before
+  format 6 loses its leading *yes: * when rendered. `quality.scoredItems` reads *"N of M questions"*.
+- **Computed support (R6)**: the stored label *Computed* is printed *From per-question results* (*from
+  per-question results* in the Executive Summary's plain words); the stored value is unchanged.
+- **Knowledge-base answers (R7)**: `tools.zeroKnowledgeBaseAnswers` is stated only when a question of the
+  suite is a knowledge-base topic (`BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion`); otherwise it
+  is unavailable with the reason *"No question of this suite is a knowledge-base topic; the prompt routes
+  game mechanics past the knowledge base."*, and the *Tool-use behavior* section omits the line.
+- **Interval sentence (R8)**: the writer prompt's confidence slot says that code appends one sentence
+  after the paragraph stating the interval, its span and the questions it rests on, and that none of them
+  is to be restated. The renderer skips its computed sentence when a stored document's confidence text
+  already places `{{quality.interval}}`, as writers before format 6 were asked to. Rule 13's note no
+  longer suggests writing the span.
+- **Strength evidence (R9)**: a strength's evidence line lists no refutation; only a weakness's does.
+- **PDF keep-with-next (R10)**: a run of consecutive headings is grouped and kept with what follows. Before
+  a paragraph the group and the paragraph are one unbreakable block (`PreventPageBreak`); before anything
+  else the group gets `EnsureSpace` for its own height plus three body lines
+  (`BenchmarkPdfStyle.KeepWithNextHeight`) or, before a table, its header and first row
+  (`KeepWithTableHeight`, 72 pt).
+- **Findings table (R11)**: at Summary disclosure the *Grader reliability* findings table is replaced by
+  the note *"The graders' findings are listed at Detailed and Full disclosure only, since their wording
+  may quote the benchmark's questions and answers."* — the finding texts are grader prose that no
+  disclosure check scans. At Detailed each row's *Finding* cell reads *"kind · category: text"*, the text
+  cut to 160 characters (a Conflicting row gives both members' texts, *A: … B: …*); at Full the cell
+  keeps *kind · category* and the whole texts follow the table. The *Recurrence* column is omitted when
+  the subject has one run.
+- **Reference reader (R12)**: in a panel entry, the facts `panel.referenceReaderIndex` (*Reference reader (advisory, third
+  provider)*, *"N / 100"*) and `panel.referenceReaderOffset` (*Reference reader's mean offset from the
+  panel*, *"+x.x points"*), each the mean over the subject's runs with a reference reader, print under
+  *Grader reliability*, the last of them followed by *"It never scores; its neutrality between the two
+  panel families is an assumption."*
+- **Claim-verifier rulings (A1)**: a new writer rule — a claim-verifier ruling is an advisory judgment by
+  an AI model that is sometimes wrong; attribute it (*"the claim verifier judged …"*), never state it as a
+  fact about the game, and never list refuted claims in the abstract or the one-sentence result. The
+  abstract's slot job says the same. Validator rule 14 (`VerifierInSummaryRule`, § 3) flags *verifier* in
+  the headline or the abstract. The warning rules — 12, 13 and 14 (`IsWarningRule`) — keep their text,
+  ask for the repair turn and mark the document CompletedWithWarnings.
+- **Response-style note (A2)**: a new writer rule — the response-style note is Overseer's own
+  observation, never attributed to a grader.
+
+A document stored under format 5 renders with the new labels and displays; where it lacks a fact (the
+reference reader's, say) the line is omitted, and where its confidence paragraph already places the
+interval the computed sentence is not added.
+
+**Format version 5** (2026-09-29) comes from a review of the run-73 Executive Summary
 and technical report PDFs:
 
 - **Provider wording**: the single-grader support labels read *One grader — different provider* and *One
@@ -497,7 +560,8 @@ packages documents and run files for download.
 
 The summary line, the ZIP's `MANIFEST.md` and its file name call them *Internal package* and *External package*.
 Opened on a run, the dialog lists every document whose subject includes the run, so a run's
-run-completion documents (§ 11) appear under both packages beside any Report Pack documents about it.
+run-completion documents (§ 11) appear under both packages beside any Report Pack documents about it;
+while they are still being written, a notice says so and the list reloads when they are done (§ 11).
 
 Each row offers its formats PDF first, then Word: pack documents and the run report PDF, Word, Markdown
 and HTML; the tool-call log PDF, Word and Markdown; diagnostics PDF, Word and Text. The choices are
@@ -883,6 +947,24 @@ administrator does it:
   navigation, zoom, a selectable text layer, **Download PDF** (under the server's file name) and **Open
   in new tab**, a real same-origin URL with `inline=true`. No PDF is framed or embedded, so the CSP is
   unchanged.
+
+**In the run progress dialog.** A run launched with a report writer shows the automatic job as its
+**stage 4**, *Writing reports*: the dialog's labels read *Stage n of 4*, the stage is current while the
+Completed run's documents are Pending or Writing (and for up to 30 s while they are still NotRequested),
+the status line follows the job's phase (*"Stage 4 of 4 — Writing reports: waiting for the report writer
+(1 job ahead)"*) and then appends *"Reports written: 2 documents, 1m 12s."*, and the completion chime
+waits for the stage to end. The run itself ends Completed when scoring ends. The full description —
+roster row, stat cell, cost panel rows, diagnostics block — is `ai-benchmark.md` § 1, *Run Progress
+Dialog*.
+
+**In the Download Center.** Opened on a run, the dialog asks for the run's report job
+(`GET …/runs/{runId}/report-documents/job`) beside the run's documents. While the job's phase is not
+*Finished* it shows, above the table, *"The AI-written reports of this run are being written (<phase>).
+They appear here when they are done."* — the phase reads *waiting for the report writer*, *preparing the
+fact sheet*, *writing* or *finishing* — and asks again every 5 s (`DOWNLOAD_CENTER_REPORT_JOB_POLL_MS`);
+a failed poll is skipped. When the job answers *Finished*, or 204 once it is gone, the dialog reloads the
+run's documents and drops the notice. A job already finished, no job, or a failed first request shows no
+notice. Closing the dialog, or opening it on another subject, stops the poll.
 
 **Written once, rewritten after a delete.** A run-completion document is immutable like every other:
 downloads only render it. A later re-synthesis or re-score marks it *Run changed since this document was

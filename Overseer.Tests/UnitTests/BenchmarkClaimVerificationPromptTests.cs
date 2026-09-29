@@ -783,4 +783,165 @@ public class BenchmarkClaimVerificationPromptTests
 
         Assert.Equal(new[] { false, true, false, false }, charged);
     }
+
+    // --- Instruction 3m: a sentence that reports what a source says -----------------------
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instruction3m_ChecksAReportedStatementAgainstItsSource_AndFollows3l(bool withBoard)
+    {
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
+
+        Assert.Contains("3m. A sentence that reports what a source says — the wiki says, the game's screen shows, the manual says — is checked against that source. It is Supported when the source says it, whether or not the source is right; if the source is wrong, say so in the basis. Refute it only when the source does not say it.", prompt);
+
+        int index3l = prompt.IndexOf("3l. When a GnollHack wiki page states", System.StringComparison.Ordinal);
+        int index3m = prompt.IndexOf("3m. A sentence that reports what a source says", System.StringComparison.Ordinal);
+        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
+
+        Assert.True(index3m > index3l, "Instruction 3m must follow instruction 3l.");
+        Assert.True(index4 > index3m, "Instruction 4 must follow 3m, unrenumbered.");
+    }
+
+    // --- The antecedent of a claim that opens with a pronoun (run 74, Q12) -----------------
+
+    private const string DonationSentence = "Donate 400 gold per level to the temple priest for protection.";
+    private const string CheapestClaim = "It's cheapest before you level up again.";
+    private const string DivinationClaim = "Divination costs 50 gold at this altar.";
+    private const string DonationAnswer =
+        "Buy the divination first.\n\n"
+        + DivinationClaim + "\n\n"
+        + "- " + DonationSentence + " " + CheapestClaim;
+
+    [Theory]
+    [InlineData("It's cheapest before you level up again.")]
+    [InlineData("it costs more later.")]
+    [InlineData("Its price doubles.")]
+    [InlineData("They're sold out.")]
+    [InlineData("That is the altar's alignment.")]
+    [InlineData("These cost more.")]
+    [InlineData("Those are cursed.")]
+    [InlineData("Their price rises.")]
+    [InlineData("He's peaceful.")]
+    [InlineData("She will not sell it.")]
+    [InlineData("This works once.")]
+    [InlineData("- **Price:** It rises with your level.")]
+    [InlineData("\"It\" means the priest.")]
+    public void StartsWithReferringWord_APronounOrDemonstrativeFirstWord_IsTrue(string claim)
+    {
+        Assert.True(BenchmarkService.StartsWithReferringWord(claim));
+    }
+
+    [Theory]
+    [InlineData("Items cost more later.")]
+    [InlineData("Thesis: donate early.")]
+    [InlineData("Theirs is the cheaper one.")]
+    [InlineData("Heal before you pray.")]
+    [InlineData("The priest sells protection.")]
+    [InlineData("Donate early.")]
+    [InlineData("")]
+    public void StartsWithReferringWord_AnyOtherFirstWord_IsFalse(string claim)
+    {
+        Assert.False(BenchmarkService.StartsWithReferringWord(claim));
+    }
+
+    [Fact]
+    public void AntecedentSentence_APronounLedClaim_IsTheSentenceBeforeIt()
+    {
+        Assert.Equal(DonationSentence, BenchmarkService.AntecedentSentence(DonationAnswer, CheapestClaim));
+    }
+
+    [Fact]
+    public void AntecedentSentence_AClaimThatDoesNotOpenWithAPronoun_HasNone()
+    {
+        Assert.Null(BenchmarkService.AntecedentSentence(DonationAnswer, DivinationClaim));
+    }
+
+    [Fact]
+    public void AntecedentSentence_TheFirstSentenceOfTheAnswer_HasNone()
+    {
+        const string answer = CheapestClaim + " " + DonationSentence;
+
+        Assert.Null(BenchmarkService.AntecedentSentence(answer, CheapestClaim));
+    }
+
+    [Fact]
+    public void AntecedentSentence_AClaimNotFoundInTheAnswer_HasNone()
+    {
+        Assert.Null(BenchmarkService.AntecedentSentence(DonationAnswer, "It's free on the first visit."));
+    }
+
+    [Fact]
+    public void WithAntecedents_SetsOnlyAPronounLedUnverifiedClaimsAntecedent()
+    {
+        var manifest = BenchmarkService.WithAntecedents(
+            BenchmarkService.BuildClaimManifest(new[] { DivinationClaim, CheapestClaim }, null, null, null, answerText: DonationAnswer),
+            DonationAnswer);
+
+        Assert.Null(manifest[0].Antecedent);
+        Assert.Equal(DonationSentence, manifest[1].Antecedent);
+    }
+
+    [Fact]
+    public void BuildPrompt_APronounLedClaim_CarriesTheSentenceBeforeIt_AndAnotherClaimDoesNot()
+    {
+        var claims = new List<string> { DivinationClaim, CheapestClaim };
+        var antecedents = claims.ConvertAll(c => BenchmarkService.AntecedentSentence(DonationAnswer, c));
+
+        string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite", 12, "Should I buy divination or protection?", null, claims,
+            new List<string> { "source_code_search" }, 15,
+            claimRoles: new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.UnverifiedClaim },
+                new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            },
+            claimAntecedents: antecedents).Replace("\r\n", "\n");
+
+        int claim0 = prompt.IndexOf("=== START CLAIM 0 ===", System.StringComparison.Ordinal);
+        int claim1 = prompt.IndexOf("=== START CLAIM 1 ===", System.StringComparison.Ordinal);
+        string block0 = prompt.Substring(claim0, claim1 - claim0);
+        string block1 = prompt.Substring(claim1);
+
+        Assert.DoesNotContain("Context (the sentence before this one", block0);
+        Assert.Contains(
+            "ClaimIndex: 1\nContext (the sentence before this one in the answer, for what the first word refers to; it is not part of the claim): "
+            + DonationSentence + "\n" + CheapestClaim + "\n=== END CLAIM 1 ===",
+            block1);
+    }
+
+    [Fact]
+    public void BuildPrompt_WithoutAntecedents_AddsNoAntecedentLine()
+    {
+        Assert.DoesNotContain(BenchmarkClaimVerificationPrompt.AntecedentLabel, BuildPrompt());
+    }
+
+    [Fact]
+    public void BuildPrompt_ALongAntecedent_IsCappedAt300CharactersKeepingItsEnd()
+    {
+        string longSentence = new string('x', 400) + " ends here.";
+
+        string prompt = BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite", 12, "Q?", null, new List<string> { CheapestClaim },
+            new List<string> { "source_code_search" }, 15,
+            claimAntecedents: new List<string?> { longSentence }).Replace("\r\n", "\n");
+
+        string prefix = BenchmarkClaimVerificationPrompt.AntecedentLabel + ": ";
+        int at = prompt.IndexOf(prefix, System.StringComparison.Ordinal);
+        Assert.True(at >= 0, "The antecedent line must be present.");
+        string shown = prompt.Substring(at + prefix.Length, prompt.IndexOf('\n', at) - at - prefix.Length);
+
+        Assert.Equal(BenchmarkClaimVerificationPrompt.AntecedentMaxLength, shown.Length);
+        Assert.Equal(300, shown.Length);
+        Assert.StartsWith("…", shown);
+        Assert.EndsWith(" ends here.", shown);
+    }
+
+    [Fact]
+    public void AntecedentShown_AShortSentence_IsKeptWhole_AndABlankOneIsNone()
+    {
+        Assert.Equal("Donate first.", BenchmarkClaimVerificationPrompt.AntecedentShown("  Donate \n first. "));
+        Assert.Null(BenchmarkClaimVerificationPrompt.AntecedentShown("   "));
+        Assert.Null(BenchmarkClaimVerificationPrompt.AntecedentShown(null));
+    }
 }

@@ -52,6 +52,9 @@ public sealed class BenchmarkReportCleanResult
 /// <item>The Executive Summary's confidence slot does not call the quality interval narrow, wide,
 /// tight or broad (<see cref="IntervalWidthWords"/>). Like rule 12 it asks for the repair turn, and
 /// <see cref="DropInvalid"/> keeps the paragraph and records the note.</item>
+/// <item>The headline and the abstract do not mention the claim verifier (<see cref="VerifierRegex"/>):
+/// its refutations are advisory and belong, attributed, in the weaknesses. A warning like rule 12: it
+/// asks for the repair turn, and <see cref="DropInvalid"/> keeps the text and records the note.</item>
 /// </list>
 /// </summary>
 public static class BenchmarkReportPackValidator
@@ -87,6 +90,15 @@ public static class BenchmarkReportPackValidator
     /// notes never drop a paragraph.
     /// </summary>
     public const int IntervalWidthRule = 13;
+
+    /// <summary>
+    /// The rule number of the claim-verifier check on the headline and the abstract, whose notes never
+    /// drop text.
+    /// </summary>
+    public const int VerifierInSummaryRule = 14;
+
+    /// <summary>Whether a rule's notes are warnings: they ask for the repair turn but never drop text.</summary>
+    public static bool IsWarningRule(int rule) => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule;
 
     /// <summary>Adjectives rule 13 flags for the quality interval, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> IntervalWidthWords = new[]
@@ -131,6 +143,11 @@ public static class BenchmarkReportPackValidator
 
     private static readonly Regex BritishSpellingRegex = new(
         @"(?<![\p{L}\p{N}])(?:" + string.Join("|", BritishSpellings) + @")(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>"verifier" or "verifiers", whole word, ignoring case; it covers "claim verifier".</summary>
+    private static readonly Regex VerifierRegex = new(
+        @"(?<![\p{L}\p{N}])verifiers?(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static readonly Regex IntervalWidthRegex = new(
@@ -197,6 +214,7 @@ public static class BenchmarkReportPackValidator
             {
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), notes);
                 CheckIntervalWidth(audience, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
+                CheckAbstractVerifier(slot, paragraphs[p], ParagraphLocation(slot, p), notes);
             }
 
             if (SlotMaxWords(audience, slot) is int cap && WordCount(text) > cap)
@@ -275,8 +293,8 @@ public static class BenchmarkReportPackValidator
     /// <summary>
     /// Removes every item and section paragraph with an issue from a copy of the output. The headline
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty. Missing
-    /// question topics are recorded but not fatal, and so are a rule 12 spelling and a rule 13
-    /// interval adjective: their text is kept.
+    /// question topics are recorded but not fatal, and so are a rule 12 spelling, a rule 13 interval
+    /// adjective and a rule 14 mention of the claim verifier: their text is kept.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -320,6 +338,7 @@ public static class BenchmarkReportPackValidator
                 var issues = new List<BenchmarkReportValidationNote>();
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), issues);
                 CheckIntervalWidth(audience, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
+                CheckAbstractVerifier(slot, paragraphs[p], ParagraphLocation(slot, p), issues);
                 if (issues.Any(Blocks))
                 {
                     notes.AddRange(MarkDropped(issues));
@@ -455,6 +474,7 @@ public static class BenchmarkReportPackValidator
         }
 
         CheckProse(ctx, headline, "headline", notes);
+        CheckVerifierMention(headline, "headline", notes);
 
         int words = WordCount(headline);
         if (words > HeadlineMaxWords)
@@ -580,7 +600,26 @@ public static class BenchmarkReportPackValidator
             .ToList();
         if (words.Count > 0)
         {
-            Issue(notes, IntervalWidthRule, location, $"Calls the interval \"{string.Join("\", \"", words)}\": state its span as {{{{quality.intervalSpan}}}} instead of describing its width.");
+            Issue(notes, IntervalWidthRule, location, $"Calls the interval \"{string.Join("\", \"", words)}\": do not describe its width; the sentence appended after this paragraph states the interval and its span.");
+        }
+    }
+
+    /// <summary>Rule 14 on one paragraph of the abstract; other slots are not checked.</summary>
+    private static void CheckAbstractVerifier(string slot, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (string.Equals(slot, BenchmarkReportSlots.Abstract, StringComparison.Ordinal))
+        {
+            CheckVerifierMention(text, location, notes);
+        }
+    }
+
+    /// <summary>Rule 14: the text does not mention the claim verifier.</summary>
+    private static void CheckVerifierMention(string? text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        var match = VerifierRegex.Match(TokenRegex.Replace(text ?? string.Empty, " "));
+        if (match.Success)
+        {
+            Issue(notes, VerifierInSummaryRule, location, $"Mentions the \"{match.Value}\": a claim-verifier ruling is an advisory judgment by an AI model that is sometimes wrong. Leave refuted claims out of the headline and the abstract, and state them among the weaknesses, attributed to the claim verifier.");
         }
     }
 
@@ -843,8 +882,8 @@ public static class BenchmarkReportPackValidator
     private static string LowerFirst(string text)
         => text.Length > 0 && char.IsUpper(text[0]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 
-    /// <summary>Every rule but rules 12 and 13 removes the offending item or paragraph.</summary>
-    private static bool Blocks(BenchmarkReportValidationNote note) => note.Rule != UsSpellingRule && note.Rule != IntervalWidthRule;
+    /// <summary>Every rule but the warning rules 12, 13 and 14 removes the offending item or paragraph.</summary>
+    private static bool Blocks(BenchmarkReportValidationNote note) => !IsWarningRule(note.Rule);
 
     /// <summary>A section's text split on blank lines, each paragraph trimmed, empty ones left out.</summary>
     internal static List<string> SplitParagraphs(string text)

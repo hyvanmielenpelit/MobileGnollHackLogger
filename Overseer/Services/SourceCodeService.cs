@@ -1275,6 +1275,18 @@ namespace Overseer.Services
 
             if (matchLine == -1)
             {
+                string? fullName = FindUniqueOfSuffixItemName(name, objectClass);
+                if (fullName != null)
+                {
+                    var resolved = GetItemStats(fullName, objectClass);
+                    if (resolved.Error == null)
+                    {
+                        string note = $"Resolved '{name.Trim()}' to '{fullName}': no item is named '{name.Trim()}'.";
+                        resolved.Message = string.IsNullOrEmpty(resolved.Message) ? note : note + " " + resolved.Message;
+                        return resolved;
+                    }
+                }
+
                 response.Error = BuildItemStatsMissMessage(name);
                 return response;
             }
@@ -1333,6 +1345,29 @@ namespace Overseer.Services
 
         private const int ItemStatsMissMaxChars = 600;
         private const int MaxItemStatsSuggestions = 5;
+
+        /// <summary>
+        /// The one item name ending in <c>" of " + name</c> (case-insensitive), restricted to
+        /// <paramref name="objectClass"/> when given, so that <c>experience</c> finds
+        /// <c>ioun stone of experience</c>. Null when no name or more than one name matches.
+        /// </summary>
+        private string? FindUniqueOfSuffixItemName(string name, string? objectClass)
+        {
+            string trimmed = name?.Trim() ?? string.Empty;
+            if (trimmed.Length == 0)
+            {
+                return null;
+            }
+
+            string suffix = " of " + trimmed;
+            var matches = _itemResolver.ItemNames
+                .Where(n => n.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                .Where(n => string.IsNullOrWhiteSpace(objectClass)
+                    || _itemResolver.ObjectClassesOf(n).Contains(objectClass, StringComparer.OrdinalIgnoreCase))
+                .Take(2)
+                .ToList();
+            return matches.Count == 1 ? matches[0] : null;
+        }
 
         /// <summary>
         /// The <see cref="StatsResponse{T}.Error"/> get_item_stats returns when no source line names

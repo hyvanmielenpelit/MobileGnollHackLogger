@@ -85,6 +85,8 @@ public static class BenchmarkReportFactLabels
         ["panel.disagreements"] = "Panel disagreements",
         ["panel.memberAAlone"] = "Panel member A alone",
         ["panel.memberBAlone"] = "Panel member B alone",
+        ["panel.referenceReaderIndex"] = "Reference reader (advisory, third provider)",
+        ["panel.referenceReaderOffset"] = "Reference reader's mean offset from the panel",
         ["panel.judgeDependentPairs"] = "Judge-dependent pairs",
 
         // Style

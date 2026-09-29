@@ -94,7 +94,7 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(longAnswer, question.AnswerText);
         Assert.DoesNotContain("FINAL-SENTENCE", question.AnswerExcerpt);
         Assert.Contains("\"answerText\":", document.ContentJson);
-        Assert.Equal(5, document.ReportFormatVersion);
+        Assert.Equal(6, document.ReportFormatVersion);
     }
 
     [Fact]
@@ -116,6 +116,27 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(confidence, writer.Sections[BenchmarkReportSlots.Confidence]);
         var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson!);
         Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.IntervalWidthRule && !n.Dropped);
+    }
+
+    [Fact]
+    public async Task AHeadlineNamingTheClaimVerifier_GetsTheRepairTurn_AndIsKeptWithItsNote()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        const string headline = "{{subject}} answered well, though the claim verifier refuted one of its answers.";
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: headline));
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: headline));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal(2, h.Provider.Calls);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+        Assert.Equal(headline, writer.Headline);
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson!);
+        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.VerifierInSummaryRule && !n.Dropped && n.Location == "headline");
+        Assert.DoesNotContain(notes, n => n.Dropped);
     }
 
     [Fact]

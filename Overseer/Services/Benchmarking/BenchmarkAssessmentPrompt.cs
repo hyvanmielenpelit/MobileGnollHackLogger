@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using MobileGnollHackLogger.Data;
 
 public class BenchmarkPerQuestionVerdictSummary
@@ -91,6 +92,44 @@ public sealed record BenchmarkEvidenceInformedTarget(
 {
     public const string CriticalErrorKind = "criticalError";
     public const string AccuracyKind = "accuracy";
+}
+
+/// <summary>
+/// A panel run's claim-verification totals over both members: the answers' own claims from each
+/// answer's verifier record, each counted once however many members raised it — the figures the
+/// report's <i>Assessor Findings</i> line prints.
+/// </summary>
+public sealed record BenchmarkRunClaimTotals(int Claims, int Answers, int Supported, int Refuted, int Indeterminate)
+{
+    public static BenchmarkRunClaimTotals FromAnswers(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        var claimsByAnswer = answers
+            .Select(a => ReadVerifications(a.ClaimVerificationJson).Where(BenchmarkClaimRoles.IsOrdinaryClaim).ToList())
+            .Where(claims => claims.Count > 0)
+            .ToList();
+        var counts = BenchmarkReportBuilder.VerdictCounts(claimsByAnswer.SelectMany(claims => claims));
+        return new BenchmarkRunClaimTotals(
+            claimsByAnswer.Sum(claims => claims.Count),
+            claimsByAnswer.Count,
+            counts.Supported,
+            counts.Refuted,
+            counts.Indeterminate);
+    }
+
+    private static List<BenchmarkClaimVerification> ReadVerifications(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new List<BenchmarkClaimVerification>();
+        try
+        {
+            return JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(
+                       json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                   ?? new List<BenchmarkClaimVerification>();
+        }
+        catch (JsonException)
+        {
+            return new List<BenchmarkClaimVerification>();
+        }
+    }
 }
 
 public static class BenchmarkAssessmentPrompt
@@ -622,8 +661,20 @@ public static class BenchmarkAssessmentPrompt
     ///     bodies but not the rubric's SOURCE list or file names (H5). The client's Instrument
     ///     Measurements notice counts per panel member (H6, client only). ScoringMethodVersion stays
     ///     12; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v43: a claim item that opens with a pronoun reaches the verifier with the answer sentence
+    ///     before it as a context line, and the verifier's instruction 3m checks a sentence that
+    ///     reports what a source says against that source (H1). A panel's union manifest drops an
+    ///     item whose text another item of the same answer contains, keeping its raisers (H2). A
+    ///     panel synthesis is given the run-wide claim totals beside its own (H3). A synthesis
+    ///     sentence that reports claim-verification results names no fabricated question (H4). The
+    ///     knowledge-base topic guard reads question text only, and "options" alone is no longer a
+    ///     topic (H5). Findings in the category "other" never converge or conflict (H6). The report's
+    ///     reference-reader section adds an offset-adjusted disagreement count (H7), and its
+    ///     percentiles are interpolated. Chat and benchmark alike: get_item_stats resolves a missed
+    ///     name to the one item named "… of <name>", and its tool guide moves ToolGuidesSha256.
+    ///     ScoringMethodVersion stays 12; CandidateSystemPromptSha256 does not move.
     /// </summary>
-    public const string HarnessVersion = "42";
+    public const string HarnessVersion = "43";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -1291,7 +1342,8 @@ public static class BenchmarkAssessmentPrompt
         string suiteName,
         IReadOnlyList<BenchmarkPerQuestionVerdictSummary> verdicts,
         string? boardName = null,
-        string? boardDigest = null)
+        string? boardDigest = null,
+        BenchmarkRunClaimTotals? panelRunClaimTotals = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are an expert AI intelligence and game knowledge assessor synthesizing the overall evaluation for an AI benchmark run on GnollHack.");
@@ -1314,8 +1366,10 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("5. A refuted claim, and a critical error the second reader or the claim verifier contested, are advisory findings, not confirmed defects: report them as advisory, exactly as the finding is phrased below.");
         // The level distribution below exists because a synthesis asked to count eighteen "Levels:"
         // lines itself gets the arithmetic wrong; every count anyone can name a number for belongs to
-        // one of these data blocks, not to counting sentences.
-        sb.AppendLine("6. Every count you state — how many answers sit at a given level, how many claims were supported, refuted or indeterminate — is copied from the data blocks below, never recomputed by rereading or recounting the per-question verdicts. This synthesis feeds no score.");
+        // one of these data blocks, not to counting sentences. A panel member's own claim figures are
+        // not the run's, so a panel run adds the pointer to its run-wide line.
+        sb.AppendLine("6. Every count you state — how many answers sit at a given level, how many claims were supported, refuted or indeterminate — is copied from the data blocks below, never recomputed by rereading or recounting the per-question verdicts. This synthesis feeds no score."
+            + (panelRunClaimTotals != null ? " When you state a run-wide claim total, copy the 'All claims checked' line." : string.Empty));
         // The structured counterpart of the two prose fields: a second synthesis of the same run is
         // compared with this one entry by entry, which prose cannot support.
         sb.AppendLine($"7. List every strength and weakness you name in `findings` as well, one entry each: `kind` is \"strength\" or \"weakness\"; `category` is one of {string.Join(", ", BenchmarkAssessmentParser.SynthesisFindingCategories)}; `questions` lists the question numbers the finding rests on, empty for a run-wide finding; `text` states it in one sentence.");
@@ -1328,8 +1382,11 @@ public static class BenchmarkAssessmentPrompt
         AppendLevelDistributionLine(sb, "Conciseness", verdicts.Select(v => v.ConcisenessLevel));
         AppendLevelDistributionLine(sb, "Readability", verdicts.Select(v => v.ReadabilityLevel));
         sb.AppendLine();
-        // The same per-answer columns the report's Assessor Findings line sums, so the two agree.
-        if (verdicts.Any(v => v.ClaimsSupportedCount.HasValue || v.ClaimsRefutedCount.HasValue || v.ClaimsIndeterminateCount.HasValue))
+        // The same per-answer columns the report's Assessor Findings line sums, so the two agree. A
+        // panel member's summaries carry its own claims only, so a panel run prints them as the
+        // member's and adds the run's union, which is what the report prints.
+        bool memberCounts = verdicts.Any(v => v.ClaimsSupportedCount.HasValue || v.ClaimsRefutedCount.HasValue || v.ClaimsIndeterminateCount.HasValue);
+        if (memberCounts || panelRunClaimTotals?.Claims > 0)
         {
             int unverified = verdicts.Sum(v => v.UnverifiedClaimCount);
             int withClaims = verdicts.Count(v => v.UnverifiedClaimCount > 0);
@@ -1337,7 +1394,16 @@ public static class BenchmarkAssessmentPrompt
             int refuted = verdicts.Sum(v => v.ClaimsRefutedCount ?? 0);
             int indeterminate = verdicts.Sum(v => v.ClaimsIndeterminateCount ?? 0);
             sb.AppendLine("--- CLAIM VERIFICATION TOTALS (counted by the harness; copy these figures rather than adding up the per-question lines) ---");
-            sb.AppendLine($"Unverified claims: {unverified} across {withClaims} answer(s); verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
+            if (panelRunClaimTotals == null)
+            {
+                sb.AppendLine($"Unverified claims: {unverified} across {withClaims} answer(s); verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
+            }
+            else
+            {
+                var all = panelRunClaimTotals;
+                sb.AppendLine($"Claims you raised: {unverified} across {withClaims} answer(s); verified: {supported} supported, {refuted} refuted, {indeterminate} indeterminate");
+                sb.AppendLine($"All claims checked in this run (both members, each counted once): {all.Claims} across {all.Answers} answer(s); verified: {all.Supported} supported, {all.Refuted} refuted, {all.Indeterminate} indeterminate");
+            }
             sb.AppendLine("--- END CLAIM VERIFICATION TOTALS ---");
             sb.AppendLine();
         }

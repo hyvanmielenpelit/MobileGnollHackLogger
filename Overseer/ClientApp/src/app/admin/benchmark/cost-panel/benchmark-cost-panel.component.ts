@@ -85,6 +85,12 @@ export class BenchmarkCostPanelComponent {
   /** Every grading role and both syntheses together, summed server-side. */
   @Input() grading: number | null = null;
 
+  /**
+   * The report writer's AI-written documents, running or final. Outside `grading` and `total`: the
+   * reports are written after the run and are not part of the benchmark's own cost. Null hides it.
+   */
+  @Input() reportWriter: number | null = null;
+
   @Input() pricingSource: string | null = null;
 
   /** At least one participating model has no price, so the total is a lower bound. */
@@ -130,6 +136,21 @@ export class BenchmarkCostPanelComponent {
 
   get hasGradingSubtotal(): boolean {
     return this.isFigure(this.grading);
+  }
+
+  get hasReportWriter(): boolean {
+    return this.isFigure(this.reportWriter);
+  }
+
+  get reportWriterLabel(): string {
+    return this.formatAmount(this.reportWriter);
+  }
+
+  /** The run's total plus the report writer's; '-' while either is unknown. */
+  get totalWithReportsLabel(): string {
+    return this.isFigure(this.total) && this.isFigure(this.reportWriter)
+      ? this.formatAmount(this.total + this.reportWriter)
+      : '-';
   }
 
   /**

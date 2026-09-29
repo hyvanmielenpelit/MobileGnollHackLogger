@@ -189,23 +189,34 @@ internal static class BenchmarkPdfMarkdownComposer
                 continue;
             }
 
-            if (block is HeadingBlock heading)
+            if (block is HeadingBlock)
             {
-                // A heading keeps with what follows: a first paragraph moves with it when the pair
-                // does not fit, and before anything else it needs room below it on its page.
-                if (i + 1 < blocks.Count && blocks[i + 1] is ParagraphBlock paragraph)
+                // A run of consecutive headings keeps with what follows: a first paragraph moves with
+                // it when the group does not fit, and before anything else the run needs room on its
+                // page for its own height and the first lines of the next block.
+                int last = i;
+                while (last + 1 < blocks.Count && blocks[last + 1] is HeadingBlock) last++;
+                var headings = blocks.Skip(i).Take(last - i + 1).Cast<HeadingBlock>().ToList();
+                var next = last + 1 < blocks.Count ? blocks[last + 1] : null;
+
+                if (next is ParagraphBlock paragraph)
                 {
-                    col.Item().PreventPageBreak().Column(pair =>
+                    col.Item().PreventPageBreak().Column(group =>
                     {
-                        pair.Spacing(BenchmarkPdfStyle.BlockSpacing);
-                        pair.Item().Element(c => Heading(c, heading, ctx));
-                        pair.Item().Element(c => Paragraph(c, paragraph.Inline, ctx, CellAlign.Left));
+                        group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                        foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
+                        group.Item().Element(c => Paragraph(c, paragraph.Inline, ctx, CellAlign.Left));
                     });
-                    i++;
+                    i = last + 1;
                 }
                 else
                 {
-                    col.Item().EnsureSpace(BenchmarkPdfStyle.KeepWithNextHeight).Element(c => Heading(c, heading, ctx));
+                    col.Item().EnsureSpace(KeepWithNextHeight(headings, next)).Column(group =>
+                    {
+                        group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                        foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
+                    });
+                    i = last;
                 }
                 continue;
             }
@@ -213,6 +224,30 @@ internal static class BenchmarkPdfMarkdownComposer
             col.Item().Element(c => ComposeBlock(c, block, ctx, listDepth));
         }
     }
+
+    /// <summary>
+    /// The room, in points, a run of headings needs on its page: each heading's own height with the
+    /// spacing between blocks, and then <see cref="BenchmarkPdfStyle.KeepWithTableHeight"/> before a
+    /// table, <see cref="BenchmarkPdfStyle.KeepWithNextHeight"/> before any other block, and nothing
+    /// at the end of the body.
+    /// </summary>
+    internal static float KeepWithNextHeight(IReadOnlyList<HeadingBlock> headings, Block? next)
+    {
+        float height = headings.Sum(h => HeadingHeight(h.Level)) + (headings.Count - 1) * BenchmarkPdfStyle.BlockSpacing;
+        if (next == null) return height;
+
+        return height + BenchmarkPdfStyle.BlockSpacing
+            + (next is MdTable ? BenchmarkPdfStyle.KeepWithTableHeight : BenchmarkPdfStyle.KeepWithNextHeight);
+    }
+
+    /// <summary>A one-line heading's height at its level: its padding, text line and, at level 2, its rule.</summary>
+    internal static float HeadingHeight(int level) => level switch
+    {
+        1 => 8 + BenchmarkPdfStyle.Heading1Size * 1.2f,
+        2 => 8 + BenchmarkPdfStyle.Heading2Size * 1.2f + 2 + 0.75f,
+        3 => 4 + BenchmarkPdfStyle.Heading3Size * 1.2f,
+        _ => 2 + BenchmarkPdfStyle.BaseSize * 1.2f
+    };
 
     private static void ComposeBlock(IContainer container, Block block, Context ctx, int listDepth)
     {

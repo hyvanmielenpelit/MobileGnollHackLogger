@@ -41,9 +41,10 @@ using Overseer.Models;
 //   quality.peerBest         best peer point estimate
 //   quality.rawIndex         mean over runs of the pre-cap index
 //   quality.unweightedMean   mean over runs of the equal-weight mean of answer quality
-//   quality.scoredItems      "4 of 4": items with a scored answer of the exam's items
+//   quality.scoredItems      "4 of 4 questions": items with a scored answer of the exam's items
 //
-// Dimensions (d = accuracy, completeness, conciseness, readability; the assessor's, member A's in a panel run)
+// Dimensions (d = accuracy, completeness, conciseness, readability; the assessor's, or in a panel run
+// the panel row of BenchmarkPanelDimensions, the mean of both members' averages)
 //   dimension.<d>, dimension.<d>.peerMean, dimension.<d>.difference
 //
 // Difficulty bands (b = simple, intermediate, advanced; the answer's assessed difficulty, else its fallback)
@@ -65,15 +66,17 @@ using Overseer.Models;
 // Tools (succeeded calls, from the per-call rows where the run has them, else the summary)
 //   tools.callsPerQuestion, tools.callsPerQuestion.peerMean
 //   tools.share.sourceCode, tools.share.wiki, tools.share.structuredLookup, tools.share.knowledgeBase, tools.share.other
-//   tools.zeroKnowledgeBaseAnswers
+//   tools.zeroKnowledgeBaseAnswers                      only when some question is a knowledge-base topic
 //   tools.failed, tools.refusedByBudget                 per-call rows only (harness 17 and later)
 //
 // Panel
 //   panel.meanAbsDelta, panel.icc, panel.disagreements, panel.memberAAlone, panel.memberBAlone
+//   panel.referenceReaderIndex, panel.referenceReaderOffset   the reference reader's index and signed offset from the panel
 //   panel.judgeDependentPairs                           peers, by letter, whose order against the subject depends on the member
 //
 // Style
-//   style.responseStyleConflict                         BenchmarkChatTransfer.HasResponseStyleConflict over the pooled answers
+//   style.responseStyleConflict                         BenchmarkChatTransfer.HasResponseStyleConflict over the pooled answers,
+//                                                       on the panel's dimension averages in a panel run; the value is a boolean
 //
 // Scoring and provenance
 //   scoring.weights, scoring.levels, scoring.criticalErrorCap   from the lowest-id run's profile snapshot
@@ -132,7 +135,11 @@ public static class BenchmarkReportFacts
     public const string SupportOneGraderSameProvider = "One grader — same provider as the model";
     public const string SupportGradersDisagree = "Graders disagree";
     public const string SupportSingleAssessor = "Single assessor";
+    /// <summary>The stored support label of an item citing no row; documents print it as <see cref="SupportComputedDisplay"/>.</summary>
     public const string SupportComputed = "Computed";
+
+    /// <summary>How <see cref="SupportComputed"/> is printed.</summary>
+    public const string SupportComputedDisplay = "From per-question results";
 
     // The single-grader labels of fact sheets stored before format version 5.
     private const string LegacySupportOneGraderDifferentFamily = "One grader — different family";
@@ -142,6 +149,10 @@ public static class BenchmarkReportFacts
 
     /// <summary>Why a peer fact is unavailable on a sheet with no peers.</summary>
     public const string StandaloneReason = "A stand-alone run report has no peers.";
+
+    /// <summary>Why <c>tools.zeroKnowledgeBaseAnswers</c> is unavailable when no question is a knowledge-base topic.</summary>
+    public const string NoKnowledgeBaseTopicReason =
+        "No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base.";
 
     public const string PanelMemberARole = "Panel member A";
     public const string PanelMemberBRole = "Panel member B";
@@ -524,7 +535,7 @@ public static class BenchmarkReportFacts
             AddIntervalOverlap(facts, quality, peers);
 
             facts.Add("quality.scoredItems", quality.ItemCount,
-                Inv(quality.ItemCount) + " of " + Inv(quality.ExamItemCount));
+                Inv(quality.ItemCount) + " of " + Inv(quality.ExamItemCount) + (quality.ExamItemCount == 1 ? " question" : " questions"));
         }
 
         var peerEstimates = peers.Where(p => p.Entry.Quality != null).Select(p => p.Entry.Quality!.PointEstimate).ToList();
@@ -608,7 +619,7 @@ public static class BenchmarkReportFacts
         foreach (string dimension in Dimensions)
         {
             AddComparedFact(facts, "dimension." + dimension, subject.DimensionMean(dimension),
-                PeerMean(peers, s => s.DimensionMean(dimension)), "No scored answer carries this dimension.");
+                PeerMean(peers, s => s.DimensionMean(dimension)), subject.DimensionMissingReason);
         }
 
         foreach (var (name, band) in Bands)
@@ -845,8 +856,15 @@ public static class BenchmarkReportFacts
             facts.Add(key, share, BenchmarkReportFormat.Percent(share));
         }
 
-        facts.Add("tools.zeroKnowledgeBaseAnswers", routing.ZeroKnowledgeBaseAnswerCount,
-            Inv(routing.ZeroKnowledgeBaseAnswerCount) + " of " + Inv(routing.AnsweredQuestionCount));
+        if (BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(subject.All))
+        {
+            facts.Add("tools.zeroKnowledgeBaseAnswers", routing.ZeroKnowledgeBaseAnswerCount,
+                Inv(routing.ZeroKnowledgeBaseAnswerCount) + " of " + Inv(routing.AnsweredQuestionCount));
+        }
+        else
+        {
+            facts.Unavailable("tools.zeroKnowledgeBaseAnswers", NoKnowledgeBaseTopicReason);
+        }
 
         bool recorded = subjectRuns.All(r => HarnessOf(r) is int h && h >= 17);
         if (!recorded)
@@ -890,7 +908,11 @@ public static class BenchmarkReportFacts
         BenchmarkModelComparisonDto comparison,
         IReadOnlyList<(BenchmarkModelComparisonEntryDto Entry, string Letter, EntryStats Stats)> peers)
     {
-        string[] runKeys = { "panel.meanAbsDelta", "panel.icc", "panel.disagreements", "panel.memberAAlone", "panel.memberBAlone" };
+        string[] runKeys =
+        {
+            "panel.meanAbsDelta", "panel.icc", "panel.disagreements", "panel.memberAAlone", "panel.memberBAlone",
+            "panel.referenceReaderIndex", "panel.referenceReaderOffset"
+        };
 
         if (!subjectRuns.All(BenchmarkRunFinalizer.IsPanelRun))
         {
@@ -911,6 +933,7 @@ public static class BenchmarkReportFacts
                 v => BenchmarkReportFormat.Whole(v) + " / 100");
             AddMean(facts, "panel.memberBAlone", subjectRuns.Select(r => (double?)r.CoAssessorOnlyQualityIndex).ToList(),
                 v => BenchmarkReportFormat.Whole(v) + " / 100");
+            AddReferenceReaderFacts(facts, subjectRuns);
         }
 
         var diagnostics = comparison.PanelDiagnostics;
@@ -945,6 +968,46 @@ public static class BenchmarkReportFacts
         facts.Add("panel.judgeDependentPairs", partners.Count, display);
     }
 
+    /// <summary>
+    /// The reference reader's Intelligence Index and its mean signed offset from the panel score, each
+    /// the mean over the runs whose reader graded of the run report's own per-run figure.
+    /// </summary>
+    private static void AddReferenceReaderFacts(FactList facts, IReadOnlyList<BenchmarkRun> subjectRuns)
+    {
+        const string reason = "No reference reader graded these answers.";
+        var indices = new List<double>();
+        var offsets = new List<double>();
+
+        foreach (var run in subjectRuns.Where(r => r.SecondOpinionAssessorModelConfigurationId.HasValue))
+        {
+            var answers = run.Answers ?? new List<BenchmarkRunAnswer>();
+            if (!answers.Any(a => a.SecondOpinionQualityScore.HasValue)) continue;
+
+            if (BenchmarkReportBuilder.ReferenceReaderIndex(run, answers, out _) is int index) indices.Add(index);
+            if (BenchmarkReportBuilder.ReferenceReaderSignedOffset(answers) is double offset) offsets.Add(offset);
+        }
+
+        if (indices.Count == 0)
+        {
+            facts.Unavailable("panel.referenceReaderIndex", reason);
+        }
+        else
+        {
+            double mean = indices.Average();
+            facts.Add("panel.referenceReaderIndex", mean, BenchmarkReportFormat.Whole(mean) + " / 100");
+        }
+
+        if (offsets.Count == 0)
+        {
+            facts.Unavailable("panel.referenceReaderOffset", reason);
+        }
+        else
+        {
+            double mean = offsets.Average();
+            facts.Add("panel.referenceReaderOffset", mean, BenchmarkReportFormat.SignedOneDecimal(mean) + " points");
+        }
+    }
+
     private static void AddMean(FactList facts, string key, IReadOnlyList<double?> values, Func<double, string> display)
     {
         var present = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
@@ -958,13 +1021,33 @@ public static class BenchmarkReportFacts
         facts.Add(key, mean, display(mean));
     }
 
+    /// <summary>
+    /// The response-style conflict, read on the panel's dimension averages in a panel entry and on the
+    /// assessor's otherwise, as the run report reads it. The value is the boolean; the display reads
+    /// as a clause.
+    /// </summary>
     private static void AddStyleFact(FactList facts, IReadOnlyList<BenchmarkRun> subjectRuns, EntryStats subject)
     {
-        bool conflict = BenchmarkChatTransfer.HasResponseStyleConflict(subjectRuns[0], subject.All, out double gap);
+        bool conflict;
+        double gap = 0.0;
+        if (subject.Panel)
+        {
+            var panel = subject.PanelAverages?.Panel;
+            conflict = panel != null
+                && BenchmarkChatTransfer.HasResponseStyleConflict(
+                    BenchmarkCandidatePromptOptions.FromJson(subjectRuns[0].CandidatePromptOptionsJson).VerboseMode,
+                    panel[0].Points, panel[1].Points, panel[2].Points, panel[3].Points);
+            if (conflict) gap = panel![0].Points - panel[1].Points;
+        }
+        else
+        {
+            conflict = BenchmarkChatTransfer.HasResponseStyleConflict(subjectRuns[0], subject.All, out gap);
+        }
+
         facts.Add("style.responseStyleConflict", conflict,
             conflict
-                ? "yes: Completeness is the lowest dimension, " + BenchmarkReportFormat.OneDecimal(gap) + " points below Accuracy"
-                : "no");
+                ? "Completeness is the lowest dimension, " + BenchmarkReportFormat.OneDecimal(gap) + " points below Accuracy"
+                : "No response-style conflict");
     }
 
     private static void AddScoringAndProvenanceFacts(FactList facts, IReadOnlyList<BenchmarkRun> subjectRuns)
@@ -1055,9 +1138,12 @@ public static class BenchmarkReportFacts
     }
 
     /// <summary>
-    /// Refuted verifications of the answers' own text (<see cref="BenchmarkReportContent.IsAnswerSentenceRole"/>),
-    /// read from the stored verifications by role; a grader's statement never counts. Null when an
-    /// answer's verifications are unreadable or carry no roles.
+    /// The distinct answer sentences the verifier refuted (<see cref="BenchmarkReportContent.IsAnswerSentenceRole"/>),
+    /// read from the stored verifications by role; a grader's statement never counts. Within one
+    /// answer, rulings on one sentence count once under the union manifest's markup-insensitive key
+    /// (<see cref="BenchmarkService.ItemKey"/>, ignoring case), so a sentence both accused and quoted
+    /// as a critical error is one sentence. Null when an answer's verifications are unreadable or
+    /// carry no roles.
     /// </summary>
     internal static int? RefutedAnswerSentencesOf(IEnumerable<BenchmarkRunAnswer> answers)
     {
@@ -1071,8 +1157,15 @@ public static class BenchmarkReportFacts
             if (verifications.Count == 0) continue;
             if (!BenchmarkClaimRoles.HasRoles(verifications)) return null;
 
-            count += verifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted
-                && BenchmarkReportContent.IsAnswerSentenceRole(BenchmarkReportContent.RoleOf(v, listHasRoles: true)));
+            var refuted = verifications
+                .Where(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted
+                            && BenchmarkReportContent.IsAnswerSentenceRole(BenchmarkReportContent.RoleOf(v, listHasRoles: true)))
+                .Select(v => BenchmarkService.ItemKey(v.Claim))
+                .ToList();
+
+            // A ruling without text cannot be matched to another, so each counts on its own.
+            count += refuted.Count(k => k.Length == 0)
+                     + refuted.Where(k => k.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).Count();
         }
         return count;
     }
@@ -1197,7 +1290,7 @@ public static class BenchmarkReportFacts
             {
                 var mean = stats.DimensionMean(dimension);
                 if (mean.HasValue) extra.Add("dimension." + dimension, mean.Value, BenchmarkReportFormat.Whole(mean.Value));
-                else extra.Unavailable("dimension." + dimension, "No scored answer carries this dimension.");
+                else extra.Unavailable("dimension." + dimension, stats.DimensionMissingReason);
             }
             if (stats.ToolCallsPerQuestion is double calls)
             {
@@ -1499,9 +1592,37 @@ public static class BenchmarkReportFacts
 
         public double? ToolCallsPerQuestion => Counting.Count > 0 ? Counting.Average(a => (double)SucceededCalls(a)) : null;
 
+        /// <summary>Every run of the entry was graded by an assessor panel.</summary>
+        public bool Panel { get; private set; }
+
+        private BenchmarkPanelDimensionAverages? _panelAverages;
+        private bool _panelAveragesComputed;
+
+        /// <summary>
+        /// A panel entry's dimension averages over its graded answers, pooled across runs, each run's
+        /// level table applied to its own answers; null for a single-assessor entry or no graded answer.
+        /// </summary>
+        public BenchmarkPanelDimensionAverages? PanelAverages
+        {
+            get
+            {
+                if (!_panelAveragesComputed)
+                {
+                    _panelAverages = Panel
+                        ? BenchmarkPanelDimensions.Averages(Scored
+                            .Where(s => s.Answer.Status == BenchmarkAnswerStatus.Ok)
+                            .Select(s => (s.Answer, (IReadOnlyList<int>?)BenchmarkScoring.ConstantsFromSnapshot(s.Run.ScoringProfileSnapshotJson).LevelScores))
+                            .ToList())
+                        : null;
+                    _panelAveragesComputed = true;
+                }
+                return _panelAverages;
+            }
+        }
+
         public static EntryStats Of(IReadOnlyList<BenchmarkRun> runs)
         {
-            var stats = new EntryStats();
+            var stats = new EntryStats { Panel = runs.Count > 0 && runs.All(BenchmarkRunFinalizer.IsPanelRun) };
             foreach (var run in runs.OrderBy(r => r.Id))
             {
                 bool panel = BenchmarkRunFinalizer.IsPanelRun(run);
@@ -1520,8 +1641,20 @@ public static class BenchmarkReportFacts
             return stats;
         }
 
+        /// <summary>Why <see cref="DimensionMean"/> is null.</summary>
+        public string DimensionMissingReason => Panel && PanelAverages is { Panel: null }
+            ? "No member B record carries all four dimension levels, so the panel's dimension figures cannot be formed."
+            : "No scored answer carries this dimension.";
+
+        /// <summary>The panel row's points in a panel entry, the assessor's mean score otherwise.</summary>
         public double? DimensionMean(string dimension)
         {
+            if (Panel)
+            {
+                int index = Array.IndexOf(Dimensions, dimension);
+                return PanelAverages?.Panel is { } panel && index >= 0 ? panel[index].Points : null;
+            }
+
             var values = Scored
                 .Select(s => dimension switch
                 {
@@ -1580,6 +1713,13 @@ public static class BenchmarkReportFormat
         double rounded = Math.Round(value, 1, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
         return rounded.ToString("0.0", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary><see cref="OneDecimal"/> with a leading <c>+</c> above zero: "+16.8", "-2.0", "0.0".</summary>
+    public static string SignedOneDecimal(double value)
+    {
+        string text = OneDecimal(value);
+        return Math.Round(value, 1, MidpointRounding.AwayFromZero) > 0 ? "+" + text : text;
     }
 
     /// <summary>At most one decimal, and none when it is zero: "3", "2.5".</summary>

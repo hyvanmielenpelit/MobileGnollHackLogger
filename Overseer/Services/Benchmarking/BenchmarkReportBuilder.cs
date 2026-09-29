@@ -1050,13 +1050,59 @@ public static class BenchmarkReportBuilder
         }
     }
 
+    /// <summary>
+    /// The reference reader's Intelligence Index of a panel run, taken over the panel's own item set
+    /// with the reader's score where it graded and an unanswered question's 0 where nobody could; null
+    /// when it graded none. <paramref name="covered"/> is the items it holds a score for.
+    /// </summary>
+    internal static int? ReferenceReaderIndex(BenchmarkRun run, IEnumerable<BenchmarkRunAnswer> answers, out int covered)
+    {
+        bool panel = BenchmarkRunFinalizer.IsPanelRun(run);
+        var readerItems = answers
+            .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && BenchmarkScoring.IndexQuality(a, panel).HasValue)
+            .Select(a => (Score: a.SecondOpinionQualityScore.HasValue
+                    ? (double?)a.SecondOpinionQualityScore.Value
+                    : (BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(a) ? BenchmarkScoring.IndexQuality(a, panel) : null),
+                Difficulty: (int?)(a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty))))
+            .ToList();
+        covered = readerItems.Count(i => i.Score.HasValue);
+        return BenchmarkScoring.QualityIndex(readerItems);
+    }
+
+    /// <summary>
+    /// The answers a panel run's reference reader graded that count toward the index, a Manual
+    /// re-grade excepted, in order-index order.
+    /// </summary>
+    internal static List<BenchmarkRunAnswer> ReferenceReaderCovered(IEnumerable<BenchmarkRunAnswer> answers)
+        => answers
+            .Where(a => a.SecondOpinionQualityScore.HasValue
+                        && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal)
+                        && BenchmarkRunFinalizer.CountsTowardQualityIndex(a))
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+
+    /// <summary>
+    /// The reference reader's mean signed difference from the panel score over the covered answers
+    /// that carry one, rounded as every agreement delta is; null when none does.
+    /// </summary>
+    internal static double? ReferenceReaderSignedOffset(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        var graded = ReferenceReaderCovered(answers).Where(a => a.PanelQualityScore.HasValue).ToList();
+        return graded.Count > 0
+            ? BenchmarkRunFinalizer.RoundAgreementDelta(graded.Average(a => a.SecondOpinionQualityScore!.Value - a.PanelQualityScore!.Value))
+            : null;
+    }
+
+    /// <summary>
+    /// The <paramref name="p"/> quantile by <see cref="BenchmarkGroupStatistics.Percentile"/>'s linear
+    /// interpolation, rounded to whole milliseconds, so the run report and every report-pack document
+    /// print one P90. Zero over no value.
+    /// </summary>
     private static long Percentile(IReadOnlyList<long> sorted, double p)
     {
         if (sorted.Count == 0) return 0;
-        if (sorted.Count == 1) return sorted[0];
-        int index = (int)Math.Ceiling(p * sorted.Count) - 1;
-        index = Math.Clamp(index, 0, sorted.Count - 1);
-        return sorted[index];
+        double value = BenchmarkGroupStatistics.Percentile(sorted.Select(v => (double)v).ToList(), p * 100.0)!.Value;
+        return (long)Math.Round(value, MidpointRounding.AwayFromZero);
     }
 
     private static double Median(IEnumerable<double> values)
@@ -1071,8 +1117,8 @@ public static class BenchmarkReportBuilder
 
     /// <summary>
     /// A P50 figure computed as the true statistical median (mean of the two middle values for an
-    /// even count) rather than <see cref="Percentile"/>'s nearest-rank pick, so the report's P50
-    /// lines agree with the Angular UI card, which is computed the same way.
+    /// even count), so the report's P50 lines agree with the Angular UI card, which is computed the
+    /// same way.
     /// </summary>
     private static long MedianMs(IReadOnlyList<long> sorted)
         => sorted.Count == 0 ? 0 : (long)Math.Round(Median(sorted.Select(v => (double)v)), MidpointRounding.AwayFromZero);
@@ -1698,19 +1744,10 @@ public static class BenchmarkReportBuilder
         sb.AppendLine($"### **Intelligence Index: {IndexHeadline(run.QualityIndex, $"{seText} / 100", terminalFailureCount, run.TotalQuestionCount, "Not Scored")}**");
         if (isPanelRun)
         {
-            // The reader's index is taken over the panel's own item set, with the reader's score where
-            // it graded and an unanswered question's 0 where nobody could.
             string readerIndexText;
             if (run.SecondOpinionAssessorModelConfigurationId.HasValue)
             {
-                var readerItems = indexAnswers
-                    .Select(a => (Score: a.SecondOpinionQualityScore.HasValue
-                            ? (double?)a.SecondOpinionQualityScore.Value
-                            : (BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(a) ? IndexQualityOf(a) : null),
-                        Difficulty: (int?)(a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty))))
-                    .ToList();
-                int readerCovered = readerItems.Count(i => i.Score.HasValue);
-                int? readerIndex = BenchmarkScoring.QualityIndex(readerItems);
+                int? readerIndex = ReferenceReaderIndex(run, answers, out int readerCovered);
                 readerIndexText = readerIndex.HasValue
                     ? $"{readerIndex.Value} / 100" + (readerCovered < indexAnswers.Count ? $" (over {readerCovered} of {indexAnswers.Count} items)" : string.Empty)
                     : "not graded";
@@ -3114,12 +3151,7 @@ public static class BenchmarkReportBuilder
         if (isPanelRun && answers.Any(a => a.SecondOpinionQualityScore.HasValue))
         {
             int answeredForAgreement = answers.Count(BenchmarkRunFinalizer.CountsTowardQualityIndex);
-            var readerCovered = answers
-                .Where(a => a.SecondOpinionQualityScore.HasValue
-                            && !string.Equals(a.SecondOpinionTrigger, "Manual", StringComparison.Ordinal)
-                            && BenchmarkRunFinalizer.CountsTowardQualityIndex(a))
-                .OrderBy(a => a.OrderIndex)
-                .ToList();
+            var readerCovered = ReferenceReaderCovered(answers);
             var readerGraded = readerCovered.Where(a => a.PanelQualityScore.HasValue).ToList();
 
             sb.AppendLine("### Reference Reader Agreement");
@@ -3130,7 +3162,7 @@ public static class BenchmarkReportBuilder
             if (readerGraded.Count > 0)
             {
                 double readerAbs = BenchmarkRunFinalizer.RoundAgreementDelta(readerGraded.Average(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.PanelQualityScore!.Value)));
-                double readerSigned = BenchmarkRunFinalizer.RoundAgreementDelta(readerGraded.Average(a => a.SecondOpinionQualityScore!.Value - a.PanelQualityScore!.Value));
+                double readerSigned = ReferenceReaderSignedOffset(answers)!.Value;
                 double readerVsA = BenchmarkRunFinalizer.RoundAgreementDelta(readerGraded.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.QualityScore!.Value)));
                 double readerVsB = BenchmarkRunFinalizer.RoundAgreementDelta(readerGraded.Average(a => (double)(a.SecondOpinionQualityScore!.Value - a.CoAssessmentQualityScore!.Value)));
                 sb.AppendLine($"- **Mean absolute difference from the panel:** {Inv(readerAbs, "F1")} points.");
@@ -3148,6 +3180,21 @@ public static class BenchmarkReportBuilder
                     ? " — " + string.Join(", ", readerDisagreed.Select(a => $"Q{a.OrderIndex}"))
                     : string.Empty;
                 sb.AppendLine($"- **Disagreements:** {readerDisagreed.Count} of {readerGraded.Count} ({Inv(readerDisagreementPct, "F1")}%){readerDisagreedNamed}. *A disagreement is a gap above {BenchmarkService.SecondOpinionDisagreementPoints} quality points from the panel score, or a critical-error flag that differs from both members'.*");
+
+                // The same definition once the reader's printed mean offset is taken off every gap, so
+                // a reader that grades uniformly higher or lower is not counted as disagreeing throughout.
+                const int offsetAdjustedMinAnswers = 5;
+                if (readerGraded.Count >= offsetAdjustedMinAnswers)
+                {
+                    var offsetDisagreed = readerGraded
+                        .Where(a => Math.Abs(a.SecondOpinionQualityScore!.Value - a.PanelQualityScore!.Value - readerSigned) > BenchmarkService.SecondOpinionDisagreementPoints
+                                    || ReaderSplitsFromPanel(a))
+                        .ToList();
+                    string offsetDisagreedNamed = offsetDisagreed.Count > 0
+                        ? " — " + string.Join(", ", offsetDisagreed.Select(a => $"Q{a.OrderIndex}"))
+                        : string.Empty;
+                    sb.AppendLine($"- **Disagreements after removing the reader's mean offset ({SignedDelta(readerSigned)}):** {offsetDisagreed.Count} of {readerGraded.Count}{offsetDisagreedNamed}. *Advisory; the definition above is unchanged.*");
+                }
             }
             else
             {
@@ -3392,44 +3439,28 @@ public static class BenchmarkReportBuilder
             {
                 // One row per member and a panel row, the mean of the two members' averages. Member
                 // B's points are its levels on this run's level table, as member A's are.
-                var levelScores = scoringConstants.LevelScores;
-                var bLevels = memberBRecords
-                    .Where(x => x.Record.AccuracyLevel.HasValue && x.Record.CompletenessLevel.HasValue
-                                && x.Record.ConcisenessLevel.HasValue && x.Record.ReadabilityLevel.HasValue)
-                    .Select(x => x.Record)
-                    .ToList();
-                var dimensions = new (string Name, Func<BenchmarkRunAnswer, int?> ScoreA, Func<BenchmarkRunAnswer, int?> LevelA, Func<BenchmarkCoAssessmentRecord, int> LevelB)[]
-                {
-                    ("Accuracy (55%)", a => a.AccuracyScore, a => a.AccuracyLevel, r => r.AccuracyLevel!.Value),
-                    ("Completeness (25%)", a => a.CompletenessScore, a => a.CompletenessLevel, r => r.CompletenessLevel!.Value),
-                    ("Conciseness (10%)", a => a.ConcisenessScore, a => a.ConcisenessLevel, r => r.ConcisenessLevel!.Value),
-                    ("Readability (10%)", a => a.ReadabilityScore, a => a.ReadabilityLevel, r => r.ReadabilityLevel!.Value)
-                };
-                var rowA = dimensions.Select(d => (Points: scoredAnswers.Average(a => d.ScoreA(a) ?? 0), Level: scoredAnswers.Average(a => d.LevelA(a) ?? 0))).ToList();
-                var rowB = bLevels.Count > 0
-                    ? dimensions.Select(d => (Points: bLevels.Average(r => (double)BenchmarkScoring.Score(d.LevelB(r), levelScores)), Level: bLevels.Average(r => (double)d.LevelB(r)))).ToList()
-                    : null;
-                static string Cell((double Points, double Level) v) => $"{Inv(v.Points, "F1")} / 100 (level {Inv(v.Level, "F1")})";
+                var averages = BenchmarkPanelDimensions.Averages(scoredAnswers, scoringConstants.LevelScores)!;
+                string[] dimensionNames = { "Accuracy (55%)", "Completeness (25%)", "Conciseness (10%)", "Readability (10%)" };
+                static string Cell(BenchmarkDimensionAverage v) => $"{Inv(v.Points, "F1")} / 100 (level {Inv(v.Level, "F1")})";
 
-                sb.AppendLine($"| Reader | {string.Join(" | ", dimensions.Select(d => d.Name))} |");
-                sb.AppendLine($"|--------|{string.Concat(dimensions.Select(_ => "---|"))}");
-                sb.AppendLine($"| Member A | {string.Join(" | ", rowA.Select(Cell))} |");
-                if (rowB != null)
+                sb.AppendLine($"| Reader | {string.Join(" | ", dimensionNames)} |");
+                sb.AppendLine($"|--------|{string.Concat(dimensionNames.Select(_ => "---|"))}");
+                sb.AppendLine($"| Member A | {string.Join(" | ", averages.MemberA.Select(Cell))} |");
+                if (averages.MemberB != null && averages.Panel != null)
                 {
-                    var rowPanel = rowA.Zip(rowB, (x, y) => (Points: (x.Points + y.Points) / 2.0, Level: (x.Level + y.Level) / 2.0)).ToList();
-                    sb.AppendLine($"| Member B | {string.Join(" | ", rowB.Select(Cell))} |");
-                    sb.AppendLine($"| Panel | {string.Join(" | ", rowPanel.Select(Cell))} |");
-                    styleAccuracy = rowPanel[0].Points;
-                    styleCompleteness = rowPanel[1].Points;
-                    styleConciseness = rowPanel[2].Points;
-                    styleReadability = rowPanel[3].Points;
+                    sb.AppendLine($"| Member B | {string.Join(" | ", averages.MemberB.Select(Cell))} |");
+                    sb.AppendLine($"| Panel | {string.Join(" | ", averages.Panel.Select(Cell))} |");
+                    styleAccuracy = averages.Panel[0].Points;
+                    styleCompleteness = averages.Panel[1].Points;
+                    styleConciseness = averages.Panel[2].Points;
+                    styleReadability = averages.Panel[3].Points;
                 }
                 else
                 {
-                    sb.AppendLine($"| Member B | {string.Join(" | ", dimensions.Select(_ => "not recorded"))} |");
+                    sb.AppendLine($"| Member B | {string.Join(" | ", dimensionNames.Select(_ => "not recorded"))} |");
                 }
                 sb.AppendLine();
-                sb.AppendLine($"*Over the {scoredAnswers.Count} answer(s) carrying a panel score; member B's row over the {bLevels.Count} of them whose record carries all four levels. The panel row is the mean of the two members' rows.*");
+                sb.AppendLine($"*Over the {scoredAnswers.Count} answer(s) carrying a panel score; member B's row over the {averages.MemberBAnswerCount} of them whose record carries all four levels. The panel row is the mean of the two members' rows.*");
             }
             else
             {

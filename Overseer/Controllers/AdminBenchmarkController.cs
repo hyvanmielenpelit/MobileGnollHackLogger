@@ -2876,12 +2876,20 @@ public class AdminBenchmarkController : ControllerBase
                 c.Id == run.AssessorModelConfigurationId.Value &&
                 c.IsEnabled && c.EncryptedApiKey != null && (c.ModelRole & 4) == 4);
 
-        string? reportWriterDisplayName = run.ReportWriterModelConfigurationId is long reportWriterId
+        var reportWriter = run.ReportWriterModelConfigurationId is long reportWriterId
             ? await _dbContext.SystemAiApiConfigurations
                 .Where(c => c.Id == reportWriterId)
-                .Select(c => c.DisplayName)
+                .Select(c => new { c.DisplayName, c.Provider, c.ModelId, c.ThinkingLevel })
                 .FirstOrDefaultAsync()
             : null;
+
+        // The run's stored run-completion documents, at most one per audience; summed in memory.
+        string runReportSubjectKey = BenchmarkRunReportDocumentService.SubjectKeyOf(run.Id);
+        var runReportDocuments = await _dbContext.BenchmarkReportDocuments
+            .Where(d => d.SubjectKey == runReportSubjectKey && d.Origin == BenchmarkReportDocumentOrigin.RunCompletion)
+            .Select(d => new { d.DurationMs, d.CostUsd, d.InputTokens, d.OutputTokens })
+            .ToListAsync();
+        bool hasRunReportDocuments = runReportDocuments.Count > 0;
 
         // While a run is running, the run-level totals are 0 because BenchmarkRunFinalizer writes them
         // once at the end. The mid-run figures are summed from the answer rows by the finalizer's own
@@ -3065,9 +3073,19 @@ public class AdminBenchmarkController : ControllerBase
             ClaimVerifierModelEndpoint = SystemAiConfigurationSnapshotStore.DescribeEndpoint(run.ClaimVerifierModelSnapshot),
 
             ReportWriterModelConfigurationId = run.ReportWriterModelConfigurationId,
-            ReportWriterDisplayName = reportWriterDisplayName,
+            ReportWriterDisplayName = reportWriter?.DisplayName,
             ReportDocumentsStatus = run.ReportDocumentsStatus,
             ReportDocumentsMessage = run.ReportDocumentsMessage,
+            ReportWriterProvider = reportWriter?.Provider,
+            ReportWriterModelId = reportWriter?.ModelId,
+            ReportWriterThinkingLevel = reportWriter?.ThinkingLevel,
+            ReportDocumentsWrittenCount = runReportDocuments.Count,
+            ReportDocumentsDurationMs = hasRunReportDocuments ? runReportDocuments.Sum(d => d.DurationMs) : null,
+            ReportDocumentsCostUsd = hasRunReportDocuments && runReportDocuments.All(d => d.CostUsd.HasValue)
+                ? runReportDocuments.Sum(d => d.CostUsd!.Value)
+                : null,
+            ReportDocumentsInputTokens = hasRunReportDocuments ? runReportDocuments.Sum(d => d.InputTokens) : null,
+            ReportDocumentsOutputTokens = hasRunReportDocuments ? runReportDocuments.Sum(d => d.OutputTokens) : null,
 
             StartedByUserId = run.StartedByUserId,
             StartedByUserName = run.StartedByUser?.UserName,
