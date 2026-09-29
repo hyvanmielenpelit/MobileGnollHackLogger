@@ -278,9 +278,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     run's own writer, else the launcher's when the server would accept it for the run's candidate —
     with its refusals shown inline and **Write Reports**, disabled with no writer and while a job is
     Pending or Writing. The tab has no Downloads button of its own. The section is not a run action.
-    The **Tools** and **Cost** panels are capped at 48 rem (`.rr-panel-narrow`) and **AI Reports** and
-    **Calibration** at 60 rem (`.rr-panel-medium`), start-aligned; **Configuration** is not capped, since
-    its `dl` keeps each value beside its label. The Tools tables right-align their counts (`.rr-num`).
+    The **Difficulty**, **Tools** and **Cost** panels are capped at 48 rem (`.rr-panel-narrow`) and
+    **Configuration**, **AI Reports** and **Calibration** at 60 rem (`.rr-panel-medium`), each centered
+    in the dialog (`margin-inline: auto`); the other tabs are full width. The Tools tables right-align
+    their counts (`.rr-num`).
     Calibration's controls are one column, at most 36 rem wide: *Calibration assessor*, then *Compare
     against*, then **Calibrate assessor** at its own width. On a panel run *Compare against* is an
     `app-model-picker` (`.calibration-target-selector`, labelled `bmCalibrationTargetLabel`) whose

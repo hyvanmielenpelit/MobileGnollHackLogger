@@ -10960,19 +10960,19 @@ describe('AdminBenchmarkComponent', () => {
         expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-summary']);
       });
 
-      it('should cap the Tools, Cost, AI Reports and Calibration panels and no other', () => {
+      it('should cap the Difficulty, Tools, Cost, Configuration, AI Reports and Calibration panels and no other', () => {
         openReport(reportRun());
 
         const panel = (key: string) => fixture.nativeElement.querySelector(`#rr-panel-${key}`) as HTMLElement;
-        for (const key of ['tools', 'cost']) {
+        for (const key of ['difficulty', 'tools', 'cost']) {
           expect(panel(key).classList).withContext(key).toContain('rr-panel-narrow');
           expect(panel(key).classList).withContext(key).not.toContain('rr-panel-medium');
         }
-        for (const key of ['reports', 'calibration']) {
+        for (const key of ['configuration', 'reports', 'calibration']) {
           expect(panel(key).classList).withContext(key).toContain('rr-panel-medium');
           expect(panel(key).classList).withContext(key).not.toContain('rr-panel-narrow');
         }
-        for (const key of ['summary', 'questions', 'configuration']) {
+        for (const key of ['summary', 'questions']) {
           expect(panel(key).classList).withContext(key).not.toContain('rr-panel-narrow');
           expect(panel(key).classList).withContext(key).not.toContain('rr-panel-medium');
         }

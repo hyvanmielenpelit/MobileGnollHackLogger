@@ -2799,9 +2799,9 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   &:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 }
 // Tabs whose content is a short table, a breakdown or a list, capped so values stay near their
-// labels on a full-screen dialog. Start-aligned with the tab row; fluid below the cap.
-.rr-panel-narrow { max-inline-size: 48rem; }
-.rr-panel-medium { max-inline-size: 60rem; }
+// labels on a full-screen dialog. Centered in the dialog; fluid below the cap.
+.rr-panel-narrow { max-inline-size: 48rem; margin-inline: auto; }
+.rr-panel-medium { max-inline-size: 60rem; margin-inline: auto; }
 // Counts and shares in the Tools tables, right-aligned so the digits line up down a column.
 .gh-table .rr-num { text-align: end; font-variant-numeric: tabular-nums; }
 .rr-figures-head {
