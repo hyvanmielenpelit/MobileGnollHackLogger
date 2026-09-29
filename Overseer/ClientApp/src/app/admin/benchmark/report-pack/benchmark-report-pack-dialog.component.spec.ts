@@ -761,10 +761,15 @@ describe('BenchmarkReportPackDialogComponent', () => {
     let closed = 0;
     component.closed.subscribe(() => closed++);
 
+    // The browser fires `close` from its own queued task, which a fixed timer can overtake; the
+    // component's template listener was registered first, so it has run when this one resolves.
+    const dialog = component.dialog!.nativeElement;
+    const dialogClosed = new Promise<void>(resolve =>
+      dialog.addEventListener('close', () => resolve(), { once: true }));
     component.close();
-    await new Promise(resolve => setTimeout(resolve));
+    await dialogClosed;
 
     expect(closed).toBe(1);
-    expect(component.dialog!.nativeElement.open).toBeFalse();
+    expect(dialog.open).toBeFalse();
   });
 });

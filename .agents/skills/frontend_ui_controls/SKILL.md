@@ -315,6 +315,10 @@ disclosure bar is gone: the whole-set **Copy** and **Download** sit beside the *
 the Summary tab. The AI Reports tab lost its own **Downloads** button; the header's **Downloads** is the
 one entry to the Download Center.*
 
+*Changed 2026-09-29: `app-model-picker` options can carry a `tag`, a role chip before the model
+name (`.model-option-tag`, global). The run report's* Compare against *uses it: Assessor A,
+Co-assessor B and Panel, each with its model.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -643,7 +647,8 @@ opens a popup `role="listbox"`, which takes focus and tracks the active option w
 
 | Input | Meaning |
 |-------|---------|
-| `options` | `ModelPickerOption[]` — `{ key, model, group? }`. Build them with `toModelPickerOptions(models, group?, keyPrefix?)`, from a getter memoized on its source, never a fresh array per change-detection pass |
+| `options` | `ModelPickerOption[]` — `{ key, model, group?, tag? }`. Build them with `toModelPickerOptions(models, group?, keyPrefix?)`, from a getter memoized on its source, never a fresh array per change-detection pass |
+| `ModelPickerOption.tag` | Optional. A short role shown as a chip (`.model-option-tag`, global) before the model name, in the trigger and the option, and part of both accessible names and of type-ahead. For a choice of roles played by models (the Calibration tab's *Compare against*), not for grouping — that is `group` |
 | `selectedKey` | The selected option's key, compared with `===`; the host owns it and feeds it back |
 | `noneLabel` | Adds a first option with key `null`; shown muted on the trigger while nothing is selected |
 | `placeholder` / `emptyHint` | Muted trigger text with no selection and no none option; the popup's text when `options` is empty (the listbox's `aria-describedby`) |
@@ -1214,6 +1219,7 @@ Diff this against your markup before calling button, tab or table work finished.
       hint, where there is one, is passed as `describedBy`.
 - [ ] `options` comes from a memoized getter, not a new array on every change-detection pass.
 - [ ] Price and parallel badges are opted into with `showPrice` / `showParallel`, not re-added by hand.
+- [ ] A role played by a model is a `tag`, not part of `displayName`.
 - [ ] No component stylesheet reaches into `.selector-trigger`, `.selector-dropdown` or `.model-option`.
 
 **Tabs**

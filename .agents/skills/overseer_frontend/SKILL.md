@@ -277,7 +277,15 @@ To find specific popups, look in the corresponding component's `.html` template:
     closes. When the finished run lacks a document, a **Report writer** picker — preselected with the
     run's own writer, else the launcher's when the server would accept it for the run's candidate —
     with its refusals shown inline and **Write Reports**, disabled with no writer and while a job is
-    Pending or Writing. The tab has no Downloads button of its own. The section is not a run action. The launcher's *Grading*
+    Pending or Writing. The tab has no Downloads button of its own. The section is not a run action.
+    The **Tools** and **Cost** panels are capped at 48 rem (`.rr-panel-narrow`) and **AI Reports** and
+    **Calibration** at 60 rem (`.rr-panel-medium`), start-aligned; **Configuration** is not capped, since
+    its `dl` keeps each value beside its label. The Tools tables right-align their counts (`.rr-num`).
+    Calibration's controls are one column, at most 36 rem wide: *Calibration assessor*, then *Compare
+    against*, then **Calibrate assessor** at its own width. On a panel run *Compare against* is an
+    `app-model-picker` (`.calibration-target-selector`, labelled `bmCalibrationTargetLabel`) whose
+    options are tagged *Assessor A*, *Co-assessor B* and *Panel*, each naming its model; the Panel
+    option reads *Mean of A and B* with the two model names. The launcher's *Grading*
     fieldset has the matching optional **Report Writer** field after *Claim Verifier* (an
     `app-model-picker`, empty choice *None — no AI-written reports*, a click-mode info tip, remembered
     with the other launcher fields). Audience 2 is shown everywhere as **Report for AI Researchers and

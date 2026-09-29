@@ -98,7 +98,9 @@ import {
   selectionNotices
 } from './model-comparison/model-comparison.models';
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
-import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../../shared/model-picker/model-picker.component';
+import {
+  ModelPickerComponent, ModelPickerKey, ModelPickerModel, ModelPickerOption, toModelPickerOptions
+} from '../../shared/model-picker/model-picker.component';
 import { InfoTipComponent } from '../../shared/info-tip/info-tip.component';
 import { Observable, Subscription, catchError, firstValueFrom, forkJoin, from, map, of, switchMap, timer } from 'rxjs';
 import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
@@ -949,6 +951,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     { value: 'CoAssessor', label: 'Co-assessor B' },
     { value: 'Panel', label: 'Panel (mean of A and B)' }
   ];
+  private calibrationTargetOptionsSource: BenchmarkRunDetailDto | null = null;
+  private calibrationTargetOptionsCache: ModelPickerOption<ModelPickerModel>[] = [];
   runningSynthesis = false;
   retryingAssessments = false;
   retryingClaimVerification = false;
@@ -8664,6 +8668,42 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /** Compare against, one option per panel member plus the panel mean, each naming its model. */
+  get calibrationTargetPickerOptions(): ModelPickerOption<ModelPickerModel>[] {
+    const run = this.selectedRunDetail ?? null;
+    if (run !== this.calibrationTargetOptionsSource) {
+      this.calibrationTargetOptionsSource = run;
+      this.calibrationTargetOptionsCache = run ? this.buildCalibrationTargetOptions(run) : [];
+    }
+    return this.calibrationTargetOptionsCache;
+  }
+
+  private buildCalibrationTargetOptions(run: BenchmarkRunDetailDto): ModelPickerOption<ModelPickerModel>[] {
+    const a = run.assessorModelDisplayNameUsed || run.assessorModelIdUsed || 'Unknown model';
+    const b = run.coAssessorModelDisplayNameUsed || run.coAssessorModelIdUsed || 'Unknown model';
+    return [
+      {
+        key: 'Assessor', tag: 'Assessor A', model: {
+          displayName: a, provider: run.assessorModelProviderUsed,
+          thinkingLevel: run.assessorModelThinkingLevelUsed, reasoningMode: run.assessorModelReasoningModeUsed
+        }
+      },
+      {
+        key: 'CoAssessor', tag: 'Co-assessor B', model: {
+          displayName: b, provider: run.coAssessorModelProviderUsed,
+          thinkingLevel: run.coAssessorModelThinkingLevelUsed, reasoningMode: run.coAssessorModelReasoningModeUsed
+        }
+      },
+      { key: 'Panel', tag: 'Panel', model: { displayName: `Mean of ${a} and ${b}` } }
+    ];
+  }
+
+  selectCalibrationTarget(key: ModelPickerKey | null): void {
+    if (key === 'Assessor' || key === 'CoAssessor' || key === 'Panel') {
+      this.calibrationTarget = key;
+    }
   }
 
   // --- Assessor panel (run detail) ---

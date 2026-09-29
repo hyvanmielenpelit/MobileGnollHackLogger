@@ -2846,7 +2846,7 @@
             }
           </div>
 
-          <div role="tabpanel" class="rr-panel" id="rr-panel-tools" aria-labelledby="rr-tab-tools" tabindex="0"
+          <div role="tabpanel" class="rr-panel rr-panel-narrow" id="rr-panel-tools" aria-labelledby="rr-tab-tools" tabindex="0"
                [hidden]="runReportTab !== 'tools'">
             <!--
               Tool Usage Profile. Knowing a budget was reached is not actionable on its own; the
@@ -2865,13 +2865,13 @@
                 <table class="gh-table tool-usage-table">
                   <caption class="visually-hidden">Successful tool calls per tool across the run</caption>
                   <thead>
-                    <tr><th scope="col">Tool</th><th scope="col">Successful calls</th></tr>
+                    <tr><th scope="col">Tool</th><th scope="col" class="rr-num">Successful calls</th></tr>
                   </thead>
                   <tbody>
                     @for (tool of toolUsageProfile(); track tool.name) {
                       <tr>
                         <td><code>{{ tool.name }}</code></td>
-                        <td>{{ tool.count }}</td>
+                        <td class="rr-num">{{ tool.count }}</td>
                       </tr>
                     }
                   </tbody>
@@ -2898,14 +2898,14 @@
                   <table class="gh-table tool-routing-table">
                     <caption class="visually-hidden">Tool calls by family, with each family's share of the run</caption>
                     <thead>
-                      <tr><th scope="col">Family</th><th scope="col">Calls</th><th scope="col">Share</th></tr>
+                      <tr><th scope="col">Family</th><th scope="col" class="rr-num">Calls</th><th scope="col" class="rr-num">Share</th></tr>
                     </thead>
                     <tbody>
                       @for (row of toolRoutingFamilies(); track row.family) {
                         <tr>
                           <td>{{ row.label }}</td>
-                          <td>{{ row.count }}</td>
-                          <td>{{ row.sharePercentage | number:'1.0-1' }} %</td>
+                          <td class="rr-num">{{ row.count }}</td>
+                          <td class="rr-num">{{ row.sharePercentage | number:'1.0-1' }} %</td>
                         </tr>
                       }
                     </tbody>
@@ -2923,7 +2923,7 @@
             }
           </div>
 
-          <div role="tabpanel" class="rr-panel" id="rr-panel-cost" aria-labelledby="rr-tab-cost" tabindex="0"
+          <div role="tabpanel" class="rr-panel rr-panel-narrow" id="rr-panel-cost" aria-labelledby="rr-tab-cost" tabindex="0"
                [hidden]="runReportTab !== 'cost'">
             <!--
               Where the Estimated Cost card's figure went. The roles and the grading subtotal are
@@ -2965,7 +2965,7 @@
             </section>
           </div>
 
-          <div role="tabpanel" class="rr-panel" id="rr-panel-reports" aria-labelledby="rr-tab-reports" tabindex="0"
+          <div role="tabpanel" class="rr-panel rr-panel-medium" id="rr-panel-reports" aria-labelledby="rr-tab-reports" tabindex="0"
                [hidden]="runReportTab !== 'reports'">
             <!--
               The run's AI-written reports: an Executive Summary and a Report for AI Researchers and
@@ -3038,7 +3038,7 @@
             </div>
           </div>
 
-          <div role="tabpanel" class="rr-panel" id="rr-panel-calibration" aria-labelledby="rr-tab-calibration" tabindex="0"
+          <div role="tabpanel" class="rr-panel rr-panel-medium" id="rr-panel-calibration" aria-labelledby="rr-tab-calibration" tabindex="0"
                [hidden]="runReportTab !== 'calibration'">
             <!--
               Assessor calibration. Grades this finished run's answers with another model and records
@@ -3066,12 +3066,10 @@
                 </div>
                 @if (selectedRunDetail.isPanelRun) {
                   <div class="form-group calibration-target-field">
-                    <label for="calibrationTargetSelect">Compare against</label>
-                    <select id="calibrationTargetSelect" class="gh-input" [(ngModel)]="calibrationTarget">
-                      @for (option of calibrationTargetOptions; track option.value) {
-                        <option [ngValue]="option.value">{{ option.label }}</option>
-                      }
-                    </select>
+                    <label id="bmCalibrationTargetLabel">Compare against</label>
+                    <app-model-picker class="calibration-target-selector" labelledBy="bmCalibrationTargetLabel"
+                                      [options]="calibrationTargetPickerOptions" [selectedKey]="calibrationTarget"
+                                      (selectionChange)="selectCalibrationTarget($event.key)"></app-model-picker>
                   </div>
                 }
                 <button type="button" class="btn-gh" (click)="runCalibration(selectedRunDetail.id)"

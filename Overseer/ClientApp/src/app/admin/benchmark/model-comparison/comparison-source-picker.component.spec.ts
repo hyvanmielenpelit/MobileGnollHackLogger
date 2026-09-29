@@ -30,6 +30,15 @@ const UNBREAKABLE_VALUE = `{"systemPrompt":"${UNBREAKABLE_TOKEN}","temperature":
 /** A full-length digest, so a test can tell an abbreviation from the value it stands for. */
 const FULL_DIGEST = 'bb19dc24e287'.repeat(5) + 'abcd';
 
+/**
+ * Resolves after the dialog's next `close` event has been dispatched. The browser fires `close`
+ * from its own queued task, which a fixed timer can overtake; the component's template listener
+ * was registered first, so it has already run when this one resolves.
+ */
+function nextClose(dialog: HTMLDialogElement): Promise<void> {
+  return new Promise<void>(resolve => dialog.addEventListener('close', () => resolve(), { once: true }));
+}
+
 describe('ComparisonSourcePickerComponent', () => {
   let component: ComparisonSourcePickerComponent;
   let fixture: ComponentFixture<ComparisonSourcePickerComponent>;
@@ -705,9 +714,9 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(cancel.defaultPrevented)
         .withContext('a refused close request leaves the reader trapped').toBeFalse();
 
+      const closed = nextClose(dialog);
       dialog.close();
-      // `close` is fired from a queued element task, so it has not run yet.
-      await new Promise<void>(resolve => setTimeout(resolve, 0));
+      await closed;
 
       expect(dialog.open).toBeFalse();
       expect(document.activeElement).toBe(trigger);
@@ -831,9 +840,9 @@ describe('ComparisonSourcePickerComponent', () => {
     openLegend();
     expect(fixture.debugElement.query(By.css('.csp-legend-inner'))).toBeTruthy();
 
+    const closed = nextClose(legendDialog());
     legendDialog().close();
-    // `close` is fired from a queued element task, so it has not run yet.
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    await closed;
     fixture.detectChanges();
 
     expect(component.legendOpen).toBeFalse();

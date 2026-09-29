@@ -2575,12 +2575,11 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .calibration-panel {
   overflow-wrap: anywhere;
 
+  // One column: the model, what it is compared against, then the action under them.
   .calibration-controls {
-    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px;
-    .form-group { margin-bottom: 0; }
+    display: grid; justify-items: start; gap: 10px; max-inline-size: 36rem;
+    .form-group { justify-self: stretch; margin-bottom: 0; }
   }
-  .calibration-model-field { flex: 1 1 22rem; min-width: min(100%, 22rem); }
-  .calibration-target-field { flex: 1 1 10rem; min-width: 0; select { width: 100%; } }
   .calibration-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
   .calibration-item { padding: 8px 10px; border: 1px solid #333; border-radius: 6px; font-size: 12px; }
   .calibration-item-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
@@ -2799,6 +2798,12 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   &[hidden] { display: none; }
   &:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
 }
+// Tabs whose content is a short table, a breakdown or a list, capped so values stay near their
+// labels on a full-screen dialog. Start-aligned with the tab row; fluid below the cap.
+.rr-panel-narrow { max-inline-size: 48rem; }
+.rr-panel-medium { max-inline-size: 60rem; }
+// Counts and shares in the Tools tables, right-aligned so the digits line up down a column.
+.gh-table .rr-num { text-align: end; font-variant-numeric: tabular-nums; }
 .rr-figures-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-bottom: 10px; border-bottom: 1px solid var(--border-glass);

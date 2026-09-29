@@ -39,6 +39,8 @@ export interface ModelPickerOption<M extends ModelPickerModel = ModelPickerModel
   model: M;
   /** Consecutive options with the same group share one heading. */
   group?: string;
+  /** A short role shown before the model name, e.g. the panel member a calibration compares against. */
+  tag?: string;
 }
 
 export interface ModelPickerSelection<M extends ModelPickerModel = ModelPickerModel> {
@@ -175,6 +177,12 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   get selectedModel(): M | null {
     if (this.selectedKey === null) return null;
     return this.options.find(o => o.key === this.selectedKey)?.model ?? null;
+  }
+
+  /** The selected option's tag, or null when it has none or nothing is selected. */
+  get selectedTag(): string | null {
+    if (this.selectedKey === null) return null;
+    return this.options.find(o => o.key === this.selectedKey)?.tag ?? null;
   }
 
   ngOnInit(): void {
@@ -391,7 +399,11 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
     let current: Section<M> | null = null;
     let groupCount = 0;
     this.options.forEach((option, i) => {
-      flat.push({ key: option.key, model: option.model, searchName: this.modelName(option.model).toLowerCase() });
+      flat.push({
+        key: option.key,
+        model: option.model,
+        searchName: [option.tag, this.modelName(option.model)].filter(Boolean).join(' ').toLowerCase()
+      });
       const group = option.group ?? null;
       if (!current || current.group !== group) {
         current = { group, headingId: group ? `${this.uid}-grp-${++groupCount}` : null, items: [] };

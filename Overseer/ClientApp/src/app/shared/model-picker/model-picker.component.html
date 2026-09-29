@@ -25,6 +25,9 @@
        [attr.aria-selected]="isSelected(item.option.key)"
        [class.is-active]="item.index === activeIndex"
        (click)="commit(item.index)">
+    @if (item.option.tag) {
+      <span class="model-option-tag">{{ item.option.tag }}</span>
+    }
     <span class="model-name">{{ modelName(item.option.model) }}</span>
     <ng-container [ngTemplateOutlet]="badges" [ngTemplateOutletContext]="{ $implicit: item.option.model }"></ng-container>
   </div>
@@ -42,6 +45,9 @@
         [attr.aria-describedby]="describedBy"
         (click)="toggle()" (keydown)="onTriggerKeydown($event)">
   @if (selectedModel; as model) {
+    @if (selectedTag; as tag) {
+      <span class="model-option-tag">{{ tag }}</span>
+    }
     <span class="model-name">{{ modelName(model) }}</span>
     <ng-container [ngTemplateOutlet]="badges" [ngTemplateOutletContext]="{ $implicit: model }"></ng-container>
   } @else {

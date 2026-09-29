@@ -304,6 +304,53 @@ describe('ModelPickerComponent', () => {
     }));
   });
 
+  describe('option tags', () => {
+    const TAGGED: ModelPickerOption<TestModel>[] = [
+      { key: 'Assessor', tag: 'Assessor A', model: MODELS[0] },
+      { key: 'CoAssessor', tag: 'Co-assessor B', model: MODELS[1] },
+      { key: 'Panel', tag: 'Panel', model: { id: 9, displayName: 'Mean of Alpha and Beta' } },
+      { key: 'Plain', model: MODELS[2] }
+    ];
+
+    it('render the tag before the name, as the start of the option text', () => {
+      update({ optionsA: TAGGED });
+      openByClick();
+      const first = options()[0];
+      const tag = first.querySelector('.model-option-tag')!;
+      expect(tag.textContent!.trim()).toBe('Assessor A');
+      expect(tag.nextElementSibling!.classList).toContain('model-name');
+      expect(first.textContent!.trim().startsWith('Assessor A')).toBeTrue();
+      expect(options()[3].querySelector('.model-option-tag')).toBeNull();
+    });
+
+    it('show the selected tag on the trigger, and none for an untagged or empty selection', () => {
+      update({ optionsA: TAGGED, selectedA: 'CoAssessor' });
+      const tag = trigger().querySelector('.model-option-tag')!;
+      expect(tag.textContent!.trim()).toBe('Co-assessor B');
+      expect(tag.nextElementSibling!.textContent!.trim()).toBe('Beta');
+
+      update({ selectedA: 'Plain' });
+      expect(trigger().querySelector('.model-option-tag')).toBeNull();
+
+      update({ selectedA: null });
+      expect(trigger().querySelector('.model-option-tag')).toBeNull();
+    });
+
+    it('take part in type-ahead', fakeAsync(() => {
+      update({ optionsA: TAGGED });
+      openByClick();
+      key(listbox()!, 'p');
+      expect(activeOption()!.textContent).toContain('Panel');
+      tick(600);
+    }));
+
+    it('are absent from an untagged picker', () => {
+      update({ selectedA: 1 });
+      openByClick();
+      expect(pickerA().querySelector('.model-option-tag')).toBeNull();
+    });
+  });
+
   describe('pointer and focus', () => {
     it('commits a clicked option', () => {
       openByClick();

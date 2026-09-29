@@ -9998,20 +9998,48 @@ describe('AdminBenchmarkComponent', () => {
         tick();
         fixture.detectChanges();
 
-        const select = fixture.nativeElement.querySelector('#calibrationTargetSelect') as HTMLSelectElement;
-        expect(select).toBeTruthy();
-        expect(Array.from(select.options).map(o => o.textContent?.trim()))
-          .toEqual(['Assessor A', 'Co-assessor B', 'Panel (mean of A and B)']);
+        const trigger = fixture.nativeElement.querySelector('.calibration-target-selector .selector-trigger') as HTMLButtonElement;
+        expect(trigger).toBeTruthy();
+        trigger.click();
+        fixture.detectChanges();
 
-        select.value = select.options[2].value;
-        select.dispatchEvent(new Event('change'));
+        const options = Array.from(fixture.nativeElement.querySelectorAll('.calibration-target-selector [role="option"]')) as HTMLElement[];
+        expect(options.map(o => o.querySelector('.model-option-tag')?.textContent?.trim()))
+          .toEqual(['Assessor A', 'Co-assessor B', 'Panel']);
+        expect(options.map(o => o.querySelector('.model-name')?.textContent?.trim()))
+          .toEqual(['GPT-5 Mini', 'Claude Opus 4', 'Mean of GPT-5 Mini and Claude Opus 4']);
+        expect(options[0].querySelector('app-provider-badge')?.textContent).toContain('OpenAI');
+        expect(options[1].querySelector('app-provider-badge')?.textContent).toContain('Anthropic');
+        expect(options[2].querySelector('app-provider-badge')).toBeNull();
+
+        options[2].click();
         fixture.detectChanges();
         expect(component.calibrationTarget).toBe('Panel');
+        expect(trigger.querySelector('.model-option-tag')?.textContent?.trim()).toBe('Panel');
 
         component.runCalibration(77);
         expect(benchmarkServiceMock.calibrateAssessor).toHaveBeenCalledWith(77, 1, 'Panel');
         discardPeriodicTasks();
       }));
+
+      it('should label Compare against like the calibration assessor', () => {
+        component.selectedRunDetail = buildPanelRun();
+        fixture.detectChanges();
+
+        const trigger = fixture.nativeElement.querySelector('.calibration-target-selector .selector-trigger') as HTMLButtonElement;
+        const labelId = trigger.getAttribute('aria-labelledby')!.split(' ')[0];
+        expect(labelId).toBe('bmCalibrationTargetLabel');
+        expect(fixture.nativeElement.querySelector(`#${labelId}`)?.textContent?.trim()).toBe('Compare against');
+      });
+
+      it('should rebuild the Compare against options only when the run changes', () => {
+        component.selectedRunDetail = buildPanelRun();
+        const first = component.calibrationTargetPickerOptions;
+        expect(component.calibrationTargetPickerOptions).toBe(first);
+
+        component.selectedRunDetail = buildPanelRun();
+        expect(component.calibrationTargetPickerOptions).not.toBe(first);
+      });
 
       it('should show the Compared against column on a panel run', () => {
         const rows = [
@@ -10043,7 +10071,7 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
         expect(fixture.nativeElement.querySelectorAll('.calibration-item').length).toBe(1);
         expect(statTerms()).not.toContain('Compared against');
-        expect(fixture.nativeElement.querySelector('#calibrationTargetSelect')).toBeNull();
+        expect(fixture.nativeElement.querySelector('.calibration-target-selector')).toBeNull();
       });
 
       it('should wrap the calibration controls and list the calibrations without a table', () => {
@@ -10059,7 +10087,7 @@ describe('AdminBenchmarkComponent', () => {
         const controls = fixture.nativeElement.querySelector('.calibration-panel .calibration-controls') as HTMLElement;
         expect(controls).toBeTruthy();
         expect(controls.querySelector('.calibration-model-field app-model-picker')).toBeTruthy();
-        expect(controls.querySelector('.calibration-target-field #calibrationTargetSelect')).toBeTruthy();
+        expect(controls.querySelector('.calibration-target-field app-model-picker.calibration-target-selector')).toBeTruthy();
         expect(controls.querySelector('button.btn-gh')?.textContent?.trim()).toBe('Calibrate assessor');
         expect(fixture.nativeElement.querySelector('.calibration-table')).toBeNull();
         expect(fixture.nativeElement.querySelector('.calibration-panel table')).toBeNull();
@@ -10070,6 +10098,25 @@ describe('AdminBenchmarkComponent', () => {
         expect(item.querySelector('.calibration-item-head')?.textContent).toContain('Claude Opus 5');
         expect(item.querySelector('p.calibration-error')?.textContent?.trim()).toBe('Three answers could not be graded.');
       });
+
+      it('should order the calibration controls model, target, button on a panel run', () => {
+        component.selectedRunDetail = buildPanelRun();
+        fixture.detectChanges();
+        expect(calibrationControlOrder()).toEqual(['model', 'target', 'button:Calibrate assessor']);
+      });
+
+      it('should order the calibration controls model, button on a single-assessor run', () => {
+        component.selectedRunDetail = buildPanelRun({ isPanelRun: false });
+        fixture.detectChanges();
+        expect(calibrationControlOrder()).toEqual(['model', 'button:Calibrate assessor']);
+      });
+
+      function calibrationControlOrder(): string[] {
+        return Array.from((fixture.nativeElement.querySelector('.calibration-panel .calibration-controls') as HTMLElement).children)
+          .map(child => child.matches('.calibration-model-field') ? 'model'
+            : child.matches('.calibration-target-field') ? 'target'
+            : child.matches('button.btn-gh') ? `button:${child.textContent?.trim()}` : child.tagName);
+      }
 
       function statTerms(): string[] {
         return Array.from(fixture.nativeElement.querySelectorAll('.calibration-stats dt'))
@@ -10830,6 +10877,31 @@ describe('AdminBenchmarkComponent', () => {
       expect(tools.textContent).toContain('(n = 2)');
     });
 
+    it('should right-align the Tools counts', () => {
+      component.selectedRunDetail = reportRun({
+        answers: [
+          reportAnswer(1, { toolCallSummary: 'source_code_search×3, wiki_search×1' }),
+          reportAnswer(2, { toolCallSummary: 'wiki_view×2' })
+        ]
+      });
+      fixture.detectChanges();
+
+      const tools = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog #rr-panel-tools') as HTMLElement;
+      const numericCells = (table: string) => Array.from(tools.querySelectorAll(`${table} tbody tr`))
+        .map(tr => Array.from(tr.querySelectorAll('td')).map(td => td.classList.contains('rr-num')));
+
+      const usage = numericCells('.tool-usage-table');
+      expect(usage.length).toBeGreaterThan(0);
+      expect(usage.every(row => row.length === 2 && !row[0] && row[1])).toBeTrue();
+      expect(tools.querySelector('.tool-usage-table thead th:nth-child(2)')!.classList).toContain('rr-num');
+
+      const routing = numericCells('.tool-routing-table');
+      expect(routing.length).toBeGreaterThan(0);
+      expect(routing.every(row => row.length === 3 && !row[0] && row[1] && row[2])).toBeTrue();
+      const routingHeads = Array.from(tools.querySelectorAll('.tool-routing-table thead th')).map(th => th.classList.contains('rr-num'));
+      expect(routingHeads).toEqual([false, true, true]);
+    });
+
     describe('tabs', () => {
       const KEYS = ['summary', 'integrity', 'synthesis', 'questions', 'difficulty', 'tools', 'cost', 'configuration', 'reports', 'calibration'];
 
@@ -10886,6 +10958,24 @@ describe('AdminBenchmarkComponent', () => {
         }
         expect(tab('summary').getAttribute('aria-selected')).toBe('true');
         expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-summary']);
+      });
+
+      it('should cap the Tools, Cost, AI Reports and Calibration panels and no other', () => {
+        openReport(reportRun());
+
+        const panel = (key: string) => fixture.nativeElement.querySelector(`#rr-panel-${key}`) as HTMLElement;
+        for (const key of ['tools', 'cost']) {
+          expect(panel(key).classList).withContext(key).toContain('rr-panel-narrow');
+          expect(panel(key).classList).withContext(key).not.toContain('rr-panel-medium');
+        }
+        for (const key of ['reports', 'calibration']) {
+          expect(panel(key).classList).withContext(key).toContain('rr-panel-medium');
+          expect(panel(key).classList).withContext(key).not.toContain('rr-panel-narrow');
+        }
+        for (const key of ['summary', 'questions', 'configuration']) {
+          expect(panel(key).classList).withContext(key).not.toContain('rr-panel-narrow');
+          expect(panel(key).classList).withContext(key).not.toContain('rr-panel-medium');
+        }
       });
 
       it('should show exactly the chosen panel, keep the others rendered, and remember the choice', () => {
