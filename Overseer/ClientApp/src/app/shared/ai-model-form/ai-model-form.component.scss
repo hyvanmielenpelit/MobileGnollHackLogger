@@ -1,9 +1,28 @@
 
+/* Fills a flex-column host dialog (.model-form-dialog), so only the scroll area scrolls. */
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-block-size: 0;
+}
+
+.dialog-content {
+  flex: 1;
+  min-block-size: 0;
+}
+
+/* The host lifts the 65vh cap with --model-form-scroll-max. */
 .form-scroll-area {
-  max-height: 65vh;
+  max-height: var(--model-form-scroll-max, 65vh);
+  flex: 1;
+  min-block-size: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+  container: model-form / inline-size;
   padding-right: 10px; // space for scrollbar
-  
+
   // Custom scrollbar
   &::-webkit-scrollbar {
     width: 6px;
@@ -14,6 +33,79 @@
   &::-webkit-scrollbar-thumb {
     background-color: var(--border-glass);
     border-radius: 3px;
+  }
+}
+
+/* Connection, Model, Settings and Advanced. Columns separate groups, never the fields of one;
+   read column by column the order is the DOM order. */
+.model-form-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "connection"
+    "model"
+    "settings"
+    "advanced";
+  gap: 16px;
+
+  > .form-fieldset,
+  > .advanced-section,
+  > .mf-settings > .form-fieldset {
+    margin-block: 0;
+  }
+}
+
+.mf-connection { grid-area: connection; }
+.mf-model { grid-area: model; }
+.mf-settings { grid-area: settings; }
+.mf-advanced { grid-area: advanced; }
+
+/* Model Properties and Configuration side by side where Settings is wide enough. */
+.mf-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.advanced-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 16px;
+  align-items: start;
+  margin-top: 8px;
+
+  > .form-fieldset {
+    margin-block: 0;
+  }
+}
+
+@container model-form (width >= 40rem) {
+  /* My Models: the one-select Connection sits above Model; the spare height goes to the Model row. */
+  .model-form-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      "connection settings"
+      "model settings"
+      "advanced advanced";
+  }
+
+  .model-form-layout.mf-admin {
+    grid-template-rows: none;
+    grid-template-areas:
+      "connection model"
+      "settings settings"
+      "advanced advanced";
+  }
+}
+
+@container model-form (width >= 70rem) {
+  .model-form-layout.mf-admin {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr);
+    grid-template-areas:
+      "connection model settings"
+      "advanced advanced advanced";
   }
 }
 
@@ -32,6 +124,11 @@
       background-color: var(--primary-color);
       color: white;
     }
+  }
+
+  /* After the base height, which it must override. */
+  @container model-form (width >= 40rem) {
+    block-size: 20rem;
   }
 }
 
@@ -210,7 +307,8 @@
   margin-bottom: 15px;
   background: rgba(0, 0, 0, 0.15);
 
-  legend {
+  /* Direct child only: the nested .gh-choice groups keep their own label-style legend. */
+  > legend {
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--gh-gold, #f39c12);
@@ -411,6 +509,30 @@
     font-size: inherit;
     font-weight: 500;
     color: #ddd;
+  }
+}
+
+/* Admin Configuration group: the checkbox rows take the form-group rhythm. */
+.mf-configuration > .checkbox-row {
+  margin-top: 0;
+  margin-bottom: 15px;
+}
+
+/* Model Role: a checkbox group whose legend reads as the form's field labels. */
+.model-role-choice {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 4px;
+
+  > legend {
+    margin-bottom: 8px;
+    font-size: inherit;
+    font-weight: 500;
+    color: #ddd;
+  }
+
+  .checkbox-row {
+    margin-block: 0;
   }
 }
 

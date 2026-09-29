@@ -221,7 +221,7 @@
   }
 </div>
 
-<dialog #modelPickerDialog class="settings-dialog">
+<dialog #modelPickerDialog class="settings-dialog model-form-dialog">
   @if (isAddingModel) {
     <app-ai-model-form
       mode="add"
@@ -234,7 +234,7 @@
   }
 </dialog>
 
-<dialog #editModelDialog class="settings-dialog">
+<dialog #editModelDialog class="settings-dialog model-form-dialog">
   @if (editingModel && editFormData) {
     <app-ai-model-form
       mode="edit"

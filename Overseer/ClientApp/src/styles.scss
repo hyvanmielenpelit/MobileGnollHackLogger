@@ -1528,6 +1528,30 @@ input[type="number"] {
   }
 }
 
+/* Near full screen, capped for very wide monitors; the form inside scrolls, not the dialog.
+   Used by the AI model form's hosts (Admin config, My Models add and edit). flex-direction sits
+   outside [open] for the reason .gh-dialog-fullscreen gives. */
+.settings-dialog.model-form-dialog {
+  --model-form-scroll-max: none;
+  width: min(96rem, calc(100dvw - 32px));
+  max-width: min(96rem, calc(100dvw - 32px));
+  height: calc(100dvh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: hidden;
+  flex-direction: column;
+
+  &[open] {
+    display: flex;
+  }
+
+  @media (max-width: 600px) {
+    width: calc(100dvw - 8px);
+    max-width: calc(100dvw - 8px);
+    height: calc(100dvh - 8px);
+    max-height: calc(100dvh - 8px);
+  }
+}
+
 .dialog-content {
   padding: 20px;
   

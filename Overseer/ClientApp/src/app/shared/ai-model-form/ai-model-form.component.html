@@ -15,628 +15,646 @@
   </div>
 
   <div class="form-scroll-area">
-    @if (isAdmin) {
-      <div class="form-group flex-col">
-        <label>Note</label>
-        <input type="text" class="gh-input w-100" [(ngModel)]="note" placeholder="Optional notes about this configuration">
-      </div>
-    }
+    <!-- Four areas in reading order; the container queries in the stylesheet place them in one to three columns. -->
+    <div class="model-form-layout" [class.mf-admin]="isAdmin">
+      <fieldset class="form-fieldset mf-area mf-connection">
+        <legend>Connection</legend>
 
-    <div class="form-group flex-col">
-      <label>Provider</label>
-      <select class="gh-input w-100" [(ngModel)]="provider" (change)="onProviderChange()" [disabled]="mode === 'edit'" [attr.disabled]="mode === 'edit' ? '' : null" [title]="mode === 'edit' ? 'Provider cannot be changed for an existing configuration' : ''">
-        @for (p of providers; track p) {
-          <option [value]="p">{{ p }}</option>
+        <div class="form-group flex-col">
+          <label for="providerSelect">Provider</label>
+          <select id="providerSelect" class="gh-input w-100" [(ngModel)]="provider" (change)="onProviderChange()" [disabled]="mode === 'edit'" [attr.disabled]="mode === 'edit' ? '' : null" [title]="mode === 'edit' ? 'Provider cannot be changed for an existing configuration' : ''">
+            @for (p of providers; track p) {
+              <option [value]="p">{{ p }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Admin only: where the key comes from -->
+        @if (isAdmin) {
+          <fieldset class="gh-choice api-key-choice">
+            <legend>API key</legend>
+            <label class="gh-radio api-key-option">
+              <input type="radio" name="aiModelFormApiKeyChoice" id="apiKeyChoiceDefault" value="default"
+                     aria-labelledby="apiKeyChoiceDefaultName"
+                     [attr.aria-describedby]="defaultKeyDescribedBy"
+                     [checked]="apiKeyChoice === 'default'"
+                     [disabled]="defaultKeyUnavailableReason !== null"
+                     (change)="onApiKeyChoiceChange('default')">
+              <span class="api-key-option-name" id="apiKeyChoiceDefaultName">Default key</span>
+              @if (defaultKeyInfo) {
+                <span class="api-key-option-detail" id="apiKeyChoiceDefaultDetail">{{ defaultKeyDescription }}</span>
+              }
+              @if (defaultKeyUnavailableReason !== null) {
+                <span class="form-hint api-key-option-reason" id="apiKeyChoiceDefaultReason">{{ defaultKeyUnavailableReason }}</span>
+              }
+            </label>
+            <label class="gh-radio api-key-option">
+              <input type="radio" name="aiModelFormApiKeyChoice" id="apiKeyChoiceCustom" value="custom"
+                     aria-labelledby="apiKeyChoiceCustomName"
+                     aria-describedby="apiKeyChoiceCustomDetail"
+                     [checked]="apiKeyChoice === 'custom'"
+                     (change)="onApiKeyChoiceChange('custom')">
+              <span class="api-key-option-name" id="apiKeyChoiceCustomName">Custom key</span>
+              <span class="api-key-option-detail" id="apiKeyChoiceCustomDetail">A key for this configuration only</span>
+            </label>
+          </fieldset>
         }
-      </select>
-    </div>
 
-    <!-- Admin only: where the key comes from -->
-    @if (isAdmin) {
-      <fieldset class="gh-choice api-key-choice">
-        <legend>API key</legend>
-        <label class="gh-radio api-key-option">
-          <input type="radio" name="aiModelFormApiKeyChoice" id="apiKeyChoiceDefault" value="default"
-                 aria-labelledby="apiKeyChoiceDefaultName"
-                 [attr.aria-describedby]="defaultKeyDescribedBy"
-                 [checked]="apiKeyChoice === 'default'"
-                 [disabled]="defaultKeyUnavailableReason !== null"
-                 (change)="onApiKeyChoiceChange('default')">
-          <span class="api-key-option-name" id="apiKeyChoiceDefaultName">Default key</span>
-          @if (defaultKeyInfo) {
-            <span class="api-key-option-detail" id="apiKeyChoiceDefaultDetail">{{ defaultKeyDescription }}</span>
-          }
-          @if (defaultKeyUnavailableReason !== null) {
-            <span class="form-hint api-key-option-reason" id="apiKeyChoiceDefaultReason">{{ defaultKeyUnavailableReason }}</span>
-          }
-        </label>
-        <label class="gh-radio api-key-option">
-          <input type="radio" name="aiModelFormApiKeyChoice" id="apiKeyChoiceCustom" value="custom"
-                 aria-labelledby="apiKeyChoiceCustomName"
-                 aria-describedby="apiKeyChoiceCustomDetail"
-                 [checked]="apiKeyChoice === 'custom'"
-                 (change)="onApiKeyChoiceChange('custom')">
-          <span class="api-key-option-name" id="apiKeyChoiceCustomName">Custom key</span>
-          <span class="api-key-option-detail" id="apiKeyChoiceCustomDetail">A key for this configuration only</span>
-        </label>
+        @if (isAdmin && usesDefaultKey) {
+          <div class="form-group flex-col">
+            <div class="api-key-row mt-5">
+              <button type="button" class="btn-gh check-models-btn" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
+            </div>
+          </div>
+        }
+
+        <!-- Admin only: the configuration's own API Key -->
+        @if (isAdmin && !usesDefaultKey) {
+          <div class="form-group flex-col">
+            <div class="flex-between">
+              <label>API Key
+                @if (customKeyRequired) {
+                  <span class="status-badge badge-warning">Key Required</span>
+                } @else {
+                  @if (hasApiKey && !deleteApiKey) {
+                    <span class="status-badge badge-success">Key Saved</span>
+                  }
+                  @if (hasApiKey && deleteApiKey) {
+                    <span class="status-badge badge-danger">Will Be Deleted</span>
+                  }
+                  @if (!hasApiKey) {
+                    <span class="status-badge badge-warning">No Key</span>
+                  }
+                }
+              </label>
+              <button class="icon-btn" (click)="toggleApiKeyInfo()" title="Provider Instructions">
+                <i class="gh-icon">info</i>
+              </button>
+            </div>
+            <!-- API Key Actions (if key exists) -->
+            @if (hasApiKey && !customKeyRequired) {
+              <div class="api-key-actions mt-5" style="display: flex; align-items: center; gap: 8px;">
+                @if (!deleteApiKey) {
+                  <button class="btn-gh" (click)="editingApiKey = !editingApiKey; deleteApiKey = false">
+                    {{ editingApiKey ? 'Cancel Edit' : 'Edit Key' }}
+                  </button>
+                }
+                @if (!deleteApiKey) {
+                  <button class="btn-gh btn-gh-delete" (click)="deleteApiKey = true; editingApiKey = false">
+                    Delete Key
+                  </button>
+                }
+                @if (deleteApiKey) {
+                  <button class="btn-gh btn-gh-cancel" (click)="deleteApiKey = false">
+                    Cancel Deletion
+                  </button>
+                }
+                <!-- Warning when deleting -->
+                @if (deleteApiKey) {
+                  <span class="ml-10" style="font-size: 0.9em; color: #e74c3c; align-self: center;">
+                    ⚠️ <span style="font-style: italic;">API key will be deleted upon save</span>
+                  </span>
+                }
+              </div>
+            }
+            @if (!deleteApiKey) {
+              <div class="api-key-row mt-5">
+                @if (editingApiKey) {
+                  <input type="password" class="gh-input w-100 custom-api-key-input" [(ngModel)]="apiKey" placeholder="Enter API Key"
+                         aria-label="API key for this configuration" autocomplete="off"
+                         [attr.aria-invalid]="customKeyError ? 'true' : null"
+                         [attr.aria-describedby]="customKeyError ? 'customApiKeyError' : null"
+                         (ngModelChange)="onApiKeyInput($event)"
+                         (keyup.enter)="onCheckModels()" />
+                }
+                <button type="button" class="btn-gh check-models-btn" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
+              </div>
+            }
+            @if (customKeyError) {
+              <p id="customApiKeyError" class="gh-field-error mt-5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>{{ customKeyError }}</span>
+              </p>
+            }
+            <!-- Instructions Expandable -->
+            @if (showApiKeyInfo) {
+              <div class="api-key-info">
+                @if (provider === 'OpenAI') {
+                  <p>
+                    Create an API key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>.
+                    Make sure your account is funded.
+                  </p>
+                }
+                @if (provider === 'Anthropic') {
+                  <p>
+                    Create an API key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com/settings/keys</a>.
+                    Make sure your account is funded.
+                  </p>
+                }
+                @if (provider === 'Google') {
+                  <p>
+                    Create an API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/app/apikey</a>.
+                    You can use a free tier key, but it will be subject to rate limits.
+                  </p>
+                }
+              </div>
+            }
+          </div>
+        }
       </fieldset>
-    }
 
-    @if (isAdmin && usesDefaultKey) {
-      <div class="form-group flex-col">
-        <div class="api-key-row mt-5">
-          <button type="button" class="btn-gh check-models-btn" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
-        </div>
-      </div>
-    }
+      <fieldset class="form-fieldset mf-area mf-model">
+        <legend>Model</legend>
 
-    <!-- Admin only: the configuration's own API Key -->
-    @if (isAdmin && !usesDefaultKey) {
-      <div class="form-group flex-col">
-        <div class="flex-between">
-          <label>API Key
-            @if (customKeyRequired) {
-              <span class="status-badge badge-warning">Key Required</span>
-            } @else {
-              @if (hasApiKey && !deleteApiKey) {
-                <span class="status-badge badge-success">Key Saved</span>
-              }
-              @if (hasApiKey && deleteApiKey) {
-                <span class="status-badge badge-danger">Will Be Deleted</span>
-              }
-              @if (!hasApiKey) {
-                <span class="status-badge badge-warning">No Key</span>
-              }
+        <!-- Models List -->
+        <div class="form-group flex-col">
+          <div class="flex-between">
+            <label for="pickerModelSelect">Models</label>
+            @if (availableModels.length > 0) {
+              <div class="sort-options">
+                <select class="gh-input" [(ngModel)]="sortMode" (change)="onSortChange()">
+                  <option value="created_desc">Newest First</option>
+                  <option value="created_asc">Oldest First</option>
+                  <option value="alphabetical_asc">A &rarr; Z</option>
+                  <option value="alphabetical_desc">Z &rarr; A</option>
+                </select>
+              </div>
             }
-          </label>
-          <button class="icon-btn" (click)="toggleApiKeyInfo()" title="Provider Instructions">
-            <i class="gh-icon">info</i>
-          </button>
+          </div>
+
+          @if (loadingModels) {
+            <div class="loading-spinner-container d-flex align-items-center" style="gap: 10px; margin-bottom: 10px;">
+              <div class="gh-spinner-small"></div>
+              <span style="font-weight: 500; color: var(--gh-text-secondary);">Loading available models...</span>
+            </div>
+          }
+
+          @if (modelError) {
+            <div class="error-message">
+              <strong>Error:</strong>
+              <span>{{ modelError }}</span>
+            </div>
+          }
+
+          <select id="pickerModelSelect" class="gh-input w-100 picker-model-select" size="8"
+            [(ngModel)]="pickerModelSelect"
+            (change)="onPickerModelSelect()"
+            [disabled]="loadingModels || (isAdmin && !usesDefaultKey && !apiKey && !hasApiKey)">
+            @for (model of sortedModels; track model) {
+              <option [value]="model.id">
+                {{ model.displayName || model.id }} {{ model.isRecommended ? '⭐' : '' }}
+              </option>
+            }
+            <option value="custom">Custom...</option>
+          </select>
         </div>
-        <!-- API Key Actions (if key exists) -->
-        @if (hasApiKey && !customKeyRequired) {
-          <div class="api-key-actions mt-5" style="display: flex; align-items: center; gap: 8px;">
-            @if (!deleteApiKey) {
-              <button class="btn-gh" (click)="editingApiKey = !editingApiKey; deleteApiKey = false">
-                {{ editingApiKey ? 'Cancel Edit' : 'Edit Key' }}
-              </button>
+
+        @if (pickerModelSelect === 'custom') {
+          <div class="form-group flex-col">
+            <label>Model ID</label>
+            <input type="text" class="gh-input w-100" [(ngModel)]="customModelId" placeholder="e.g. custom-model-v1">
+          </div>
+        }
+
+        <div class="form-group flex-col">
+          <label>Display Name</label>
+          <div class="compound-input">
+            <select class="gh-input w-100" [(ngModel)]="displayNameMode">
+              <option value="model_name">Model Name</option>
+              <option value="model_id">Model ID</option>
+              <option value="custom">Custom...</option>
+            </select>
+            @if (displayNameMode === 'custom') {
+              <input type="text" class="gh-input w-100" [(ngModel)]="customDisplayName" placeholder="Enter custom display name">
             }
-            @if (!deleteApiKey) {
-              <button class="btn-gh btn-gh-delete" (click)="deleteApiKey = true; editingApiKey = false">
-                Delete Key
-              </button>
-            }
-            @if (deleteApiKey) {
-              <button class="btn-gh btn-gh-cancel" (click)="deleteApiKey = false">
-                Cancel Deletion
-              </button>
-            }
-            <!-- Warning when deleting -->
-            @if (deleteApiKey) {
-              <span class="ml-10" style="font-size: 0.9em; color: #e74c3c; align-self: center;">
-                ⚠️ <span style="font-style: italic;">API key will be deleted upon save</span>
+          </div>
+          <div class="display-name-preview mt-5">
+            <span>Result: </span><strong>{{ getPreviewDisplayName() }}</strong>
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="mf-area mf-settings">
+        <fieldset class="form-fieldset model-properties-fieldset">
+          <legend>Model Properties</legend>
+
+          @if (selectedModelObj?.contextWindowSize) {
+            <div class="model-meta model-meta-box">
+              <span class="d-inline-block">
+                <span class="detail-label color-gh-gold">Context Window:</span>
+                {{ selectedModelObj!.contextWindowSize | number }} tokens
               </span>
-            }
-          </div>
-        }
-        @if (!deleteApiKey) {
-          <div class="api-key-row mt-5">
-            @if (editingApiKey) {
-              <input type="password" class="gh-input w-100 custom-api-key-input" [(ngModel)]="apiKey" placeholder="Enter API Key"
-                     aria-label="API key for this configuration" autocomplete="off"
-                     [attr.aria-invalid]="customKeyError ? 'true' : null"
-                     [attr.aria-describedby]="customKeyError ? 'customApiKeyError' : null"
-                     (ngModelChange)="onApiKeyInput($event)"
-                     (keyup.enter)="onCheckModels()" />
-            }
-            <button type="button" class="btn-gh check-models-btn" style="white-space: nowrap;" (click)="onCheckModels()">Check Models</button>
-          </div>
-        }
-        @if (customKeyError) {
-          <p id="customApiKeyError" class="gh-field-error mt-5">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-            <span>{{ customKeyError }}</span>
-          </p>
-        }
-        <!-- Instructions Expandable -->
-        @if (showApiKeyInfo) {
-          <div class="api-key-info">
-            @if (provider === 'OpenAI') {
-              <p>
-                Create an API key at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">platform.openai.com/api-keys</a>.
-                Make sure your account is funded.
-              </p>
-            }
-            @if (provider === 'Anthropic') {
-              <p>
-                Create an API key at <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">console.anthropic.com/settings/keys</a>.
-                Make sure your account is funded.
-              </p>
-            }
-            @if (provider === 'Google') {
-              <p>
-                Create an API key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/app/apikey</a>.
-                You can use a free tier key, but it will be subject to rate limits.
-              </p>
-            }
-          </div>
-        }
-      </div>
-    }
+            </div>
+          }
 
-    <!-- Models List -->
-    <div class="form-group flex-col">
-      <div class="flex-between">
-        <label>Models</label>
-        @if (availableModels.length > 0) {
-          <div class="sort-options">
-            <select class="gh-input" [(ngModel)]="sortMode" (change)="onSortChange()">
-              <option value="created_desc">Newest First</option>
-              <option value="created_asc">Oldest First</option>
-              <option value="alphabetical_asc">A &rarr; Z</option>
-              <option value="alphabetical_desc">Z &rarr; A</option>
-            </select>
-          </div>
-        }
-      </div>
-
-      @if (loadingModels) {
-        <div class="loading-spinner-container d-flex align-items-center" style="gap: 10px; margin-bottom: 10px;">
-          <div class="gh-spinner-small"></div>
-          <span style="font-weight: 500; color: var(--gh-text-secondary);">Loading available models...</span>
-        </div>
-      }
-
-      @if (modelError) {
-        <div class="error-message">
-          <strong>Error:</strong>
-          <span>{{ modelError }}</span>
-        </div>
-      }
-
-      <select class="gh-input w-100 picker-model-select" size="8"
-        [(ngModel)]="pickerModelSelect"
-        (change)="onPickerModelSelect()"
-        [disabled]="loadingModels || (isAdmin && !usesDefaultKey && !apiKey && !hasApiKey)">
-        @for (model of sortedModels; track model) {
-          <option [value]="model.id">
-            {{ model.displayName || model.id }} {{ model.isRecommended ? '⭐' : '' }}
-          </option>
-        }
-        <option value="custom">Custom...</option>
-      </select>
-    </div>
-
-    @if (pickerModelSelect === 'custom') {
-      <div class="form-group flex-col">
-        <label>Model ID</label>
-        <input type="text" class="gh-input w-100" [(ngModel)]="customModelId" placeholder="e.g. custom-model-v1">
-      </div>
-    }
-
-    <div class="form-group flex-col">
-      <label>Display Name</label>
-      <div class="compound-input">
-        <select class="gh-input w-100" [(ngModel)]="displayNameMode">
-          <option value="model_name">Model Name</option>
-          <option value="model_id">Model ID</option>
-          <option value="custom">Custom...</option>
-        </select>
-        @if (displayNameMode === 'custom') {
-          <input type="text" class="gh-input w-100" [(ngModel)]="customDisplayName" placeholder="Enter custom display name">
-        }
-      </div>
-      <div class="display-name-preview mt-5">
-        <span>Result: </span><strong>{{ getPreviewDisplayName() }}</strong>
-      </div>
-    </div>
-
-    <fieldset class="form-fieldset model-properties-fieldset">
-      <legend>Model Properties</legend>
-
-      @if (selectedModelObj?.contextWindowSize) {
-        <div class="model-meta model-meta-box">
-          <span class="d-inline-block">
-            <span class="detail-label color-gh-gold">Context Window:</span>
-            {{ selectedModelObj!.contextWindowSize | number }} tokens
-          </span>
-        </div>
-      }
-
-      <div class="settings-row mb-15">
-        <!-- Thinking Level -->
-        <div class="form-group flex-col">
-          <label>Thinking Level</label>
-          <div class="compound-input">
-            <select class="gh-input w-100" [(ngModel)]="pickerThinkingLevelSelect" (change)="onPickerThinkingLevelChange()">
-              <option value="">{{ defaultThinkingLevelLabel }}</option>
-              @if (selectedModelObj) {
-                @for (level of selectedModelObj.supportedThinkingLevels; track level) {
-                  <option [value]="level">
-                    {{ formatThinkingLevel(level) }}
-                    {{ level === selectedModelObj.recommendedThinkingLevel ? '⭐' : '' }}
-                  </option>
-                }
-              }
-              <option value="custom">Custom...</option>
-            </select>
-            @if (pickerThinkingLevelSelect === 'custom') {
-              <input type="text" class="gh-input w-100" [(ngModel)]="customThinkingLevel" placeholder="E.g. high">
-            }
-          </div>
-        </div>
-
-        <!-- Reasoning Mode -->
-        <div class="form-group flex-col">
-          <label>Reasoning Mode</label>
-          <div class="compound-input">
-            <select class="gh-input w-100" [(ngModel)]="pickerReasoningModeSelect" (change)="onPickerReasoningModeChange()">
-              <option value="">Default</option>
-              @if (selectedModelObj) {
-                @for (level of selectedModelObj.supportedReasoningModes; track level) {
-                  <option [value]="level">
-                    {{ formatThinkingLevel(level) }}
-                  </option>
-                }
-              }
-              <option value="custom">Custom...</option>
-            </select>
-            @if (pickerReasoningModeSelect === 'custom') {
-              <input type="text" class="gh-input w-100" [(ngModel)]="customReasoningMode" placeholder="E.g. pro">
-            }
-          </div>
-        </div>
-
-        <!-- Reasoning Summary -->
-        <div class="form-group flex-col">
-          <label>Reasoning Summary</label>
-          <div class="compound-input">
-            <select class="gh-input w-100" [(ngModel)]="pickerReasoningSummarySelect" (change)="onPickerReasoningSummaryChange()">
-              <option value="">{{ getReasoningSummaryDefaultLabel() }}</option>
-              @if (selectedModelObj) {
-                @for (level of selectedModelObj.supportedReasoningSummaries; track level) {
-                  <option [value]="level">
-                    {{ formatThinkingLevel(level) }}
-                  </option>
-                }
-              }
-              <option value="custom">Custom...</option>
-            </select>
-            @if (pickerReasoningSummarySelect === 'custom') {
-              <input type="text" class="gh-input w-100" [(ngModel)]="customReasoningSummary" placeholder="E.g. auto">
-            }
-          </div>
-        </div>
-
-        <!-- Service Tier -->
-        <div class="form-group flex-col">
-          <label>Service Tier</label>
-          <div class="compound-input">
-            <select class="gh-input w-100" [(ngModel)]="pickerServiceTierSelect" (change)="onPickerServiceTierChange()">
-              <option value="">None (Default)</option>
-              @for (tier of (selectedModelObj?.supportedServiceTiers && selectedModelObj!.supportedServiceTiers.length > 0 ? selectedModelObj!.supportedServiceTiers : getProviderServiceTiers()); track tier) {
-                <option [value]="tier">
-                  {{ formatServiceTier(tier) }}
-                </option>
-              }
-              <option value="custom">Custom...</option>
-            </select>
-            @if (pickerServiceTierSelect === 'custom') {
-              <input type="text" class="gh-input w-100" [(ngModel)]="customServiceTier" placeholder="E.g. priority">
-            }
-          </div>
-        </div>
-      </div>
-
-      <!-- Tokens -->
-      <div class="token-row">
-        <div class="form-group flex-col">
-          <label>Max Input Tokens</label>
-          <input type="number" class="gh-input w-100" [(ngModel)]="maxInputTokens" placeholder="Optional">
-        </div>
-        <div class="form-group flex-col">
-          <label>Max Output Tokens</label>
-          <input type="number" class="gh-input w-100" [(ngModel)]="maxOutputTokens" placeholder="Optional">
-        </div>
-      </div>
-    </fieldset>
-
-    <!-- Admin only fields: Status, Rate Limits -->
-    @if (isAdmin) {
-      <div class="checkbox-row" style="flex-direction: row; gap: 20px;">
-        <label class="checkbox-label">
-          <input type="checkbox" [(ngModel)]="isEnabled"> Enabled
-        </label>
-        <label class="checkbox-label">
-          <input type="checkbox" [(ngModel)]="isSystemWide"> System Wide
-        </label>
-      </div>
-      <div class="form-group flex-col mt-10">
-        <label>Model Role</label>
-        <div class="checkbox-row" style="flex-direction: row; gap: 20px; flex-wrap: wrap;">
-          <label class="checkbox-label">
-            <input type="checkbox" [(ngModel)]="roleChat"> Chat
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" [(ngModel)]="roleTitle"> Title Generation
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" [(ngModel)]="roleBenchmark"> Benchmark
-          </label>
-        </div>
-        @if (modelRole === 0) {
-          <span class="field-validation-error" style="color: var(--danger-color, #ff6b6b); font-size: 0.85rem; margin-top: 4px;">Select at least one role.</span>
-        }
-      </div>
-    }
-
-    <details class="advanced-section" [open]="advancedOpen" (toggle)="onAdvancedToggle($event)">
-      <summary>Advanced</summary>
-
-      <fieldset class="form-fieldset pricing-fieldset">
-        <legend>Pricing</legend>
-
-        <div class="form-group flex-col">
-          <label for="pricingModeSelect">Pricing Model</label>
-          <div class="compound-input">
-            <select id="pricingModeSelect" class="gh-input w-100" [(ngModel)]="pricingMode" (change)="onPricingModeChange()">
-              <option value="default">Default</option>
-              <option value="custom">Custom...</option>
-            </select>
-          </div>
-
-          @if (pricingMode === 'default') {
-            <div class="pricing-display-card mt-10">
-              @if (selectedModelObj?.defaultPricing; as p) {
-                <dl class="pricing-grid">
-                  <dt class="pricing-label">Input:</dt>
-                  <dd class="pricing-value">
-                    <span class="price-number">{{ formatRate(p.inputPerMillion) }}</span>
-                    <span class="price-unit">/ 1M tokens</span>
-                  </dd>
-
-                  <dt class="pricing-label">Output:</dt>
-                  <dd class="pricing-value">
-                    <span class="price-number">{{ formatRate(p.outputPerMillion) }}</span>
-                    <span class="price-unit">/ 1M tokens</span>
-                  </dd>
-
-                  @if (p.cachedInputPerMillion != null) {
-                    <dt class="pricing-label">Cached Input:</dt>
-                    <dd class="pricing-value">
-                      <span class="price-number">{{ formatRate(p.cachedInputPerMillion) }}</span>
-                      <span class="price-unit">/ 1M tokens</span>
-                    </dd>
+          <div class="settings-row mb-15">
+            <!-- Thinking Level -->
+            <div class="form-group flex-col">
+              <label>Thinking Level</label>
+              <div class="compound-input">
+                <select class="gh-input w-100" [(ngModel)]="pickerThinkingLevelSelect" (change)="onPickerThinkingLevelChange()">
+                  <option value="">{{ defaultThinkingLevelLabel }}</option>
+                  @if (selectedModelObj) {
+                    @for (level of selectedModelObj.supportedThinkingLevels; track level) {
+                      <option [value]="level">
+                        {{ formatThinkingLevel(level) }}
+                        {{ level === selectedModelObj.recommendedThinkingLevel ? '⭐' : '' }}
+                      </option>
+                    }
                   }
-
-                  @if (p.cacheWritePerMillion != null) {
-                    <dt class="pricing-label">Cache Write:</dt>
-                    <dd class="pricing-value">
-                      <span class="price-number">{{ formatRate(p.cacheWritePerMillion) }}</span>
-                      <span class="price-unit">/ 1M tokens</span>
-                    </dd>
-                  }
-                </dl>
-                @if (p.asOf) {
-                  <div class="pricing-meta-note mt-8">
-                    Catalog pricing as of {{ p.asOf }} (USD)
-                  </div>
+                  <option value="custom">Custom...</option>
+                </select>
+                @if (pickerThinkingLevelSelect === 'custom') {
+                  <input type="text" class="gh-input w-100" [(ngModel)]="customThinkingLevel" placeholder="E.g. high">
                 }
+              </div>
+            </div>
+
+            <!-- Reasoning Mode -->
+            <div class="form-group flex-col">
+              <label>Reasoning Mode</label>
+              <div class="compound-input">
+                <select class="gh-input w-100" [(ngModel)]="pickerReasoningModeSelect" (change)="onPickerReasoningModeChange()">
+                  <option value="">Default</option>
+                  @if (selectedModelObj) {
+                    @for (level of selectedModelObj.supportedReasoningModes; track level) {
+                      <option [value]="level">
+                        {{ formatThinkingLevel(level) }}
+                      </option>
+                    }
+                  }
+                  <option value="custom">Custom...</option>
+                </select>
+                @if (pickerReasoningModeSelect === 'custom') {
+                  <input type="text" class="gh-input w-100" [(ngModel)]="customReasoningMode" placeholder="E.g. pro">
+                }
+              </div>
+            </div>
+
+            <!-- Reasoning Summary -->
+            <div class="form-group flex-col">
+              <label>Reasoning Summary</label>
+              <div class="compound-input">
+                <select class="gh-input w-100" [(ngModel)]="pickerReasoningSummarySelect" (change)="onPickerReasoningSummaryChange()">
+                  <option value="">{{ getReasoningSummaryDefaultLabel() }}</option>
+                  @if (selectedModelObj) {
+                    @for (level of selectedModelObj.supportedReasoningSummaries; track level) {
+                      <option [value]="level">
+                        {{ formatThinkingLevel(level) }}
+                      </option>
+                    }
+                  }
+                  <option value="custom">Custom...</option>
+                </select>
+                @if (pickerReasoningSummarySelect === 'custom') {
+                  <input type="text" class="gh-input w-100" [(ngModel)]="customReasoningSummary" placeholder="E.g. auto">
+                }
+              </div>
+            </div>
+
+            <!-- Service Tier -->
+            <div class="form-group flex-col">
+              <label>Service Tier</label>
+              <div class="compound-input">
+                <select class="gh-input w-100" [(ngModel)]="pickerServiceTierSelect" (change)="onPickerServiceTierChange()">
+                  <option value="">None (Default)</option>
+                  @for (tier of (selectedModelObj?.supportedServiceTiers && selectedModelObj!.supportedServiceTiers.length > 0 ? selectedModelObj!.supportedServiceTiers : getProviderServiceTiers()); track tier) {
+                    <option [value]="tier">
+                      {{ formatServiceTier(tier) }}
+                    </option>
+                  }
+                  <option value="custom">Custom...</option>
+                </select>
+                @if (pickerServiceTierSelect === 'custom') {
+                  <input type="text" class="gh-input w-100" [(ngModel)]="customServiceTier" placeholder="E.g. priority">
+                }
+              </div>
+            </div>
+          </div>
+
+          <!-- Tokens -->
+          <div class="token-row">
+            <div class="form-group flex-col">
+              <label>Max Input Tokens</label>
+              <input type="number" class="gh-input w-100" [(ngModel)]="maxInputTokens" placeholder="Optional">
+            </div>
+            <div class="form-group flex-col">
+              <label>Max Output Tokens</label>
+              <input type="number" class="gh-input w-100" [(ngModel)]="maxOutputTokens" placeholder="Optional">
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Admin only: note, status and roles -->
+        @if (isAdmin) {
+          <fieldset class="form-fieldset mf-configuration">
+            <legend>Configuration</legend>
+
+            <div class="form-group flex-col">
+              <label for="configNoteInput">Note</label>
+              <input id="configNoteInput" type="text" class="gh-input w-100" [(ngModel)]="note" placeholder="Optional notes about this configuration">
+            </div>
+
+            <div class="checkbox-row" style="flex-direction: row; gap: 20px;">
+              <label class="checkbox-label">
+                <input type="checkbox" [(ngModel)]="isEnabled"> Enabled
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" [(ngModel)]="isSystemWide"> System Wide
+              </label>
+            </div>
+
+            <fieldset class="gh-choice model-role-choice">
+              <legend>Model Role</legend>
+              <div class="checkbox-row" style="flex-direction: row; gap: 20px; flex-wrap: wrap;">
+                <label class="checkbox-label">
+                  <input type="checkbox" [(ngModel)]="roleChat"> Chat
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" [(ngModel)]="roleTitle"> Title Generation
+                </label>
+                <label class="checkbox-label">
+                  <input type="checkbox" [(ngModel)]="roleBenchmark"> Benchmark
+                </label>
+              </div>
+              @if (modelRole === 0) {
+                <span class="field-validation-error" style="color: var(--danger-color, #ff6b6b); font-size: 0.85rem; margin-top: 4px;">Select at least one role.</span>
+              }
+            </fieldset>
+          </fieldset>
+        }
+      </div>
+
+      <details class="advanced-section mf-area mf-advanced" [open]="advancedOpen" (toggle)="onAdvancedToggle($event)">
+        <summary>Advanced</summary>
+
+        <div class="advanced-grid">
+          <fieldset class="form-fieldset pricing-fieldset">
+            <legend>Pricing</legend>
+
+            <div class="form-group flex-col">
+              <label for="pricingModeSelect">Pricing Model</label>
+              <div class="compound-input">
+                <select id="pricingModeSelect" class="gh-input w-100" [(ngModel)]="pricingMode" (change)="onPricingModeChange()">
+                  <option value="default">Default</option>
+                  <option value="custom">Custom...</option>
+                </select>
+              </div>
+
+              @if (pricingMode === 'default') {
+                <div class="pricing-display-card mt-10">
+                  @if (selectedModelObj?.defaultPricing; as p) {
+                    <dl class="pricing-grid">
+                      <dt class="pricing-label">Input:</dt>
+                      <dd class="pricing-value">
+                        <span class="price-number">{{ formatRate(p.inputPerMillion) }}</span>
+                        <span class="price-unit">/ 1M tokens</span>
+                      </dd>
+
+                      <dt class="pricing-label">Output:</dt>
+                      <dd class="pricing-value">
+                        <span class="price-number">{{ formatRate(p.outputPerMillion) }}</span>
+                        <span class="price-unit">/ 1M tokens</span>
+                      </dd>
+
+                      @if (p.cachedInputPerMillion != null) {
+                        <dt class="pricing-label">Cached Input:</dt>
+                        <dd class="pricing-value">
+                          <span class="price-number">{{ formatRate(p.cachedInputPerMillion) }}</span>
+                          <span class="price-unit">/ 1M tokens</span>
+                        </dd>
+                      }
+
+                      @if (p.cacheWritePerMillion != null) {
+                        <dt class="pricing-label">Cache Write:</dt>
+                        <dd class="pricing-value">
+                          <span class="price-number">{{ formatRate(p.cacheWritePerMillion) }}</span>
+                          <span class="price-unit">/ 1M tokens</span>
+                        </dd>
+                      }
+                    </dl>
+                    @if (p.asOf) {
+                      <div class="pricing-meta-note mt-8">
+                        Catalog pricing as of {{ p.asOf }} (USD)
+                      </div>
+                    }
+                  } @else {
+                    <div class="pricing-empty-note">
+                      <span class="pricing-empty-icon">&#8505;</span>
+                      <span>No price published in the model catalog</span>
+                    </div>
+                  }
+                </div>
               } @else {
-                <div class="pricing-empty-note">
-                  <span class="pricing-empty-icon">&#8505;</span>
-                  <span>No price published in the model catalog</span>
+                <div class="custom-pricing-inputs mt-10">
+                  <div class="pricing-row">
+                    <div class="form-group flex-col">
+                      <label>Input / 1M ($)</label>
+                      <input type="number" class="gh-input w-100" [(ngModel)]="inputPricePerMillion" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                    <div class="form-group flex-col">
+                      <label>Output / 1M ($)</label>
+                      <input type="number" class="gh-input w-100" [(ngModel)]="outputPricePerMillion" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                    <div class="form-group flex-col">
+                      <label>Cached / 1M ($)</label>
+                      <input type="number" class="gh-input w-100" [(ngModel)]="cachedInputPricePerMillion" step="0.01" min="0" placeholder="0.00">
+                    </div>
+                  </div>
+                  <div class="form-hint mt-5">Prices are per 1,000,000 tokens in USD. Convert other currencies before entering them.</div>
+                  <div class="form-hint mt-5">Custom prices are a single flat rate. Catalog pricing can also carry a long-prompt rate, service-tier multipliers and scheduled price changes; a custom price replaces all of it.</div>
                 </div>
               }
             </div>
-          } @else {
-            <div class="custom-pricing-inputs mt-10">
-              <div class="pricing-row">
-                <div class="form-group flex-col">
-                  <label>Input / 1M ($)</label>
-                  <input type="number" class="gh-input w-100" [(ngModel)]="inputPricePerMillion" step="0.01" min="0" placeholder="0.00">
-                </div>
-                <div class="form-group flex-col">
-                  <label>Output / 1M ($)</label>
-                  <input type="number" class="gh-input w-100" [(ngModel)]="outputPricePerMillion" step="0.01" min="0" placeholder="0.00">
-                </div>
-                <div class="form-group flex-col">
-                  <label>Cached / 1M ($)</label>
-                  <input type="number" class="gh-input w-100" [(ngModel)]="cachedInputPricePerMillion" step="0.01" min="0" placeholder="0.00">
+          </fieldset>
+
+          @if (isAdmin) {
+            <fieldset class="form-fieldset">
+              <legend>Tool Calling</legend>
+
+              <div class="form-group flex-col mt-10">
+                <label for="parallelExecutionModeSelect">Parallel Execution Mode</label>
+                <select id="parallelExecutionModeSelect" class="gh-input w-100"
+                        [(ngModel)]="parallelExecutionMode"
+                        aria-describedby="parallelExecutionModeHint">
+                  <option [ngValue]="2">Allowed</option>
+                  <option [ngValue]="1">On request</option>
+                  <option [ngValue]="0">Sequential only</option>
+                </select>
+                <div id="parallelExecutionModeHint" class="form-hint mt-5 mode-hint">
+                  <p class="mode-hint-lead">
+                    Whether the model may ask for several tool calls in one turn on this key.
+                  </p>
+
+                  <dl class="mode-hint-modes">
+                    <dt>Allowed</dt>
+                    <dd>The default batching guidance applies unchanged.</dd>
+
+                    <dt>On request</dt>
+                    <dd>Sequential unless the user asks for parallel lookups, which conserves quota.</dd>
+
+                    <dt>Sequential only</dt>
+                    <dd>
+                      Parallel tool calls are switched off on the provider request and the model is held
+                      to one subagent at a time, which protects a rate-limited key.
+                    </dd>
+                  </dl>
+
+                  <p class="mode-hint-note">
+                    Not the same as <strong>Max Parallel Tool Calls</strong> in user settings, which
+                    bounds how many the server runs at once.
+                  </p>
                 </div>
               </div>
-              <div class="form-hint mt-5">Prices are per 1,000,000 tokens in USD. Convert other currencies before entering them.</div>
-              <div class="form-hint mt-5">Custom prices are a single flat rate. Catalog pricing can also carry a long-prompt rate, service-tier multipliers and scheduled price changes; a custom price replaces all of it.</div>
-            </div>
+            </fieldset>
+
+            <!-- Admin only: what has been agreed with the provider account behind this key -->
+            <fieldset class="form-fieldset">
+              <legend>Provider Agreement</legend>
+
+              <p class="form-hint">
+                What the account behind this key has agreed with the provider, and where its inference runs.
+                Nothing here is inferred from the model.
+              </p>
+
+              <div class="form-group flex-col mt-10">
+                <label for="postureSelect">Retention Posture</label>
+                <select id="postureSelect" class="gh-input w-100" [(ngModel)]="confidentialityPosture"
+                        aria-describedby="postureHint">
+                  <option value="">Not established</option>
+                  @for (p of postures; track p.value) {
+                    @if (p.value !== 'Unknown') {
+                      <option [value]="p.value">{{ p.label }}</option>
+                    }
+                  }
+                </select>
+                <div id="postureHint" class="form-hint mt-5 posture-hint">{{ selectedPostureHint }}</div>
+              </div>
+
+              <div class="form-group flex-col mt-10">
+                <label for="postureNoteInput">Agreement Note</label>
+                <input id="postureNoteInput" type="text" class="gh-input w-100" maxlength="1024"
+                       [(ngModel)]="confidentialityNote"
+                       placeholder="What the agreement covers, and what it does not">
+              </div>
+
+              <div class="token-row mt-10">
+                <div class="form-group flex-col">
+                  <label for="postureAgreementInput">Agreement Reference</label>
+                  <input id="postureAgreementInput" type="text" class="gh-input w-100" maxlength="256"
+                         [(ngModel)]="postureAgreementRef"
+                         placeholder="DPA number, contract id or ticket">
+                </div>
+                <div class="form-group flex-col">
+                  <label for="postureDataRegionInput">Inference Region</label>
+                  <input id="postureDataRegionInput" type="text" class="gh-input w-100" maxlength="64"
+                         [(ngModel)]="dataRegion"
+                         placeholder="e.g. eu-west-1">
+                </div>
+              </div>
+
+              <div class="form-group flex-col mt-10">
+                <label for="postureVerifiedInput">Verified On</label>
+                <input id="postureVerifiedInput" type="date" class="gh-input w-100"
+                       [(ngModel)]="postureVerifiedUtc"
+                       aria-describedby="postureVerifiedHint">
+                <div id="postureVerifiedHint" class="form-hint mt-5">
+                  The day an operator checked this posture against the agreement. Without it the posture is
+                  recorded but unverified, and an unverified posture never earns the green Private badge in chat.
+                </div>
+              </div>
+
+              <div class="mt-10">
+                <span class="status-badge"
+                      [class.badge-success]="isPostureVerified"
+                      [class.badge-warning]="!isPostureVerified && (hasRecordedPosture || hasEmptyVerifiedPosture)">
+                  {{ postureBadgeText }}
+                </span>
+              </div>
+
+              @if (hasEmptyVerifiedPosture) {
+                <div class="form-hint mt-5">
+                  <strong>A verification date with no posture confirms nothing.</strong>
+                  Choose a posture, or clear the date.
+                </div>
+              }
+            </fieldset>
+
+            <!-- Admin only: where this model's requests actually go. Never exposed to users -- a base
+                 URL decides where the server sends an authenticated request, which is the server
+                 operator's decision and not the account holder's. -->
+            <fieldset class="form-fieldset endpoint-fieldset">
+              <legend>Custom Endpoint</legend>
+
+              @if (customEndpointsEnabled) {
+                <p class="form-hint">
+                  Leave the base URL empty for the provider's official endpoint, which is what every existing
+                  configuration does. Allowed hosts: {{ allowedHostPatternsText }}. Allowed header names:
+                  {{ allowedHeaderNamesText }}. Loopback: {{ endpointPolicy?.allowLoopback ? 'on' : 'off' }}.
+                  Anything else is refused on save rather than silently falling back.
+                </p>
+              } @else {
+                <p class="form-hint">
+                  <strong>Custom endpoints are switched off on this server:</strong> no host is allowlisted in
+                  <code>PrivacySettings:CustomEndpoints:AllowedHostPatterns</code>. Requests use the provider's
+                  official endpoint.
+                </p>
+              }
+
+              <div class="form-group flex-col mt-10">
+                <label for="baseUrlInput">Base URL</label>
+                <input id="baseUrlInput" type="url" class="gh-input w-100" maxlength="2048"
+                       [ngModel]="baseUrl"
+                       (ngModelChange)="onBaseUrlChange($event)"
+                       [disabled]="!customEndpointsEnabled"
+                       aria-describedby="baseUrlHint"
+                       placeholder="https://acme.openai.azure.com">
+                <div id="baseUrlHint" class="form-hint mt-5">
+                  Scheme, host and an optional path prefix, e.g. <code>https://gateway.example.com/openai</code>.
+                  No query string or fragment: the provider appends its own path and query.
+                </div>
+              </div>
+
+              <div class="form-group flex-col mt-10">
+                <label for="apiVersionInput">API Version</label>
+                <input id="apiVersionInput" type="text" class="gh-input w-100" maxlength="64"
+                       [(ngModel)]="apiVersion"
+                       [disabled]="!customEndpointsEnabled"
+                       aria-describedby="apiVersionHint"
+                       placeholder="2026-05-01">
+                <div id="apiVersionHint" class="form-hint mt-5">
+                  For Azure OpenAI. When set, requests authenticate with an <code>api-key</code> header and carry
+                  <code>?api-version=</code> instead of a bearer token. Leave it empty for any other endpoint,
+                  including OpenAI-compatible gateways.
+                </div>
+              </div>
+
+              <div class="form-group flex-col mt-10">
+                <label for="customHeadersInput">Custom Headers</label>
+                <textarea id="customHeadersInput" class="gh-input w-100 custom-headers-input" rows="1"
+                          maxlength="4096"
+                          [(ngModel)]="customHeadersJson"
+                          [disabled]="!customEndpointsEnabled"
+                          aria-describedby="customHeadersHint"
+                          placeholder='{"X-Gateway-Tenant":"acme"}'></textarea>
+                <div id="customHeadersHint" class="form-hint mt-5">
+                  A JSON object. Names must be on the allowlist above; credential, <code>Host</code> and
+                  hop-by-hop headers are always refused.
+                </div>
+              </div>
+
+              @if (baseUrl) {
+                <div class="form-hint mt-10">
+                  <strong>Check Models queries this endpoint, not the public API.</strong>
+                  Many gateways expose no listing route; if the check fails with 404, enter the model id by hand.
+                  The key is then unverified.
+                </div>
+              }
+            </fieldset>
           }
         </div>
-      </fieldset>
-
-      @if (isAdmin) {
-        <fieldset class="form-fieldset">
-          <legend>Tool Calling</legend>
-
-          <div class="form-group flex-col mt-10">
-            <label for="parallelExecutionModeSelect">Parallel Execution Mode</label>
-            <select id="parallelExecutionModeSelect" class="gh-input w-100"
-                    [(ngModel)]="parallelExecutionMode"
-                    aria-describedby="parallelExecutionModeHint">
-              <option [ngValue]="2">Allowed</option>
-              <option [ngValue]="1">On request</option>
-              <option [ngValue]="0">Sequential only</option>
-            </select>
-            <div id="parallelExecutionModeHint" class="form-hint mt-5 mode-hint">
-              <p class="mode-hint-lead">
-                Whether the model may ask for several tool calls in one turn on this key.
-              </p>
-
-              <dl class="mode-hint-modes">
-                <dt>Allowed</dt>
-                <dd>The default batching guidance applies unchanged.</dd>
-
-                <dt>On request</dt>
-                <dd>Sequential unless the user asks for parallel lookups, which conserves quota.</dd>
-
-                <dt>Sequential only</dt>
-                <dd>
-                  Parallel tool calls are switched off on the provider request and the model is held
-                  to one subagent at a time, which protects a rate-limited key.
-                </dd>
-              </dl>
-
-              <p class="mode-hint-note">
-                Not the same as <strong>Max Parallel Tool Calls</strong> in user settings, which
-                bounds how many the server runs at once.
-              </p>
-            </div>
-          </div>
-        </fieldset>
-
-        <!-- Admin only: what has been agreed with the provider account behind this key -->
-        <fieldset class="form-fieldset">
-          <legend>Provider Agreement</legend>
-
-          <p class="form-hint">
-            What the account behind this key has agreed with the provider, and where its inference runs.
-            Nothing here is inferred from the model.
-          </p>
-
-          <div class="form-group flex-col mt-10">
-            <label for="postureSelect">Retention Posture</label>
-            <select id="postureSelect" class="gh-input w-100" [(ngModel)]="confidentialityPosture"
-                    aria-describedby="postureHint">
-              <option value="">Not established</option>
-              @for (p of postures; track p.value) {
-                @if (p.value !== 'Unknown') {
-                  <option [value]="p.value">{{ p.label }}</option>
-                }
-              }
-            </select>
-            <div id="postureHint" class="form-hint mt-5 posture-hint">{{ selectedPostureHint }}</div>
-          </div>
-
-          <div class="form-group flex-col mt-10">
-            <label for="postureNoteInput">Agreement Note</label>
-            <input id="postureNoteInput" type="text" class="gh-input w-100" maxlength="1024"
-                   [(ngModel)]="confidentialityNote"
-                   placeholder="What the agreement covers, and what it does not">
-          </div>
-
-          <div class="token-row mt-10">
-            <div class="form-group flex-col">
-              <label for="postureAgreementInput">Agreement Reference</label>
-              <input id="postureAgreementInput" type="text" class="gh-input w-100" maxlength="256"
-                     [(ngModel)]="postureAgreementRef"
-                     placeholder="DPA number, contract id or ticket">
-            </div>
-            <div class="form-group flex-col">
-              <label for="postureDataRegionInput">Inference Region</label>
-              <input id="postureDataRegionInput" type="text" class="gh-input w-100" maxlength="64"
-                     [(ngModel)]="dataRegion"
-                     placeholder="e.g. eu-west-1">
-            </div>
-          </div>
-
-          <div class="form-group flex-col mt-10">
-            <label for="postureVerifiedInput">Verified On</label>
-            <input id="postureVerifiedInput" type="date" class="gh-input w-100"
-                   [(ngModel)]="postureVerifiedUtc"
-                   aria-describedby="postureVerifiedHint">
-            <div id="postureVerifiedHint" class="form-hint mt-5">
-              The day an operator checked this posture against the agreement. Without it the posture is
-              recorded but unverified, and an unverified posture never earns the green Private badge in chat.
-            </div>
-          </div>
-
-          <div class="mt-10">
-            <span class="status-badge"
-                  [class.badge-success]="isPostureVerified"
-                  [class.badge-warning]="!isPostureVerified && (hasRecordedPosture || hasEmptyVerifiedPosture)">
-              {{ postureBadgeText }}
-            </span>
-          </div>
-
-          @if (hasEmptyVerifiedPosture) {
-            <div class="form-hint mt-5">
-              <strong>A verification date with no posture confirms nothing.</strong>
-              Choose a posture, or clear the date.
-            </div>
-          }
-        </fieldset>
-
-        <!-- Admin only: where this model's requests actually go. Never exposed to users -- a base
-             URL decides where the server sends an authenticated request, which is the server
-             operator's decision and not the account holder's. -->
-        <fieldset class="form-fieldset endpoint-fieldset">
-          <legend>Custom Endpoint</legend>
-
-          @if (customEndpointsEnabled) {
-            <p class="form-hint">
-              Leave the base URL empty for the provider's official endpoint, which is what every existing
-              configuration does. Allowed hosts: {{ allowedHostPatternsText }}. Allowed header names:
-              {{ allowedHeaderNamesText }}. Loopback: {{ endpointPolicy?.allowLoopback ? 'on' : 'off' }}.
-              Anything else is refused on save rather than silently falling back.
-            </p>
-          } @else {
-            <p class="form-hint">
-              <strong>Custom endpoints are switched off on this server:</strong> no host is allowlisted in
-              <code>PrivacySettings:CustomEndpoints:AllowedHostPatterns</code>. Requests use the provider's
-              official endpoint.
-            </p>
-          }
-
-          <div class="form-group flex-col mt-10">
-            <label for="baseUrlInput">Base URL</label>
-            <input id="baseUrlInput" type="url" class="gh-input w-100" maxlength="2048"
-                   [ngModel]="baseUrl"
-                   (ngModelChange)="onBaseUrlChange($event)"
-                   [disabled]="!customEndpointsEnabled"
-                   aria-describedby="baseUrlHint"
-                   placeholder="https://acme.openai.azure.com">
-            <div id="baseUrlHint" class="form-hint mt-5">
-              Scheme, host and an optional path prefix, e.g. <code>https://gateway.example.com/openai</code>.
-              No query string or fragment: the provider appends its own path and query.
-            </div>
-          </div>
-
-          <div class="form-group flex-col mt-10">
-            <label for="apiVersionInput">API Version</label>
-            <input id="apiVersionInput" type="text" class="gh-input w-100" maxlength="64"
-                   [(ngModel)]="apiVersion"
-                   [disabled]="!customEndpointsEnabled"
-                   aria-describedby="apiVersionHint"
-                   placeholder="2026-05-01">
-            <div id="apiVersionHint" class="form-hint mt-5">
-              For Azure OpenAI. When set, requests authenticate with an <code>api-key</code> header and carry
-              <code>?api-version=</code> instead of a bearer token. Leave it empty for any other endpoint,
-              including OpenAI-compatible gateways.
-            </div>
-          </div>
-
-          <div class="form-group flex-col mt-10">
-            <label for="customHeadersInput">Custom Headers</label>
-            <textarea id="customHeadersInput" class="gh-input w-100 custom-headers-input" rows="1"
-                      maxlength="4096"
-                      [(ngModel)]="customHeadersJson"
-                      [disabled]="!customEndpointsEnabled"
-                      aria-describedby="customHeadersHint"
-                      placeholder='{"X-Gateway-Tenant":"acme"}'></textarea>
-            <div id="customHeadersHint" class="form-hint mt-5">
-              A JSON object. Names must be on the allowlist above; credential, <code>Host</code> and
-              hop-by-hop headers are always refused.
-            </div>
-          </div>
-
-          @if (baseUrl) {
-            <div class="form-hint mt-10">
-              <strong>Check Models queries this endpoint, not the public API.</strong>
-              Many gateways expose no listing route; if the check fails with 404, enter the model id by hand.
-              The key is then unverified.
-            </div>
-          }
-        </fieldset>
-      }
-    </details>
+      </details>
+    </div>
 
   </div>
 

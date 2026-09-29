@@ -972,6 +972,74 @@ describe('AiModelFormComponent', () => {
     });
   });
 
+  describe('Layout areas', () => {
+    const el = () => fixture.nativeElement as HTMLElement;
+    const layout = () => el().querySelector('.model-form-layout') as HTMLElement;
+    const areaClasses = () => Array.from(layout().children)
+      .map(c => ['mf-connection', 'mf-model', 'mf-settings', 'mf-advanced'].find(a => c.classList.contains(a)));
+    const legendOf = (fieldset: Element | null) =>
+      fieldset?.querySelector(':scope > legend')?.textContent?.trim();
+
+    it('orders the four areas Connection, Model, Settings, Advanced for an admin', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      expect(layout().classList).toContain('mf-admin');
+      expect(areaClasses()).toEqual(['mf-connection', 'mf-model', 'mf-settings', 'mf-advanced']);
+      expect(legendOf(layout().querySelector('.mf-connection'))).toBe('Connection');
+      expect(legendOf(layout().querySelector('.mf-model'))).toBe('Model');
+      expect(layout().querySelector('.mf-advanced')?.tagName).toBe('DETAILS');
+    });
+
+    it('puts the Note, status and Model Role in the admin Configuration group', () => {
+      component.isAdmin = true;
+      component.apiKey = 'dummy';
+      fixture.detectChanges();
+
+      const note = el().querySelector('#configNoteInput') as HTMLInputElement;
+      expect(note).toBeTruthy();
+      const configuration = note.closest('fieldset.mf-configuration')!;
+      expect(legendOf(configuration)).toBe('Configuration');
+      expect(configuration.closest('.mf-settings')).toBeTruthy();
+      expect(el().querySelector('label[for="configNoteInput"]')?.textContent?.trim()).toBe('Note');
+
+      const role = configuration.querySelector('fieldset.model-role-choice');
+      expect(role).toBeTruthy();
+      expect(legendOf(role)).toBe('Model Role');
+      expect(role!.querySelectorAll('.checkbox-row input[type="checkbox"]').length).toBe(3);
+      expect(configuration.textContent).toContain('Enabled');
+      expect(configuration.textContent).toContain('System Wide');
+    });
+
+    it('keeps the same area order without mf-admin or a Configuration group for a non-admin', () => {
+      component.isAdmin = false;
+      fixture.detectChanges();
+
+      expect(layout().classList).not.toContain('mf-admin');
+      expect(areaClasses()).toEqual(['mf-connection', 'mf-model', 'mf-settings', 'mf-advanced']);
+      const legends = Array.from(el().querySelectorAll('legend')).map(l => l.textContent?.trim());
+      expect(legends).not.toContain('Configuration');
+      expect(legends).not.toContain('Model Role');
+      expect(el().querySelector('#configNoteInput')).toBeNull();
+      expect(el().querySelector('.mf-settings .model-properties-fieldset')).toBeTruthy();
+    });
+
+    it('associates the Provider and Models labels with their selects', () => {
+      component.isAdmin = false;
+      fixture.detectChanges();
+
+      for (const id of ['providerSelect', 'pickerModelSelect']) {
+        const label = el().querySelector(`label[for="${id}"]`) as HTMLLabelElement;
+        expect(label).withContext(id).toBeTruthy();
+        expect(el().querySelector(`#${id}`)?.tagName).withContext(id).toBe('SELECT');
+      }
+      expect(el().querySelector('label[for="providerSelect"]')?.textContent?.trim()).toBe('Provider');
+      expect(el().querySelector('label[for="pickerModelSelect"]')?.textContent?.trim()).toBe('Models');
+      expect(el().querySelector('#pickerModelSelect')?.classList).toContain('picker-model-select');
+    });
+  });
+
   describe('Default / Custom API key choice', () => {
     const el = () => fixture.nativeElement as HTMLElement;
     const defaultRadio = () => el().querySelector('#apiKeyChoiceDefault') as HTMLInputElement;

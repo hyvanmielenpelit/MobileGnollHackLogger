@@ -83,6 +83,10 @@ Harness-neutral, and the floor for any Overseer frontend work.
   stage list of the run, multi-run and AI report writing progress dialogs; `.is-done` / `.is-current`
   plus a visually hidden state word) and the **`.dc-ring`** ring spinner (`.dc-ring-track`,
   `.dc-ring-arc`; the Download Center and the PDF viewer), which stands still under reduced motion.
+- **`.settings-dialog.model-form-dialog`** is the near-full-screen frame of every dialog hosting
+  `app-ai-model-form` (Admin config, My Models add and edit): `min(96rem, 100dvw - 32px)` by
+  `100dvh - 32px`, 8 px inset on a phone, a flex column in which only the form body scrolls. It
+  is global; do not copy it into a component.
 
 ### Typography
 - **Type tokens** on `:root` in `styles.scss`: `--text-body` (0.875rem: running text and
@@ -201,7 +205,8 @@ To find specific popups, look in the corresponding component's `.html` template:
 - **Admin Component (`admin.component.html`)**
   - `#manageGroupsDialog`: Manage Groups
   - `#createGroupDialog`: Create Group
-  - `#configDialog`: Config
+  - `#configDialog`: Config — near full screen (`settings-dialog model-form-dialog`); only the
+    body of its `app-ai-model-form` scrolls.
   - `#config-filter-panel`: Config Filter (`popover="auto"`, anchored to `#config-filter-trigger`)
   - `#confirmDialog`: Confirm
   - `#manageUserConfigsDialog`: Manage User Configs
@@ -251,6 +256,8 @@ To find specific popups, look in the corresponding component's `.html` template:
 - **Models Component (`models.component.html`)**
   - `#modelPickerDialog`: Model Picker
   - `#editModelDialog`: Edit Model
+  - Both are near full screen (`settings-dialog model-form-dialog`); only the body of their
+    `app-ai-model-form` scrolls.
   - `#deleteModelConfirmDialog`: Delete Model Confirm
 
 - **Settings Component (`settings.component.html`)**
@@ -770,6 +777,23 @@ When configuring or editing AI models in `AiModelFormComponent` (used across `/m
 ### 3. Provider Immutability in Edit Mode
 - **Provider Immutability**: In Edit Mode (`mode === 'edit'`), the Provider dropdown is disabled (`[disabled]="mode === 'edit'"`) and programmatic provider changes via `onProviderChange()` are ignored. The AI Provider can only be chosen during creation in Add Mode (`mode === 'add'`).
 - Because the provider cannot change during edits, property preservation always operates within models of the same provider.
+
+### 4. Layout
+- The body (`.form-scroll-area`) is the `model-form` inline-size container, and
+  `.model-form-layout` holds four areas in this DOM order: **Connection** (Provider; admin: the API
+  key choice, Check Models, custom key), **Model** (catalog listbox, Model ID, Display Name),
+  **Settings** (`.mf-settings`: *Model Properties*; admin: *Configuration* with Note, Enabled,
+  System Wide and the *Model Role* fieldset) and **Advanced** (`details`, its fieldsets in
+  `.advanced-grid`).
+- Columns follow the container width, not the viewport. Admin (`.mf-admin`): one column below
+  40 rem, `connection model / settings settings` from 40 rem, `connection model settings` from
+  70 rem. My Models: one column below 40 rem, `connection settings / model settings` from 40 rem.
+  Advanced always spans the full width. Read column by column the order is the DOM order, so no
+  `order` property is used.
+- Each group stays one column of label-above-field rows; columns separate groups, never the fields
+  of one group.
+- The body is capped at `max-height: var(--model-form-scroll-max, 65vh)`. A host frame that sizes
+  the dialog itself (`.model-form-dialog`) sets `--model-form-scroll-max: none` to lift the cap.
 
 ## AI Benchmark Configuration Persistence
 
