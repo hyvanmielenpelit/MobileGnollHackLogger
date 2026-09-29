@@ -36,6 +36,13 @@
   --score-low-ink: #e57373;
   --score-low-bg: rgba(244, 67, 54, 0.15);
   --score-low-border: rgba(244, 67, 54, 0.45);
+
+  /* Type scale, in rem so text follows the reader's browser font size: body for running text and
+     values, secondary for labels, metadata and hints. */
+  --text-body: 0.875rem;
+  --text-secondary: 0.8125rem;
+  --leading-body: 1.5;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 
 *, *::before, *::after {

@@ -2551,7 +2551,7 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 // Band Agreement and Tool Usage Profile panels. One shared rule, and .gh-table for the
 // table: this file sits against the 30 kB anyComponentStyle budget.
 .section-note,
-.band-shift-list { margin: 0 0 8px; color: #999; font-size: 12px; }
+.band-shift-list { margin: 0 0 8px; color: #999; }
 .band-shift-list { padding-left: 20px; }
 
 /* Suite Health opens as a full-screen dialog (see the .benchmark-suite-health-dialog block
@@ -2581,7 +2581,7 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
     .form-group { justify-self: stretch; margin-bottom: 0; }
   }
   .calibration-list { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
-  .calibration-item { padding: 8px 10px; border: 1px solid #333; border-radius: 6px; font-size: 12px; }
+  .calibration-item { padding: 8px 10px; border: 1px solid #333; border-radius: 6px; }
   .calibration-item-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
   .calibration-stats {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: 6px 12px; margin: 8px 0 0;
@@ -2611,7 +2611,7 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
     &.is-warning { border-color: var(--color-warning); color: var(--color-warning); }
     &.is-missing { color: #888; }
   }
-  .rr-ai-doc-meta { font-size: 12px; color: #888; }
+  .rr-ai-doc-meta { font-size: var(--text-secondary); color: #888; }
   // Its own line under the name, as .gh-tag-changed is everywhere else.
   .rr-ai-doc-text .gh-tag-changed { flex-basis: 100%; margin-top: 2px; }
   .rr-ai-write {
@@ -2795,8 +2795,20 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 }
 .rr-panel {
   border-radius: 6px;
+  // Running text and values of every tab; controls, tags and cards set their own sizes.
+  font-size: var(--text-body);
+  // Inline code and other fonts take Lato's x-height (Baseline 2024; without it, Consolas is
+  // within 3% of Lato).
+  font-size-adjust: from-font;
   &[hidden] { display: none; }
   &:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
+
+  :is(p, ul, ol, dl) { line-height: var(--leading-body); }
+  p { text-wrap: pretty; }
+  code { font-family: var(--font-mono); }
+  // Global .form-hint is 0.85em, which would shrink under the panel's base.
+  .form-hint { font-size: var(--text-secondary); }
+  h5 { margin: 16px 0 8px; font-size: var(--text-body); font-weight: 700; color: #ddd; }
 }
 // Tabs whose content is a short table, a breakdown or a list, capped so values stay near their
 // labels on a full-screen dialog. Centered in the dialog; fluid below the cap.
@@ -2804,6 +2816,10 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .rr-panel-medium { max-inline-size: 60rem; margin-inline: auto; }
 // Counts and shares in the Tools tables, right-aligned so the digits line up down a column.
 .gh-table .rr-num { text-align: end; font-variant-numeric: tabular-nums; }
+// The Tools tables read at the panel's body size, like the notes around them.
+:is(.tool-usage-table, .tool-routing-table) :is(th, td) { font-size: var(--text-body); }
+// Fine print under a question: one step below the body.
+.rr-fine-print { font-size: var(--text-secondary); }
 .rr-figures-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   margin-bottom: 10px; border-bottom: 1px solid var(--border-glass);
@@ -2825,7 +2841,6 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 4px 12px;
   margin: 0 0 20px;
-  font-size: 12px;
   dt { color: #888; }
   dd { margin: 0; overflow-wrap: anywhere; }
 }

@@ -76,6 +76,20 @@ Harness-neutral, and the floor for any Overseer frontend work.
   `.gh-fieldset-hint` for a one-sentence purpose line under the legend; **`.gh-disclosure`** is
   the themed native `<details>`, with `.gh-disclosure-body` for its content. Both are global.
 
+### Typography
+- **Type tokens** on `:root` in `styles.scss`: `--text-body` (0.875rem: running text and
+  values), `--text-secondary` (0.8125rem: labels, metadata, hints), `--leading-body` (1.5,
+  unitless) and `--font-mono` (the monospace stack).
+- **New text rules use `rem` or the tokens, never `px`.**
+- **A container sets the body size once, and its children inherit it.** Do not restate the size
+  on each child.
+- **Terms and values in a `dl` share one size** and differ by color.
+- **A tab's heading is `.gh-section-title`.**
+- **Inline code uses `--font-mono`** under `font-size-adjust: from-font` on its container, so it
+  matches the x-height of the text around it.
+- The run report dialog (`#runDetailDialog`) is the first adopter; other screens move over when
+  they are next touched.
+
 When creating UI elements in the Overseer frontend, adhere to the following standards:
 
 ### Buttons, Icon Buttons, and Tabs
@@ -281,7 +295,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     The **Difficulty**, **Tools** and **Cost** panels are capped at 48 rem (`.rr-panel-narrow`) and
     **Configuration**, **AI Reports** and **Calibration** at 60 rem (`.rr-panel-medium`), each centered
     in the dialog (`margin-inline: auto`); the other tabs are full width. The Tools tables right-align
-    their counts (`.rr-num`).
+    their counts (`.rr-num`). The panels share one type scale: running text at `--text-body`,
+    metadata and hints at `--text-secondary`, and every tab heading `.gh-section-title`; the Summary
+    cards, question cards, synthesis panel and cost panel keep their own scales.
     Calibration's controls are one column, at most 36 rem wide: *Calibration assessor*, then *Compare
     against*, then **Calibrate assessor** at its own width. On a panel run *Compare against* is an
     `app-model-picker` (`.calibration-target-selector`, labelled `bmCalibrationTargetLabel`) whose

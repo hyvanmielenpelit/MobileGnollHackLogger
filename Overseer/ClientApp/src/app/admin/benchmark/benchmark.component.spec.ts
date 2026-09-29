@@ -10902,6 +10902,104 @@ describe('AdminBenchmarkComponent', () => {
       expect(routingHeads).toEqual([false, true, true]);
     });
 
+    describe('typography', () => {
+      // Expected sizes follow the root size, so the specs hold whatever Karma's root font size is.
+      const rootPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize);
+      const sizeOf = (el: Element) => parseFloat(getComputedStyle(el).fontSize);
+
+      function panel(key: string): HTMLElement {
+        return fixture.nativeElement.querySelector(`.benchmark-run-detail-dialog #rr-panel-${key}`) as HTMLElement;
+      }
+
+      function one(root: HTMLElement, selector: string): HTMLElement {
+        const el = root.querySelector(selector) as HTMLElement;
+        expect(el).withContext(selector).toBeTruthy();
+        return el;
+      }
+
+      /** Tool calls, a band disagreement, a configuration hash, a written report and a calibration row. */
+      function openTypographyReport(): void {
+        benchmarkServiceMock.listReportDocuments.and.returnValue(of([{
+          id: 71, packId: 'run-55', audience: 1, title: 'Document 71', subjectKey: 'run:55', subjectLabel: 'Test Model',
+          subjectRunIds: [55], suiteId: 1, suiteName: 'Default Suite', writerDisplayName: 'Test Model',
+          writerProvider: 'Anthropic', writerModelId: 'claude-3-5-sonnet', writerThinkingLevel: null,
+          sameProviderAcknowledged: false, status: 'Completed', reportFormatVersion: 2,
+          createdAtUtc: '2026-09-28T10:15:00Z', inputTokens: 0, outputTokens: 0, durationMs: 0, costUsd: null,
+          runChangedSinceGeneration: false, missingRunIds: [], allowedDisclosures: [1, 2, 3], origin: 2
+        }]));
+        benchmarkServiceMock.getCalibrations.and.returnValue(of([
+          { id: 2, benchmarkRunId: 55, assessorDisplayNameUsed: 'Claude Opus 5', assessorProviderUsed: 'Anthropic',
+            createdAtUtc: '2026-09-27T09:00:00Z', answerCount: 3, skippedAnswerCount: 0, meanAbsDelta: 4.5,
+            disagreementCount: 1, inputTokens: 1, outputTokens: 1, durationMs: 1, comparedAgainst: null }
+        ]));
+        openReport(reportRun({
+          assessmentJson: '{}', candidateSystemPromptSha256: 'abc123',
+          answers: [
+            reportAnswer(1, { toolCallSummary: 'source_code_search×3, wiki_search×1', toolCallCount: 4, assessedDifficulty: 90 }),
+            reportAnswer(2, { toolCallSummary: 'wiki_view×2', toolCallCount: 2 })
+          ]
+        }));
+      }
+
+      it('should set every tab\'s running text at the body size', () => {
+        openTypographyReport();
+        const body = rootPx() * 0.875;
+
+        const panels = Array.from(fixture.nativeElement.querySelectorAll('.benchmark-run-detail-dialog [role="tabpanel"].rr-panel')) as HTMLElement[];
+        expect(panels.length).toBe(10);
+        for (const p of panels) {
+          expect(sizeOf(p)).withContext(p.id).toBeCloseTo(body, 2);
+        }
+
+        const texts: [string, string][] = [
+          ['difficulty', '.section-note'],
+          ['difficulty', '.band-shift-list li'],
+          ['tools', '.section-note'],
+          ['tools', '.tool-usage-table td'],
+          ['tools', '.tool-routing-table td'],
+          ['configuration', '.rr-config dt'],
+          ['configuration', '.rr-config dd'],
+          ['calibration', '.calibration-item'],
+          ['reports', '.rr-ai-status'],
+          ['questions', '.section-note']
+        ];
+        for (const [key, selector] of texts) {
+          expect(sizeOf(one(panel(key), selector))).withContext(`${key} ${selector}`).toBeCloseTo(body, 2);
+        }
+      });
+
+      it('should set metadata and hints one step smaller', () => {
+        openTypographyReport();
+        const secondary = rootPx() * 0.8125;
+
+        expect(sizeOf(one(panel('reports'), '.rr-ai-doc-meta'))).toBeCloseTo(secondary, 2);
+        expect(sizeOf(one(panel('calibration'), '.form-hint'))).toBeCloseTo(secondary, 2);
+      });
+
+      it('should head the Questions tab like the other tabs', () => {
+        openTypographyReport();
+
+        expect(one(panel('questions'), '#rrQuestionsTitle').classList).toContain('gh-section-title');
+      });
+
+      it('should set inline code in the monospace stack', () => {
+        openTypographyReport();
+
+        const family = getComputedStyle(one(panel('configuration'), 'code')).fontFamily;
+        expect(family).toContain('Consolas');
+        expect(family).not.toBe('monospace');
+      });
+
+      it('should size Tool Routing as a sub-heading', () => {
+        openTypographyReport();
+
+        const heading = one(panel('tools'), 'h5');
+        expect(heading.textContent?.trim()).toBe('Tool Routing');
+        expect(sizeOf(heading)).toBeCloseTo(rootPx() * 0.875, 2);
+        expect(getComputedStyle(heading).fontWeight).toBe('700');
+      });
+    });
+
     describe('tabs', () => {
       const KEYS = ['summary', 'integrity', 'synthesis', 'questions', 'difficulty', 'tools', 'cost', 'configuration', 'reports', 'calibration'];
 

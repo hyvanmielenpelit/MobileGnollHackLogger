@@ -2180,7 +2180,7 @@
           <div role="tabpanel" class="rr-panel" id="rr-panel-questions" aria-labelledby="rr-tab-questions" tabindex="0"
                [hidden]="runReportTab !== 'questions'">
             <section class="questions-detail-section" aria-labelledby="rrQuestionsTitle">
-              <h4 id="rrQuestionsTitle">Questions ({{ selectedRunDetail.answers.length }})</h4>
+              <h4 id="rrQuestionsTitle" class="gh-section-title">Questions ({{ selectedRunDetail.answers.length }})</h4>
               <!-- A card is shown when it matches any pressed filter. -->
               <div class="rr-toolbar">
                 @for (filter of questionFiltersOf(selectedRunDetail); track filter.key) {
@@ -2299,7 +2299,7 @@
                             <div class="alert-body">
                               {{ ans.errorMessage }}
                               @if (ans.providerErrorDetail) {
-                                <div class="mt-5 text-muted text-11">{{ ans.providerErrorDetail }}</div>
+                                <div class="mt-5 text-muted rr-fine-print">{{ ans.providerErrorDetail }}</div>
                               }
                             </div>
                           </div>
@@ -2488,7 +2488,7 @@
                       }
 
                       @if (answerBoardChars(ans); as boardChars) {
-                        <div class="text-muted text-11 mb-15">Board characters sent — assessor / second reader / verifier: {{ boardChars }}</div>
+                        <div class="text-muted rr-fine-print mb-15">Board characters sent — assessor / second reader / verifier: {{ boardChars }}</div>
                       }
 
                       @if (claimVerificationsOf(ans); as verifications) {
@@ -2501,11 +2501,11 @@
                                   {{ ans.claimsSupportedCount ?? 0 }} supported, {{ ans.claimsRefutedCount ?? 0 }} refuted, {{ ans.claimsIndeterminateCount ?? 0 }} indeterminate
                                 </span>
                                 @if (hasAdvisoryClaimRoles(verifications) || (ans.answerFlagNames && ans.answerFlagNames.includes('ContestedAccuracyDeduction'))) {
-                                  <div class="text-muted text-11 claim-roles-note">Entries labeled below were sent by the harness to check the assessor — its critical-error quote, its out-of-rubric basis, or a sentence it charged as false — and are not claims the answer was marked down for leaving unverified; they are not counted here.</div>
+                                  <div class="text-muted rr-fine-print claim-roles-note">Entries labeled below were sent by the harness to check the assessor — its critical-error quote, its out-of-rubric basis, or a sentence it charged as false — and are not claims the answer was marked down for leaving unverified; they are not counted here.</div>
                                 }
                               </div>
                               @if (ans.claimVerificationToolCallCount != null) {
-                                <span class="text-muted text-11">({{ ans.claimVerificationToolCallCount }} tool call(s))</span>
+                                <span class="text-muted rr-fine-print">({{ ans.claimVerificationToolCallCount }} tool call(s))</span>
                               }
                             </div>
                             <div class="claim-verification-list">
@@ -2517,7 +2517,7 @@
                                     </span>
                                     <span class="claim-text">“{{ v.claim }}”</span>
                                     @for (label of claimRoleLabels(v.roles, v.raisedBy); track label) {
-                                      <span class="claim-role-label text-muted text-11">({{ label }})</span>
+                                      <span class="claim-role-label text-muted rr-fine-print">({{ label }})</span>
                                     }
                                   </div>
                                   @if (v.citation) {
@@ -2543,7 +2543,7 @@
                             <div class="alert-body">
                               {{ ans.claimVerificationError }}
                               @if (ans.claimVerificationRawText) {
-                                <div class="mt-5 text-muted text-11">
+                                <div class="mt-5 text-muted rr-fine-print">
                                   (Raw verifier response captured &mdash; {{ ans.claimVerificationRawText.length }} characters)
                                 </div>
                               }
@@ -2652,7 +2652,7 @@
                                       <tr [class.is-tool-call-failed]="!isToolCallSucceeded(call)">
                                         <td>{{ call.sortOrder }}</td>
                                         <td>{{ call.iterationIndex ?? '—' }}</td>
-                                        <td><code>{{ call.name ?? '—' }}</code>@if (call.agentName) { <span class="text-muted text-11"> ({{ call.agentName }})</span> }</td>
+                                        <td><code>{{ call.name ?? '—' }}</code>@if (call.agentName) { <span class="text-muted rr-fine-print"> ({{ call.agentName }})</span> }</td>
                                         <td>
                                           <span class="tool-call-status-badge" [class.is-succeeded]="isToolCallSucceeded(call)" [class.is-failed]="!isToolCallSucceeded(call)">
                                             {{ call.status ?? 'Unknown' }}
@@ -2662,7 +2662,7 @@
                                         <td>{{ call.executionMs != null ? (call.executionMs + ' ms') : '—' }}</td>
                                         <td>
                                           {{ call.resultLengthChars }} chars
-                                          @if (call.resultTruncated) { <span class="text-muted text-11"> (stored truncated)</span> }
+                                          @if (call.resultTruncated) { <span class="text-muted rr-fine-print"> (stored truncated)</span> }
                                         </td>
                                         <td class="tool-call-detail-cell">
                                           @if (call.argsText) {
