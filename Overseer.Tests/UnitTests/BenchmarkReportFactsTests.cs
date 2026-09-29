@@ -165,6 +165,59 @@ public class BenchmarkReportFactsTests
     }
 
     [Fact]
+    public void TheIntervalSpan_IsThePrintedUpperBoundMinusThePrintedLowerBound()
+    {
+        var comparison = Comparison(
+            Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 78, 72.5, 82.4),
+            Entry("run:2", new long[] { 2 }, "No bounds", "Google", 70));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", SimpleRun(1, "OpenAI"), SimpleRun(2, "Google")));
+
+        Assert.Equal("73–82", FactOf(sheet, "quality.interval").Display);
+        var span = FactOf(sheet, "quality.intervalSpan");
+        Assert.True(span.Available);
+        Assert.Equal("9 points", span.Display);
+        Assert.Equal(9, span.Value!.GetValue<int>());
+        Assert.False(BenchmarkReportFacts.IsPeerFact("quality.intervalSpan"));
+
+        var noBounds = BuildSheet(Input(comparison, "run:2", SimpleRun(1, "OpenAI"), SimpleRun(2, "Google")));
+        var missing = FactOf(noBounds, "quality.intervalSpan");
+        Assert.False(missing.Available);
+        Assert.Equal("No interval could be computed.", missing.UnavailableReason);
+
+        var noQuality = BuildSheet(Input(
+            Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", null)), "run:1", SimpleRun(1, "OpenAI")));
+        Assert.False(FactOf(noQuality, "quality.intervalSpan").Available);
+    }
+
+    [Fact]
+    public void NormalizeSupportLabels_RewritesTheFamilyLabelsOfOlderSheets_AndIsIdempotent()
+    {
+        var sheet = new BenchmarkReportFactSheet
+        {
+            Rows = new List<BenchmarkReportFindingRow>
+            {
+                new() { Id = "R1", SupportLabel = LegacyDifferentFamilyLabel },
+                new() { Id = "R2", SupportLabel = LegacySameFamilyLabel },
+                new() { Id = "R3", SupportLabel = BenchmarkReportFacts.SupportBothGraders }
+            }
+        };
+
+        // Unnormalized, the legacy labels rank nowhere.
+        Assert.Equal(BenchmarkReportFacts.SupportComputed, BenchmarkReportFacts.SupportLabelFor(new[] { "R1" }, sheet));
+
+        BenchmarkReportFacts.NormalizeSupportLabels(sheet);
+        BenchmarkReportFacts.NormalizeSupportLabels(sheet);
+
+        Assert.Equal(
+            new[] { BenchmarkReportFacts.SupportOneGraderDifferentProvider, BenchmarkReportFacts.SupportOneGraderSameProvider, BenchmarkReportFacts.SupportBothGraders },
+            sheet.Rows.Select(r => r.SupportLabel));
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderDifferentProvider, BenchmarkReportFacts.SupportLabelFor(new[] { "R1", "R2" }, sheet));
+        Assert.Equal("One grader — different provider", BenchmarkReportFacts.SupportOneGraderDifferentProvider);
+        Assert.Equal("One grader — same provider as the model", BenchmarkReportFacts.SupportOneGraderSameProvider);
+    }
+
+    [Fact]
     public void TheNoSignificanceStatement_IsTheComparisonsOwn()
     {
         var comparison = Comparison(
@@ -265,7 +318,7 @@ public class BenchmarkReportFactsTests
     }
 
     [Fact]
-    public void PanelRows_TakeTheirSupportLabelFromTheMembersFamilyRelationToTheModel()
+    public void PanelRows_TakeTheirSupportLabelFromTheMembersProviderRelationToTheModel()
     {
         var run = Run(1, "Google", "subject", new AnswerSpec(11, 1, 1, 80), new AnswerSpec(12, 2, 1, 40), new AnswerSpec(13, 3, 1, 60));
         run.CoAssessorModelConfigurationId = 2;
@@ -286,9 +339,9 @@ public class BenchmarkReportFactsTests
         string LabelOf(string category) => sheet.Rows.Single(r => r.Category == category).SupportLabel;
 
         Assert.Equal(BenchmarkReportFacts.SupportBothGraders, LabelOf("accuracy"));
-        Assert.Equal(BenchmarkReportFacts.SupportOneGraderSameFamily, LabelOf("readability"));
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderSameProvider, LabelOf("readability"));
         Assert.Equal(BenchmarkReportFacts.SupportGradersDisagree, LabelOf("conciseness"));
-        Assert.Equal(BenchmarkReportFacts.SupportOneGraderDifferentFamily, LabelOf("tool_use"));
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderDifferentProvider, LabelOf("tool_use"));
 
         var memberA = Assert.Single(sheet.Graders, g => g.Role == BenchmarkReportFacts.PanelMemberARole);
         Assert.True(memberA.SameFamilyAsSubject);
@@ -304,17 +357,17 @@ public class BenchmarkReportFactsTests
             Rows = new List<BenchmarkReportFindingRow>
             {
                 new() { Id = "R1", SupportLabel = BenchmarkReportFacts.SupportGradersDisagree },
-                new() { Id = "R2", SupportLabel = BenchmarkReportFacts.SupportOneGraderSameFamily },
+                new() { Id = "R2", SupportLabel = BenchmarkReportFacts.SupportOneGraderSameProvider },
                 new() { Id = "R3", SupportLabel = BenchmarkReportFacts.SupportSingleAssessor },
-                new() { Id = "R4", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentFamily },
+                new() { Id = "R4", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentProvider },
                 new() { Id = "R5", SupportLabel = BenchmarkReportFacts.SupportBothGraders }
             }
         };
 
         Assert.Equal(BenchmarkReportFacts.SupportGradersDisagree, BenchmarkReportFacts.SupportLabelFor(new[] { "R1" }, sheet));
-        Assert.Equal(BenchmarkReportFacts.SupportOneGraderSameFamily, BenchmarkReportFacts.SupportLabelFor(new[] { "R1", "R2" }, sheet));
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderSameProvider, BenchmarkReportFacts.SupportLabelFor(new[] { "R1", "R2" }, sheet));
         Assert.Equal(BenchmarkReportFacts.SupportSingleAssessor, BenchmarkReportFacts.SupportLabelFor(new[] { "R2", "R3", "R1" }, sheet));
-        Assert.Equal(BenchmarkReportFacts.SupportOneGraderDifferentFamily, BenchmarkReportFacts.SupportLabelFor(new[] { "R3", "R4" }, sheet));
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderDifferentProvider, BenchmarkReportFacts.SupportLabelFor(new[] { "R3", "R4" }, sheet));
         Assert.Equal(BenchmarkReportFacts.SupportBothGraders, BenchmarkReportFacts.SupportLabelFor(new[] { "R4", "Q2", "R5" }, sheet));
 
         Assert.Equal(BenchmarkReportFacts.SupportComputed, BenchmarkReportFacts.SupportLabelFor(new[] { "quality.index", "Q3" }, sheet));

@@ -87,16 +87,17 @@ public static class BenchmarkReportJson
 ///
 /// <para>A sheet with no peers renders the stand-alone form: no peer tables, no pairwise-significance
 /// statement and no peer columns. The Report for AI Researchers and Developers prints one evidence
-/// line beneath each strength, weakness and recommendation; the Executive Summary and the Report for
-/// AI Researchers and Developers end with the evaluation terms. Fact keys are printed only through
-/// <see cref="BenchmarkReportFactLabels"/>.</para>
+/// line beneath each strength, weakness and recommendation at Detailed and Full; the Executive Summary
+/// and the Report for AI Researchers and Developers end with the evaluation terms. Fact keys are
+/// printed only through <see cref="BenchmarkReportFactLabels"/>.</para>
 ///
 /// <para>A document stored under an earlier format version renders with what it stored: a missing
-/// role, count or fact falls back to the wording that version printed.</para>
+/// role, count or fact falls back to the wording that version printed, and its single-grader support
+/// labels are read in their provider wording.</para>
 /// </summary>
 public static class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 4;
+    public const int ReportFormatVersion = 5;
 
     private const string ProductName = "Overseer GnollHack Assistant Benchmark";
     private const string TokenPattern = @"\{\{([^{}]+)\}\}";
@@ -177,6 +178,7 @@ public static class BenchmarkReportPackRenderer
                 ? new List<BenchmarkReportValidationNote>()
                 : BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson)
         };
+        BenchmarkReportFacts.NormalizeSupportLabels(ctx.Sheet);
 
         var sb = new StringBuilder();
         switch (document.Audience)
@@ -197,7 +199,10 @@ public static class BenchmarkReportPackRenderer
         {
             EvaluationTerms(sb, ctx);
         }
-        Footer(sb, ctx);
+        if (options.IncludeDocumentFooter)
+        {
+            Footer(sb, ctx);
+        }
         return sb.ToString();
     }
 
@@ -226,6 +231,12 @@ public static class BenchmarkReportPackRenderer
 
         Heading(sb, "## How reliable this result is");
         Slot(sb, ctx, BenchmarkReportSlots.Confidence);
+        IntervalSpanLine(sb, ctx);
+        if (WriterIndependenceCaveat(ctx) is string caveat)
+        {
+            Line(sb, caveat);
+            Line(sb);
+        }
         if (!ctx.Standalone)
         {
             NoSignificance(sb, ctx);
@@ -411,6 +422,34 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
     }
 
+    /// <summary>
+    /// The interval, its span and the scored questions in one code-rendered sentence; nothing on a
+    /// document stored without the span fact.
+    /// </summary>
+    private static void IntervalSpanLine(StringBuilder sb, Context ctx)
+    {
+        if (!IsAvailable(ctx, "quality.interval") || !IsAvailable(ctx, "quality.intervalSpan") || !IsAvailable(ctx, "quality.scoredItems")) return;
+
+        Line(sb, "The 95 % interval is " + D(ctx, "quality.interval") + ", a span of " + D(ctx, "quality.intervalSpan")
+            + ", and rests on " + D(ctx, "quality.scoredItems") + " questions with a scored answer.");
+        Line(sb);
+    }
+
+    /// <summary>
+    /// The caveat of a document whose writer shares the subject's provider (trimmed, case-insensitive,
+    /// as <see cref="BenchmarkComplianceGuard.IsSameProvider(string?, string?)"/> compares); null for an independent writer.
+    /// </summary>
+    private static string? WriterIndependenceCaveat(Context ctx)
+    {
+        string writer = ctx.Document.WriterProvider?.Trim() ?? string.Empty;
+        string subject = ctx.Sheet.SubjectProvider?.Trim() ?? string.Empty;
+        if (writer.Length == 0 || subject.Length == 0 || !string.Equals(writer, subject, StringComparison.OrdinalIgnoreCase)) return null;
+
+        return "This document was written by " + ctx.Document.WriterDisplayName + ", a model from " + subject
+            + ", the provider of the model under test. A writer from the same provider may describe it more favorably; "
+            + "the figures and tables were computed by Overseer, not by the writer.";
+    }
+
     private static void NoSignificance(StringBuilder sb, Context ctx)
     {
         string text = JoinSentences(ctx.Sheet.NoSignificanceSummary, ctx.Sheet.NoSignificanceInstead);
@@ -526,7 +565,7 @@ public static class BenchmarkReportPackRenderer
             foreach (var grader in sheet.Graders)
             {
                 Line(sb, "  - " + grader.Role + ": " + grader.Label + " (" + grader.Provider + ", " + grader.ModelId + "), "
-                    + (grader.SameFamilyAsSubject ? "same family as the model under test" : "different family from the model under test"));
+                    + (grader.SameFamilyAsSubject ? "same provider as the model under test" : "different provider from the model under test"));
             }
         }
 
@@ -781,8 +820,9 @@ public static class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// Every question with each run's answer excerpt; with <paramref name="grading"/>, also its
-    /// rubric, the graders' verdicts and the claim verifier's rulings.
+    /// Every question with each run's answer excerpt; with <paramref name="grading"/>, the complete
+    /// answer where it was captured, and also the rubric, the graders' verdicts and the claim
+    /// verifier's rulings.
     /// </summary>
     private static void QuestionDetails(StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool grading)
     {
@@ -833,12 +873,31 @@ public static class BenchmarkReportPackRenderer
                     Heading(sb, "##### Run " + Inv(runId));
                 }
 
-                Line(sb, "**Answer excerpt:**");
-                Line(sb);
-                Quote(sb, item.AnswerExcerpt);
-                Line(sb);
+                if (!grading)
+                {
+                    Line(sb, "**Answer excerpt:**");
+                    Line(sb);
+                    Quote(sb, item.AnswerExcerpt);
+                    Line(sb);
+                    continue;
+                }
 
-                if (!grading) continue;
+                if (item.AnswerText != null || !item.AnswerExcerptCut)
+                {
+                    Line(sb, "**Answer:**");
+                    Line(sb);
+                    Quote(sb, item.AnswerText ?? item.AnswerExcerpt);
+                    Line(sb);
+                }
+                else
+                {
+                    Line(sb, "**Answer excerpt:**");
+                    Line(sb);
+                    Quote(sb, item.AnswerExcerpt);
+                    Line(sb);
+                    Line(sb, "*This document predates complete-answer capture; the answer is shown as the excerpt stored when it was written.*");
+                    Line(sb);
+                }
 
                 Line(sb, "**Graders:**");
                 Line(sb);
@@ -888,6 +947,19 @@ public static class BenchmarkReportPackRenderer
             LabeledLine(sb, ctx, key);
         }
         Line(sb);
+
+        Line(sb, "*Recorded success or failure describes whether a tool call executed. It does not show that the query was "
+            + "well chosen, that the result was relevant, or that the corpus was current.*");
+        Line(sb);
+
+        if (ctx.Options.Disclosure == BenchmarkReportDisclosure.Full)
+        {
+            // tools.failed exists only where the runs recorded per-call rows (harness 17 and later).
+            Line(sb, IsAvailable(ctx, "tools.failed")
+                ? "*Per-call arguments and results are in each run's Tool-call log until the retention sweep prunes them.*"
+                : "*These runs did not record per-call arguments or results.*");
+            Line(sb);
+        }
     }
 
     private static void GraderReliability(StringBuilder sb, Context ctx)
@@ -960,11 +1032,15 @@ public static class BenchmarkReportPackRenderer
         {
             Line(sb, "- Significance: " + sheet.NoSignificanceSummary);
         }
-        Line(sb, "- The graders are AI models. Each grader's family relation to the model under test is stated under "
-            + "Setup and method; a grader from the model's own family may read it more favorably.");
+        Line(sb, "- The graders are AI models. Each grader's provider relation to the model under test is stated under "
+            + "Setup and method; a grader from the model's own provider may read it more favorably.");
         if (string.Equals(sheet.SubjectState, "Degraded", StringComparison.Ordinal))
         {
             Line(sb, "- Comparability: " + sheet.SubjectExplanation);
+        }
+        if (WriterIndependenceCaveat(ctx) is string caveat)
+        {
+            Line(sb, "- " + caveat);
         }
         Line(sb);
     }
@@ -1084,20 +1160,23 @@ public static class BenchmarkReportPackRenderer
     private static void Footer(StringBuilder sb, Context ctx)
     {
         var document = ctx.Document;
-        string version = Inv(ReportFormatVersion)
-            + (document.ReportFormatVersion != ReportFormatVersion ? " (generated under format version " + Inv(document.ReportFormatVersion) + ")" : string.Empty);
+        string version = document.ReportFormatVersion == ReportFormatVersion
+            ? "format version " + Inv(ReportFormatVersion)
+            : "generated under format version " + Inv(document.ReportFormatVersion) + " · rendered with format version " + Inv(ReportFormatVersion);
 
         Line(sb, "---");
         Line(sb);
         Line(sb, "*Document ID " + document.Id.ToString(CultureInfo.InvariantCulture)
-            + " · format version " + version
+            + " · " + version
             + " · created " + document.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC"
             + " · writer " + document.WriterDisplayName + " (" + document.WriterProvider + ", " + document.WriterModelId + ")"
             + " · disclosure " + ctx.Options.Disclosure.ToString()
             + " · peers " + (ctx.Anonymized ? "anonymized" : "named") + "*");
         Line(sb);
         Line(sb, "*Figures and tables were computed by Overseer. The prose was written by " + document.WriterDisplayName
-            + " from those figures and checked automatically.*");
+            + " from those figures and checked automatically for structure, permitted figures and references, word limits, "
+            + "disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's "
+            + "interpretations.*");
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1128,11 +1207,11 @@ public static class BenchmarkReportPackRenderer
     }
 
     /// <summary>A support label in the Executive Summary's plain words.</summary>
-    internal static string PlainSupportLabel(string supportLabel) => supportLabel switch
+    internal static string PlainSupportLabel(string supportLabel) => BenchmarkReportFacts.NormalizeSupportLabel(supportLabel) switch
     {
         BenchmarkReportFacts.SupportBothGraders => "both graders agreed",
-        BenchmarkReportFacts.SupportOneGraderDifferentFamily => "raised by one grader",
-        BenchmarkReportFacts.SupportOneGraderSameFamily => "raised by one grader, from the model's own company",
+        BenchmarkReportFacts.SupportOneGraderDifferentProvider => "raised by one grader",
+        BenchmarkReportFacts.SupportOneGraderSameProvider => "raised by one grader, from the model's own company",
         BenchmarkReportFacts.SupportGradersDisagree => "the graders disagree",
         BenchmarkReportFacts.SupportSingleAssessor => "raised by the grader",
         BenchmarkReportFacts.SupportComputed => "computed from the figures",
@@ -1396,6 +1475,7 @@ public static class BenchmarkReportPackRenderer
     private static BenchmarkReportFactSheet AnonymizedSheet(Context ctx)
     {
         var copy = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(ctx.Document.FactsJson);
+        BenchmarkReportFacts.NormalizeSupportLabels(copy);
 
         var kept = new List<string?> { copy.SubjectLabel, copy.SubjectDisplayName, copy.SubjectModelId, copy.SubjectProvider, copy.SuiteName };
         foreach (var grader in copy.Graders)
@@ -1489,8 +1569,9 @@ public static class BenchmarkReportPackRenderer
         /// <summary>The sheet has no peers: a stand-alone report.</summary>
         public bool Standalone => Sheet.Peers.Count == 0;
 
-        /// <summary>Evidence lines belong to the Report for AI Researchers and Developers alone.</summary>
-        public bool PrintsEvidence => Document.Audience == BenchmarkReportAudience.TechnicalReport;
+        /// <summary>Evidence lines belong to the Report for AI Researchers and Developers alone, at Detailed and Full.</summary>
+        public bool PrintsEvidence => Document.Audience == BenchmarkReportAudience.TechnicalReport
+                                      && Options.Disclosure >= BenchmarkReportDisclosure.Detailed;
 
         /// <summary>The evaluation terms belong to every audience but the Internal Improvement Brief.</summary>
         public bool PrintsEvaluationTerms => Document.Audience != BenchmarkReportAudience.InternalBrief;

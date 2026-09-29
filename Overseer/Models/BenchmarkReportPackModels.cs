@@ -27,7 +27,10 @@ public enum BenchmarkReportDisclosure
     /// <summary>Verbatim text and answer excerpts for every question; no rubric or grader evidence.</summary>
     Detailed = 2,
 
-    /// <summary>Everything, rubrics and grader evidence included. Internal only.</summary>
+    /// <summary>
+    /// Everything: complete answers where they were captured, rubrics and grader evidence included.
+    /// Internal only.
+    /// </summary>
     Full = 3,
 }
 
@@ -48,6 +51,12 @@ public sealed class BenchmarkReportRenderOptions
     /// and Word downloads leave them out, because their cover prints the same facts.
     /// </summary>
     public bool IncludeFrontMatter { get; init; } = true;
+
+    /// <summary>
+    /// The closing document ID, version, writer and provenance lines. The PDF and Word downloads
+    /// leave them out, because their cover prints the same facts.
+    /// </summary>
+    public bool IncludeDocumentFooter { get; init; } = true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -177,7 +186,7 @@ public sealed class BenchmarkReportPeer
     public string Explanation { get; set; } = string.Empty;
 }
 
-/// <summary>One grading role of the subject's runs, with its family relation to the subject.</summary>
+/// <summary>One grading role of the subject's runs, with its provider relation to the subject.</summary>
 public sealed class BenchmarkReportGrader
 {
     /// <summary>e.g. <c>Panel member A</c>, <c>Panel member B</c>, <c>Assessor</c>, <c>Reference reader</c>, <c>Claim verifier</c>.</summary>
@@ -188,7 +197,10 @@ public sealed class BenchmarkReportGrader
     public string ModelId { get; set; } = string.Empty;
     public string? ThinkingLevel { get; set; }
 
-    /// <summary>The grader's provider is the subject's.</summary>
+    /// <summary>
+    /// The grader's provider is the subject's. The name is the stored FactsJson property of every
+    /// format version, so it keeps "family".
+    /// </summary>
     public bool SameFamilyAsSubject { get; set; }
 }
 
@@ -405,6 +417,13 @@ public sealed class BenchmarkReportContentQuestion
     public string AnswerExcerpt { get; set; } = string.Empty;
 
     public bool AnswerExcerptCut { get; set; }
+
+    /// <summary>
+    /// The complete answer, stored only when <see cref="AnswerExcerptCut"/> is true; otherwise the
+    /// excerpt is the whole answer. Null on documents stored before format version 5. Printed at
+    /// Full only; the writer never sees it.
+    /// </summary>
+    public string? AnswerText { get; set; }
 
     /// <summary>Each grader's comment and evidence, in role order.</summary>
     public List<BenchmarkReportContentGrader> Graders { get; set; } = new();

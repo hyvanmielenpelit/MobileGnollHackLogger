@@ -35,6 +35,7 @@ public static class BenchmarkReportFactLabels
         // Quality
         ["quality.index"] = "Intelligence Index",
         ["quality.interval"] = "95 % interval",
+        ["quality.intervalSpan"] = "Interval span",
         ["quality.intervalBasis"] = "Interval basis",
         ["quality.rank"] = "Intelligence rank",
         ["quality.intervalOverlap"] = "Interval overlap",

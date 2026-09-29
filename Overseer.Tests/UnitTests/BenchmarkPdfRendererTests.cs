@@ -182,12 +182,21 @@ public class BenchmarkPdfRendererTests
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
 
         Assert.Equal(
-            new[] { "Document ID", "Disclosure", "Peers", "Suite", "Questions", "Run", "Created (UTC)", "Report format", "Writer" },
+            new[] { "Document ID", "Disclosure", "Peers", "Suite", "Questions", "Run", "Created (UTC)", "Generated format", "Writer", "Provenance" },
             info.Facts.Select(f => f.Label));
         Assert.Equal("101", info.Facts.Single(f => f.Label == "Document ID").Value);
         Assert.Equal("2, anonymized", info.Facts.Single(f => f.Label == "Peers").Value);
         Assert.Equal("4", info.Facts.Single(f => f.Label == "Questions").Value);
-        Assert.Equal("version " + BenchmarkReportPackRenderer.ReportFormatVersion, info.Facts.Single(f => f.Label == "Report format").Value);
+        Assert.Equal("version " + BenchmarkReportPackRenderer.ReportFormatVersion, info.Facts.Single(f => f.Label == "Generated format").Value);
+        Assert.Equal("Claude Opus 5.5 (Anthropic, claude-opus-5-5; high)", info.Facts.Single(f => f.Label == "Writer").Value);
+        Assert.Equal("Figures and tables computed by Overseer; prose written by the writer and checked automatically for structure, "
+            + "permitted figures and references, word limits and disclosure. The checks do not verify its interpretations.",
+            info.Facts.Single(f => f.Label == "Provenance").Value);
+
+        var noThinking = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        noThinking.WriterThinkingLevel = null;
+        Assert.Equal("Claude Opus 5.5 (Anthropic, claude-opus-5-5)", BenchmarkPdfDocumentInfo.ForReportDocument(noThinking, options, BenchmarkPdfPaper.A4)
+            .Facts.Single(f => f.Label == "Writer").Value);
 
         var standalone = BenchmarkPdfDocumentInfo.ForReportDocument(
             BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary),
@@ -198,7 +207,7 @@ public class BenchmarkPdfRendererTests
 
         var older = BenchmarkReportPackFixture.StoredV2Document(BenchmarkReportAudience.TechnicalReport);
         Assert.Equal("version 2", BenchmarkPdfDocumentInfo.ForReportDocument(older, options, BenchmarkPdfPaper.A4)
-            .Facts.Single(f => f.Label == "Report format").Value);
+            .Facts.Single(f => f.Label == "Generated format").Value);
     }
 
     [Fact]
@@ -209,7 +218,8 @@ public class BenchmarkPdfRendererTests
         {
             Disclosure = BenchmarkReportDisclosure.Full,
             PeerNaming = BenchmarkReportPeerNaming.Named,
-            IncludeFrontMatter = false
+            IncludeFrontMatter = false,
+            IncludeDocumentFooter = false
         };
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
 
@@ -218,6 +228,11 @@ public class BenchmarkPdfRendererTests
         string text = AllText(pdf);
         Assert.Contains(Squash("Document ID"), text);
         Assert.Contains(Squash("Questions"), text);
+        Assert.Contains(Squash("Generated format"), text);
+        Assert.Contains(Squash("Provenance"), text);
+        // The Markdown footer is left out; the cover states its facts once.
+        Assert.DoesNotContain(Squash("Figures and tables were computed by Overseer."), text);
+        Assert.DoesNotContain(Squash("rendered with format version"), text);
         Assert.Contains(Squash("PDF layout 2"), text);
         Assert.DoesNotContain(Squash("Audience"), text);
         // The stamp prints once, in the cover banner.

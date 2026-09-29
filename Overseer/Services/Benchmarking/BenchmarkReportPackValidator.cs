@@ -49,6 +49,9 @@ public sealed class BenchmarkReportCleanResult
 /// <item>No significance claims. Matching is whole-word, so <c>insignificant</c> passes.</item>
 /// <item>US English: no word from <see cref="BritishSpellings"/>. It asks for the repair turn, but
 /// <see cref="DropInvalid"/> keeps the text and records the note instead of dropping it.</item>
+/// <item>The Executive Summary's confidence slot does not call the quality interval narrow, wide,
+/// tight or broad (<see cref="IntervalWidthWords"/>). Like rule 12 it asks for the repair turn, and
+/// <see cref="DropInvalid"/> keeps the paragraph and records the note.</item>
 /// </list>
 /// </summary>
 public static class BenchmarkReportPackValidator
@@ -78,6 +81,18 @@ public static class BenchmarkReportPackValidator
 
     /// <summary>The rule number of the US English check, whose notes never drop an item.</summary>
     public const int UsSpellingRule = 12;
+
+    /// <summary>
+    /// The rule number of the interval-width check in the Executive Summary's confidence slot, whose
+    /// notes never drop a paragraph.
+    /// </summary>
+    public const int IntervalWidthRule = 13;
+
+    /// <summary>Adjectives rule 13 flags for the quality interval, matched as whole words, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> IntervalWidthWords = new[]
+    {
+        "narrow", "narrower", "wide", "wider", "tight", "tighter", "broad"
+    };
 
     /// <summary>British spellings rule 12 flags in prose, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> BritishSpellings = new[]
@@ -116,6 +131,10 @@ public static class BenchmarkReportPackValidator
 
     private static readonly Regex BritishSpellingRegex = new(
         @"(?<![\p{L}\p{N}])(?:" + string.Join("|", BritishSpellings) + @")(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex IntervalWidthRegex = new(
+        @"(?<![\p{L}\p{N}])(?:" + string.Join("|", IntervalWidthWords) + @")(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private enum ItemKind
@@ -177,6 +196,7 @@ public static class BenchmarkReportPackValidator
             for (int p = 0; p < paragraphs.Count; p++)
             {
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), notes);
+                CheckIntervalWidth(audience, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
             }
 
             if (SlotMaxWords(audience, slot) is int cap && WordCount(text) > cap)
@@ -255,7 +275,8 @@ public static class BenchmarkReportPackValidator
     /// <summary>
     /// Removes every item and section paragraph with an issue from a copy of the output. The headline
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty. Missing
-    /// question topics are recorded but not fatal, and so is a rule 12 spelling: its text is kept.
+    /// question topics are recorded but not fatal, and so are a rule 12 spelling and a rule 13
+    /// interval adjective: their text is kept.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -298,6 +319,7 @@ public static class BenchmarkReportPackValidator
             {
                 var issues = new List<BenchmarkReportValidationNote>();
                 CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), issues);
+                CheckIntervalWidth(audience, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
                 if (issues.Any(Blocks))
                 {
                     notes.AddRange(MarkDropped(issues));
@@ -536,6 +558,29 @@ public static class BenchmarkReportPackValidator
         if (british.Count > 0)
         {
             Issue(notes, UsSpellingRule, location, $"Uses the British spelling{Plural(british.Count)} \"{string.Join("\", \"", british)}\": write in US English (color, behavior, analyze, center, gray, labeled, canceled).");
+        }
+    }
+
+    /// <summary>
+    /// Rule 13: the Executive Summary's confidence slot states the interval's span as a figure and
+    /// does not call the interval narrow, wide, tight or broad. Other slots and audiences are not checked.
+    /// </summary>
+    private static void CheckIntervalWidth(
+        BenchmarkReportAudience audience, string slot, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (audience != BenchmarkReportAudience.ExecutiveSummary
+            || !string.Equals(slot, BenchmarkReportSlots.Confidence, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var words = IntervalWidthRegex.Matches(TokenRegex.Replace(text ?? string.Empty, " "))
+            .Select(m => m.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (words.Count > 0)
+        {
+            Issue(notes, IntervalWidthRule, location, $"Calls the interval \"{string.Join("\", \"", words)}\": state its span as {{{{quality.intervalSpan}}}} instead of describing its width.");
         }
     }
 
@@ -798,8 +843,8 @@ public static class BenchmarkReportPackValidator
     private static string LowerFirst(string text)
         => text.Length > 0 && char.IsUpper(text[0]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 
-    /// <summary>Every rule but rule 12 removes the offending item or paragraph.</summary>
-    private static bool Blocks(BenchmarkReportValidationNote note) => note.Rule != UsSpellingRule;
+    /// <summary>Every rule but rules 12 and 13 removes the offending item or paragraph.</summary>
+    private static bool Blocks(BenchmarkReportValidationNote note) => note.Rule != UsSpellingRule && note.Rule != IntervalWidthRule;
 
     /// <summary>A section's text split on blank lines, each paragraph trimmed, empty ones left out.</summary>
     internal static List<string> SplitParagraphs(string text)

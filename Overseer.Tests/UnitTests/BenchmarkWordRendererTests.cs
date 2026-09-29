@@ -689,13 +689,18 @@ public class BenchmarkWordRendererTests
             .ToDictionary(cells => cells[0], cells => cells[1]);
 
         Assert.Equal(
-            new[] { "Document ID", "Disclosure", "Peers", "Suite", "Questions", "Run", "Created (UTC)", "Report format", "Writer" },
+            new[] { "Document ID", "Disclosure", "Peers", "Suite", "Questions", "Run", "Created (UTC)", "Generated format", "Writer", "Provenance" },
             facts.Keys);
         Assert.Equal(document.Id.ToString(CultureInfo.InvariantCulture), facts["Document ID"]);
         Assert.Equal("2, named", facts["Peers"]);
         Assert.Equal("4", facts["Questions"]);
+        Assert.Equal("Claude Opus 5.5 (Anthropic, claude-opus-5-5; high)", facts["Writer"]);
+        Assert.StartsWith("Figures and tables computed by Overseer;", facts["Provenance"], StringComparison.Ordinal);
 
         string text = TextOf(body);
+        // The native download leaves out the Markdown footer; its facts are on the cover.
+        Assert.DoesNotContain("Figures and tables were computed by Overseer.", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Document ID " + document.Id.ToString(CultureInfo.InvariantCulture) + " ·", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Audience", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Date: 2026-09-28", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Peers: Model A = Grok 5", text, StringComparison.Ordinal);

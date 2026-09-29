@@ -26,9 +26,9 @@ GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Model A an
 - **Model under test:** GPT-5.6 Luna (OpenAI, gpt-5.6-luna), thinking level high; 1 run.
 - **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %. Each dimension is graded on behaviorally anchored levels scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
 - **Graders:**
-  - Panel member A: Gemini 3.8 Flash (Google, gemini-3.8-flash), different family from the model under test
-  - Panel member B: Claude Haiku 5 (Anthropic, claude-haiku-5), different family from the model under test
-  - Claim verifier: Gemini 3.8 Flash (Google, gemini-3.8-flash), different family from the model under test
+  - Panel member A: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test
+  - Panel member B: Claude Haiku 5 (Anthropic, claude-haiku-5), different provider from the model under test
+  - Claim verifier: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test
 - **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
 - **Comparability:** every model in this report was measured under one instrument condition, signature `sig-7f3a91`.
 - **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
@@ -109,9 +109,7 @@ Completeness was 70 against a peer mean of 78.
 ### Weaknesses
 
 - Asserted a false outcome on Q3, where Model A scored well. *(Both graders)*
-  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 - Scored lowest on intermediate questions (49). *(Computed)*
-  - *Evidence:* Intermediate band score: 49 · Q2 (72 / 100), Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 
 ## What worked well
 
@@ -119,13 +117,11 @@ Short, accurate answers on simple questions (R2).
 
 ### Strengths
 
-- Answers simple questions precisely and briefly. *(One grader — different family)*
-  - *Evidence:* One grader — different family — accuracy · Q1 (90 / 100)
+- Answers simple questions precisely and briefly. *(One grader — different provider)*
 
 ## Recommendations for model developers
 
 - Verify object-destruction rules before asserting them. *(Both graders)*
-  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 
 ## Per-question results
 
@@ -152,6 +148,8 @@ Short, accurate answers on simple questions (R2).
 - **Failed tool calls:** 0
 - **Calls refused by the tool budget:** 0
 
+*Recorded success or failure describes whether a tool call executed. It does not show that the query was well chosen, that the result was relevant, or that the corpus was current.*
+
 ## Grader reliability
 
 - **Panel mean absolute difference:** 6.5 points
@@ -164,7 +162,7 @@ Short, accurate answers on simple questions (R2).
 | Row | Finding | Questions | Support | Recurrence |
 |---|---|---|---|---|
 | R1 | weakness · critical error | Q3 | Both graders | 1 of 1 run |
-| R2 | strength · accuracy | Q1 | One grader — different family | 1 of 1 run |
+| R2 | strength · accuracy | Q1 | One grader — different provider | 1 of 1 run |
 | R3 | strength (A) vs weakness (B) · conciseness | Q2 | Graders disagree | 1 of 1 run |
 
 ## Threats to validity
@@ -172,7 +170,7 @@ Short, accurate answers on simple questions (R2).
 - The benchmark asks single-turn questions under one chat configuration. It does not exercise conversation history, pre-injected wiki context, spoiler-free mode, web search or subagents.
 - Interval: Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two.
 - Significance: Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none.
-- The graders are AI models. Each grader's family relation to the model under test is stated under Setup and method; a grader from the model's own family may read it more favorably.
+- The graders are AI models. Each grader's provider relation to the model under test is stated under Setup and method; a grader from the model's own provider may read it more favorably.
 
 ## Reproducibility appendix
 
@@ -201,6 +199,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 4 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers anonymized*
+*Document ID 101 · format version 5 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers anonymized*
 
-*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*
+*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's interpretations.*

@@ -76,7 +76,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, WithoutFrontMatter(options!), ct);
+        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!), ct);
         if (notFound) return NotFound();
         if (refusal != null) return BadRequest(new { error = refusal });
 
@@ -114,7 +114,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, WithoutFrontMatter(options!), ct);
+        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!), ct);
         if (notFound) return NotFound();
         if (refusal != null) return BadRequest(new { error = refusal });
 
@@ -153,11 +153,15 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         return (new BenchmarkReportRenderOptions { Disclosure = level, PeerNaming = naming }, null);
     }
 
-    /// <summary>The options for a PDF or Word download, whose cover prints the stamp and the facts the front matter lists.</summary>
-    private static BenchmarkReportRenderOptions WithoutFrontMatter(BenchmarkReportRenderOptions options) => new()
+    /// <summary>
+    /// The options for a PDF or Word download, whose cover prints the stamp, the facts the front
+    /// matter lists and the document ID, version, writer and provenance the footer states.
+    /// </summary>
+    private static BenchmarkReportRenderOptions ForNativeDocument(BenchmarkReportRenderOptions options) => new()
     {
         Disclosure = options.Disclosure,
         PeerNaming = options.PeerNaming,
-        IncludeFrontMatter = false
+        IncludeFrontMatter = false,
+        IncludeDocumentFooter = false
     };
 }

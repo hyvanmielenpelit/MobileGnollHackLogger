@@ -405,8 +405,10 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             job.AddLog($"{name}: {notes.Count(n => n.Dropped)} item(s) removed by validation.", "warning");
         }
 
-        // A spelling note (rule 12) keeps its item but still marks the document.
-        var status = notes.Any(n => n.Dropped || n.Rule == BenchmarkReportPackValidator.UsSpellingRule)
+        // A spelling note (rule 12) or an interval-width note (rule 13) keeps its text but still marks the document.
+        var status = notes.Any(n => n.Dropped
+                                    || n.Rule == BenchmarkReportPackValidator.UsSpellingRule
+                                    || n.Rule == BenchmarkReportPackValidator.IntervalWidthRule)
             ? BenchmarkReportDocumentStatus.CompletedWithWarnings
             : BenchmarkReportDocumentStatus.Completed;
 

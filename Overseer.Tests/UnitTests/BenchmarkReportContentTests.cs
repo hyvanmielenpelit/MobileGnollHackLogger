@@ -86,6 +86,27 @@ public class BenchmarkReportContentTests
     }
 
     [Fact]
+    public void TheCompleteAnswer_IsStoredOnlyWhenTheExcerptWasCut()
+    {
+        const string longAnswer = "The unicorn catches the gem and your Luck rises.";
+        var run = Run(1, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 80), new AnswerSpec(12, 2, 1, 80));
+        run.Answers[0].AnswerText = longAnswer;
+        run.Answers[1].AnswerText = "Short.";
+
+        var snapshot = BenchmarkReportContent.Build(new[] { run }, 20);
+
+        var cut = snapshot.Runs[0].Questions[0];
+        Assert.True(cut.AnswerExcerptCut);
+        Assert.Equal(longAnswer, cut.AnswerText);
+
+        var whole = snapshot.Runs[0].Questions[1];
+        Assert.False(whole.AnswerExcerptCut);
+        Assert.Equal("Short.", whole.AnswerExcerpt);
+        Assert.Null(whole.AnswerText);
+        Assert.DoesNotContain("answerText", BenchmarkReportJson.Serialize(whole));
+    }
+
+    [Fact]
     public void AGroupSubject_HasOneBlockPerRun_InRunIdOrder_NumberedLikeTheFactSheet()
     {
         var later = Run(7, "OpenAI", "subject", new AnswerSpec(12, 2, 1, 60), new AnswerSpec(11, 1, 1, 80), new AnswerSpec(13, 3, 1, 70));

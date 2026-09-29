@@ -83,8 +83,9 @@ without *Peer mean* and *Difference*, a comparability line that describes the mo
 no pairwise-significance statement.
 
 **Evidence lines.** Under every strength, weakness and recommendation of the Report for AI Researchers
-and Developers, the renderer — never the writer — prints **one** compact, indented *Evidence:* line,
-its parts joined by ` · ` and each present only where it applies:
+and Developers at **Detailed and Full**, the renderer — never the writer — prints **one** compact,
+indented *Evidence:* line, its parts joined by ` · ` and each present only where it applies (at Summary
+the item keeps its support label and prints no evidence line):
 
 - the **finding rows** (`R3`) the item cites: each row's support label (§ 2) and category, and, for a
   group subject, in how many of its runs it recurred;
@@ -148,8 +149,8 @@ finding rows it cites, never written by the model:
 | Label | When |
 |---|---|
 | *Both graders* | The cited rows are Convergent between the two panel members |
-| *One grader — different family* | One member found it, from a family other than the subject's |
-| *One grader — same family as the model* | One member found it, from the subject's own family |
+| *One grader — different provider* | One member found it, from a provider other than the subject's |
+| *One grader — same provider as the model* | One member found it, from the subject's own provider |
 | *Graders disagree* | The cited rows are Conflicting |
 | *Single assessor* | A single-assessor run |
 | *Computed* | The item cites facts or questions only, no finding row |
@@ -176,7 +177,7 @@ whether that member shares the subject's provider.
 
 ## 3. Validation, Repair and Drops
 
-`BenchmarkReportPackValidator` checks the writer's JSON against twelve rules. Each failure is a
+`BenchmarkReportPackValidator` checks the writer's JSON against thirteen rules. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message.
 
@@ -194,9 +195,11 @@ whether that member shares the subject's provider.
 | 10 | No peer names, model ids or providers in prose |
 | 11 | No significance language: *significant*, *significantly*, *statistically*, *reliably better* or *worse*, *clearly outperforms* |
 | 12 | US English: no word of the fixed British-spelling list (`BenchmarkReportPackValidator.BritishSpellings`: *colour, behaviour, analyse, analysed, organise, recognise, favour, honour, centre, defence, catalogue, programme, grey, travelled, modelling, labelled, cancelled, judgement*), matched as whole words ignoring case, in any prose |
+| 13 | In the Executive Summary's `confidence` slot only: the quality interval is not called *narrow*, *narrower*, *wide*, *wider*, *tight*, *tighter* or *broad* (`BenchmarkReportPackValidator.IntervalWidthWords`, whole words ignoring case); the slot states the span as `{{quality.intervalSpan}}` instead |
 
 Rules 2, 3, 8, 9, 10, 11 and 12 apply to every prose string: the headline, each paragraph of each slot,
-and the text of every item, topic and note.
+and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive Summary's
+`confidence` slot.
 
 **Repair and drop policy.**
 
@@ -206,9 +209,11 @@ and the text of every item, topic and note.
    output, the note records `Dropped`, and the document is stored as **CompletedWithWarnings**. An
    over-cap slot with a word limit (the abstract, `meaning`, `confidence`, `whyItScored`, `whatWorked`)
    loses its last paragraphs until it fits.
-3. **Rule 12 never drops.** A spelling slip is not worth losing a finding: after the repair turn, text
-   that still uses a British spelling is **kept**, its note is recorded without `Dropped`, and the
-   document is stored as **CompletedWithWarnings**.
+3. **Rules 12 and 13 never drop.** A spelling slip or an interval adjective is not worth losing a
+   finding or the one paragraph of a required slot: after the repair turn, text that still uses a British
+   spelling or calls the interval narrow or wide is **kept**, its note is recorded without `Dropped`, and
+   the document is stored as **CompletedWithWarnings**. The Executive Summary states the interval's span
+   in a code-rendered sentence whatever the writer wrote (§ 6).
 4. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
    row is stored. A headline whose only fault is rule 12 is kept.
 
@@ -281,9 +286,10 @@ Each document is one **immutable** `BenchmarkReportDocument` row; there is no up
 - `ReportFormatVersion`, the writer prompt's SHA-256 and `AnswerExcerptChars`;
 - `FactsJson` — the fact sheet;
 - `ContentJson` — the verbatim content the renderer may print: question text as asked, rubric as
-  graded, answer excerpts cut at generation, grader evidence and verifier rulings (each with its role
-  from format version 3, § 7), all taken from the subject's **answer rows**, never from the live suite,
-  so a later suite edit cannot change a document;
+  graded, answer excerpts cut at generation, the complete answer (`answerText`) wherever the excerpt was
+  cut (from format version 5, § 7), grader evidence and verifier rulings (each with its role from format
+  version 3), all taken from the subject's **answer rows**, never from the live suite, so a later suite
+  edit cannot change a document. The writer sees only the excerpts;
 - `WriterOutputJson` — the final validated writer output, with dropped items already removed;
 - `ValidationNotesJson`, status, tokens, duration and cost.
 
@@ -307,7 +313,7 @@ Both are chosen **at download, per document**; the stored row is the same whatev
 |---|---|---|---|---|---|
 | **Summary** | Topic only | Never | Never | Never | *Confidential. Prepared for the model's provider. Questions are described, not quoted.* |
 | **Detailed** | Verbatim, every question | Never | Excerpts, every question | Never | *Confidential. Prepared for the model's provider. Contains benchmark questions — do not publish.* |
-| **Full** | Verbatim, every question | Verbatim | Excerpts | Verbatim | *INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.* |
+| **Full** | Verbatim, every question | Verbatim | Complete (the stored excerpt on a document written before format version 5) | Verbatim | *INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.* |
 
 The stamps are audience-aware (`BenchmarkReportPackRenderer.Stamp(audience, disclosure)`). The Executive
 Summary quotes no question or rubric at any level, so its Detailed stamp reads *Confidential. Prepared for
@@ -315,10 +321,31 @@ the model's provider. Review before sharing.* and its Full stamp *INTERNAL — u
 results. Do not share outside the Overseer team.*; its Summary stamp is the one above. The PDF and Word
 classification banners use the same text.
 
-In the Report for AI Researchers and Developers, Detailed prints every question and each run's answer
+In the Report for AI Researchers and Developers, Summary prints each finding's support label but no
+evidence line (§ 1). Detailed adds the evidence lines and prints every question and each run's answer
 excerpt in one *Questions and answers* section; Full prints the same section as *Question details*, with
-each question's rubric, the graders' scores and notes and the claim verifier's rulings added. The notes
-on individual questions never quote them at any level: the section does.
+each run's **complete answer** under *Answer:*, each question's rubric, the graders' scores and notes and
+the claim verifier's rulings added. An answer short enough to be stored whole prints as its excerpt,
+which is the whole answer; a cut excerpt on a document stored before complete answers were kept prints
+under *Answer excerpt:* with the note *"This document predates complete-answer capture; the answer is
+shown as the excerpt stored when it was written."* The notes on individual questions never quote them at
+any level: the section does. The size guard (`BenchmarkPdfRenderer.MaxSourceCharacters`, shared by Word)
+still applies to the rendered Markdown.
+
+At every level the *Tool-use behavior* section says that a recorded success or failure describes only
+whether a tool call executed — not whether the query was well chosen, the result relevant or the corpus
+current. At Full it adds where the per-call detail is: each run's Tool-call log, until the retention sweep
+prunes it, when the runs recorded per-call rows (`tools.failed` is available, harness 17 and later), or
+that the runs did not record per-call arguments or results.
+
+**Writer independence.** When the stored writer provider equals the subject's provider (trimmed,
+case-insensitive, as `BenchmarkComplianceGuard.IsSameProvider` compares), the Executive Summary's *How
+reliable this result is* and the technical report's *Threats to validity* print a code-rendered caveat
+naming the writer and the shared provider, whatever the writer returned. The Internal Improvement Brief
+does not print it. The Executive Summary's reliability section also prints *"The 95 % interval is 73–82,
+a span of 9 points, and rests on 4 of 4 questions with a scored answer."* from the `quality.interval`,
+`quality.intervalSpan` and `quality.scoredItems` facts; a document stored without the span fact prints
+nothing there.
 
 **Peer naming** is *Named* or *Anonymized*. Anonymized prints peers as *Model A*, *Model B*…, removes the
 provider column, and replaces the peers' model ids and providers in every table. The subject is always
@@ -364,7 +391,37 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 4** (the current one, 2026-09-29) makes the disclosure levels differ visibly (§ 6): at
+**Format version 5** (the current one, 2026-09-29) comes from a review of the run-73 Executive Summary
+and technical report PDFs:
+
+- **Provider wording**: the single-grader support labels read *One grader — different provider* and *One
+  grader — same provider as the model* (§ 2); *Setup and method* and *Threats to validity* speak of a
+  grader's provider. A sheet stored under format 2–4 is normalized when it is read
+  (`BenchmarkReportFacts.NormalizeSupportLabels`, in both the render and the anonymized appendix copy), so
+  its items keep their single-grader label rather than falling to *Computed*. The stored property
+  `sameFamilyAsSubject` keeps its name, and the Internal Improvement Brief's raw fact-sheet appendix still
+  prints it.
+- **Writer independence**: a writer sharing the subject's provider gets a code-rendered caveat (§ 6),
+  also on re-rendered format 2–4 documents.
+- **Interval span**: the new fact `quality.intervalSpan` (the printed upper bound minus the printed lower
+  bound, *"9 points"*); the writer prompt's confidence slot names `{{quality.interval}}` and
+  `{{quality.intervalSpan}}` instead of asking for the interval's width; validator rule 13 (§ 3); the
+  Executive Summary's code-rendered span sentence (§ 6).
+- **Disclosure density**: the Report for AI Researchers and Developers prints evidence lines at Detailed
+  and Full only.
+- **Complete answers**: `ContentJson` keeps `answerText` for every cut excerpt, and Full prints it (§ 6).
+- **Tool use**: the execution-only note at every level and the Tool-call log pointer at Full (§ 6).
+- **Native framing**: the PDF and Word downloads render with `IncludeDocumentFooter = false` as well as
+  `IncludeFrontMatter = false`; their cover gains the writer's provider and model id, a *Generated
+  format* row (formerly *Report format*) and a *Provenance* row (§ 8). The Markdown footer reads *format
+  version 5* for a current document and *generated under format version N · rendered with format version
+  5* for an older one, and its provenance line names the automatic checks and says they do not verify the
+  prose's interpretations.
+
+A format 4 document renders without the span sentence and with its excerpts at Full, under the note.
+Version-5 rows stay readable by version-4 code, which ignores `answerText`.
+
+**Format version 4** (2026-09-29) makes the disclosure levels differ visibly (§ 6): at
 Detailed the Report for AI Researchers and Developers prints every question and answer excerpt in a
 *Questions and answers* section, and the quote under each noted question is gone at Detailed and Full,
 where the section carries it. Nothing stored changed, so a format 3 document renders the same way.
@@ -504,10 +561,15 @@ still reaches no model client, clock or configuration, and the architecture pins
   else, the text saying what the color says. A table of contents follows when a document other than the
   Executive Summary has four or more `##` sections. A report document's facts table reads *Document ID*,
   *Disclosure*, *Peers* (the count and how they are named, or *none (stand-alone report)*), *Suite*,
-  *Questions*, *Run* or *Runs*, then the creation time, the report format and the writer; it has
-  no *Audience* row, since the document kind says it. The Markdown's front matter — the stamp and the
-  *Date*, *Suite*, *Questions*, *Runs* and *Peers* list under the title — is left out of the PDF and Word
-  files (`BenchmarkReportRenderOptions.IncludeFrontMatter = false`), because the cover prints the same.
+  *Questions*, *Run* or *Runs*, then the creation time, *Generated format* (the format version the
+  document was generated under), *Writer* (display name, then provider, model id and thinking level, each
+  empty part left out) and *Provenance* (the figures computed by Overseer, the prose by the writer and
+  checked automatically for structure, permitted figures and references, word limits and disclosure,
+  which does not verify its interpretations); it has no *Audience* row, since the document kind says it.
+  The Markdown's front matter — the stamp and the *Date*, *Suite*, *Questions*, *Runs* and *Peers* list
+  under the title — and its closing footer — the document ID, version, writer and provenance lines — are
+  left out of the PDF and Word files (`BenchmarkReportRenderOptions.IncludeFrontMatter = false` and
+  `IncludeDocumentFooter = false`), because the cover prints the same.
 - **Every page**: from page 2 a running header with the emblem, *GnollBench · {kind}* and the subject;
   a footer with the short classification, the source hash and layout version, and *Page X of Y*; for
   internal documents a diagonal *INTERNAL* watermark. Header, footer and watermark are artifacts, skipped

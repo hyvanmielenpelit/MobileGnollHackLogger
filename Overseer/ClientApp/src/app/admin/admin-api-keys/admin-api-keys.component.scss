@@ -8,6 +8,8 @@
  */
 
 .aak {
+  inline-size: min(100%, 48rem);
+  margin-inline: auto;
   font-size: var(--text-body);
   line-height: var(--leading-body);
 }
@@ -26,7 +28,6 @@
 .aak-cards {
   display: grid;
   gap: 16px;
-  max-width: 48rem;
 }
 
 .aak-card {

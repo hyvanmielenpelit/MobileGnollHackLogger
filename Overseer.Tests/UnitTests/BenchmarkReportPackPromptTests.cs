@@ -299,7 +299,7 @@ public class BenchmarkReportPackPromptTests
         sheet.Rows.Add(new BenchmarkReportFindingRow
         {
             Id = "R5", Kind = "weakness", Category = "tool_use", Questions = new List<int> { 2 },
-            Status = "MemberAOnly", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentFamily, MemberAText = "Few lookups."
+            Status = "MemberAOnly", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentProvider, MemberAText = "Few lookups."
         });
 
         string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
@@ -462,6 +462,33 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("| critical error: no | refuted claims: 0 |", message);
         Assert.Contains("    - Answer sentence — refuted: Praying now is safe.", message);
         Assert.Contains("    - Grader's statement — refuted (the answer was right): The prayer timeout is always one thousand turns.", message);
+    }
+
+    [Fact]
+    public void TheConfidenceSlot_AsksForTheIntervalAndItsSpanTokens_NotItsWidth()
+    {
+        string system = Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt;
+        string confidence = system.Split('\n').Single(l => l.StartsWith("- confidence:", StringComparison.Ordinal));
+
+        Assert.Contains("stating the quality interval as {{quality.interval}} and its span as {{quality.intervalSpan}}, "
+            + "without calling it narrow, wide, tight or broad", confidence);
+        Assert.DoesNotContain("width", confidence);
+    }
+
+    [Fact]
+    public void UserMessage_QuotesTheExcerpt_NeverTheCompleteAnswer()
+    {
+        const string sentinel = "SENTINEL-AFTER-THE-CUT";
+        var content = ReportPackWriterTestData.Content();
+        var question = content.Runs[0].Questions[0];
+        question.AnswerExcerptCut = true;
+        question.AnswerText = question.AnswerExcerpt + " " + sentinel;
+
+        var prompt = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.InternalBrief, ReportPackWriterTestData.Sheet(), content);
+
+        Assert.Contains(question.AnswerExcerpt, prompt.UserMessage);
+        Assert.DoesNotContain(sentinel, prompt.UserMessage);
+        Assert.DoesNotContain(sentinel, prompt.SystemPrompt);
     }
 
     // Repair ------------------------------------------------------------------------------------

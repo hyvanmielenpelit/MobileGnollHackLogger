@@ -3269,6 +3269,38 @@ abstract name every refuted error. Two findings of the same review — a claim-v
 contradicted its rationale on one question, and a synthesis that merged unrelated items into one
 Conflicting row — are grading-side and left for a later benchmark round.
 
+### AI-Written Report Documents: Provider Wording, Complete Answers and Native Framing (2026-09-29) — No Harness Version Bump
+
+*The AI-written report documents describe a grader's or writer's relation to the model under test by
+provider, print complete answers at Full, and no longer repeat their cover in PDF and Word.* Nothing here
+grades anything: no grading prompt, score, index or comparability key changes; `HarnessVersion` and
+`ScoringMethodVersion` do not move, and neither do the PDF and Word layout versions. `ReportFormatVersion`
+moves from **4** to **5**. No migration: the new `answerText` is an optional property inside the
+`ContentJson` `nvarchar(max)` column. Stored documents keep rendering; a re-rendered format 2–4 document
+gains the provider wording and, where it applies, the writer-independence caveat. The full description is
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 2, 3, 6, 7 and 8.
+
+- **Provider, not family**, in the AI-written documents only: *One grader — different provider* and *One
+  grader — same provider as the model*, and the grader lines and threats to validity. Stored labels of
+  earlier formats are normalized when read. "Family" for a grader's provider stays in the run report, the
+  run-detail grader list, the launcher, the grader guide and the writer warnings.
+- **Writer independence**: a writer from the subject's provider gets a code-rendered caveat in the
+  Executive Summary and the technical report.
+- **Interval span**: the new fact `quality.intervalSpan`, a code-rendered span sentence in the Executive
+  Summary, a confidence-slot instruction that names the interval and span tokens, and validator rule 13,
+  which asks for a repair when the slot calls the interval narrow, wide, tight or broad, and keeps the
+  text with a note if the repair does not fix it.
+- **Disclosure**: the technical report's evidence lines at Detailed and Full only; complete answers at
+  Full for every cut excerpt, with a note on older documents that kept only the excerpt.
+- **Tool use**: a note at every level that a recorded success or failure describes execution only, and at
+  Full a pointer to the runs' Tool-call logs when they recorded per-call rows.
+- **Native framing**: PDF and Word leave out the Markdown footer; their cover prints *Generated format*,
+  the writer with its provider and model id, and a *Provenance* row. The Markdown footer names both format
+  versions when they differ and lists the automatic checks, which do not verify the prose's
+  interpretations.
+
+The Admin **API Keys** tab's content is centered in one column of at most 48rem.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

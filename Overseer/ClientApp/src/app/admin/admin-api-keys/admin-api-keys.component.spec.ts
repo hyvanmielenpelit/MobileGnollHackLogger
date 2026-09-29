@@ -124,6 +124,27 @@ describe('AdminApiKeysComponent', () => {
     expect(card('OpenAI').querySelector('.aak-verification')).toBeNull();
   });
 
+  it('centers a 48rem content column on a wide panel and fills a narrow one without overflow', async () => {
+    const host = fixture.nativeElement as HTMLElement;
+    host.style.display = 'block';
+    host.style.width = '1200px';
+    await render([status('Anthropic', { hasKey: true, keyHint: 'ab12' }), status('Google'), status('OpenAI')]);
+
+    const section = host.querySelector('.aak') as HTMLElement;
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+    let hostBox = host.getBoundingClientRect();
+    let box = section.getBoundingClientRect();
+    expect(Math.abs(box.width - 48 * rem)).toBeLessThanOrEqual(1);
+    expect(Math.abs((box.left - hostBox.left) - (hostBox.right - box.right))).toBeLessThanOrEqual(1);
+
+    host.style.width = '320px';
+    fixture.detectChanges();
+    hostBox = host.getBoundingClientRect();
+    box = section.getBoundingClientRect();
+    expect(Math.abs(box.width - hostBox.width)).toBeLessThanOrEqual(1);
+    expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
+  });
+
   it('shows an invalid refusal under the input with its detail and keeps the key', async () => {
     await render([status('Anthropic'), status('Google'), status('OpenAI')]);
     const refusal: ApiKeyRefusal = {

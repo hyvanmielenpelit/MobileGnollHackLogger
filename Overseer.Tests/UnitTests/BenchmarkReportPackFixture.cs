@@ -42,21 +42,30 @@ internal static class BenchmarkReportPackFixture
             BenchmarkReportDocumentStatus.Completed, BenchmarkReportDocumentOrigin.RunCompletion,
             "{\"runIds\":[12],\"groupIds\":[],\"pricingBasis\":1}");
 
+    /// <summary>The single-grader support label format versions 2 to 4 stored for R2.</summary>
+    public const string LegacyDifferentFamilyLabel = "One grader — different family";
+
+    /// <summary>The same-provider single-grader support label format versions 2 to 4 stored.</summary>
+    public const string LegacySameFamilyLabel = "One grader — same family as the model";
+
     /// <summary>
     /// <see cref="Document"/> as format version 2 stored it: the index display with its half-width,
-    /// no pricing-basis kind, catalog date, token or 90th-percentile facts, no refuted-answer-sentence
-    /// counts and no ruling roles.
+    /// no pricing-basis kind, catalog date, interval span, token or 90th-percentile facts, no
+    /// refuted-answer-sentence counts, no ruling roles, no complete answers and the "family" wording of
+    /// the single-grader support label.
     /// </summary>
     public static BenchmarkReportDocument StoredV2Document(BenchmarkReportAudience audience)
     {
         var sheet = Sheet();
-        string[] added = { "comparison.pricedOn", "comparison.pricingBasisKind", "cost.perRun", "speed.modelTimeP90", "tokens.inputPerQuestion", "tokens.outputPerQuestion" };
+        string[] added = { "comparison.pricedOn", "comparison.pricingBasisKind", "cost.perRun", "quality.intervalSpan", "speed.modelTimeP90", "tokens.inputPerQuestion", "tokens.outputPerQuestion" };
         sheet.Facts = sheet.Facts.Where(f => !added.Contains(f.Key)).ToList();
         sheet.Facts.Single(f => f.Key == "quality.index").Display = "80 ± 3 / 100";
         foreach (var q in sheet.Questions) q.RefutedAnswerSentences = null;
+        sheet.Rows.Single(r => r.Id == "R2").SupportLabel = LegacyDifferentFamilyLabel;
 
         var content = Content();
         foreach (var ruling in content.Runs.SelectMany(r => r.Questions).SelectMany(q => q.ClaimRulings)) ruling.Role = null;
+        foreach (var question in content.Runs.SelectMany(r => r.Questions)) question.AnswerText = null;
 
         var document = Document(audience, sheet, Writer(), Notes(), BenchmarkReportDocumentStatus.CompletedWithWarnings,
             BenchmarkReportDocumentOrigin.ReportPack, "{\"runIds\":[12,13,14],\"groupIds\":[],\"pricingBasis\":1}");
@@ -191,7 +200,7 @@ internal static class BenchmarkReportPackFixture
             new()
             {
                 Id = "R2", Kind = "strength", Category = "accuracy", Questions = new List<int> { 1 },
-                Status = "MemberAOnly", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentFamily,
+                Status = "MemberAOnly", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentProvider,
                 MemberAText = "Precise on the unicorn throwing rules."
             },
             new()
@@ -284,6 +293,8 @@ internal static class BenchmarkReportPackFixture
             Fact("quality.interval", "77–83"),
             Fact("quality.intervalBasis", "Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two."),
             Fact("quality.intervalOverlap", "its 95 % interval overlaps those of Models A and B"),
+            Fact("quality.intervalSpan", "6 points", JsonValue.Create(6)),
+            Fact("quality.scoredItems", "4 of 4", JsonValue.Create(4)),
             Fact("quality.rank", "2nd of 3"),
             Fact("run.dates", "2026-09-20"),
             Fact("run.harnessVersion", "41"),
@@ -373,6 +384,8 @@ internal static class BenchmarkReportPackFixture
                         ExpectedPointsRecorded = false,
                         AnswerExcerpt = "Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for…",
                         AnswerExcerptCut = true,
+                        AnswerText = "Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for "
+                            + "selling or for wishing instead.\n\nIf you must throw something, throw worthless glass.",
                         Graders = new List<BenchmarkReportContentGrader>
                         {
                             new()

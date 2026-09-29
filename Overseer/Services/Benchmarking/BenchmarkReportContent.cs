@@ -11,8 +11,8 @@ using Overseer.Models;
 /// <summary>
 /// The verbatim material a report-pack document may print at Detailed and Full disclosure, captured
 /// from the subject's answer rows: the question text as asked, the rubric as graded, an answer
-/// excerpt, each grader's comment and evidence, and the claim verifier's rulings. Never read from the
-/// live suite. Pure: no I/O and no clock.
+/// excerpt and, when the excerpt was cut, the complete answer, each grader's comment and evidence,
+/// and the claim verifier's rulings. Never read from the live suite. Pure: no I/O and no clock.
 /// </summary>
 public static class BenchmarkReportContent
 {
@@ -137,6 +137,7 @@ public static class BenchmarkReportContent
                     ExpectedPointsRecorded = answer.ExpectedPointsRecorded,
                     AnswerExcerpt = excerpt,
                     AnswerExcerptCut = cut,
+                    AnswerText = cut ? answer.AnswerText ?? string.Empty : null,
                     Graders = GradersOf(run, answer, panel),
                     ClaimRulings = RulingsOf(answer)
                 });

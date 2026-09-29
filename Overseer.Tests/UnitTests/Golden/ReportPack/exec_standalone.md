@@ -36,6 +36,8 @@ GPT-5.6 Luna is a capable assistant for everyday play, but its answers on item d
 
 The result rests on 4 questions, so it should be read with care.
 
+The 95 % interval is 77–83, a span of 6 points, and rests on 4 of 4 questions with a scored answer.
+
 ## About this benchmark
 
 GnollHack is a roguelike game descended from NetHack. The Overseer is its AI assistant: players ask it questions about the game, and it answers with the help of tools that search the game's source code, its wiki and a knowledge base.
@@ -54,6 +56,6 @@ What it does not measure: conversations longer than one question, the wiki text 
 
 ---
 
-*Document ID 101 · format version 4 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 5 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
-*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*
+*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's interpretations.*

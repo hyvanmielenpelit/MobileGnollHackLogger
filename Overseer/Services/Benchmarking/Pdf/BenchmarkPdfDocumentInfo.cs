@@ -119,8 +119,9 @@ public sealed record BenchmarkPdfDocumentInfo
             new("Questions", QuestionsText(sheet)),
             new(runIds.Count == 1 ? "Run" : "Runs", runIds.Count == 0 ? "—" : string.Join(", ", runIds.Select(id => "#" + Inv(id)))),
             new("Created (UTC)", Stamp(document.CreatedAtUtc)),
-            new("Report format", "version " + Inv(document.ReportFormatVersion)),
+            new("Generated format", "version " + Inv(document.ReportFormatVersion)),
             new("Writer", WriterText(document)),
+            new("Provenance", ProvenanceText),
         };
 
         return new BenchmarkPdfDocumentInfo
@@ -273,10 +274,23 @@ public sealed record BenchmarkPdfDocumentInfo
         return fact is { Available: true } ? fact.Display : Inv(sheet.Questions.Count);
     }
 
+    /// <summary>What a report-pack document's figures and prose rest on, and what the automatic checks do not cover.</summary>
+    private const string ProvenanceText = "Figures and tables computed by Overseer; prose written by the writer and checked "
+        + "automatically for structure, permitted figures and references, word limits and disclosure. The checks do not "
+        + "verify its interpretations.";
+
+    /// <summary><c>display name (provider, model id; thinking level)</c>, each empty part left out.</summary>
     private static string WriterText(BenchmarkReportDocument document)
     {
         string writer = string.IsNullOrWhiteSpace(document.WriterDisplayName) ? document.WriterModelId : document.WriterDisplayName;
-        return string.IsNullOrWhiteSpace(document.WriterThinkingLevel) ? writer : writer + " (" + document.WriterThinkingLevel + ")";
+
+        string identity = string.Join(", ", new[] { document.WriterProvider, document.WriterModelId }
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => p.Trim()));
+        string details = string.Join("; ", new[] { identity, document.WriterThinkingLevel?.Trim() ?? string.Empty }
+            .Where(p => p.Length > 0));
+
+        return details.Length == 0 ? writer : writer + " (" + details + ")";
     }
 
     private static string SubjectLineOf(string? suiteName, IReadOnlyCollection<long> runIds)

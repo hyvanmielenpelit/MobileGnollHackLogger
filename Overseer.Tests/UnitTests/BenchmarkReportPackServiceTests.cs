@@ -73,6 +73,52 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
+    public async Task ACutAnswer_IsStoredWhole_InTheContentJson()
+    {
+        await using var h = await Harness.CreateAsync();
+        string longAnswer = string.Join(" ", Enumerable.Repeat("The unicorn catches the gem and your Luck rises.", 20)) + " FINAL-SENTENCE.";
+        var answer = await h.Db.BenchmarkRunAnswers
+            .Where(a => a.BenchmarkRunId == h.Seeded.RunIds[0])
+            .OrderBy(a => a.OrderIndex)
+            .FirstAsync(TestContext.Current.CancellationToken);
+        answer.AnswerText = longAnswer;
+        await h.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        var content = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(document.ContentJson);
+        var question = content.Runs.SelectMany(r => r.Questions).Single(q => q.AnswerExcerptCut);
+        Assert.Equal(longAnswer, question.AnswerText);
+        Assert.DoesNotContain("FINAL-SENTENCE", question.AnswerExcerpt);
+        Assert.Contains("\"answerText\":", document.ContentJson);
+        Assert.Equal(5, document.ReportFormatVersion);
+    }
+
+    [Fact]
+    public async Task AnUnrepairedIntervalAdjective_IsKept_AndMarksTheDocumentWithWarnings()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        const string confidence = "The interval is narrow, so the result should be read with care.";
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, confidence: confidence));
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, confidence: confidence));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal(2, h.Provider.Calls);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+        Assert.Equal(confidence, writer.Sections[BenchmarkReportSlots.Confidence]);
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson!);
+        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.IntervalWidthRule && !n.Dropped);
+    }
+
+    [Fact]
     public async Task AnInvalidFirstReply_IsRepairedOnce_AndBothCallsAreRecorded()
     {
         await using var h = await Harness.CreateAsync();
@@ -583,7 +629,8 @@ public class BenchmarkReportPackServiceTests
     private static string ValidExecutiveReply(BenchmarkReportPackPreparation prep) => ExecutiveReply(prep);
 
     /// <summary>An Executive Summary reply citing a fact the sheet really has; each argument overrides one part.</summary>
-    private static string ExecutiveReply(BenchmarkReportPackPreparation prep, string? headline = null, string? extraStrength = null)
+    private static string ExecutiveReply(
+        BenchmarkReportPackPreparation prep, string? headline = null, string? extraStrength = null, string? confidence = null)
     {
         string factKey = prep.Sheet.Facts.First(f => f.Available).Key;
         var strengths = new List<object>
@@ -601,7 +648,7 @@ public class BenchmarkReportPackServiceTests
             sections = new Dictionary<string, string>
             {
                 [BenchmarkReportSlots.Meaning] = "{{subject}} would serve players well as a game assistant.",
-                [BenchmarkReportSlots.Confidence] = "The result rests on a small set of questions, so it should be read with care."
+                [BenchmarkReportSlots.Confidence] = confidence ?? "The result rests on a small set of questions, so it should be read with care."
             },
             strengths,
             weaknesses = new[]

@@ -33,6 +33,7 @@ using Overseer.Models;
 // Quality (Intelligence Index; higher is better)
 //   quality.index            "80 / 100": the point estimate
 //   quality.interval         "77–83": the 95 % interval, its bounds rounded as the point is
+//   quality.intervalSpan     "6 points": the printed upper bound minus the printed lower bound
 //   quality.intervalBasis    which sources of variation the interval covers
 //   quality.rank             "2nd of 3" among entries with a quality figure
 //   quality.intervalOverlap  descriptive: which peers' intervals overlap the subject's, by letter
@@ -127,11 +128,15 @@ public sealed record BenchmarkReportQuestionSlot(
 public static class BenchmarkReportFacts
 {
     public const string SupportBothGraders = "Both graders";
-    public const string SupportOneGraderDifferentFamily = "One grader — different family";
-    public const string SupportOneGraderSameFamily = "One grader — same family as the model";
+    public const string SupportOneGraderDifferentProvider = "One grader — different provider";
+    public const string SupportOneGraderSameProvider = "One grader — same provider as the model";
     public const string SupportGradersDisagree = "Graders disagree";
     public const string SupportSingleAssessor = "Single assessor";
     public const string SupportComputed = "Computed";
+
+    // The single-grader labels of fact sheets stored before format version 5.
+    private const string LegacySupportOneGraderDifferentFamily = "One grader — different family";
+    private const string LegacySupportOneGraderSameFamily = "One grader — same family as the model";
 
     public const string NotAvailable = "not available";
 
@@ -176,7 +181,7 @@ public static class BenchmarkReportFacts
     /// </summary>
     private static readonly string[] SupportStrength =
     {
-        SupportBothGraders, SupportOneGraderDifferentFamily, SupportSingleAssessor, SupportOneGraderSameFamily, SupportGradersDisagree
+        SupportBothGraders, SupportOneGraderDifferentProvider, SupportSingleAssessor, SupportOneGraderSameProvider, SupportGradersDisagree
     };
 
     public static BenchmarkReportFactsResult Build(BenchmarkReportFactsInput input)
@@ -299,8 +304,8 @@ public static class BenchmarkReportFacts
 
     /// <summary>
     /// The support label of a writer item from the evidence it cites: the strongest label among the
-    /// <c>R&lt;n&gt;</c> rows it cites, in the order Both graders, One grader — different family,
-    /// Single assessor, One grader — same family as the model, Graders disagree; <c>Computed</c> when
+    /// <c>R&lt;n&gt;</c> rows it cites, in the order Both graders, One grader — different provider,
+    /// Single assessor, One grader — same provider as the model, Graders disagree; <c>Computed</c> when
     /// it cites no row (fact keys and questions only).
     /// </summary>
     public static string SupportLabelFor(IReadOnlyList<string>? evidence, BenchmarkReportFactSheet sheet)
@@ -319,6 +324,28 @@ public static class BenchmarkReportFacts
 
         return best == int.MaxValue ? SupportComputed : SupportStrength[best];
     }
+
+    /// <summary>
+    /// Rewrites the single-grader support labels of a sheet stored before format version 5 to their
+    /// provider wording. Idempotent.
+    /// </summary>
+    public static void NormalizeSupportLabels(BenchmarkReportFactSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+
+        foreach (var row in sheet.Rows)
+        {
+            row.SupportLabel = NormalizeSupportLabel(row.SupportLabel);
+        }
+    }
+
+    /// <summary>A support label in its provider wording; any label but the two legacy ones is returned unchanged.</summary>
+    public static string NormalizeSupportLabel(string supportLabel) => supportLabel switch
+    {
+        LegacySupportOneGraderDifferentFamily => SupportOneGraderDifferentProvider,
+        LegacySupportOneGraderSameFamily => SupportOneGraderSameProvider,
+        _ => supportLabel
+    };
 
     /// <summary>
     /// The subject's exam, numbered: the lowest-id run's answers by order index (then answer id), then
@@ -461,7 +488,7 @@ public static class BenchmarkReportFacts
         var quality = subject.Quality;
         if (quality == null)
         {
-            foreach (var key in new[] { "quality.index", "quality.interval", "quality.intervalBasis", "quality.rank", "quality.intervalOverlap", "quality.scoredItems" })
+            foreach (var key in new[] { "quality.index", "quality.interval", "quality.intervalSpan", "quality.intervalBasis", "quality.rank", "quality.intervalOverlap", "quality.scoredItems" })
             {
                 facts.Unavailable(key, "The comparison computed no quality figure for this model.");
             }
@@ -473,12 +500,19 @@ public static class BenchmarkReportFacts
 
             if (quality.IntervalLower.HasValue && quality.IntervalUpper.HasValue)
             {
-                facts.Text("quality.interval",
-                    BenchmarkReportFormat.Whole(quality.IntervalLower.Value) + "–" + BenchmarkReportFormat.Whole(quality.IntervalUpper.Value));
+                string lower = BenchmarkReportFormat.Whole(quality.IntervalLower.Value);
+                string upper = BenchmarkReportFormat.Whole(quality.IntervalUpper.Value);
+                facts.Text("quality.interval", lower + "–" + upper);
+
+                // From the printed bounds, so the span always matches the interval's own arithmetic.
+                int span = int.Parse(upper, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture)
+                    - int.Parse(lower, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture);
+                facts.Add("quality.intervalSpan", span, Inv(span) + (span == 1 ? " point" : " points"));
             }
             else
             {
                 facts.Unavailable("quality.interval", "No interval could be computed.");
+                facts.Unavailable("quality.intervalSpan", "No interval could be computed.");
             }
 
             facts.Add("quality.intervalBasis", quality.IntervalBasis, quality.IntervalBasis);
@@ -1121,10 +1155,10 @@ public static class BenchmarkReportFacts
             string label = row.Status switch
             {
                 BenchmarkConvergenceStatus.Convergent => SupportBothGraders,
-                BenchmarkConvergenceStatus.MemberAOnly => SameFamily(run.AssessorModelSnapshot?.Provider, subjectProvider)
-                    ? SupportOneGraderSameFamily : SupportOneGraderDifferentFamily,
-                BenchmarkConvergenceStatus.MemberBOnly => SameFamily(run.CoAssessorModelSnapshot?.Provider, subjectProvider)
-                    ? SupportOneGraderSameFamily : SupportOneGraderDifferentFamily,
+                BenchmarkConvergenceStatus.MemberAOnly => SameProvider(run.AssessorModelSnapshot?.Provider, subjectProvider)
+                    ? SupportOneGraderSameProvider : SupportOneGraderDifferentProvider,
+                BenchmarkConvergenceStatus.MemberBOnly => SameProvider(run.CoAssessorModelSnapshot?.Provider, subjectProvider)
+                    ? SupportOneGraderSameProvider : SupportOneGraderDifferentProvider,
                 _ => SupportGradersDisagree
             };
 
@@ -1221,7 +1255,7 @@ public static class BenchmarkReportFacts
                 Provider = snapshot.Provider,
                 ModelId = snapshot.ModelId,
                 ThinkingLevel = snapshot.ThinkingLevel,
-                SameFamilyAsSubject = SameFamily(snapshot.Provider, subjectProvider)
+                SameFamilyAsSubject = SameProvider(snapshot.Provider, subjectProvider)
             });
         }
 
@@ -1309,7 +1343,7 @@ public static class BenchmarkReportFacts
         return values.Count > 0 ? values.Average() : null;
     }
 
-    private static bool SameFamily(string? provider, string? subjectProvider)
+    private static bool SameProvider(string? provider, string? subjectProvider)
         => !string.IsNullOrWhiteSpace(provider) && string.Equals(provider?.Trim(), subjectProvider?.Trim(), StringComparison.OrdinalIgnoreCase);
 
     private static BenchmarkDifficulty BandOf(BenchmarkRunAnswer answer)

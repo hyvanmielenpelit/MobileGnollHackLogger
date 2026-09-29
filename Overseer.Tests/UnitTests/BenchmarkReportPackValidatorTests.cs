@@ -1109,6 +1109,57 @@ public class BenchmarkReportPackValidatorTests
         Assert.DoesNotContain(result.Notes, n => n.Dropped);
     }
 
+    // Rule 13 -----------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("The interval is narrow, and the graders mostly agreed.", "narrow")]
+    [InlineData("A Wide interval leaves the order open.", "Wide")]
+    [InlineData("Its interval is tighter than most.", "tighter")]
+    [InlineData("The broad interval overlaps that of {{peer:A}}.", "broad")]
+    public void Rule13_IntervalWidthAdjectives_InTheConfidenceSlot(string text, string word)
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.Confidence] = text;
+
+        var note = Assert.Single(Validate(Es, output));
+
+        Assert.Equal(BenchmarkReportPackValidator.IntervalWidthRule, note.Rule);
+        Assert.Equal(13, note.Rule);
+        Assert.Equal("sections.confidence[p1]", note.Location);
+        Assert.Contains(word, note.Message);
+        Assert.Contains("{{quality.intervalSpan}}", note.Message);
+    }
+
+    [Fact]
+    public void Rule13_AppliesOnlyToTheExecutiveSummarysConfidenceSlot_AndToWholeWords()
+    {
+        Assert.Empty(ValidateMeaning("A narrow lead on item lore and a wide range of topics."));
+
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.Confidence] = "The graders agreed broadly, and the answers were widely accepted.";
+        Assert.Empty(Validate(Es, output));
+
+        var technical = ReportPackWriterTestData.ValidOutput(Tr);
+        technical.Sections[BenchmarkReportSlots.WhyItScored] = "A narrow reading of the board was the main weakness, most visibly on Q2.";
+        Assert.Empty(Validate(Tr, technical));
+    }
+
+    [Fact]
+    public void Drop_KeepsAnIntervalWidthAdjective_AndRecordsItsNote()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        const string confidence = "The interval is narrow, and the graders mostly agreed.";
+        output.Sections[BenchmarkReportSlots.Confidence] = confidence;
+
+        var result = Drop(Es, output);
+
+        Assert.False(result.Fatal);
+        Assert.Equal(confidence, result.Output.Sections[BenchmarkReportSlots.Confidence]);
+        var note = Assert.Single(result.Notes);
+        Assert.Equal(BenchmarkReportPackValidator.IntervalWidthRule, note.Rule);
+        Assert.False(note.Dropped);
+    }
+
     [Fact]
     public void Drop_TrimsAnOverlongMeaningByParagraph()
     {

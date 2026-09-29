@@ -37,7 +37,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 ### Strengths
 
-- Answers simple questions precisely and briefly. *(One grader — different family)*
+- Answers simple questions precisely and briefly. *(One grader — different provider)*
 
 ### Weaknesses
 
@@ -80,7 +80,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 > - The unicorn catches the gem.
 > - A valuable gem raises Luck; worthless glass does not.
 
-**Answer excerpt:**
+**Answer:**
 
 > The unicorn catches it. A real gem of your alignment raises your Luck; glass does nothing.
 
@@ -104,7 +104,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 > - The timeout is reset to a random value around 350.
 
-**Answer excerpt:**
+**Answer:**
 
 > About 50 to 1000 turns, typically near 350.
 
@@ -128,9 +128,11 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 *Rubric not recorded for this answer.*
 
-**Answer excerpt:**
+**Answer:**
 
-> Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for…
+> Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for selling or for wishing instead.
+>
+> If you must throw something, throw worthless glass.
 
 **Graders:**
 
@@ -154,7 +156,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 > - 1 to 3 charges.
 > - Wresting gives one more.
 
-**Answer excerpt:**
+**Answer:**
 
 > A new wand has 1 to 3 charges, and you can wrest one more.
 
@@ -447,8 +449,20 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     },
     {
       "available": true,
+      "display": "6 points",
+      "key": "quality.intervalSpan",
+      "value": 6
+    },
+    {
+      "available": true,
       "display": "2nd of 3",
       "key": "quality.rank"
+    },
+    {
+      "available": true,
+      "display": "4 of 4",
+      "key": "quality.scoredItems",
+      "value": 4
     },
     {
       "available": true,
@@ -756,7 +770,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       ],
       "recurrence": 1,
       "status": "MemberAOnly",
-      "supportLabel": "One grader — different family"
+      "supportLabel": "One grader — different provider"
     },
     {
       "category": "conciseness",
@@ -797,6 +811,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 4 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 5 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
-*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*
+*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's interpretations.*

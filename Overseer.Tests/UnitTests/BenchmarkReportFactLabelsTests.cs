@@ -66,6 +66,7 @@ public class BenchmarkReportFactLabelsTests
 
     [Theory]
     [InlineData("quality.index", "Intelligence Index")]
+    [InlineData("quality.intervalSpan", "Interval span")]
     [InlineData("dimension.accuracy", "Accuracy score")]
     [InlineData("dimension.completeness.peerMean", "Completeness peer mean")]
     [InlineData("dimension.readability.difference", "Readability difference from the peer mean")]

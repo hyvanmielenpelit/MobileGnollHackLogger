@@ -131,8 +131,8 @@ public class BenchmarkReportDocument
 
     /// <summary>
     /// The verbatim material the renderer may print at Detailed and Full disclosure: question text as
-    /// asked, rubric as graded, answer excerpts, grader evidence and verifier rulings, taken from the
-    /// subject's answer rows at generation.
+    /// asked, rubric as graded, answer excerpts (with the complete answer when an excerpt was cut),
+    /// grader evidence and verifier rulings, taken from the subject's answer rows at generation.
     /// </summary>
     public string ContentJson { get; set; } = default!;
 

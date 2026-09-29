@@ -20,14 +20,15 @@ export const REPORT_DISCLOSURE_GUIDE: ReportDisclosureGuide = {
     },
     {
       term: 'Detailed',
-      text: 'For the model’s company, not for publishing. Everything in Summary, plus every question exactly as asked '
-        + 'and an excerpt of the model’s answer. Still no rubrics or grader notes. '
+      text: 'For the model’s company, not for publishing. Everything in Summary, plus every question exactly as asked, '
+        + 'an excerpt of the model’s answer and the evidence line under each finding. Still no rubrics or grader notes. '
         + 'Publishing it would reveal the benchmark’s questions.'
     },
     {
       term: 'Full',
-      text: 'Internal only. Everything in Detailed, plus each question’s rubric, both graders’ scores and notes, '
-        + 'the claim checker’s rulings and the graders’ agreement details. '
+      text: 'Internal only. Everything in Detailed, plus each question’s rubric, every grader’s score, notes and evidence, '
+        + 'the claim checker’s rulings, and the model’s complete answers. Documents written before complete answers were '
+        + 'kept show the stored excerpt instead. '
         + 'Marked INTERNAL and watermarked; never share it outside the Overseer team.'
     },
     {
