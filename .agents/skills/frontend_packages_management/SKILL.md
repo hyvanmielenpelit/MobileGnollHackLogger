@@ -61,6 +61,22 @@ plan -- `package.json` is the source of truth.
   ReDoS advisories; current builds ship only from the vendor's own registry, which this project does
   not use), `exceljs` (Node-first, 21 MB unpacked, nine transitive dependencies needing browser
   polyfills) and `xlsx-populate` (15 MB, `lodash` and `jszip`).
+- **`pdfjs-dist`** -- Mozilla's PDF renderer (pdf.js), behind the shared in-app PDF viewer
+  (`app-pdf-viewer-dialog`) that shows a run's AI-written reports. It is reached **only** through the
+  dynamic `import()`s in `shared/pdf-viewer/pdfjs-loader.ts` (the display module, then
+  `pdfjs-dist/web/pdf_viewer.mjs`), so it lands in lazy chunks and never in the initial bundle; specs
+  replace the loader through the `PDFJS_LOADER` token, so Karma never loads pdf.js. Its worker,
+  `build/pdf.worker.min.mjs`, is copied as an asset by `angular.json` to `/pdfjs/`, a same-origin
+  file the CSP already allows. The viewer's stylesheet carries a **scoped subset** of the package's
+  `web/pdf_viewer.css` (the page, canvas wrapper and text layer, under `.pdfv`) rather than the whole
+  sheet: that is about 124 kB minified, over the component style budget, and it sets global `:root`
+  rules and ships the annotation-editor UI with its images. On an upgrade, compare that subset with
+  the new sheet. The modern build needs current browsers, since it uses very recent JavaScript
+  built-ins; if older browsers must be supported, `pdfjs-dist/legacy/…` is the fallback build. It was
+  chosen over the browser's own PDF viewer in an `<iframe>` (the CSP forbids framing a `blob:` URL -- it
+  would need `frame-src blob:` -- and phones do not render a PDF inline in a frame) and over Angular
+  wrapper packages around pdf.js (they bundle a full viewer UI of their own and fight the
+  application's styling).
 
 ### Held-back Upgrades
 `npm outdated` will keep listing these; do not force them.

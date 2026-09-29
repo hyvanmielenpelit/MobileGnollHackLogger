@@ -54,6 +54,9 @@ public enum BenchmarkRunReportDocumentsStatus
 
     /// <summary>The compliance guard refused the spend; nothing was written.</summary>
     Skipped = 6,
+
+    /// <summary>An administrator canceled the job; documents written before the cancellation are kept.</summary>
+    Canceled = 7,
 }
 
 /// <summary>

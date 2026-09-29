@@ -1,6 +1,6 @@
 # GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Executive Summary
 
-*INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.*
+*INTERNAL — unpublished benchmark results. Do not share outside the Overseer team.*
 
 - **Date:** 2026-09-28
 - **Suite:** GnollHack Core Suite
@@ -14,29 +14,25 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 
 ## Key figures
 
-- **Intelligence:** 80 ± 3 / 100.
+- **Intelligence:** 80 / 100 (interval 77–83).
 - **Speed:** median answer time 12.3 s.
 - **Cost:** $0.036 per question.
-- **Serious errors:** 1 of 4 answers.
+- **Critical errors:** 1 of 4 answers.
 
 ## What it did well
 
-- Answers simple questions precisely and briefly. *(One grader — different family)*
-  - *Evidence:* One grader — different family — accuracy (Q1)
+- Answers simple questions precisely and briefly. *(raised by one grader)*
 
 ## Where it fell short
 
-- Asserted a false outcome on Q3. *(Both graders)*
-  - *Evidence:* Both graders — critical error (Q3)
-  - *Evidence:* Q3 — Breaking a thrown gem: score 25 / 100; Panel member A 25, Panel member B 25; a grader flagged a critical error; the claim verifier refuted one claim
-- Scored lowest on intermediate questions (49). *(Computed)*
-  - *Evidence:* band.intermediate.score: 49
+- Asserted a false outcome on Q3. *(both graders agreed)*
+- Scored lowest on intermediate questions (49). *(computed from the figures)*
 
 ## What this means for use as a game assistant
 
 GPT-5.6 Luna is a capable assistant for everyday play, but its answers on item destruction need a source check.
 
-## How confident are we
+## How reliable this result is
 
 The result rests on 4 questions, so it should be read with care.
 
@@ -46,7 +42,7 @@ GnollHack is a roguelike game descended from NetHack. The Overseer is its AI ass
 
 This benchmark gives the production assistant prompt and tools, unchanged, a fixed set of single-turn questions about the game, and asks for the concise answer style the live assistant uses.
 
-Two AI graders from two different companies score every answer for accuracy, completeness, conciseness and readability, weighted Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %. A separate verifier checks disputed claims against the game's source code. Speed is the model's own time per answer, with time spent in tools excluded. Cost is list price for the model under test, on this basis: Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
+Two AI graders from two different companies score every answer for accuracy, completeness, conciseness and readability, weighted Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %. A separate verifier checks disputed claims against the game's source code. Speed is the model's own time per answer, with time spent in tools excluded. Cost is the model under test's price per question at the catalog prices of 2026-09-20, which is comparable across dates but is not what was actually spent.
 
 What it does not measure: conversations longer than one question, the wiki text the live assistant is given before it answers, spoiler-free mode, web search, and delegation to subagents. A result here describes the assistant as configured for this benchmark; it may not carry over to those situations.
 
@@ -58,6 +54,6 @@ What it does not measure: conversations longer than one question, the wiki text 
 
 ---
 
-*Report 101 · format version 2 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 3 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*

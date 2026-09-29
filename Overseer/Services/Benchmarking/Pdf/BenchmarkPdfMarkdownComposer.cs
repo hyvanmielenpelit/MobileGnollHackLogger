@@ -51,7 +51,7 @@ internal static class BenchmarkPdfMarkdownComposer
     /// <summary>Cell values that stand for "no value" and do not decide a column's alignment.</summary>
     private static readonly HashSet<string> Placeholders = new(StringComparer.OrdinalIgnoreCase)
     {
-        "", "—", "–", "-", "N/A", "NA", "n.a."
+        "", "—", "–", "-", "N/A", "NA", "n.a.", "not available"
     };
 
     private static readonly string[] Bullets = { "•", "◦", "▪" };
@@ -69,6 +69,11 @@ internal static class BenchmarkPdfMarkdownComposer
     private const double SemiboldWidthScale = 1.08;
     private const int MaxColumnWordCharacters = 24;
     private const int MaxColumnTextCharacters = 60;
+
+    // A table of at most this many columns whose preferred widths fill less than this share of the
+    // text width is set at those widths, against the left margin, instead of across the page.
+    private const int NarrowTableMaxColumns = 3;
+    private const double NarrowTableMaxShare = 0.6;
 
     internal enum CellAlign
     {
@@ -375,10 +380,13 @@ internal static class BenchmarkPdfMarkdownComposer
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// A pipe table: header row repeated on every page, zebra body rows, hairline rules, and a row
-    /// kept whole on one page when it fits on one. A column whose non-empty body cells are all
-    /// numbers, percentages, currency amounts or durations is right-aligned unless the Markdown
-    /// sets its alignment.
+    /// A pipe table as a decoration: the header row above the body, repeated on every page, and the
+    /// body as a column of one-row tables sharing the header's column definitions, zebra-striped with
+    /// hairline rules. Each body row is kept on one page when it fits on one, so a row's cells always
+    /// start on the same page; a row taller than a page breaks across pages. A column whose non-empty
+    /// body cells are all numbers, percentages, currency amounts or durations is right-aligned unless
+    /// the Markdown sets its alignment, and a narrow table (<see cref="PdfColumnLayout"/>) is set at
+    /// its preferred widths against the left margin.
     /// </summary>
     private static void ComposeTable(IContainer container, MdTable table, Context ctx)
     {
@@ -395,32 +403,69 @@ internal static class BenchmarkPdfMarkdownComposer
             (rows[r].IsHeader ? headerRows : bodyRows).Add(cellsByRow[r]);
         }
 
-        var (aligns, weights) = ColumnLayout(table, headerRows, bodyRows, columns, ctx.Document.Source);
+        var (aligns, widths, constant) = PdfColumnLayout(table, headerRows, bodyRows, columns, ctx.Document.Source);
 
-        container.SemanticTable().Table(t =>
+        void Columns(TableDescriptor t) => t.ColumnsDefinition(cd =>
         {
-            t.ColumnsDefinition(cd =>
+            foreach (float width in widths)
             {
-                foreach (float weight in weights) cd.RelativeColumn(weight);
-            });
+                if (constant) cd.ConstantColumn(width);
+                else cd.RelativeColumn(width);
+            }
+        });
 
+        (constant ? container.AlignLeft() : container).SemanticTable().Decoration(d =>
+        {
             if (headerRows.Count > 0)
             {
-                t.Header(h =>
+                d.Before().Table(t =>
                 {
-                    for (int r = 0; r < headerRows.Count; r++)
+                    Columns(t);
+                    t.Header(h =>
                     {
-                        PlaceRow(() => h.Cell(), headerRows[r], (uint)(r + 1), columns, aligns, header: true, zebra: false, ctx);
-                    }
+                        for (int r = 0; r < headerRows.Count; r++)
+                        {
+                            PlaceRow(() => h.Cell(), headerRows[r], (uint)(r + 1), columns, aligns, header: true, zebra: false, ctx);
+                        }
+                    });
                 });
             }
 
-            for (int r = 0; r < bodyRows.Count; r++)
+            d.Content().Column(col =>
             {
-                ctx.Token.ThrowIfCancellationRequested();
-                PlaceRow(() => t.Cell(), bodyRows[r], (uint)(r + 1), columns, aligns, header: false, zebra: r % 2 == 1, ctx);
-            }
+                for (int r = 0; r < bodyRows.Count; r++)
+                {
+                    ctx.Token.ThrowIfCancellationRequested();
+                    var cells = bodyRows[r];
+                    bool zebra = r % 2 == 1;
+                    col.Item().PreventPageBreak().Table(t =>
+                    {
+                        Columns(t);
+                        PlaceRow(() => t.Cell(), cells, 1, columns, aligns, header: false, zebra, ctx);
+                    });
+                }
+            });
         });
+    }
+
+    /// <summary>
+    /// <see cref="ColumnLayout"/> for the PDF: relative weights across the text width, or, for a
+    /// table of at most <see cref="NarrowTableMaxColumns"/> columns whose preferred widths fill less
+    /// than <see cref="NarrowTableMaxShare"/> of it, constant widths in points at those preferred widths.
+    /// </summary>
+    internal static (CellAlign[] Aligns, float[] Widths, bool Constant) PdfColumnLayout(
+        MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
+        int columns, string source)
+    {
+        var (aligns, bodyMinimum, minimum, preferred) = MeasureColumns(table, headerRows, bodyRows, columns, source);
+
+        var preferredPoints = preferred.Select(w => (float)(w * AverageCharacterPoints + CellPaddingPoints)).ToArray();
+        if (columns <= NarrowTableMaxColumns && preferredPoints.Sum() < TableWidthPoints * NarrowTableMaxShare)
+        {
+            return (aligns, preferredPoints, true);
+        }
+
+        return (aligns, ColumnWeights(bodyMinimum, minimum, preferred), false);
     }
 
     /// <summary>
@@ -429,6 +474,18 @@ internal static class BenchmarkPdfMarkdownComposer
     /// <see cref="ColumnWeights"/> over the columns' word and text lengths.
     /// </summary>
     internal static (CellAlign[] Aligns, float[] Weights) ColumnLayout(
+        MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
+        int columns, string source)
+    {
+        var (aligns, bodyMinimum, minimum, preferred) = MeasureColumns(table, headerRows, bodyRows, columns, source);
+        return (aligns, ColumnWeights(bodyMinimum, minimum, preferred));
+    }
+
+    /// <summary>
+    /// Each column's alignment, and its body's longest word, longest word with the header's, and
+    /// preferred width, in estimated characters.
+    /// </summary>
+    private static (CellAlign[] Aligns, double[] BodyMinimum, double[] Minimum, double[] Preferred) MeasureColumns(
         MdTable table, IReadOnlyList<List<MdTableCell>> headerRows, IReadOnlyList<List<MdTableCell>> bodyRows,
         int columns, string source)
     {
@@ -480,7 +537,7 @@ internal static class BenchmarkPdfMarkdownComposer
             preferred[c] = Math.Max(minimum[c], Math.Min(longest, MaxColumnTextCharacters));
         }
 
-        return (aligns, ColumnWeights(bodyMinimum, minimum, preferred));
+        return (aligns, bodyMinimum, minimum, preferred);
     }
 
     /// <summary>
@@ -549,7 +606,7 @@ internal static class BenchmarkPdfMarkdownComposer
 
     private static void CellBody(IContainer slot, MdTableCell? cell, CellAlign align, bool header, bool zebra, Context ctx)
     {
-        IContainer c = header ? slot : slot.PreventPageBreak();
+        IContainer c = slot;
         if (header) c = c.Background(BenchmarkPdfStyle.TableHeader);
         else if (zebra) c = c.Background(BenchmarkPdfStyle.Zebra);
 

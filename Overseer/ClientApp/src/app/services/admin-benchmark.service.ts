@@ -748,6 +748,8 @@ export interface StartBenchmarkRunRequest {
   reportWriterModelConfigurationId?: number | null;
   scoringProfileId?: number | null;
   acknowledgeSameProvider?: boolean;
+  /** The operator acknowledged that the report writer shares the model under test's provider. */
+  acknowledgeSameProviderReportWriter?: boolean;
   verboseMode?: boolean;
   /**
    * How many times to execute this identical request, strictly one at a time. 1 (the default)
@@ -818,12 +820,17 @@ export type BenchmarkCalibrationTarget = 'Assessor' | 'CoAssessor' | 'Panel';
 /** Which panel member a re-assessment re-grades. The server treats an absent value as `Both`. */
 export type BenchmarkPanelMember = 'A' | 'B' | 'Both';
 
+/** Which choice shares the model under test's provider. Absent on older responses: an assessor. */
+export type SameProviderWarningRole = 'assessor' | 'reportWriter';
+
 export interface SameProviderWarningDto {
   sameProvider: boolean;
   provider: string;
   testedModelDisplayName: string;
+  /** The assessor's display name, or the report writer's when `role` is `reportWriter`. */
   assessorModelDisplayName: string;
   message: string;
+  role?: SameProviderWarningRole;
 }
 
 export interface BenchmarkFootprintDto {
@@ -2102,17 +2109,73 @@ export enum BenchmarkRunReportDocumentsStatus {
   Completed = 3,
   CompletedWithWarnings = 4,
   Failed = 5,
-  Skipped = 6
+  Skipped = 6,
+  /** An administrator canceled the job; documents written before the cancellation are kept. */
+  Canceled = 7
 }
 
 /** Writes a finished run's missing AI-written documents now, with this writer. */
 export interface WriteRunReportDocumentsRequest {
   writerModelConfigurationId: number;
+  /** The documents to write; absent or empty writes every missing one. */
+  audiences?: BenchmarkReportAudience[];
+  /** The operator acknowledged that the writer shares the model under test's provider. */
+  acknowledgeSameProvider?: boolean;
 }
 
 export interface WriteRunReportDocumentsResponse {
   runId: number;
   status: BenchmarkRunReportDocumentsStatus;
+  /** The documents the job will write. */
+  audiences?: BenchmarkReportAudience[];
+}
+
+/** `Queued`, `Preparing`, `Writing` or `Finished`. */
+export type BenchmarkRunReportJobPhase = 'Queued' | 'Preparing' | 'Writing' | 'Finished';
+
+/**
+ * A run's report-writing job as this server process knows it: the run's persisted status plus the
+ * job's phase, queue position, timestamps and progress. Kept in memory only, for 6 hours after the
+ * job finishes; after a restart the endpoint answers 204.
+ */
+export interface BenchmarkRunReportJobDto {
+  runId: number;
+  status: BenchmarkRunReportDocumentsStatus;
+  message: string | null;
+  phase: BenchmarkRunReportJobPhase;
+  queuedAtUtc: string;
+  slotAcquiredAtUtc: string | null;
+  finishedAtUtc: string | null;
+  cancelRequestedAtUtc: string | null;
+  /** Jobs ahead in the report writer's queue; only while queued. */
+  jobsAhead: number | null;
+  /** The running job that holds the slot, prefixed `Report Pack:` or `Run #N:`. */
+  blockingJobLabel: string | null;
+  audiences: BenchmarkReportAudience[];
+  writerConfigId: number;
+  writerDisplayName: string;
+  writerProvider: string;
+  writerModelId: string;
+  writerThinkingLevel: string | null;
+  job: BenchmarkReportPackJobDto;
+  /** The server's clock when the response was built; elapsed times are measured against it. */
+  serverTimeUtc: string;
+}
+
+export interface BenchmarkRunReportEstimateRequest {
+  writerModelConfigurationId: number;
+  /** Absent or empty estimates every missing document. */
+  audiences?: BenchmarkReportAudience[];
+}
+
+export interface BenchmarkRunReportEstimateDto {
+  estimates: BenchmarkReportPackAudienceEstimateDto[];
+  /** Null when the writer has no resolvable price. */
+  estimatedTotalCostUsd: number | null;
+  /** Why the writer cannot write this run's reports, or null. */
+  refusal: string | null;
+  /** The same-provider warning writing would ask to acknowledge, or null. */
+  sameProviderWarning: SameProviderWarningDto | null;
 }
 
 /** The comparison's pricing basis as the report-pack request body carries it: a number. */
@@ -2198,6 +2261,12 @@ export interface BenchmarkReportPackDocumentProgressDto {
   documentId: number | null;
   errorMessage: string | null;
   modelCalls: number;
+  startedAtUtc?: string | null;
+  completedAtUtc?: string | null;
+  inputTokens?: number;
+  outputTokens?: number;
+  /** Null when the writer has no resolvable price. */
+  costUsd?: number | null;
 }
 
 export interface BenchmarkReportPackJobLogEntryDto {
@@ -2932,13 +3001,56 @@ export class AdminBenchmarkService {
   }
 
   /**
-   * Writes a finished run's missing AI-written documents with the given writer, which becomes the
-   * run's report writer. 202 once queued. Refusals: 400 `{ error }` (no final synthesis, or the
-   * writer refused), 404, 409 `{ error }` (both documents exist, or a job is pending or writing),
-   * 429 a plain string.
+   * Writes a finished run's missing AI-written documents (all of them, or the requested ones) with
+   * the given writer, which becomes the run's report writer. 202 once queued. Refusals: 400
+   * `{ error }` (no final synthesis, the writer refused, or an audience that is not a run
+   * document), 404, 409 `{ error }` (the documents exist, or a job is pending or writing) or a
+   * `SameProviderWarningDto` (a same-provider writer not acknowledged), 429 a plain string.
    */
   writeRunReportDocuments(runId: number, request: WriteRunReportDocumentsRequest): Observable<WriteRunReportDocumentsResponse> {
     return this.http.post<WriteRunReportDocumentsResponse>(`/api/admin/benchmark/runs/${runId}/report-documents`, request);
+  }
+
+  /** The run's report-writing job, or null (204) when this server process knows none. */
+  getRunReportJob(runId: number): Observable<BenchmarkRunReportJobDto | null> {
+    return this.http.get<BenchmarkRunReportJobDto>(`/api/admin/benchmark/runs/${runId}/report-documents/job`,
+      { observe: 'response' }).pipe(
+      map(response => response.status === 204 ? null : response.body ?? null)
+    );
+  }
+
+  /** Asks the run's report-writing job to stop. 202 with the job view; 409 `{ error }` when none is in progress. */
+  cancelRunReportJob(runId: number): Observable<BenchmarkRunReportJobDto> {
+    return this.http.post<BenchmarkRunReportJobDto>(`/api/admin/benchmark/runs/${runId}/report-documents/cancel`, {});
+  }
+
+  /** What writing the run's documents with this writer would cost, and whether it is refused or warned. No model call. */
+  estimateRunReports(runId: number, request: BenchmarkRunReportEstimateRequest): Observable<BenchmarkRunReportEstimateDto> {
+    return this.http.post<BenchmarkRunReportEstimateDto>(`/api/admin/benchmark/runs/${runId}/report-documents/estimate`, request);
+  }
+
+  /** Deletes one of the run's AI-written documents. 204; 409 `{ error }` while the run's reports are being written. */
+  deleteRunReportDocument(runId: number, documentId: number): Observable<void> {
+    return this.http.delete<void>(`/api/admin/benchmark/runs/${runId}/report-documents/${documentId}`);
+  }
+
+  /**
+   * The same-origin URL of a document's PDF, with the query `getReportDocumentPdf` sends. With
+   * `inline`, the browser shows it in its own viewer and saves it under the server's file name.
+   */
+  reportDocumentPdfUrl(
+    id: number,
+    disclosure: BenchmarkReportDisclosure,
+    peers: BenchmarkReportPeerNaming,
+    paper: BenchmarkPdfPaper,
+    inline = false
+  ): string {
+    let params = new HttpParams()
+      .set('disclosure', reportDisclosureParam(disclosure))
+      .set('peers', reportPeerNamingParam(peers))
+      .set('paper', paper);
+    if (inline) params = params.set('inline', 'true');
+    return `/api/admin/benchmark/report-documents/${id}/render/pdf?${params.toString()}`;
   }
 
   /** The run's Markdown report as text, named as the server's `Content-Disposition` names it. */

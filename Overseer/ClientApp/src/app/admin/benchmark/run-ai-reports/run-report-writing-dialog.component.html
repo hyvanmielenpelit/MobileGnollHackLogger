@@ -1,0 +1,284 @@
+<!--
+  THE AI REPORT WRITING PROGRESS DIALOG
+
+  Opened from inside the run report dialog, so its own close and cancel events, and those of the
+  confirmation nested in it, stop here. Closing it never cancels the job.
+-->
+<dialog #rwDialog class="gh-dialog run-writing-dialog" aria-labelledby="rwTitle" closedby="closerequest"
+        (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 #rwHeading id="rwTitle" tabindex="-1">Writing AI Reports · Run #{{ runId }}</h3>
+        @if (context?.runLabel) {
+          <p class="dialog-subtitle">{{ context?.runLabel }}</p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action rw-close"
+              aria-label="Close the report writing progress. The writing continues."
+              interestfor="rw-close-tip" style="anchor-name: --rw-close-tip" (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="rw-close-tip" style="position-anchor: --rw-close-tip">
+        {{ isFinished ? 'Close' : 'Run in background' }}
+      </div>
+    </div>
+
+    <div class="dialog-body">
+      <!-- The one live region: it changes with the phase or the document in hand, never with the clock. -->
+      <p class="rw-status" role="status" aria-live="polite">{{ statusLine }}</p>
+
+      @if (unknownJob) {
+        <div class="rw-fallback">
+          @if (fallbackLoading) {
+            <p class="rw-note">Reading the run’s stored report status…</p>
+          } @else if (fallbackError) {
+            <p class="gh-field-error rw-fallback-error">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ fallbackError }}</span>
+            </p>
+          } @else {
+            <dl class="rw-facts rw-fallback-facts">
+              <div>
+                <dt>Stored report status</dt>
+                <dd class="rw-fallback-status">{{ fallbackStatusWord }}</dd>
+              </div>
+              @if (fallbackRun?.reportDocumentsMessage) {
+                <div>
+                  <dt>Message</dt>
+                  <dd>{{ fallbackRun?.reportDocumentsMessage }}</dd>
+                </div>
+              }
+            </dl>
+          }
+        </div>
+      } @else {
+        <ol class="run-stage-rail" aria-label="Report writing stages">
+          @for (stage of stages; track stage.key; let i = $index) {
+            <li class="run-stage" [attr.data-stage]="stage.key"
+                [class.is-done]="stage.state === 'done'"
+                [class.is-current]="stage.state === 'current'"
+                [attr.aria-current]="stage.state === 'current' ? 'step' : null">
+              <span class="run-stage-index" aria-hidden="true">{{ i + 1 }}</span>
+              <span class="run-stage-name">{{ stage.name }}</span>
+              @if (stage.state !== 'pending') {
+                <span class="visually-hidden">({{ stage.state === 'current' ? 'current' : 'done' }})</span>
+              }
+            </li>
+          }
+        </ol>
+
+        @if (!isFinished) {
+          <div class="job-progress-block rw-activity">
+            <progress class="job-progress" aria-label="Writing progress"></progress>
+          </div>
+        }
+
+        <dl class="run-stat-strip rw-stats">
+          <div class="run-stat">
+            <dt>Elapsed</dt>
+            <dd class="rw-elapsed">{{ elapsedLabel }}</dd>
+          </div>
+          <div class="run-stat rw-stat-writer">
+            <dt>Writer</dt>
+            <dd>
+              @if (view) {
+                <span class="model-name">{{ view.writerDisplayName || view.writerModelId }}</span>
+                @if (view.writerProvider) {
+                  <app-provider-badge [provider]="view.writerProvider"></app-provider-badge>
+                }
+                @if (view.writerThinkingLevel) {
+                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(view.writerThinkingLevel) }}</span>
+                }
+              } @else {
+                —
+              }
+            </dd>
+          </div>
+          <div class="run-stat">
+            <dt>Model calls</dt>
+            <dd class="rw-model-calls">{{ formatCount(view?.job?.totalModelCalls) }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Input tokens</dt>
+            <dd class="rw-input-tokens">{{ formatCount(view?.job?.inputTokens) }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Output tokens</dt>
+            <dd class="rw-output-tokens">{{ formatCount(view?.job?.outputTokens) }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt class="rw-cost-label">{{ costLabel }}</dt>
+            <dd class="rw-cost">{{ view ? costValue : '—' }}</dd>
+          </div>
+          @if (estimateValue) {
+            <div class="run-stat">
+              <dt>Estimate</dt>
+              <dd class="rw-estimate">{{ estimateValue }}</dd>
+            </div>
+          }
+        </dl>
+
+        @if (documentRows.length > 0) {
+          <div class="rw-table-wrap">
+            <table class="gh-table rw-documents">
+              <caption>Documents</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Document</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Duration</th>
+                  <th scope="col">Model calls</th>
+                  <th scope="col">Tokens</th>
+                  <th scope="col">Cost</th>
+                  @if (isFinished) {
+                    <th scope="col"><span class="visually-hidden">Actions</span></th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of documentRows; track row.audience) {
+                  <tr class="rw-document-row" [attr.data-audience]="row.audience">
+                    <th scope="row">{{ row.name }}</th>
+                    <td>
+                      <span [class]="row.chipClass">{{ row.statusWord }}</span>
+                      @if (row.errorMessage) {
+                        <p class="gh-field-error rw-document-error">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                          <span>{{ row.errorMessage }}</span>
+                        </p>
+                      }
+                    </td>
+                    <td class="rw-num">{{ row.duration }}</td>
+                    <td class="rw-num">{{ row.modelCalls }}</td>
+                    <td class="rw-num">{{ row.tokens }}</td>
+                    <td class="rw-num">{{ row.cost }}</td>
+                    @if (isFinished) {
+                      <td class="rw-row-actions">
+                        @if (row.viewable) {
+                          <button type="button" class="btn-gh btn-gh-small rw-view"
+                                  [attr.aria-label]="'View the ' + row.name" (click)="viewDocument(row)">View</button>
+                        }
+                      </td>
+                    }
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      }
+
+      @if (pollTroubleLine) {
+        <p class="gh-field-error rw-poll-trouble">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ pollTroubleLine }}</span>
+        </p>
+      }
+
+      <details class="gh-disclosure rw-diagnostics">
+        <summary>Diagnostics</summary>
+        <div class="gh-disclosure-body">
+          <div class="rw-diagnostics-toolbar">
+            <button type="button" class="action-btn rw-copy-diagnostics"
+                    [attr.aria-label]="'Copy the report writing diagnostics for run ' + runId"
+                    interestfor="rw-copy-diagnostics-tip" style="anchor-name: --rw-copy-diagnostics-tip"
+                    (click)="copyDiagnostics()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="rw-copy-diagnostics-tip"
+                 style="position-anchor: --rw-copy-diagnostics-tip">Copy diagnostics</div>
+            <button type="button" class="action-btn rw-download-diagnostics"
+                    [attr.aria-label]="'Download the report writing diagnostics for run ' + runId"
+                    interestfor="rw-download-diagnostics-tip" style="anchor-name: --rw-download-diagnostics-tip"
+                    (click)="downloadDiagnostics()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="rw-download-diagnostics-tip"
+                 style="position-anchor: --rw-download-diagnostics-tip">Download diagnostics</div>
+            <p class="rw-copy-status" role="status" aria-live="polite">{{ copyStatus }}</p>
+          </div>
+          @if (copyError) {
+            <p class="gh-field-error rw-copy-error">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ copyError }}</span>
+            </p>
+          }
+
+          <dl class="rw-facts">
+            @for (fact of diagnosticFacts; track fact.term) {
+              <div>
+                <dt>{{ fact.term }}</dt>
+                <dd>{{ fact.value }}</dd>
+              </div>
+            }
+          </dl>
+
+          <h4 class="rw-log-title">Log</h4>
+          @if (logEntries.length > 0) {
+            <ol class="rw-log">
+              @for (entry of logEntries; track $index) {
+                <li [class]="logClass(entry)">
+                  <span class="rw-log-time">{{ logTime(entry) }}</span>
+                  <span class="rw-log-severity">{{ entry.severity }}</span>
+                  <span class="rw-log-message">{{ entry.message }}</span>
+                </li>
+              }
+            </ol>
+          } @else {
+            <p class="rw-note">No log entries yet.</p>
+          }
+        </div>
+      </details>
+    </div>
+
+    <div class="dialog-footer">
+      @if (cancelError) {
+        <p class="gh-field-error rw-cancel-error">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ cancelError }}</span>
+        </p>
+      }
+      @if (!isFinished) {
+        <button type="button" class="btn-gh btn-gh-cancel rw-background" (click)="close()">Run in Background</button>
+        <button type="button" class="btn-gh btn-gh-delete rw-cancel"
+                [attr.aria-disabled]="canceling ? 'true' : null" (click)="requestCancel()">
+          {{ canceling ? 'Canceling…' : 'Cancel Writing' }}
+        </button>
+      } @else {
+        @if (finishedSummary) {
+          <p class="rw-summary">{{ finishedSummary }}</p>
+        }
+        <button #rwDownloadsButton type="button" class="btn-gh btn-gh-cancel rw-downloads"
+                (click)="openDownloads(rwDownloadsButton)">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+          Open Download Center
+        </button>
+        <button type="button" class="btn-gh rw-done" (click)="close()">Done</button>
+      }
+    </div>
+  </div>
+
+  <!-- CANCEL CONFIRMATION -->
+  <dialog #rwConfirmDialog class="gh-dialog rw-confirm-dialog" aria-labelledby="rwConfirmTitle"
+          (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
+    <div class="dialog-content">
+      <div class="dialog-header">
+        <h3 id="rwConfirmTitle">Cancel Writing</h3>
+      </div>
+      <div class="dialog-body">
+        <p>Cancel the writing? The document being written is discarded; documents already written are kept. Tokens already used are still charged.</p>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" class="btn-gh btn-gh-cancel rw-keep-writing" (click)="keepWriting()">Keep Writing</button>
+        <button type="button" class="btn-gh btn-gh-delete rw-confirm-cancel" (click)="confirmCancel()">Cancel Writing</button>
+      </div>
+    </div>
+  </dialog>
+</dialog>

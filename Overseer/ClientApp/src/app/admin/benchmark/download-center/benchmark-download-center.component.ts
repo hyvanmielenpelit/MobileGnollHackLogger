@@ -1132,16 +1132,23 @@ export function audienceLabel(audience: BenchmarkReportAudience): string {
 /** The audience suffixes a Report for AI Researchers and Developers title can end in, current and earlier. */
 const RESEARCHER_REPORT_TITLE_SUFFIX = /\s+[\u2014\u2013-]\s+(?:Report for AI Researchers and Developers|Technical Report)\s*$/;
 
+/** A single run's subject key, `run:<digits>`, as the server's `BenchmarkPdfFileNames` matches it. */
+const RUN_SUBJECT_KEY = /^run:([0-9]+)$/;
+
 /**
  * A report document's file-name stem. A Report for AI Researchers and Developers is named by its
  * title without the audience suffix, then `_Researcher_Report`; every other document by its title.
+ * A document about one run (subject `run:<digits>`) is prefixed `run-<digits>_`, as the server's
+ * `BenchmarkPdfFileNames.ForReportDocument` names its PDF and Word files.
  */
 export function reportDocumentFileStem(doc: BenchmarkReportDocumentListItemDto, fallbackTitle: string): string {
   const title = doc.title || fallbackTitle;
+  const run = RUN_SUBJECT_KEY.exec(doc.subjectKey ?? '');
+  const prefix = run ? `run-${run[1]}_` : '';
   if (doc.audience !== BenchmarkReportAudience.TechnicalReport) {
-    return safeFileName(title);
+    return `${prefix}${safeFileName(title)}`;
   }
-  return `${safeFileName(title.replace(RESEARCHER_REPORT_TITLE_SUFFIX, ''))}_Researcher_Report`;
+  return `${prefix}${safeFileName(title.replace(RESEARCHER_REPORT_TITLE_SUFFIX, ''))}_Researcher_Report`;
 }
 
 function disclosureLabel(disclosure: BenchmarkReportDisclosure): string {

@@ -3188,12 +3188,86 @@ writing, failed, skipped, or not written yet during a run). The section's own **
 gone; the header's **Downloads** is the one entry to the Download Center. While a document is missing, the
 report writer picker and **Write Reports** follow the rows, and the picker starts on the run's own writer
 if it still qualifies, else on the launcher's *Report Writer* if the server would accept it for this run's
-candidate, else empty, with **Write Reports** disabled and no *Choose a report writer.* hint.
+candidate, else empty, with **Write Reports** disabled and no *Choose a report writer.* hint. *The tab was
+rebuilt the next day, with document choice, a progress dialog, an in-app PDF viewer and Delete: see* AI
+Reports Tab: Writing Progress, PDF Viewer and Rewrites (2026-09-29) *below.*
 
 **Download Center.** Opening it focuses the *Downloads* title rather than the header's Close button, so
 the *Close downloads* tooltip no longer opens by itself. Its GnollBench emblem is 64 px, 40 px under
 600 px of viewport, as tall as the title and subtitle beside it and the size of the run report's; the
 Report Pack dialog keeps the 28 px emblem beside its one-line title.
+
+### AI Reports Tab: Writing Progress, PDF Viewer and Rewrites (2026-09-29) — No Version Bump
+
+*A run's AI-written reports can be chosen, followed, canceled, viewed in the page, deleted and written
+again, a writer from the model under test's provider is allowed after a warning, and the documents
+themselves read better.* Nothing here grades anything: no grading prompt, score, index or comparability
+key changes; `HarnessVersion` stays **42** and `ScoringMethodVersion` **12**. `ReportFormatVersion` moves
+to **3** and the PDF layout to **2**; documents stored under format 2 keep rendering. No migration: the new
+run status `BenchmarkRunReportDocumentsStatus.Canceled = 7` fits the existing `int` column. The full
+description is [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 4, 7–9 and 11.
+
+**The AI Reports tab** is its own component, `app-run-ai-reports`. Each written document has **View**, a
+**Delete** icon button (with a confirmation; unavailable while a job is writing) and a meta line with its
+writer, date, duration, cost and *same provider, acknowledged* where that applies. A *Downloads* notice
+opens the Download Center on the run. While a document is missing, the write panel offers a checkbox per
+missing document (**Write Report** or **Write Reports**), the report writer picker with an info tip of
+per-document advice, and a live cost estimate from the new estimate endpoint, which makes no model call.
+Refusals show in red; a same-provider writer shows an amber warning and asks for a *Same-Provider Report
+Writer* confirmation (**Write Anyway**) on each write. Each document can have its own writer: two
+documents with two writers are two rounds.
+
+**Writing progress.** Writing opens a progress dialog, `app-run-report-writing-dialog`: the phase (queued,
+with the jobs ahead and the job holding the slot; preparing; writing each document; finished), a stage
+rail, the elapsed time on the server's clock, the writer, model calls, tokens and cost against the
+estimate, a documents table with **View** once finished, and a *Diagnostics* disclosure to copy or
+download. **Run in Background** keeps the job running; the tab offers **Show Progress** while the run's
+documents are Pending or Writing, including an automatic job's. **Cancel Writing** works while the job is
+queued (it leaves the queue) and while it writes (the documents already written are kept; tokens already
+used are still charged), and the run's status becomes **Canceled**, never Failed. The server keeps each
+run's job in memory and remembers a finished one for 6 hours; after a restart only the stored status and
+documents remain. New endpoints under `runs/{runId}/report-documents`: `GET job`, `POST cancel`, `POST
+estimate` and `DELETE {documentId}`; the write endpoint takes `audiences` and `acknowledgeSameProvider`
+(§ 6).
+
+**PDF viewer.** **View** no longer opens a `blob:` URL in a new tab (whose download was named by a GUID).
+It opens `app-pdf-viewer-dialog`, a shared, full-screen in-app viewer built on pdf.js, with the document's
+allowed disclosures as *Summary* / *Detailed* / *Full* tabs, page navigation, zoom, selectable text,
+**Download PDF** under the server's file name, and **Open in new tab**, a same-origin URL with the render
+endpoint's new `inline=true`. The pages are canvases and the worker is a same-origin file, so the CSP is
+unchanged.
+
+**Delete and rewrite.** Deleting a run's run-completion document, from the tab or through either delete
+endpoint, returns the run's status to *NotRequested* when no job is in progress, so the tab offers **Write
+Reports** again; the run keeps its report writer, and the tab clears the picker when it held the model that
+wrote the deleted document. The documents of a single-run subject are named from the run first,
+`run-<id>_…`, in PDF, Word and Download Center names alike.
+
+**The report writer and the model under test's provider.** A run-completion writer from the candidate's
+provider was refused; it is now **allowed after a warning and an explicit confirmation**, as the Report Pack
+already allowed. The launcher's *Report Writer* field shows the model-under-test refusal in red and holds
+Start back, and shows the same-provider case as an amber advisory that does not. On Start the server answers
+409 with a warning of role `reportWriter`, after the assessor's own same-provider check, and the launcher's
+same-provider dialog, now role-aware, reads *Same-Provider Report Writer* with the model under test, the
+report writer and the provider family; **Acknowledge & Start Run** re-sends the start with
+`acknowledgeSameProviderReportWriter`, keeping any assessor acknowledgment already given. Neither flag is
+remembered. The acknowledgment is stored on each document as `SameProviderAcknowledged`.
+
+**Report quality (format version 3).** A review of the two documents written for run 73 found the
+evidence repeated under every item, raw fact keys printed as labels, the index given as *±* a half-width,
+refuted grader statements read as errors of the answer, the rubric's source notes and cut-off answer
+tables reaching the writer, and slots that restated their lists. Now: one compact evidence line per item in
+the Report for AI Researchers and Developers and none in the Executive Summary, which prints plain support
+labels; a human label for every fact key; *Why it scored this way* and *What worked well* explain patterns
+(at most 300 and 150 words) above their *Weaknesses* and *Strengths* lists; a *Speed and cost* table; the
+index as *77 / 100 (interval 73–82)* under *How reliable this result is*; claim rulings that say what was
+checked and who was right, and a *Refuted answer sentences* column that counts only the answer's own
+sentences; audience-aware classification stamps; and PDF and Word covers that carry the front matter, with
+table rows that never split across pages. The writer prompt uses one grader vocabulary, leaves out
+Conflicting rows about different things, adds a same-provider caveat to the reliability slot and makes the
+abstract name every refuted error. Two findings of the same review — a claim-verifier verdict that
+contradicted its rationale on one question, and a synthesis that merged unrelated items into one
+Conflicting row — are grading-side and left for a later benchmark round.
 
 ### Harness Version 29 Updates
 
@@ -4908,7 +4982,10 @@ prompt, validation and rendering changes are its §§ 1, 3 and 7.
   is refused (400) for a configuration that is not an enabled Benchmark-role configuration with a key or
   that the endpoint policy refuses, for the model under test (*"The model under test cannot write its
   own reports."*) and for any writer from the candidate's provider (*"Choose a report writer from another
-  provider than the model under test."*).
+  provider than the model under test."*). *Changed 2026-09-29: a writer from the candidate's provider is
+  now allowed after a warning and an explicit confirmation (`acknowledgeSameProviderReportWriter`, a 409
+  of role `reportWriter` without it); only the model under test stays refused. See* AI Reports Tab:
+  Writing Progress, PDF Viewer and Rewrites (2026-09-29).
 - **Written once, after scoring.** When a run completes with a writer and a final synthesis,
   `BenchmarkRunReportDocumentService` queues behind any running report-pack job, checks the compliance
   guard and the writer, and writes the two documents once, with no peers, under
@@ -5276,7 +5353,7 @@ release, while a family name lasts.
 | Second Reader | **Gemini Flash** (not Flash-Lite) | `medium` | A different provider from the assessor. When the candidate is a Gemini Flash model, use a different Flash version, and expect the weaker same-family pairing the launcher warns about |
 | Reference Reader | **Gemini Flash** (not Flash-Lite) | `medium` | The same model on every run you compare. Google is the third family beside the Anthropic and OpenAI members |
 | Claim Verifier | **Gemini Flash** (not Flash-Lite) | `medium` (`high` if its rulings are often wrong; never `low`) | The same as the reader. The report already notes that one model in both roles makes their findings correlated |
-| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: the Report Pack refuses it, and a writer from the same provider needs an acknowledgment. Chosen in the Report Pack dialog, and also in the launcher's optional **Report Writer** field for a run's own two documents, where a writer from the candidate's provider is refused outright; the assessor's model is a good choice there. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
+| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: it is refused, and a writer from the same provider needs a warning acknowledged. Chosen in the Report Pack dialog, in the launcher's optional **Report Writer** field for a run's own two documents, and in the run report's **AI Reports** tab; for a run's documents a writer from the candidate's provider is allowed after a warning and an explicit confirmation, but prefer another provider — the assessor's model is a good choice, and one sharing a family with neither panel member is better where the roster allows. The Executive Summary is short prose, the Report for AI Researchers and Developers long and number-dense, so give the latter the model you trust most with exact figures (`high` if it often needs repair); the two can have different writers. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
 
 All roles avoid `xhigh` and `max`. Today's roster matches — Claude 5.5 Opus, GPT-6 Sol and Gemini 3.8
 Flash, all at `medium` — for a set whose candidates include neither Claude 5.5 Opus nor GPT-6 Sol. A set
@@ -5286,12 +5363,18 @@ every run of the set, so the whole set shares one panel; runs 68–72 were grade
 **Where the recommendations appear.** The launcher's grader info popups, the *How the graders work*
 guide (its section *Choosing grader models*) and the Report Pack dialog's writer info tip name the same
 **families** — Claude Opus, GPT Sol, Gemini Flash — and the top tiers not to use, Claude Fable and GPT
-Astra, with price ratios but no versions or prices. The launcher's **Report Writer** info tip names no
-family: it asks for a strong model from another provider than the model under test, such as the one used
-as an assessor. The table in **The roster today, and why Anthropic is primary** names the exact versions. The
-project skills name no model or family at all and point here. When a provider renames or re-prices a line,
-this subsection, the roster table, the popups in `benchmark.component.html` (the Report Writer tip
-included), the guide component and the Report Pack dialog's writer info tip are the places to update.
+Astra, with price ratios but no versions or prices. The run report's **AI Reports** tab has a report
+writer info tip with per-document advice — the Executive Summary short, for a strong writing model at
+medium; the Report for AI Researchers and Developers long and number-dense, for the strongest
+scoring-tier model trusted with numbers, at medium or high, at three to four times the cost — naming Claude
+Opus and GPT Sol, the economy tiers (Flash, Flash-Lite) and the top tiers to avoid. The launcher's **Report
+Writer** info tip names no family: it asks for a strong model from another provider than the model under
+test, such as the one used as an assessor. The table in **The roster today, and why Anthropic is primary**
+names the exact versions. The project skills name no model or family at all and point here. When a
+provider renames or re-prices a line, this subsection, the roster table, the popups in
+`benchmark.component.html` (the Report Writer tip included), the guide component, the Report Pack dialog's
+writer info tip and the AI Reports tab's info tip (`run-ai-reports.component.html`) are the places to
+update.
 
 **Two consequences of the co-assessor rule.**
 
@@ -6191,7 +6274,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `POST /api/admin/benchmark/suites/{id}/snapshot`: Attach a board built from uploaded snapshot text or an HTML dump to this suite (body `{ name, content, contentKind, notes?, sourceGnollHackVersion?, replaceExisting }`). 409 when the suite already has a snapshot and `replaceExisting` is false. Returns `{ board, suite }`. See *Game Snapshots*.
 
 ### Runs & Scoring
-- `POST /api/admin/benchmark/runs`: Start a benchmark run (gated by hourly/daily caps and same-provider acknowledgement). An optional `reportWriterModelConfigurationId` names the run's report writer (§ *Harness Version 42 Updates*).
+- `POST /api/admin/benchmark/runs`: Start a benchmark run (gated by hourly/daily caps and same-provider acknowledgement). An optional `reportWriterModelConfigurationId` names the run's report writer (§ *Harness Version 42 Updates*); a writer from the candidate's provider needs `acknowledgeSameProviderReportWriter`, and without it the start answers 409 with a `SameProviderWarningDto` of role `reportWriter`, after the assessor's own same-provider check.
 - `GET /api/admin/benchmark/runs`: List historical runs with filtering.
 - `GET /api/admin/benchmark/runs/{id}`: Full run detail with question answers, compliance purpose statement, and assessment.
 - `GET /api/admin/benchmark/runs/active`: Return `{ runId }` for the run currently executing, or 204 when idle. Lets a client that reloaded mid-run reattach to it; the client then calls `GET .../runs/{id}` for the detail.
@@ -6232,14 +6315,20 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 #### Report Packs and Documents
 - `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and writer prompts for a report pack, without a model call (body as for the start). Returns the subject, the lettered peers, the estimated tokens and cost per document, the same-provider warning and any refusal.
 - `POST /api/admin/benchmark/report-packs`: Start a report-pack job (body `{ runIds, groupIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`, audiences 1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Brief). Returns 202 `{ jobId }`. Refusals, in order: 400 for an unknown entry or an Excluded subject; 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is the subject's own model; 400 for no audience; 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs.
-- `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing run-completion documents (Executive Summary and Report for AI Researchers and Developers) with the writer in the body, `{ writerModelConfigurationId }`, which is recorded on the run as its report writer. Returns 202 with the run's Pending status. 400 when the run has no final synthesis or the writer is refused (unusable, the model under test, the candidate's provider, the endpoint policy); 404 for an unknown run; 409 when both documents exist or a job for the run is Pending or Writing; 429 at the spend cap. See `ai-benchmark-report-pack.md` § 11.
+- `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing run-completion documents (Executive Summary and Report for AI Researchers and Developers) with the writer in the body, `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`, which is recorded on the run as its report writer; `audiences` names the documents to write, and null or empty writes every missing one. Returns 202 with the run's Pending status and the documents the job will write. 400 when the run has no final synthesis, an audience is not a run-completion document, or the writer is refused (unusable, the model under test, the endpoint policy); 404 for an unknown run; 409 when a requested document is already written (or, with none requested, both are), when a job for the run is Pending or Writing, or, with a `SameProviderWarningDto` of role `reportWriter`, for a writer of the candidate's provider without `acknowledgeSameProvider`; 429 at the spend cap. See `ai-benchmark-report-pack.md` § 11.
+- `GET /api/admin/benchmark/runs/{runId}/report-documents/job`: The run's current or last run-completion job: phase (Queued, Preparing, Writing, Finished), queue position and blocking job, writer, per-document times, tokens and cost, the log, the persisted status and message, and the server's time. 204 when this process knows no job for the run (none since a restart, or a finished job older than 6 hours); 404 for an unknown run.
+- `POST /api/admin/benchmark/runs/{runId}/report-documents/cancel`: Cancel the run's job, queued or writing; documents already written are kept and the run's status becomes Canceled. 202 with the job view; 409 when nothing is in progress; 404 for an unknown run.
+- `POST /api/admin/benchmark/runs/{runId}/report-documents/estimate`: Per-document and total cost estimates for writing the run's documents with a writer (body `{ writerModelConfigurationId, audiences? }`), with its refusal or same-provider warning. No model call.
+- `DELETE /api/admin/benchmark/runs/{runId}/report-documents/{documentId}`: Delete one of the run's own run-completion documents; the run's status returns to NotRequested. 204; 404 when it is not this run's run-completion document; 409 while the run's documents are being written.
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running report-pack job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel a report-pack job.
 - `GET /api/admin/benchmark/report-documents?suiteId=&runId=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` from its runs' scoring fingerprints.
 - `GET /api/admin/benchmark/report-documents/{id}`: Document detail: metadata, validation notes and the facts JSON.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`: Render a stored document as `text/markdown; charset=utf-8`, deterministically and with no model call. 400 for a refused combination (the Internal Brief renders at `full` only).
-- `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its `BenchmarkReportDocumentRuns` rows cascade. Deleting a run never deletes a document.
+- `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its `BenchmarkReportDocumentRuns` rows cascade. Deleting a run never deletes a document. Deleting a run's run-completion document returns the run's status to NotRequested when no job is in progress.
+
+The PDF and Word renderings of a document (`…/render/pdf`, `…/render/docx`, and `inline=true` on the PDF for viewing in a browser tab) are in `ai-benchmark-report-pack.md` § 9.
 
 ---
 

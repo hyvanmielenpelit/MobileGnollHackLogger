@@ -30,10 +30,10 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 ### Key figures
 
-- **Intelligence:** 80 ± 3 / 100, 2nd of 3; its 95 % interval overlaps those of Models A and B.
+- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps those of Models A and B.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
-- **Serious errors:** 1 of 4 answers.
+- **Critical errors:** 1 of 4 answers.
 
 ### Strengths
 
@@ -56,12 +56,12 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 ## 5. Per-question results
 
-| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted claims | Tool calls | Model time |
+| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |
 |---|---|---|---|---|---|---|---|---|---|
-| Q1 | Throwing gems at unicorns | Simple | 90 | 85 | +5 | no | 0 | 2.0 | 8.1 s |
-| Q2 | Prayer timeout | Intermediate | 72 | 70 | +2 | no | 0 | 3.0 | 11.0 s |
-| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5.0 | 15.2 s |
-| Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4.0 | 13.4 s |
+| Q1 | Throwing gems at unicorns | Simple | 90 | 85 | +5 | no | 0 | 2 | 8.1 s |
+| Q2 | Prayer timeout | Intermediate | 72 | 70 | +2 | no | 0 | 3 | 11.0 s |
+| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |
+| Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4 | 13.4 s |
 
 ### Questions below the peer mean or with a critical error
 
@@ -96,7 +96,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 **Claim verifier:**
 
-- No claims were checked.
+- **Grader's statement — refuted (the answer was right):** "Worthless glass angers the unicorn." — Glass is caught and returned without anger (dothrow.c).
 
 #### Q2: Prayer timeout
 
@@ -120,7 +120,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 **Claim verifier:**
 
-- **supported:** "The timeout is typically near 350." — Matches the prayer code (pray.c).
+- **Answer sentence — supported:** "The timeout is typically near 350." — Matches the prayer code (pray.c).
 
 #### Q3: Breaking a thrown gem
 
@@ -145,7 +145,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 
 **Claim verifier:**
 
-- **refuted:** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
+- **Answer sentence accused by a grader — refuted (the grader was right):** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
 
 #### Q4: Wand of wishing charges
 
@@ -288,8 +288,18 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     },
     {
       "available": true,
+      "display": "2026-09-20",
+      "key": "comparison.pricedOn"
+    },
+    {
+      "available": true,
       "display": "Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.",
       "key": "comparison.pricingBasis"
+    },
+    {
+      "available": true,
+      "display": "catalog",
+      "key": "comparison.pricingBasisKind"
     },
     {
       "available": true,
@@ -305,6 +315,11 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "available": true,
       "display": "$0.036",
       "key": "cost.perQuestion"
+    },
+    {
+      "available": true,
+      "display": "$0.144",
+      "key": "cost.perRun"
     },
     {
       "available": true,
@@ -415,7 +430,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     },
     {
       "available": true,
-      "display": "80 ± 3 / 100",
+      "display": "80 / 100",
       "key": "quality.index",
       "value": 80.4
     },
@@ -491,6 +506,11 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     },
     {
       "available": true,
+      "display": "15.0 s",
+      "key": "speed.modelTimeP90"
+    },
+    {
+      "available": true,
       "display": "2nd of 2",
       "key": "speed.rank"
     },
@@ -503,6 +523,16 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "available": true,
       "display": "4",
       "key": "suite.questions"
+    },
+    {
+      "available": true,
+      "display": "18,250",
+      "key": "tokens.inputPerQuestion"
+    },
+    {
+      "available": true,
+      "display": "1,140",
+      "key": "tokens.outputPerQuestion"
     },
     {
       "available": true,
@@ -642,6 +672,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "peerCount": 2,
       "peerMean": 85,
       "questionKey": "101",
+      "refutedAnswerSentences": 0,
       "refutedClaims": 0,
       "runCount": 1,
       "score": 90,
@@ -658,6 +689,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "peerCount": 2,
       "peerMean": 70,
       "questionKey": "102",
+      "refutedAnswerSentences": 0,
       "refutedClaims": 0,
       "runCount": 1,
       "score": 72,
@@ -674,6 +706,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "peerCount": 2,
       "peerMean": 68,
       "questionKey": "103",
+      "refutedAnswerSentences": 1,
       "refutedClaims": 1,
       "runCount": 1,
       "score": 25,
@@ -690,6 +723,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "peerCount": 2,
       "peerMean": 91,
       "questionKey": "104",
+      "refutedAnswerSentences": 0,
       "refutedClaims": 0,
       "runCount": 1,
       "score": 87,
@@ -761,6 +795,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Report 101 · format version 2 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
+*Document ID 101 · format version 3 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*

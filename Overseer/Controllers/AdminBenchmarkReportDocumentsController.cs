@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Net.Http.Headers;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.Pdf;
@@ -60,10 +61,13 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
     /// The same document as a tagged PDF on <c>a4</c> (the default) or <c>letter</c> paper, with the
     /// same validation and refusals as <see cref="Render"/>. Rendered by the static
     /// <see cref="BenchmarkPdfRenderer"/>, so this path stays as free of model clients as the Markdown one.
+    /// With <paramref name="inline"/> the PDF is sent for viewing in the browser (<c>Content-Disposition:
+    /// inline</c>) under the same name; otherwise it is an attachment.
     /// </summary>
     [HttpGet("report-documents/{id:long}/render/pdf")]
     public async Task<IActionResult> RenderPdf(
-        long id, [FromQuery] string? disclosure, [FromQuery] string? peers, [FromQuery] string? paper, CancellationToken ct)
+        long id, [FromQuery] string? disclosure, [FromQuery] string? peers, [FromQuery] string? paper, CancellationToken ct,
+        [FromQuery] bool inline = false)
     {
         var (options, invalid) = ParseRenderOptions(disclosure, peers);
         if (invalid != null) return invalid;
@@ -72,7 +76,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, options!, ct);
+        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, WithoutFrontMatter(options!), ct);
         if (notFound) return NotFound();
         if (refusal != null) return BadRequest(new { error = refusal });
 
@@ -83,8 +87,15 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
 
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, pdfPaper);
         byte[] pdf = await Task.Run(() => BenchmarkPdfRenderer.RenderMarkdown(markdown!, info, ct), ct);
+        string name = BenchmarkPdfFileNames.ForReportDocument(document!, options!);
 
-        return File(pdf, "application/pdf", BenchmarkPdfFileNames.ForReportDocument(document!, options!));
+        if (inline)
+        {
+            // No download name on the result, so ASP.NET adds no attachment disposition of its own.
+            Response.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline") { FileNameStar = name }.ToString();
+            return File(pdf, "application/pdf");
+        }
+        return File(pdf, "application/pdf", name);
     }
 
     /// <summary>
@@ -103,7 +114,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, options!, ct);
+        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, WithoutFrontMatter(options!), ct);
         if (notFound) return NotFound();
         if (refusal != null) return BadRequest(new { error = refusal });
 
@@ -141,4 +152,12 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
 
         return (new BenchmarkReportRenderOptions { Disclosure = level, PeerNaming = naming }, null);
     }
+
+    /// <summary>The options for a PDF or Word download, whose cover prints the stamp and the facts the front matter lists.</summary>
+    private static BenchmarkReportRenderOptions WithoutFrontMatter(BenchmarkReportRenderOptions options) => new()
+    {
+        Disclosure = options.Disclosure,
+        PeerNaming = options.PeerNaming,
+        IncludeFrontMatter = false
+    };
 }

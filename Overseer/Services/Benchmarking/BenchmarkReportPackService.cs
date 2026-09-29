@@ -211,6 +211,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         string jobId = job.Id;
         try
         {
+            ct.ThrowIfCancellationRequested();
             int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
             int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
 

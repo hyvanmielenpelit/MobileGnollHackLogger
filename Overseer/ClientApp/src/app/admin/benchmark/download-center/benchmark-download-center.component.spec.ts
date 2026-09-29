@@ -865,7 +865,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(saveBlob).not.toHaveBeenCalled();
       expect(saveBytes).not.toHaveBeenCalled();
       expect(saveText).toHaveBeenCalledOnceWith(
-        'executive-summary-gpt-model-x_summary_anonymized.md',
+        'run-42_executive-summary-gpt-model-x_summary_anonymized.md',
         '# Document 1 (summary, anonymized)\n\nCost $4 per question.\n',
         'text/markdown;charset=utf-8');
       expect(requested.filter(url => url.endsWith('/render')).length).toBe(1);
@@ -883,7 +883,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(saveBlob).not.toHaveBeenCalled();
       expect(saveBytes).toHaveBeenCalledTimes(1);
       const [name, bytes, mime] = saveBytes.calls.mostRecent().args as [string, Uint8Array, string];
-      expect(name).toBe('executive-summary-gpt-model-x_summary_anonymized.pdf');
+      expect(name).toBe('run-42_executive-summary-gpt-model-x_summary_anonymized.pdf');
       expect(mime).toBe('application/pdf');
       expect(new TextDecoder().decode(bytes)).toBe('%PDF-1.7\n% /api/admin/benchmark/report-documents/1/render/pdf a4\n');
       expect(binaryRequests.length).toBe(1);
@@ -915,15 +915,15 @@ describe('BenchmarkDownloadCenterComponent', () => {
         [DIAG_PDF_NAME]: NOW.getTime(),
         [DIAG_DOCX_NAME]: NOW.getTime(),
         'board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt': NOW.getTime(),
-        'executive-summary-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
-        'executive-summary-gpt-model-x_full_named_INTERNAL.docx': documentTime,
-        'executive-summary-gpt-model-x_full_named_INTERNAL.md': documentTime,
-        'gpt-model-x_Researcher_Report_full_named_INTERNAL.pdf': documentTime,
-        'gpt-model-x_Researcher_Report_full_named_INTERNAL.docx': documentTime,
-        'gpt-model-x_Researcher_Report_full_named_INTERNAL.md': documentTime,
-        'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
-        'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.docx': documentTime,
-        'internal-improvement-brief-gpt-model-x_full_named_INTERNAL.md': documentTime,
+        'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
+        'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.docx': documentTime,
+        'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.md': documentTime,
+        'run-42_gpt-model-x_Researcher_Report_full_named_INTERNAL.pdf': documentTime,
+        'run-42_gpt-model-x_Researcher_Report_full_named_INTERNAL.docx': documentTime,
+        'run-42_gpt-model-x_Researcher_Report_full_named_INTERNAL.md': documentTime,
+        'run-42_internal-improvement-brief-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
+        'run-42_internal-improvement-brief-gpt-model-x_full_named_INTERNAL.docx': documentTime,
+        'run-42_internal-improvement-brief-gpt-model-x_full_named_INTERNAL.md': documentTime,
         'MANIFEST.md': NOW.getTime()
       };
       expect(Object.keys(zip.files).sort()).toEqual(Object.keys(expected).sort());
@@ -952,7 +952,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(manifest.match(/- \*\*Format:\*\* Word\n- \*\*Word:\*\* Office Open XML \(\.docx\), A4\n/g)?.length).toBe(6);
       expect(manifest.match(/- \*\*Format:\*\* Markdown\n/g)?.length).toBe(5);
       expect(manifest).toContain('- **Format:** Text\n');
-      const hash = await sha256Hex(zip.files['executive-summary-gpt-model-x_full_named_INTERNAL.md']);
+      const hash = await sha256Hex(zip.files['run-42_executive-summary-gpt-model-x_full_named_INTERNAL.md']);
       expect(manifest).toContain(`\`${hash}\``);
       const pdfHash = await sha256Hex(zip.files[REPORT_PDF_NAME]);
       expect(manifest).toContain(`\`${pdfHash}\``);
@@ -1003,7 +1003,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(saveBlob).not.toHaveBeenCalled();
       expect(saveBytes).toHaveBeenCalledTimes(1);
       const [name, bytes, mime] = saveBytes.calls.mostRecent().args as [string, Uint8Array, string];
-      expect(name).toBe('executive-summary-gpt-model-x_detailed_anonymized.docx');
+      expect(name).toBe('run-42_executive-summary-gpt-model-x_detailed_anonymized.docx');
       expect(mime).toBe(DOCX_MIME);
       expect(new TextDecoder().decode(bytes)).toBe('PK\u0003\u0004 /api/admin/benchmark/report-documents/1/render/docx letter\n');
       expect(binaryRequests.map(r => r.url)).toEqual(['/api/admin/benchmark/report-documents/1/render/docx']);
@@ -1028,16 +1028,16 @@ describe('BenchmarkDownloadCenterComponent', () => {
       openRun();
       choose('custom', { 'doc:1': { disclosure: Full, naming: Anonymized, formats: ['md'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('executive-summary-gpt-model-x_full_anonymized_INTERNAL.md');
+      expect(saveText.calls.mostRecent().args[0]).toBe('run-42_executive-summary-gpt-model-x_full_anonymized_INTERNAL.md');
 
       choose('custom', { 'doc:2': { disclosure: Detailed, naming: Named, formats: ['html'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('gpt-model-x_Researcher_Report_detailed_named.html');
+      expect(saveText.calls.mostRecent().args[0]).toBe('run-42_gpt-model-x_Researcher_Report_detailed_named.html');
       expect(saveText.calls.mostRecent().args[2]).toBe('text/html;charset=utf-8');
 
       choose('provider', { 'doc:2': { formats: ['md'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('gpt-model-x_Researcher_Report_summary_anonymized.md');
+      expect(saveText.calls.mostRecent().args[0]).toBe('run-42_gpt-model-x_Researcher_Report_summary_anonymized.md');
       expect(saveText.calls.mostRecent().args[0]).not.toContain('INTERNAL');
 
       choose('internal', { 'diag:42': { formats: ['txt'] } });
@@ -1047,7 +1047,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       choose('custom', { 'doc:1': { disclosure: Full, naming: Named, formats: ['pdf'] } });
       await runDownload();
-      expect(saveBytes.calls.mostRecent().args[0]).toBe('executive-summary-gpt-model-x_full_named_INTERNAL.pdf');
+      expect(saveBytes.calls.mostRecent().args[0]).toBe('run-42_executive-summary-gpt-model-x_full_named_INTERNAL.pdf');
     });
 
     it('keeps the server file name of the run files, with _INTERNAL once', async () => {
@@ -1081,11 +1081,37 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
     it('names a Report for AI Researchers and Developers by its title without the audience, then _Researcher_Report', () => {
       expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: 'GPT Model X — Report for AI Researchers and Developers' }), 'x'))
-        .toBe('gpt-model-x_Researcher_Report');
+        .toBe('run-42_gpt-model-x_Researcher_Report');
       expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: 'GPT Model X — Technical Report' }), 'x'))
-        .toBe('gpt-model-x_Researcher_Report');
-      expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: '' }), 'Fallback Label')).toBe('fallback-label_Researcher_Report');
-      expect(reportDocumentFileStem(doc(1, ExecutiveSummary), 'x')).toBe('executive-summary-gpt-model-x');
+        .toBe('run-42_gpt-model-x_Researcher_Report');
+      expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: '' }), 'Fallback Label')).toBe('run-42_fallback-label_Researcher_Report');
+      expect(reportDocumentFileStem(doc(1, ExecutiveSummary), 'x')).toBe('run-42_executive-summary-gpt-model-x');
+    });
+
+    it('prefixes a run subject with run-<id>_ and leaves every other subject unprefixed, as the server does', () => {
+      const subject = 'GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark';
+      const researcher = (subjectKey: string) =>
+        reportDocumentFileStem(doc(2, TechnicalReport, { subjectKey, title: `${subject} — Report for AI Researchers and Developers` }), 'x');
+      const summary = (subjectKey: string) =>
+        reportDocumentFileStem(doc(1, ExecutiveSummary, { subjectKey, title: `${subject} — Executive Summary` }), 'x');
+
+      // The server's BenchmarkPdfFileNames fixtures for subject run:12, one for one.
+      expect(`${researcher('run:12')}_detailed_anonymized.pdf`)
+        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf');
+      expect(`${researcher('run:12')}_full_named_INTERNAL.pdf`)
+        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf');
+      expect(`${researcher('run:12')}_summary_named.pdf`)
+        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf');
+      expect(`${summary('run:12')}_summary_named.pdf`)
+        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf');
+
+      // A group subject, and keys that only look like a run, get no prefix.
+      expect(`${summary('group:5')}_summary_named.pdf`)
+        .toBe('gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf');
+      for (const key of ['run:', 'run:7a', 'run:12\n', 'xrun:12']) {
+        expect(summary(key)).withContext(JSON.stringify(key))
+          .toBe('gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary');
+      }
     });
 
     it('never doubles _INTERNAL on a server name that already carries it', () => {
@@ -1136,7 +1162,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       });
 
       const [name, html, mime] = saveText.calls.mostRecent().args as [string, string, string];
-      expect(name).toBe('executive-summary-gpt-model-x_summary_anonymized.html');
+      expect(name).toBe('run-42_executive-summary-gpt-model-x_summary_anonymized.html');
       expect(mime).toBe('text/html;charset=utf-8');
       expect(html.startsWith('<!DOCTYPE html>')).toBeTrue();
       expect(html).toContain('<title>Executive Summary: GPT Model X</title>');
@@ -1327,7 +1353,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await runDownload({ reportStatus: 404 });
 
       const zip = await savedZip();
-      expect(Object.keys(zip.files).sort()).toEqual(['MANIFEST.md', 'executive-summary-gpt-model-x_full_named_INTERNAL.md']);
+      expect(Object.keys(zip.files).sort()).toEqual(['MANIFEST.md', 'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.md']);
       expect(component.failures[0].reason).toBe('the run no longer exists');
     });
   });

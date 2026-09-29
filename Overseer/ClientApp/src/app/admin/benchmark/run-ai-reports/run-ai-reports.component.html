@@ -1,0 +1,256 @@
+<!--
+  The run's AI-written reports: an Executive Summary and a Report for AI Researchers and Developers,
+  written by a report writer and stored. One row per document, written or not; View renders the
+  stored text as a PDF and only Write Reports calls a model.
+-->
+<div class="rr-ai-reports">
+  <div class="rr-ai-status-row">
+    <p class="rr-ai-status" role="status"
+       [class.gh-field-error]="statusKind === 'failed'"
+       [class.rr-ai-status-skipped]="statusKind === 'skipped'">
+      @if (statusKind === 'failed') {
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      } @else if (statusKind === 'skipped') {
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      }
+      <span class="rr-ai-status-text">{{ statusText }}</span>
+      @if (announcement) {
+        <span class="rr-ai-announcement">{{ announcement }}</span>
+      }
+    </p>
+    @if (jobInProgress) {
+      <button type="button" class="btn-ghost rr-ai-show-progress" (click)="showProgress()">Show Progress</button>
+    }
+  </div>
+
+  @if (documentsError) {
+    <p class="gh-field-error rr-ai-list-error">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ documentsError }}</span>
+    </p>
+  } @else {
+    <ul class="rr-ai-doc-list">
+      @for (row of documentRows; track row.audience) {
+        <li class="rr-ai-doc-row" [attr.data-audience]="row.audience" [attr.data-document-id]="row.doc?.id ?? null">
+          <div class="rr-ai-doc-text">
+            <span class="rr-ai-doc-name">{{ row.label }}</span>
+            @if (row.doc; as doc) {
+              <span class="gh-tag rr-ai-doc-status" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ documentStatusLabel(doc) }}</span>
+              <span class="rr-ai-doc-meta">{{ documentMeta(doc) }}</span>
+              @if (doc.runChangedSinceGeneration) {
+                <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
+              }
+            } @else if (documentsLoaded) {
+              <span class="gh-tag rr-ai-doc-status is-missing">Not written</span>
+            }
+          </div>
+          @if (row.doc; as doc) {
+            <div class="rr-ai-doc-actions">
+              <button type="button" class="btn-gh btn-gh-small rr-ai-doc-view"
+                      [attr.aria-label]="'View the ' + row.label"
+                      (click)="viewDocument(doc)">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                View
+              </button>
+              <button type="button" class="action-btn action-btn-danger rr-ai-doc-delete"
+                      [attr.aria-label]="'Delete the ' + row.label"
+                      [attr.aria-disabled]="jobInProgress ? 'true' : null"
+                      [attr.interestfor]="'rr-ai-tip-delete-' + row.audience"
+                      [attr.style]="'anchor-name: --rr-ai-tip-delete-' + row.audience"
+                      (click)="requestDelete(doc)">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" [id]="'rr-ai-tip-delete-' + row.audience"
+                   [attr.style]="'position-anchor: --rr-ai-tip-delete-' + row.audience">{{ jobInProgress ? 'Wait for the writing to finish, or cancel it' : 'Delete' }}</div>
+            </div>
+          }
+        </li>
+      }
+    </ul>
+  }
+
+  @if (viewError) {
+    <div class="alert alert-danger rr-ai-alert" role="alert">
+      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <div class="alert-content"><div class="alert-body">{{ viewError }}</div></div>
+    </div>
+  }
+
+  @if (hasWrittenDocument) {
+    <div class="alert alert-info rr-ai-download-notice">
+      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+      <div class="alert-content">
+        <div class="alert-heading">Downloads</div>
+        <div class="alert-body">
+          These reports, and the rest of this run, can be downloaded from the Download Center as PDF, Word or
+          Markdown, at Summary, Detailed or Full disclosure, one by one or together in a ZIP.
+        </div>
+        <div class="alert-actions">
+          <button #openDownloadsButton type="button" class="btn-ghost rr-ai-open-downloads"
+                  (click)="requestDownloads(openDownloadsButton)">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+            Open Download Center
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (documentsMissing) {
+    <fieldset class="gh-fieldset rr-ai-write">
+      <legend>Write missing reports</legend>
+
+      <fieldset class="gh-choice rr-ai-audiences">
+        <legend>Documents</legend>
+        @for (audience of missingAudiences; track audience) {
+          <label class="checkbox-label">
+            <input type="checkbox" [id]="'rrAudience' + audience" [attr.data-audience]="audience"
+                   [checked]="isChecked(audience)" (change)="toggleAudience(audience, $event)">
+            {{ audienceLabel(audience) }}
+          </label>
+        }
+        @for (label of writtenLabels; track label) {
+          <p class="form-hint rr-ai-written-hint">{{ label }} is already written. Delete it to write it again.</p>
+        }
+      </fieldset>
+
+      <div class="rr-ai-writer">
+        <label id="rrReportWriterModelLabel">Report writer</label>
+        <div class="rr-ai-write-row">
+          <div class="gh-field-row rr-ai-writer-field">
+            <app-model-picker class="rr-report-writer-model-selector" labelledBy="rrReportWriterModelLabel"
+                              [describedBy]="writerDescribedBy"
+                              placeholder="Select a model" [emptyHint]="pickerEmptyHint" [showPrice]="true"
+                              [options]="pickerOptions" [selectedKey]="writerConfigId"
+                              (selectionChange)="selectWriter($event.model)"></app-model-picker>
+            <app-info-tip trigger="click" tipId="rrReportWriterHint" subject="Report writer">
+              <dl>
+                <div>
+                  <dt><span class="gh-info-term">Executive Summary</span> <span class="gh-info-badge">Short</span></dt>
+                  <dd>For decision-makers. A short, plain-language document (about 2,000 output tokens) where clear,
+                    careful wording matters more than depth. Use a strong writing model — Claude Opus or GPT Sol — at
+                    medium effort. It is cheap even with a strong model.</dd>
+                </div>
+                <div>
+                  <dt><span class="gh-info-term">Report for AI Researchers and Developers</span> <span class="gh-info-badge">Long</span></dt>
+                  <dd>For specialists. A long, number-dense document (about 7,000 output tokens) that must keep every
+                    figure exact and follow a strict schema. Use the strongest scoring-tier reasoning model you trust
+                    with numbers — Claude Opus or GPT Sol — at medium effort, high if its documents often need repair.
+                    It costs roughly three to four times the summary.</dd>
+                </div>
+                <div>
+                  <dt><span class="gh-info-term">Both</span></dt>
+                  <dd>Prefer a writer from another provider than the model under test; a writer from the same provider
+                    is allowed after a warning. Where the roster allows, prefer one that shares a family with neither
+                    panel member either. Avoid economy tiers (Flash, Flash-Lite) and the top tiers (Claude Fable, GPT
+                    Astra). Each document can be written by a different model: write one, then choose another writer
+                    for the other.</dd>
+                </div>
+              </dl>
+            </app-info-tip>
+          </div>
+          <button #writeButton type="button" class="btn-gh rr-ai-write-btn"
+                  [disabled]="writeDisabled"
+                  [attr.aria-busy]="writeSubmitting ? 'true' : null"
+                  (click)="requestWrite()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+            {{ writeLabel }}
+          </button>
+        </div>
+      </div>
+
+      @if (writerNote) {
+        <p class="form-hint rr-ai-writer-note">{{ writerNote }}</p>
+      }
+
+      @if (writeRefusal) {
+        <p id="rrReportWriterBlocked" class="gh-field-error rr-ai-write-blocked">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ writeRefusal }}</span>
+        </p>
+      }
+
+      @if (writerWarning) {
+        <div class="alert alert-warning rr-ai-writer-warning" role="note">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <div class="alert-content"><div class="alert-body" id="rrReportWriterWarning">{{ writerWarning }}</div></div>
+        </div>
+      }
+
+      @if (estimateText) {
+        <p class="rr-ai-estimate" [class.is-muted]="estimateLoading || estimateFailed">{{ estimateText }}</p>
+      }
+
+      @if (writeError) {
+        <div class="alert alert-danger rr-ai-alert" role="alert">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <div class="alert-content"><div class="alert-body">{{ writeError }}</div></div>
+        </div>
+      }
+    </fieldset>
+  }
+</div>
+
+<!-- DELETE CONFIRMATION: opened inside the run report dialog, so its own events stop here. -->
+<dialog #deleteDialog class="gh-dialog rr-ai-confirm-dialog rr-ai-delete-dialog" aria-labelledby="rrAiDeleteTitle"
+        (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="rrAiDeleteTitle">Delete the {{ deleteTarget ? audienceLabel(deleteTarget.audience) : 'document' }}?</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      @if (deleteTarget; as doc) {
+        <p class="rr-ai-delete-text">
+          Written by {{ documentWriter(doc) }} on {{ documentDate(doc) }}. The document is removed permanently; you
+          can write it again afterwards, with any report writer.
+        </p>
+      }
+      @if (deleteError) {
+        <div class="alert alert-danger rr-ai-alert" role="alert">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <div class="alert-content"><div class="alert-body">{{ deleteError }}</div></div>
+        </div>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel rr-ai-delete-keep" (click)="cancelDelete()">Keep It</button>
+      <button type="button" class="btn-gh btn-gh-delete rr-ai-delete-confirm" [disabled]="deleting"
+              [attr.aria-busy]="deleting ? 'true' : null" (click)="confirmDelete()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        Delete
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- SAME-PROVIDER CONFIRMATION: asked on every write with such a writer, never remembered. -->
+<dialog #sameProviderDialog class="gh-dialog rr-ai-confirm-dialog rr-ai-same-provider-dialog" aria-labelledby="rrAiSameProviderTitle"
+        (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="rrAiSameProviderTitle">Same-Provider Report Writer</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <div class="alert alert-warning" role="note">
+        <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+        <div class="alert-content"><div class="alert-body rr-ai-same-provider-text">{{ confirmWarningText }}</div></div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel rr-ai-same-provider-cancel" (click)="cancelSameProvider()">Cancel</button>
+      <button type="button" class="btn-gh rr-ai-same-provider-confirm" (click)="confirmSameProvider()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        Write Anyway
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<app-run-report-writing-dialog (finished)="onWritingFinished($event)"
+                               (viewRequested)="viewDocumentById($event)"
+                               (downloadsRequested)="requestDownloads($event)"></app-run-report-writing-dialog>
+<app-pdf-viewer-dialog></app-pdf-viewer-dialog>

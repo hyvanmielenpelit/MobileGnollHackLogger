@@ -2786,6 +2786,7 @@ public class AdminBenchmarkController : ControllerBase
                 return StatusCode(StatusCodes.Status429TooManyRequests, result.Error);
 
             case BenchmarkRunLaunchOutcome.SameProviderNotAcknowledged:
+            case BenchmarkRunLaunchOutcome.ReportWriterSameProviderNotAcknowledged:
                 return StatusCode(StatusCodes.Status409Conflict, result.SameProviderWarning);
 
             default:

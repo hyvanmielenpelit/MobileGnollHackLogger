@@ -17,6 +17,16 @@ public class BenchmarkReportPackDocumentProgress
     public long? DocumentId { get; set; }
     public string? ErrorMessage { get; set; }
     public int ModelCalls { get; set; }
+
+    /// <summary>When the document first became <see cref="BenchmarkReportPackDocumentStatus.Writing"/>.</summary>
+    public DateTime? StartedAtUtc { get; set; }
+
+    /// <summary>When the document reached a terminal status: completed, failed or canceled.</summary>
+    public DateTime? CompletedAtUtc { get; set; }
+
+    public long InputTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public decimal? CostUsd { get; set; }
 }
 
 public class BenchmarkReportPackJobLogEntry
@@ -90,6 +100,15 @@ public class BenchmarkReportPackJob
             document.Status = status;
             if (errorMessage != null) document.ErrorMessage = errorMessage;
             if (documentId != null) document.DocumentId = documentId;
+            if (status == BenchmarkReportPackDocumentStatus.Writing && document.StartedAtUtc == null)
+            {
+                document.StartedAtUtc = DateTime.UtcNow;
+            }
+            if (status is BenchmarkReportPackDocumentStatus.Completed or BenchmarkReportPackDocumentStatus.CompletedWithWarnings
+                or BenchmarkReportPackDocumentStatus.Failed or BenchmarkReportPackDocumentStatus.Canceled)
+            {
+                document.CompletedAtUtc ??= DateTime.UtcNow;
+            }
         }
     }
 
@@ -102,7 +121,13 @@ public class BenchmarkReportPackJob
             OutputTokens += outputTokens;
             if (cost != null) CostUsd = (CostUsd ?? 0m) + cost.Value;
             var document = Documents.FirstOrDefault(d => d.Audience == audience);
-            if (document != null) document.ModelCalls++;
+            if (document != null)
+            {
+                document.ModelCalls++;
+                document.InputTokens += inputTokens;
+                document.OutputTokens += outputTokens;
+                if (cost != null) document.CostUsd = (document.CostUsd ?? 0m) + cost.Value;
+            }
         }
     }
 
@@ -146,7 +171,12 @@ public class BenchmarkReportPackJob
                     Status = d.Status.ToString(),
                     DocumentId = d.DocumentId,
                     ErrorMessage = d.ErrorMessage,
-                    ModelCalls = d.ModelCalls
+                    ModelCalls = d.ModelCalls,
+                    StartedAtUtc = d.StartedAtUtc,
+                    CompletedAtUtc = d.CompletedAtUtc,
+                    InputTokens = d.InputTokens,
+                    OutputTokens = d.OutputTokens,
+                    CostUsd = d.CostUsd == null ? null : (double)d.CostUsd.Value
                 }).ToList(),
                 Log = Log.Select(l => new BenchmarkReportPackJobLogEntryDto
                 {

@@ -41,8 +41,8 @@ public sealed class BenchmarkReportCleanResult
 /// one, and so do the recommendations of the Report for AI Researchers and Developers.</item>
 /// <item>A strength cites no weakness row and a weakness no strength row; a finding citing only
 /// Conflicting rows says the graders disagree.</item>
-/// <item>Word and item limits, the Executive Summary's slot and item word caps and the report's
-/// recommendation count included.</item>
+/// <item>Word and item limits, the Executive Summary's slot and item word caps, and the report's
+/// slot word caps and recommendation count included.</item>
 /// <item>No headings, Markdown tables or HTML.</item>
 /// <item>No run of <see cref="ShingleLength"/> words shared with the content snapshot.</item>
 /// <item>No peer name, label, model id or provider other than the subject's own provider.</item>
@@ -61,8 +61,14 @@ public static class BenchmarkReportPackValidator
     /// <summary>The Executive Summary's "What this means for use as a game assistant".</summary>
     public const int MeaningMaxWords = 90;
 
-    /// <summary>The Executive Summary's "How confident are we".</summary>
+    /// <summary>The Executive Summary's "How reliable this result is".</summary>
     public const int ConfidenceMaxWords = 60;
+
+    /// <summary>The Report for AI Researchers and Developers' "Why it scored this way", before its weaknesses list.</summary>
+    public const int WhyItScoredMaxWords = 300;
+
+    /// <summary>The Report for AI Researchers and Developers' "What worked well", before its strengths list.</summary>
+    public const int WhatWorkedMaxWords = 150;
 
     /// <summary>Each strength and weakness of the Executive Summary.</summary>
     public const int ExecutiveItemMaxWords = 30;
@@ -134,6 +140,8 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportSlots.Abstract => AbstractMaxWords,
         BenchmarkReportSlots.Meaning when audience == BenchmarkReportAudience.ExecutiveSummary => MeaningMaxWords,
         BenchmarkReportSlots.Confidence when audience == BenchmarkReportAudience.ExecutiveSummary => ConfidenceMaxWords,
+        BenchmarkReportSlots.WhyItScored when audience == BenchmarkReportAudience.TechnicalReport => WhyItScoredMaxWords,
+        BenchmarkReportSlots.WhatWorked when audience == BenchmarkReportAudience.TechnicalReport => WhatWorkedMaxWords,
         _ => null
     };
 
@@ -781,7 +789,9 @@ public static class BenchmarkReportPackValidator
     {
         BenchmarkReportSlots.Abstract => "The abstract",
         BenchmarkReportSlots.Meaning => "\"What this means for use as a game assistant\"",
-        BenchmarkReportSlots.Confidence => "\"How confident are we\"",
+        BenchmarkReportSlots.Confidence => "\"How reliable this result is\"",
+        BenchmarkReportSlots.WhyItScored => "\"Why it scored this way\"",
+        BenchmarkReportSlots.WhatWorked => "\"What worked well\"",
         _ => $"The \"{slot}\" slot"
     };
 

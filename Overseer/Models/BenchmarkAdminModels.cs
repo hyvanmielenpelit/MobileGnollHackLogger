@@ -298,14 +298,20 @@ public class StartBenchmarkRunRequest
 
     /// <summary>
     /// Optional. When set, this configuration writes the run's Executive Summary and Report for AI
-    /// Researchers and Developers once, after the run completes. It may be neither the model under test
-    /// nor another model of its provider. Null writes nothing; the run report dialog can write them
-    /// later. Not a comparability key.
+    /// Researchers and Developers once, after the run completes. It may not be the model under test;
+    /// another model of its provider needs <see cref="AcknowledgeSameProviderReportWriter"/>. Null
+    /// writes nothing; the run report dialog can write them later. Not a comparability key.
     /// </summary>
     public long? ReportWriterModelConfigurationId { get; set; }
 
     public long? ScoringProfileId { get; set; }
     public bool AcknowledgeSameProvider { get; set; }
+
+    /// <summary>
+    /// The operator acknowledged that the report writer shares the candidate's provider. Recorded on
+    /// each document it writes, never kept as a preference.
+    /// </summary>
+    public bool AcknowledgeSameProviderReportWriter { get; set; }
 
     /// <summary>
     /// Optional. The candidate answers under the production chat system prompt
@@ -362,6 +368,12 @@ public class BenchmarkLastAssessorDto
 
 public class SameProviderWarningDto
 {
+    /// <summary>
+    /// Which choice shares the candidate's provider: <c>assessor</c> or <c>reportWriter</c>. For a
+    /// report writer, <see cref="AssessorModelDisplayName"/> carries the writer's name.
+    /// </summary>
+    public string Role { get; set; } = "assessor";
+
     public bool SameProvider { get; set; } = true;
     public string Provider { get; set; } = string.Empty;
     public string TestedModelDisplayName { get; set; } = string.Empty;

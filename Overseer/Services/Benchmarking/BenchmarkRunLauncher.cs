@@ -38,7 +38,14 @@ public enum BenchmarkRunLaunchOutcome
     /// controller returns this as a 409 the operator can confirm through; the orchestrator never
     /// sees it, because a series stores an already-acknowledged request.
     /// </summary>
-    SameProviderNotAcknowledged = 5
+    SameProviderNotAcknowledged = 5,
+
+    /// <summary>
+    /// Candidate and report writer share a provider and the caller has not acknowledged it. Checked
+    /// after <see cref="SameProviderNotAcknowledged"/>, so one confirmation is asked at a time; the
+    /// controller returns it as the same kind of 409, with the warning's role <c>reportWriter</c>.
+    /// </summary>
+    ReportWriterSameProviderNotAcknowledged = 6
 }
 
 public sealed record BenchmarkRunLaunchResult
@@ -250,7 +257,8 @@ public class BenchmarkRunLauncher
         }
 
         // Optional: a report writer writes the run's two AI-written documents once it completes. It
-        // is neither a grader nor a comparability key, and it never shares the candidate's provider.
+        // is neither a grader nor a comparability key, and it is never the model under test; a writer
+        // of the candidate's provider needs an acknowledgment, asked below.
         SystemAiApiConfiguration? reportWriterConfig = null;
         if (request.ReportWriterModelConfigurationId.HasValue)
         {
@@ -327,6 +335,16 @@ public class BenchmarkRunLauncher
                     AssessorModelDisplayName = assessorConfig.DisplayName,
                     Message = $"Both the model under test ({testedConfig.DisplayName}) and the assessor model ({assessorConfig.DisplayName}) belong to the same provider ({testedConfig.Provider}). Evaluation of a model by its own provider family may produce biased grading."
                 }
+            }, null);
+        }
+
+        string? writerWarning = BenchmarkRunReportDocumentService.WriterWarning(reportWriterConfig, testedConfig, _complianceGuard);
+        if (writerWarning != null && !request.AcknowledgeSameProviderReportWriter)
+        {
+            return (new BenchmarkRunLaunchResult
+            {
+                Outcome = BenchmarkRunLaunchOutcome.ReportWriterSameProviderNotAcknowledged,
+                SameProviderWarning = BenchmarkRunReportDocumentService.WriterWarningDto(reportWriterConfig!, testedConfig, writerWarning)
             }, null);
         }
         return (null, new ValidatedLaunch(

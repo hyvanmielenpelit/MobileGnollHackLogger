@@ -125,6 +125,106 @@ public class BenchmarkPdfRendererTests
     }
 
     [Fact]
+    public void ATableWithTallRows_CrossesPages_AndARowTallerThanAPageStillRenders()
+    {
+        var markdown = new StringBuilder("| Question | Note |\n|---|---|\n");
+        for (int i = 1; i <= 40; i++)
+        {
+            markdown.Append("| Q").Append(i).Append(" | ")
+                .Append(string.Join(" ", Enumerable.Repeat("a note long enough to wrap onto several lines of the cell", 4)))
+                .Append(" |\n");
+        }
+        markdown.Append("| Qhuge | ").Append(string.Join(" ", Enumerable.Repeat("an oversized cell", 1200))).Append(" |\n");
+
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(markdown.ToString(), Info(), TestContext.Current.CancellationToken);
+
+        using var reader = PdfDocument.Open(pdf);
+        Assert.True(reader.NumberOfPages >= 3, $"Expected the table to cross pages, got {reader.NumberOfPages}.");
+        string text = AllText(pdf);
+        Assert.Contains("Q40", text);
+        Assert.Contains("Qhuge", text);
+        Assert.All(reader.GetPages(), page => Assert.Contains("Question", Squash(page.Text)));
+    }
+
+    [Fact]
+    public void ANarrowTable_IsSetAtItsPreferredWidths_AgainstTheLeftMargin()
+    {
+        const string narrow = "| Measure | Value |\n|---|---|\n| Median answer time | 12.3 s |\n| Cost per question | not available |\n";
+
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(narrow, Info(), TestContext.Current.CancellationToken);
+
+        using var reader = PdfDocument.Open(pdf);
+        var page = reader.GetPage(1);
+        var number = page.GetWords().First(w => w.Text.Contains("12.3", StringComparison.Ordinal));
+        Assert.True(number.BoundingBox.Right < page.Width / 2, $"The value column ends at {number.BoundingBox.Right} on a page {page.Width} wide.");
+
+        var (_, _, constant) = Layout(narrow);
+        Assert.True(constant);
+        Assert.False(Layout("| A | B | C | D |\n|---|---|---|---|\n| 1 | 2 | 3 | 4 |\n").Constant);
+        Assert.False(Layout("| Note | Value |\n|---|---|\n| " + new string('x', 20) + " " + new string('y', 20) + " " + new string('z', 20) + " | 1 |\n").Constant);
+    }
+
+    [Fact]
+    public void ANumericColumn_StaysRightAligned_WhenACellIsNotAvailable()
+    {
+        var (aligns, _, _) = Layout("| Model | Score |\n|---|---|\n| One | 80 |\n| Two | not available |\n");
+
+        Assert.Equal(BenchmarkPdfMarkdownComposer.CellAlign.Right, aligns[1]);
+        Assert.True(BenchmarkPdfMarkdownComposer.IsNumericColumn(new[] { "80", "not available", "—" }));
+    }
+
+    [Fact]
+    public void AReportDocumentsCover_ListsItsFacts_WithoutTheAudience()
+    {
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
+
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
+
+        Assert.Equal(
+            new[] { "Document ID", "Disclosure", "Peers", "Suite", "Questions", "Run", "Created (UTC)", "Report format", "Writer" },
+            info.Facts.Select(f => f.Label));
+        Assert.Equal("101", info.Facts.Single(f => f.Label == "Document ID").Value);
+        Assert.Equal("2, anonymized", info.Facts.Single(f => f.Label == "Peers").Value);
+        Assert.Equal("4", info.Facts.Single(f => f.Label == "Questions").Value);
+        Assert.Equal("version " + BenchmarkReportPackRenderer.ReportFormatVersion, info.Facts.Single(f => f.Label == "Report format").Value);
+
+        var standalone = BenchmarkPdfDocumentInfo.ForReportDocument(
+            BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary),
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named },
+            BenchmarkPdfPaper.A4);
+        Assert.Equal("none (stand-alone report)", standalone.Facts.Single(f => f.Label == "Peers").Value);
+        Assert.Equal("INTERNAL — unpublished benchmark results. Do not share outside the Overseer team.", standalone.ClassificationText);
+
+        var older = BenchmarkReportPackFixture.StoredV2Document(BenchmarkReportAudience.TechnicalReport);
+        Assert.Equal("version 2", BenchmarkPdfDocumentInfo.ForReportDocument(older, options, BenchmarkPdfPaper.A4)
+            .Facts.Single(f => f.Label == "Report format").Value);
+    }
+
+    [Fact]
+    public void AReportDocumentPdf_PrintsItsCoverFacts_AndTheLayoutVersion()
+    {
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var options = new BenchmarkReportRenderOptions
+        {
+            Disclosure = BenchmarkReportDisclosure.Full,
+            PeerNaming = BenchmarkReportPeerNaming.Named,
+            IncludeFrontMatter = false
+        };
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
+
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(BenchmarkReportPackRenderer.Render(document, options), info, TestContext.Current.CancellationToken);
+
+        string text = AllText(pdf);
+        Assert.Contains(Squash("Document ID"), text);
+        Assert.Contains(Squash("Questions"), text);
+        Assert.Contains(Squash("PDF layout 2"), text);
+        Assert.DoesNotContain(Squash("Audience"), text);
+        // The stamp prints once, in the cover banner.
+        Assert.Single(AllIndexesOf(text, Squash("INTERNAL — contains benchmark questions and rubrics.")));
+    }
+
+    [Fact]
     public void RawHtml_PrintsAsLiteralText()
     {
         const string markdown = "Before <b>bold</b> and <script>alert(1)</script> after.\n\n<div>A block of html</div>\n";
@@ -243,20 +343,52 @@ public class BenchmarkPdfRendererTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
                 PeerNaming = BenchmarkReportPeerNaming.Anonymized
             }));
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Full,
                 PeerNaming = BenchmarkReportPeerNaming.Named
             }));
         Assert.Equal("Suite_Model_20260928_104200_INTERNAL.pdf", BenchmarkPdfFileNames.InternalPdfName("Suite_Model_20260928_104200.md"));
+    }
+
+    [Fact]
+    public void ARunSubjectsName_StartsWithTheRunNumber()
+    {
+        var document = BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary);
+        document.SubjectKey = "run:73";
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
+
+        string name = BenchmarkPdfFileNames.ForReportDocument(document, options);
+
+        Assert.StartsWith("run-73_", name, StringComparison.Ordinal);
+        Assert.Equal("run-73_" + BenchmarkPdfFileNames.SafeFileName(document.Title) + "_full_named_INTERNAL.pdf", name);
+        Assert.Equal(name[..^".pdf".Length] + ".docx", BenchmarkPdfFileNames.ForReportDocument(document, options, "docx"));
+    }
+
+    [Theory]
+    [InlineData("group:5")]
+    [InlineData("run:")]
+    [InlineData("run:7a")]
+    public void AGroupSubjectsName_HasNoRunPrefix(string subjectKey)
+    {
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        document.SubjectKey = subjectKey;
+
+        Assert.Equal(
+            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
+            BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
+            {
+                Disclosure = BenchmarkReportDisclosure.Summary,
+                PeerNaming = BenchmarkReportPeerNaming.Named
+            }));
     }
 
     [Fact]
@@ -267,7 +399,7 @@ public class BenchmarkPdfRendererTests
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named };
 
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf",
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, options));
         Assert.Equal(
             "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers",
@@ -276,7 +408,7 @@ public class BenchmarkPdfRendererTests
         // The other audiences keep the title-derived name.
         var executive = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(executive, options));
     }
 
@@ -396,6 +528,27 @@ public class BenchmarkPdfRendererTests
         CreatedAtUtc = CreatedAt,
         Keywords = new[] { "Fixture Model", "Fixture Suite", "GnollBench" }
     };
+
+    /// <summary>The PDF column layout of the first table in <paramref name="markdown"/>.</summary>
+    private static (BenchmarkPdfMarkdownComposer.CellAlign[] Aligns, float[] Widths, bool Constant) Layout(string markdown)
+    {
+        var table = BenchmarkPdfMarkdownComposer.Parse(markdown).OfType<Markdig.Extensions.Tables.Table>().First();
+        var rows = table.OfType<Markdig.Extensions.Tables.TableRow>().ToList();
+        var header = rows.Where(r => r.IsHeader).Select(r => r.OfType<Markdig.Extensions.Tables.TableCell>().ToList()).ToList();
+        var body = rows.Where(r => !r.IsHeader).Select(r => r.OfType<Markdig.Extensions.Tables.TableCell>().ToList()).ToList();
+        int columns = rows.Max(r => r.Count);
+        return BenchmarkPdfMarkdownComposer.PdfColumnLayout(table, header, body, columns, markdown);
+    }
+
+    private static List<int> AllIndexesOf(string text, string value)
+    {
+        var indexes = new List<int>();
+        for (int i = text.IndexOf(value, StringComparison.Ordinal); i >= 0; i = text.IndexOf(value, i + 1, StringComparison.Ordinal))
+        {
+            indexes.Add(i);
+        }
+        return indexes;
+    }
 
     /// <summary>The text with all whitespace removed: extraction does not reliably keep spaces.</summary>
     private static string Squash(string text) => new(text.Where(c => !char.IsWhiteSpace(c)).ToArray());

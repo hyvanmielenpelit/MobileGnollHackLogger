@@ -426,7 +426,7 @@ public class BenchmarkComplianceGuardTests
     }
 
     [Fact]
-    public async Task StartRun_RefusesAReportWriterFromTheCandidatesProvider_OrTheCandidateItself_With400()
+    public async Task StartRun_AsksToAcknowledgeAReportWriterFromTheCandidatesProvider()
     {
         var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
         var (suite, modelA, modelB, modelC) = await SeedConfigsAndSuite(db);
@@ -439,10 +439,20 @@ public class BenchmarkComplianceGuardTests
             ReportWriterModelConfigurationId = writerId
         };
 
-        // modelB is another Google model than the Google candidate.
-        var sameProvider = Assert.IsType<BadRequestObjectResult>(await controller.StartRun(Request(modelB.Id)));
-        Assert.Equal(BenchmarkRunReportDocumentService.SameProviderMessage, sameProvider.Value);
+        // modelB is another Google model than the Google candidate: a warning to confirm, not a refusal.
+        var sameProvider = Assert.IsType<ObjectResult>(await controller.StartRun(Request(modelB.Id)));
+        Assert.Equal(StatusCodes.Status409Conflict, sameProvider.StatusCode);
+        var warning = Assert.IsType<SameProviderWarningDto>(sameProvider.Value);
+        Assert.Equal("reportWriter", warning.Role);
+        Assert.True(warning.SameProvider);
+        Assert.Equal("Google", warning.Provider);
+        Assert.Equal("Gemini Pro", warning.TestedModelDisplayName);
+        Assert.Equal("Gemini Flash", warning.AssessorModelDisplayName);
+        Assert.Equal(
+            "Gemini Flash is from Google, the provider of the model under test. Its reports may describe that model more favorably than an independent writer would.",
+            warning.Message);
 
+        // The model under test itself stays refused.
         var sameModel = Assert.IsType<BadRequestObjectResult>(await controller.StartRun(Request(modelA.Id)));
         Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, sameModel.Value);
 
@@ -450,6 +460,61 @@ public class BenchmarkComplianceGuardTests
         Assert.Equal(BenchmarkRunReportDocumentService.InvalidWriterMessage, unknown.Value);
 
         Assert.Empty(await db.BenchmarkRuns.ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task StartRun_StartsWithASameProviderReportWriterOnceAcknowledged()
+    {
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, modelB, modelC) = await SeedConfigsAndSuite(db);
+
+        var result = await controller.StartRun(new StartBenchmarkRunRequest
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = modelA.Id,
+            AssessorModelConfigurationId = modelC.Id,
+            ReportWriterModelConfigurationId = modelB.Id,
+            AcknowledgeSameProviderReportWriter = true
+        });
+        Assert.IsType<AcceptedResult>(result);
+
+        var run = await db.BenchmarkRuns.FirstAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(modelB.Id, run.ReportWriterModelConfigurationId);
+        Assert.False(run.SameProviderAcknowledged); // The assessor is from another provider.
+    }
+
+    [Fact]
+    public async Task StartRun_WithASameProviderAssessorAndWriter_AsksForTheAssessorFirst_ThenTheWriter_ThenStarts()
+    {
+        var (controller, db, _) = CreateTestBenchmarkController(maxRunsPerHour: 10);
+        var (suite, modelA, modelB, _) = await SeedConfigsAndSuite(db);
+        var writer = await AddConfigAsync(db, "Google", "gemini-2.0-flash-lite", "Gemini Flash Lite");
+
+        StartBenchmarkRunRequest Request(bool assessorAck, bool writerAck) => new()
+        {
+            SuiteId = suite.Id,
+            TestedModelConfigurationId = modelA.Id,
+            AssessorModelConfigurationId = modelB.Id,
+            ReportWriterModelConfigurationId = writer.Id,
+            AcknowledgeSameProvider = assessorAck,
+            AcknowledgeSameProviderReportWriter = writerAck
+        };
+
+        var first = Assert.IsType<ObjectResult>(await controller.StartRun(Request(assessorAck: false, writerAck: false)));
+        Assert.Equal(StatusCodes.Status409Conflict, first.StatusCode);
+        Assert.Equal("assessor", Assert.IsType<SameProviderWarningDto>(first.Value).Role);
+
+        var second = Assert.IsType<ObjectResult>(await controller.StartRun(Request(assessorAck: true, writerAck: false)));
+        Assert.Equal(StatusCodes.Status409Conflict, second.StatusCode);
+        var writerWarning = Assert.IsType<SameProviderWarningDto>(second.Value);
+        Assert.Equal("reportWriter", writerWarning.Role);
+        Assert.Equal("Gemini Flash Lite", writerWarning.AssessorModelDisplayName);
+        Assert.Empty(await db.BenchmarkRuns.ToListAsync(TestContext.Current.CancellationToken));
+
+        Assert.IsType<AcceptedResult>(await controller.StartRun(Request(assessorAck: true, writerAck: true)));
+        var run = await db.BenchmarkRuns.FirstAsync(TestContext.Current.CancellationToken);
+        Assert.True(run.SameProviderAcknowledged);
+        Assert.Equal(writer.Id, run.ReportWriterModelConfigurationId);
     }
 
     [Fact]

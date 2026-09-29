@@ -42,6 +42,29 @@ internal static class BenchmarkReportPackFixture
             BenchmarkReportDocumentStatus.Completed, BenchmarkReportDocumentOrigin.RunCompletion,
             "{\"runIds\":[12],\"groupIds\":[],\"pricingBasis\":1}");
 
+    /// <summary>
+    /// <see cref="Document"/> as format version 2 stored it: the index display with its half-width,
+    /// no pricing-basis kind, catalog date, token or 90th-percentile facts, no refuted-answer-sentence
+    /// counts and no ruling roles.
+    /// </summary>
+    public static BenchmarkReportDocument StoredV2Document(BenchmarkReportAudience audience)
+    {
+        var sheet = Sheet();
+        string[] added = { "comparison.pricedOn", "comparison.pricingBasisKind", "cost.perRun", "speed.modelTimeP90", "tokens.inputPerQuestion", "tokens.outputPerQuestion" };
+        sheet.Facts = sheet.Facts.Where(f => !added.Contains(f.Key)).ToList();
+        sheet.Facts.Single(f => f.Key == "quality.index").Display = "80 ± 3 / 100";
+        foreach (var q in sheet.Questions) q.RefutedAnswerSentences = null;
+
+        var content = Content();
+        foreach (var ruling in content.Runs.SelectMany(r => r.Questions).SelectMany(q => q.ClaimRulings)) ruling.Role = null;
+
+        var document = Document(audience, sheet, Writer(), Notes(), BenchmarkReportDocumentStatus.CompletedWithWarnings,
+            BenchmarkReportDocumentOrigin.ReportPack, "{\"runIds\":[12,13,14],\"groupIds\":[],\"pricingBasis\":1}");
+        document.ContentJson = BenchmarkReportJson.Serialize(content);
+        document.ReportFormatVersion = 2;
+        return document;
+    }
+
     private static BenchmarkReportDocument Document(
         BenchmarkReportAudience audience,
         BenchmarkReportFactSheet sheet,
@@ -223,10 +246,13 @@ internal static class BenchmarkReportPackFixture
             Fact("band.simple.peerMean", "85"),
             Fact("band.simple.questions", "1"),
             Fact("band.simple.score", "90"),
+            Fact("comparison.pricedOn", "2026-09-20"),
             Fact("comparison.pricingBasis", "Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent."),
+            Fact("comparison.pricingBasisKind", BenchmarkReportFacts.PricingBasisCatalog),
             Fact("comparison.signature", "sig-7f3a91"),
             Fact("config.chat", "Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed"),
             Fact("cost.perQuestion", "$0.036"),
+            Fact("cost.perRun", "$0.144"),
             Fact("cost.pricingAsOf", "2026-09-01"),
             Fact("cost.rank", "2nd of 3"),
             Fact("dimension.accuracy", "84"),
@@ -254,7 +280,7 @@ internal static class BenchmarkReportPackFixture
             Fact("panel.meanAbsDelta", "6.5 points"),
             Fact("panel.memberAAlone", "81 / 100"),
             Fact("panel.memberBAlone", "79 / 100"),
-            Fact("quality.index", "80 ± 3 / 100", JsonValue.Create(80.4)),
+            Fact("quality.index", "80 / 100", JsonValue.Create(80.4)),
             Fact("quality.interval", "77–83"),
             Fact("quality.intervalBasis", "Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two."),
             Fact("quality.intervalOverlap", "its 95 % interval overlaps those of Models A and B"),
@@ -269,9 +295,12 @@ internal static class BenchmarkReportPackFixture
             Fact("scoring.methodVersion", "12"),
             Fact("scoring.weights", "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %"),
             Fact("speed.modelTimeP50", "12.3 s"),
+            Fact("speed.modelTimeP90", "15.0 s"),
             Fact("speed.rank", "2nd of 2"),
             Fact("style.responseStyleConflict", "no"),
             Fact("suite.questions", "4"),
+            Fact("tokens.inputPerQuestion", "18,250"),
+            Fact("tokens.outputPerQuestion", "1,140"),
             Fact("tools.callsPerQuestion", "3.5"),
             Fact("tools.callsPerQuestion.peerMean", "2.8"),
             Fact("tools.failed", "0"),
@@ -308,6 +337,15 @@ internal static class BenchmarkReportPackFixture
                         {
                             new() { Role = "Panel member A", Label = "Gemini 3.8 Flash", Score = 92, Comment = "Accurate and brief.", Evidence = new List<string> { "Accuracy: Matches rubric." } },
                             new() { Role = "Panel member B", Label = "Claude Haiku 5", Score = 88, Comment = "Correct." }
+                        },
+                        ClaimRulings = new List<BenchmarkReportContentClaimRuling>
+                        {
+                            new()
+                            {
+                                Claim = "Worthless glass angers the unicorn.", Verdict = "refuted",
+                                Rationale = "Glass is caught and returned without anger (dothrow.c).",
+                                Role = BenchmarkReportContent.AssessorStatementRole
+                            }
                         }
                     },
                     new()
@@ -324,7 +362,7 @@ internal static class BenchmarkReportPackFixture
                         },
                         ClaimRulings = new List<BenchmarkReportContentClaimRuling>
                         {
-                            new() { Claim = "The timeout is typically near 350.", Verdict = "supported", Rationale = "Matches the prayer code (pray.c)." }
+                            new() { Claim = "The timeout is typically near 350.", Verdict = "supported", Rationale = "Matches the prayer code (pray.c).", Role = BenchmarkReportContent.ClaimRole }
                         }
                     },
                     new()
@@ -346,7 +384,7 @@ internal static class BenchmarkReportPackFixture
                         },
                         ClaimRulings = new List<BenchmarkReportContentClaimRuling>
                         {
-                            new() { Claim = "A thrown gem always shatters on impact.", Verdict = "refuted", Rationale = "Gems are caught, not broken (dothrow.c)." }
+                            new() { Claim = "A thrown gem always shatters on impact.", Verdict = "refuted", Rationale = "Gems are caught, not broken (dothrow.c).", Role = BenchmarkReportContent.AccusedSentenceRole }
                         }
                     },
                     new()
@@ -504,6 +542,7 @@ internal static class BenchmarkReportPackFixture
             PeerCount = 2,
             CriticalError = critical,
             RefutedClaims = refuted,
+            RefutedAnswerSentences = refuted,
             ToolCalls = tools,
             ModelTimeMs = modelTimeMs,
             RunCount = 1

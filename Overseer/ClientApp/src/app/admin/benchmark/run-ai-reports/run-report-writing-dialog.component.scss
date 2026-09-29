@@ -1,0 +1,244 @@
+@use '../benchmark-dialog-frame' as frame;
+
+/* The AI report writing progress dialog.
+ *
+ * Layout and component-local presentation only. .btn-gh and its variants, .action-btn,
+ * .btn-icon-action, .gh-tooltip, .gh-dialog, .gh-table, .gh-disclosure, .gh-field-error,
+ * .run-stage-rail, .run-stat-strip, .job-progress-block, .job-status-chip, .model-name and
+ * .thinking-badge come from styles.scss and are never redefined here.
+ */
+
+.gh-dialog.run-writing-dialog {
+  @include frame.frame($width: 44rem);
+}
+
+.gh-dialog.rw-confirm-dialog {
+  @include frame.frame($width: 34rem);
+  @include frame.confirm;
+}
+
+.dialog-body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.rw-status {
+  margin: 0 0 14px;
+  color: #e4e4e7;
+  font-weight: 600;
+}
+
+.rw-note {
+  margin: 0;
+  color: #a1a1aa;
+  font-size: var(--text-secondary);
+}
+
+/* --- Activity bar --------------------------------------------------------------------------- */
+
+/* An indeterminate bar: a gold band sweeping across the track. Under reduced motion it is a
+   static striped bar. */
+.rw-activity .job-progress:indeterminate {
+  background-color: #2a2a2a;
+  background-image: linear-gradient(90deg, transparent 0%, var(--primary-color) 50%, transparent 100%);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: rw-sweep 1.6s ease-in-out infinite;
+
+  &::-webkit-progress-bar {
+    background: transparent;
+  }
+
+  &::-moz-progress-bar {
+    background: transparent;
+  }
+}
+
+@keyframes rw-sweep {
+  from {
+    background-position: -40% 0;
+  }
+
+  to {
+    background-position: 140% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rw-activity .job-progress:indeterminate {
+    animation: none;
+    background-size: auto;
+    background-repeat: repeat;
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(212, 160, 23, 0.55) 0 8px,
+      rgba(212, 160, 23, 0.2) 8px 16px
+    );
+  }
+}
+
+/* --- Stats ---------------------------------------------------------------------------------- */
+
+.rw-stat-writer {
+  grid-column: span 2;
+
+  dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+  }
+}
+
+/* --- Documents ------------------------------------------------------------------------------ */
+
+.rw-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.rw-documents {
+  caption {
+    caption-side: top;
+    text-align: start;
+    padding: 0 0 6px;
+    font-family: "Cinzel", serif;
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  th[scope="row"] {
+    background: transparent;
+    color: #e4e4e7;
+  }
+
+  .rw-num {
+    white-space: nowrap;
+  }
+
+  .rw-document-error {
+    margin-top: 6px;
+  }
+
+  .rw-row-actions {
+    text-align: end;
+  }
+
+  /* The chips name the state in words; nothing on the rail or in the table moves. */
+  .job-status-chip {
+    animation: none;
+  }
+}
+
+/* --- Poll trouble --------------------------------------------------------------------------- */
+
+.rw-poll-trouble {
+  margin-bottom: 12px;
+}
+
+/* --- Diagnostics ---------------------------------------------------------------------------- */
+
+.rw-diagnostics {
+  margin-top: 4px;
+}
+
+.rw-diagnostics-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rw-copy-status {
+  margin: 0;
+  color: var(--primary-color);
+  font-size: var(--text-secondary);
+}
+
+.rw-copy-error {
+  margin-bottom: 8px;
+}
+
+.rw-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  font-size: var(--text-secondary);
+
+  > div {
+    display: contents;
+  }
+
+  dt {
+    color: #a1a1aa;
+  }
+
+  dd {
+    margin: 0;
+    color: #e4e4e7;
+    overflow-wrap: anywhere;
+  }
+}
+
+.rw-log-title {
+  margin: 0 0 6px;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: #d4d4d8;
+}
+
+.rw-log {
+  margin: 0;
+  padding-inline-start: 1.4em;
+  max-block-size: 16rem;
+  overflow-y: auto;
+  font-size: var(--text-secondary);
+  color: #d4d4d8;
+
+  li + li {
+    margin-top: 4px;
+  }
+}
+
+.rw-log-time,
+.rw-log-severity {
+  margin-inline-end: 6px;
+  color: #a1a1aa;
+}
+
+.rw-log-message {
+  overflow-wrap: anywhere;
+}
+
+.rw-log-warning .rw-log-severity,
+.rw-log-warning .rw-log-message {
+  color: var(--color-warning);
+}
+
+.rw-log-error .rw-log-severity,
+.rw-log-error .rw-log-message {
+  color: var(--color-error-text);
+}
+
+/* --- Footer --------------------------------------------------------------------------------- */
+
+.dialog-footer {
+  align-items: center;
+
+  .rw-summary,
+  .rw-cancel-error {
+    flex-basis: 100%;
+    margin: 0;
+  }
+
+  .rw-summary {
+    color: #e4e4e7;
+  }
+
+  .rw-cancel[aria-disabled="true"] {
+    opacity: 0.6;
+    cursor: progress;
+  }
+}

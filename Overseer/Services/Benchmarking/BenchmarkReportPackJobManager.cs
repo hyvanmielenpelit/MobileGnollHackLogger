@@ -86,6 +86,7 @@ public class BenchmarkReportPackJobManager
         {
             while (true)
             {
+                ct.ThrowIfCancellationRequested();
                 lock (_lock)
                 {
                     if (_waiting.First == node && (_currentJob == null || _currentJob.Status != BenchmarkReportPackJobStatus.Running))
@@ -106,6 +107,33 @@ public class BenchmarkReportPackJobManager
                 if (node.List != null) _waiting.Remove(node);
             }
             throw;
+        }
+    }
+
+    /// <summary>
+    /// How many jobs wait ahead of <paramref name="job"/> (0 when it is not waiting), and the job that
+    /// holds the slot while it runs.
+    /// </summary>
+    public (int Ahead, BenchmarkReportPackJob? Running) QueueInfo(BenchmarkReportPackJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+
+        lock (_lock)
+        {
+            int ahead = 0;
+            bool waiting = false;
+            for (var node = _waiting.First; node != null; node = node.Next)
+            {
+                if (ReferenceEquals(node.Value, job))
+                {
+                    waiting = true;
+                    break;
+                }
+                ahead++;
+            }
+
+            var running = _currentJob != null && _currentJob.Status == BenchmarkReportPackJobStatus.Running ? _currentJob : null;
+            return (waiting ? ahead : 0, running);
         }
     }
 

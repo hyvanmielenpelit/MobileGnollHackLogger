@@ -264,8 +264,9 @@ public class BenchmarkReportPackPromptTests
         string message = Build(BenchmarkReportAudience.TechnicalReport).UserMessage;
 
         Assert.Contains("R3 | kind: weakness | category: accuracy | questions: Q3 | status: Conflicting | support: Graders disagree | in 1 of 1 runs", message);
-        Assert.Contains("raised only by the Panel member B, which shares the subject's provider", message);
-        Assert.Contains("  member B: Reasonable prayer advice.", message);
+        Assert.Contains("raised only by panel member B, which shares the subject's provider", message);
+        Assert.Contains("  panel member A: Unsafe prayer advice.", message);
+        Assert.Contains("  panel member B: Reasonable prayer advice.", message);
 
         Assert.Contains("[Q2] band: Intermediate | score: 50 | peer mean: 72 | difference: -22 | critical error: no", message);
         Assert.Contains("[Q1] band: Simple | score: 90 | peer mean: 85 | difference: +5 | critical error: no", message);
@@ -303,8 +304,8 @@ public class BenchmarkReportPackPromptTests
 
         string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
 
-        Assert.Contains("raised only by the Panel member B, which shares the subject's provider", message);
-        Assert.Contains("raised only by the Panel member A, which does not share the subject's provider", message);
+        Assert.Contains("raised only by panel member B, which shares the subject's provider", message);
+        Assert.Contains("raised only by panel member A, which does not share the subject's provider", message);
     }
 
     [Fact]
@@ -316,7 +317,7 @@ public class BenchmarkReportPackPromptTests
 
         string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
 
-        Assert.Contains("raised only by the Co-assessor, which shares the subject's provider", message);
+        Assert.Contains("raised only by the co-assessor, which shares the subject's provider", message);
     }
 
     [Fact]
@@ -357,7 +358,9 @@ public class BenchmarkReportPackPromptTests
         string system = Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt;
 
         Assert.Contains("At most 90 words: what this means for use as a game assistant", system);
-        Assert.Contains("At most 60 words: how confident are we", system);
+        Assert.Contains("At most 60 words: how reliable this result is", system);
+        Assert.Contains("when a grader shares the subject's provider, say so in plain words and that it may read the subject more favorably", system);
+        Assert.DoesNotContain("how confident are we", system);
         Assert.Contains("each at most 30 words", system);
     }
 
@@ -368,7 +371,7 @@ public class BenchmarkReportPackPromptTests
 
         Assert.Contains("DOCUMENT: Report for AI Researchers and Developers.", system);
         Assert.Contains("recommendations: at most six items", system);
-        Assert.Contains("the observed failure, the change proposed for the model's next iteration, and the evidence", system);
+        Assert.Contains("Name the change proposed and, in a few words, the weakness it answers; do not restate the weakness.", system);
         Assert.Contains("Every recommendation cites at least one evidence id", system);
         Assert.DoesNotContain("A recommendation may cite evidence as well.", system);
 
@@ -382,6 +385,83 @@ public class BenchmarkReportPackPromptTests
         sheet.Facts.RemoveAll(f => f.Key.Contains("responseStyleConflict", StringComparison.OrdinalIgnoreCase));
 
         Assert.DoesNotContain("RESPONSE STYLE", Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_NamesTheGradersInOneVocabulary(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, "
+            + "the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader).", system);
+        Assert.Contains("In the Executive Summary say 'one grader' or 'both graders' instead.", system);
+        Assert.DoesNotContain("co-assessor", system, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("member A is the assessor", system, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("A Conflicting row whose two member texts are about different things is not a disagreement about one finding; leave it out.", system);
+    }
+
+    [Fact]
+    public void UserMessage_NamesTheGradersInTheSameVocabulary()
+    {
+        string message = Build(BenchmarkReportAudience.TechnicalReport).UserMessage;
+
+        Assert.Contains("GRADERS (by role; write each role name in lower case)", message);
+        Assert.DoesNotContain("the co-assessor)", message);
+        Assert.DoesNotContain("\n  member A:", message);
+        Assert.DoesNotContain("\n  member B:", message);
+    }
+
+    [Fact]
+    public void ResearcherReport_SlotsExplainPatterns_AndLeaveTheListsToThemselves()
+    {
+        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
+
+        Assert.Contains("- whyItScored: Explain the patterns and causes across the weaknesses, grouped by category", system);
+        Assert.Contains("in at most 300 words.", system);
+        Assert.Contains("The weaknesses list is printed right after this text; do not restate its items.", system);
+        Assert.Contains("- whatWorked: Explain the patterns and causes across the strengths, grouped by category, in at most 150 words.", system);
+        Assert.Contains("The strengths list is printed right after this text; do not restate its items.", system);
+        Assert.Contains("Name every error the claim verifier refuted among the main reasons.", system);
+    }
+
+    [Fact]
+    public void UserMessage_LeavesOutTheRubricsSourceParagraphs()
+    {
+        var content = ReportPackWriterTestData.Content();
+        content.Runs[0].Questions[0].ExpectedPoints =
+            "- A lawful character may receive Excalibur.\n\nSOURCE — fountain.c:212 dipfountain() rolls the chance.\nsee also artifact.c:88\n\n- The chance is one in six per dip.";
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, ReportPackWriterTestData.Sheet(), content).UserMessage;
+
+        Assert.Contains("    - A lawful character may receive Excalibur.\n    \n    - The chance is one in six per dip.\n", message);
+        Assert.DoesNotContain("SOURCE", message);
+        Assert.DoesNotContain("fountain.c:212", message);
+        Assert.DoesNotContain("artifact.c:88", message);
+
+        Assert.Equal("Keep this.", BenchmarkReportPackPrompt.WithoutSourceParagraphs("SOURCE: a.c:1\nb.c:2\n\nKeep this."));
+        Assert.Equal("Keep this.", BenchmarkReportPackPrompt.WithoutSourceParagraphs("Keep this.\n\nSOURCE — a.c:1"));
+        Assert.Equal("No citation here.", BenchmarkReportPackPrompt.WithoutSourceParagraphs("No citation here."));
+    }
+
+    [Fact]
+    public void UserMessage_GivesEachRulingItsRole_AndCountsRefutedAnswerSentences()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Questions[2].RefutedAnswerSentences = 1;
+        var content = ReportPackWriterTestData.Content();
+        content.Runs[0].Questions[2].ClaimRulings = new List<BenchmarkReportContentClaimRuling>
+        {
+            new() { Claim = "Praying now is safe.", Verdict = "refuted", Role = BenchmarkReportContent.ClaimRole },
+            new() { Claim = "The prayer timeout is always one thousand turns.", Verdict = "refuted", Role = BenchmarkReportContent.AssessorStatementRole }
+        };
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, sheet, content).UserMessage;
+
+        Assert.Contains("| critical error: yes | refuted answer sentences: 1 |", message);
+        Assert.Contains("| critical error: no | refuted claims: 0 |", message);
+        Assert.Contains("    - Answer sentence — refuted: Praying now is safe.", message);
+        Assert.Contains("    - Grader's statement — refuted (the answer was right): The prayer timeout is always one thousand turns.", message);
     }
 
     // Repair ------------------------------------------------------------------------------------

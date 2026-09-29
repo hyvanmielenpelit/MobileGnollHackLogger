@@ -26,11 +26,13 @@ using Overseer.Models;
 //   config.chat                                        the candidate prompt options of the lowest-id run
 //   comparison.models                                  non-excluded entries, subject included
 //   comparison.pricingBasis                            the comparison's pricing-basis sentence
+//   comparison.pricingBasisKind                        "catalog" (Current) or "snapshot" (AsRun)
+//   comparison.pricedOn                                the catalog date of a catalog basis
 //   comparison.signature                               the comparison's baseline signature
 //
 // Quality (Intelligence Index; higher is better)
-//   quality.index            "80 ± 3 / 100": point estimate ± combined half-width
-//   quality.interval         "77–83": the 95 % interval
+//   quality.index            "80 / 100": the point estimate
+//   quality.interval         "77–83": the 95 % interval, its bounds rounded as the point is
 //   quality.intervalBasis    which sources of variation the interval covers
 //   quality.rank             "2nd of 3" among entries with a quality figure
 //   quality.intervalOverlap  descriptive: which peers' intervals overlap the subject's, by letter
@@ -51,6 +53,9 @@ using Overseer.Models;
 //
 // Cost (candidate spend per question; lower is better)
 //   cost.perQuestion, cost.perRun, cost.rank, cost.basis, cost.pricingAsOf, cost.totalRunPerRun
+//
+// Tokens (the model under test's, per answer that recorded them)
+//   tokens.inputPerQuestion, tokens.outputPerQuestion
 //
 // Errors and claims
 //   errors.critical          "1 of 4 answers": answers at least one grader flagged with a critical error
@@ -142,6 +147,12 @@ public static class BenchmarkReportFacts
 
     /// <summary>The <see cref="BenchmarkReportFindingRow.Status"/> of a non-panel synthesis finding.</summary>
     public const string SingleStatus = "Single";
+
+    /// <summary>The value of <c>comparison.pricingBasisKind</c> for today's catalog prices.</summary>
+    public const string PricingBasisCatalog = "catalog";
+
+    /// <summary>The value of <c>comparison.pricingBasisKind</c> for the prices stored with each run.</summary>
+    public const string PricingBasisSnapshot = "snapshot";
 
     private const string PairwiseSignificanceMeasure = "Pairwise significance";
 
@@ -265,6 +276,7 @@ public static class BenchmarkReportFacts
         AddDimensionAndBandFacts(facts, subjectStats, peers.Select(p => p.Stats).ToList());
         AddSpeedFacts(facts, subject, eligible);
         AddCostFacts(facts, subject, eligible);
+        AddTokenFacts(facts, subjectStats);
         AddErrorAndClaimFacts(facts, subjectStats);
         AddToolFacts(facts, subjectStats, subjectRuns, peers.Select(p => p.Stats).ToList());
         AddPanelFacts(facts, subject, subjectRuns, comparison, peers);
@@ -396,6 +408,7 @@ public static class BenchmarkReportFacts
 
         facts.Add("comparison.models", eligibleCount, Inv(eligibleCount));
         facts.Add("comparison.pricingBasis", comparison.PricingBasisLabel, comparison.PricingBasisLabel);
+        AddPricingBasisKind(facts, comparison);
         if (string.IsNullOrWhiteSpace(comparison.BaselineSignature))
         {
             facts.Unavailable("comparison.signature", "The comparison recorded no baseline signature.");
@@ -404,6 +417,38 @@ public static class BenchmarkReportFacts
         {
             facts.Add("comparison.signature", comparison.BaselineSignature, comparison.BaselineSignature);
         }
+    }
+
+    /// <summary>
+    /// Which prices the cost figures use: <c>catalog</c> for the Current basis, with the catalog date
+    /// the comparison was computed on, or <c>snapshot</c> for AsRun, each run's stored prices.
+    /// </summary>
+    private static void AddPricingBasisKind(FactList facts, BenchmarkModelComparisonDto comparison)
+    {
+        if (string.Equals(comparison.PricingBasis, nameof(BenchmarkModelComparisonPricingBasis.Current), StringComparison.Ordinal))
+        {
+            facts.Add("comparison.pricingBasisKind", PricingBasisCatalog, PricingBasisCatalog);
+            if (comparison.ComputedAtUtc == default)
+            {
+                facts.Unavailable("comparison.pricedOn", "The comparison recorded no computation date.");
+            }
+            else
+            {
+                string date = comparison.ComputedAtUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                facts.Add("comparison.pricedOn", date, date);
+            }
+            return;
+        }
+
+        if (string.Equals(comparison.PricingBasis, nameof(BenchmarkModelComparisonPricingBasis.AsRun), StringComparison.Ordinal))
+        {
+            facts.Add("comparison.pricingBasisKind", PricingBasisSnapshot, PricingBasisSnapshot);
+            facts.Unavailable("comparison.pricedOn", "Each run is priced at the prices stored with it.");
+            return;
+        }
+
+        facts.Unavailable("comparison.pricingBasisKind", "The comparison recorded an unknown pricing basis.");
+        facts.Unavailable("comparison.pricedOn", "The comparison recorded an unknown pricing basis.");
     }
 
     private static void AddQualityFacts(
@@ -423,10 +468,8 @@ public static class BenchmarkReportFacts
         }
         else
         {
-            string index = quality.IntervalHalfWidth.HasValue
-                ? BenchmarkReportFormat.Whole(quality.PointEstimate) + " ± " + BenchmarkReportFormat.Whole(quality.IntervalHalfWidth.Value) + " / 100"
-                : BenchmarkReportFormat.Whole(quality.PointEstimate) + " / 100";
-            facts.Add("quality.index", quality.PointEstimate, index);
+            // The point and both bounds are rounded the same way; the half-width is not printed.
+            facts.Add("quality.index", quality.PointEstimate, BenchmarkReportFormat.Whole(quality.PointEstimate) + " / 100");
 
             if (quality.IntervalLower.HasValue && quality.IntervalUpper.HasValue)
             {
@@ -694,6 +737,27 @@ public static class BenchmarkReportFacts
         }
     }
 
+    /// <summary>The model under test's mean input and output tokens over the answers that recorded them.</summary>
+    private static void AddTokenFacts(FactList facts, EntryStats subject)
+    {
+        foreach (var (key, tokens) in new (string Key, Func<BenchmarkRunAnswer, int?> Tokens)[]
+        {
+            ("tokens.inputPerQuestion", a => a.InputTokens),
+            ("tokens.outputPerQuestion", a => a.OutputTokens)
+        })
+        {
+            var recorded = subject.All.Select(tokens).Where(t => t.HasValue).Select(t => (double)t!.Value).ToList();
+            if (recorded.Count == 0)
+            {
+                facts.Unavailable(key, "No answer recorded its token counts.");
+                continue;
+            }
+
+            double mean = recorded.Average();
+            facts.Add(key, mean, BenchmarkReportFormat.Count(mean));
+        }
+    }
+
     private static void AddErrorAndClaimFacts(FactList facts, EntryStats subject)
     {
         facts.Add("errors.critical", subject.CriticalCount,
@@ -946,6 +1010,7 @@ public static class BenchmarkReportFacts
                 PeerCount = peerCount,
                 CriticalError = counting.Any(HasCriticalError),
                 RefutedClaims = answers.Sum(a => a.ClaimsRefutedCount ?? 0),
+                RefutedAnswerSentences = RefutedAnswerSentencesOf(answers),
                 ToolCalls = counting.Count > 0 ? counting.Average(a => (double)SucceededCalls(a)) : 0,
                 ModelTimeMs = timed.Count > 0 ? timed.Average(a => (double)a.ModelTimeMs) : null,
                 RunCount = scored.Count
@@ -953,6 +1018,29 @@ public static class BenchmarkReportFacts
         }
 
         return questions;
+    }
+
+    /// <summary>
+    /// Refuted verifications of the answers' own text (<see cref="BenchmarkReportContent.IsAnswerSentenceRole"/>),
+    /// read from the stored verifications by role; a grader's statement never counts. Null when an
+    /// answer's verifications are unreadable or carry no roles.
+    /// </summary>
+    internal static int? RefutedAnswerSentencesOf(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        int count = 0;
+        foreach (var answer in answers)
+        {
+            if (string.IsNullOrWhiteSpace(answer.ClaimVerificationJson)) continue;
+
+            var verifications = BenchmarkReportContent.ReadVerifications(answer.ClaimVerificationJson);
+            if (verifications == null) return null;
+            if (verifications.Count == 0) continue;
+            if (!BenchmarkClaimRoles.HasRoles(verifications)) return null;
+
+            count += verifications.Count(v => v.EffectiveVerdict == BenchmarkClaimVerdict.Refuted
+                && BenchmarkReportContent.IsAnswerSentenceRole(BenchmarkReportContent.RoleOf(v, listHasRoles: true)));
+        }
+        return count;
     }
 
     /// <summary>
@@ -1458,6 +1546,22 @@ public static class BenchmarkReportFormat
         double rounded = Math.Round(value, 1, MidpointRounding.AwayFromZero);
         if (rounded == 0) rounded = 0;
         return rounded.ToString("0.0", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>At most one decimal, and none when it is zero: "3", "2.5".</summary>
+    public static string CompactDecimal(double value)
+    {
+        double rounded = Math.Round(value, 1, MidpointRounding.AwayFromZero);
+        if (rounded == 0) rounded = 0;
+        return rounded.ToString("0.#", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>A whole count with thousands separators: "12,345".</summary>
+    public static string Count(double value)
+    {
+        double rounded = Math.Round(value, 0, MidpointRounding.AwayFromZero);
+        if (rounded == 0) rounded = 0;
+        return rounded.ToString("#,0", CultureInfo.InvariantCulture);
     }
 
     public static string Seconds(double milliseconds) => OneDecimal(milliseconds / 1000.0) + " s";

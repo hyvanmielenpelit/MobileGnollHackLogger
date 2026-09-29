@@ -1,0 +1,191 @@
+@use '../benchmark-dialog-frame' as frame;
+
+/* The run report's AI Reports tab: a job status line, a row per document, written or not, the
+ * Download Center notice and, while a document is missing, the write panel.
+ *
+ * Layout and component-local presentation only. .btn-gh and its variants, .btn-ghost, .action-btn,
+ * .gh-tooltip, .gh-tag, .gh-fieldset, .gh-choice, .checkbox-label, .gh-field-row, .gh-field-error,
+ * .alert and .gh-dialog come from styles.scss and are never redefined here.
+ */
+
+:host {
+  display: block;
+}
+
+/* The run report panel's type scale, which its encapsulated rules cannot give this component. */
+.rr-ai-reports {
+  overflow-wrap: anywhere;
+
+  p {
+    line-height: var(--leading-body);
+    text-wrap: pretty;
+  }
+
+  .form-hint {
+    font-size: var(--text-secondary);
+  }
+}
+
+.rr-ai-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 0 0 10px;
+}
+
+.rr-ai-status {
+  margin: 0;
+
+  &.rr-ai-status-skipped {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    color: var(--color-warning);
+
+    > svg {
+      flex-shrink: 0;
+      margin-top: 0.2em;
+    }
+  }
+}
+
+.rr-ai-status-text:empty {
+  display: none;
+}
+
+.rr-ai-announcement {
+  color: var(--nav-color);
+}
+
+.rr-ai-list-error {
+  margin: 0 0 10px;
+}
+
+.rr-ai-doc-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.rr-ai-doc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+}
+
+.rr-ai-doc-text {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+
+  /* Its own line under the name, as .gh-tag-changed is everywhere else. */
+  .gh-tag-changed {
+    flex-basis: 100%;
+    margin-top: 2px;
+  }
+}
+
+.rr-ai-doc-name {
+  font-weight: 600;
+}
+
+.rr-ai-doc-status {
+  border-color: var(--border-glass);
+  color: var(--nav-color);
+
+  &.is-warning {
+    border-color: var(--color-warning);
+    color: var(--color-warning);
+  }
+
+  &.is-missing {
+    color: #888;
+  }
+}
+
+.rr-ai-doc-meta {
+  font-size: var(--text-secondary);
+  color: #888;
+}
+
+.rr-ai-doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rr-ai-alert,
+.rr-ai-download-notice {
+  margin: 10px 0 0;
+}
+
+.rr-ai-write {
+  margin-top: 14px;
+}
+
+.rr-ai-audiences {
+  margin-bottom: 12px;
+
+  .rr-ai-written-hint {
+    margin: 4px 0 0;
+  }
+}
+
+.rr-ai-writer > label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: var(--text-secondary);
+  font-weight: 500;
+  color: var(--nav-color);
+}
+
+/* The label sits above the row, so the button centers on the picker trigger alone. */
+.rr-ai-write-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.rr-ai-writer-field {
+  flex: 1 1 22rem;
+  min-width: min(100%, 22rem);
+}
+
+.rr-ai-writer-note,
+.rr-ai-write-blocked,
+.rr-ai-estimate {
+  margin: 8px 0 0;
+}
+
+.rr-ai-writer-warning {
+  margin: 10px 0 0;
+}
+
+.rr-ai-estimate {
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+
+  &.is-muted {
+    color: #aaa;
+  }
+}
+
+.gh-dialog.rr-ai-confirm-dialog {
+  @include frame.frame($width: 34rem);
+  @include frame.confirm;
+
+  .alert {
+    margin-bottom: 0;
+  }
+}

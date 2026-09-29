@@ -42,6 +42,12 @@ public sealed class BenchmarkReportRenderOptions
 {
     public BenchmarkReportDisclosure Disclosure { get; init; } = BenchmarkReportDisclosure.Summary;
     public BenchmarkReportPeerNaming PeerNaming { get; init; } = BenchmarkReportPeerNaming.Anonymized;
+
+    /// <summary>
+    /// The italic stamp and the Date, Suite, Questions, Runs and Peers list under the title. The PDF
+    /// and Word downloads leave them out, because their cover prints the same facts.
+    /// </summary>
+    public bool IncludeFrontMatter { get; init; } = true;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -67,12 +73,12 @@ public static class BenchmarkReportSlots
 {
     // Executive Summary
     public const string Meaning = "meaning";         // What this means for use as a game assistant
-    public const string Confidence = "confidence";   // How confident are we
+    public const string Confidence = "confidence";   // How reliable this result is
 
     // Report for AI Researchers and Developers (the TechnicalReport audience)
     public const string Abstract = "abstract";       // ≤ 150 words
-    public const string WhyItScored = "whyItScored"; // failures by category
-    public const string WhatWorked = "whatWorked";
+    public const string WhyItScored = "whyItScored"; // patterns behind the weaknesses, ≤ 300 words
+    public const string WhatWorked = "whatWorked";   // patterns behind the strengths, ≤ 150 words
 
     // Internal Improvement Brief, in the order of What the Benchmark Is For
     public const string OverseerChat = "overseerChat";
@@ -141,7 +147,7 @@ public sealed class BenchmarkReportFact
     /// <summary>The raw value: a number, string, boolean or null.</summary>
     public JsonNode? Value { get; set; }
 
-    /// <summary>Culture-invariant display string, e.g. <c>80 ± 3 / 100</c>.</summary>
+    /// <summary>Culture-invariant display string, e.g. <c>80 / 100</c>.</summary>
     public string Display { get; set; } = string.Empty;
 
     public bool Available { get; set; } = true;
@@ -209,7 +215,17 @@ public sealed class BenchmarkReportQuestion
     public int PeerCount { get; set; }
 
     public bool CriticalError { get; set; }
+
+    /// <summary>The verifier's refuted ordinary claims of the answers (the harness's <c>ClaimsRefutedCount</c>).</summary>
     public int RefutedClaims { get; set; }
+
+    /// <summary>
+    /// Refuted verifications of the answers' own text: ordinary claims, sentences a grader accused and
+    /// critical-error quotes, never a grader's statement. Null when a verification carries no roles
+    /// (recorded before harness 31) and on a document stored before format version 3.
+    /// </summary>
+    public int? RefutedAnswerSentences { get; set; }
+
     public double ToolCalls { get; set; }
     public double? ModelTimeMs { get; set; }
 
@@ -382,7 +398,10 @@ public sealed class BenchmarkReportContentQuestion
 
     public bool ExpectedPointsRecorded { get; set; }
 
-    /// <summary>The first <see cref="BenchmarkReportContentSnapshot.AnswerExcerptChars"/> characters, cut on whitespace, with an ellipsis when cut.</summary>
+    /// <summary>
+    /// At most <see cref="BenchmarkReportContentSnapshot.AnswerExcerptChars"/> characters, cut at a
+    /// sentence end, a line break or whitespace and never inside a table, with an ellipsis when cut.
+    /// </summary>
     public string AnswerExcerpt { get; set; } = string.Empty;
 
     public bool AnswerExcerptCut { get; set; }
@@ -410,6 +429,14 @@ public sealed class BenchmarkReportContentClaimRuling
     public string Verdict { get; set; } = string.Empty;
 
     public string? Rationale { get; set; }
+
+    /// <summary>
+    /// Why the item was verified (<see cref="Overseer.Services.Benchmarking.BenchmarkReportContent"/>'s
+    /// role constants): <c>claim</c>, <c>accusedSentence</c>, <c>criticalErrorQuote</c>,
+    /// <c>assessorStatement</c> or <c>outOfRubricBasis</c>. Null when the verification recorded no
+    /// roles, and on a document stored before format version 3.
+    /// </summary>
+    public string? Role { get; set; }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -581,6 +608,18 @@ public class BenchmarkReportPackDocumentProgressDto
     public long? DocumentId { get; set; }
     public string? ErrorMessage { get; set; }
     public int ModelCalls { get; set; }
+
+    /// <summary>When the document first became <c>Writing</c>; null while it waits.</summary>
+    public DateTime? StartedAtUtc { get; set; }
+
+    /// <summary>When the document reached a terminal status; null until then.</summary>
+    public DateTime? CompletedAtUtc { get; set; }
+
+    public long InputTokens { get; set; }
+    public long OutputTokens { get; set; }
+
+    /// <summary>Null when no call of the document had a resolvable price.</summary>
+    public double? CostUsd { get; set; }
 }
 
 public class BenchmarkReportPackJobLogEntryDto
@@ -667,6 +706,12 @@ public class BenchmarkReportDocumentDetailDto : BenchmarkReportDocumentListItemD
 public class WriteRunReportDocumentsRequest
 {
     public long WriterModelConfigurationId { get; set; }
+
+    /// <summary>The documents to write; null or empty writes every missing one.</summary>
+    public List<BenchmarkReportAudience>? Audiences { get; set; }
+
+    /// <summary>The operator acknowledged that the writer shares the candidate's provider.</summary>
+    public bool AcknowledgeSameProvider { get; set; }
 }
 
 public class WriteRunReportDocumentsResponse
@@ -675,4 +720,72 @@ public class WriteRunReportDocumentsResponse
 
     /// <summary>The run's documents status once the job is queued: <see cref="BenchmarkRunReportDocumentsStatus.Pending"/>.</summary>
     public BenchmarkRunReportDocumentsStatus Status { get; set; }
+
+    /// <summary>The documents the job will write.</summary>
+    public List<BenchmarkReportAudience> Audiences { get; set; } = new();
+}
+
+/// <summary>
+/// A run's run-completion job as this process knows it: while it runs, and for a few hours after it
+/// finishes or until the run's next job. After a restart only the persisted status and the documents remain.
+/// </summary>
+public class BenchmarkRunReportJobDto
+{
+    public long RunId { get; set; }
+
+    /// <summary>The run's persisted documents status.</summary>
+    public BenchmarkRunReportDocumentsStatus Status { get; set; }
+
+    /// <summary>The run's persisted documents message.</summary>
+    public string? Message { get; set; }
+
+    /// <summary><c>Queued</c>, <c>Preparing</c>, <c>Writing</c> or <c>Finished</c>.</summary>
+    public string Phase { get; set; } = string.Empty;
+
+    public DateTime QueuedAtUtc { get; set; }
+    public DateTime? SlotAcquiredAtUtc { get; set; }
+    public DateTime? FinishedAtUtc { get; set; }
+    public DateTime? CancelRequestedAtUtc { get; set; }
+
+    /// <summary>Jobs waiting ahead of this one; set only while it is queued.</summary>
+    public int? JobsAhead { get; set; }
+
+    /// <summary>The running job this one waits for, <c>Report Pack: �</c> or <c>Run #N: �</c>; set only while queued.</summary>
+    public string? BlockingJobLabel { get; set; }
+
+    public List<BenchmarkReportAudience> Audiences { get; set; } = new();
+    public long WriterConfigId { get; set; }
+    public string WriterDisplayName { get; set; } = string.Empty;
+    public string WriterProvider { get; set; } = string.Empty;
+    public string WriterModelId { get; set; } = string.Empty;
+    public string? WriterThinkingLevel { get; set; }
+
+    /// <summary>Per-document progress, the log and the running totals.</summary>
+    public BenchmarkReportPackJobDto Job { get; set; } = new();
+
+    /// <summary>The server's clock when the view was built, for elapsed times the client shows.</summary>
+    public DateTime ServerTimeUtc { get; set; }
+}
+
+/// <summary>Estimates writing a run's documents; makes no model call.</summary>
+public class BenchmarkRunReportEstimateRequest
+{
+    public long WriterModelConfigurationId { get; set; }
+
+    /// <summary>The documents to estimate; null or empty estimates every missing one.</summary>
+    public List<BenchmarkReportAudience>? Audiences { get; set; }
+}
+
+public class BenchmarkRunReportEstimateDto
+{
+    public List<BenchmarkReportPackAudienceEstimateDto> Estimates { get; set; } = new();
+
+    /// <summary>Sum over <see cref="Estimates"/> of the first call; null when the writer has no resolvable price.</summary>
+    public double? EstimatedTotalCostUsd { get; set; }
+
+    /// <summary>Why the documents cannot be written with this writer, or null when they can.</summary>
+    public string? Refusal { get; set; }
+
+    /// <summary>Set when the writer shares the candidate's provider; writing then needs an acknowledgment.</summary>
+    public SameProviderWarningDto? SameProviderWarning { get; set; }
 }

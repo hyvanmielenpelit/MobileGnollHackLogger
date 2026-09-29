@@ -32,7 +32,10 @@ public enum BenchmarkSeriesStartOutcome
     /// </summary>
     InstrumentChanged = 5,
 
-    /// <summary>Candidate and assessor share a provider and the request did not acknowledge it.</summary>
+    /// <summary>
+    /// Candidate and assessor, or candidate and report writer, share a provider and the request did not
+    /// acknowledge it; the warning's role says which.
+    /// </summary>
     SameProviderNotAcknowledged = 6
 }
 
@@ -197,6 +200,7 @@ public class BenchmarkSeriesOrchestrator
                     BenchmarkRunLaunchOutcome.NotFound => BenchmarkSeriesStartOutcome.NotFound,
                     BenchmarkRunLaunchOutcome.SpendDenied => BenchmarkSeriesStartOutcome.SpendDenied,
                     BenchmarkRunLaunchOutcome.SameProviderNotAcknowledged
+                        or BenchmarkRunLaunchOutcome.ReportWriterSameProviderNotAcknowledged
                         => BenchmarkSeriesStartOutcome.SameProviderNotAcknowledged,
                     _ => BenchmarkSeriesStartOutcome.Invalid
                 },

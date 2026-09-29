@@ -19,9 +19,9 @@ using Overseer.Services.Benchmarking;
 using Overseer.Services.Privacy;
 
 /// <summary>
-/// Report-pack generation: preview (no model call), start, progress and cancel, and writing a
-/// finished run's own run-completion documents on request. The writer call runs in
-/// <see cref="BenchmarkReportPackService"/>, resolved per job from a fresh scope; stored documents
+/// Report-pack generation: preview (no model call), start, progress and cancel; and for a finished
+/// run's own run-completion documents, write on request, estimate, progress, cancel and delete. The
+/// writer call runs in <see cref="BenchmarkReportPackService"/>, resolved per job from a fresh scope; stored documents
 /// are served by <see cref="AdminBenchmarkReportDocumentsController"/>, which cannot reach a model.
 /// </summary>
 [Route("api/admin/benchmark")]
@@ -113,27 +113,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             }
         }
 
-        int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
-        var pricing = writer != null ? _pricingService.Resolve(writer) : null;
         var audiences = (request.Audiences ?? new List<BenchmarkReportAudience>()).Distinct().OrderBy(a => a).ToList();
-        foreach (var audience in audiences)
-        {
-            var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
-            int chars = prompt.SystemPrompt.Length + prompt.UserMessage.Length;
-            int input = (chars + 3) / 4;
-            int output = Math.Min(maxOutputTokens, EstimatedOutputTokens[audience]);
-            preview.Estimates.Add(new BenchmarkReportPackAudienceEstimateDto
-            {
-                Audience = audience,
-                PromptChars = chars,
-                EstimatedInputTokens = input,
-                EstimatedOutputTokens = output,
-                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.ComputeCost(pricing, input, output, 0, 0)
-            });
-        }
-        preview.EstimatedTotalCostUsd = pricing == null || preview.Estimates.Count == 0
-            ? null
-            : preview.Estimates.Sum(e => e.EstimatedCostUsd ?? 0);
+        preview.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
+        preview.EstimatedTotalCostUsd = TotalCost(preview.Estimates);
 
         return Ok(preview);
     }
@@ -231,10 +213,13 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
     /// <summary>
     /// Writes a finished run's missing run-completion documents with the given writer, which becomes
-    /// the run's report writer. Answers 202 with the run's Pending status. Refusals, in order: no body
-    /// (400); unknown run (404); the run has no final synthesis yet (400); both documents exist, or a
-    /// job for the run is Pending or Writing (409); an unusable writer, the model under test, a writer of
-    /// its provider, or a refused endpoint (400); the spend cap (429).
+    /// the run's report writer: the requested ones, or every missing one when none is named. Answers 202
+    /// with the run's Pending status and the documents the job will write. Refusals, in order: no body
+    /// (400); unknown run (404); the run has no final synthesis yet (400); a job for the run is Pending
+    /// or Writing (409); a requested document that is not a run-completion document (400); a requested
+    /// document already written (409), or with none requested, both written (409); an unusable writer or
+    /// the model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
+    /// warning); a refused endpoint (400); the spend cap (429).
     /// </summary>
     [HttpPost("runs/{runId:long}/report-documents")]
     public async Task<IActionResult> WriteRunReportDocuments(long runId, [FromBody] WriteRunReportDocumentsRequest request, CancellationToken ct)
@@ -247,7 +232,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
         if (!BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run))
         {
-            return BadRequest(new { error = "The run has not finished with a final synthesis, so there is nothing to write about yet." });
+            return BadRequest(new { error = NoSynthesisMessage });
         }
 
         if (BenchmarkRunReportDocumentService.IsInProgress(run.ReportDocumentsStatus) || _runReportDocuments.IsActive(runId))
@@ -255,19 +240,43 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             return Conflict(new { error = "The reports of this run are already being written." });
         }
 
+        var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
+        if (invalidAudience != null) return invalidAudience;
+
         var missing = await BenchmarkRunReportDocumentService.MissingAudiencesAsync(_db, runId, ct);
-        if (missing.Count == 0)
+        List<BenchmarkReportAudience> toWrite;
+        if (requested == null)
         {
-            return Conflict(new { error = "This run already has both AI-written reports. Delete them first to write them again." });
+            if (missing.Count == 0)
+            {
+                return Conflict(new { error = "This run already has both AI-written reports. Delete them first to write them again." });
+            }
+            toWrite = missing;
+        }
+        else
+        {
+            var written = requested.Where(a => !missing.Contains(a)).ToList();
+            if (written.Count > 0)
+            {
+                return Conflict(new { error = $"The {BenchmarkReportRenderService.AudienceName(written[0])} is already written. Delete it first to write it again." });
+            }
+            toWrite = requested;
         }
 
         var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
-        string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(
-            writer, BenchmarkRunReportDocumentService.CandidateIdentity(run), _complianceGuard);
+        var candidate = BenchmarkRunReportDocumentService.CandidateIdentity(run);
+        string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard);
         if (refusal != null) return BadRequest(new { error = refusal });
+
+        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
+        if (warning != null && !request.AcknowledgeSameProvider)
+        {
+            return StatusCode(StatusCodes.Status409Conflict, BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning));
+        }
+
         if (!_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
         {
-            return BadRequest(new { error = $"Report writer configuration '{writer.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}" });
+            return BadRequest(new { error = EndpointRefusal(writer, endpointError) });
         }
 
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync(ct: ct);
@@ -279,7 +288,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         await _db.SaveChangesAsync(ct);
 
         string? userId = User?.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (!_runReportDocuments.TryStart(runId, userId, out _))
+        if (!_runReportDocuments.TryStart(runId, userId, toWrite, request.AcknowledgeSameProvider, out _))
         {
             return Conflict(new { error = "The reports of this run are already being written." });
         }
@@ -287,8 +296,127 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         return Accepted(new WriteRunReportDocumentsResponse
         {
             RunId = runId,
-            Status = BenchmarkRunReportDocumentsStatus.Pending
+            Status = BenchmarkRunReportDocumentsStatus.Pending,
+            Audiences = toWrite.ToList()
         });
+    }
+
+    /// <summary>
+    /// The run's current or last run-completion job: 200 with its view, 204 when this process knows
+    /// none for the run (none since the last restart, or its finished job has expired), 404 for an
+    /// unknown run.
+    /// </summary>
+    [HttpGet("runs/{runId:long}/report-documents/job")]
+    public async Task<IActionResult> GetRunReportJob(long runId, CancellationToken ct)
+    {
+        if (_runReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+        var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run == null) return NotFound();
+
+        var view = RunJobView(run);
+        return view == null ? NoContent() : Ok(view);
+    }
+
+    /// <summary>
+    /// Cancels the run's run-completion job: 202 with its view once asked; 409 when no job for the run
+    /// is in progress; 404 for an unknown run. Documents written before the cancellation are kept.
+    /// </summary>
+    [HttpPost("runs/{runId:long}/report-documents/cancel")]
+    public async Task<IActionResult> CancelRunReportJob(long runId, CancellationToken ct)
+    {
+        if (_runReportDocuments == null) return StatusCode(StatusCodes.Status503ServiceUnavailable);
+
+        var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run == null) return NotFound();
+
+        if (_runReportDocuments.TryCancel(runId) != BenchmarkRunReportDocumentService.CancelOutcome.Requested)
+        {
+            return Conflict(new { error = "No report writing is in progress for this run." });
+        }
+        return Accepted(RunJobView(run));
+    }
+
+    /// <summary>
+    /// What writing the run's documents with the writer would cost, by the preview's arithmetic, with
+    /// the writer's refusal or same-provider warning. Computes the fact sheet and the prompts; makes no
+    /// model call. 404 for an unknown run; a document that is not a run-completion document is a 400.
+    /// </summary>
+    [HttpPost("runs/{runId:long}/report-documents/estimate")]
+    public async Task<IActionResult> EstimateRunReportDocuments(long runId, [FromBody] BenchmarkRunReportEstimateRequest request, CancellationToken ct)
+    {
+        if (request == null) return BadRequest(new { error = "A request body is required." });
+
+        var run = await _db.BenchmarkRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run == null) return NotFound();
+
+        var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
+        if (invalidAudience != null) return invalidAudience;
+        var audiences = requested ?? await BenchmarkRunReportDocumentService.MissingAudiencesAsync(_db, runId, ct);
+
+        var writer = request.WriterModelConfigurationId > 0
+            ? await _db.SystemAiApiConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct)
+            : null;
+        var candidate = BenchmarkRunReportDocumentService.CandidateIdentity(run);
+        var estimate = new BenchmarkRunReportEstimateDto
+        {
+            Refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard)
+        };
+        if (estimate.Refusal == null
+            && !_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
+        {
+            estimate.Refusal = EndpointRefusal(writer, endpointError);
+        }
+        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
+        if (estimate.Refusal == null && warning != null)
+        {
+            estimate.SameProviderWarning = BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning);
+        }
+
+        if (!BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run))
+        {
+            estimate.Refusal ??= NoSynthesisMessage;
+            return Ok(estimate);
+        }
+
+        int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
+        var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+            _db, _comparisonService, BenchmarkRunReportDocumentService.RunRequest(runId, audiences, writer?.Id ?? 0), excerptChars, ct);
+        if (prep == null)
+        {
+            estimate.Refusal ??= prepRefusal ?? "The reports could not be prepared.";
+            return Ok(estimate);
+        }
+
+        estimate.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
+        estimate.EstimatedTotalCostUsd = TotalCost(estimate.Estimates);
+        return Ok(estimate);
+    }
+
+    /// <summary>
+    /// Deletes one of the run's own run-completion documents and settles the run's documents status.
+    /// 404 when the run or the document is unknown, or the document is not this run's run-completion
+    /// document; 409 while the run's documents are being written.
+    /// </summary>
+    [HttpDelete("runs/{runId:long}/report-documents/{documentId:long}")]
+    public async Task<IActionResult> DeleteRunReportDocument(long runId, long documentId, CancellationToken ct)
+    {
+        var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run == null) return NotFound();
+
+        string subjectKey = BenchmarkRunReportDocumentService.SubjectKeyOf(runId);
+        bool isRunDocument = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .AnyAsync(d => d.Id == documentId && d.SubjectKey == subjectKey && d.Origin == BenchmarkReportDocumentOrigin.RunCompletion, ct);
+        if (!isRunDocument) return NotFound();
+
+        if (BenchmarkRunReportDocumentService.IsInProgress(run.ReportDocumentsStatus) || (_runReportDocuments?.IsActive(runId) ?? false))
+        {
+            return Conflict(new { error = "Wait for the writing to finish, or cancel it, before deleting a report." });
+        }
+
+        return await BenchmarkReportRenderService.DeleteDocumentAsync(_db, documentId, ct) ? NoContent() : NotFound();
     }
 
     [HttpGet("report-packs/jobs/{jobId}")]
@@ -314,6 +442,62 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (job == null) return NotFound();
         return Ok(new { cancelled = _jobManager.TryCancel(jobId) });
     }
+
+    private const string NoSynthesisMessage = "The run has not finished with a final synthesis, so there is nothing to write about yet.";
+
+    /// <summary>
+    /// The requested run-completion documents in <see cref="BenchmarkRunReportDocumentService.Audiences"/>
+    /// order, or null when none is named; a 400 when one is not a run-completion document.
+    /// </summary>
+    private (List<BenchmarkReportAudience>? Audiences, IActionResult? Invalid) RequestedAudiences(List<BenchmarkReportAudience>? audiences)
+    {
+        if (audiences == null || audiences.Count == 0) return (null, null);
+        if (audiences.Any(a => !BenchmarkRunReportDocumentService.Audiences.Contains(a)))
+        {
+            return (null, BadRequest(new { error = "Only the Executive Summary and the Report for AI Researchers and Developers are written for a run." }));
+        }
+        return (BenchmarkRunReportDocumentService.Audiences.Where(audiences.Contains).ToList(), null);
+    }
+
+    /// <summary>The run's job view with the run's persisted status and message, or null when this process knows no job for it.</summary>
+    private BenchmarkRunReportJobDto? RunJobView(BenchmarkRun run)
+    {
+        var view = _runReportDocuments?.TryGetJob(run.Id);
+        if (view == null) return null;
+        view.Status = run.ReportDocumentsStatus;
+        view.Message = run.ReportDocumentsMessage;
+        return view;
+    }
+
+    /// <summary>Each document's prompt size, estimated tokens and first-call cost; makes no model call.</summary>
+    private BenchmarkReportPackAudienceEstimateDto[] EstimateAudiences(
+        BenchmarkReportPackPreparation prep, SystemAiApiConfiguration? writer, IEnumerable<BenchmarkReportAudience> audiences)
+    {
+        int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
+        var pricing = writer != null ? _pricingService.Resolve(writer) : null;
+        return audiences.Select(audience =>
+        {
+            var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
+            int chars = prompt.SystemPrompt.Length + prompt.UserMessage.Length;
+            int input = (chars + 3) / 4;
+            int output = Math.Min(maxOutputTokens, EstimatedOutputTokens[audience]);
+            return new BenchmarkReportPackAudienceEstimateDto
+            {
+                Audience = audience,
+                PromptChars = chars,
+                EstimatedInputTokens = input,
+                EstimatedOutputTokens = output,
+                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.ComputeCost(pricing, input, output, 0, 0)
+            };
+        }).ToArray();
+    }
+
+    /// <summary>The sum of the estimates' costs; null when there is none or a document has no price.</summary>
+    private static double? TotalCost(IReadOnlyCollection<BenchmarkReportPackAudienceEstimateDto> estimates)
+        => estimates.Count == 0 || estimates.Any(e => e.EstimatedCostUsd == null) ? null : estimates.Sum(e => e.EstimatedCostUsd!.Value);
+
+    private static string EndpointRefusal(SystemAiApiConfiguration writer, string? endpointError)
+        => $"Report writer configuration '{writer.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}";
 
     /// <summary>Why the configuration cannot write this subject's documents, or null when it can.</summary>
     private string? WriterRefusal(SystemAiApiConfiguration? writer, BenchmarkModelComparisonEntryDto subject)

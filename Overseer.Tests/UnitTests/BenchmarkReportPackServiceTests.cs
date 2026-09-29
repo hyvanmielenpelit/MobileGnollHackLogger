@@ -98,6 +98,36 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
+    public async Task EachDocument_RecordsItsStartAndCompletionTimes_TokensAndCost()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: "{{subject}} answered 3 questions well."));
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        var before = DateTime.UtcNow;
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        var dto = job.ToDto();
+        var progress = Assert.Single(dto.Documents);
+        Assert.Equal(nameof(BenchmarkReportPackDocumentStatus.Completed), progress.Status);
+        Assert.NotNull(progress.StartedAtUtc);
+        Assert.NotNull(progress.CompletedAtUtc);
+        Assert.True(progress.StartedAtUtc >= before);
+        Assert.True(progress.CompletedAtUtc >= progress.StartedAtUtc);
+        Assert.Equal(2, progress.ModelCalls);
+        Assert.Equal(2L * WriterProvider.PromptTokens, progress.InputTokens);
+        Assert.Equal(2L * WriterProvider.OutputTokens, progress.OutputTokens);
+        Assert.Equal(dto.InputTokens, progress.InputTokens);
+        Assert.Equal(dto.OutputTokens, progress.OutputTokens);
+        Assert.Equal(dto.CostUsd, progress.CostUsd);
+
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(document.InputTokens, progress.InputTokens);
+        Assert.Equal(document.OutputTokens, progress.OutputTokens);
+    }
+
+    [Fact]
     public async Task AnItemStillInvalidAfterRepair_IsDropped_AndTheDocumentCompletesWithWarnings()
     {
         await using var h = await Harness.CreateAsync();
@@ -398,12 +428,95 @@ public class BenchmarkReportPackServiceTests
 
         Assert.Equal("application/pdf", provider.ContentType);
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             provider.FileDownloadName);
         Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(provider.FileContents, 0, 5));
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
             full.FileDownloadName);
+    }
+
+    [Fact]
+    public async Task RenderPdf_Inline_SendsAnInlineDispositionWithTheSameName()
+    {
+        BenchmarkPdfTestSetup.Configure();
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        await using var db = new ApplicationDbContext(options);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        document.Id = 0;
+        db.BenchmarkReportDocuments.Add(document);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance))
+        {
+            ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() }
+        };
+
+        var pdf = Assert.IsType<FileContentResult>(
+            await controller.RenderPdf(document.Id, "detailed", "anonymized", null, CancellationToken.None, inline: true));
+
+        Assert.Equal("application/pdf", pdf.ContentType);
+        Assert.True(string.IsNullOrEmpty(pdf.FileDownloadName));
+        Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(pdf.FileContents, 0, 5));
+        Assert.Equal(
+            "inline; filename*=UTF-8''run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            controller.Response.Headers.ContentDisposition.ToString());
+    }
+
+    [Fact]
+    public async Task DeleteDocument_OfARunCompletionDocument_SettlesTheRunsStatus()
+    {
+        await using var h = await Harness.CreateAsync();
+        var ct = TestContext.Current.CancellationToken;
+        long runId = h.Seeded.RunIds[0];
+        var run = await h.Db.BenchmarkRuns.SingleAsync(r => r.Id == runId, ct);
+        run.ReportWriterModelConfigurationId = h.Writer.Id;
+        run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Failed;
+        run.ReportDocumentsMessage = "Report for AI Researchers and Developers: it could not be written.";
+
+        BenchmarkReportDocument Stored(BenchmarkReportAudience audience, BenchmarkReportDocumentOrigin origin)
+        {
+            var document = BenchmarkReportPackFixture.StandaloneDocument(audience);
+            document.Id = 0;
+            document.Origin = origin;
+            document.SubjectKey = $"run:{runId}";
+            document.Runs = new List<BenchmarkReportDocumentRun>();
+            h.Db.BenchmarkReportDocuments.Add(document);
+            return document;
+        }
+        var packDocument = Stored(BenchmarkReportAudience.InternalBrief, BenchmarkReportDocumentOrigin.ReportPack);
+        var executive = Stored(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDocumentOrigin.RunCompletion);
+        var researcher = Stored(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDocumentOrigin.RunCompletion);
+        await h.Db.SaveChangesAsync(ct);
+
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance));
+
+        async Task<BenchmarkRun> RunNowAsync()
+        {
+            await using var db = new ApplicationDbContext(h.Options);
+            return await db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().SingleAsync(r => r.Id == runId, ct);
+        }
+
+        // A report pack's document about the same run leaves the run's status alone.
+        Assert.IsType<NoContentResult>(await controller.Delete(packDocument.Id, ct));
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Failed, (await RunNowAsync()).ReportDocumentsStatus);
+
+        // While the documents are being written, a delete leaves the status to the job.
+        run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Writing;
+        await h.Db.SaveChangesAsync(ct);
+        Assert.IsType<NoContentResult>(await controller.Delete(researcher.Id, ct));
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Writing, (await RunNowAsync()).ReportDocumentsStatus);
+
+        run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Completed;
+        await h.Db.SaveChangesAsync(ct);
+        Assert.IsType<NoContentResult>(await controller.Delete(executive.Id, ct));
+
+        var settled = await RunNowAsync();
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, settled.ReportDocumentsStatus);
+        Assert.Null(settled.ReportDocumentsMessage);
+        Assert.Equal(h.Writer.Id, settled.ReportWriterModelConfigurationId);
+        Assert.IsType<NotFoundResult>(await controller.Delete(executive.Id, ct));
     }
 
     [Fact]

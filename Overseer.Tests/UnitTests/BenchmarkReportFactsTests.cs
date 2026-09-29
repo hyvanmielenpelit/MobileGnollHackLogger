@@ -394,7 +394,7 @@ public class BenchmarkReportFactsTests
         Assert.Equal(keys.OrderBy(k => k, StringComparer.Ordinal).ToList(), keys);
         Assert.Equal(keys.Count, keys.Distinct(StringComparer.Ordinal).Count());
 
-        Assert.Equal("80 ± 3 / 100", FactOf(sheet, "quality.index").Display);
+        Assert.Equal("80 / 100", FactOf(sheet, "quality.index").Display);
         Assert.Equal("77–84", FactOf(sheet, "quality.interval").Display);
         Assert.Equal("12.3 s", FactOf(sheet, "speed.modelTimeP50").Display);
         Assert.Equal("$0.036", FactOf(sheet, "cost.perQuestion").Display);
@@ -412,5 +412,101 @@ public class BenchmarkReportFactsTests
         Assert.Equal(names.OrderBy(n => n, StringComparer.Ordinal).ToList(), names);
         Assert.Contains("Peer", names);
         Assert.Contains("GnollHack Core Suite", names);
+    }
+
+    [Fact]
+    public void TheIndexAndItsInterval_AreRoundedTheSameWay_AndPrintedTogether()
+    {
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 77.4, 73.0, 81.8));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", SimpleRun(1, "OpenAI")));
+
+        Assert.Equal("77 / 100", FactOf(sheet, "quality.index").Display);
+        Assert.Equal("73–82", FactOf(sheet, "quality.interval").Display);
+        Assert.DoesNotContain(sheet.Facts, f => f.Display.Contains('±'));
+
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+        Assert.Contains("- **Intelligence:** 77 / 100 (interval 73–82).\n", text);
+    }
+
+    [Fact]
+    public void RefutedAnswerSentences_CountTheAnswersOwnText_AndNeverAGradersStatement()
+    {
+        static BenchmarkClaimVerification V(BenchmarkClaimVerdict verdict, params string[] roles)
+            => new(0, "A sentence.", verdict, null, null) { Roles = roles.Length == 0 ? null : roles };
+
+        var run = Run(1, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 40), new AnswerSpec(12, 2, 1, 70), new AnswerSpec(13, 3, 1, 90));
+        run.Answers[0].ClaimsRefutedCount = 2;
+        run.Answers[0].ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new[]
+        {
+            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.UnverifiedClaim),
+            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote),
+            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.CriticalErrorQuote),
+            V(BenchmarkClaimVerdict.Refuted),
+            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AssessorStatement),
+            V(BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.OutOfRubricBasis),
+            V(BenchmarkClaimVerdict.Supported, BenchmarkClaimRoles.UnverifiedClaim),
+            V(BenchmarkClaimVerdict.Indeterminate, BenchmarkClaimRoles.AccusedQuote)
+        });
+        // Stored before harness 31: no roles, so the count cannot be told apart from the grader's.
+        run.Answers[1].ClaimsRefutedCount = 1;
+        run.Answers[1].ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new[] { V(BenchmarkClaimVerdict.Refuted) });
+
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 60)), "run:1", run));
+
+        Assert.Equal(4, sheet.Questions[0].RefutedAnswerSentences);
+        Assert.Equal(2, sheet.Questions[0].RefutedClaims);
+        Assert.Null(sheet.Questions[1].RefutedAnswerSentences);
+        Assert.Equal(1, sheet.Questions[1].RefutedClaims);
+        Assert.Equal(0, sheet.Questions[2].RefutedAnswerSentences);
+    }
+
+    [Fact]
+    public void ThePricingBasisKind_IsCatalogWithItsDate_OrSnapshot()
+    {
+        var current = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80));
+        current.ComputedAtUtc = new DateTime(2026, 9, 29, 8, 30, 0, DateTimeKind.Utc);
+        var catalog = BuildSheet(Input(current, "run:1", SimpleRun(1, "OpenAI")));
+
+        Assert.Equal(BenchmarkReportFacts.PricingBasisCatalog, FactOf(catalog, "comparison.pricingBasisKind").Display);
+        Assert.Equal("2026-09-29", FactOf(catalog, "comparison.pricedOn").Display);
+
+        var asRun = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80));
+        asRun.PricingBasis = nameof(BenchmarkModelComparisonPricingBasis.AsRun);
+        var snapshot = BuildSheet(Input(asRun, "run:1", SimpleRun(1, "OpenAI")));
+
+        Assert.Equal(BenchmarkReportFacts.PricingBasisSnapshot, FactOf(snapshot, "comparison.pricingBasisKind").Display);
+        Assert.False(FactOf(snapshot, "comparison.pricedOn").Available);
+    }
+
+    [Fact]
+    public void TokenFacts_AreTheMeanOverTheAnswersThatRecordedThem()
+    {
+        var run = SimpleRun(1, "OpenAI");
+        run.Answers[0].InputTokens = 12000;
+        run.Answers[0].OutputTokens = 900;
+        run.Answers[1].InputTokens = 13001;
+
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", run));
+
+        Assert.Equal("12,501", FactOf(sheet, "tokens.inputPerQuestion").Display);
+        Assert.Equal("900", FactOf(sheet, "tokens.outputPerQuestion").Display);
+
+        var none = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+        Assert.False(FactOf(none, "tokens.inputPerQuestion").Available);
+    }
+
+    [Theory]
+    [InlineData(3.0, "3")]
+    [InlineData(2.5, "2.5")]
+    [InlineData(2.46, "2.5")]
+    [InlineData(2.04, "2")]
+    [InlineData(-0.04, "0")]
+    public void CompactDecimal_DropsAZeroDecimal(double value, string expected)
+    {
+        Assert.Equal(expected, BenchmarkReportFormat.CompactDecimal(value));
+        Assert.Equal("3.0", BenchmarkReportFormat.OneDecimal(3.0));
     }
 }

@@ -44,13 +44,7 @@ import {
   ImportBenchmarkQuestionsResultDto,
   CaptureBenchmarkSnapshotResponse,
   BoardFactsCheckDto,
-  BoardFactIssueDto,
-  BenchmarkReportAudience,
-  BenchmarkReportDisclosure,
-  BenchmarkReportDocumentListItemDto,
-  BenchmarkReportDocumentOrigin,
-  BenchmarkReportPeerNaming,
-  BenchmarkRunReportDocumentsStatus
+  BoardFactIssueDto
 } from '../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../services/admin.service';
 
@@ -102,7 +96,7 @@ import {
   ModelPickerComponent, ModelPickerKey, ModelPickerModel, ModelPickerOption, toModelPickerOptions
 } from '../../shared/model-picker/model-picker.component';
 import { InfoTipComponent } from '../../shared/info-tip/info-tip.component';
-import { Observable, Subscription, catchError, firstValueFrom, forkJoin, from, map, of, switchMap, timer } from 'rxjs';
+import { Observable, Subscription, catchError, firstValueFrom, forkJoin, from, map, of } from 'rxjs';
 import { QuestionYamlImportDialogComponent } from './question-yaml/question-yaml-import-dialog.component';
 import { QuestionYamlHelpDialogComponent } from './question-yaml/question-yaml-help-dialog.component';
 import { SnapshotSuiteWizardComponent } from './question-yaml/snapshot-suite-wizard.component';
@@ -118,29 +112,14 @@ import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload
 import { RunReportFrameComponent } from './run-report-frame/run-report-frame.component';
 import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from './run-report-frame/key-figure-card-actions.component';
 import { ImageContext, KeyFiguresAction, exportKeyFiguresImage } from './run-report-frame/key-figures-image';
-import {
-  BenchmarkDownloadCenterComponent,
-  audienceLabel as reportAudienceLabel,
-  rememberedPdfPaper
-} from './download-center/benchmark-download-center.component';
-import { statusLabel as reportDocumentStatusLabel } from './report-pack/benchmark-report-pack-dialog.component';
+import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
+import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/run-ai-reports.component';
+import { reportWriterRefusal, reportWriterWarning } from './run-ai-reports/report-writer-policy';
 import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../utils/download.util';
 import { jobStatusLabel } from '../../utils/job-status-label.util';
 
 const COPY_STATUS_MS = 3000;
-
-/** The interval of the run report's document poll while a finished run's reports are queued or written. */
-export const RUN_REPORT_DOCUMENTS_POLL_MS = 5000;
-
-/** How long a viewed report PDF's object URL lives: long enough for the new tab to load it. */
-const RUN_REPORT_PDF_URL_LIFETIME_MS = 60000;
-
-/** The two AI-written documents of a run, in the order the run report lists them. */
-const RUN_REPORT_AUDIENCES: readonly BenchmarkReportAudience[] = [
-  BenchmarkReportAudience.ExecutiveSummary,
-  BenchmarkReportAudience.TechnicalReport
-];
 
 /** The run report's tabs, in order. */
 const RUN_REPORT_TABS = [
@@ -359,7 +338,7 @@ interface BenchmarkRunSettings {
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
-    RunReportFrameComponent, KeyFigureCardActionsComponent, BenchmarkDownloadCenterComponent
+    RunReportFrameComponent, KeyFigureCardActionsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -1617,9 +1596,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.stopPolling();
     this.stopRunElapsedTicker();
     this.stopDetailPolling();
-    this.stopRunReportDocumentsPoll();
-    this.runReportDocumentsSubscription?.unsubscribe();
-    this.runReportDocumentsSubscription = null;
     this.stopDifficultyPolling();
     this.terminatingDifficultyJob = false;
     this.stopSeriesPolling();
@@ -1737,29 +1713,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * Mirrors the server's two report-writer refusals: the writer may be neither the model under test
-   * nor of its provider. Empty when there is no writer or nothing to refuse.
+   * Mirrors the server's report-writer refusals: an invalid configuration, or the model under test
+   * itself. Holds Start back. Empty when there is no writer or nothing to refuse.
    */
   get reportWriterLaunchRefusal(): string {
-    return AdminBenchmarkComponent.reportWriterRefusal(this.selectedReportWriterModel, this.selectedTestedModel);
+    return reportWriterRefusal(this.selectedReportWriterModel, this.selectedTestedModel);
   }
 
-  /** The server's report-writer refusal for this writer and candidate, or '' when it would accept it. */
-  private static reportWriterRefusal(
-    writer: { id?: number | null; provider?: string | null; modelId?: string | null } | undefined,
-    candidate: { id?: number | null; provider?: string | null; modelId?: string | null } | undefined
-  ): string {
-    if (!writer || !candidate) return '';
-    const sameProvider = AdminBenchmarkComponent.sameProvider(writer.provider, candidate.provider);
-    const sameModelId = !!writer.modelId && !!candidate.modelId &&
-      writer.modelId.trim().toLowerCase() === candidate.modelId.trim().toLowerCase();
-    if ((writer.id != null && writer.id === candidate.id) || (sameProvider && sameModelId)) {
-      return 'The model under test cannot write its own reports.';
-    }
-    if (sameProvider) {
-      return 'Choose a report writer from another provider than the model under test.';
-    }
-    return '';
+  /**
+   * A writer from the model under test's provider: advisory, Start stays available and the server
+   * asks for the acknowledgment. Empty when there is no writer, it is refused, or its provider differs.
+   */
+  get reportWriterLaunchWarning(): string {
+    return reportWriterWarning(this.selectedReportWriterModel, this.selectedTestedModel);
   }
 
   /**
@@ -3333,8 +3299,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * Saved in startBenchmark before the request is sent: the operator's choices are worth remembering
    * whether or not the server accepts the run.
    *
-   * acknowledgeSameProvider is deliberately not persisted. It is a per-run safety acknowledgement, and
-   * silently remembering it would defeat the warning dialog it exists to gate. Neither are the
+   * The same-provider acknowledgments (acknowledgeSameProvider for the assessor and
+   * acknowledgeSameProviderReportWriter for the report writer) are deliberately not persisted. They are
+   * per-run safety acknowledgments, and silently remembering them would defeat the warning dialog they
+   * exist to gate. Neither are the
    * difficulty-assessor, retry-assessor, generation-model or calibration-assessor selections, which are
    * not part of setting up a run.
    */
@@ -3445,17 +3413,33 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   // --- Run Execution ---
 
+  /**
+   * The same-provider acknowledgments given in the current start attempt, by role. A new attempt
+   * starts with none; the confirmation adds its role and the request is sent again with every one
+   * given so far, so an assessor warning and then a report-writer warning resolve both. Never stored.
+   */
+  private launchAcknowledgments = { assessor: false, reportWriter: false };
+
   startBenchmark(acknowledgeSameProvider: boolean = false, boardQuotesAcknowledged: boolean = false) {
     if (!this.canStartRun || this.selectedSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
 
     this.armCompletionSignalsFromGesture();
+
+    if (acknowledgeSameProvider) {
+      // Without a role recorded by the dialog, the acknowledgment is the assessor's.
+      if (!this.launchAcknowledgments.assessor && !this.launchAcknowledgments.reportWriter) {
+        this.launchAcknowledgments.assessor = true;
+      }
+    } else if (!boardQuotesAcknowledged) {
+      this.launchAcknowledgments = { assessor: false, reportWriter: false };
+    }
 
     // A same-provider acknowledgement follows a request that already passed this gate.
     if (!acknowledgeSameProvider && !boardQuotesAcknowledged && this.selectedSuite?.gameSnapshotId != null) {
       this.checkBoardQuotesBeforeStart(this.selectedSuiteId);
       return;
     }
-    this.sendStartRequest(acknowledgeSameProvider);
+    this.sendStartRequest();
   }
 
   @ViewChild('boardQuoteWarningDialog') boardQuoteWarningDialog?: ElementRef<HTMLDialogElement>;
@@ -3489,11 +3473,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           this.boardQuoteWarningDialog?.nativeElement.showModal();
           return;
         }
-        this.sendStartRequest(false);
+        this.sendStartRequest();
       },
       error: (err) => {
         console.warn('Board facts check before start failed; starting without it', err);
-        this.sendStartRequest(false);
+        this.sendStartRequest();
       }
     });
   }
@@ -3508,7 +3492,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.startBenchmark(false, true);
   }
 
-  private sendStartRequest(acknowledgeSameProvider: boolean): void {
+  private sendStartRequest(): void {
     if (this.selectedSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
 
     this.startingRun = true;
@@ -3531,7 +3515,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       reportWriterModelConfigurationId: this.reportWriterConfigId,
       verboseMode: this.candidateVerboseMode,
       scoringProfileId: this.selectedScoringProfileId,
-      acknowledgeSameProvider: acknowledgeSameProvider,
+      acknowledgeSameProvider: this.launchAcknowledgments.assessor,
+      // Only once acknowledged, so every other request carries the body it always has.
+      ...(this.launchAcknowledgments.reportWriter ? { acknowledgeSameProviderReportWriter: true } : {}),
       // Only on a panel run, so a single-assessor request carries the body it always has.
       ...(this.coAssessorConfigId != null ? { coAssessorModelConfigurationId: this.coAssessorConfigId } : {})
     };
@@ -3569,10 +3555,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       },
       error: (err) => {
         this.startingRun = false;
-        // Never for a panel run: the server blocks self-grading there outright and answers no 409.
-        if (err?.status === 409 && err.error?.sameProvider && req.coAssessorModelConfigurationId == null) {
-          this.sameProviderWarning = err.error as SameProviderWarningDto;
-          this.sameProviderDialog?.nativeElement.showModal();
+        if (this.isSameProviderPrompt(err, req)) {
+          this.showSameProviderDialog(err.error as SameProviderWarningDto);
         } else {
           this.runErrorMessage = err?.error || 'Failed to start benchmark run.';
         }
@@ -3703,16 +3687,34 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       },
       error: (err) => {
         this.startingRun = false;
-        // Never for a panel run: the server blocks self-grading there outright and answers no 409.
-        if (err?.status === 409 && err.error?.sameProvider && req.coAssessorModelConfigurationId == null) {
-          this.sameProviderWarning = err.error as SameProviderWarningDto;
-          this.sameProviderDialog?.nativeElement.showModal();
+        if (this.isSameProviderPrompt(err, req)) {
+          this.showSameProviderDialog(err.error as SameProviderWarningDto);
         } else {
           this.runErrorMessage = err?.error?.message || err?.error || 'Failed to start benchmark run series.';
         }
         this.cdr.detectChanges();
       }
     });
+  }
+
+  /**
+   * A 409 that asks for a same-provider acknowledgment. The assessor's never comes for a panel run,
+   * where the server blocks self-grading outright; the report writer's can come for any run.
+   */
+  private isSameProviderPrompt(err: any, req: StartBenchmarkRunRequest): boolean {
+    if (err?.status !== 409 || !err.error?.sameProvider) {
+      return false;
+    }
+    return err.error.role === 'reportWriter' || req.coAssessorModelConfigurationId == null;
+  }
+
+  /** Shows the same-provider dialog, or switches its content when a second role's prompt follows the first. */
+  private showSameProviderDialog(warning: SameProviderWarningDto): void {
+    this.sameProviderWarning = warning;
+    const dialog = this.sameProviderDialog?.nativeElement;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
   }
 
   /**
@@ -4010,8 +4012,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.sameProviderWarning = null;
   }
 
+  /** Acknowledge & Start Run: adds the shown role's acknowledgment to those given in this attempt and sends again. */
   confirmSameProviderRun() {
+    if (this.sameProviderWarningIsReportWriter) {
+      this.launchAcknowledgments.reportWriter = true;
+    } else {
+      this.launchAcknowledgments.assessor = true;
+    }
     this.startBenchmark(true);
+  }
+
+  /** The same-provider dialog is about the report writer rather than the assessor. */
+  get sameProviderWarningIsReportWriter(): boolean {
+    return this.sameProviderWarning?.role === 'reportWriter';
   }
 
   cancelActiveRun() {
@@ -5944,7 +5957,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.calibrationErrorMessage = null;
     this.calibrationAssessorConfigId = this.benchmarkCapableConfigs[0]?.id ?? null;
     this.calibrationTarget = 'Assessor';
-    this.resetRunReportDocuments();
     // Re-scoring reloads the run into the dialog that is already open, on the tab it shows.
     const dialog = this.runDetailDialog?.nativeElement;
     if (!dialog?.open) {
@@ -5960,8 +5972,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         if (token !== this.runDetailLoadToken) return;
         this.selectedRunDetail = data;
         this.loadingDetail = false;
-        this.runReportWriterConfigId = this.defaultRunReportWriterId(data);
-        this.loadRunReportDocuments(data.id);
         this.cdr.detectChanges();
         // The header's tooltips and the Re-run popover are new anchors to the polyfill.
         refreshAnchorPositioning();
@@ -5974,20 +5984,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.cdr.detectChanges();
       }
     });
-  }
-
-  /**
-   * The writer Write Reports starts with: the run's own writer while it qualifies, else the launcher's
-   * Report Writer when the server would accept it for this run's candidate, else none.
-   */
-  private defaultRunReportWriterId(run: BenchmarkRunDetailDto): number | null {
-    const own = run.reportWriterModelConfigurationId ?? null;
-    if (own != null && this.benchmarkCapableConfigs.some(c => c.id === own)) {
-      return own;
-    }
-    const launcher = this.benchmarkCapableConfigs.find(c => c.id === this.reportWriterConfigId);
-    const candidate = { provider: run.testedModelProviderUsed, modelId: run.testedModelIdUsed };
-    return launcher && AdminBenchmarkComponent.reportWriterRefusal(launcher, candidate) === '' ? launcher.id : null;
   }
 
   // --- Run report: tabs ---
@@ -6073,7 +6069,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
     this.runDetailLoadToken++;
     this.stopDetailPolling();
-    this.resetRunReportDocuments();
     this.selectedRunDetail = null;
     this.runDetailRequestedId = null;
     this.runDetailLoadError = null;
@@ -6179,12 +6174,19 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.rerunTrigger?.nativeElement.focus();
   }
 
-  /** Opens the Download Center on the viewed run; its diagnostics are captured when a download is prepared. */
-  openRunDownloads(): void {
+  /** The button that last opened the Download Center over the run report, for focus to return to. */
+  private runDownloadsOpener: HTMLElement | null = null;
+
+  /**
+   * Opens the Download Center on the viewed run; its diagnostics are captured when a download is
+   * prepared. `opener` is the button that asked, when it is not the header's Downloads.
+   */
+  openRunDownloads(opener?: HTMLElement): void {
     const run = this.selectedRunDetail;
     if (!run) {
       return;
     }
+    this.runDownloadsOpener = opener ?? null;
     this.runDownloadCenter?.open({
       kind: 'run',
       run: {
@@ -6202,321 +6204,37 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     });
   }
 
-  /** Focus lost when the Download Center closed over the run report goes back to Downloads. */
+  /**
+   * Focus lost when the Download Center closed over the run report goes back to the button that
+   * opened it while that button is still shown, else to the header's Downloads.
+   */
   onRunDownloadsClosed(): void {
+    const opener = this.runDownloadsOpener;
+    this.runDownloadsOpener = null;
     const active = document.activeElement;
     if (this.runDetailDialog?.nativeElement.open && (!active || active === document.body)) {
-      document.getElementById('rr-downloads-trigger')?.focus();
+      const target = opener?.isConnected && opener.getClientRects().length > 0
+        ? opener
+        : document.getElementById('rr-downloads-trigger');
+      target?.focus();
     }
   }
 
-  // --- Run report: AI-written reports ---
-
-  /**
-   * The viewed run's AI-written (run-completion) documents, one per audience, from the document
-   * list. Whether they exist is read here and never from the run's status, which a delete does
-   * not reset.
-   */
-  runReportDocuments: BenchmarkReportDocumentListItemDto[] = [];
-  /** The document list of the viewed run has answered. */
-  runReportDocumentsLoaded = false;
-  runReportDocumentsError: string | null = null;
-  /** The writer Write Reports sends; see {@link defaultRunReportWriterId} for where it starts. */
-  runReportWriterConfigId: number | null = null;
-  runReportWriteSubmitting = false;
-  runReportWriteError: string | null = null;
-  runReportViewError: string | null = null;
-  private runReportDocumentsSubscription: Subscription | null = null;
-  private runReportDocumentsPoll: Subscription | null = null;
-  private runReportDocumentsPollRunId: number | null = null;
-
-  /** The run's documents status, read from its number or, from an older server, its name. */
-  runReportDocumentsStatusOf(run: BenchmarkRunDetailDto | null | undefined): BenchmarkRunReportDocumentsStatus {
-    const raw = run?.reportDocumentsStatus as unknown;
-    if (typeof raw === 'number') {
-      return raw as BenchmarkRunReportDocumentsStatus;
-    }
-    if (typeof raw === 'string') {
-      const value = BenchmarkRunReportDocumentsStatus[raw as keyof typeof BenchmarkRunReportDocumentsStatus];
-      if (typeof value === 'number') {
-        return value;
-      }
-    }
-    return BenchmarkRunReportDocumentsStatus.NotRequested;
+  /** The run report dialog is open; the AI Reports tab polls only then. */
+  get runDetailDialogOpen(): boolean {
+    return !!this.runDetailDialog?.nativeElement?.open;
   }
 
-  /** A job for the run's documents is queued or writing. */
-  runReportDocumentsInProgress(run: BenchmarkRunDetailDto | null | undefined): boolean {
-    const status = this.runReportDocumentsStatusOf(run);
-    return status === BenchmarkRunReportDocumentsStatus.Pending || status === BenchmarkRunReportDocumentsStatus.Writing;
-  }
-
-  /** The run finished with a status its documents can be written for. */
-  runReportRunFinished(run: BenchmarkRunDetailDto): boolean {
-    const status = this.formatStatus(run.status);
-    return status === 'Completed' || status === 'CompletedWithErrors' || status === 'CompletedWithLimits';
-  }
-
-  runReportDocumentFor(audience: BenchmarkReportAudience): BenchmarkReportDocumentListItemDto | undefined {
-    return this.runReportDocuments.find(doc => doc.audience === audience);
-  }
-
-  /** A finished run has fewer than both documents, so the section offers Write Reports. */
-  get runReportDocumentsMissing(): boolean {
+  /** The AI Reports tab read new report fields: the run the dialog shows follows them. */
+  onRunReportStatusChange(change: RunReportStatusChange): void {
     const run = this.selectedRunDetail;
-    return !!run && this.runReportDocumentsLoaded && this.runReportDocumentsError === null &&
-      this.runReportRunFinished(run) && RUN_REPORT_AUDIENCES.some(audience => !this.runReportDocumentFor(audience));
-  }
-
-  /** The server's refusal of the chosen writer for the viewed run's candidate, or '' when it would accept it. */
-  get runReportWriterRefusal(): string {
-    const run = this.selectedRunDetail;
-    if (!run) return '';
-    const writer = this.benchmarkCapableConfigs.find(c => c.id === this.runReportWriterConfigId);
-    return AdminBenchmarkComponent.reportWriterRefusal(writer, {
-      provider: run.testedModelProviderUsed,
-      modelId: run.testedModelIdUsed
-    });
-  }
-
-  /** Why Write Reports cannot be pressed now, or '' when it can. */
-  get runReportWriteBlockedReason(): string {
-    const run = this.selectedRunDetail;
-    if (!run) return '';
-    if (this.runReportDocumentsInProgress(run)) {
-      return 'The reports are being written.';
-    }
-    if (!run.assessmentJson) {
-      return 'The run has no final synthesis to write about. Re-run the final synthesis first.';
-    }
-    return this.runReportWriterRefusal;
-  }
-
-  /** One row per run-completion audience, in the order the section lists them, with its stored document if any. */
-  get runReportDocumentRows(): { audience: BenchmarkReportAudience; label: string; doc: BenchmarkReportDocumentListItemDto | null }[] {
-    return RUN_REPORT_AUDIENCES.map(audience => ({
-      audience,
-      label: reportAudienceLabel(audience),
-      doc: this.runReportDocumentFor(audience) ?? null
-    }));
-  }
-
-  runReportDocumentStatusLabel(doc: BenchmarkReportDocumentListItemDto): string {
-    switch (doc.status) {
-      case 'Completed': return 'Written';
-      case 'CompletedWithWarnings': return 'Written with warnings';
-      default: return reportDocumentStatusLabel(doc.status);
-    }
-  }
-
-  /** A written document's writer and date. */
-  runReportDocumentMeta(doc: BenchmarkReportDocumentListItemDto): string {
-    const writer = doc.writerDisplayName || this.selectedRunDetail?.reportWriterDisplayName || 'the report writer';
-    return `by ${writer} on ${this.formatRunReportDate(doc.createdAtUtc)}`;
-  }
-
-  /** The section's job state, or '' when the document rows already say everything. */
-  runReportStatusText(run: BenchmarkRunDetailDto): string {
-    const status = this.runReportDocumentsStatusOf(run);
-    const message = run.reportDocumentsMessage?.trim();
-    switch (status) {
-      case BenchmarkRunReportDocumentsStatus.Pending:
-        return 'Waiting for the report writer';
-      case BenchmarkRunReportDocumentsStatus.Writing:
-        return 'Writing…';
-      case BenchmarkRunReportDocumentsStatus.Failed:
-        return message ? `Failed: ${message}` : 'Failed';
-      case BenchmarkRunReportDocumentsStatus.Skipped:
-        return message ? `Skipped: ${message}` : 'Skipped';
-    }
-    if (status === BenchmarkRunReportDocumentsStatus.NotRequested && run.reportWriterModelConfigurationId != null
-      && this.formatStatus(run.status) === 'Running') {
-      return `Not written yet: ${run.reportWriterDisplayName || 'the report writer'} writes them once the run is scored`;
-    }
-    return '';
-  }
-
-  private formatRunReportDate(value: string | null | undefined): string {
-    if (!value) return 'an unknown date';
-    const date = parseServerUtcDate(value);
-    return Number.isNaN(date.getTime()) ? value : `${formatDate(date, 'yyyy-MM-dd HH:mm', 'en-US', 'UTC')} UTC`;
-  }
-
-  selectRunReportWriterModel(config: SystemAiConfigDto | null): void {
-    this.runReportWriterConfigId = config?.id ?? null;
-    this.runReportWriteError = null;
-  }
-
-  /** The list's run-completion documents of this run, the newest one per audience, in audience order. */
-  private runCompletionDocumentsOf(documents: readonly BenchmarkReportDocumentListItemDto[] | null | undefined, runId: number): BenchmarkReportDocumentListItemDto[] {
-    const subjectKey = `run:${runId}`;
-    const newestFirst = (documents ?? [])
-      .filter(doc => doc.origin === BenchmarkReportDocumentOrigin.RunCompletion && doc.subjectKey === subjectKey)
-      .sort((a, b) => (b.createdAtUtc ?? '').localeCompare(a.createdAtUtc ?? '') || b.id - a.id);
-    return RUN_REPORT_AUDIENCES
-      .map(audience => newestFirst.find(doc => doc.audience === audience))
-      .filter((doc): doc is BenchmarkReportDocumentListItemDto => !!doc);
-  }
-
-  private resetRunReportDocuments(): void {
-    this.stopRunReportDocumentsPoll();
-    this.runReportDocumentsSubscription?.unsubscribe();
-    this.runReportDocumentsSubscription = null;
-    this.runReportDocuments = [];
-    this.runReportDocumentsLoaded = false;
-    this.runReportDocumentsError = null;
-    this.runReportWriteSubmitting = false;
-    this.runReportWriteError = null;
-    this.runReportViewError = null;
-  }
-
-  private loadRunReportDocuments(runId: number): void {
-    this.runReportDocumentsSubscription?.unsubscribe();
-    this.runReportDocumentsSubscription = this.benchmarkService.listReportDocuments({ runId }).subscribe({
-      next: documents => {
-        if (this.selectedRunDetail?.id !== runId) return;
-        this.runReportDocuments = this.runCompletionDocumentsOf(documents, runId);
-        this.runReportDocumentsLoaded = true;
-        this.runReportDocumentsError = null;
-        this.syncRunReportDocumentsPoll();
-        this.cdr.detectChanges();
-      },
-      error: err => {
-        if (this.selectedRunDetail?.id !== runId) return;
-        console.warn('Failed to list the run\'s AI-written reports', err);
-        this.runReportDocumentsLoaded = true;
-        this.runReportDocumentsError = 'The AI-written reports could not be listed.';
-        this.syncRunReportDocumentsPoll();
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  /**
-   * Polls a finished run's documents while they are queued or being written, and only while the
-   * run report is open on that run. A running run is followed by the detail poll instead.
-   */
-  private syncRunReportDocumentsPoll(): void {
-    const run = this.selectedRunDetail;
-    const open = !!this.runDetailDialog?.nativeElement.open;
-    if (!run || !open || this.isRunBusy() || !this.runReportDocumentsInProgress(run)) {
-      this.stopRunReportDocumentsPoll();
+    if (!run) {
       return;
     }
-    if (this.runReportDocumentsPoll && this.runReportDocumentsPollRunId === run.id) {
-      return;
-    }
-    this.stopRunReportDocumentsPoll();
-    const runId = run.id;
-    this.runReportDocumentsPollRunId = runId;
-    this.runReportDocumentsPoll = timer(RUN_REPORT_DOCUMENTS_POLL_MS, RUN_REPORT_DOCUMENTS_POLL_MS).pipe(
-      // A failed tick is skipped; the next one asks again.
-      switchMap(() => forkJoin({
-        run: this.benchmarkService.getRun(runId),
-        documents: this.benchmarkService.listReportDocuments({ runId })
-      }).pipe(catchError(() => of(null))))
-    ).subscribe(result => {
-      const current = this.selectedRunDetail;
-      if (!result || !current || current.id !== runId) return;
-      current.reportWriterModelConfigurationId = result.run.reportWriterModelConfigurationId ?? null;
-      current.reportWriterDisplayName = result.run.reportWriterDisplayName ?? null;
-      current.reportDocumentsStatus = result.run.reportDocumentsStatus;
-      current.reportDocumentsMessage = result.run.reportDocumentsMessage ?? null;
-      this.runReportDocuments = this.runCompletionDocumentsOf(result.documents, runId);
-      this.runReportDocumentsLoaded = true;
-      this.runReportDocumentsError = null;
-      if (!this.runReportDocumentsInProgress(current)) {
-        this.stopRunReportDocumentsPoll();
-      }
-      this.cdr.detectChanges();
-    });
-  }
-
-  private stopRunReportDocumentsPoll(): void {
-    this.runReportDocumentsPoll?.unsubscribe();
-    this.runReportDocumentsPoll = null;
-    this.runReportDocumentsPollRunId = null;
-  }
-
-  /** Writes the viewed run's missing documents with the chosen writer. */
-  writeRunReports(): void {
-    const run = this.selectedRunDetail;
-    const writerId = this.runReportWriterConfigId;
-    if (!run || writerId == null || this.runReportWriteSubmitting || this.runReportWriteBlockedReason) {
-      return;
-    }
-    const runId = run.id;
-    this.runReportWriteSubmitting = true;
-    this.runReportWriteError = null;
-    this.benchmarkService.writeRunReportDocuments(runId, { writerModelConfigurationId: writerId }).subscribe({
-      next: response => {
-        this.runReportWriteSubmitting = false;
-        const current = this.selectedRunDetail;
-        if (!current || current.id !== runId) return;
-        const writer = this.benchmarkCapableConfigs.find(c => c.id === writerId);
-        current.reportWriterModelConfigurationId = writerId;
-        current.reportWriterDisplayName = writer?.displayName ?? current.reportWriterDisplayName ?? null;
-        current.reportDocumentsStatus = response?.status ?? BenchmarkRunReportDocumentsStatus.Pending;
-        current.reportDocumentsMessage = null;
-        this.syncRunReportDocumentsPoll();
-        this.cdr.detectChanges();
-      },
-      error: err => {
-        this.runReportWriteSubmitting = false;
-        if (this.selectedRunDetail?.id !== runId) return;
-        this.runReportWriteError = AdminBenchmarkComponent.runReportWriteErrorOf(err, runId);
-        // A 409 means the list or the status moved on elsewhere; show where they stand now.
-        if (err?.status === 409) {
-          this.loadRunReportDocuments(runId);
-        }
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  private static runReportWriteErrorOf(err: any, runId: number): string {
-    if (err?.status === 404) return `Run #${runId} no longer exists.`;
-    if (err?.status === 0) return 'The server could not be reached.';
-    const text = AdminBenchmarkComponent.serverErrorText(err);
-    return text ?? `The reports could not be requested (HTTP ${err?.status ?? 'error'}).`;
-  }
-
-  /** The server's own message from an error body: a plain string, or `{ error }`. */
-  private static serverErrorText(err: any): string | null {
-    const body = err?.error;
-    if (typeof body === 'string' && body.trim()) return body.trim();
-    if (body && typeof body.error === 'string' && body.error.trim()) return body.error.trim();
-    return null;
-  }
-
-  /**
-   * Opens a stored document as a PDF in a new tab, at the fullest disclosure it allows and with peers
-   * named. The tab is opened before the request so the browser does not block it as a popup.
-   */
-  viewRunReportDocument(doc: BenchmarkReportDocumentListItemDto): void {
-    this.runReportViewError = null;
-    const tab = window.open('', '_blank');
-    const allowed = doc.allowedDisclosures ?? [];
-    const disclosure = allowed.length > 0
-      ? Math.max(...allowed) as BenchmarkReportDisclosure
-      : BenchmarkReportDisclosure.Full;
-    this.benchmarkService.getReportDocumentPdf(doc.id, disclosure, BenchmarkReportPeerNaming.Named, rememberedPdfPaper()).subscribe({
-      next: file => {
-        const url = URL.createObjectURL(new Blob([file.bytes as unknown as BlobPart], { type: 'application/pdf' }));
-        if (tab && !tab.closed) {
-          tab.location.href = url;
-        } else {
-          window.open(url, '_blank');
-        }
-        setTimeout(() => URL.revokeObjectURL(url), RUN_REPORT_PDF_URL_LIFETIME_MS);
-      },
-      error: err => {
-        tab?.close();
-        const reason = err?.status === 404 ? 'it no longer exists' : (AdminBenchmarkComponent.serverErrorText(err) ?? 'it could not be rendered');
-        this.runReportViewError = `The ${reportAudienceLabel(doc.audience)} could not be opened: ${reason}.`;
-        this.cdr.detectChanges();
-      }
-    });
+    run.reportWriterModelConfigurationId = change.writerId;
+    run.reportWriterDisplayName = change.writerName;
+    run.reportDocumentsStatus = change.status;
+    run.reportDocumentsMessage = change.message;
   }
 
   /** Copies the viewed run's diagnostics, the text the Download Center saves for it. */
@@ -6784,9 +6502,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           this.retryingAssessments = false;
           this.retryingClaimVerification = false;
           this.loadHistory();
-          if (this.runDetailDialog?.nativeElement.open && this.selectedRunDetail?.id === runId) {
-            this.loadRunReportDocuments(runId);
-          }
         }
         this.cdr.detectChanges();
       },

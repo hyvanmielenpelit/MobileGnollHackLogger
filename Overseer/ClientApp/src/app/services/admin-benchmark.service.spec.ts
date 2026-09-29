@@ -9,6 +9,7 @@ import {
   BenchmarkReportPackPricingBasis,
   BenchmarkReportPackRequest,
   BenchmarkReportPeerNaming,
+  BenchmarkRunReportJobDto,
   BenchmarkTextFile,
   decodeBinaryErrorBody,
   fileNameFromContentDisposition,
@@ -342,6 +343,72 @@ describe('AdminBenchmarkService', () => {
       const req = httpMock.expectOne('/api/admin/benchmark/report-documents/9');
       expect(req.request.method).toBe('DELETE');
       req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('writes only the requested documents, with the same-provider acknowledgment', () => {
+      let audiences: BenchmarkReportAudience[] | undefined;
+      service.writeRunReportDocuments(73, {
+        writerModelConfigurationId: 5,
+        audiences: [BenchmarkReportAudience.ExecutiveSummary],
+        acknowledgeSameProvider: true
+      }).subscribe(res => audiences = res.audiences);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents');
+      expect(req.request.body).toEqual({ writerModelConfigurationId: 5, audiences: [1], acknowledgeSameProvider: true });
+      req.flush({ runId: 73, status: 1, audiences: [1] }, { status: 202, statusText: 'Accepted' });
+
+      expect(audiences).toEqual([BenchmarkReportAudience.ExecutiveSummary]);
+    });
+
+    it('gets the run report-writing job', () => {
+      let view: BenchmarkRunReportJobDto | null | undefined;
+      service.getRunReportJob(73).subscribe(res => view = res);
+
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents/job');
+      expect(req.request.method).toBe('GET');
+      req.flush({ runId: 73, phase: 'Writing' });
+
+      expect(view?.phase).toBe('Writing');
+    });
+
+    it('maps a 204 run report-writing job to null', () => {
+      let view: BenchmarkRunReportJobDto | null | undefined;
+      service.getRunReportJob(73).subscribe(res => view = res);
+
+      httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents/job')
+        .flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(view).toBeNull();
+    });
+
+    it('cancels the run report-writing job with an empty POST', () => {
+      service.cancelRunReportJob(73).subscribe();
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents/cancel');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({});
+      req.flush({ runId: 73, phase: 'Writing' }, { status: 202, statusText: 'Accepted' });
+    });
+
+    it('estimates the run reports with the writer and the documents', () => {
+      service.estimateRunReports(73, { writerModelConfigurationId: 5, audiences: [2] }).subscribe();
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents/estimate');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ writerModelConfigurationId: 5, audiences: [2] });
+      req.flush({ estimates: [], estimatedTotalCostUsd: null, refusal: null, sameProviderWarning: null });
+    });
+
+    it('deletes a run document through the run-scoped endpoint', () => {
+      service.deleteRunReportDocument(73, 9).subscribe();
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents/9');
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('builds the PDF URL with the render query, and inline only when asked', () => {
+      expect(service.reportDocumentPdfUrl(9, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, 'a4'))
+        .toBe('/api/admin/benchmark/report-documents/9/render/pdf?disclosure=full&peers=named&paper=a4');
+      expect(service.reportDocumentPdfUrl(9, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized, 'letter', true))
+        .toBe('/api/admin/benchmark/report-documents/9/render/pdf?disclosure=summary&peers=anonymized&paper=letter&inline=true');
     });
   });
 

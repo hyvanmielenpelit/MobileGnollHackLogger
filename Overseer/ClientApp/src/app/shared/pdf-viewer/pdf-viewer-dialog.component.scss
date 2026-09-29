@@ -1,0 +1,399 @@
+/* The PDF viewer dialog. The component has no view encapsulation, because pdf.js builds the page
+   DOM outside Angular's templates, so every rule here is scoped under .pdfv. .gh-dialog-fullscreen
+   (styles.scss) supplies the size, the zero padding, the entry transition and the flex column. */
+.pdfv {
+  /* The neutral backdrop the white pages sit on. */
+  --pdfv-backdrop: rgb(38 38 42);
+
+  /* pdf.js viewer variables, which pdf_viewer.css defines on :root. --viewer-container-height is
+     not among them: pdf.js writes it on the document element itself. */
+  --pdfViewer-padding-bottom: 8px;
+  --page-margin: 8px auto 0;
+  --page-border: 1px solid rgb(0 0 0 / 0.6);
+  --spreadHorizontalWrapped-margin-LR: -3.5px;
+
+  /* ---------------------------------------------------------------------------------------------
+     Header: the title, the subtitle and Close
+     --------------------------------------------------------------------------------------------- */
+  .pdfv-header {
+    flex-shrink: 0;
+    gap: 12px;
+    padding: 16px 20px 12px;
+    margin-bottom: 0;
+  }
+
+  .pdfv-title-group {
+    flex-wrap: wrap;
+    min-width: 0;
+
+    h3 {
+      overflow-wrap: anywhere;
+
+      /* Focused by script on open; the ring shows only for keyboard users. */
+      &:focus {
+        outline: none;
+      }
+
+      &:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 2px;
+      }
+    }
+
+    .dialog-subtitle {
+      margin: 0;
+    }
+  }
+
+  /* ---------------------------------------------------------------------------------------------
+     Toolbar: variants, page navigation, zoom, file actions
+     --------------------------------------------------------------------------------------------- */
+  .pdfv-toolbar-frame {
+    flex-shrink: 0;
+    container: pdfv-toolbar / inline-size;
+    padding: 8px 20px;
+    border-bottom: 1px solid var(--border-glass);
+    font-size: var(--text-secondary);
+  }
+
+  .pdfv-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas: "variants nav zoom actions";
+    align-items: center;
+    gap: 8px 16px;
+
+    .action-btn {
+      margin-left: 0;
+      flex-shrink: 0;
+    }
+
+    a.action-btn {
+      text-decoration: none;
+    }
+  }
+
+  .pdfv-variants {
+    grid-area: variants;
+    min-width: 0;
+  }
+
+  .pdfv-nav {
+    grid-area: nav;
+    justify-self: center;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .pdfv-page-label,
+  .pdfv-page-count {
+    color: var(--nav-color);
+  }
+
+  .pdfv-page-input {
+    width: 4.5rem;
+    min-width: 0;
+    padding-block: 4px;
+    text-align: center;
+  }
+
+  .pdfv-zoom {
+    grid-area: zoom;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pdfv-zoom-select {
+    width: auto;
+    min-width: 8.5rem;
+    padding-block: 4px;
+  }
+
+  .pdfv-actions {
+    grid-area: actions;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Narrow: navigation and the file actions first, then the variants and the zoom on a line of
+     their own. The navigation group never wraps. */
+  @container pdfv-toolbar (width < 40rem) {
+    .pdfv-toolbar {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "nav actions"
+        "variants zoom";
+    }
+
+    .pdfv-toolbar:not(.has-variants) {
+      grid-template-areas:
+        "nav actions"
+        "zoom zoom";
+    }
+
+    .pdfv-nav {
+      justify-self: start;
+    }
+  }
+
+  /* ---------------------------------------------------------------------------------------------
+     Body: the pages, and the loading and error states over them
+     --------------------------------------------------------------------------------------------- */
+  .pdfv-body {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    background: var(--pdfv-backdrop);
+  }
+
+  /* pdf.js refuses a container that is not absolutely positioned. */
+  .pdfv-pages {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: -2px;
+    }
+  }
+
+  .pdfv-status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: var(--pdfv-backdrop);
+    pointer-events: none;
+
+    /* Idle, it stays in the accessibility tree as an empty live region, with no box. */
+    &:not(.is-active) {
+      inset: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+      background: none;
+    }
+  }
+
+  .pdfv-status-text {
+    margin: 0;
+    color: var(--nav-color);
+    font-size: var(--text-body);
+  }
+
+  .pdfv-error {
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 24px 16px;
+
+    .alert {
+      width: 100%;
+      max-width: 40rem;
+      margin: 0;
+    }
+  }
+
+  /* ---------------------------------------------------------------------------------------------
+     pdf.js viewer rules
+
+     The subset of pdfjs-dist's web/pdf_viewer.css (Apache-2.0, Mozilla Foundation) that a vertical
+     PDFViewer with a text layer and no annotation layer uses: the page, its canvas wrapper and the
+     text layer. The full sheet is not imported: about 124 kB minified, it exceeds the
+     anyComponentStyle budget, and it carries global :root rules (color-scheme among them) and the
+     annotation-editor UI with its image assets. Page borders and margins are restyled for the dark
+     backdrop.
+     --------------------------------------------------------------------------------------------- */
+  [data-main-rotation="90"] {
+    transform: rotate(90deg) translateY(-100%);
+  }
+
+  [data-main-rotation="180"] {
+    transform: rotate(180deg) translate(-100%, -100%);
+  }
+
+  [data-main-rotation="270"] {
+    transform: rotate(270deg) translateX(-100%);
+  }
+
+  .pdfViewer {
+    --scale-factor: 1;
+    --page-bg-color: unset;
+    --hcm-highlight-filter: none;
+    --hcm-highlight-selected-filter: none;
+
+    padding-bottom: var(--pdfViewer-padding-bottom);
+
+    @media screen and (forced-colors: active) {
+      --hcm-highlight-filter: invert(100%);
+    }
+
+    &.copyAll {
+      cursor: wait;
+    }
+
+    &.noUserSelect {
+      user-select: none;
+    }
+
+    .canvasWrapper {
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+
+      canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        margin: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        contain: content;
+
+        .structTree {
+          contain: strict;
+        }
+
+        &.detailView {
+          image-rendering: pixelated;
+        }
+      }
+
+      .selection {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        background: rgb(0 90 255 / 0.22);
+      }
+    }
+
+    .page {
+      --user-unit: 1;
+      --total-scale-factor: calc(var(--scale-factor) * var(--user-unit));
+      --scale-round-x: 1px;
+      --scale-round-y: 1px;
+
+      direction: ltr;
+      width: 816px;
+      height: 1056px;
+      margin: var(--page-margin);
+      position: relative;
+      overflow: visible;
+      border: var(--page-border);
+      background-clip: content-box;
+      background-color: var(--page-bg-color, rgb(255 255 255));
+      box-shadow: 0 1px 3px rgb(0 0 0 / 0.5), 0 6px 18px rgb(0 0 0 / 0.35);
+    }
+
+    .dummyPage {
+      position: relative;
+      width: 0;
+      height: var(--viewer-container-height, 0);
+    }
+  }
+
+  .textLayer {
+    color-scheme: only light;
+
+    position: absolute;
+    text-align: initial;
+    inset: 0;
+    overflow: clip;
+    opacity: 1;
+    line-height: 1;
+    letter-spacing: normal;
+    word-spacing: normal;
+    text-size-adjust: none;
+    forced-color-adjust: none;
+    transform-origin: 0 0;
+    caret-color: CanvasText;
+    z-index: 0;
+
+    --min-font-size: 1;
+    --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+    --min-font-size-inv: calc(1 / var(--min-font-size));
+
+    :is(span, br) {
+      color: transparent;
+      position: absolute;
+      white-space: pre;
+      cursor: text;
+      transform-origin: 0% 0%;
+      user-select: text;
+    }
+
+    > :not(.markedContent),
+    .markedContent span:not(.markedContent) {
+      z-index: 1;
+
+      --font-height: 0;
+      font-size: calc(var(--text-scale-factor) * var(--font-height));
+
+      --scale-x: 1;
+      --rotate: 0deg;
+      transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+    }
+
+    .markedContent {
+      display: contents;
+    }
+
+    span[role="img"] {
+      user-select: none;
+      cursor: default;
+    }
+
+    ::selection {
+      background: rgb(0 0 255 / 0.25);
+      background: color-mix(in srgb, AccentColor, transparent 50%);
+      color: transparent;
+    }
+
+    br::selection {
+      background: transparent;
+    }
+
+    .endOfContent {
+      display: block;
+      position: absolute;
+      inset: 100% 0 0;
+      z-index: 0;
+      cursor: default;
+      user-select: none;
+    }
+
+    &.selecting .endOfContent {
+      top: 0;
+    }
+  }
+
+  .textLayerImages {
+    position: absolute;
+    inset: 0;
+    user-select: none;
+
+    canvas {
+      position: absolute;
+      transform-origin: 0% 0%;
+    }
+  }
+}

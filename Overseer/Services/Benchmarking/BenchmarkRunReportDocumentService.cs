@@ -23,8 +23,10 @@ using Overseer.Services;
 /// re-synthesis only marks the documents as changed, and writing again means deleting them first.</para>
 ///
 /// <para>A job queues for the report-pack slot behind a running job, checks the compliance guard and
-/// the writer, then writes whichever of the two documents the run does not have yet. The run's
-/// <see cref="BenchmarkRun.ReportDocumentsStatus"/> tracks it.</para>
+/// the writer, then writes whichever of the requested documents the run does not have yet. One job has
+/// one writer; two documents with two writers are two jobs. The run's
+/// <see cref="BenchmarkRun.ReportDocumentsStatus"/> tracks it, and <see cref="TryGetJob(long)"/> shows
+/// it while it runs and for <see cref="FinishedJobRetention"/> after, in memory only.</para>
 ///
 /// <para>Singleton: it opens its own scope for every job and every status update.</para>
 /// </summary>
@@ -35,10 +37,14 @@ public sealed class BenchmarkRunReportDocumentService
     public const string InvalidWriterMessage =
         "Report writer configuration is invalid, disabled, missing an API key, or not configured with the Benchmark role.";
     public const string ModelUnderTestMessage = "The model under test cannot write its own reports.";
-    public const string SameProviderMessage = "Choose a report writer from another provider than the model under test.";
+    public const string CanceledBeforeWritingMessage = "Canceled before the writing began.";
+    public const string CanceledWhileWritingPrefix = "Canceled while writing. ";
 
     /// <summary>The length <see cref="BenchmarkRun.ReportDocumentsMessage"/> holds.</summary>
     public const int MaxMessageLength = 1000;
+
+    /// <summary>How long a finished job stays visible, unless the run's next job replaces it first.</summary>
+    public static readonly TimeSpan FinishedJobRetention = TimeSpan.FromHours(6);
 
     /// <summary>The run-completion documents of every run, in the order they are written.</summary>
     public static readonly IReadOnlyList<BenchmarkReportAudience> Audiences = new[]
@@ -47,24 +53,74 @@ public sealed class BenchmarkRunReportDocumentService
         BenchmarkReportAudience.TechnicalReport
     };
 
+    /// <summary>What <see cref="TryCancel"/> did.</summary>
+    public enum CancelOutcome
+    {
+        /// <summary>This process knows no job for the run.</summary>
+        NotFound,
+
+        /// <summary>The run's last job has finished.</summary>
+        NotInProgress,
+
+        /// <summary>The job was asked to stop; it settles the run as Canceled.</summary>
+        Requested
+    }
+
+    private enum JobPhase { Queued, Preparing, Writing, Finished }
+
+    /// <summary>One run's job, as the run report dialog shows it. Mutable fields change under <see cref="_lock"/>.</summary>
+    private sealed class RunReportJobState
+    {
+        public required BenchmarkReportPackJob Job { get; init; }
+        public required long RunId { get; init; }
+        public JobPhase Phase { get; set; } = JobPhase.Queued;
+        public DateTime QueuedAtUtc { get; set; }
+        public DateTime? SlotAcquiredAtUtc { get; set; }
+        public DateTime? FinishedAtUtc { get; set; }
+        public DateTime? CancelRequestedAtUtc { get; set; }
+        public required List<BenchmarkReportAudience> Audiences { get; init; }
+        public long WriterConfigId { get; init; }
+        public string WriterDisplayName { get; init; } = string.Empty;
+        public string WriterProvider { get; init; } = string.Empty;
+        public string WriterModelId { get; init; } = string.Empty;
+        public string? WriterThinkingLevel { get; init; }
+    }
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BenchmarkReportPackJobManager _jobManager;
     private readonly ILogger<BenchmarkRunReportDocumentService> _logger;
+    private readonly TimeProvider _time;
     private readonly object _lock = new();
     private readonly HashSet<long> _active = new();
+    private readonly Dictionary<long, RunReportJobState> _jobs = new();
 
     public BenchmarkRunReportDocumentService(
         IServiceScopeFactory scopeFactory,
         BenchmarkReportPackJobManager jobManager,
-        ILogger<BenchmarkRunReportDocumentService> logger)
+        ILogger<BenchmarkRunReportDocumentService> logger,
+        TimeProvider? timeProvider = null)
     {
         _scopeFactory = scopeFactory;
         _jobManager = jobManager;
         _logger = logger;
+        _time = timeProvider ?? TimeProvider.System;
     }
+
+    /// <summary>The service's clock, which stamps the job view.</summary>
+    public DateTime UtcNow => _time.GetUtcNow().UtcDateTime;
 
     /// <summary>The comparison entry key the run's own documents are stored under.</summary>
     public static string SubjectKeyOf(long runId) => "run:" + runId.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The run id of a <c>run:&lt;id&gt;</c> subject key; false for a group or anything else.</summary>
+    public static bool TryParseSubjectKey(string? subjectKey, out long runId)
+    {
+        runId = 0;
+        // NumberStyles.None admits digits only: no sign, whitespace or separator.
+        return subjectKey != null
+            && subjectKey.StartsWith("run:", StringComparison.Ordinal)
+            && long.TryParse(subjectKey.AsSpan(4), NumberStyles.None, CultureInfo.InvariantCulture, out runId);
+    }
 
     /// <summary>A job is queued or writing for the run is Pending or Writing.</summary>
     public static bool IsInProgress(BenchmarkRunReportDocumentsStatus status)
@@ -77,8 +133,8 @@ public sealed class BenchmarkRunReportDocumentService
 
     /// <summary>
     /// Why the configuration cannot write the run's documents, or null when it can: an unusable
-    /// configuration, the model under test itself, or a model of the same provider. The endpoint policy
-    /// is the caller's to check.
+    /// configuration or the model under test. A model of the same provider may write after an
+    /// acknowledgment (<see cref="WriterWarning"/>). The endpoint policy is the caller's to check.
     /// </summary>
     public static string? WriterRefusal(
         SystemAiApiConfiguration? writer, SystemAiApiConfiguration candidate, BenchmarkComplianceGuard complianceGuard)
@@ -94,11 +150,46 @@ public sealed class BenchmarkRunReportDocumentService
         {
             return ModelUnderTestMessage;
         }
-        if (complianceGuard.IsSameProvider(writer, candidate))
-        {
-            return SameProviderMessage;
-        }
         return null;
+    }
+
+    /// <summary>
+    /// The warning an operator acknowledges before a writer of the candidate's provider writes the
+    /// run's documents, or null when the providers differ or there is no writer.
+    /// </summary>
+    public static string? WriterWarning(
+        SystemAiApiConfiguration? writer, SystemAiApiConfiguration candidate, BenchmarkComplianceGuard complianceGuard)
+    {
+        ArgumentNullException.ThrowIfNull(candidate);
+        ArgumentNullException.ThrowIfNull(complianceGuard);
+
+        if (writer == null || !complianceGuard.IsSameProvider(writer, candidate))
+        {
+            return null;
+        }
+        string name = string.IsNullOrWhiteSpace(writer.DisplayName) ? writer.ModelId : writer.DisplayName;
+        string provider = string.IsNullOrWhiteSpace(candidate.Provider) ? writer.Provider : candidate.Provider;
+        return $"{name} is from {provider}, the provider of the model under test. "
+            + "Its reports may describe that model more favorably than an independent writer would.";
+    }
+
+    /// <summary>
+    /// The 409 body of an unacknowledged same-provider report writer: role <c>reportWriter</c>, with the
+    /// writer's name in <see cref="SameProviderWarningDto.AssessorModelDisplayName"/>.
+    /// </summary>
+    public static SameProviderWarningDto WriterWarningDto(SystemAiApiConfiguration writer, SystemAiApiConfiguration candidate, string message)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(candidate);
+        return new SameProviderWarningDto
+        {
+            Role = "reportWriter",
+            SameProvider = true,
+            Provider = string.IsNullOrWhiteSpace(candidate.Provider) ? writer.Provider : candidate.Provider,
+            TestedModelDisplayName = candidate.DisplayName ?? string.Empty,
+            AssessorModelDisplayName = string.IsNullOrWhiteSpace(writer.DisplayName) ? writer.ModelId : writer.DisplayName,
+            Message = message
+        };
     }
 
     /// <summary>A stand-in configuration carrying the recorded candidate's provider and model id, for the writer checks.</summary>
@@ -110,6 +201,20 @@ public sealed class BenchmarkRunReportDocumentService
             Provider = run.TestedModelSnapshot?.Provider ?? string.Empty,
             ModelId = run.TestedModelSnapshot?.ModelId ?? string.Empty,
             DisplayName = run.TestedModelSnapshot.Label() ?? string.Empty
+        };
+    }
+
+    /// <summary>The report-pack request a run's job writes, and its estimate prices: the run alone, as its own subject.</summary>
+    public static BenchmarkReportPackRequest RunRequest(long runId, IEnumerable<BenchmarkReportAudience> audiences, long writerConfigId)
+    {
+        ArgumentNullException.ThrowIfNull(audiences);
+        return new BenchmarkReportPackRequest
+        {
+            RunIds = new List<long> { runId },
+            GroupIds = new List<long>(),
+            SubjectKey = SubjectKeyOf(runId),
+            Audiences = audiences.ToList(),
+            WriterModelConfigurationId = writerConfigId
         };
     }
 
@@ -140,15 +245,24 @@ public sealed class BenchmarkRunReportDocumentService
     /// Writes the run's documents in the background when they are due: the run completed, names a
     /// report writer and has a final synthesis, has no run-completion document yet, and no job for it
     /// is Pending or Writing. Returns at once; the task ends when the job does, or at once when
-    /// nothing is due.
+    /// nothing is due. A writer of the candidate's provider was acknowledged at launch, so its
+    /// documents record the acknowledgment.
     /// </summary>
     public Task ScheduleIfDue(long runId) => Task.Run(() => ScheduleIfDueCoreAsync(runId));
 
     /// <summary>
-    /// Starts a job for whatever run-completion documents the run is missing, with the writer already
-    /// recorded on the run. False when this process already holds a job for the run.
+    /// Starts a job with the writer already recorded on the run, for the requested audiences the run
+    /// is missing, in <see cref="Audiences"/> order; null or empty requests every missing one. A writer
+    /// of the candidate's provider needs <paramref name="sameProviderAcknowledged"/>, or the job
+    /// settles the run as Failed with the warning. False when this process already holds a job for
+    /// the run.
     /// </summary>
-    public bool TryStart(long runId, string? userId, out Task completion)
+    public bool TryStart(
+        long runId,
+        string? userId,
+        IReadOnlyCollection<BenchmarkReportAudience>? audiences,
+        bool sameProviderAcknowledged,
+        out Task completion)
     {
         if (!TryClaim(runId))
         {
@@ -156,8 +270,92 @@ public sealed class BenchmarkRunReportDocumentService
             return false;
         }
 
-        completion = Task.Run(() => RunClaimedAsync(runId, userId));
+        var requested = audiences?.ToList();
+        completion = Task.Run(() => RunClaimedAsync(runId, userId, requested, sameProviderAcknowledged));
         return true;
+    }
+
+    /// <summary>
+    /// Asks the run's job to stop. A queued job leaves the queue; a job that is writing keeps every
+    /// document already stored. Either way the run settles as <see cref="BenchmarkRunReportDocumentsStatus.Canceled"/>.
+    /// </summary>
+    public CancelOutcome TryCancel(long runId)
+    {
+        BenchmarkReportPackJob job;
+        lock (_lock)
+        {
+            if (!_jobs.TryGetValue(runId, out var state)) return CancelOutcome.NotFound;
+            if (state.Phase == JobPhase.Finished) return CancelOutcome.NotInProgress;
+
+            job = state.Job;
+            if (state.CancelRequestedAtUtc == null)
+            {
+                state.CancelRequestedAtUtc = UtcNow;
+                job.AddLog("Cancellation requested.", "warning");
+            }
+        }
+
+        // Outside the lock: cancellation callbacks may run the job's continuations inline.
+        try
+        {
+            job.Cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        return CancelOutcome.Requested;
+    }
+
+    /// <summary>The run's job as the service's clock sees it now; see <see cref="TryGetJob(long, DateTime)"/>.</summary>
+    public BenchmarkRunReportJobDto? TryGetJob(long runId) => TryGetJob(runId, UtcNow);
+
+    /// <summary>
+    /// The run's current or last job, or null when this process knows none, or its finished job is
+    /// older than <see cref="FinishedJobRetention"/>. The persisted
+    /// <see cref="BenchmarkRunReportJobDto.Status"/> and <see cref="BenchmarkRunReportJobDto.Message"/>
+    /// are the caller's to fill from the run row.
+    /// </summary>
+    public BenchmarkRunReportJobDto? TryGetJob(long runId, DateTime nowUtc)
+    {
+        RunReportJobState state;
+        JobPhase phase;
+        DateTime queuedAt;
+        DateTime? slotAcquiredAt, finishedAt, cancelRequestedAt;
+        lock (_lock)
+        {
+            Prune(nowUtc);
+            if (!_jobs.TryGetValue(runId, out var found)) return null;
+            state = found;
+            phase = state.Phase;
+            queuedAt = state.QueuedAtUtc;
+            slotAcquiredAt = state.SlotAcquiredAtUtc;
+            finishedAt = state.FinishedAtUtc;
+            cancelRequestedAt = state.CancelRequestedAtUtc;
+        }
+
+        // Outside the lock: the job manager has its own, and neither lock is taken inside the other.
+        var (ahead, running) = _jobManager.QueueInfo(state.Job);
+        bool queued = phase == JobPhase.Queued;
+
+        return new BenchmarkRunReportJobDto
+        {
+            RunId = runId,
+            Phase = phase.ToString(),
+            QueuedAtUtc = queuedAt,
+            SlotAcquiredAtUtc = slotAcquiredAt,
+            FinishedAtUtc = finishedAt,
+            CancelRequestedAtUtc = cancelRequestedAt,
+            JobsAhead = queued ? ahead : null,
+            BlockingJobLabel = queued && running != null && !ReferenceEquals(running, state.Job) ? BlockingLabel(running) : null,
+            Audiences = state.Audiences.ToList(),
+            WriterConfigId = state.WriterConfigId,
+            WriterDisplayName = state.WriterDisplayName,
+            WriterProvider = state.WriterProvider,
+            WriterModelId = state.WriterModelId,
+            WriterThinkingLevel = state.WriterThinkingLevel,
+            Job = state.Job.ToDto(),
+            ServerTimeUtc = nowUtc
+        };
     }
 
     /// <summary>
@@ -185,6 +383,23 @@ public sealed class BenchmarkRunReportDocumentService
             await db.SaveChangesAsync(ct);
         }
         return interrupted.Count;
+    }
+
+    /// <summary>
+    /// After one of the run's documents is deleted: a run whose documents are not being written returns
+    /// to <see cref="BenchmarkRunReportDocumentsStatus.NotRequested"/> with no message, so its status no
+    /// longer describes a document that is gone. The run keeps its report writer.
+    /// </summary>
+    public static async Task SettleAfterDeleteAsync(ApplicationDbContext db, long runId, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+
+        var run = await db.BenchmarkRuns.IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run == null || IsInProgress(run.ReportDocumentsStatus)) return;
+
+        run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.NotRequested;
+        run.ReportDocumentsMessage = null;
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task ScheduleIfDueCoreAsync(long runId)
@@ -216,7 +431,7 @@ public sealed class BenchmarkRunReportDocumentService
             }
 
             if (!TryClaim(runId)) return;
-            await RunClaimedAsync(runId, userId: null);
+            await RunClaimedAsync(runId, userId: null, audiences: null, sameProviderAcknowledged: null);
         }
         catch (Exception ex)
         {
@@ -224,18 +439,25 @@ public sealed class BenchmarkRunReportDocumentService
         }
     }
 
-    /// <summary>The job itself. The caller holds the claim; this releases it.</summary>
-    private async Task RunClaimedAsync(long runId, string? userId)
+    /// <summary>
+    /// The job itself. The caller holds the claim; this releases it. A null
+    /// <paramref name="sameProviderAcknowledged"/> is the automatic job's: its launch already asked.
+    /// </summary>
+    private async Task RunClaimedAsync(
+        long runId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged)
     {
+        RunReportJobState? state = null;
         BenchmarkReportPackJob? job = null;
         try
         {
+            state = await CreateJobAsync(runId, userId, audiences, sameProviderAcknowledged);
+            if (state == null) return;
+            job = state.Job;
+            Register(state);
+
             await SetStatusAsync(runId, BenchmarkRunReportDocumentsStatus.Pending, null);
-
-            job = await CreateJobAsync(runId, userId);
-            if (job == null) return;
-
-            await _jobManager.WaitForSlotAsync(job, CancellationToken.None);
+            await _jobManager.WaitForSlotAsync(job, job.Cts.Token);
+            SetPhase(state, JobPhase.Preparing);
 
             using var scope = _scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -267,6 +489,9 @@ public sealed class BenchmarkRunReportDocumentService
             job.WriterSnapshotId = snapshot.Id;
             job.Request.WriterModelConfigurationId = writer.Id;
 
+            job.Cts.Token.ThrowIfCancellationRequested();
+            SetPhase(state, JobPhase.Writing);
+
             SetOn(run, BenchmarkRunReportDocumentsStatus.Writing, null);
             await db.SaveChangesAsync();
             job.AddLog($"Writing the run-completion documents of run {runId.ToString(CultureInfo.InvariantCulture)} with {job.WriterDisplayName}.");
@@ -275,7 +500,22 @@ public sealed class BenchmarkRunReportDocumentService
             await reportWriter.WriteRunCompletionDocumentsAsync(job, job.Cts.Token);
 
             var (status, message) = OutcomeOf(job);
+            if (status == BenchmarkRunReportDocumentsStatus.Canceled) job.AddLog(message!, "warning");
             await SetStatusAsync(runId, status, message);
+        }
+        catch (OperationCanceledException) when (job != null && job.Cts.IsCancellationRequested)
+        {
+            bool writing = PhaseOf(state!) == JobPhase.Writing;
+            foreach (var d in job.Documents.ToList().Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
+                         or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing))
+            {
+                job.SetDocumentStatus(d.Audience, BenchmarkReportPackDocumentStatus.Canceled);
+            }
+            job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
+
+            string message = writing ? OutcomeOf(job).Message! : CanceledBeforeWritingMessage;
+            job.AddLog(message, "warning");
+            await TrySetStatusAsync(runId, BenchmarkRunReportDocumentsStatus.Canceled, message);
         }
         catch (Exception ex)
         {
@@ -289,15 +529,19 @@ public sealed class BenchmarkRunReportDocumentService
             {
                 job.SetStatus(BenchmarkReportPackJobStatus.Failed);
             }
+            if (state != null) SetPhase(state, JobPhase.Finished);
             Release(runId);
         }
     }
 
     /// <summary>
-    /// The job for the documents the run is missing, labeled as the Report Pack dialog shows a job; null
-    /// when the run is gone or has every document, which settles its status.
+    /// The job for the requested documents the run is missing, labeled as the Report Pack dialog shows
+    /// a job, with the writer identity the job view shows. Null when the run is gone, has none of the
+    /// requested documents missing, or names an unacknowledged writer of the candidate's provider;
+    /// each settles the run's status.
     /// </summary>
-    private async Task<BenchmarkReportPackJob?> CreateJobAsync(long runId, string? userId)
+    private async Task<RunReportJobState?> CreateJobAsync(
+        long runId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -306,52 +550,85 @@ public sealed class BenchmarkRunReportDocumentService
         if (run == null) return null;
 
         var missing = await MissingAudiencesAsync(db, runId, CancellationToken.None);
-        if (missing.Count == 0)
+        var toWrite = audiences == null || audiences.Count == 0
+            ? missing
+            : missing.Where(audiences.Contains).ToList();
+        if (toWrite.Count == 0)
         {
-            await SetStatusAsync(runId, BenchmarkRunReportDocumentsStatus.Completed, null);
+            await SetStatusAsync(runId,
+                missing.Count == 0 ? BenchmarkRunReportDocumentsStatus.Completed : BenchmarkRunReportDocumentsStatus.NotRequested, null);
             return null;
         }
 
-        string? writerName = run.ReportWriterModelConfigurationId is long writerId
-            ? await db.SystemAiApiConfigurations.Where(c => c.Id == writerId).Select(c => c.DisplayName).FirstOrDefaultAsync()
+        var writer = run.ReportWriterModelConfigurationId is long writerId
+            ? await db.SystemAiApiConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == writerId)
             : null;
-        string subjectKey = SubjectKeyOf(runId);
+        var candidate = CandidateIdentity(run);
+        var complianceGuard = scope.ServiceProvider.GetRequiredService<BenchmarkComplianceGuard>();
+        bool sameProvider = writer != null && complianceGuard.IsSameProvider(writer, candidate);
+        if (sameProvider && sameProviderAcknowledged == false)
+        {
+            await SetStatusAsync(runId, BenchmarkRunReportDocumentsStatus.Failed, WriterWarning(writer, candidate, complianceGuard));
+            return null;
+        }
 
-        return new BenchmarkReportPackJob
+        string subjectKey = SubjectKeyOf(runId);
+        long writerConfigId = run.ReportWriterModelConfigurationId ?? 0;
+        var job = new BenchmarkReportPackJob
         {
             SubjectKey = subjectKey,
             SubjectLabel = run.TestedModelSnapshot.Label() ?? subjectKey,
             SuiteId = run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId,
             SuiteName = run.SuiteName ?? string.Empty,
-            WriterConfigId = run.ReportWriterModelConfigurationId ?? 0,
-            WriterDisplayName = writerName ?? string.Empty,
-            Request = new BenchmarkReportPackRequest
-            {
-                RunIds = new List<long> { runId },
-                GroupIds = new List<long>(),
-                SubjectKey = subjectKey,
-                Audiences = missing,
-                WriterModelConfigurationId = run.ReportWriterModelConfigurationId ?? 0
-            },
+            WriterConfigId = writerConfigId,
+            WriterDisplayName = writer?.DisplayName ?? string.Empty,
+            // Only an acknowledged writer of the candidate's provider reaches this point.
+            SameProviderAcknowledged = sameProvider,
+            Request = RunRequest(runId, toWrite, writerConfigId),
             // Usage rows need a user: an automatic job is charged to the user who launched the run.
             StartedByUserId = string.IsNullOrEmpty(userId) ? run.StartedByUserId : userId,
             Cts = new CancellationTokenSource(),
-            Documents = missing.Select(a => new BenchmarkReportPackDocumentProgress { Audience = a }).ToList()
+            Documents = toWrite.Select(a => new BenchmarkReportPackDocumentProgress { Audience = a }).ToList()
+        };
+
+        return new RunReportJobState
+        {
+            Job = job,
+            RunId = runId,
+            Audiences = toWrite.ToList(),
+            WriterConfigId = writerConfigId,
+            WriterDisplayName = writer == null ? string.Empty : writer.DisplayName ?? writer.ModelId,
+            WriterProvider = writer?.Provider ?? string.Empty,
+            WriterModelId = writer?.ModelId ?? string.Empty,
+            WriterThinkingLevel = writer?.ThinkingLevel
         };
     }
 
     /// <summary>
     /// Completed when every document of the job was stored, with warnings when one carries them;
-    /// Failed with the first document's error otherwise. A stored document is kept either way.
+    /// Canceled when an administrator stopped it, naming what was kept; Failed with the first
+    /// document's error otherwise. A stored document is kept either way.
     /// </summary>
     internal static (BenchmarkRunReportDocumentsStatus Status, string? Message) OutcomeOf(BenchmarkReportPackJob job)
     {
         var documents = job.ToDto().Documents;
-        var failed = documents
-            .Where(d => d.Status != nameof(BenchmarkReportPackDocumentStatus.Completed)
-                && d.Status != nameof(BenchmarkReportPackDocumentStatus.CompletedWithWarnings))
-            .ToList();
+        bool IsStored(BenchmarkReportPackDocumentProgressDto d)
+            => d.Status == nameof(BenchmarkReportPackDocumentStatus.Completed)
+               || d.Status == nameof(BenchmarkReportPackDocumentStatus.CompletedWithWarnings);
 
+        if (job.Status == BenchmarkReportPackJobStatus.Canceled)
+        {
+            var written = documents.Where(IsStored).Select(d => BenchmarkReportRenderService.AudienceName(d.Audience)).ToList();
+            string kept = written.Count switch
+            {
+                0 => "Nothing was written.",
+                1 => $"The {written[0]} was written and is kept.",
+                _ => $"The {string.Join(" and the ", written)} were written and are kept."
+            };
+            return (BenchmarkRunReportDocumentsStatus.Canceled, CanceledWhileWritingPrefix + kept);
+        }
+
+        var failed = documents.Where(d => !IsStored(d)).ToList();
         if (failed.Count > 0)
         {
             var first = failed[0];
@@ -367,6 +644,73 @@ public sealed class BenchmarkRunReportDocumentService
         return documents.Any(d => d.Status == nameof(BenchmarkReportPackDocumentStatus.CompletedWithWarnings))
             ? (BenchmarkRunReportDocumentsStatus.CompletedWithWarnings, null)
             : (BenchmarkRunReportDocumentsStatus.Completed, null);
+    }
+
+    /// <summary>The running job that holds the slot, as a queued job's view names it.</summary>
+    private string BlockingLabel(BenchmarkReportPackJob running)
+    {
+        long? runningRunId = null;
+        lock (_lock)
+        {
+            foreach (var state in _jobs.Values)
+            {
+                if (ReferenceEquals(state.Job, running))
+                {
+                    runningRunId = state.RunId;
+                    break;
+                }
+            }
+        }
+
+        return runningRunId is long id
+            ? $"Run #{id.ToString(CultureInfo.InvariantCulture)}: {running.SubjectLabel}"
+            : "Report Pack: " + running.SubjectLabel;
+    }
+
+    /// <summary>Makes the job the run's current one, replacing its previous entry, and prunes old finished ones.</summary>
+    private void Register(RunReportJobState state)
+    {
+        lock (_lock)
+        {
+            var now = UtcNow;
+            Prune(now);
+            state.Phase = JobPhase.Queued;
+            state.QueuedAtUtc = now;
+            _jobs[state.RunId] = state;
+        }
+        state.Job.AddLog("Queued for the report writer.");
+    }
+
+    private void SetPhase(RunReportJobState state, JobPhase phase)
+    {
+        lock (_lock)
+        {
+            if (state.Phase == JobPhase.Finished) return;
+            state.Phase = phase;
+            if (phase == JobPhase.Preparing) state.SlotAcquiredAtUtc = UtcNow;
+            if (phase == JobPhase.Finished) state.FinishedAtUtc = UtcNow;
+        }
+    }
+
+    private JobPhase PhaseOf(RunReportJobState state)
+    {
+        lock (_lock)
+        {
+            return state.Phase;
+        }
+    }
+
+    /// <summary>Drops finished entries older than <see cref="FinishedJobRetention"/>. The caller holds the lock.</summary>
+    private void Prune(DateTime nowUtc)
+    {
+        var expired = _jobs
+            .Where(e => e.Value.Phase == JobPhase.Finished && e.Value.FinishedAtUtc is DateTime finished && nowUtc - finished >= FinishedJobRetention)
+            .Select(e => e.Key)
+            .ToList();
+        foreach (long runId in expired)
+        {
+            _jobs.Remove(runId);
+        }
     }
 
     private static void SetOn(BenchmarkRun run, BenchmarkRunReportDocumentsStatus status, string? message)

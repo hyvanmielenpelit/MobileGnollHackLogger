@@ -687,6 +687,41 @@ public class BenchmarkReportPackValidatorTests
         Assert.Equal("sections." + slot, note.Location);
     }
 
+    [Theory]
+    [InlineData(BenchmarkReportSlots.WhyItScored, 300)]
+    [InlineData(BenchmarkReportSlots.WhatWorked, 150)]
+    public void Rule7_ResearcherReportSlotWordLimits_AskForTheRepairTurn(string slot, int limit)
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("pattern", limit));
+        Assert.Empty(Validate(Tr, output));
+
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("pattern", limit + 1));
+        var note = Assert.Single(Validate(Tr, output));
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("sections." + slot, note.Location);
+        Assert.Contains(limit.ToString(System.Globalization.CultureInfo.InvariantCulture), note.Message);
+
+        // A note from Validate is what sends the writer its repair turn.
+        Assert.Contains("- rule 7 at sections." + slot + ":", BenchmarkReportPackPrompt.BuildRepairMessage(new[] { note }));
+
+        // Without a repair, the paragraphs past the cap are dropped.
+        output.Sections[slot] = "A first paragraph about the patterns.\n\n" + string.Join(" ", Enumerable.Repeat("pattern", limit));
+        var cleaned = Drop(Tr, output);
+        Assert.Equal("A first paragraph about the patterns.", cleaned.Output.Sections[slot]);
+        Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "sections." + slot + "[p2]");
+    }
+
+    [Fact]
+    public void Rule7_TheExecutiveSummaryHasNoCapOnTheResearcherSlots()
+    {
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.WhyItScored));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Ib, BenchmarkReportSlots.WhatWorked));
+        Assert.Equal(300, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.WhyItScored));
+        Assert.Equal(150, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.WhatWorked));
+    }
+
     [Fact]
     public void Rule7_ExecutiveSummaryItemWordLimit()
     {

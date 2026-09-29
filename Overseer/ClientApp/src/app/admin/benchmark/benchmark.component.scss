@@ -2293,63 +2293,10 @@
   white-space: nowrap;
 }
 
-/* The run's three stages. The server's Verifying and SecondOpinion share the middle item
-   because they are two passes of one serial tail and the server marks Verifying again after
-   the second-opinion pass — one item each would step the rail backwards. */
-.run-stage-rail {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 0 0 16px 0;
-  padding: 0;
-
-  .run-stage {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1 1 auto;
-    min-inline-size: 0;
-    padding: 8px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.02);
-    font-size: 12px;
-    color: #888;
-
-    .run-stage-index {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 20px;
-      height: 20px;
-      flex-shrink: 0;
-      border-radius: 50%;
-      border: 1px solid currentColor;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .run-stage-name {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    &.is-done {
-      color: #3fb950;
-      border-color: rgba(46, 160, 67, 0.3);
-      background: rgba(46, 160, 67, 0.08);
-    }
-
-    &.is-current {
-      color: var(--primary-color);
-      border-color: rgba(212, 160, 23, 0.45);
-      background: rgba(212, 160, 23, 0.1);
-      font-weight: 600;
-    }
-  }
-}
+/* The run's three stages (.run-stage-rail, in styles.scss). The server's Verifying and
+   SecondOpinion share the middle item because they are two passes of one serial tail and the
+   server marks Verifying again after the second-opinion pass — one item each would step the rail
+   backwards. */
 
 /* .run-stat-strip lives in styles.scss, shared with the difficulty, multi-run and
    question-generation dialogs. */
@@ -2589,37 +2536,6 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
     dd { margin: 0; }
   }
   .calibration-error { margin: 6px 0 0; color: #fbbf24; }
-}
-
-// The run report's AI Reports tab: a job status line, a row per document, written or not, and the
-// writer picker with Write Reports while a document is missing.
-.rr-ai-reports {
-  overflow-wrap: anywhere;
-
-  .rr-ai-status { margin: 0 0 10px; &:empty { margin: 0; } }
-  .rr-ai-doc-list { display: grid; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
-  .rr-ai-doc-row {
-    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
-    padding: 8px 10px; border: 1px solid var(--border-glass); border-radius: 6px;
-  }
-  .rr-ai-doc-text { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
-  .rr-ai-doc-name { font-weight: 600; }
-  .rr-ai-doc-status {
-    border-color: var(--border-glass);
-    color: var(--nav-color);
-
-    &.is-warning { border-color: var(--color-warning); color: var(--color-warning); }
-    &.is-missing { color: #888; }
-  }
-  .rr-ai-doc-meta { font-size: var(--text-secondary); color: #888; }
-  // Its own line under the name, as .gh-tag-changed is everywhere else.
-  .rr-ai-doc-text .gh-tag-changed { flex-basis: 100%; margin-top: 2px; }
-  .rr-ai-write {
-    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; margin-top: 14px;
-    .form-group { margin-bottom: 0; }
-  }
-  .rr-ai-writer-field { flex: 1 1 22rem; min-width: min(100%, 22rem); }
-  .rr-ai-write-blocked { margin: 6px 0 0; }
 }
 
 // Assessor panel. Terse for the same component style budget as above.

@@ -22,6 +22,9 @@ public static class BenchmarkPdfFileNames
     private static readonly Regex Dots = new(@"\.{2,}", RegexOptions.CultureInvariant);
     private static readonly Regex EdgeHyphensAndDots = new(@"^[-.]+|[-.]+$", RegexOptions.CultureInvariant);
 
+    // A subject that is one run: its documents are named from the run number first.
+    private static readonly Regex RunSubject = new(@"^run:([0-9]+)\z", RegexOptions.CultureInvariant);
+
     /// <summary>
     /// The client's <c>safeFileName</c> (<c>utils/download.util.ts</c>): lowercase, whitespace runs to
     /// hyphens, everything outside <c>[a-z0-9._-]</c> dropped, repeated separators collapsed, leading and
@@ -43,14 +46,16 @@ public static class BenchmarkPdfFileNames
     public const string ResearcherReportLabel = "Researcher_Report";
 
     /// <summary>
-    /// <c>&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].&lt;extension&gt;</c>, as the Download Center
-    /// names a pack document: the title, else "&lt;audience&gt;: &lt;subject&gt;"; <c>_INTERNAL</c> at Full
-    /// disclosure. The extension is <c>pdf</c> or <c>docx</c>.
+    /// <c>[run-&lt;id&gt;_]&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].&lt;extension&gt;</c>, as the Download
+    /// Center names a pack document: <c>run-&lt;id&gt;_</c> when the subject is the run <c>run:&lt;id&gt;</c>
+    /// (a group subject has no prefix); the title, else "&lt;audience&gt;: &lt;subject&gt;"; <c>_INTERNAL</c> at
+    /// Full disclosure. The extension is <c>pdf</c> or <c>docx</c>, e.g.
+    /// <c>run-73_claude-5.5-opus-on-the-gnollbench-executive-summary_full_named_INTERNAL.pdf</c>.
     ///
     /// <para>A Report for AI Researchers and Developers is named
-    /// <c>&lt;title without its "— &lt;audience name&gt;" ending&gt;_Researcher_Report_…</c>, the ending being
-    /// either the current name or the legacy <c>Technical Report</c>; with no title, the subject label
-    /// takes the title's place.</para>
+    /// <c>[run-&lt;id&gt;_]&lt;title without its "— &lt;audience name&gt;" ending&gt;_Researcher_Report_…</c>, the
+    /// ending being either the current name or the legacy <c>Technical Report</c>; with no title, the
+    /// subject label takes the title's place.</para>
     /// </summary>
     public static string ForReportDocument(
         BenchmarkReportDocument document, BenchmarkReportRenderOptions options, string extension = "pdf")
@@ -76,7 +81,10 @@ public static class BenchmarkPdfFileNames
         string peers = options.PeerNaming == BenchmarkReportPeerNaming.Named ? "named" : "anonymized";
         string internalSuffix = options.Disclosure == BenchmarkReportDisclosure.Full ? "_INTERNAL" : string.Empty;
 
-        return SafeFileName(title) + label + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
+        var runSubject = RunSubject.Match(document.SubjectKey ?? string.Empty);
+        string runPrefix = runSubject.Success ? "run-" + runSubject.Groups[1].Value + "_" : string.Empty;
+
+        return runPrefix + SafeFileName(title) + label + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
     }
 
     /// <summary>The title without a trailing <c> — Report for AI Researchers and Developers</c> or <c> — Technical Report</c>.</summary>

@@ -576,7 +576,8 @@
                 <label id="bmReportWriterModelLabel">Report Writer <span class="field-optional">Optional</span></label>
                 <div class="gh-field-row">
                   <app-model-picker class="report-writer-model-selector"
-                                    labelledBy="bmReportWriterModelLabel" describedBy="bmReportWriterModelHint"
+                                    labelledBy="bmReportWriterModelLabel"
+                                    [describedBy]="reportWriterLaunchRefusal ? 'bmReportWriterModelHint bmReportWriterRefusal' : 'bmReportWriterModelHint'"
                                     noneLabel="None — no AI-written reports" [showPrice]="true"
                                     [options]="benchmarkPickerOptions" [selectedKey]="reportWriterConfigId"
                                     (selectionChange)="selectReportWriterModel($event.model)"></app-model-picker>
@@ -588,11 +589,23 @@
                   </app-info-tip>
                 </div>
 
-                <!-- The server's two report-writer refusals, shown before Start so the run is never sent. -->
+                <!-- The server's report-writer refusal, shown before Start so the run is never sent. -->
                 @if (reportWriterLaunchRefusal) {
+                  <p id="bmReportWriterRefusal" class="gh-field-error mt-10 report-writer-refusal">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                    <span>{{ reportWriterLaunchRefusal }}</span>
+                  </p>
+                }
+                <!-- A writer of the model under test's provider: advisory; the server asks for the acknowledgment on Start. -->
+                @if (reportWriterLaunchWarning) {
                   <div class="alert alert-warning mt-10 report-writer-advisory" role="note">
+                    <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                      <line x1="12" y1="9" x2="12" y2="13"></line>
+                      <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
                     <div class="alert-content">
-                      <div class="alert-body">{{ reportWriterLaunchRefusal }}</div>
+                      <div class="alert-body">{{ reportWriterLaunchWarning }}</div>
                     </div>
                   </div>
                 }
@@ -2967,75 +2980,11 @@
 
           <div role="tabpanel" class="rr-panel rr-panel-medium" id="rr-panel-reports" aria-labelledby="rr-tab-reports" tabindex="0"
                [hidden]="runReportTab !== 'reports'">
-            <!--
-              The run's AI-written reports: an Executive Summary and a Report for AI Researchers and
-              Developers, written once after scoring by the run's report writer and stored. One row per
-              document, written or not; View renders the stored text and only Write Reports calls a model.
-            -->
-            <div class="rr-ai-reports">
-              <p class="rr-ai-status" role="status">{{ runReportStatusText(selectedRunDetail) }}</p>
-
-              @if (runReportDocumentsError) {
-                <p class="form-hint text-danger">{{ runReportDocumentsError }}</p>
-              } @else {
-                <ul class="rr-ai-doc-list">
-                  @for (row of runReportDocumentRows; track row.audience) {
-                    <li class="rr-ai-doc-row" [attr.data-audience]="row.audience" [attr.data-document-id]="row.doc?.id ?? null">
-                      <div class="rr-ai-doc-text">
-                        <span class="rr-ai-doc-name">{{ row.label }}</span>
-                        @if (row.doc; as doc) {
-                          <span class="gh-tag rr-ai-doc-status" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ runReportDocumentStatusLabel(doc) }}</span>
-                          <span class="rr-ai-doc-meta">{{ runReportDocumentMeta(doc) }}</span>
-                          @if (doc.runChangedSinceGeneration) {
-                            <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
-                          }
-                        } @else if (runReportDocumentsLoaded) {
-                          <span class="gh-tag rr-ai-doc-status is-missing">Not written</span>
-                        }
-                      </div>
-                      @if (row.doc; as doc) {
-                        <button type="button" class="btn-gh btn-gh-small rr-ai-doc-view"
-                                [attr.aria-label]="'View the ' + row.label"
-                                (click)="viewRunReportDocument(doc)">View</button>
-                      }
-                    </li>
-                  }
-                </ul>
-              }
-
-              @if (runReportViewError) {
-                <div class="alert alert-warning mt-10" role="alert">
-                  <div class="alert-content"><div class="alert-body">{{ runReportViewError }}</div></div>
-                </div>
-              }
-
-              @if (runReportDocumentsMissing) {
-                <div class="rr-ai-write">
-                  <div class="form-group rr-ai-writer-field">
-                    <label id="rrReportWriterModelLabel">Report writer</label>
-                    <app-model-picker class="rr-report-writer-model-selector" labelledBy="rrReportWriterModelLabel"
-                                      [describedBy]="runReportWriteBlockedReason ? 'rrReportWriterBlocked' : null"
-                                      placeholder="Select a model" [emptyHint]="benchmarkPickerEmptyHint" [showPrice]="true"
-                                      [options]="benchmarkPickerOptions" [selectedKey]="runReportWriterConfigId"
-                                      (selectionChange)="selectRunReportWriterModel($event.model)"></app-model-picker>
-                  </div>
-                  <button type="button" class="btn-gh rr-ai-write-btn"
-                          [disabled]="runReportWriterConfigId == null || !!runReportWriteBlockedReason || runReportWriteSubmitting"
-                          [attr.aria-busy]="runReportWriteSubmitting ? 'true' : null"
-                          (click)="writeRunReports()">
-                    {{ runReportWriteSubmitting ? 'Requesting…' : 'Write Reports' }}
-                  </button>
-                </div>
-                @if (runReportWriteBlockedReason) {
-                  <p id="rrReportWriterBlocked" class="form-hint rr-ai-write-blocked">{{ runReportWriteBlockedReason }}</p>
-                }
-                @if (runReportWriteError) {
-                  <div class="alert alert-warning mt-10" role="alert">
-                    <div class="alert-content"><div class="alert-body">{{ runReportWriteError }}</div></div>
-                  </div>
-                }
-              }
-            </div>
+            <app-run-ai-reports [run]="selectedRunDetail" [pickerOptions]="benchmarkPickerOptions"
+                                [pickerEmptyHint]="benchmarkPickerEmptyHint" [writerConfigs]="stableBenchmarkCapableConfigs"
+                                [launcherWriterConfigId]="reportWriterConfigId" [dialogOpen]="runDetailDialogOpen"
+                                (downloadsRequested)="openRunDownloads($event)"
+                                (reportStatusChange)="onRunReportStatusChange($event)"></app-run-ai-reports>
           </div>
 
           <div role="tabpanel" class="rr-panel rr-panel-medium" id="rr-panel-calibration" aria-labelledby="rr-tab-calibration" tabindex="0"
@@ -3813,7 +3762,7 @@
     <div class="dialog-content flex-col">
       <div class="dialog-header">
         <div class="dialog-title-group">
-          <h3>Same-Provider Assessment Warning</h3>
+          <h3>{{ sameProviderWarningIsReportWriter ? 'Same-Provider Report Writer' : 'Same-Provider Assessment Warning' }}</h3>
         </div>
         <button type="button" class="btn-icon-action" aria-label="Close same-provider warning" (click)="closeSameProviderDialog()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
@@ -3832,18 +3781,33 @@
           <div class="alert-content">
             <div class="alert-heading"><strong>Methodological Notice</strong></div>
             <div class="alert-body">
-              Both candidate and assessor models belong to <strong>{{ sameProviderWarning.provider }}</strong>.
+              @if (sameProviderWarningIsReportWriter) {
+                The report writer, <strong>{{ sameProviderWarning.assessorModelDisplayName }}</strong>, and the model under
+                test both belong to <strong>{{ sameProviderWarning.provider }}</strong>.
+              } @else {
+                Both candidate and assessor models belong to <strong>{{ sameProviderWarning.provider }}</strong>.
+              }
             </div>
           </div>
         </div>
-        <p class="mb-10">
+        <p class="mb-10 same-provider-roles">
           <strong>Model Under Test:</strong> {{ sameProviderWarning.testedModelDisplayName }}<br>
-          <strong>Assessor Model:</strong> {{ sameProviderWarning.assessorModelDisplayName }}<br>
+          @if (sameProviderWarningIsReportWriter) {
+            <strong>Report Writer:</strong> {{ sameProviderWarning.assessorModelDisplayName }}<br>
+          } @else {
+            <strong>Assessor Model:</strong> {{ sameProviderWarning.assessorModelDisplayName }}<br>
+          }
           <strong>Provider Family:</strong> {{ sameProviderWarning.provider }}
         </p>
-        <p class="text-muted mb-15">
-          Evaluating a model with an assessor from the same provider family is methodologically weaker and may exhibit self-preference bias. Cross-provider assessment is generally recommended.
-        </p>
+        @if (sameProviderWarningIsReportWriter) {
+          <p class="text-muted mb-15 same-provider-note">
+            The run's AI-written reports would be written by a model from the same provider as the model under test, which may describe it more favorably.
+          </p>
+        } @else {
+          <p class="text-muted mb-15 same-provider-note">
+            Evaluating a model with an assessor from the same provider family is methodologically weaker and may exhibit self-preference bias. Cross-provider assessment is generally recommended.
+          </p>
+        }
         <p class="text-muted">
           Would you like to acknowledge this warning and proceed with the benchmark run?
         </p>

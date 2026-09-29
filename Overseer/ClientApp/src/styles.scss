@@ -15,6 +15,8 @@
   --color-success: #28a745;
   --color-error: #dc3545;
   --color-warning: #ffc107;
+  /* Error text. --color-error falls below 4.5:1 on the dark dialog surfaces; this clears it. */
+  --color-error-text: #f87171;
 
   /* Provider identity. The brand hue paints the tint; the ink is a lighter tint of the same hue
      that clears 4.5:1 on the dark badge ground. Any provider without a pair renders neutral. */
@@ -826,6 +828,25 @@ a:hover {
   color: #aaa;
   font-weight: normal;
   display: block;
+}
+
+/* An inline error line for a field or an action. The markup supplies a leading 14 px Feather
+   alert-circle SVG (aria-hidden), so the word, the icon and the color all carry the message. */
+.gh-field-error {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 0;
+  color: var(--color-error-text);
+  font-size: var(--text-secondary);
+  line-height: 1.45;
+
+  > svg {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    margin-top: 0.15em;
+  }
 }
 
 /* Custom Scrollbar */
@@ -3265,6 +3286,103 @@ app-table-pager {
   }
 }
 
+/* A progress dialog's stages, shared by the run, multi-run and AI report writing dialogs.
+   .is-done and .is-current mark the stages; the markup adds a visually hidden word as well. */
+.run-stage-rail {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 16px 0;
+  padding: 0;
+
+  .run-stage {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    font-size: 12px;
+    color: #888;
+
+    .run-stage-index {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      border: 1px solid currentColor;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .run-stage-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &.is-done {
+      color: #3fb950;
+      border-color: rgba(46, 160, 67, 0.3);
+      background: rgba(46, 160, 67, 0.08);
+    }
+
+    &.is-current {
+      color: var(--primary-color);
+      border-color: rgba(212, 160, 23, 0.45);
+      background: rgba(212, 160, 23, 0.1);
+      font-weight: 600;
+    }
+  }
+}
+
+/* A ring spinner, shared by the Download Center and the PDF viewer: a faint track and a gold arc
+   that rotates while its length eases between a quarter and three quarters of the ring. */
+.dc-ring {
+  display: block;
+  flex-shrink: 0;
+  animation: dc-ring-spin 0.9s linear infinite;
+
+  circle {
+    fill: none;
+    stroke-width: 4;
+  }
+}
+
+.dc-ring-track {
+  stroke: rgba(255, 255, 255, 0.12);
+}
+
+.dc-ring-arc {
+  stroke: var(--primary-color);
+  stroke-linecap: round;
+  stroke-dasharray: 25 100;
+  animation: dc-ring-arc 1.8s ease-in-out infinite alternate;
+}
+
+@keyframes dc-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes dc-ring-arc {
+  from {
+    stroke-dasharray: 25 100;
+  }
+
+  to {
+    stroke-dasharray: 75 100;
+  }
+}
+
 .run-stat-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -3399,6 +3517,16 @@ app-table-pager {
   .job-status-chip.status-generating,
   .job-status-chip.status-repairing {
     animation: none;
+  }
+
+  /* A still three-quarter ring: the text beside it carries the progress. */
+  .dc-ring,
+  .dc-ring-arc {
+    animation: none;
+  }
+
+  .dc-ring-arc {
+    stroke-dasharray: 75 100;
   }
 }
 

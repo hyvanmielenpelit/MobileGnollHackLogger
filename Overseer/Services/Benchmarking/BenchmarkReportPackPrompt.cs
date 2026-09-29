@@ -189,13 +189,13 @@ public static class BenchmarkReportPackPrompt
         BenchmarkReportSlots.Meaning =>
             $"At most {BenchmarkReportPackValidator.MeaningMaxWords.ToString(CultureInfo.InvariantCulture)} words: what this means for use as a game assistant, that is, what a player relying on {{{{subject}}}} could expect, drawn from the facts and findings.",
         BenchmarkReportSlots.Confidence =>
-            $"At most {BenchmarkReportPackValidator.ConfidenceMaxWords.ToString(CultureInfo.InvariantCulture)} words: how confident are we, covering the width of the quality interval, how far the graders agreed (in plain words), whether the subject's interval overlaps its peers' intervals when it has peers, and how many questions the result rests on.",
+            $"At most {BenchmarkReportPackValidator.ConfidenceMaxWords.ToString(CultureInfo.InvariantCulture)} words: how reliable this result is, covering the width of the quality interval, how far the graders agreed (in plain words), whether the subject's interval overlaps its peers' intervals when it has peers, and how many questions the result rests on; and, when a grader shares the subject's provider, say so in plain words and that it may read the subject more favorably.",
         BenchmarkReportSlots.Abstract =>
-            "At most 150 words: what was measured, the subject's result against its peers, and the main reasons for it.",
+            $"At most {BenchmarkReportPackValidator.AbstractMaxWords.ToString(CultureInfo.InvariantCulture)} words: what was measured, the subject's result against its peers, and the main reasons for it. Name every error the claim verifier refuted among the main reasons.",
         BenchmarkReportSlots.WhyItScored =>
-            "Why it scored as it did: the failures grouped by category (domain knowledge, reading the game state, tool use, instruction following, completeness under the concise answer style, calibration), citing the questions and the evidence behind each. Leave out a category the data does not support.",
+            $"Explain the patterns and causes across the weaknesses, grouped by category (domain knowledge, reading the game state, tool use, instruction following, completeness under the concise answer style, calibration), in at most {BenchmarkReportPackValidator.WhyItScoredMaxWords.ToString(CultureInfo.InvariantCulture)} words. Leave out a category the data does not support. The weaknesses list is printed right after this text; do not restate its items.",
         BenchmarkReportSlots.WhatWorked =>
-            "What worked: the behaviors that earned points, with their questions.",
+            $"Explain the patterns and causes across the strengths, grouped by category, in at most {BenchmarkReportPackValidator.WhatWorkedMaxWords.ToString(CultureInfo.InvariantCulture)} words. The strengths list is printed right after this text; do not restate its items.",
         BenchmarkReportSlots.OverseerChat =>
             "The brief's first part, the Overseer chat and its tools: what the result suggests about the chat system prompt, the tools and the knowledge the assistant can reach, such as tool calls that found nothing or missing wiki, source or knowledge-base content. State these as things to check, not as conclusions.",
         BenchmarkReportSlots.BenchmarkSystem =>
@@ -225,7 +225,7 @@ public static class BenchmarkReportPackPrompt
         {
             if (spec.RecommendationTargets.Count == 1 && spec.RecommendationTargets[0] == BenchmarkReportSlots.TargetModelDevelopers)
             {
-                Line(sb, $"- recommendations: at most {Words(BenchmarkReportPackValidator.MaxRecommendations(spec.Audience))} items for the model's next iteration. Each names, in this order, the observed failure, the change proposed for the model's next iteration, and the evidence for it. \"for\" is always \"{BenchmarkReportSlots.TargetModelDevelopers}\".");
+                Line(sb, $"- recommendations: at most {Words(BenchmarkReportPackValidator.MaxRecommendations(spec.Audience))} items for the model's next iteration. Name the change proposed and, in a few words, the weakness it answers; do not restate the weakness. Cite the evidence for it in \"evidence\". \"for\" is always \"{BenchmarkReportSlots.TargetModelDevelopers}\".");
             }
             else
             {
@@ -258,7 +258,7 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
         Line(sb, "- Refer to a question as Q followed by its number from the QUESTIONS block, for example Q7. This is the only form in which a digit may appear.");
-        Line(sb, "- Never name any model, provider or product, including the graders: call them by role (the assessor, the co-assessor, the claim verifier).");
+        Line(sb, "- Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.");
         Line(sb, "- If a fact is unavailable, say the figure is unavailable and why; never estimate it.");
         Line(sb);
     }
@@ -286,10 +286,12 @@ public static class BenchmarkReportPackPrompt
     private static void AppendWeighingRules(StringBuilder sb)
     {
         Line(sb, "WEIGHING THE EVIDENCE:");
-        Line(sb, "- A Convergent row, raised independently by both members of the grading panel, outweighs a row raised by a single member (MemberAOnly, MemberBOnly or Single). Member A is the assessor and member B the co-assessor.");
+        Line(sb, "- A Convergent row, raised independently by both members of the grading panel, outweighs a row raised by a single member (MemberAOnly, MemberBOnly or Single).");
         Line(sb, "- A strength raised by a single member that shares the subject's provider is the weakest evidence there is. Never put it in the headline; if you mention it at all, say that only one grader raised it.");
         Line(sb, "- A Conflicting row means the graders disagree. Report it as disagreement, never as a finding in either direction.");
+        Line(sb, "- A Conflicting row whose two member texts are about different things is not a disagreement about one finding; leave it out.");
         Line(sb, "- A claim the claim verifier refuted is the verifier's advisory finding: attribute it to the verifier rather than stating it as proven.");
+        Line(sb, "- Each claim ruling names what was checked. A ruling on an answer sentence tests the answer; a ruling on a grader's statement tests the grader, so a refuted grader's statement means the grader was wrong, not the answer.");
         Line(sb, "- A claim the verifier supported is a fact of the game. Never describe it as a mistake, even where the rubric leaves it out.");
         Line(sb, "- When the response-style conflict fact is true, lower completeness is partly the effect of the benchmark's concise-answer instruction, not only of the model. Say so wherever completeness is discussed.");
         Line(sb, "- Never re-grade an answer with your own judgment, and never invent a cause the data does not show.");
@@ -382,7 +384,7 @@ public static class BenchmarkReportPackPrompt
         Line(sb, $"Questions in the exam: {sheet.Questions.Count.ToString(CultureInfo.InvariantCulture)}");
         Line(sb);
 
-        Line(sb, "GRADERS (by role; in a panel run member A of the grading panel is the assessor and member B the co-assessor)");
+        Line(sb, "GRADERS (by role; write each role name in lower case)");
         if (sheet.Graders.Count == 0)
         {
             Line(sb, "(none recorded)");
@@ -482,15 +484,18 @@ public static class BenchmarkReportPackPrompt
                 : null;
             if (single != null)
             {
-                Line(sb, $"  raised only by the {OneLine(single.Role)}, {(single.SameFamilyAsSubject ? "which shares the subject's provider" : "which does not share the subject's provider")}");
+                Line(sb, $"  raised only by {RoleInWords(single.Role)}, {(single.SameFamilyAsSubject ? "which shares the subject's provider" : "which does not share the subject's provider")}");
             }
             if (!string.IsNullOrWhiteSpace(row.MemberAText))
             {
-                Line(sb, $"  member A: {OneLine(row.MemberAText)}");
+                string role = row.Status.Equals(BenchmarkReportFacts.SingleStatus, StringComparison.OrdinalIgnoreCase)
+                    ? BenchmarkReportFacts.AssessorRole.ToLowerInvariant()
+                    : RoleInWords(BenchmarkReportFacts.PanelMemberARole);
+                Line(sb, $"  {role}: {OneLine(row.MemberAText)}");
             }
             if (!string.IsNullOrWhiteSpace(row.MemberBText))
             {
-                Line(sb, $"  member B: {OneLine(row.MemberBText)}");
+                Line(sb, $"  {RoleInWords(BenchmarkReportFacts.PanelMemberBRole)}: {OneLine(row.MemberBText)}");
             }
         }
         Line(sb);
@@ -508,7 +513,10 @@ public static class BenchmarkReportPackPrompt
 
         foreach (var q in questions)
         {
-            Line(sb, $"[{Q(q.Number)}] band: {OneLine(q.Band)} | score: {Num(q.Score)} | peer mean: {Num(q.PeerMean)} | difference: {Signed(q.Difference)} | critical error: {(q.CriticalError ? "yes" : "no")} | refuted claims: {q.RefutedClaims.ToString(CultureInfo.InvariantCulture)} | tool calls: {Num(q.ToolCalls)}");
+            string refuted = q.RefutedAnswerSentences is int sentences
+                ? $"refuted answer sentences: {sentences.ToString(CultureInfo.InvariantCulture)}"
+                : $"refuted claims: {q.RefutedClaims.ToString(CultureInfo.InvariantCulture)}";
+            Line(sb, $"[{Q(q.Number)}] band: {OneLine(q.Band)} | score: {Num(q.Score)} | peer mean: {Num(q.PeerMean)} | difference: {Signed(q.Difference)} | critical error: {(q.CriticalError ? "yes" : "no")} | {refuted} | tool calls: {Num(q.ToolCalls)}");
 
             var entries = runs
                 .Select(r => (r.RunId, Item: r.Questions.FirstOrDefault(c => c.Number == q.Number)))
@@ -527,7 +535,7 @@ public static class BenchmarkReportPackPrompt
             Line(sb, "  Question as asked:");
             Block(sb, first.QuestionText);
             Line(sb, "  Rubric:");
-            Block(sb, first.ExpectedPointsRecorded && first.ExpectedPoints != null ? first.ExpectedPoints : "(not recorded)");
+            Block(sb, first.ExpectedPointsRecorded && first.ExpectedPoints != null ? WithoutSourceParagraphs(first.ExpectedPoints) : "(not recorded)");
 
             foreach (var (runId, item) in entries.Skip(1))
             {
@@ -540,7 +548,7 @@ public static class BenchmarkReportPackPrompt
                 if (!string.Equals(item.ExpectedPoints, first.ExpectedPoints, StringComparison.Ordinal))
                 {
                     Line(sb, $"  Rubric in run {run}:");
-                    Block(sb, item.ExpectedPointsRecorded && item.ExpectedPoints != null ? item.ExpectedPoints : "(not recorded)");
+                    Block(sb, item.ExpectedPointsRecorded && item.ExpectedPoints != null ? WithoutSourceParagraphs(item.ExpectedPoints) : "(not recorded)");
                 }
             }
 
@@ -571,7 +579,7 @@ public static class BenchmarkReportPackPrompt
                     foreach (var ruling in item.ClaimRulings)
                     {
                         string rationale = string.IsNullOrWhiteSpace(ruling.Rationale) ? string.Empty : $" (rationale: {OneLine(ruling.Rationale)})";
-                        Line(sb, $"    - {OneLine(ruling.Verdict)}: {OneLine(ruling.Claim)}{rationale}");
+                        Line(sb, $"    - {OneLine(BenchmarkReportContent.RulingLabel(ruling.Role, ruling.Verdict))}: {OneLine(ruling.Claim)}{rationale}");
                     }
                 }
             }
@@ -594,6 +602,49 @@ public static class BenchmarkReportPackPrompt
 
     private static string NormalizeRole(string role)
         => new string((role ?? string.Empty).Where(char.IsLetter).ToArray()).ToLowerInvariant();
+
+    /// <summary>A grader role in lower case, as the prose names it: <c>panel member B</c>, <c>the reference reader</c>.</summary>
+    private static string RoleInWords(string role)
+    {
+        string text = OneLine(role).ToLowerInvariant();
+        return text.StartsWith("panel member ", StringComparison.Ordinal)
+            ? "panel member " + text["panel member ".Length..].ToUpperInvariant()
+            : "the " + text;
+    }
+
+    /// <summary>
+    /// A rubric without its <c>SOURCE</c> paragraphs: each runs from a line starting <c>SOURCE</c> to
+    /// the next blank line or the end.
+    /// </summary>
+    internal static string WithoutSourceParagraphs(string rubric)
+    {
+        var lines = (rubric ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        var kept = new List<string>();
+        bool skipping = false;
+        foreach (string line in lines)
+        {
+            if (line.TrimStart().StartsWith("SOURCE", StringComparison.Ordinal))
+            {
+                skipping = true;
+                continue;
+            }
+            if (skipping)
+            {
+                if (line.Trim().Length > 0) continue;
+                skipping = false;
+            }
+            kept.Add(line);
+        }
+
+        // Blank lines a removed paragraph leaves together fold into one.
+        var folded = new List<string>();
+        foreach (string line in kept)
+        {
+            if (line.Trim().Length == 0 && folded.Count > 0 && folded[^1].Trim().Length == 0) continue;
+            folded.Add(line);
+        }
+        return string.Join("\n", folded).Trim();
+    }
 
     private static string Q(int number) => "Q" + number.ToString(CultureInfo.InvariantCulture);
 

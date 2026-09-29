@@ -10,14 +10,14 @@
 
 ## Abstract
 
-GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, ranking 2nd of 3 against Model A and Model B.
+GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Model A and Model B.
 
 ## Key figures
 
-- **Intelligence:** 80 ± 3 / 100, 2nd of 3; its 95 % interval overlaps those of Models A and B.
+- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps those of Models A and B.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
-- **Serious errors:** 1 of 4 answers.
+- **Critical errors:** 1 of 4 answers.
 
 ## Setup and method
 
@@ -31,7 +31,7 @@ GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, ranking 2nd of 3 against Model
   - Claim verifier: Gemini 3.8 Flash (Google, gemini-3.8-flash), different family from the model under test
 - **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
 - **Comparability:** every model in this report was measured under one instrument condition, signature `sig-7f3a91`.
-- **Pricing basis:** Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
+- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 - **Versions:** harness 41, scoring method 12.
 
 ## Results against peers
@@ -89,43 +89,52 @@ Not ranked on speed:
 
 Judge-dependent pairs: not available. The compared runs were not all graded by the same panel.
 
+## Speed and cost
+
+| Measure | GPT-5.6 Luna |
+|---|---|
+| Median answer time | 12.3 s |
+| 90th-percentile answer time | 15.0 s |
+| Cost per question | $0.036 |
+| Cost per run | $0.144 |
+| Input tokens per question | 18,250 |
+| Output tokens per question | 1,140 |
+
 ## Why it scored this way
 
 One critical error on Q3 capped that answer at 25.
 
 Completeness was 70 against a peer mean of 78.
 
+### Weaknesses
+
 - Asserted a false outcome on Q3, where Model A scored well. *(Both graders)*
-  - *Evidence:* R1: Both graders — critical error (Q3)
-  - *Evidence:* Q3 — Breaking a thrown gem: score 25 / 100; peer mean 68 (-43); Panel member A 25, Panel member B 25; a grader flagged a critical error; the claim verifier refuted one claim
-  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
+  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 - Scored lowest on intermediate questions (49). *(Computed)*
-  - *Evidence:* band.intermediate.score: 49
-  - *Q2 as asked:* How long is the prayer timeout after a successful prayer?
-  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
+  - *Evidence:* Intermediate band score: 49 · Q2 (72 / 100), Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 
 ## What worked well
 
 Short, accurate answers on simple questions (R2).
 
+### Strengths
+
 - Answers simple questions precisely and briefly. *(One grader — different family)*
-  - *Evidence:* R2: One grader — different family — accuracy (Q1)
-  - *Q1 as asked:* What happens if I throw a gem at a co-aligned unicorn?
+  - *Evidence:* One grader — different family — accuracy · Q1 (90 / 100)
 
 ## Recommendations for model developers
 
 - Verify object-destruction rules before asserting them. *(Both graders)*
-  - *Evidence:* R1: Both graders — critical error (Q3)
-  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
+  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 
 ## Per-question results
 
-| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted claims | Tool calls | Model time |
+| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |
 |---|---|---|---|---|---|---|---|---|---|
-| Q1 | Throwing gems at unicorns | Simple | 90 | 85 | +5 | no | 0 | 2.0 | 8.1 s |
-| Q2 | Prayer timeout | Intermediate | 72 | 70 | +2 | no | 0 | 3.0 | 11.0 s |
-| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5.0 | 15.2 s |
-| Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4.0 | 13.4 s |
+| Q1 | Throwing gems at unicorns | Simple | 90 | 85 | +5 | no | 0 | 2 | 8.1 s |
+| Q2 | Prayer timeout | Intermediate | 72 | 70 | +2 | no | 0 | 3 | 11.0 s |
+| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |
+| Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4 | 13.4 s |
 
 ### Questions below the peer mean or with a critical error
 
@@ -171,7 +180,7 @@ Short, accurate answers on simple questions (R2).
 
 ## Reproducibility appendix
 
-- **Run ids:** 12
+- **Run IDs:** 12
 - **Run dates:** 2026-09-20
 - **Model under test:** OpenAI gpt-5.6-luna, thinking level high
 - **Grader models:** Panel member A: Google gemini-3.8-flash, thinking level medium; Panel member B: Anthropic claude-haiku-5; Claim verifier: Google gemini-3.8-flash, thinking level medium
@@ -180,8 +189,7 @@ Short, accurate answers on simple questions (R2).
 - **Comparability signature:** `sig-7f3a91`
 - **System prompt SHA-256 prefix:** `e9b3e9a7c4d1`
 - **Tool guides SHA-256 prefix:** `f59d8b30a1c7`
-- **Pricing basis:** Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
-- **Price card date:** 2026-09-01
+- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 
 ## Removed content
 
@@ -197,6 +205,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Report 101 · format version 2 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Detailed · peers anonymized*
+*Document ID 101 · format version 3 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Detailed · peers anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*

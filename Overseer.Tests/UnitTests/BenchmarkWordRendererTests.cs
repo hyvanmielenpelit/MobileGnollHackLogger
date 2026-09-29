@@ -492,6 +492,15 @@ public class BenchmarkWordRendererTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
+            {
+                Disclosure = BenchmarkReportDisclosure.Detailed,
+                PeerNaming = BenchmarkReportPeerNaming.Anonymized
+            }, "docx"));
+
+        document.SubjectKey = "group:5";
+        Assert.Equal(
             "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
@@ -645,10 +654,10 @@ public class BenchmarkWordRendererTests
 
         Assert.Equal(BenchmarkWordRenderer.ContentType, provider.ContentType);
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             provider.FileDownloadName);
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.docx",
+            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.docx",
             full.FileDownloadName);
         AssertValid(provider.FileContents);
         AssertValid(full.FileContents);
@@ -657,6 +666,42 @@ public class BenchmarkWordRendererTests
         XNamespace dcterms = "http://purl.org/dc/terms/";
         Assert.Equal(BenchmarkReportPackFixture.CreatedAt, ParseUtc(Core(package).Root!.Element(dcterms + "created")!.Value));
         Assert.Empty(package.MainDocumentPart!.HeaderParts.SelectMany(h => h.Header!.Descendants<V.Shape>()));
+    }
+
+    [Fact]
+    public async Task RenderDocx_PrintsTheCoverFacts_AndLeavesOutTheFrontMatter()
+    {
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        await using var db = new ApplicationDbContext(options);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        document.Id = 0;
+        db.BenchmarkReportDocuments.Add(document);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+
+        var full = Assert.IsType<FileContentResult>(await controller.RenderDocx(document.Id, "full", "named", null, CancellationToken.None));
+
+        using var package = Open(full.FileContents);
+        var body = package.MainDocumentPart!.Document!.Body!;
+        var facts = body.Elements<W.Table>().First().Elements<W.TableRow>()
+            .Select(r => r.Elements<W.TableCell>().Select(TextOf).ToList())
+            .ToDictionary(cells => cells[0], cells => cells[1]);
+
+        Assert.Equal(
+            new[] { "Document ID", "Disclosure", "Peers", "Suite", "Questions", "Run", "Created (UTC)", "Report format", "Writer" },
+            facts.Keys);
+        Assert.Equal(document.Id.ToString(CultureInfo.InvariantCulture), facts["Document ID"]);
+        Assert.Equal("2, named", facts["Peers"]);
+        Assert.Equal("4", facts["Questions"]);
+
+        string text = TextOf(body);
+        Assert.DoesNotContain("Audience", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Date: 2026-09-28", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Peers: Model A = Grok 5", text, StringComparison.Ordinal);
+        const string stamp = "INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.";
+        Assert.Equal(text.IndexOf(stamp, StringComparison.Ordinal), text.LastIndexOf(stamp, StringComparison.Ordinal));
+        Assert.Contains(stamp, text, StringComparison.Ordinal);
     }
 
     // --- Helpers -----------------------------------------------------------------------------------

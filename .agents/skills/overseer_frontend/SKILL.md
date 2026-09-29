@@ -75,6 +75,14 @@ Harness-neutral, and the floor for any Overseer frontend work.
 - **`.gh-fieldset`** groups related controls in a themed `<fieldset>`/`<legend>`, with
   `.gh-fieldset-hint` for a one-sentence purpose line under the legend; **`.gh-disclosure`** is
   the themed native `<details>`, with `.gh-disclosure-body` for its content. Both are global.
+- **`.gh-field-error`** is the inline error line for a field or an action: a leading 14 px Feather
+  *alert-circle* SVG (`aria-hidden`), then the text, in `--color-error-text` (a lighter red that
+  clears 4.5:1 on the dialog surfaces, where `--color-error` does not). Use it for a refusal under a
+  control rather than `form-hint text-danger`; the icon, the word and the color all carry the message.
+- Shared since 2026-09-29, and not to be copied back into a component: **`.run-stage-rail`** (the
+  stage list of the run, multi-run and AI report writing progress dialogs; `.is-done` / `.is-current`
+  plus a visually hidden state word) and the **`.dc-ring`** ring spinner (`.dc-ring-track`,
+  `.dc-ring-arc`; the Download Center and the PDF viewer), which stands still under reduced motion.
 
 ### Typography
 - **Type tokens** on `:root` in `styles.scss`: `--text-body` (0.875rem: running text and
@@ -280,18 +288,35 @@ To find specific popups, look in the corresponding component's `.html` template:
     **No footer.** Escape and the header Close both close it, and closing always stops detail polling.
     Question cards have real `<button>` headers, filter toggles (*Critical errors*, *Disputed*,
     *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*. The **AI Reports**
-    tab lists the run's two run-completion documents, one row each, written or not: a written one with
-    a *Written* / *Written with warnings* tag, *by <writer> on <date>*, a *Run changed since this
-    document was written* badge when the list item says so, and a **View** button (`btn-gh
-    btn-gh-small`, named *View the Executive Summary* / *View the Report for AI Researchers and
-    Developers*) that opens the Full, named-peers PDF in a new tab; a missing one with a neutral *Not
-    written* tag (no tag at all until the list answers). A `role="status"` line above says only the job
-    state (*Waiting for the report writer*, *Writing…*, *Failed: …*, *Skipped: …*, *Not written yet: …*),
-    refreshed by the run poll and, after completion, by a 5-second poll that stops when the dialog
-    closes. When the finished run lacks a document, a **Report writer** picker — preselected with the
-    run's own writer, else the launcher's when the server would accept it for the run's candidate —
-    with its refusals shown inline and **Write Reports**, disabled with no writer and while a job is
-    Pending or Writing. The tab has no Downloads button of its own. The section is not a run action.
+    tab is its own component, `app-run-ai-reports` (`run-ai-reports/`), fed the run, the picker
+    options, the configurations, the launcher's writer and whether the dialog is open. It lists the
+    run's two run-completion documents, one row each, written or not: a written one with a *Written* /
+    *Written with warnings* tag, a meta line (*by <writer> on <date>*, then duration, cost and *same
+    provider, acknowledged* where known), a *Run changed since this document was written* badge when
+    the list item says so, a **View** button (`btn-gh btn-gh-small` with the *eye* glyph, named *View
+    the Executive Summary* / *View the Report for AI Researchers and Developers*) that opens the
+    document in `app-pdf-viewer-dialog`, and a **Delete** icon button (`.action-btn-danger`, *trash*,
+    `aria-disabled` with a tooltip saying why while a job is Pending or Writing) behind a confirmation;
+    a missing one with a neutral *Not written* tag (no tag at all until the list answers). A
+    `role="status"` line above says only the job state (*Waiting for the report writer*, *Writing…*,
+    *Failed: …*, *Skipped: …*, the cancellation message, *Not written yet: …*), with **Show Progress**
+    (`.btn-ghost`) while the documents are Pending or Writing, an automatic job's included; it is
+    refreshed by the run poll and, after completion, by a 5-second poll of the job endpoint that stops
+    when the dialog closes. When a document is written, an `alert-info` *Downloads* notice holds **Open
+    Download Center** (*file-with-arrow*), and focus returns to that button when the Download Center
+    closes. When the finished run lacks a document, the *Write missing reports* fieldset holds a
+    checkbox per missing document, the **Report writer** picker — preselected with the run's own
+    writer, else the launcher's when it needs neither a refusal nor a warning for the run's candidate —
+    with a click-mode info tip of per-document advice, **Write Report** / **Write Reports** (*zap*)
+    vertically centered beside the picker, a live cost estimate (debounced, from the estimate
+    endpoint), a refusal as a red `.gh-field-error` line that disables the button, a same-provider
+    writer as an amber `alert-warning` that leaves it enabled and opens a nested *Same-Provider Report
+    Writer* confirmation (**Write Anyway**, *zap*) on every write, and server errors as
+    `alert-danger`. Write is disabled with no writer, no document checked, a refusal, and while a job
+    is Pending or Writing. After a delete the picker is cleared, with a note, if it held the model that
+    wrote the deleted document. Two documents with two writers are two rounds. The nested
+    confirmations stop their own `close` and `cancel` events so the run report dialog never sees them.
+    The section is not a run action.
     The **Difficulty**, **Tools** and **Cost** panels are capped at 48 rem (`.rr-panel-narrow`) and
     **Configuration**, **AI Reports** and **Calibration** at 60 rem (`.rr-panel-medium`), each centered
     in the dialog (`margin-inline: auto`); the other tabs are full width. The Tools tables right-align
@@ -305,15 +330,52 @@ To find specific popups, look in the corresponding component's `.html` template:
     option reads *Mean of A and B* with the two model names. The launcher's *Grading*
     fieldset has the matching optional **Report Writer** field after *Claim Verifier* (an
     `app-model-picker`, empty choice *None — no AI-written reports*, a click-mode info tip, remembered
-    with the other launcher fields). Audience 2 is shown everywhere as **Report for AI Researchers and
-    Developers** (its stored type is still `TechnicalReport`).
+    with the other launcher fields). The model under test as writer is a red `.gh-field-error` refusal
+    (`#bmReportWriterRefusal`, added to the picker's `aria-describedby`) that holds Start back; a
+    writer from the model under test's provider is an amber `alert-warning report-writer-advisory`
+    that does not. Both rules come from `run-ai-reports/report-writer-policy.ts`, which the AI Reports
+    tab shares; the server stays authoritative. Audience 2 is shown everywhere as **Report for AI
+    Researchers and Developers** (its stored type is still `TechnicalReport`).
+  - `#sameProviderDialog`: the same-provider confirmation on Start, **role-aware** by the 409's
+    `role`. For `assessor` it is the *Same-Provider Assessment Warning* (*Model Under Test / Assessor
+    Model / Provider Family*); for `reportWriter` the title is *Same-Provider Report Writer*, the lines
+    *Model Under Test / Report Writer / Provider Family*, and the note says the reports may describe the
+    model more favorably. **Acknowledge & Start Run** re-sends the start with the matching flag
+    (`acknowledgeSameProvider` or `acknowledgeSameProviderReportWriter`) and keeps any acknowledgment
+    already given in that attempt, so an assessor prompt followed by a report-writer prompt resolves
+    both. Neither flag is persisted (*Safety Acknowledgments Excluded*, below).
+  - `app-run-report-writing-dialog` (`run-ai-reports/`, owned by `app-run-ai-reports`): the progress of
+    a run's AI report writing job, opened after a write and by **Show Progress**. A `role="status"` line
+    that changes with the phase only (never with the clock), the shared `.run-stage-rail` (*Queued*,
+    *Preparing*, one stage per document, *Done*), an indeterminate `progress`, a `.run-stat-strip`
+    (elapsed on the server's clock, writer, model calls, tokens, cost so far or total, estimate), a
+    documents table with **View** once finished, and a *Diagnostics* `gh-disclosure` with icon-only
+    **Copy** (*copy*) and **Download** (*file-with-arrow*,
+    `run-<id>_ai-report-writing-diagnostics_<yyyyMMdd-HHmmss>.txt`). It polls through the worker
+    ticker every 2 s, backing off 2 → 4 → 8 → 16 → 30 s on failures. **Run in Background** and the
+    close button never cancel; **Cancel Writing** opens a nested confirmation. A 204 from the job
+    endpoint shows the run's stored status instead. Finished, it offers **Open Download Center** and
+    **Done**. It and its confirmation stop their own `close` and `cancel` events.
+  - `app-pdf-viewer-dialog` (`shared/pdf-viewer/`): a **generic, shared** full-screen PDF viewer; the
+    caller supplies the title, subtitle, variants, a loader returning the bytes and, optionally, a
+    same-origin URL for *Open in new tab*. pdf.js (`pdfjs-dist`, loaded only through the dynamic
+    `import()` in `pdfjs-loader.ts`, behind the `PDFJS_LOADER` token specs replace) draws canvases and a
+    selectable text layer. The toolbar holds the variants as a segmented `gh-tabs` row (the AI Reports
+    tab passes the document's allowed disclosures), page navigation, zoom, **Download PDF** (the server's
+    file name) and **Open in new tab** (*external-link*), with **Close** in the header. **It uses
+    `ViewEncapsulation.None`**, because pdf.js builds the page DOM outside Angular's templates, where
+    emulated encapsulation cannot reach; every rule in its stylesheet is therefore scoped under `.pdfv`,
+    including the subset of pdf.js's `pdf_viewer.css` it carries. It focuses its title on open and stops
+    its own `close` and `cancel` events. No PDF is framed or embedded, so the CSP needs nothing new.
   - **Download Center**: one dialog for downloading a run's and a report pack's files, opened from the
     run report's **Downloads** and from the Report Pack dialog. Package presets *Internal*,
     *External* (the Executive Summary and the Report for AI Researchers and Developers; internal-only
     rows listed but unselectable, with their reason) and *Custom*; a run context lists every document
     whose subject includes the run, run-completion documents included;
     per-document disclosure (*Summary* / *Detailed* / *Full*) and peer naming (*Named* /
-    *Anonymized*); `_INTERNAL` file-name suffixes; several files as one ZIP with a `MANIFEST.md`. Its
+    *Anonymized*); `_INTERNAL` file-name suffixes, and a `run-<id>_` prefix for a document whose subject
+    is one run (`reportDocumentFileStem`, matching the server's PDF and Word names); several files as one
+    ZIP with a `MANIFEST.md`. Its
     HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
     ones. Every row offers **PDF** first, then **Word** (both rendered server-side, see
     `ai-benchmark-report-pack.md` § 8); the External preset is PDF only and Internal PDF, Word and
@@ -691,6 +753,7 @@ Whenever modifying or extending the benchmark setup form, ensure the following f
 - **`secondOpinionConfigId`**: Second reader (reference reader in a panel run) model configuration ID (or `null`).
 - **`secondOpinionMode`**: Explicit second-reader coverage override (or `null` to follow the profile default).
 - **`claimVerifierConfigId`**: Claim verifier model configuration ID (or `null`).
+- **`reportWriterConfigId`**: Report writer model configuration ID (or `null` for *None — no AI-written reports*).
 - **`verboseMode`**: Candidate response style (`false` for concise / production default, `true` for detailed / diagnostic).
 - **`runCount`**: Number of runs (`1` for a single run, or `≥ 2` for a replicate multi-run series).
 
@@ -701,7 +764,7 @@ Whenever modifying or extending the benchmark setup form, ensure the following f
   - Fields not backed by asynchronous lists (`verboseMode`, `runCount`) restore immediately.
   - Number of runs (`runCount`) must be validated to be a positive integer (`≥ 1`, floored). It is clamped against `maxRunCountPerSeries` both upon restoration (if limits are already available) and in `loadRunLimits()` when the server limits response arrives.
   - List-backed fields (`suiteId`, `scoringProfileId`, `testedConfigId`, `assessorConfigId`, etc.) are validated against their asynchronously loaded datasets before being applied. If a saved ID no longer exists or a configuration is disabled or lost its `Benchmark` role, it must fall back gracefully to the default rather than leaving a dangling ID.
-- **Safety Acknowledgments Excluded**: Transient safety gates (such as `acknowledgeSameProvider`) must NEVER be persisted across sessions, ensuring the warning dialog cannot be silently bypassed.
+- **Safety Acknowledgments Excluded**: Transient safety gates (such as `acknowledgeSameProvider` and `acknowledgeSameProviderReportWriter`) must NEVER be persisted across sessions, ensuring the warning dialog cannot be silently bypassed. The launcher keeps the acknowledgments given in one start attempt only, by role, and a new attempt starts with none; the AI Reports tab's *Write Anyway* is likewise asked on every write.
 
 ## Angular Unit Testing
 

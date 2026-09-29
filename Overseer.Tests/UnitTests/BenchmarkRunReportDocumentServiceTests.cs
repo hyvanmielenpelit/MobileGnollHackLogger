@@ -24,11 +24,19 @@ using Xunit;
 /// The run-completion documents: when a finished run's two AI-written documents are written, that
 /// they are written once, how a busy report-pack slot, the compliance guard, a missing writer and a
 /// failed document settle the run's status, that a download never reaches the writer, the restart
-/// settlement, and the write-now endpoint. The writer is a fake; nothing calls a provider.
+/// settlement, the write-now endpoint with its document choice and same-provider acknowledgment,
+/// cancellation, the job view, the estimate and the run-scoped delete. The writer is a fake; nothing
+/// calls a provider.
 /// </summary>
 public class BenchmarkRunReportDocumentServiceTests
 {
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
+    private static readonly BenchmarkReportAudience[] BothAudiences =
+    {
+        BenchmarkReportAudience.ExecutiveSummary,
+        BenchmarkReportAudience.TechnicalReport
+    };
 
     // --- Scheduling ----------------------------------------------------------------------------------
 
@@ -69,10 +77,9 @@ public class BenchmarkRunReportDocumentServiceTests
         {
             Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, d.Origin);
             Assert.Equal(BenchmarkRunReportDocumentService.SubjectKeyOf(h.RunId), d.SubjectKey);
+            Assert.False(d.SameProviderAcknowledged);
         });
-        Assert.Equal(
-            new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport },
-            documents.Select(d => d.Audience).OrderBy(a => a));
+        Assert.Equal(BothAudiences, documents.Select(d => d.Audience).OrderBy(a => a));
 
         var run = await h.RunAsync();
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, run.ReportDocumentsStatus);
@@ -169,7 +176,7 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Equal(1, h.Writer.JobCalls);
 
         h.Writer.FailAudience = null;
-        Assert.True(h.Service.TryStart(h.RunId, "user-1", out var completion));
+        Assert.True(h.Service.TryStart(h.RunId, "user-1", null, false, out var completion));
         await completion.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
         Assert.Equal(3, h.Writer.Calls);
@@ -217,6 +224,25 @@ public class BenchmarkRunReportDocumentServiceTests
         var listed = await render.ListAsync(null, h.RunId, null, Ct);
         Assert.Equal(2, listed.Count);
         Assert.All(listed, d => Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, d.Origin));
+    }
+
+    [Fact]
+    public async Task ScheduledJob_OfAnAcknowledgedLaunch_MarksItsDocumentsAcknowledged()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+        long sameProviderId = await h.AddConfigAsync("OpenAI", "gpt-5.6-sol", "GPT Sol");
+        await h.UpdateRunAsync(r => r.ReportWriterModelConfigurationId = sameProviderId);
+
+        await h.Service.ScheduleIfDue(h.RunId);
+
+        var documents = await h.DocumentsAsync();
+        Assert.Equal(2, documents.Count);
+        Assert.All(documents, d =>
+        {
+            Assert.True(d.SameProviderAcknowledged);
+            Assert.Equal(sameProviderId, d.WriterConfigId);
+        });
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
     }
 
     // --- Restart -------------------------------------------------------------------------------------
@@ -308,36 +334,84 @@ public class BenchmarkRunReportDocumentServiceTests
             Documents =
             {
                 new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.ExecutiveSummary, Status = BenchmarkReportPackDocumentStatus.CompletedWithWarnings },
-                new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.TechnicalReport, Status = BenchmarkReportPackDocumentStatus.Canceled }
+                new BenchmarkReportPackDocumentProgress
+                {
+                    Audience = BenchmarkReportAudience.TechnicalReport,
+                    Status = BenchmarkReportPackDocumentStatus.Failed,
+                    ErrorMessage = "The writer's reply could not be parsed."
+                }
             }
         };
+        job.SetStatus(BenchmarkReportPackJobStatus.CompletedWithErrors);
 
         var (status, message) = BenchmarkRunReportDocumentService.OutcomeOf(job);
 
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Failed, status);
-        Assert.Equal("Report for AI Researchers and Developers: the writing was canceled.", message);
+        Assert.Equal("Report for AI Researchers and Developers: The writer's reply could not be parsed.", message);
+    }
+
+    [Fact]
+    public void OutcomeOf_ACanceledJob_IsCanceled_NotFailed()
+    {
+        BenchmarkReportPackJob Canceled(BenchmarkReportPackDocumentStatus executive, BenchmarkReportPackDocumentStatus researcher)
+        {
+            var job = new BenchmarkReportPackJob
+            {
+                Documents =
+                {
+                    new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.ExecutiveSummary, Status = executive },
+                    new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.TechnicalReport, Status = researcher }
+                }
+            };
+            job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
+            return job;
+        }
+
+        Assert.Equal(
+            (BenchmarkRunReportDocumentsStatus.Canceled, "Canceled while writing. The Executive Summary was written and is kept."),
+            BenchmarkRunReportDocumentService.OutcomeOf(Canceled(BenchmarkReportPackDocumentStatus.Completed, BenchmarkReportPackDocumentStatus.Canceled)));
+        Assert.Equal(
+            (BenchmarkRunReportDocumentsStatus.Canceled, "Canceled while writing. Nothing was written."),
+            BenchmarkRunReportDocumentService.OutcomeOf(Canceled(BenchmarkReportPackDocumentStatus.Canceled, BenchmarkReportPackDocumentStatus.Canceled)));
+        Assert.Equal(
+            (BenchmarkRunReportDocumentsStatus.Canceled,
+                "Canceled while writing. The Executive Summary and the Report for AI Researchers and Developers were written and are kept."),
+            BenchmarkRunReportDocumentService.OutcomeOf(Canceled(BenchmarkReportPackDocumentStatus.CompletedWithWarnings, BenchmarkReportPackDocumentStatus.Completed)));
     }
 
     // --- Writer checks -------------------------------------------------------------------------------
 
+    private static SystemAiApiConfiguration CheckConfig(string provider, string modelId, bool enabled = true) => new()
+    {
+        Provider = provider, ModelId = modelId, DisplayName = modelId, ModelRole = 4, IsEnabled = enabled, EncryptedApiKey = "dummy_encrypted"
+    };
+
+    private static readonly SystemAiApiConfiguration CheckCandidate = new() { Provider = "OpenAI", ModelId = "gpt-5.6-luna", DisplayName = "GPT Luna" };
+
     [Fact]
-    public void WriterRefusal_RefusesAnUnusableWriter_TheModelUnderTest_AndItsProvider()
+    public void WriterRefusal_RefusesAnUnusableWriter_AndTheModelUnderTest_ButNotItsProvider()
     {
         var guard = new BenchmarkComplianceGuard(new ConfigurationBuilder().Build(), null!);
-        var candidate = new SystemAiApiConfiguration { Provider = "OpenAI", ModelId = "gpt-5.6-luna", DisplayName = "GPT Luna" };
-        SystemAiApiConfiguration Config(string provider, string modelId, bool enabled = true) => new()
-        {
-            Provider = provider, ModelId = modelId, DisplayName = modelId, ModelRole = 4, IsEnabled = enabled, EncryptedApiKey = "dummy_encrypted"
-        };
 
-        Assert.Equal(BenchmarkRunReportDocumentService.InvalidWriterMessage, BenchmarkRunReportDocumentService.WriterRefusal(null, candidate, guard));
+        Assert.Equal(BenchmarkRunReportDocumentService.InvalidWriterMessage, BenchmarkRunReportDocumentService.WriterRefusal(null, CheckCandidate, guard));
         Assert.Equal(BenchmarkRunReportDocumentService.InvalidWriterMessage,
-            BenchmarkRunReportDocumentService.WriterRefusal(Config("Anthropic", "claude-opus-5-5", enabled: false), candidate, guard));
+            BenchmarkRunReportDocumentService.WriterRefusal(CheckConfig("Anthropic", "claude-opus-5-5", enabled: false), CheckCandidate, guard));
         Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage,
-            BenchmarkRunReportDocumentService.WriterRefusal(Config("OpenAI", "gpt-5.6-luna"), candidate, guard));
-        Assert.Equal(BenchmarkRunReportDocumentService.SameProviderMessage,
-            BenchmarkRunReportDocumentService.WriterRefusal(Config("openai", "gpt-5.6-sol"), candidate, guard));
-        Assert.Null(BenchmarkRunReportDocumentService.WriterRefusal(Config("Anthropic", "claude-opus-5-5"), candidate, guard));
+            BenchmarkRunReportDocumentService.WriterRefusal(CheckConfig("OpenAI", "gpt-5.6-luna"), CheckCandidate, guard));
+        Assert.Null(BenchmarkRunReportDocumentService.WriterRefusal(CheckConfig("openai", "gpt-5.6-sol"), CheckCandidate, guard));
+        Assert.Null(BenchmarkRunReportDocumentService.WriterRefusal(CheckConfig("Anthropic", "claude-opus-5-5"), CheckCandidate, guard));
+    }
+
+    [Fact]
+    public void WriterWarning_WarnsForTheCandidatesProvider_Only()
+    {
+        var guard = new BenchmarkComplianceGuard(new ConfigurationBuilder().Build(), null!);
+
+        Assert.Equal(
+            "gpt-5.6-sol is from OpenAI, the provider of the model under test. Its reports may describe that model more favorably than an independent writer would.",
+            BenchmarkRunReportDocumentService.WriterWarning(CheckConfig("openai", "gpt-5.6-sol"), CheckCandidate, guard));
+        Assert.Null(BenchmarkRunReportDocumentService.WriterWarning(CheckConfig("Anthropic", "claude-opus-5-5"), CheckCandidate, guard));
+        Assert.Null(BenchmarkRunReportDocumentService.WriterWarning(null, CheckCandidate, guard));
     }
 
     // --- Write now -----------------------------------------------------------------------------------
@@ -354,12 +428,137 @@ public class BenchmarkRunReportDocumentServiceTests
         var response = Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value);
         Assert.Equal(h.RunId, response.RunId);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Pending, response.Status);
+        Assert.Equal(BothAudiences, response.Audiences);
 
         await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
         var run = await h.RunAsync();
         Assert.Equal(h.WriterConfig.Id, run.ReportWriterModelConfigurationId);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, run.ReportDocumentsStatus);
         Assert.Equal(2, (await h.DocumentsAsync()).Count);
+    }
+
+    [Fact]
+    public async Task WriteNow_WritesOnlyTheRequestedDocument_AndLeavesTheOtherMissing()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+
+        var accepted = Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.TechnicalReport }
+        }, Ct));
+        Assert.Equal(
+            new[] { BenchmarkReportAudience.TechnicalReport },
+            Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value).Audiences);
+
+        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+        var written = Assert.Single(await h.DocumentsAsync());
+        Assert.Equal(BenchmarkReportAudience.TechnicalReport, written.Audience);
+        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, h.Writer.LastAudiences);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+
+        await using var db = new ApplicationDbContext(h.Options);
+        Assert.Equal(
+            new[] { BenchmarkReportAudience.ExecutiveSummary },
+            await BenchmarkRunReportDocumentService.MissingAudiencesAsync(db, h.RunId, Ct));
+    }
+
+    [Fact]
+    public async Task WriteNow_RefusesARequestedDocumentThatIsAlreadyWritten_WithConflict()
+    {
+        await using var h = await Harness.CreateAsync();
+        h.Writer.FailAudience = BenchmarkReportAudience.TechnicalReport;
+        await h.Service.ScheduleIfDue(h.RunId);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Failed, await h.StatusAsync());
+
+        WriteRunReportDocumentsRequest Request(params BenchmarkReportAudience[] audiences) => new()
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = audiences.ToList()
+        };
+
+        var executive = Assert.IsType<ConflictObjectResult>(await h.Controller().WriteRunReportDocuments(
+            h.RunId, Request(BenchmarkReportAudience.ExecutiveSummary), Ct));
+        Assert.Contains("The Executive Summary is already written. Delete it first to write it again.", JsonSerializer.Serialize(executive.Value));
+
+        var both = Assert.IsType<ConflictObjectResult>(await h.Controller().WriteRunReportDocuments(h.RunId, Request(BothAudiences), Ct));
+        Assert.Contains("The Executive Summary is already written.", JsonSerializer.Serialize(both.Value));
+        Assert.Equal(1, h.Writer.JobCalls);
+
+        h.Writer.FailAudience = null;
+        Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(
+            h.RunId, Request(BenchmarkReportAudience.TechnicalReport), Ct));
+        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+    }
+
+    [Fact]
+    public async Task WriteNow_RefusesAnAudienceThatIsNotARunCompletionDocument()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+
+        foreach (var audiences in new[]
+                 {
+                     new List<BenchmarkReportAudience> { BenchmarkReportAudience.InternalBrief },
+                     new List<BenchmarkReportAudience> { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.InternalBrief },
+                     new List<BenchmarkReportAudience> { (BenchmarkReportAudience)99 }
+                 })
+        {
+            var bad = Assert.IsType<BadRequestObjectResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
+            {
+                WriterModelConfigurationId = h.WriterConfig.Id,
+                Audiences = audiences
+            }, Ct));
+            Assert.Contains(
+                "Only the Executive Summary and the Report for AI Researchers and Developers are written for a run.",
+                JsonSerializer.Serialize(bad.Value));
+        }
+
+        var run = await h.RunAsync();
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, run.ReportDocumentsStatus);
+        Assert.Null(run.ReportWriterModelConfigurationId);
+        Assert.Equal(0, h.Writer.JobCalls);
+    }
+
+    [Fact]
+    public async Task TwoRounds_WriteTheTwoDocumentsWithDifferentWriters()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+        long secondWriterId = await h.AddConfigAsync("Google", "gemini-3.7-pro", "Gemini 3.7 Pro");
+
+        async Task WriteAsync(long writerId, BenchmarkReportAudience audience)
+        {
+            Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
+            {
+                WriterModelConfigurationId = writerId,
+                Audiences = new List<BenchmarkReportAudience> { audience }
+            }, Ct));
+            await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+        }
+
+        await WriteAsync(h.WriterConfig.Id, BenchmarkReportAudience.ExecutiveSummary);
+        await WriteAsync(secondWriterId, BenchmarkReportAudience.TechnicalReport);
+
+        var documents = await h.DocumentsAsync();
+        Assert.Equal(2, documents.Count);
+        var executive = documents.Single(d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        var researcher = documents.Single(d => d.Audience == BenchmarkReportAudience.TechnicalReport);
+        Assert.Equal(h.WriterConfig.Id, executive.WriterConfigId);
+        Assert.Equal("Claude Opus 5.5", executive.WriterDisplayName);
+        Assert.Equal(secondWriterId, researcher.WriterConfigId);
+        Assert.Equal("Gemini 3.7 Pro", researcher.WriterDisplayName);
+        Assert.Equal(2, h.Writer.JobCalls);
+
+        var run = await h.RunAsync();
+        Assert.Equal(secondWriterId, run.ReportWriterModelConfigurationId);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, run.ReportDocumentsStatus);
+
+        // The second round's job replaced the first in the job view.
+        var view = h.Service.TryGetJob(h.RunId)!;
+        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, view.Audiences);
+        Assert.Equal(secondWriterId, view.WriterConfigId);
+        Assert.Equal("Google", view.WriterProvider);
     }
 
     [Fact]
@@ -383,21 +582,50 @@ public class BenchmarkRunReportDocumentServiceTests
     }
 
     [Fact]
-    public async Task WriteNow_RefusesAWriterFromTheCandidatesProvider_AndARunWithoutSynthesis()
+    public async Task WriteNow_AnswersConflictWithTheWarning_WhenNotAcknowledged_AndStartsWhenAcknowledged()
     {
         await using var h = await Harness.CreateAsync(withWriter: false);
-        long sameProviderId;
-        await using (var db = new ApplicationDbContext(h.Options))
-        {
-            var sameProvider = Harness.Config("OpenAI", "gpt-5.6-sol", "GPT Sol");
-            db.SystemAiApiConfigurations.Add(sameProvider);
-            await db.SaveChangesAsync(Ct);
-            sameProviderId = sameProvider.Id;
-        }
+        long sameProviderId = await h.AddConfigAsync("OpenAI", "gpt-5.6-sol", "GPT Sol");
 
-        var refused = Assert.IsType<BadRequestObjectResult>(await h.Controller().WriteRunReportDocuments(
+        var warned = Assert.IsType<ObjectResult>(await h.Controller().WriteRunReportDocuments(
             h.RunId, new WriteRunReportDocumentsRequest { WriterModelConfigurationId = sameProviderId }, Ct));
-        Assert.Contains(BenchmarkRunReportDocumentService.SameProviderMessage, JsonSerializer.Serialize(refused.Value));
+        Assert.Equal(StatusCodes.Status409Conflict, warned.StatusCode);
+        var warning = Assert.IsType<SameProviderWarningDto>(warned.Value);
+        Assert.Equal("reportWriter", warning.Role);
+        Assert.True(warning.SameProvider);
+        Assert.Equal("OpenAI", warning.Provider);
+        Assert.Equal("gpt-5.6-luna", warning.TestedModelDisplayName);
+        Assert.Equal("GPT Sol", warning.AssessorModelDisplayName);
+        Assert.Equal(
+            "GPT Sol is from OpenAI, the provider of the model under test. Its reports may describe that model more favorably than an independent writer would.",
+            warning.Message);
+
+        var untouched = await h.RunAsync();
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, untouched.ReportDocumentsStatus);
+        Assert.Null(untouched.ReportWriterModelConfigurationId);
+        Assert.Equal(0, h.Writer.JobCalls);
+
+        Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = sameProviderId,
+            AcknowledgeSameProvider = true
+        }, Ct));
+        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
+
+        var documents = await h.DocumentsAsync();
+        Assert.Equal(2, documents.Count);
+        Assert.All(documents, d =>
+        {
+            Assert.True(d.SameProviderAcknowledged);
+            Assert.Equal(sameProviderId, d.WriterConfigId);
+        });
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+    }
+
+    [Fact]
+    public async Task WriteNow_RefusesARunWithoutSynthesis_AndAnUnknownRun()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
 
         await h.UpdateRunAsync(r => r.AssessmentJson = null);
         var unfinished = Assert.IsType<BadRequestObjectResult>(await h.Controller().WriteRunReportDocuments(
@@ -421,6 +649,303 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, await h.StatusAsync());
     }
 
+    // --- Cancel --------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Cancel_WhileQueued_LeavesTheQueue_AndSettlesTheRunAsCanceled()
+    {
+        await using var h = await Harness.CreateAsync();
+        var running = new BenchmarkReportPackJob { SubjectLabel = "Other", SuiteName = "Isolation Suite", Cts = new CancellationTokenSource() };
+        Assert.True(h.Jobs.TryStart(running, out _));
+
+        var job = h.Service.ScheduleIfDue(h.RunId);
+        await WaitUntilAsync(() => h.Jobs.WaitingCount == 1);
+
+        var accepted = Assert.IsType<AcceptedResult>(await h.Controller().CancelRunReportJob(h.RunId, Ct));
+        Assert.Equal(h.Clock.UtcNow, Assert.IsType<BenchmarkRunReportJobDto>(accepted.Value).CancelRequestedAtUtc);
+        await job.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        Assert.Equal(0, h.Jobs.WaitingCount);
+        Assert.Same(running, h.Jobs.Current);
+        var run = await h.RunAsync();
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Canceled, run.ReportDocumentsStatus);
+        Assert.Equal(BenchmarkRunReportDocumentService.CanceledBeforeWritingMessage, run.ReportDocumentsMessage);
+        Assert.Equal(0, h.Writer.JobCalls);
+        Assert.Empty(await h.DocumentsAsync());
+        Assert.False(h.Service.IsActive(h.RunId));
+
+        var view = h.Service.TryGetJob(h.RunId)!;
+        Assert.Equal("Finished", view.Phase);
+        Assert.Null(view.SlotAcquiredAtUtc);
+        Assert.NotNull(view.CancelRequestedAtUtc);
+        Assert.Equal(nameof(BenchmarkReportPackJobStatus.Canceled), view.Job.Status);
+        Assert.All(view.Job.Documents, d => Assert.Equal(nameof(BenchmarkReportPackDocumentStatus.Canceled), d.Status));
+        Assert.Contains(view.Job.Log, l => l.Message == "Cancellation requested.");
+    }
+
+    [Fact]
+    public async Task Cancel_WhileWriting_KeepsTheWrittenDocument_AndSettlesAsCanceled()
+    {
+        await using var h = await Harness.CreateAsync();
+        h.Writer.BlockAfterFirst = true;
+
+        var job = h.Service.ScheduleIfDue(h.RunId);
+        await h.Writer.FirstStored.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal("Writing", h.Service.TryGetJob(h.RunId)!.Phase);
+
+        Assert.Equal(BenchmarkRunReportDocumentService.CancelOutcome.Requested, h.Service.TryCancel(h.RunId));
+        await job.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        var kept = Assert.Single(await h.DocumentsAsync());
+        Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, kept.Audience);
+        var run = await h.RunAsync();
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Canceled, run.ReportDocumentsStatus);
+        Assert.Equal("Canceled while writing. The Executive Summary was written and is kept.", run.ReportDocumentsMessage);
+
+        var view = h.Service.TryGetJob(h.RunId)!;
+        Assert.Equal("Finished", view.Phase);
+        Assert.Equal(nameof(BenchmarkReportPackJobStatus.Canceled), view.Job.Status);
+        Assert.Equal(
+            new[] { nameof(BenchmarkReportPackDocumentStatus.Completed), nameof(BenchmarkReportPackDocumentStatus.Canceled) },
+            view.Job.Documents.Select(d => d.Status));
+    }
+
+    [Fact]
+    public async Task Cancel_WithNoJob_AnswersConflict()
+    {
+        await using var h = await Harness.CreateAsync();
+
+        Assert.Equal(BenchmarkRunReportDocumentService.CancelOutcome.NotFound, h.Service.TryCancel(h.RunId));
+        var none = Assert.IsType<ConflictObjectResult>(await h.Controller().CancelRunReportJob(h.RunId, Ct));
+        Assert.Contains("No report writing is in progress for this run.", JsonSerializer.Serialize(none.Value));
+        Assert.IsType<NotFoundResult>(await h.Controller().CancelRunReportJob(999999, Ct));
+
+        await h.Service.ScheduleIfDue(h.RunId);
+
+        Assert.Equal(BenchmarkRunReportDocumentService.CancelOutcome.NotInProgress, h.Service.TryCancel(h.RunId));
+        Assert.IsType<ConflictObjectResult>(await h.Controller().CancelRunReportJob(h.RunId, Ct));
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+    }
+
+    // --- Job view ------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task JobView_ReportsPhaseQueuePositionTimesAndPerDocumentUsage()
+    {
+        await using var h = await Harness.CreateAsync();
+        long secondRunId = h.Seeded.RunIds[1];
+        await h.UpdateRunAsync(secondRunId, r =>
+        {
+            r.AssessmentJson = Harness.AssessmentJson;
+            r.ReportWriterModelConfigurationId = h.WriterConfig.Id;
+        });
+        var running = new BenchmarkReportPackJob { SubjectLabel = "Other", SuiteName = "Isolation Suite", Cts = new CancellationTokenSource() };
+        Assert.True(h.Jobs.TryStart(running, out _));
+
+        var first = h.Service.ScheduleIfDue(h.RunId);
+        await WaitUntilAsync(() => h.Jobs.WaitingCount == 1);
+        var second = h.Service.ScheduleIfDue(secondRunId);
+        await WaitUntilAsync(() => h.Jobs.WaitingCount == 2);
+
+        var queued = h.Service.TryGetJob(h.RunId)!;
+        Assert.Equal("Queued", queued.Phase);
+        Assert.Equal(0, queued.JobsAhead);
+        Assert.Equal("Report Pack: Other", queued.BlockingJobLabel);
+        Assert.Equal(h.Clock.UtcNow, queued.QueuedAtUtc);
+        Assert.Null(queued.SlotAcquiredAtUtc);
+        Assert.Null(queued.FinishedAtUtc);
+        Assert.Null(queued.CancelRequestedAtUtc);
+        Assert.Equal(BothAudiences, queued.Audiences);
+        Assert.Equal(h.WriterConfig.Id, queued.WriterConfigId);
+        Assert.Equal("Claude Opus 5.5", queued.WriterDisplayName);
+        Assert.Equal("Anthropic", queued.WriterProvider);
+        Assert.Equal("claude-opus-5-5", queued.WriterModelId);
+        Assert.Equal(h.Clock.UtcNow, queued.ServerTimeUtc);
+        Assert.Contains(queued.Job.Log, l => l.Message == "Queued for the report writer.");
+        Assert.All(queued.Job.Documents, d =>
+        {
+            Assert.Null(d.StartedAtUtc);
+            Assert.Equal(0, d.InputTokens);
+        });
+        Assert.Equal(1, h.Service.TryGetJob(secondRunId)!.JobsAhead);
+
+        var ok = Assert.IsType<OkObjectResult>(await h.Controller().GetRunReportJob(h.RunId, Ct));
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Pending, Assert.IsType<BenchmarkRunReportJobDto>(ok.Value).Status);
+
+        // The first job writes while the second waits behind it.
+        h.Writer.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+        running.SetStatus(BenchmarkReportPackJobStatus.Completed);
+        await WaitUntilAsync(() => h.Service.TryGetJob(h.RunId)!.Phase == "Writing");
+
+        var writing = h.Service.TryGetJob(h.RunId)!;
+        Assert.Equal(h.Clock.UtcNow, writing.SlotAcquiredAtUtc);
+        Assert.Null(writing.JobsAhead);
+        Assert.Null(writing.BlockingJobLabel);
+        var behind = h.Service.TryGetJob(secondRunId)!;
+        Assert.Equal("Queued", behind.Phase);
+        Assert.Equal(0, behind.JobsAhead);
+        Assert.Equal($"Run #{h.RunId}: gpt-5.6-luna", behind.BlockingJobLabel);
+
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+        h.Writer.Gate.SetResult();
+        await first.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        await second.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        var finished = h.Service.TryGetJob(h.RunId)!;
+        Assert.Equal("Finished", finished.Phase);
+        Assert.Equal(h.Clock.UtcNow, finished.FinishedAtUtc);
+        Assert.Equal(nameof(BenchmarkReportPackJobStatus.Completed), finished.Job.Status);
+        Assert.All(finished.Job.Documents, d =>
+        {
+            Assert.NotNull(d.StartedAtUtc);
+            Assert.NotNull(d.CompletedAtUtc);
+            Assert.Equal(1, d.ModelCalls);
+            Assert.Equal(FakeWriter.InputTokensPerDocument, d.InputTokens);
+            Assert.Equal(FakeWriter.OutputTokensPerDocument, d.OutputTokens);
+            Assert.Equal((double)FakeWriter.CostPerDocument, d.CostUsd);
+        });
+        Assert.Equal(2 * FakeWriter.InputTokensPerDocument, finished.Job.InputTokens);
+        Assert.Equal("Finished", h.Service.TryGetJob(secondRunId)!.Phase);
+    }
+
+    [Fact]
+    public async Task JobView_IsKeptAfterTheJobFinishes_AndPrunedAfterTheRetention()
+    {
+        await using var h = await Harness.CreateAsync();
+        Assert.IsType<NoContentResult>(await h.Controller().GetRunReportJob(h.RunId, Ct));
+
+        await h.Service.ScheduleIfDue(h.RunId);
+        Assert.Equal("Finished", h.Service.TryGetJob(h.RunId)!.Phase);
+
+        h.Clock.Advance(BenchmarkRunReportDocumentService.FinishedJobRetention - TimeSpan.FromMinutes(1));
+        var kept = Assert.IsType<BenchmarkRunReportJobDto>(Assert.IsType<OkObjectResult>(await h.Controller().GetRunReportJob(h.RunId, Ct)).Value);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, kept.Status);
+
+        h.Clock.Advance(TimeSpan.FromMinutes(1));
+        Assert.Null(h.Service.TryGetJob(h.RunId));
+        Assert.IsType<NoContentResult>(await h.Controller().GetRunReportJob(h.RunId, Ct));
+        Assert.IsType<NotFoundResult>(await h.Controller().GetRunReportJob(999999, Ct));
+
+        // The persisted status and the documents remain.
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
+    }
+
+    // --- Estimate ------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Estimate_UsesThePreviewArithmetic_AndReportsTheRunWriterRefusalAndWarning()
+    {
+        await using var h = await Harness.CreateAsync(withWriter: false);
+        long sameProviderId = await h.AddConfigAsync("OpenAI", "gpt-5.6-sol", "GPT Sol");
+        long sameModelId = await h.AddConfigAsync("OpenAI", "gpt-5.6-luna", "GPT Luna");
+
+        async Task<BenchmarkRunReportEstimateDto> EstimateAsync(long writerId, List<BenchmarkReportAudience>? audiences = null)
+            => Assert.IsType<BenchmarkRunReportEstimateDto>(Assert.IsType<OkObjectResult>(
+                await h.Controller().EstimateRunReportDocuments(h.RunId, new BenchmarkRunReportEstimateRequest
+                {
+                    WriterModelConfigurationId = writerId,
+                    Audiences = audiences
+                }, Ct)).Value);
+
+        var estimate = await EstimateAsync(h.WriterConfig.Id);
+        Assert.Null(estimate.Refusal);
+        Assert.Null(estimate.SameProviderWarning);
+        Assert.Equal(BothAudiences, estimate.Estimates.Select(e => e.Audience));
+
+        var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
+            await h.Controller().Preview(new BenchmarkReportPackRequest
+            {
+                RunIds = new List<long> { h.RunId },
+                SubjectKey = BenchmarkRunReportDocumentService.SubjectKeyOf(h.RunId),
+                Audiences = BothAudiences.ToList(),
+                WriterModelConfigurationId = h.WriterConfig.Id
+            }, Ct)).Value);
+        Assert.Null(preview.Refusal);
+        Assert.Equal(
+            preview.Estimates.Select(e => (e.Audience, e.PromptChars, e.EstimatedInputTokens, e.EstimatedOutputTokens, e.EstimatedCostUsd)),
+            estimate.Estimates.Select(e => (e.Audience, e.PromptChars, e.EstimatedInputTokens, e.EstimatedOutputTokens, e.EstimatedCostUsd)));
+        Assert.Equal(preview.EstimatedTotalCostUsd, estimate.EstimatedTotalCostUsd);
+
+        var one = await EstimateAsync(h.WriterConfig.Id, new List<BenchmarkReportAudience> { BenchmarkReportAudience.TechnicalReport });
+        Assert.Equal(
+            preview.Estimates.Single(e => e.Audience == BenchmarkReportAudience.TechnicalReport).PromptChars,
+            Assert.Single(one.Estimates).PromptChars);
+
+        var sameProvider = await EstimateAsync(sameProviderId);
+        Assert.Null(sameProvider.Refusal);
+        Assert.Equal("reportWriter", sameProvider.SameProviderWarning?.Role);
+        Assert.Equal("GPT Sol", sameProvider.SameProviderWarning?.AssessorModelDisplayName);
+        Assert.Equal(2, sameProvider.Estimates.Count);
+
+        var sameModel = await EstimateAsync(sameModelId);
+        Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, sameModel.Refusal);
+        Assert.Null(sameModel.SameProviderWarning);
+
+        Assert.IsType<BadRequestObjectResult>(await h.Controller().EstimateRunReportDocuments(h.RunId, new BenchmarkRunReportEstimateRequest
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.InternalBrief }
+        }, Ct));
+        Assert.IsType<NotFoundResult>(await h.Controller().EstimateRunReportDocuments(
+            999999, new BenchmarkRunReportEstimateRequest { WriterModelConfigurationId = h.WriterConfig.Id }, Ct));
+
+        Assert.Equal(0, h.Writer.JobCalls);
+        await using var db = new ApplicationDbContext(h.Options);
+        Assert.Empty(await db.SystemAiUsageLogs.ToListAsync(Ct));
+    }
+
+    // --- Run-scoped delete ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task DeleteRunDocument_SettlesTheStatus_RefusesWhileWriting_AndRefusesAnotherRunsDocument()
+    {
+        await using var h = await Harness.CreateAsync();
+        await h.Service.ScheduleIfDue(h.RunId);
+        var executive = (await h.DocumentsAsync()).Single(d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+
+        long otherRunId = h.Seeded.RunIds[1];
+        long otherDocumentId;
+        await using (var db = new ApplicationDbContext(h.Options))
+        {
+            var other = BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary);
+            other.Id = 0;
+            other.SubjectKey = BenchmarkRunReportDocumentService.SubjectKeyOf(otherRunId);
+            other.Runs = new List<BenchmarkReportDocumentRun>();
+            db.BenchmarkReportDocuments.Add(other);
+            await db.SaveChangesAsync(Ct);
+            otherDocumentId = other.Id;
+        }
+
+        Assert.IsType<NotFoundResult>(await h.Controller().DeleteRunReportDocument(h.RunId, otherDocumentId, Ct));
+        Assert.IsType<NotFoundResult>(await h.Controller().DeleteRunReportDocument(999999, executive.Id, Ct));
+        Assert.IsType<NotFoundResult>(await h.Controller().DeleteRunReportDocument(h.RunId, 999999, Ct));
+
+        await h.UpdateRunAsync(r => r.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Writing);
+        var busy = Assert.IsType<ConflictObjectResult>(await h.Controller().DeleteRunReportDocument(h.RunId, executive.Id, Ct));
+        Assert.Contains("Wait for the writing to finish, or cancel it, before deleting a report.", JsonSerializer.Serialize(busy.Value));
+        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+
+        await h.UpdateRunAsync(r => r.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Completed);
+        Assert.IsType<NoContentResult>(await h.Controller().DeleteRunReportDocument(h.RunId, executive.Id, Ct));
+
+        var run = await h.RunAsync();
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, run.ReportDocumentsStatus);
+        Assert.Null(run.ReportDocumentsMessage);
+        Assert.Equal(h.WriterConfig.Id, run.ReportWriterModelConfigurationId);
+
+        var remaining = await h.DocumentsAsync();
+        Assert.DoesNotContain(remaining, d => d.Id == executive.Id);
+        Assert.Contains(remaining, d => d.Id == otherDocumentId);
+        await using (var db = new ApplicationDbContext(h.Options))
+        {
+            Assert.Equal(
+                new[] { BenchmarkReportAudience.ExecutiveSummary },
+                await BenchmarkRunReportDocumentService.MissingAudiencesAsync(db, h.RunId, Ct));
+        }
+    }
+
     // --- Helpers -------------------------------------------------------------------------------------
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -433,12 +958,44 @@ public class BenchmarkRunReportDocumentServiceTests
         }
     }
 
+    /// <summary>A clock the tests move by hand.</summary>
+    private sealed class FakeClock : TimeProvider
+    {
+        private readonly object _lock = new();
+        private DateTimeOffset _now = new(2026, 9, 29, 12, 0, 0, TimeSpan.Zero);
+
+        public DateTime UtcNow => GetUtcNow().UtcDateTime;
+
+        public void Advance(TimeSpan by)
+        {
+            lock (_lock)
+            {
+                _now += by;
+            }
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_lock)
+            {
+                return _now;
+            }
+        }
+    }
+
     /// <summary>
     /// Stores a fixture run-completion document for each audience on the job, except
-    /// <see cref="FailAudience"/>, which it fails as a writer's reply that could not be parsed.
+    /// <see cref="FailAudience"/>, which it fails as a writer's reply that could not be parsed. Each
+    /// document records one call's usage. <see cref="Gate"/> holds the job before its first document;
+    /// <see cref="BlockAfterFirst"/> holds it after the first document is stored until it is canceled.
+    /// A cancellation settles the job as the real writer does.
     /// </summary>
     private sealed class FakeWriter : IBenchmarkRunReportWriter
     {
+        public const long InputTokensPerDocument = 100;
+        public const long OutputTokensPerDocument = 20;
+        public const decimal CostPerDocument = 0.01m;
+
         private readonly DbContextOptions<ApplicationDbContext> _options;
         private int _calls;
         private int _jobCalls;
@@ -447,6 +1004,9 @@ public class BenchmarkRunReportDocumentServiceTests
 
         public BenchmarkReportAudience? FailAudience { get; set; }
         public BenchmarkReportAudience? WarnAudience { get; set; }
+        public TaskCompletionSource? Gate { get; set; }
+        public bool BlockAfterFirst { get; set; }
+        public TaskCompletionSource FirstStored { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Calls => _calls;
         public int JobCalls => _jobCalls;
         public long? LastWriterConfigId { get; private set; }
@@ -459,50 +1019,77 @@ public class BenchmarkRunReportDocumentServiceTests
             LastAudiences = job.Documents.Select(d => d.Audience).ToList();
             long runId = job.Request.RunIds.Single();
 
-            await using var db = new ApplicationDbContext(_options);
-            int failed = 0;
-            foreach (var progress in job.Documents.ToList())
+            try
             {
-                Interlocked.Increment(ref _calls);
-                if (progress.Audience == FailAudience)
+                if (Gate != null) await Gate.Task.WaitAsync(ct);
+
+                await using var db = new ApplicationDbContext(_options);
+                int failed = 0;
+                foreach (var progress in job.Documents.ToList())
                 {
-                    job.SetDocumentStatus(progress.Audience, BenchmarkReportPackDocumentStatus.Failed, "The writer's reply could not be parsed.");
-                    failed++;
-                    continue;
+                    ct.ThrowIfCancellationRequested();
+                    Interlocked.Increment(ref _calls);
+                    job.SetDocumentStatus(progress.Audience, BenchmarkReportPackDocumentStatus.Writing);
+                    job.AddUsage(progress.Audience, InputTokensPerDocument, OutputTokensPerDocument, CostPerDocument);
+                    if (progress.Audience == FailAudience)
+                    {
+                        job.SetDocumentStatus(progress.Audience, BenchmarkReportPackDocumentStatus.Failed, "The writer's reply could not be parsed.");
+                        failed++;
+                        continue;
+                    }
+
+                    var document = BenchmarkReportPackFixture.StandaloneDocument(progress.Audience);
+                    document.Id = 0;
+                    document.SubjectKey = job.SubjectKey;
+                    document.SubjectRunIdsJson = "[" + runId + "]";
+                    document.WriterConfigId = job.WriterConfigId;
+                    document.WriterDisplayName = job.WriterDisplayName;
+                    document.SameProviderAcknowledged = job.SameProviderAcknowledged;
+                    document.Status = progress.Audience == WarnAudience
+                        ? BenchmarkReportDocumentStatus.CompletedWithWarnings
+                        : BenchmarkReportDocumentStatus.Completed;
+                    document.Runs = new List<BenchmarkReportDocumentRun>
+                    {
+                        new() { RunId = runId, ScoringMethodVersion = 9, SynthesisSha256 = "0123456789abcdef" }
+                    };
+                    db.BenchmarkReportDocuments.Add(document);
+                    await db.SaveChangesAsync(CancellationToken.None);
+
+                    job.SetDocumentStatus(progress.Audience,
+                        document.Status == BenchmarkReportDocumentStatus.Completed
+                            ? BenchmarkReportPackDocumentStatus.Completed
+                            : BenchmarkReportPackDocumentStatus.CompletedWithWarnings,
+                        documentId: document.Id);
+
+                    if (BlockAfterFirst && FirstStored.TrySetResult())
+                    {
+                        await Task.Delay(Timeout.Infinite, ct);
+                    }
                 }
 
-                var document = BenchmarkReportPackFixture.StandaloneDocument(progress.Audience);
-                document.Id = 0;
-                document.SubjectKey = job.SubjectKey;
-                document.SubjectRunIdsJson = "[" + runId + "]";
-                document.WriterConfigId = job.WriterConfigId;
-                document.Status = progress.Audience == WarnAudience
-                    ? BenchmarkReportDocumentStatus.CompletedWithWarnings
-                    : BenchmarkReportDocumentStatus.Completed;
-                document.Runs = new List<BenchmarkReportDocumentRun>
-                {
-                    new() { RunId = runId, ScoringMethodVersion = 9, SynthesisSha256 = "0123456789abcdef" }
-                };
-                db.BenchmarkReportDocuments.Add(document);
-                await db.SaveChangesAsync(ct);
-
-                job.SetDocumentStatus(progress.Audience,
-                    document.Status == BenchmarkReportDocumentStatus.Completed
-                        ? BenchmarkReportPackDocumentStatus.Completed
-                        : BenchmarkReportPackDocumentStatus.CompletedWithWarnings,
-                    documentId: document.Id);
+                job.SetStatus(failed == 0 ? BenchmarkReportPackJobStatus.Completed : BenchmarkReportPackJobStatus.CompletedWithErrors);
             }
-
-            job.SetStatus(failed == 0 ? BenchmarkReportPackJobStatus.Completed : BenchmarkReportPackJobStatus.CompletedWithErrors);
+            catch (OperationCanceledException)
+            {
+                foreach (var d in job.Documents.ToList().Where(d => d.Status is BenchmarkReportPackDocumentStatus.Pending
+                             or BenchmarkReportPackDocumentStatus.Writing or BenchmarkReportPackDocumentStatus.Repairing))
+                {
+                    job.SetDocumentStatus(d.Audience, BenchmarkReportPackDocumentStatus.Canceled);
+                }
+                job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
+            }
         }
     }
 
     private sealed class Harness : IAsyncDisposable
     {
+        public const string AssessmentJson = "{\"finalScore\":80,\"findings\":[]}";
+
         public DbContextOptions<ApplicationDbContext> Options { get; private init; } = default!;
         public BenchmarkRunExamTests.SeededSuite Seeded { get; private init; } = default!;
         public IConfiguration Configuration { get; private init; } = default!;
         public FakeWriter Writer { get; private init; } = default!;
+        public FakeClock Clock { get; } = new();
         public BenchmarkReportPackJobManager Jobs { get; } = new(TimeSpan.FromMilliseconds(10));
         public BenchmarkRunReportDocumentService Service { get; private set; } = default!;
         public SystemAiApiConfiguration WriterConfig { get; private set; } = default!;
@@ -549,7 +1136,8 @@ public class BenchmarkRunReportDocumentServiceTests
             harness.Service = new BenchmarkRunReportDocumentService(
                 harness._provider.GetRequiredService<IServiceScopeFactory>(),
                 harness.Jobs,
-                NullLogger<BenchmarkRunReportDocumentService>.Instance);
+                NullLogger<BenchmarkRunReportDocumentService>.Instance,
+                harness.Clock);
 
             await using var db = new ApplicationDbContext(options);
             harness.WriterConfig = Config("Anthropic", "claude-opus-5-5", "Claude Opus 5.5");
@@ -557,11 +1145,20 @@ public class BenchmarkRunReportDocumentServiceTests
             await db.SaveChangesAsync();
 
             var run = await db.BenchmarkRuns.SingleAsync(r => r.Id == seeded.RunIds[0]);
-            run.AssessmentJson = "{\"finalScore\":80,\"findings\":[]}";
+            run.AssessmentJson = AssessmentJson;
             run.ReportWriterModelConfigurationId = withWriter ? harness.WriterConfig.Id : null;
             await db.SaveChangesAsync();
 
             return harness;
+        }
+
+        public async Task<long> AddConfigAsync(string provider, string modelId, string name)
+        {
+            await using var db = new ApplicationDbContext(Options);
+            var config = Config(provider, modelId, name);
+            db.SystemAiApiConfigurations.Add(config);
+            await db.SaveChangesAsync();
+            return config.Id;
         }
 
         public AdminBenchmarkReportPacksController Controller()
@@ -587,10 +1184,12 @@ public class BenchmarkRunReportDocumentServiceTests
 
         public async Task<BenchmarkRunReportDocumentsStatus> StatusAsync() => (await RunAsync()).ReportDocumentsStatus;
 
-        public async Task UpdateRunAsync(Action<BenchmarkRun> update)
+        public Task UpdateRunAsync(Action<BenchmarkRun> update) => UpdateRunAsync(RunId, update);
+
+        public async Task UpdateRunAsync(long runId, Action<BenchmarkRun> update)
         {
             await using var db = new ApplicationDbContext(Options);
-            var run = await db.BenchmarkRuns.SingleAsync(r => r.Id == RunId);
+            var run = await db.BenchmarkRuns.SingleAsync(r => r.Id == runId);
             update(run);
             await db.SaveChangesAsync();
         }

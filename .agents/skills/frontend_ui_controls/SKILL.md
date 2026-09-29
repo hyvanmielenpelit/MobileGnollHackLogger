@@ -194,18 +194,19 @@ you already read the label, it is noise; drop it.
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
 | play | Start Benchmark, Acknowledge & Start Run | "This begins now", and it reinforces the consequence of a button that starts real work |
-| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
+| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, in the Report Pack dialog and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions, **Re-run** (the run report's popover trigger, followed by a chevron state indicator) | "This runs again" — the circular-arrow convention is universal |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
-| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center) | "A file arrives on your disk" |
+| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
-| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header) | "Copies to the clipboard" — nothing is saved to disk |
-| eye | Open in Single view, **Preview** a rendered report document | "Look at it here" — shows content without changing or downloading it |
+| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header and the report writing progress dialog) | "Copies to the clipboard" — nothing is saved to disk |
+| eye | Open in Single view, **Preview** a rendered report document, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer) | "Look at it here" — shows content without changing or downloading it |
+| external-link (a box with an arrow leaving it) | **Open in new tab** (icon-only, the PDF viewer) | "Leaves this page for a browser tab" — the same content, outside the application |
 | map | **View game snapshot** (icon-only, the run report's header) | The game board the suite's questions are asked about |
 | layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
 | upload | Import Suite from YAML, Upload Snapshot | A file leaves the user's disk and enters the application; the arrow points out of the tray |
-| zap | Generate Questions, **Reports** (Model Comparison; opens the Report Pack dialog) | AI generation: content is produced by a model, not typed in |
+| zap | Generate Questions, **Reports** (Model Comparison; opens the Report Pack dialog), **Write Report** / **Write Reports** (the run report's AI Reports tab) and its **Write Anyway** confirmation | AI generation: content is produced by a model, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
 | compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard | A guided route through several steps: the wizard finds the way, the admin follows it |
@@ -318,6 +319,16 @@ one entry to the Download Center.*
 *Changed 2026-09-29: `app-model-picker` options can carry a `tag`, a role chip before the model
 name (`.model-option-tag`, global). The run report's* Compare against *uses it: Assessor A,
 Co-assessor B and Panel, each with its model.*
+
+*Changed 2026-09-29 (AI Reports tab and PDF viewer): the run report's AI Reports tab gives* zap *to
+**Write Report** / **Write Reports** and to the same-provider confirmation's **Write Anyway** — both
+make a model write — *eye* to **View**, which now opens the in-app PDF viewer rather than a browser
+tab, and* trash *to each document's icon-only **Delete** (`.action-btn-danger`) and its confirmation.
+**Open Download Center**, the viewer's **Download PDF** and the progress dialog's **Download
+diagnostics** take* file-with-arrow*, and **Copy diagnostics** there takes* copy*. The viewer adds one
+new glyph,* external-link*, for the icon-only **Open in new tab**: it leaves this page for a browser
+tab, which neither* eye *(look here) nor* file-with-arrow *(save to disk) says. Dismissals — **Keep
+It**, **Keep Writing**, **Run in Background**, **Done** — and **Cancel Writing** stay text-only.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -946,6 +957,11 @@ concerns.
   to a cap and then scrolls (`field-sizing: content`, bounded by `--autosize-min` /
   `--autosize-max`); a component sets those two custom properties for its own bounds rather
   than defining a second autosize class.
+- `.gh-field-error` is the shared inline error line under a control or beside an action — a
+  refusal, a failed copy or cancel: a leading 14 px *alert-circle* SVG (`aria-hidden`) and the text
+  in `var(--color-error-text)`, a red that keeps 4.5:1 on the dialog surfaces. Give it an `id` and add
+  that to the control's `aria-describedby`. The icon and the words carry the meaning with the color
+  (§6); a warning the user may proceed past is an amber `alert-warning` instead, never this line.
 - Use the design tokens: `var(--primary-color)`, `var(--gold-glow)`,
   `var(--border-glass)`, `var(--nav-color)`. Not `#e0ba6d`, which *is* `--primary-color`
   and will not follow it if the theme ever changes.

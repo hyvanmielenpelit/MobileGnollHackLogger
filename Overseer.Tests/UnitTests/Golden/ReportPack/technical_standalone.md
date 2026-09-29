@@ -10,14 +10,14 @@
 
 ## Abstract
 
-GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, with one critical error on Q3.
+GPT-5.6 Luna scored 80 / 100 on 4 questions, with one critical error on Q3.
 
 ## Key figures
 
-- **Intelligence:** 80 ± 3 / 100.
+- **Intelligence:** 80 / 100 (interval 77–83).
 - **Speed:** median answer time 12.3 s.
 - **Cost:** $0.036 per question.
-- **Serious errors:** 1 of 4 answers.
+- **Critical errors:** 1 of 4 answers.
 
 ## Setup and method
 
@@ -31,7 +31,7 @@ GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, with one critical error on Q3.
   - Claim verifier: Gemini 3.8 Flash (Google, gemini-3.8-flash), different family from the model under test
 - **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
 - **Comparability:** this report describes the model on its own, measured under the instrument condition with signature `sig-7f3a91`.
-- **Pricing basis:** Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
+- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 - **Versions:** harness 41, scoring method 12.
 
 ## Results
@@ -53,48 +53,52 @@ GPT-5.6 Luna scored 80 ± 3 / 100 on 4 questions, with one critical error on Q3.
 | Intermediate | 2 | 49 |
 | Advanced | 1 | 87 |
 
+## Speed and cost
+
+| Measure | GPT-5.6 Luna |
+|---|---|
+| Median answer time | 12.3 s |
+| 90th-percentile answer time | 15.0 s |
+| Cost per question | $0.036 |
+| Cost per run | $0.144 |
+| Input tokens per question | 18,250 |
+| Output tokens per question | 1,140 |
+
 ## Why it scored this way
 
 One critical error on Q3 capped that answer at 25.
 
 Completeness was its lowest dimension at 70.
 
+### Weaknesses
+
 - Asserted a false outcome on Q3. *(Both graders)*
-  - *Evidence:* R1: Both graders — critical error (Q3)
-  - *Evidence:* Q3 — Breaking a thrown gem: score 25 / 100; Panel member A 25, Panel member B 25; a grader flagged a critical error; the claim verifier refuted one claim
-  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
-  - *Panel member A on Q3:* Accuracy: The gem does not always shatter.
+  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 - Scored lowest on intermediate questions (49). *(Computed)*
-  - *Evidence:* band.intermediate.score: 49
-  - *Q2 as asked:* How long is the prayer timeout after a successful prayer?
-  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
-  - *Panel member A on Q3:* Accuracy: The gem does not always shatter.
+  - *Evidence:* Intermediate band score: 49 · Q2 (72 / 100), Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 
 ## What worked well
 
 Short, accurate answers on simple questions (R2).
 
+### Strengths
+
 - Answers simple questions precisely and briefly. *(One grader — different family)*
-  - *Evidence:* R2: One grader — different family — accuracy (Q1)
-  - *Q1 as asked:* What happens if I throw a gem at a co-aligned unicorn?
-  - *Panel member A on Q1:* Accuracy: Matches rubric.
+  - *Evidence:* One grader — different family — accuracy · Q1 (90 / 100)
 
 ## Recommendations for model developers
 
 - Asserting a destruction rule without checking it cost Q3; verify object-destruction rules before stating them. *(Both graders)*
-  - *Evidence:* R1: Both graders — critical error (Q3)
-  - *Evidence:* Q3 — Breaking a thrown gem: score 25 / 100; Panel member A 25, Panel member B 25; a grader flagged a critical error; the claim verifier refuted one claim
-  - *Q3 as asked:* Will my gem break if I throw it at a unicorn?
-  - *Panel member A on Q3:* Accuracy: The gem does not always shatter.
+  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 
 ## Per-question results
 
-| Q | Topic | Band | Score | Critical error | Refuted claims | Tool calls | Model time |
+| Q | Topic | Band | Score | Critical error | Refuted answer sentences | Tool calls | Model time |
 |---|---|---|---|---|---|---|---|
-| Q1 | Throwing gems at unicorns | Simple | 90 | no | 0 | 2.0 | 8.1 s |
-| Q2 | Prayer timeout | Intermediate | 72 | no | 0 | 3.0 | 11.0 s |
-| Q3 | Breaking a thrown gem | Intermediate | 25 | yes | 1 | 5.0 | 15.2 s |
-| Q4 | Wand of wishing charges | Advanced | 87 | no | 0 | 4.0 | 13.4 s |
+| Q1 | Throwing gems at unicorns | Simple | 90 | no | 0 | 2 | 8.1 s |
+| Q2 | Prayer timeout | Intermediate | 72 | no | 0 | 3 | 11.0 s |
+| Q3 | Breaking a thrown gem | Intermediate | 25 | yes | 1 | 5 | 15.2 s |
+| Q4 | Wand of wishing charges | Advanced | 87 | no | 0 | 4 | 13.4 s |
 
 ### Questions scoring below 50 or with a critical error
 
@@ -129,7 +133,7 @@ Short, accurate answers on simple questions (R2).
 
 **Claim verifier:**
 
-- No claims were checked.
+- **Grader's statement — refuted (the answer was right):** "Worthless glass angers the unicorn." — Glass is caught and returned without anger (dothrow.c).
 
 #### Q2: Prayer timeout
 
@@ -153,7 +157,7 @@ Short, accurate answers on simple questions (R2).
 
 **Claim verifier:**
 
-- **supported:** "The timeout is typically near 350." — Matches the prayer code (pray.c).
+- **Answer sentence — supported:** "The timeout is typically near 350." — Matches the prayer code (pray.c).
 
 #### Q3: Breaking a thrown gem
 
@@ -178,7 +182,7 @@ Short, accurate answers on simple questions (R2).
 
 **Claim verifier:**
 
-- **refuted:** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
+- **Answer sentence accused by a grader — refuted (the grader was right):** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
 
 #### Q4: Wand of wishing charges
 
@@ -231,9 +235,9 @@ Short, accurate answers on simple questions (R2).
 | R2 | strength · accuracy | Q1 | One grader — different family | 1 of 1 run |
 | R3 | strength (A) vs weakness (B) · conciseness | Q2 | Graders disagree | 1 of 1 run |
 
-- **R1:** member A: States that a thrown gem always shatters. · member B: Claims the gem is always destroyed.
-- **R2:** member A: Precise on the unicorn throwing rules.
-- **R3:** member A: Admirably brief. · member B: Too terse to be useful.
+- **R1:** Panel member A: States that a thrown gem always shatters. · Panel member B: Claims the gem is always destroyed.
+- **R2:** Panel member A: Precise on the unicorn throwing rules.
+- **R3:** Panel member A: Admirably brief. · Panel member B: Too terse to be useful.
 
 ## Threats to validity
 
@@ -243,7 +247,7 @@ Short, accurate answers on simple questions (R2).
 
 ## Reproducibility appendix
 
-- **Run ids:** 12
+- **Run IDs:** 12
 - **Run dates:** 2026-09-20
 - **Model under test:** OpenAI gpt-5.6-luna, thinking level high
 - **Grader models:** Panel member A: Google gemini-3.8-flash, thinking level medium; Panel member B: Anthropic claude-haiku-5; Claim verifier: Google gemini-3.8-flash, thinking level medium
@@ -252,8 +256,7 @@ Short, accurate answers on simple questions (R2).
 - **Comparability signature:** `sig-7f3a91`
 - **System prompt SHA-256 prefix:** `e9b3e9a7c4d1`
 - **Tool guides SHA-256 prefix:** `f59d8b30a1c7`
-- **Pricing basis:** Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
-- **Price card date:** 2026-09-01
+- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 
 ## Evaluation terms
 
@@ -263,6 +266,6 @@ Short, accurate answers on simple questions (R2).
 
 ---
 
-*Report 101 · format version 2 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 3 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically.*

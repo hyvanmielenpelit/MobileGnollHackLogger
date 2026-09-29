@@ -86,29 +86,7 @@
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
-/* A ring spinner: a faint track and a gold arc that rotates while its length eases between a quarter
-   and three quarters of the ring. */
-.dc-ring {
-  display: block;
-  flex-shrink: 0;
-  animation: dc-ring-spin 0.9s linear infinite;
-
-  circle {
-    fill: none;
-    stroke-width: 4;
-  }
-}
-
-.dc-ring-track {
-  stroke: rgba(255, 255, 255, 0.12);
-}
-
-.dc-ring-arc {
-  stroke: var(--primary-color);
-  stroke-linecap: round;
-  stroke-dasharray: 25 100;
-  animation: dc-ring-arc 1.8s ease-in-out infinite alternate;
-}
+/* The ring spinner (.dc-ring) is in styles.scss, shared with the PDF viewer. */
 
 .dc-preparing-step {
   margin: 0;
@@ -156,22 +134,6 @@
 
   to {
     opacity: 1;
-  }
-}
-
-@keyframes dc-ring-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes dc-ring-arc {
-  from {
-    stroke-dasharray: 25 100;
-  }
-
-  to {
-    stroke-dasharray: 75 100;
   }
 }
 
@@ -508,15 +470,9 @@
     transition: none;
   }
 
-  /* A still three-quarter ring and no fade: the step text and the progress bar carry the progress. */
-  .dc-preparing,
-  .dc-ring,
-  .dc-ring-arc {
+  /* No fade (the ring stills in styles.scss): the step text and the progress bar carry the progress. */
+  .dc-preparing {
     animation: none;
-  }
-
-  .dc-ring-arc {
-    stroke-dasharray: 75 100;
   }
 
   .dc-preparing-bar::-webkit-progress-value {

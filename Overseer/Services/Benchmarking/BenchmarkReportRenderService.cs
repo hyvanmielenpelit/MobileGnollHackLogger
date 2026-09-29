@@ -169,12 +169,31 @@ public class BenchmarkReportRenderService
         return (BenchmarkReportPackRenderer.Render(d, options), d, false, null);
     }
 
-    public async Task<bool> DeleteAsync(long id, CancellationToken ct)
+    public Task<bool> DeleteAsync(long id, CancellationToken ct) => DeleteDocumentAsync(_db, id, ct);
+
+    /// <summary>
+    /// Removes a stored document; false for an unknown id. Deleting a run's own run-completion
+    /// document also settles the run's documents status
+    /// (<see cref="BenchmarkRunReportDocumentService.SettleAfterDeleteAsync"/>).
+    /// </summary>
+    public static async Task<bool> DeleteDocumentAsync(ApplicationDbContext db, long id, CancellationToken ct)
     {
-        var d = await _db.BenchmarkReportDocuments.IgnoreAutoIncludes().FirstOrDefaultAsync(x => x.Id == id, ct);
+        ArgumentNullException.ThrowIfNull(db);
+
+        var d = await db.BenchmarkReportDocuments.IgnoreAutoIncludes().FirstOrDefaultAsync(x => x.Id == id, ct);
         if (d == null) return false;
-        _db.BenchmarkReportDocuments.Remove(d);
-        await _db.SaveChangesAsync(ct);
+        long? runId = d.Origin == BenchmarkReportDocumentOrigin.RunCompletion
+            && BenchmarkRunReportDocumentService.TryParseSubjectKey(d.SubjectKey, out long subjectRunId)
+                ? subjectRunId
+                : null;
+
+        db.BenchmarkReportDocuments.Remove(d);
+        await db.SaveChangesAsync(ct);
+
+        if (runId != null)
+        {
+            await BenchmarkRunReportDocumentService.SettleAfterDeleteAsync(db, runId.Value, ct);
+        }
         return true;
     }
 

@@ -1,6 +1,7 @@
 namespace Overseer.Tests.UnitTests;
 
 using System.Linq;
+using System.Text.Json;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
@@ -9,10 +10,15 @@ using static Overseer.Tests.UnitTests.BenchmarkReportPackFixture;
 
 /// <summary>
 /// The report pack's verbatim content snapshot: taken from the answer rows as asked and graded,
-/// never from the live suite, with answers excerpted on a word boundary.
+/// never from the live suite, with answers excerpted at a sentence end, a line break or a word
+/// boundary and never inside a table, and claim rulings carried with their roles.
 /// </summary>
 public class BenchmarkReportContentTests
 {
+    private static string Verifications(params BenchmarkClaimVerification[] items) => JsonSerializer.Serialize(items);
+
+    private static BenchmarkClaimVerification Verification(string claim, BenchmarkClaimVerdict verdict, params string[] roles)
+        => new(0, claim, verdict, null, null) { Roles = roles.Length == 0 ? null : roles };
     [Fact]
     public void QuestionTextAndRubric_ComeFromTheAnswerRows_NotTheLiveQuestion()
     {
@@ -139,5 +145,108 @@ public class BenchmarkReportContentTests
         Assert.Equal("refuted", ruling.Verdict);
         Assert.Equal("A thrown gem always shatters.", ruling.Claim);
         Assert.Equal("Gems are caught. (dothrow.c)", ruling.Rationale);
+        Assert.Null(ruling.Role);
+    }
+
+    [Fact]
+    public void ClaimRulings_CarryTheirRoles_FromTheStoredVerification()
+    {
+        var run = Run(1, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 40));
+        run.Answers[0].ClaimVerificationJson = Verifications(
+            Verification("Ordinary claim.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.UnverifiedClaim),
+            Verification("Accused sentence.", BenchmarkClaimVerdict.Supported, BenchmarkClaimRoles.AccusedQuote),
+            Verification("Critical quote.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.CriticalErrorQuote, BenchmarkClaimRoles.UnverifiedClaim),
+            Verification("Grader statement.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AssessorStatement),
+            Verification("Out-of-rubric basis.", BenchmarkClaimVerdict.Supported, BenchmarkClaimRoles.OutOfRubricBasis),
+            Verification("Record without roles.", BenchmarkClaimVerdict.Indeterminate));
+
+        var rulings = BenchmarkReportContent.Build(new[] { run }, 200).Runs[0].Questions[0].ClaimRulings;
+
+        Assert.Equal(
+            new[]
+            {
+                BenchmarkReportContent.ClaimRole, BenchmarkReportContent.AccusedSentenceRole, BenchmarkReportContent.CriticalErrorQuoteRole,
+                BenchmarkReportContent.AssessorStatementRole, BenchmarkReportContent.OutOfRubricBasisRole, BenchmarkReportContent.ClaimRole
+            },
+            rulings.Select(r => r.Role));
+        Assert.True(BenchmarkReportContent.IsAnswerSentenceRole(BenchmarkReportContent.AccusedSentenceRole));
+        Assert.True(BenchmarkReportContent.IsAnswerSentenceRole(BenchmarkReportContent.CriticalErrorQuoteRole));
+        Assert.False(BenchmarkReportContent.IsAnswerSentenceRole(BenchmarkReportContent.AssessorStatementRole));
+        Assert.False(BenchmarkReportContent.IsAnswerSentenceRole(BenchmarkReportContent.OutOfRubricBasisRole));
+        Assert.False(BenchmarkReportContent.IsAnswerSentenceRole(null));
+    }
+
+    [Theory]
+    [InlineData(null, "refuted", "refuted")]
+    [InlineData(BenchmarkReportContent.ClaimRole, "refuted", "Answer sentence — refuted")]
+    [InlineData(BenchmarkReportContent.AccusedSentenceRole, "supported", "Answer sentence accused by a grader — supported (the grader was wrong)")]
+    [InlineData(BenchmarkReportContent.AccusedSentenceRole, "refuted", "Answer sentence accused by a grader — refuted (the grader was right)")]
+    [InlineData(BenchmarkReportContent.CriticalErrorQuoteRole, "indeterminate", "Answer sentence a grader flagged as a critical error — indeterminate")]
+    [InlineData(BenchmarkReportContent.AssessorStatementRole, "refuted", "Grader's statement — refuted (the answer was right)")]
+    [InlineData(BenchmarkReportContent.AssessorStatementRole, "supported", "Grader's statement — supported (the grader was right)")]
+    [InlineData(BenchmarkReportContent.OutOfRubricBasisRole, "refuted", "Grader's basis for an out-of-rubric deduction — refuted (the grader was wrong)")]
+    public void RulingLabel_NamesTheRole_AndWhoWasRight(string? role, string verdict, string expected)
+    {
+        Assert.Equal(expected, BenchmarkReportContent.RulingLabel(role, verdict));
+    }
+
+    [Theory]
+    [InlineData("Gems are caught.", "dothrow.c", "Gems are caught. (dothrow.c)")]
+    [InlineData("dothrow.c:412", "dothrow.c:412", "dothrow.c:412")]
+    [InlineData("  dothrow.c:412 ", "dothrow.c:412", "dothrow.c:412")]
+    [InlineData(null, "dothrow.c", "dothrow.c")]
+    [InlineData("Gems are caught.", null, "Gems are caught.")]
+    public void TheRationale_PrintsACitationEqualToTheBasisOnce(string? basis, string? citation, string expected)
+    {
+        var verification = new BenchmarkClaimVerification(0, "A claim.", BenchmarkClaimVerdict.Refuted, citation, basis);
+
+        Assert.Equal(expected, BenchmarkReportContent.RationaleOf(verification));
+    }
+
+    [Fact]
+    public void AnExcerpt_EndsAtTheLastSentenceEndBeforeTheLimit()
+    {
+        const string text = "First sentence here. Second sentence is longer than the limit allows.";
+
+        var (excerpt, cut) = BenchmarkReportContent.Excerpt(text, 30);
+
+        Assert.Equal("First sentence here. …", excerpt);
+        Assert.True(cut);
+    }
+
+    [Fact]
+    public void AnExcerpt_EndsAtALineBreak_WhenNoSentenceEndsLater()
+    {
+        const string text = "Line one is here\nLine two goes on and on and on.";
+
+        Assert.Equal("Line one is here …", BenchmarkReportContent.Excerpt(text, 20).Excerpt);
+    }
+
+    [Fact]
+    public void AnExcerpt_FallsBackToWhitespace_WhenTheLastSentenceEndIsTooEarly()
+    {
+        const string text = "Hi. This is a long run of words without any stop at all";
+
+        Assert.Equal("Hi. This is a long run of…", BenchmarkReportContent.Excerpt(text, 30).Excerpt);
+    }
+
+    [Fact]
+    public void AnExcerpt_EndsBeforeATable_WhenTheLimitFallsInsideIt()
+    {
+        const string text = "Intro text.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\nAfter.";
+
+        var (excerpt, cut) = BenchmarkReportContent.Excerpt(text, 35);
+
+        Assert.Equal("Intro text.\n\n" + BenchmarkReportContent.TableFollows, excerpt);
+        Assert.True(cut);
+        Assert.Equal(BenchmarkReportContent.TableFollows, BenchmarkReportContent.Excerpt("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |", 25).Excerpt);
+    }
+
+    [Fact]
+    public void AnExcerpt_CutJustAfterATable_PutsTheEllipsisInItsOwnParagraph()
+    {
+        const string text = "| A | B |\n|---|---|\n| 1 | 2 |\nThen a long closing sentence that runs past the limit.";
+
+        Assert.Equal("| A | B |\n|---|---|\n| 1 | 2 |\n\n…", BenchmarkReportContent.Excerpt(text, 40).Excerpt);
     }
 }

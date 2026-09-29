@@ -108,14 +108,15 @@ public sealed record BenchmarkPdfDocumentInfo
         string audience = BenchmarkReportRenderService.AudienceName(document.Audience);
         bool full = options.Disclosure == BenchmarkReportDisclosure.Full;
         var runIds = ParseRunIds(document.SubjectRunIdsJson);
+        var sheet = ParseSheet(document.FactsJson);
 
         var facts = new List<BenchmarkPdfFact>
         {
-            new("Document", "#" + Inv(document.Id)),
-            new("Audience", audience),
+            new("Document ID", Inv(document.Id)),
             new("Disclosure", options.Disclosure.ToString()),
-            new("Peers", options.PeerNaming == BenchmarkReportPeerNaming.Named ? "Named" : "Anonymized"),
+            new("Peers", PeersText(sheet, options.PeerNaming)),
             new("Suite", document.SuiteName ?? string.Empty),
+            new("Questions", QuestionsText(sheet)),
             new(runIds.Count == 1 ? "Run" : "Runs", runIds.Count == 0 ? "—" : string.Join(", ", runIds.Select(id => "#" + Inv(id)))),
             new("Created (UTC)", Stamp(document.CreatedAtUtc)),
             new("Report format", "version " + Inv(document.ReportFormatVersion)),
@@ -130,7 +131,7 @@ public sealed record BenchmarkPdfDocumentInfo
                 : BenchmarkReportRenderService.CurrentTitle(document.Audience, document.Title),
             SubjectLine = SubjectLineOf(document.SuiteName, runIds),
             Classification = full ? BenchmarkPdfClassification.Internal : BenchmarkPdfClassification.ProviderConfidential,
-            ClassificationText = BenchmarkReportPackRenderer.Stamp(options.Disclosure),
+            ClassificationText = BenchmarkReportPackRenderer.Stamp(document.Audience, options.Disclosure),
             Facts = facts,
             CreatedAtUtc = document.CreatedAtUtc,
             Keywords = KeywordsOf(document.SubjectLabel, document.SuiteName, audience),
@@ -240,6 +241,37 @@ public sealed record BenchmarkPdfDocumentInfo
     }
 
     private static string ModelLabel(BenchmarkRun run) => run.TestedModelSnapshot.Label() ?? "unknown model";
+
+    /// <summary>The document's stored fact sheet; null when it cannot be read.</summary>
+    private static BenchmarkReportFactSheet? ParseSheet(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(json);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>"none (stand-alone report)", or the peer count and how they are named; the naming alone without a sheet.</summary>
+    private static string PeersText(BenchmarkReportFactSheet? sheet, BenchmarkReportPeerNaming naming)
+    {
+        string mode = naming == BenchmarkReportPeerNaming.Named ? "named" : "anonymized";
+        if (sheet == null) return naming == BenchmarkReportPeerNaming.Named ? "Named" : "Anonymized";
+        if (sheet.Peers.Count == 0) return "none (stand-alone report)";
+        return Inv(sheet.Peers.Count) + ", " + mode;
+    }
+
+    /// <summary>The questions of the subject's exam, from the sheet's <c>suite.questions</c>, else its question count.</summary>
+    private static string QuestionsText(BenchmarkReportFactSheet? sheet)
+    {
+        if (sheet == null) return "—";
+        var fact = sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, "suite.questions", StringComparison.Ordinal));
+        return fact is { Available: true } ? fact.Display : Inv(sheet.Questions.Count);
+    }
 
     private static string WriterText(BenchmarkReportDocument document)
     {
