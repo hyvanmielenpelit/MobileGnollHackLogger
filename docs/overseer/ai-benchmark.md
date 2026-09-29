@@ -25,7 +25,7 @@ The benchmark framework consists of:
 - **Provider Error Isolation**: Distinguishes between genuine model errors (wrong answers, hallucinations) and transient API infrastructure failures (HTTP 429 rate limits, 503 service unavailable, 529 overload). Provider errors are excluded from scores and denominators.
 - **Configurable Scoring Profiles**: Entities defining weights, level-to-score mappings, critical error ceilings, speed target latencies, decay factors, and maximum parallel questions.
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
-- **Report Packs and the Download Center**: For one Model Comparison entry, a separately chosen writer model writes an Executive Summary, a Technical Report and an Internal Improvement Brief from computed figures; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
+- **Report Packs and the Download Center**: For one Model Comparison entry, a separately chosen writer model writes an Executive Summary, a Technical Report and an Internal Improvement Brief from computed figures; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. The Report Pack dialog lists the documents of the comparison that is open; the Model Comparison launcher, under its **Open Comparison Wizard** button, lists every comparison document as **Comparison reports**. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
 
 ### Run Progress Dialog
 
@@ -3311,6 +3311,38 @@ gains the provider wording and, where it applies, the writer-independence caveat
   interpretations.
 
 The Admin **API Keys** tab's content is centered in one column of at most 48rem.
+
+### Report Packs: a Comparison's Own Documents, a Comparison Reports Library and Format 7 (2026-09-29) — No Harness Version Bump
+
+*The Report Pack dialog lists the documents of the comparison that is open, reads them in the PDF viewer,
+and the comparison documents say how the model compares with its peers.* Nothing here grades anything:
+no grading prompt, score, index or comparability key changes, and `HarnessVersion` and
+`ScoringMethodVersion` do not move. `ReportFormatVersion` moves from **6** to **7**. One EF Core migration,
+`ReportDocumentComparisonKey`, adds `BenchmarkReportDocuments.ComparisonKey` (with an index on
+`ComparisonKey, Origin, CreatedAtUtc`) and `BenchmarkReportDocumentRuns.IsPeer`; a startup backfill keys
+the rows stored before it. The full description is
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 1, 2, 3, 5, 7, 8, 9 and 12.
+
+- **A comparison's identity**: a document belongs to a comparison when the comparison has the same set of
+  runs and groups; the pricing basis is not part of it. The document list takes `comparison=<entry keys>`
+  and `origin=`, and its `runId` filter matches the subject's runs only.
+- **Peer fingerprints**: each peer run's scoring fingerprint is stored with the document, and a later
+  re-score, re-run or deletion of a peer marks the document *Comparison changed*. Documents written before
+  this change have none and are never so marked.
+- **The Report Pack dialog**: the form sits in a resizable sidebar, and the main area lists this
+  comparison's documents in a shared library — sort, filter, select, **View** in the PDF viewer with a
+  *Peer names* row, **Download** through the Download Center, **Delete**. It gains the AI Reports tab's
+  writer advice (with an Internal Brief entry), *Estimated cost* panel, same-provider confirmation
+  (**Write Anyway**, asked on every write, replacing the acknowledgment checkbox), job stage rail and
+  *Downloads* notice. The Markdown preview is gone.
+- **The Model Comparison launcher** leads with **Open Comparison Wizard**; *How the comparison works* is a
+  disclosure; **Comparison reports** below lists every Report Pack document.
+- **Format 7**: per-peer facts and a paired difference against each peer (a 95 % paired-bootstrap
+  estimate, not adjusted for comparing several models and not a significance test); the Executive
+  Summary's *Rank* line and *How it compares*; the researcher report's *Compared models*, *Paired
+  difference* column and writer-authored *Limitations*; word caps for the Internal Brief; readability
+  rules in every writer prompt; validator rules 15–17 (a note for every question needing one, overlap
+  wording in comparative sentences, no hype words), all warnings.
 
 ### Harness Version 29 Updates
 

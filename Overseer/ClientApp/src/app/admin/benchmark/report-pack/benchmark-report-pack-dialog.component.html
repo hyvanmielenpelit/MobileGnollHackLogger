@@ -1,14 +1,16 @@
 <!--
   THE REPORT PACK DIALOG
 
-  Full-screen, over the Model Comparison wizard. Its own close and cancel events, and those of the
-  dialogs nested in it (Preview, Delete, the Download Center), stop here, so Escape closes only the
-  top one and never the wizard.
+  Full-screen, over the Model Comparison wizard: a resizable sidebar that starts a report pack, and a
+  main area with the job's progress and the documents of this comparison. Its own close and cancel
+  events, and those of the dialogs nested in it (the same-provider confirmation here; the viewer, the
+  Download Center and the delete confirmation in the library), stop short of the wizard.
 -->
 <dialog #reportPackDialog class="gh-dialog gh-dialog-fullscreen rp-dialog" aria-labelledby="rp-title"
         (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
-  <app-run-report-frame mainLabel="New report pack" asideLabel="Documents"
-                        [busy]="documentsLoading || writersLoading">
+  <app-run-report-frame layout="sidebar" sidebarLabel="New report pack" mainLabel="Documents of this comparison"
+                        [sidebarWidth]="sidebarWidth" (sidebarWidthChange)="onSidebarWidthChange($event)"
+                        [busy]="writersLoading">
     <div runReportHeader class="rp-identity">
       <div class="dialog-title-group align-items-center">
         <!-- Decorative: the title beside it names the dialog. -->
@@ -29,10 +31,10 @@
          style="position-anchor: --rp-close-tip">Close report packs</div>
 
     <!-- ===================================================================================
-         LEFT: NEW REPORT PACK
+         SIDEBAR: NEW REPORT PACK
          =================================================================================== -->
-    <div runReportMain class="rp-new">
-      <h4 class="rp-section-title" id="rp-new-heading">New report pack</h4>
+    <div runReportSidebar class="rp-new">
+      <h4 class="gh-section-title rp-new-heading" id="rp-new-heading">New report pack</h4>
 
       <div class="form-group rp-field">
         @if (subjects.length > 0) {
@@ -69,38 +71,41 @@
         <label id="rp-writer-label">Report writer</label>
         <div class="gh-field-row">
           <app-model-picker class="rp-writer-selector"
-                            labelledBy="rp-writer-label" describedBy="rp-writer-tip"
+                            labelledBy="rp-writer-label" [describedBy]="writerDescribedBy"
                             placeholder="Choose a writer" [emptyHint]="writerEmptyHint" [showPrice]="true"
                             [options]="writerOptions" [selectedKey]="writerId"
                             (selectionChange)="selectWriter($event.key)"></app-model-picker>
-          <app-info-tip trigger="click" tipId="rp-writer-tip" subject="Report writer">
-            <p>Writes the documents' words from the figures the server computed; it never writes a figure. One
-              call per document, and one repair turn when its output fails validation.</p>
-            <p><strong>Recommended:</strong> a strong model — the tier recommended for scoring roles, Claude Opus
-              or GPT Sol, not the provider's top tier (Claude Fable, GPT Astra) — from a family other than the
-              model under report, at medium thinking or reasoning effort; high only if its documents often need
-              the repair turn or lose items to validation; never low. Not an economy tier (Flash, Flash-Lite).</p>
+          <app-info-tip trigger="dialog" tipId="rp-writer-tip" subject="Report writer"
+                        dialogTitle="Choosing a report writer">
+            <p class="rp-writer-advice-lead">{{ writerAdviceLead }}</p>
+            <dl>
+              @for (entry of writerAdvice; track entry.term) {
+                <div>
+                  <dt><span class="gh-info-term">{{ entry.term }}</span>@if (entry.badge) { <span class="gh-info-badge">{{ entry.badge }}</span>}</dt>
+                  <dd>{{ entry.text }}</dd>
+                </div>
+              }
+            </dl>
             <p>More: How the graders work, the link under this field.</p>
           </app-info-tip>
         </div>
         <button type="button" class="btn-link rp-guide-link" (click)="requestGraderGuide()">More: How the graders work</button>
         @if (writersError) {
-          <p class="rp-error" role="alert">{{ writersError }}</p>
+          <p class="gh-field-error rp-writers-error" role="alert">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ writersError }}</span>
+          </p>
         }
       </div>
 
-      <!-- Visible text, not tips: each of these decides whether Generate can run. -->
+      <!-- Visible text, not tips: a refusal holds Generate back; a warning makes it ask first. -->
       @if (preview?.refusal) {
-        <div class="alert alert-danger rp-refusal" role="alert">
-          <div class="alert-content">
-            <p class="alert-heading">This writer cannot write these documents</p>
-            <div class="alert-body">{{ preview?.refusal }}</div>
-          </div>
-        </div>
-      }
-
-      @if (sameProviderWarning) {
-        <div class="alert alert-warning rp-same-provider">
+        <p id="rp-writer-refusal" class="gh-field-error rp-refusal" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ preview?.refusal }}</span>
+        </p>
+      } @else if (sameProviderWarning) {
+        <div class="alert alert-warning rp-same-provider" role="note">
           <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
             <line x1="12" y1="9" x2="12" y2="13"></line>
@@ -108,65 +113,56 @@
           </svg>
           <div class="alert-content">
             <p class="alert-heading">Writer from the subject's provider</p>
-            <div class="alert-body" id="rp-same-provider-text">{{ sameProviderWarning }}</div>
-            <label class="checkbox-label align-start rp-acknowledge">
-              <input type="checkbox" id="rp-acknowledge" aria-describedby="rp-same-provider-text"
-                     [checked]="acknowledgeSameProvider" [disabled]="jobInProgress"
-                     (change)="onAcknowledgeChange($event)">
-              I understand, and want this writer anyway
-            </label>
+            <div class="alert-body" id="rp-same-provider-text">{{ sameProviderWarning }} Generate asks you to confirm.</div>
           </div>
         </div>
       }
 
-      <section class="rp-estimate" aria-labelledby="rp-estimate-heading">
-        <h5 id="rp-estimate-heading" class="rp-subsection-title">Estimate</h5>
-        @if (previewPending) {
-          <p class="rp-note">Estimating&hellip;</p>
-        } @else if (previewError) {
-          <p class="rp-error">{{ previewError }}</p>
-          <button type="button" class="btn-link rp-retry-estimate" (click)="retryPreview()">Retry the estimate</button>
-        } @else if (preview) {
-          <p class="rp-estimate-subject">
-            {{ preview.subjectLabel }} ({{ preview.subjectState }}) against {{ preview.peers.length }}
-            {{ preview.peers.length === 1 ? 'peer' : 'peers' }}@if (preview.writerDisplayName) {<span>, written by {{ preview.writerDisplayName }}</span>}.
-          </p>
-          <table class="gh-table rp-estimate-table">
-            <caption class="visually-hidden">Estimated tokens and cost per document</caption>
-            <thead>
-              <tr>
-                <th scope="col">Document</th>
-                <th scope="col">Tokens</th>
-                <th scope="col">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of estimateRows; track row.label) {
-                <tr>
-                  <th scope="row">{{ row.label }}</th>
-                  <td>{{ row.tokens }}</td>
-                  <td>{{ row.cost }}</td>
-                </tr>
+      <!-- Always rendered, so the live region is in place before an estimate arrives. -->
+      <div id="rp-estimate" class="gh-estimate-panel rp-estimate" role="status"
+           [class.is-empty]="!estimateView"
+           [class.is-muted]="estimateView !== null && estimateView.state !== 'ready'"
+           [attr.aria-busy]="estimateView?.state === 'loading' ? 'true' : null">
+        @if (estimateView; as est) {
+          @switch (est.state) {
+            @case ('ready') {
+              <div class="gh-estimate-head">
+                <span class="gh-estimate-label">Estimated cost</span>
+                <span class="gh-estimate-total">about {{ est.total }}</span>
+              </div>
+              @if (est.parts.length > 1) {
+                <dl class="gh-estimate-parts">
+                  @for (part of est.parts; track part.name) {
+                    <div>
+                      <dt>{{ part.name }}</dt>
+                      <dd>{{ part.cost }}</dd>
+                    </div>
+                  }
+                </dl>
               }
-            </tbody>
-            <tfoot>
-              <tr>
-                <th scope="row">Total</th>
-                <td></td>
-                <td class="rp-estimate-total">{{ estimateTotal }}</td>
-              </tr>
-            </tfoot>
-          </table>
-          <p class="form-hint">A repair turn can roughly double a document's cost.</p>
-        } @else {
-          <p class="rp-note">Choose a subject, at least one document and a writer to see the estimate.</p>
+              <p class="gh-estimate-note">{{ estimateSubjectLine }}</p>
+            }
+            @case ('loading') {
+              <p class="gh-estimate-note">Estimating…</p>
+            }
+            @case ('failed') {
+              <p class="gh-estimate-note">{{ previewError }}</p>
+            }
+            @default {
+              <p class="gh-estimate-note">No price card for this writer; the cost cannot be estimated.</p>
+            }
+          }
         }
-      </section>
+      </div>
+      @if (previewError) {
+        <button type="button" class="btn-link rp-retry-estimate" (click)="retryPreview()">Retry the estimate</button>
+      }
 
       <div class="rp-generate-row">
-        <button type="button" class="btn-gh rp-generate"
+        <button #generateButton type="button" class="btn-gh rp-generate"
                 [disabled]="generateBlockedReason !== null"
-                [attr.aria-describedby]="generateBlockedReason !== null ? 'rp-generate-blocked' : null"
+                [attr.aria-describedby]="generateDescribedBy"
+                [attr.aria-busy]="starting ? 'true' : null"
                 (click)="generate()">
           <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
           Generate
@@ -177,326 +173,188 @@
       </div>
 
       @if (startError) {
-        <p class="rp-error rp-start-error" role="alert">{{ startError }}</p>
+        <p class="gh-field-error rp-start-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span class="rp-start-error-text">{{ startError }}</span>
+        </p>
       }
-
-      <!-- The job: one polite live line, the per-document rows, the log. -->
-      <section class="rp-job" aria-labelledby="rp-job-heading">
-        <h5 id="rp-job-heading" class="rp-subsection-title">Progress</h5>
-        <p class="rp-job-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
-        @if (job) {
-          <p class="rp-job-meta">
-            Writer {{ job.writerDisplayName }} · elapsed {{ jobElapsed }} · {{ job.totalModelCalls }}
-            {{ job.totalModelCalls === 1 ? 'model call' : 'model calls' }} · cost {{ formatCostUsd(job.costUsd) }}
-          </p>
-          <table class="gh-table rp-job-table">
-            <caption class="visually-hidden">Progress of each document</caption>
-            <thead>
-              <tr>
-                <th scope="col">Document</th>
-                <th scope="col">Status</th>
-                <th scope="col">Model calls</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (row of jobDocuments; track row.audience) {
-                <tr class="rp-job-row" [attr.data-audience]="row.audience">
-                  <th scope="row">{{ audienceLabel(row.audience) }}</th>
-                  <td>
-                    {{ statusLabel(row.status) }}
-                    @if (row.errorMessage) {
-                      <span class="rp-job-row-error">{{ row.errorMessage }}</span>
-                    }
-                  </td>
-                  <td>{{ row.modelCalls }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-          @if (job.log.length > 0) {
-            <details class="gh-disclosure rp-job-log">
-              <summary>Log ({{ job.log.length }} {{ job.log.length === 1 ? 'entry' : 'entries' }})</summary>
-              <div class="gh-disclosure-body">
-                <ol class="rp-log-list">
-                  @for (entry of job.log; track $index) {
-                    <li [class.rp-log-warning]="entry.severity !== 'Info'">
-                      <span class="rp-log-time">{{ formatUtc(entry.timestampUtc) }}</span>
-                      <span class="rp-log-severity">{{ entry.severity }}</span>
-                      {{ entry.message }}
-                    </li>
-                  }
-                </ol>
-              </div>
-            </details>
-          }
-        } @else if (!activeJobId) {
-          <p class="rp-note">No report pack is being written. Closing this dialog does not stop a job.</p>
-        }
-        @if (pollError) {
-          <p class="rp-error">{{ pollError }}</p>
-        }
-        @if (jobInProgress && activeJobId) {
-          <button type="button" class="btn-gh btn-gh-delete rp-cancel-job"
-                  [disabled]="canceling" (click)="cancelJob()">Cancel Job</button>
-        }
-      </section>
     </div>
 
     <!-- ===================================================================================
-         RIGHT: DOCUMENTS
+         MAIN: THE JOB, THEN THE DOCUMENTS OF THIS COMPARISON
          =================================================================================== -->
-    <div runReportAside class="rp-library">
-      <h4 class="rp-section-title" id="rp-documents-heading" tabindex="-1">Documents</h4>
-      <p class="form-hint">Every stored report document of {{ context?.suiteName || 'this suite' }}.</p>
+    <div runReportMain class="rp-main">
+      <h4 class="gh-section-title rp-documents-heading" id="rp-documents-heading" tabindex="-1">Documents of this comparison</h4>
+      <p class="form-hint rp-scope-line">{{ libraryScopeLine }}</p>
 
-      <div class="gh-datatable-toolbar rp-library-toolbar">
-        <button type="button" class="btn-ghost rp-download-selected" id="rp-download-selected"
-                [attr.aria-disabled]="selectedIds.size === 0 ? 'true' : null"
-                [attr.aria-describedby]="selectedIds.size === 0 ? 'rp-download-selected-hint' : null"
-                (click)="downloadSelected()">
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
-          Download&hellip;
-        </button>
-        @if (selectedIds.size === 0) {
-          <span class="rp-note" id="rp-download-selected-hint">Select documents to download them together.</span>
-        } @else {
-          <p class="rp-selection-count">
-            {{ selectedIds.size }} selected@if (offPageSelectedCount > 0) {<span> — {{ offPageSelectedCount }} not on this page</span>}
-          </p>
-          <button type="button" class="gh-filter-toggle rp-show-selected"
-                  [attr.aria-pressed]="showSelectedOnly" (click)="toggleShowSelectedOnly()">Show selected only</button>
-          <button type="button" class="gh-filter-clear rp-clear-selection" (click)="clearSelection()">Clear Selection</button>
-        }
-      </div>
+      <!-- One polite live line, in place before a job exists; it changes with the job's phase only. -->
+      <p class="rp-job-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
 
-      <p class="rp-library-status" role="status">{{ libraryStatus }}</p>
+      @if (activeJobId) {
+        <section class="rp-job" [class.is-finished]="jobFinished" aria-labelledby="rp-job-heading">
+          <h5 id="rp-job-heading" class="rp-subsection-title">{{ jobFinished ? 'Last report pack' : 'Report pack in progress' }}</h5>
+          @if (jobFinished) {
+            <div class="rp-job-summary-row">
+              <p class="rp-job-summary">{{ jobSummary }}</p>
+              <button type="button" class="btn-ghost rp-dismiss-job" (click)="dismissJob()">Dismiss</button>
+            </div>
+          } @else {
+            <ol class="run-stage-rail rp-job-rail" aria-label="Report pack stages">
+              @for (stage of jobStages; track stage.key; let i = $index) {
+                <li class="run-stage" [attr.data-stage]="stage.key"
+                    [class.is-done]="stage.state === 'done'"
+                    [class.is-current]="stage.state === 'current'"
+                    [attr.aria-current]="stage.state === 'current' ? 'step' : null">
+                  <span class="run-stage-index" aria-hidden="true">{{ i + 1 }}</span>
+                  <span class="run-stage-name">{{ stage.name }}</span>
+                  @if (stage.state !== 'pending') {
+                    <span class="visually-hidden">({{ stage.state === 'current' ? 'current' : 'done' }})</span>
+                  }
+                </li>
+              }
+            </ol>
 
-      @if (documentsError) {
-        <p class="rp-error" role="alert">{{ documentsError }}</p>
+            <dl class="run-stat-strip rp-job-stats">
+              <div class="run-stat">
+                <dt>Elapsed</dt>
+                <dd class="rp-job-elapsed">{{ jobElapsed || '—' }}</dd>
+              </div>
+              <div class="run-stat">
+                <dt>Writer</dt>
+                <dd class="rp-job-writer">{{ job?.writerDisplayName || '—' }}</dd>
+              </div>
+              <div class="run-stat">
+                <dt>Model calls</dt>
+                <dd class="rp-job-calls">{{ job ? job.totalModelCalls : '—' }}</dd>
+              </div>
+              <div class="run-stat">
+                <dt>Tokens</dt>
+                <dd class="rp-job-tokens">{{ jobTokens }}</dd>
+              </div>
+              <div class="run-stat">
+                <dt class="rp-job-cost-label">{{ jobCostLabel }}</dt>
+                <dd class="rp-job-cost">{{ job ? formatCostUsd(job.costUsd) : '—' }}</dd>
+              </div>
+              @if (jobEstimate) {
+                <div class="run-stat">
+                  <dt>Estimate</dt>
+                  <dd class="rp-job-estimate">{{ jobEstimate }}</dd>
+                </div>
+              }
+            </dl>
+          }
+
+          @if (job) {
+            <details class="gh-disclosure rp-job-details" [open]="!jobFinished">
+              <summary>Documents and log</summary>
+              <div class="gh-disclosure-body">
+                <table class="gh-table rp-job-table">
+                  <caption class="visually-hidden">Progress of each document</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Document</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Model calls</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of jobDocuments; track row.audience) {
+                      <tr class="rp-job-row" [attr.data-audience]="row.audience">
+                        <th scope="row">{{ audienceLabel(row.audience) }}</th>
+                        <td>
+                          {{ statusLabel(row.status) }}
+                          @if (row.errorMessage) {
+                            <span class="rp-job-row-error">{{ row.errorMessage }}</span>
+                          }
+                        </td>
+                        <td>{{ row.modelCalls }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+                @if (job.log.length > 0) {
+                  <details class="gh-disclosure rp-job-log">
+                    <summary>Log ({{ job.log.length }} {{ job.log.length === 1 ? 'entry' : 'entries' }})</summary>
+                    <div class="gh-disclosure-body">
+                      <ol class="rp-log-list">
+                        @for (entry of job.log; track $index) {
+                          <li [class.rp-log-warning]="entry.severity !== 'Info'">
+                            <span class="rp-log-time">{{ formatUtc(entry.timestampUtc) }}</span>
+                            <span class="rp-log-severity">{{ entry.severity }}</span>
+                            {{ entry.message }}
+                          </li>
+                        }
+                      </ol>
+                    </div>
+                  </details>
+                }
+              </div>
+            </details>
+          }
+
+          @if (pollError) {
+            <p class="gh-field-error rp-poll-error">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{{ pollError }}</span>
+            </p>
+          }
+          @if (jobInProgress) {
+            <button type="button" class="btn-gh btn-gh-delete rp-cancel-job"
+                    [disabled]="canceling" (click)="cancelJob()">Cancel Job</button>
+          }
+        </section>
       }
 
-      @if (documentsLoading && documents.length === 0) {
-        <p class="rp-note">Loading report documents&hellip;</p>
-      } @else if (documents.length === 0) {
-        <p class="rp-note rp-library-empty">No report documents are stored for this suite yet.</p>
-      } @else {
-        <app-table-pager [state]="documentTable" [rows]="documents" noun="documents"
-                         (changed)="onTableChanged()"></app-table-pager>
-        <div class="gh-datatable-scroll rp-table-scroll">
-          <table class="gh-table gh-datatable rp-documents-table">
-            <caption class="visually-hidden">Stored report documents</caption>
-            <thead>
-              <tr>
-                <th scope="col" class="rp-col-check"><span class="visually-hidden">Select</span></th>
-                <th app-sort-header [state]="documentTable" column="createdAtUtc" label="Date (UTC)"
-                    (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="documentTable" column="subjectLabel" label="Subject"
-                    (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="documentTable" column="audience" label="Document"
-                    (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="documentTable" column="writerDisplayName" label="Writer"
-                    (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="documentTable" column="status" label="Status"
-                    (changed)="onTableChanged()"></th>
-                <th app-sort-header [state]="documentTable" column="costUsd" label="Cost"
-                    (changed)="onTableChanged()"></th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (doc of documentView; track doc.id) {
-                <tr class="rp-doc-row" [attr.data-document-id]="doc.id">
-                  <td class="rp-col-check">
-                    <label class="checkbox-label">
-                      <input type="checkbox" [id]="'rp-doc-' + doc.id + '-select'"
-                             [checked]="isSelected(doc)"
-                             [attr.aria-label]="'Select ' + documentName(doc)"
-                             (change)="onSelectChange(doc, $event)">
-                    </label>
-                  </td>
-                  <td class="rp-col-date">{{ formatUtc(doc.createdAtUtc) }}</td>
-                  <td class="rp-col-subject">
-                    {{ doc.subjectLabel }}
-                    @if (doc.runChangedSinceGeneration) {
-                      <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
-                    }
-                  </td>
-                  <td>{{ audienceLabel(doc.audience) }}</td>
-                  <td>{{ doc.writerDisplayName }}</td>
-                  <td>{{ statusLabel(doc.status) }}</td>
-                  <td class="rp-col-cost">{{ formatCostUsd(doc.costUsd) }}</td>
-                  <td class="rp-col-actions">
-                    <span class="rp-row-actions">
-                      <button type="button" class="action-btn rp-preview-btn" [id]="'rp-doc-' + doc.id + '-preview'"
-                              [attr.aria-label]="'Preview ' + documentName(doc)"
-                              [attr.interestfor]="'rp-tip-preview-' + doc.id"
-                              [attr.style]="'anchor-name: --rp-tip-preview-' + doc.id"
-                              (click)="openPreview(doc)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                      </button>
-                      <div popover="hint" class="gh-tooltip" [id]="'rp-tip-preview-' + doc.id"
-                           [attr.style]="'position-anchor: --rp-tip-preview-' + doc.id">Preview</div>
-
-                      <button type="button" class="action-btn rp-download-btn" [id]="'rp-doc-' + doc.id + '-download'"
-                              [attr.aria-label]="'Download ' + documentName(doc)"
-                              [attr.interestfor]="'rp-tip-download-' + doc.id"
-                              [attr.style]="'anchor-name: --rp-tip-download-' + doc.id"
-                              (click)="downloadDocument(doc)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
-                      </button>
-                      <div popover="hint" class="gh-tooltip" [id]="'rp-tip-download-' + doc.id"
-                           [attr.style]="'position-anchor: --rp-tip-download-' + doc.id">Download&hellip;</div>
-
-                      <button type="button" class="action-btn action-btn-danger rp-delete-btn" [id]="'rp-doc-' + doc.id + '-delete'"
-                              [attr.aria-label]="'Delete ' + documentName(doc)"
-                              [attr.interestfor]="'rp-tip-delete-' + doc.id"
-                              [attr.style]="'anchor-name: --rp-tip-delete-' + doc.id"
-                              (click)="requestDelete(doc)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                      </button>
-                      <div popover="hint" class="gh-tooltip" [id]="'rp-tip-delete-' + doc.id"
-                           [attr.style]="'position-anchor: --rp-tip-delete-' + doc.id">Delete</div>
-                    </span>
-                  </td>
-                </tr>
-              }
-            </tbody>
-          </table>
+      @if (libraryDocumentCount > 0) {
+        <div class="alert alert-info rp-download-notice">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <div class="alert-content">
+            <div class="alert-heading">Downloads</div>
+            <div class="alert-body">
+              The documents of this comparison can be downloaded from the Download Center as PDF, Word or Markdown,
+              at the disclosure each allows, one by one or together in a ZIP.
+            </div>
+            <div class="alert-actions">
+              <button #openDownloadsButton type="button" class="btn-ghost rp-open-downloads"
+                      (click)="openAllDownloads(openDownloadsButton)">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                Open Download Center
+              </button>
+            </div>
+          </div>
         </div>
-        @if (documentTable.noMatches(documents)) {
-          <p class="rp-note">No selected document is in the list.
-            <button type="button" class="gh-filter-clear" (click)="toggleShowSelectedOnly()">Show all</button>
-          </p>
-        }
-        <app-table-pager [state]="documentTable" [rows]="documents" noun="documents" [announce]="false"
-                         (changed)="onTableChanged()"></app-table-pager>
+      }
+
+      @if (libraryScope) {
+        <app-report-document-library idPrefix="rp" [scope]="libraryScope" [showComparisonColumn]="false"
+                                     [reloadToken]="libraryReloadToken"
+                                     (documentsChange)="onLibraryDocuments($event)"></app-report-document-library>
       }
     </div>
   </app-run-report-frame>
 
-  <!-- ===================================================================================
-       NESTED DIALOGS: outside the frame, which projects only its five slots.
-       =================================================================================== -->
-
-  <!-- PREVIEW -->
-  <dialog #previewDialog class="gh-dialog rp-preview-dialog" aria-labelledby="rp-preview-title"
-          (cancel)="onPreviewDialogEvent($event)" (close)="onPreviewDialogEvent($event)">
+  <!-- SAME-PROVIDER CONFIRMATION: asked on every generate with such a writer, never remembered. -->
+  <dialog #sameProviderDialog class="gh-dialog rp-confirm-dialog rp-same-provider-dialog" aria-labelledby="rp-same-provider-title"
+          (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
     <div class="dialog-content">
       <div class="dialog-header">
         <div class="dialog-title-group">
-          <h3 id="rp-preview-title">Preview</h3>
-          @if (previewDoc) {
-            <p class="dialog-subtitle">{{ documentName(previewDoc) }}</p>
-          }
+          <h3 id="rp-same-provider-title">Same-Provider Report Writer</h3>
         </div>
-        <button type="button" class="btn-icon-action" aria-label="Close the document preview"
-                interestfor="rp-preview-close-tip" style="anchor-name: --rp-preview-close-tip"
-                (click)="closePreview()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-        <div popover="hint" class="gh-tooltip" id="rp-preview-close-tip"
-             style="position-anchor: --rp-preview-close-tip">Close the preview</div>
-      </div>
-
-      <div class="dialog-body rp-preview-body">
-        @if (previewDoc) {
-          <div class="rp-preview-controls">
-            <div class="rp-preview-control">
-              <span class="rp-preview-control-label" id="rp-preview-disclosure-label">Disclosure</span>
-              <div class="gh-tabs gh-tabs-segmented rp-preview-disclosure" role="tablist"
-                   aria-labelledby="rp-preview-disclosure-label">
-                @for (disclosure of previewDisclosures; track disclosure; let i = $index) {
-                  <button type="button" role="tab" class="gh-tab" [id]="'rp-preview-disclosure-' + disclosure"
-                          aria-controls="rp-preview-panel"
-                          [attr.aria-selected]="previewDisclosure === disclosure"
-                          [attr.tabindex]="previewDisclosure === disclosure ? 0 : -1"
-                          (keydown)="onSegmentKeydown($event, 'disclosure', i)"
-                          (click)="setPreviewDisclosure(disclosure)">{{ disclosureLabel(disclosure) }}</button>
-                }
-              </div>
-            </div>
-            <div class="rp-preview-control">
-              <span class="rp-preview-control-label" id="rp-preview-naming-label">Peers</span>
-              <div class="gh-tabs gh-tabs-segmented rp-preview-naming" role="tablist"
-                   aria-labelledby="rp-preview-naming-label">
-                @for (naming of previewNamings; track naming; let i = $index) {
-                  <button type="button" role="tab" class="gh-tab" [id]="'rp-preview-naming-' + naming"
-                          aria-controls="rp-preview-panel"
-                          [attr.aria-selected]="previewNaming === naming"
-                          [attr.tabindex]="previewNaming === naming ? 0 : -1"
-                          (keydown)="onSegmentKeydown($event, 'naming', i)"
-                          (click)="setPreviewNaming(naming)">{{ namingLabel(naming) }}</button>
-                }
-              </div>
-            </div>
-          </div>
-          <p class="form-hint rp-preview-level">{{ previewDisclosureDescription }}</p>
-
-          @if (previewNotes && previewNotes.length > 0) {
-            <details class="gh-disclosure rp-preview-notes">
-              <summary>Validation notes ({{ previewNotes.length }})</summary>
-              <div class="gh-disclosure-body">
-                <ul>
-                  @for (note of previewNotes; track $index) {
-                    <li>Rule {{ note.rule }}, {{ note.location }}: {{ note.message }}@if (note.dropped) {<strong> (dropped)</strong>}</li>
-                  }
-                </ul>
-              </div>
-            </details>
-          }
-
-          @if (previewRenderError) {
-            <p class="rp-error" role="alert">{{ previewRenderError }}</p>
-          }
-          <div role="tabpanel" id="rp-preview-panel" class="rp-preview-doc" tabindex="0"
-               [attr.aria-labelledby]="'rp-preview-disclosure-' + previewDisclosure"
-               [attr.aria-busy]="previewRendering ? 'true' : null"
-               [innerHTML]="previewHtml"></div>
-          @if (previewRendering && !previewHtml) {
-            <p class="rp-note">Rendering&hellip;</p>
-          }
-        }
-      </div>
-
-      <div class="dialog-footer">
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closePreview()">Close</button>
-      </div>
-    </div>
-  </dialog>
-
-  <!-- DELETE CONFIRMATION -->
-  <dialog #deleteDialog class="gh-dialog rp-delete-dialog" aria-labelledby="rp-delete-title"
-          (cancel)="onDeleteDialogEvent($event)" (close)="onDeleteDialogEvent($event)">
-    <div class="dialog-content">
-      <div class="dialog-header">
-        <h3 id="rp-delete-title">Delete Document</h3>
       </div>
       <div class="dialog-body">
-        @if (deleteTarget) {
-          <p class="rp-delete-text">
-            Delete <strong>{{ deleteTarget.title }}</strong>, written {{ formatUtc(deleteTarget.createdAtUtc) }} by
-            {{ deleteTarget.writerDisplayName }}? This cannot be undone. The runs are not affected.
-          </p>
-        }
-        @if (deleteError) {
-          <p class="rp-error" role="alert">{{ deleteError }}</p>
-        }
+        <div class="alert alert-warning" role="note">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <div class="alert-content"><div class="alert-body rp-same-provider-confirm-text">{{ confirmWarningText }}</div></div>
+        </div>
       </div>
       <div class="dialog-footer">
-        <button type="button" class="btn-gh btn-gh-cancel rp-delete-cancel" (click)="cancelDelete()">Cancel</button>
-        <button type="button" class="btn-gh btn-gh-delete rp-delete-confirm" [disabled]="deleting" (click)="confirmDelete()">
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-          Delete Document
+        <button type="button" class="btn-gh btn-gh-cancel rp-same-provider-cancel" (click)="cancelSameProvider()">Cancel</button>
+        <button type="button" class="btn-gh rp-same-provider-confirm" (click)="confirmSameProvider()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          Write Anyway
         </button>
       </div>
     </div>
   </dialog>
-
-  <!-- The Download Center's own dialog: its events stop at this wrapper. -->
-  <div class="rp-nested" (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
-    <app-benchmark-download-center #downloadCenter (closed)="onDownloadCenterClosed()" />
-  </div>
 </dialog>

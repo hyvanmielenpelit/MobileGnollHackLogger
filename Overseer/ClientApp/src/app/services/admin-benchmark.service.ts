@@ -2342,6 +2342,20 @@ export interface BenchmarkReportDocumentListItemDto {
   allowedDisclosures: BenchmarkReportDisclosure[];
   /** Report Pack or run completion. Undefined on a list served before it existed: a Report Pack document. */
   origin?: BenchmarkReportDocumentOrigin;
+  /*
+   * The comparison fields below are always sent by the server; they are optional here only so that
+   * fixtures written before them still type-check, and a missing one reads as absent.
+   */
+  /** The comparison the document was written for, as the server stores it; null without one. */
+  comparisonKey?: string | null;
+  /** How many entries (runs and groups) that comparison had. */
+  comparisonEntryCount?: number;
+  /** How many of them were the subject's peers. */
+  peerCount?: number;
+  /** The pricing basis it was written on: `AsRun` or `Current`. */
+  pricingBasis?: string;
+  /** A peer's run was re-scored, re-run or deleted since the document was written. */
+  peersChangedSinceGeneration?: boolean;
 }
 
 /** One validation problem, and whether the offending item was dropped. */
@@ -2366,9 +2380,16 @@ export interface BenchmarkReportDocumentDetailDto extends BenchmarkReportDocumen
 /** Which stored documents to list; every field is optional. */
 export interface BenchmarkReportDocumentQuery {
   suiteId?: number | null;
+  /** Documents whose subject includes this run. */
   runId?: number | null;
   take?: number | null;
+  /** A comparison's entry keys (`run:<id>`, `group:<id>`): the documents written for exactly that set. */
+  comparison?: readonly string[] | null;
+  origin?: BenchmarkReportDocumentOriginParam | null;
 }
+
+/** The list endpoint's `origin` query value. */
+export type BenchmarkReportDocumentOriginParam = 'reportPack' | 'runCompletion';
 
 /** A text file fetched from the server, with the name its `Content-Disposition` gave it. */
 export interface BenchmarkTextFile {
@@ -2991,6 +3012,8 @@ export class AdminBenchmarkService {
     if (query.suiteId != null) params = params.set('suiteId', query.suiteId);
     if (query.runId != null) params = params.set('runId', query.runId);
     if (query.take != null) params = params.set('take', query.take);
+    if (query.comparison != null) params = params.set('comparison', query.comparison.join(','));
+    if (query.origin != null) params = params.set('origin', query.origin);
     return this.http.get<BenchmarkReportDocumentListItemDto[]>('/api/admin/benchmark/report-documents', { params });
   }
 

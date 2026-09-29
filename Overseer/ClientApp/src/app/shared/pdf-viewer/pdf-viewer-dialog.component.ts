@@ -45,6 +45,15 @@ export interface PdfViewerVariantsInfo {
   note?: string;
 }
 
+/** A second, independent choice of version, such as how the peers are named; its own tab row. */
+export interface PdfViewerSecondaryVariants {
+  /** The row's accessible name. */
+  label: string;
+  options: PdfViewerVariant[];
+  /** The option shown first; the first option when unknown. */
+  initial: string;
+}
+
 /** A loaded PDF: its bytes and the file name the server gave it, if any. */
 export interface PdfViewerFile {
   bytes: Uint8Array;
@@ -62,10 +71,15 @@ export interface PdfViewerRequest {
   initialVariant?: string;
   /** What the variants mean; its info button is shown only with variants. */
   variantsInfo?: PdfViewerVariantsInfo;
-  /** Fetches the PDF; `variant` is null when there are no variants. An error shows the server's message. */
-  load(variant: string | null): Observable<PdfViewerFile>;
+  /** A second tab row after the variants; absent or without options for none. */
+  secondaryVariants?: PdfViewerSecondaryVariants;
+  /**
+   * Fetches the PDF; `variant` is null when there are no variants, and `secondary` is passed only
+   * with secondary variants. An error shows the server's message.
+   */
+  load(variant: string | null, secondary?: string): Observable<PdfViewerFile>;
   /** A real same-origin URL for the same PDF, opened by "Open in new tab"; that control is absent without it. */
-  tabUrl?(variant: string | null): string;
+  tabUrl?(variant: string | null, secondary?: string): string;
   /** The download name when the server sends none; reduced by `safeFileName`. */
   fallbackFileName: string;
 }
@@ -177,6 +191,8 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
 
   request: PdfViewerRequest | null = null;
   variant: string | null = null;
+  /** The chosen secondary option; null without secondary variants. */
+  secondaryVariant: string | null = null;
   tabHref: string | null = null;
   state: PdfViewerState = 'idle';
   errorMessage = '';
@@ -205,6 +221,28 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
 
   get variantsInfo(): PdfViewerVariantsInfo | null {
     return this.variants.length > 0 ? this.request?.variantsInfo ?? null : null;
+  }
+
+  get secondaryVariants(): PdfViewerVariant[] {
+    return this.request?.secondaryVariants?.options ?? [];
+  }
+
+  get secondaryLabel(): string {
+    return this.request?.secondaryVariants?.label ?? '';
+  }
+
+  /** Either tab row is shown, so the body is their tab panel. */
+  get hasTabs(): boolean {
+    return this.variants.length > 0 || this.secondaryVariants.length > 0;
+  }
+
+  /** The selected tab of each row, which together name the body. */
+  get bodyLabelledBy(): string | null {
+    const ids = [
+      this.variants.length > 0 && this.variant !== null ? this.variantTabId(this.variant) : null,
+      this.secondaryVariants.length > 0 && this.secondaryVariant !== null ? this.secondaryTabId(this.secondaryVariant) : null
+    ].filter((id): id is string => id !== null);
+    return ids.length > 0 ? ids.join(' ') : null;
   }
 
   get isReady(): boolean {
@@ -247,6 +285,10 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
     this.variant = variants.length === 0
       ? null
       : (variants.some(v => v.key === request.initialVariant) ? request.initialVariant! : variants[0].key);
+    const secondary = request.secondaryVariants?.options ?? [];
+    this.secondaryVariant = secondary.length === 0
+      ? null
+      : (secondary.some(v => v.key === request.secondaryVariants!.initial) ? request.secondaryVariants!.initial : secondary[0].key);
     this.updateTabHref();
     this.state = 'loading';
     this.cdr.detectChanges();
@@ -308,6 +350,37 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
 
   variantTabId(key: string): string {
     return `${this.idPrefix}-variant-${key.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+  }
+
+  selectSecondaryVariant(key: string): void {
+    if (key === this.secondaryVariant) {
+      return;
+    }
+    this.secondaryVariant = key;
+    this.updateTabHref();
+    this.startLoad();
+  }
+
+  onSecondaryKeydown(event: KeyboardEvent, index: number): void {
+    const options = this.secondaryVariants;
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: options.length - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined || options.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const next = options[(requested + options.length) % options.length];
+    this.selectSecondaryVariant(next.key);
+    document.getElementById(this.secondaryTabId(next.key))?.focus();
+  }
+
+  secondaryTabId(key: string): string {
+    return `${this.idPrefix}-secondary-${key.replace(/[^A-Za-z0-9_-]/g, '-')}`;
   }
 
   retry(): void {
@@ -397,7 +470,13 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
 
   private updateTabHref(): void {
     const request = this.request;
-    this.tabHref = request?.tabUrl ? request.tabUrl(this.variant) : null;
+    if (!request?.tabUrl) {
+      this.tabHref = null;
+    } else {
+      this.tabHref = this.secondaryVariant !== null
+        ? request.tabUrl(this.variant, this.secondaryVariant)
+        : request.tabUrl(this.variant);
+    }
   }
 
   /** Fetches and renders the current variant; the previous document is destroyed first. */
@@ -414,7 +493,10 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
     this.errorMessage = '';
     this.cdr.markForCheck();
 
-    this.loadSubscription = request.load(this.variant).subscribe({
+    const load = this.secondaryVariant !== null
+      ? request.load(this.variant, this.secondaryVariant)
+      : request.load(this.variant);
+    this.loadSubscription = load.subscribe({
       next: file => {
         if (generation === this.generation) {
           this.zone.runOutsideAngular(() => void this.render(file, generation));

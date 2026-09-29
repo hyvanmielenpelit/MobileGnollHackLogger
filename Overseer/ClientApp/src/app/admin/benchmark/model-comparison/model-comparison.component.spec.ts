@@ -1135,6 +1135,8 @@ describe('ModelComparisonComponent', () => {
         groupIds: [4],
         pricingBasis: 'AsRun',
         entries,
+        // Every entry, the Excluded one included: the set runIds and groupIds carry.
+        entryKeys: ['run:1', 'run:2', 'group:4', 'run:9'],
         suiteId: 5,
         suiteName: 'GnollHack Player Assistance Benchmark Suite'
       });

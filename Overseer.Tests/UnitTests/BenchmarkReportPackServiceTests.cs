@@ -61,9 +61,13 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(WriterProvider.PromptTokens, document.InputTokens);
         Assert.Equal(WriterProvider.OutputTokens, document.OutputTokens);
 
-        var child = Assert.Single(document.Runs);
+        var child = Assert.Single(document.Runs, r => !r.IsPeer);
         Assert.Equal(h.Seeded.RunIds[0], child.RunId);
         Assert.Equal(16, child.SynthesisSha256.Length);
+        var peer = Assert.Single(document.Runs, r => r.IsPeer);
+        Assert.Equal(h.Seeded.RunIds[1], peer.RunId);
+        Assert.Equal(16, peer.SynthesisSha256.Length);
+        Assert.Equal(BenchmarkReportComparisonKey.From(new[] { h.Seeded.RunIds[0], h.Seeded.RunIds[1] }, Array.Empty<long>()), document.ComparisonKey);
 
         Assert.Equal(1, h.Provider.Calls);
         var usage = Assert.Single(await h.Db.SystemAiUsageLogs.ToListAsync(TestContext.Current.CancellationToken));
@@ -94,7 +98,7 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(longAnswer, question.AnswerText);
         Assert.DoesNotContain("FINAL-SENTENCE", question.AnswerExcerpt);
         Assert.Contains("\"answerText\":", document.ContentJson);
-        Assert.Equal(6, document.ReportFormatVersion);
+        Assert.Equal(7, document.ReportFormatVersion);
     }
 
     [Fact]
@@ -254,7 +258,10 @@ public class BenchmarkReportPackServiceTests
         var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, document.Origin);
         Assert.Equal($"run:{runId}", document.SubjectKey);
-        Assert.Equal(runId, Assert.Single(document.Runs).RunId);
+        var only = Assert.Single(document.Runs);
+        Assert.Equal(runId, only.RunId);
+        Assert.False(only.IsPeer);
+        Assert.Equal(BenchmarkReportComparisonKey.From(new[] { runId }, Array.Empty<long>()), document.ComparisonKey);
 
         var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
         Assert.Empty(sheet.Peers);
@@ -612,6 +619,136 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(new[] { runId }, orphan.MissingRunIds);
     }
 
+    [Fact]
+    public async Task List_ByRun_MatchesTheSubjectsRunsOnly_NeverAPeersRun()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+        var render = new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance);
+
+        Assert.Single(await render.ListAsync(null, h.Seeded.RunIds[0], null, CancellationToken.None));
+        Assert.Empty(await render.ListAsync(null, h.Seeded.RunIds[1], null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task List_FlagsADocumentWhosePeerWasRescoredOrDeleted_AndDescribesItsComparison()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+        var render = new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance);
+        long subjectRunId = h.Seeded.RunIds[0];
+        long peerRunId = h.Seeded.RunIds[1];
+
+        var fresh = Assert.Single(await render.ListAsync(null, subjectRunId, null, CancellationToken.None));
+        Assert.False(fresh.RunChangedSinceGeneration);
+        Assert.False(fresh.PeersChangedSinceGeneration);
+        Assert.Empty(fresh.MissingRunIds);
+        Assert.Equal(BenchmarkReportComparisonKey.From(new[] { subjectRunId, peerRunId }, Array.Empty<long>()), fresh.ComparisonKey);
+        Assert.Equal(2, fresh.ComparisonEntryCount);
+        Assert.Equal(1, fresh.PeerCount);
+        Assert.Equal("AsRun", fresh.PricingBasis);
+
+        var peer = await h.Db.BenchmarkRuns.SingleAsync(r => r.Id == peerRunId, TestContext.Current.CancellationToken);
+        peer.QualityIndex = (peer.QualityIndex ?? 0) + 1;
+        await h.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var rescored = Assert.Single(await render.ListAsync(null, subjectRunId, null, CancellationToken.None));
+        Assert.True(rescored.PeersChangedSinceGeneration);
+        Assert.False(rescored.RunChangedSinceGeneration);
+
+        h.Db.BenchmarkRuns.Remove(peer);
+        await h.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var orphan = Assert.Single(await render.ListAsync(null, subjectRunId, null, CancellationToken.None));
+        Assert.True(orphan.PeersChangedSinceGeneration);
+        Assert.False(orphan.RunChangedSinceGeneration);
+        Assert.Empty(orphan.MissingRunIds);
+
+        var detail = await render.GetAsync(orphan.Id, CancellationToken.None);
+        Assert.NotNull(detail);
+        Assert.True(detail!.PeersChangedSinceGeneration);
+        Assert.False(detail.RunChangedSinceGeneration);
+        Assert.Equal(1, detail.PeerCount);
+    }
+
+    [Fact]
+    public async Task ListController_FiltersByComparisonEntryKeysAndOrigin_AndRefusesMalformedValues()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(await h.PrepareAsync(standalone: true)));
+        await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
+
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance));
+        async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(string? comparison = null, string? origin = null)
+        {
+            var ok = Assert.IsType<OkObjectResult>(await controller.List(null, null, null, CancellationToken.None, comparison, origin));
+            return Assert.IsType<List<BenchmarkReportDocumentListItemDto>>(ok.Value);
+        }
+
+        long a = h.Seeded.RunIds[0];
+        long b = h.Seeded.RunIds[1];
+        Assert.Equal(2, (await ListAsync()).Count);
+
+        // Order and spacing of the entry keys do not matter; the pricing basis is not part of the identity.
+        var pack = Assert.Single(await ListAsync(comparison: $"run:{b}, run:{a}"));
+        Assert.Equal(BenchmarkReportDocumentOrigin.ReportPack, pack.Origin);
+        var single = Assert.Single(await ListAsync(comparison: $"run:{a}"));
+        Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, single.Origin);
+        Assert.Empty(await ListAsync(comparison: $"run:{a},group:{b}"));
+
+        Assert.Equal(BenchmarkReportDocumentOrigin.ReportPack, Assert.Single(await ListAsync(origin: "reportPack")).Origin);
+        Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, Assert.Single(await ListAsync(origin: "runCompletion")).Origin);
+        Assert.Empty(await ListAsync(comparison: $"run:{a}", origin: "reportPack"));
+
+        foreach (var malformed in new[] { "", "run:", "run:x", $"run:{a},suite:1", "run:-1" })
+        {
+            var bad = Assert.IsType<BadRequestObjectResult>(await controller.List(null, null, null, CancellationToken.None, malformed, null));
+            Assert.Contains("comma-separated list of run:", JsonSerializer.Serialize(bad.Value));
+        }
+        Assert.IsType<BadRequestObjectResult>(await controller.List(null, null, null, CancellationToken.None, null, "both"));
+    }
+
+    [Fact]
+    public async Task Backfill_KeysEveryReadableRow_LeavesAnUnreadableOneEmpty_AndIsIdempotent()
+    {
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        await using var db = new ApplicationDbContext(options);
+        var ct = TestContext.Current.CancellationToken;
+
+        BenchmarkReportDocument Stored(string comparisonRequestJson)
+        {
+            var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+            document.Id = 0;
+            document.ComparisonKey = null;
+            document.ComparisonRequestJson = comparisonRequestJson;
+            document.Runs = new List<BenchmarkReportDocumentRun>();
+            db.BenchmarkReportDocuments.Add(document);
+            return document;
+        }
+        var groups = Stored("{\"runIds\":[7,3],\"groupIds\":[4],\"pricingBasis\":1}");
+        var runs = Stored("{\"runIds\":[3,7,3],\"groupIds\":[],\"pricingBasis\":0}");
+        var unreadable = Stored("not json");
+        var keyed = Stored("{\"runIds\":[1],\"groupIds\":[]}");
+        keyed.ComparisonKey = "already-set";
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(2, await BenchmarkReportDocumentBackfill.BackfillComparisonKeysAsync(db, NullLogger.Instance, ct));
+        Assert.Equal(0, await BenchmarkReportDocumentBackfill.BackfillComparisonKeysAsync(db, NullLogger.Instance, ct));
+
+        await using var verify = new ApplicationDbContext(options);
+        var byId = await verify.BenchmarkReportDocuments.AsNoTracking().IgnoreAutoIncludes().ToDictionaryAsync(d => d.Id, ct);
+        Assert.Equal(BenchmarkReportComparisonKey.From(new long[] { 3, 7 }, new long[] { 4 }), byId[groups.Id].ComparisonKey);
+        Assert.Equal(BenchmarkReportComparisonKey.From(new long[] { 3, 7 }, Array.Empty<long>()), byId[runs.Id].ComparisonKey);
+        Assert.Null(byId[unreadable.Id].ComparisonKey);
+        Assert.Equal("already-set", byId[keyed.Id].ComparisonKey);
+    }
+
     // --- The download path cannot reach a model (D13) -------------------------------------------------
 
     [Fact]
@@ -663,14 +800,20 @@ public class BenchmarkReportPackServiceTests
             strengths.Add(new { text = extraStrength, questions = Array.Empty<int>(), evidence = new[] { factKey } });
         }
 
+        var sections = new Dictionary<string, string>
+        {
+            [BenchmarkReportSlots.Meaning] = "{{subject}} would serve players well as a game assistant.",
+            [BenchmarkReportSlots.Confidence] = confidence ?? "The result rests on a small set of questions, so it should be read with care."
+        };
+        if (prep.Sheet.Peers.Count > 0)
+        {
+            sections[BenchmarkReportSlots.Comparison] = "{{subject}} sits among its peers on quality, and the order between them is not established.";
+        }
+
         return JsonSerializer.Serialize(new
         {
             headline = headline ?? "{{subject}} gave accurate and readable answers across the benchmark.",
-            sections = new Dictionary<string, string>
-            {
-                [BenchmarkReportSlots.Meaning] = "{{subject}} would serve players well as a game assistant.",
-                [BenchmarkReportSlots.Confidence] = confidence ?? "The result rests on a small set of questions, so it should be read with care."
-            },
+            sections,
             strengths,
             weaknesses = new[]
             {

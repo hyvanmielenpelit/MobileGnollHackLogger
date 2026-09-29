@@ -1,6 +1,6 @@
-<!-- Columns, narrow: .rrf-top is display: contents, so only the header sticks while the frame
-     scrolls; wide, the top block sticks above the two scrolling columns. Single: the top block
-     stays put and the body scrolls. -->
+<!-- Columns and sidebar, narrow: .rrf-top is display: contents, so only the header sticks while the
+     frame scrolls; wide, the top block sticks above the two scrolling columns. Single: the top block
+     stays put and the body scrolls. Every slot appears once, so each projects in one place. -->
 <div class="rrf-top">
   <header class="rrf-header">
     <div class="rrf-identity"><ng-content select="[runReportHeader]" /></div>
@@ -13,13 +13,28 @@
   @if (layout === 'single') {
     <div class="rrf-single"><ng-content select="[runReportBody]" /></div>
   } @else {
-    <div class="rrf-columns">
+    <div class="rrf-columns" [class.rrf-columns-sidebar]="layout === 'sidebar'"
+         [style.--rrf-sidebar-width]="layout === 'sidebar' ? sidebarWidthPx + 'px' : null">
+      @if (layout === 'sidebar') {
+        <!-- First in the DOM, so reading and Tab order follow the visual left-to-right order. -->
+        <aside class="rrf-sidebar" tabindex="0" [id]="sidebarId" [attr.aria-label]="sidebarLabel">
+          <ng-content select="[runReportSidebar]" />
+        </aside>
+        <app-pane-resizer class="rrf-resizer" [controls]="sidebarId" [label]="'Resize ' + sidebarLabel"
+                          [value]="sidebarWidthPx" [min]="sidebarWidthMin" [max]="sidebarWidthMax"
+                          [defaultValue]="sidebarWidthDefault"
+                          (pointerdown)="measureSidebarWidthMax()" (focusin)="measureSidebarWidthMax()"
+                          (valueChange)="onSidebarWidthChange($event)"
+                          (valueCommit)="onSidebarWidthCommit($event)"></app-pane-resizer>
+      }
       <section class="rrf-main" tabindex="0" [attr.aria-label]="mainLabel">
         <ng-content select="[runReportMain]" />
       </section>
-      <section class="rrf-aside" tabindex="0" [attr.aria-label]="asideLabel">
-        <ng-content select="[runReportAside]" />
-      </section>
+      @if (layout !== 'sidebar') {
+        <section class="rrf-aside" tabindex="0" [attr.aria-label]="asideLabel">
+          <ng-content select="[runReportAside]" />
+        </section>
+      }
     </div>
   }
 </div>

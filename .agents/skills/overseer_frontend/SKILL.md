@@ -265,8 +265,20 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#changelogDialog`: Changelog
 
 - **Benchmark Component (`benchmark.component.html`, Admin → AI Benchmark)** — the tab opens directly
-  with the benchmark tabs, with no brand row above them. Not an exhaustive list of this component's
-  dialogs, only the ones recorded here so far:
+  with the benchmark tabs, with no brand row above them.
+  - **The Model Comparison tab** (`bm-panel-modelcomparison`) is a one-column grid. The hero card
+    `.mc-launcher-hero` holds the h3, the lead, then **Open Comparison Wizard** — the page's only
+    `.btn-gh`, full size, *compass* glyph — then the *Last comparison* read-out, then a non-exclusive
+    `details.gh-disclosure.mc-launcher-howto` *How the comparison works* (the steps and the
+    like-for-like note), open on the first visit and afterwards as left
+    (`localStorage['overseer.benchmark.modelComparison.launcher']`, try/catch). Below it,
+    `.mc-launcher-library` holds **Comparison reports**: `app-report-document-library` with
+    `scope = { kind: 'all' }`, `idPrefix="mcl"` and `showComparisonColumn`. The panel is inside
+    `@if (activeSubTab === 'modelcomparison')`, so the library loads when the tab is shown and again on
+    every showing; the wizard's close bumps `comparisonReportsReloadToken`. The panel duplicates none
+    of the wizard's controls; the library is a document list, not a comparison control.
+
+  Not an exhaustive list of this component's dialogs, only the ones recorded here so far:
   - `#runProgressDialog`: the run progress dialog, **full-screen** (`gh-dialog-fullscreen`, no
     component sizing of its own). Its content wrapper is an inline-size container (`run-progress`)
     and its body holds two sections: `section.run-progress-overview` (everything but the questions,
@@ -343,7 +355,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     with a dialog-mode info tip (*Choosing a report writer*) of per-document advice, **Write Report** /
     **Write Reports** (*zap*) vertically centered beside the picker, a live cost estimate (debounced,
     from the estimate endpoint) shown as the `#rrWriteEstimate` *Estimated cost* panel — a quiet
-    `.rr-ai-estimate` block with a gold start border, the total, a per-document `dl` breakdown when two
+    `.gh-estimate-panel` block (global, in `styles.scss`, shared with the Report Pack dialog) with a gold start border, the total, a per-document `dl` breakdown when two
     documents are checked, and a note; `role="status"`, always rendered so the live region exists, and
     named by the Write button's `aria-describedby` — a refusal as a red `.gh-field-error` line that disables the button, a same-provider
     writer as an amber `alert-warning` that leaves it enabled and opens a nested *Same-Provider Report
@@ -508,14 +520,28 @@ To find specific popups, look in the corresponding component's `.html` template:
     measures, each with a summary, an *Instead: …* line and a *Why* disclosure). The dialog body
     renders only while it is open, and it stops propagation of its own close and cancel events so
     they never reach, and close, the wizard's own dialog.
-  - **Reports** (the *zap* glyph) opens the **Report Pack dialog**, full-screen: choose the subject
-    (any entry that is not Excluded), the report writer (an `app-model-picker` with an info tip on the
-    recommended writer; the subject's own model is refused, and a same-provider writer needs its
-    acknowledgment checkbox checked) and the documents — Executive Summary, Report for AI Researchers
-    and Developers, Internal Improvement Brief; preview the estimate, start and follow the job, then list, preview (*eye*),
-    download (through the Download Center) or delete (*trash*) the stored documents, each flagged
-    *Run changed since this document was written* when its run moved. Rendering is server-side and
-    deterministic; see `docs/overseer/ai-benchmark-report-pack.md`.
+  - **Reports** (the *zap* glyph) opens the **Report Pack dialog**, full-screen, in
+    `app-run-report-frame`'s `layout="sidebar"`: a resizable sidebar (20–32rem, at most 40 % of the
+    body, width kept as `sidebarWidth` in `localStorage['overseer.benchmark.reportPack']`; stacked
+    below 60rem) holds the form — the subject (any entry that is not Excluded), the documents, the
+    report writer (an `app-model-picker` with the dialog-mode *Choosing a report writer* tip from
+    `run-ai-reports/report-writer-advice.ts`; the subject's own model is refused), the refusal or the
+    amber same-provider warning, the `.gh-estimate-panel` estimate and **Generate**. A same-provider
+    writer makes Generate ask the nested *Same-Provider Report Writer* confirmation (**Write Anyway**)
+    on every write; nothing is remembered. The main area holds *Documents of this comparison*, the job
+    card (stage rail and stat strip, collapsing to a one-line summary with **Dismiss**), the
+    *Downloads* notice and `app-report-document-library` in the comparison scope with `idPrefix="rp"`.
+    `ReportPackContext.entryKeys` is every entry key of the comparison, Excluded ones included, since
+    the server keys a document by the request's run and group ids. There is no Markdown preview.
+    Rendering is server-side and deterministic; see `docs/overseer/ai-benchmark-report-pack.md` § 12.
+  - **`app-report-document-library`** (`report-pack/report-document-library.component.*`) is the one
+    documents table outside a run: inputs `scope` (`{ kind: 'comparison', entryKeys }` or
+    `{ kind: 'all' }`), `heading` (rendered only when non-empty), `idPrefix`, `showComparisonColumn`,
+    `reloadToken`; output `documentsChange`. It owns loading (`origin=reportPack`), `TableState`
+    sorting and filtering, selection by id, **Download…**, and the row actions **View** (the PDF
+    viewer at the highest allowed disclosure, with a *Peer names* second row when the document has
+    peers), **Download** and **Delete**, each with its nested dialog. Every id derives from
+    `idPrefix` so two instances can share a page.
   - **Recompute** is icon-only: a `.action-btn` with the rotate glyph,
     `aria-label="Recompute the comparison"` and the tooltip *Recompute this comparison*. A refetch
     whose payload carries the same entry keys (from changing Prices or from Recompute) keeps the

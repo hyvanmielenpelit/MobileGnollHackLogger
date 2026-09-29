@@ -84,13 +84,23 @@ using Overseer.Models;
 //   run.ids, run.dates
 //   run.promptSha256, run.toolGuidesSha256                      distinct 12-character prefixes
 //
+// Peers (X = each peer's letter; a figure of an axis the peer is degraded on is unavailable with its explanation)
+//   peer.X.quality.index, peer.X.quality.interval, peer.X.quality.rank   the peer's own quality figures
+//   peer.X.speed.medianSeconds, peer.X.cost.perQuestion                  the peer's median answer time and cost
+//   peer.X.runs                                                          "3 runs"
+//   peer.X.intervalOverlap                                               boolean: its 95 % interval overlaps the subject's
+//   peer.X.pairedDifference, peer.X.pairedInterval, peer.X.sharedQuestions
+//       the subject's mean per-question difference from the peer over the questions both scored on the
+//       same item revision, and its 95 % paired-bootstrap interval; unavailable below
+//       PairedMinimumQuestions shared questions
+//
 // Each entry's Extra facts (BenchmarkReportEntryFigures.Extra) reuse dimension.<d>,
 // tools.callsPerQuestion and errors.critical for that entry alone.
 //
 // A comparison with no peers is a stand-alone report: every fact that compares the subject with
 // peers (the .peerMean and .difference facts, quality.peerMedian, quality.peerBest,
 // quality.intervalOverlap, the three ranks and panel.judgeDependentPairs) keeps its key and is
-// unavailable with StandaloneReason.
+// unavailable with StandaloneReason; it has no peer.X facts.
 //
 // Question numbering (shared with BenchmarkReportContent): items are keyed by question and item
 // revision (an unlinked answer by its order index and revision). Numbers follow the lowest-id run's
@@ -169,6 +179,18 @@ public static class BenchmarkReportFacts
 
     /// <summary>The value of <c>comparison.pricingBasisKind</c> for the prices stored with each run.</summary>
     public const string PricingBasisSnapshot = "snapshot";
+
+    /// <summary>A paired difference needs at least this many questions both sides scored.</summary>
+    public const int PairedMinimumQuestions = 5;
+
+    /// <summary>Resamples of the question list behind a paired-bootstrap interval.</summary>
+    public const int PairedBootstrapResamples = 10_000;
+
+    /// <summary>The bootstrap seed when no comparison key can be derived from the entry keys.</summary>
+    public const int FallbackPairedSeed = 0;
+
+    /// <summary><see cref="BenchmarkReportEntryFigures.HarnessVersion"/> of an entry whose runs differ.</summary>
+    public const string MixedHarnessVersion = "mixed";
 
     private const string PairwiseSignificanceMeasure = "Pairwise significance";
 
@@ -298,6 +320,11 @@ public static class BenchmarkReportFacts
         AddPanelFacts(facts, subject, subjectRuns, comparison, peers);
         AddStyleFact(facts, subjectRuns, subjectStats);
         AddScoringAndProvenanceFacts(facts, subjectRuns);
+        AddPeerFacts(facts, subject, peers, eligible);
+
+        sheet.Questions = BuildQuestions(slots, subjectStats, peers.Select(p => p.Stats).ToList());
+        sheet.PairedDifferences = AddPairedDifferences(
+            facts, sheet.Questions, peers, PairedSeed(comparison.Entries.Select(e => e.Key)));
 
         if (peers.Count == 0)
         {
@@ -305,9 +332,8 @@ public static class BenchmarkReportFacts
         }
 
         sheet.Facts = facts.Sorted();
-        sheet.Questions = BuildQuestions(slots, subjectStats, peers.Select(p => p.Stats).ToList());
         sheet.Rows = BuildRows(subjectRuns, numberByItem, subject.Provider);
-        sheet.Entries = BuildEntries(subject, subjectStats, peers, eligible);
+        sheet.Entries = BuildEntries(subject, subjectStats, peers, eligible, runsById);
         sheet.KnownNames = BuildKnownNames(sheet);
 
         return new BenchmarkReportFactsResult { Sheet = sheet };
@@ -1086,6 +1112,195 @@ public static class BenchmarkReportFacts
             .Select(h => string.IsNullOrWhiteSpace(h) ? "not recorded" : h.Length > 12 ? h[..12] : h)
             .Distinct(StringComparer.Ordinal));
 
+    /// <summary>The key prefix of a peer's own facts: <c>peer.A.</c>.</summary>
+    public static string PeerPrefix(string letter) => "peer." + letter + ".";
+
+    /// <summary>
+    /// Each peer's own figures: its index, interval and rank, median answer time, cost per question,
+    /// runs, and whether its 95 % interval overlaps the subject's. A figure of an axis the peer is
+    /// degraded on is unavailable with the peer's explanation.
+    /// </summary>
+    private static void AddPeerFacts(
+        FactList facts,
+        BenchmarkModelComparisonEntryDto subject,
+        IReadOnlyList<(BenchmarkModelComparisonEntryDto Entry, string Letter, EntryStats Stats)> peers,
+        IReadOnlyList<BenchmarkModelComparisonEntryDto> eligible)
+    {
+        var qualities = eligible.Where(e => e.Quality != null).Select(e => e.Quality!.PointEstimate).ToList();
+
+        foreach (var (entry, letter, _) in peers)
+        {
+            string prefix = PeerPrefix(letter);
+            var quality = entry.Quality;
+
+            if (quality == null)
+            {
+                foreach (var key in new[] { "quality.index", "quality.interval", "quality.rank", "intervalOverlap" })
+                {
+                    facts.Unavailable(prefix + key, "The comparison computed no quality figure for this model.");
+                }
+            }
+            else
+            {
+                facts.Add(prefix + "quality.index", quality.PointEstimate, BenchmarkReportFormat.Whole(quality.PointEstimate) + " / 100");
+
+                if (quality.IntervalLower is double lower && quality.IntervalUpper is double upper)
+                {
+                    facts.Text(prefix + "quality.interval", BenchmarkReportFormat.Whole(lower) + "–" + BenchmarkReportFormat.Whole(upper));
+                }
+                else
+                {
+                    facts.Unavailable(prefix + "quality.interval", "No interval could be computed.");
+                }
+
+                int rank = RankOf(quality.PointEstimate, qualities, higherIsBetter: true);
+                facts.Add(prefix + "quality.rank", rank, BenchmarkReportFormat.Rank(rank, qualities.Count));
+
+                if (subject.Quality?.IntervalLower is not double subjectLower || subject.Quality?.IntervalUpper is not double subjectUpper)
+                {
+                    facts.Unavailable(prefix + "intervalOverlap", "The subject's quality interval could not be computed.");
+                }
+                else if (quality.IntervalLower is not double peerLower || quality.IntervalUpper is not double peerUpper)
+                {
+                    facts.Unavailable(prefix + "intervalOverlap", "This model's quality interval could not be computed.");
+                }
+                else
+                {
+                    bool overlaps = subjectLower <= peerUpper && peerLower <= subjectUpper;
+                    facts.Add(prefix + "intervalOverlap", overlaps,
+                        overlaps ? "its 95 % interval overlaps the subject's" : "its 95 % interval does not overlap the subject's");
+                }
+            }
+
+            if (entry.SpeedDegraded)
+            {
+                facts.Unavailable(prefix + "speed.medianSeconds", entry.Explanation);
+            }
+            else
+            {
+                AddSeconds(facts, prefix + "speed.medianSeconds", entry.Speed?.ModelTimeP50Ms);
+            }
+
+            if (entry.CostDegraded)
+            {
+                facts.Unavailable(prefix + "cost.perQuestion", entry.Explanation);
+            }
+            else if (entry.Cost?.CandidateCostPerQuestionUsd is double perQuestion)
+            {
+                facts.Add(prefix + "cost.perQuestion", perQuestion, BenchmarkReportFormat.Usd(perQuestion));
+            }
+            else
+            {
+                facts.Unavailable(prefix + "cost.perQuestion", "No price card was resolved for every run behind this model.");
+            }
+
+            int runs = entry.RunIds.Count;
+            facts.Add(prefix + "runs", runs, Inv(runs) + (runs == 1 ? " run" : " runs"));
+        }
+    }
+
+    /// <summary>
+    /// The subject's paired difference from each peer, in letter order: over the questions both
+    /// scored on the same item revision, the subject's per-question score (a mean over runs for a
+    /// group) minus the peer's per-question mean, and its 95 % paired-bootstrap interval. Adds the
+    /// <c>peer.X.paired*</c> and <c>peer.X.sharedQuestions</c> facts, unavailable below
+    /// <see cref="PairedMinimumQuestions"/> shared questions.
+    /// </summary>
+    private static List<BenchmarkReportPairedDifference> AddPairedDifferences(
+        FactList facts,
+        IReadOnlyList<BenchmarkReportQuestion> questions,
+        IReadOnlyList<(BenchmarkModelComparisonEntryDto Entry, string Letter, EntryStats Stats)> peers,
+        int seed)
+    {
+        var result = new List<BenchmarkReportPairedDifference>();
+
+        foreach (var (_, letter, stats) in peers)
+        {
+            var differences = new List<double>();
+            foreach (var q in questions.OrderBy(q => q.Number))
+            {
+                if (q.Score is not double score || q.ItemRevisionUsed is not int revision) continue;
+                if (!long.TryParse(q.QuestionKey, NumberStyles.Integer, CultureInfo.InvariantCulture, out long questionId)) continue;
+                if (stats.ItemMean(questionId, revision) is double peerMean) differences.Add(score - peerMean);
+            }
+
+            string prefix = PeerPrefix(letter);
+            var paired = new BenchmarkReportPairedDifference { PeerLetter = letter, SharedQuestions = differences.Count };
+
+            if (differences.Count < PairedMinimumQuestions)
+            {
+                string reason = "Fewer than five questions were scored for both this model and the subject on the same item revision, "
+                    + "too few for a paired difference.";
+                facts.Unavailable(prefix + "pairedDifference", reason);
+                facts.Unavailable(prefix + "pairedInterval", reason);
+                facts.Unavailable(prefix + "sharedQuestions", reason);
+            }
+            else
+            {
+                var (mean, lower, upper) = PairedBootstrap(differences, seed);
+                paired.MeanDifference = mean;
+                paired.Lower = lower;
+                paired.Upper = upper;
+
+                facts.Add(prefix + "pairedDifference", mean, BenchmarkReportFormat.SignedOneDecimal(mean) + " points");
+                facts.Text(prefix + "pairedInterval",
+                    BenchmarkReportFormat.SignedOneDecimal(lower) + " to " + BenchmarkReportFormat.SignedOneDecimal(upper));
+                facts.Add(prefix + "sharedQuestions", differences.Count, Inv(differences.Count) + " questions");
+            }
+
+            result.Add(paired);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// The mean of <paramref name="differences"/> and its 95 % percentile interval: the means of
+    /// <see cref="PairedBootstrapResamples"/> resamples of the list with replacement, drawn from
+    /// <c>new Random(seed)</c> and sorted, cut at the 2.5th and 97.5th percentiles (the 251st mean
+    /// from each end). The same list and seed always give the same interval.
+    /// </summary>
+    public static (double Mean, double Lower, double Upper) PairedBootstrap(IReadOnlyList<double> differences, int seed)
+    {
+        ArgumentNullException.ThrowIfNull(differences);
+        if (differences.Count == 0) throw new ArgumentException("A paired bootstrap needs at least one difference.", nameof(differences));
+
+        var random = new Random(seed);
+        int n = differences.Count;
+        var means = new double[PairedBootstrapResamples];
+        for (int b = 0; b < means.Length; b++)
+        {
+            double sum = 0;
+            for (int i = 0; i < n; i++)
+            {
+                sum += differences[random.Next(n)];
+            }
+            means[b] = sum / n;
+        }
+        Array.Sort(means);
+
+        int tail = PairedBootstrapResamples * 25 / 1000;
+        return (differences.Average(), means[tail], means[means.Length - 1 - tail]);
+    }
+
+    /// <summary>
+    /// The paired-bootstrap seed of a comparison: the first eight hex digits of its
+    /// <see cref="BenchmarkReportComparisonKey"/> over every entry key, excluded entries included, as
+    /// an int; <see cref="FallbackPairedSeed"/> when no key can be derived.
+    /// </summary>
+    public static int PairedSeed(IEnumerable<string>? entryKeys)
+    {
+        if (entryKeys == null
+            || !BenchmarkReportComparisonKey.TryFromEntryKeys(entryKeys, out string key)
+            || key.Length < 8
+            || !uint.TryParse(key.AsSpan(0, 8), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out uint prefix))
+        {
+            return FallbackPairedSeed;
+        }
+
+        return unchecked((int)prefix);
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Questions, rows, entries, graders
     // ---------------------------------------------------------------------------------------------
@@ -1272,7 +1487,8 @@ public static class BenchmarkReportFacts
         BenchmarkModelComparisonEntryDto subject,
         EntryStats subjectStats,
         IReadOnlyList<(BenchmarkModelComparisonEntryDto Entry, string Letter, EntryStats Stats)> peers,
-        IReadOnlyList<BenchmarkModelComparisonEntryDto> eligible)
+        IReadOnlyList<BenchmarkModelComparisonEntryDto> eligible,
+        IReadOnlyDictionary<long, BenchmarkRun> runsById)
     {
         var qualities = eligible.Where(e => e.Quality != null).Select(e => e.Quality!.PointEstimate).ToList();
         var speeds = eligible.Where(e => !e.SpeedDegraded && e.Speed?.ModelTimeP50Ms != null)
@@ -1303,6 +1519,9 @@ public static class BenchmarkReportFacts
             extra.Add("errors.critical", stats.CriticalCount,
                 Inv(stats.CriticalCount) + " of " + Inv(stats.Counting.Count) + " answers");
 
+            var runs = RunsOf(entry, runsById);
+            var dates = runs.Select(r => r.CompletedAtUtc ?? r.StartedAtUtc).ToList();
+
             return new BenchmarkReportEntryFigures
             {
                 EntryKey = entry.Key,
@@ -1319,6 +1538,9 @@ public static class BenchmarkReportFacts
                 CostRank = perQuestion.HasValue ? RankOf(perQuestion.Value, costs, false) : null,
                 CostDegraded = entry.CostDegraded,
                 RunCount = entry.RunCount,
+                HarnessVersion = EntryHarnessVersion(runs),
+                FirstRunUtc = dates.Count > 0 ? dates.Min() : null,
+                LastRunUtc = dates.Count > 0 ? dates.Max() : null,
                 Extra = extra.Sorted()
             };
         }
@@ -1326,6 +1548,21 @@ public static class BenchmarkReportFacts
         var entries = new List<BenchmarkReportEntryFigures> { Figures(subject, null, subjectStats) };
         entries.AddRange(peers.Select(p => Figures(p.Entry, p.Letter, p.Stats)));
         return entries;
+    }
+
+    /// <summary>The runs' harness version, <see cref="MixedHarnessVersion"/> when they differ; null without runs.</summary>
+    private static string? EntryHarnessVersion(IReadOnlyList<BenchmarkRun> runs)
+    {
+        var versions = runs
+            .Select(r => string.IsNullOrWhiteSpace(r.HarnessVersion) ? "not recorded" : r.HarnessVersion.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        return versions.Count switch
+        {
+            0 => null,
+            1 => versions[0],
+            _ => MixedHarnessVersion
+        };
     }
 
     private static List<BenchmarkReportGrader> BuildGraders(IReadOnlyList<BenchmarkRun> runs, string subjectProvider)
@@ -1407,7 +1644,8 @@ public static class BenchmarkReportFacts
 
     /// <summary>A fact that compares the subject with its peers.</summary>
     public static bool IsPeerFact(string key)
-        => key.EndsWith(".peerMean", StringComparison.Ordinal)
+        => key.StartsWith("peer.", StringComparison.Ordinal)
+           || key.EndsWith(".peerMean", StringComparison.Ordinal)
            || key.EndsWith(".difference", StringComparison.Ordinal)
            || key is "quality.peerMedian" or "quality.peerBest" or "quality.intervalOverlap"
                or "quality.rank" or "speed.rank" or "cost.rank" or "panel.judgeDependentPairs";

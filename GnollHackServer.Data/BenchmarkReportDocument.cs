@@ -93,6 +93,13 @@ public class BenchmarkReportDocument
     /// <summary>The model comparison request the peers were computed from, as JSON.</summary>
     public string ComparisonRequestJson { get; set; } = default!;
 
+    /// <summary>
+    /// Lower-case hex SHA-256 of the comparison's entry set (its sorted run and group ids); documents of
+    /// one comparison share it whatever their subject or pricing basis. Null when it could not be derived.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ComparisonKey { get; set; }
+
     public long? SuiteId { get; set; }
 
     [MaxLength(256)]
@@ -164,9 +171,9 @@ public class BenchmarkReportDocument
 }
 
 /// <summary>
-/// One run a report-pack document's subject covers, with that run's scoring fingerprint at
-/// generation. Comparing the fingerprint with the run as it is now tells whether the run was
-/// re-scored or re-run after the document was written.
+/// One run a report-pack document's subject or one of its peers covers, with that run's scoring
+/// fingerprint at generation. Comparing the fingerprint with the run as it is now tells whether the
+/// run was re-scored or re-run after the document was written.
 /// </summary>
 public class BenchmarkReportDocumentRun
 {
@@ -175,6 +182,9 @@ public class BenchmarkReportDocumentRun
 
     /// <summary>A run id, deliberately without a foreign key: deleting the run keeps the document.</summary>
     public long RunId { get; set; }
+
+    /// <summary>The run belongs to a peer, not to the subject. Documents written before peer rows were stored have none.</summary>
+    public bool IsPeer { get; set; }
 
     public int? FinalScore { get; set; }
     public int? QualityIndex { get; set; }

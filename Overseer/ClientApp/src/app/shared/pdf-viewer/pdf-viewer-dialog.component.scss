@@ -73,17 +73,25 @@
     }
   }
 
-  /* The variant tab row, then the info button explaining the variants. */
+  /* The variant tab row, then the info button explaining the variants, then the secondary row,
+     which wraps under them when the group is narrow. */
   .pdfv-variants-group {
     grid-area: variants;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 6px;
     min-width: 0;
   }
 
-  .pdfv-variants {
+  .pdfv-variants,
+  .pdfv-secondary-variants {
     min-width: 0;
+  }
+
+  .pdfv-variants + .pdfv-secondary-variants,
+  app-info-tip + .pdfv-secondary-variants {
+    margin-inline-start: 10px;
   }
 
   /* The variants explanation, projected into the info button's dialog. */

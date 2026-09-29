@@ -173,7 +173,7 @@ describe('RunAiReportsComponent', () => {
   }
 
   function estimateLine(): string {
-    return (section().querySelector('.rr-ai-estimate')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    return (section().querySelector('.gh-estimate-panel')?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
   function dialog(selector: string): HTMLDialogElement {
@@ -561,7 +561,7 @@ describe('RunAiReportsComponent', () => {
 
     expect(estimateLine()).toBe('Estimating…');
     const block = section().querySelector('#rrWriteEstimate') as HTMLElement;
-    expect(block.classList).toContain('rr-ai-estimate');
+    expect(block.classList).toContain('gh-estimate-panel');
     expect(block.getAttribute('role')).toBe('status');
     expect(block.getAttribute('aria-busy')).toBe('true');
     expect(block.classList).toContain('is-muted');
@@ -585,12 +585,12 @@ describe('RunAiReportsComponent', () => {
     expect(ready.hasAttribute('aria-busy')).toBeFalse();
     expect(ready.classList).not.toContain('is-muted');
     expect(ready.classList).not.toContain('is-empty');
-    expect(ready.querySelector('.rr-ai-estimate-label')?.textContent?.trim()).toBe('Estimated cost');
-    expect(ready.querySelector('.rr-ai-estimate-total')?.textContent?.trim()).toBe('about $0.18');
-    const parts = Array.from(ready.querySelectorAll('.rr-ai-estimate-parts > div')) as HTMLElement[];
+    expect(ready.querySelector('.gh-estimate-label')?.textContent?.trim()).toBe('Estimated cost');
+    expect(ready.querySelector('.gh-estimate-total')?.textContent?.trim()).toBe('about $0.18');
+    const parts = Array.from(ready.querySelectorAll('.gh-estimate-parts > div')) as HTMLElement[];
     expect(parts.map(part => [part.querySelector('dt')?.textContent?.trim(), part.querySelector('dd')?.textContent?.trim()]))
       .toEqual([['Executive Summary', '$0.04'], ['Report for AI Researchers and Developers', '$0.14']]);
-    expect(ready.querySelector('.rr-ai-estimate-note')?.textContent?.trim())
+    expect(ready.querySelector('.gh-estimate-note')?.textContent?.trim())
       .toBe('The actual cost is shown while the reports are written.');
     flush();
     discardPeriodicTasks();
@@ -609,8 +609,8 @@ describe('RunAiReportsComponent', () => {
     fixture.detectChanges();
 
     const block = section().querySelector('#rrWriteEstimate') as HTMLElement;
-    expect(block.querySelector('.rr-ai-estimate-total')?.textContent?.trim()).toBe('about $0.14');
-    expect(block.querySelector('.rr-ai-estimate-parts')).toBeNull();
+    expect(block.querySelector('.gh-estimate-total')?.textContent?.trim()).toBe('about $0.14');
+    expect(block.querySelector('.gh-estimate-parts')).toBeNull();
     flush();
     discardPeriodicTasks();
   }));
@@ -631,9 +631,9 @@ describe('RunAiReportsComponent', () => {
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
     fixture.detectChanges();
     expect(estimateLine()).toBe('No price card for this model; the cost cannot be estimated.');
-    expect(section().querySelector('.rr-ai-estimate .rr-ai-estimate-note')).not.toBeNull();
-    expect(section().querySelector('.rr-ai-estimate .rr-ai-estimate-total')).toBeNull();
-    expect(section().querySelector('.rr-ai-estimate')?.classList).toContain('is-muted');
+    expect(section().querySelector('.gh-estimate-panel .gh-estimate-note')).not.toBeNull();
+    expect(section().querySelector('.gh-estimate-panel .gh-estimate-total')).toBeNull();
+    expect(section().querySelector('.gh-estimate-panel')?.classList).toContain('is-muted');
 
     service.estimateRunReports.and.returnValue(throwError(() => ({ status: 500 })));
     checkbox(1).click();
@@ -641,7 +641,7 @@ describe('RunAiReportsComponent', () => {
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
     fixture.detectChanges();
     expect(estimateLine()).toBe('The cost could not be estimated.');
-    expect(section().querySelector('.rr-ai-estimate')?.classList).toContain('is-muted');
+    expect(section().querySelector('.gh-estimate-panel')?.classList).toContain('is-muted');
     expect(writeButton().disabled).toBeFalse();
     flush();
     discardPeriodicTasks();

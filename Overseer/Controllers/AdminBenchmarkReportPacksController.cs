@@ -32,8 +32,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// <summary>Rough output sizes per document, for the preview's cost estimate only.</summary>
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, int> EstimatedOutputTokens = new Dictionary<BenchmarkReportAudience, int>
     {
-        [BenchmarkReportAudience.ExecutiveSummary] = 2000,
-        [BenchmarkReportAudience.TechnicalReport] = 7000,
+        [BenchmarkReportAudience.ExecutiveSummary] = 2400,
+        [BenchmarkReportAudience.TechnicalReport] = 7400,
         [BenchmarkReportAudience.InternalBrief] = 7000
     };
 

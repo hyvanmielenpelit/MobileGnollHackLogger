@@ -57,7 +57,7 @@ internal static class BenchmarkReportPackFixture
     /// </summary>
     public static BenchmarkReportDocument StoredV2Document(BenchmarkReportAudience audience)
     {
-        var sheet = Sheet();
+        var sheet = StoredV6Sheet();
         string[] added =
         {
             "comparison.pricedOn", "comparison.pricingBasisKind", "cost.perRun", "panel.referenceReaderIndex", "panel.referenceReaderOffset",
@@ -80,11 +80,49 @@ internal static class BenchmarkReportPackFixture
         foreach (var ruling in content.Runs.SelectMany(r => r.Questions).SelectMany(q => q.ClaimRulings)) ruling.Role = null;
         foreach (var question in content.Runs.SelectMany(r => r.Questions)) question.AnswerText = null;
 
-        var document = Document(audience, sheet, Writer(), Notes(), BenchmarkReportDocumentStatus.CompletedWithWarnings,
+        var document = Document(audience, sheet, StoredV6Writer(), Notes(), BenchmarkReportDocumentStatus.CompletedWithWarnings,
             BenchmarkReportDocumentOrigin.ReportPack, "{\"runIds\":[12,13,14],\"groupIds\":[],\"pricingBasis\":1}");
         document.ContentJson = BenchmarkReportJson.Serialize(content);
         document.ReportFormatVersion = 2;
         return document;
+    }
+
+    /// <summary>
+    /// <see cref="Document"/> as format version 6 stored it: no per-peer or paired-difference facts, no
+    /// paired differences, no harness version or run dates per entry, and no comparison or
+    /// limitations slot.
+    /// </summary>
+    public static BenchmarkReportDocument StoredV6Document(BenchmarkReportAudience audience)
+    {
+        var document = Document(audience, StoredV6Sheet(), StoredV6Writer(), Notes(), BenchmarkReportDocumentStatus.CompletedWithWarnings,
+            BenchmarkReportDocumentOrigin.ReportPack, "{\"runIds\":[12,13,14],\"groupIds\":[],\"pricingBasis\":1}");
+        document.ReportFormatVersion = 6;
+        return document;
+    }
+
+    /// <summary><see cref="Sheet"/> without what format version 7 added.</summary>
+    private static BenchmarkReportFactSheet StoredV6Sheet()
+    {
+        var sheet = Sheet();
+        sheet.Facts = sheet.Facts.Where(f => !f.Key.StartsWith("peer.", StringComparison.Ordinal)).ToList();
+        sheet.Facts.Single(f => f.Key == "quality.intervalOverlap").Value = null;
+        sheet.PairedDifferences.Clear();
+        foreach (var entry in sheet.Entries)
+        {
+            entry.HarnessVersion = null;
+            entry.FirstRunUtc = null;
+            entry.LastRunUtc = null;
+        }
+        return sheet;
+    }
+
+    /// <summary><see cref="Writer"/> without the slots format version 7 added.</summary>
+    private static BenchmarkReportWriterOutput StoredV6Writer()
+    {
+        var writer = Writer();
+        writer.Sections.Remove(BenchmarkReportSlots.Comparison);
+        writer.Sections.Remove(BenchmarkReportSlots.Limitations);
+        return writer;
     }
 
     private static BenchmarkReportDocument Document(
@@ -238,18 +276,34 @@ internal static class BenchmarkReportPackFixture
             new()
             {
                 EntryKey = "run:12", IsSubject = true, QualityIndex = 80.4, QualityLower = 77.1, QualityUpper = 83.2, QualityRank = 2,
-                ModelTimeP50Ms = 12300, SpeedRank = 2, CostPerQuestionUsd = 0.036, CostRank = 2, RunCount = 1
+                ModelTimeP50Ms = 12300, SpeedRank = 2, CostPerQuestionUsd = 0.036, CostRank = 2, RunCount = 1,
+                HarnessVersion = "41",
+                FirstRunUtc = new DateTime(2026, 9, 20, 14, 5, 0, DateTimeKind.Utc),
+                LastRunUtc = new DateTime(2026, 9, 20, 14, 5, 0, DateTimeKind.Utc)
             },
             new()
             {
                 EntryKey = "run:14", PeerLetter = "A", QualityIndex = 85.2, QualityLower = 81.0, QualityUpper = 89.4, QualityRank = 1,
-                ModelTimeP50Ms = 9800, SpeedRank = 1, CostPerQuestionUsd = 0.052, CostRank = 3, RunCount = 1
+                ModelTimeP50Ms = 9800, SpeedRank = 1, CostPerQuestionUsd = 0.052, CostRank = 3, RunCount = 1,
+                HarnessVersion = "41",
+                FirstRunUtc = new DateTime(2026, 9, 19, 9, 30, 0, DateTimeKind.Utc),
+                LastRunUtc = new DateTime(2026, 9, 19, 9, 30, 0, DateTimeKind.Utc)
             },
             new()
             {
                 EntryKey = "run:13", PeerLetter = "B", QualityIndex = 78.3, QualityLower = 74.1, QualityUpper = 82.5, QualityRank = 3,
-                SpeedDegraded = true, CostPerQuestionUsd = 0.021, CostRank = 1, RunCount = 1
+                SpeedDegraded = true, CostPerQuestionUsd = 0.021, CostRank = 1, RunCount = 1,
+                HarnessVersion = "41",
+                FirstRunUtc = new DateTime(2026, 9, 12, 18, 0, 0, DateTimeKind.Utc),
+                LastRunUtc = new DateTime(2026, 9, 12, 18, 0, 0, DateTimeKind.Utc)
             }
+        },
+        // Hand-built like the rest of the sheet: Model A's figures stand in for a paired difference over
+        // enough shared questions, Model B's for one over too few.
+        PairedDifferences = new List<BenchmarkReportPairedDifference>
+        {
+            new() { PeerLetter = "A", SharedQuestions = 4, MeanDifference = -4.6, Lower = -9.8, Upper = 0.7 },
+            new() { PeerLetter = "B", SharedQuestions = 4 }
         }
     };
 
@@ -305,10 +359,30 @@ internal static class BenchmarkReportPackFixture
             Fact("panel.memberBAlone", "79 / 100"),
             Fact("panel.referenceReaderIndex", "90 / 100", JsonValue.Create(90.0)),
             Fact("panel.referenceReaderOffset", "+16.8 points", JsonValue.Create(16.8)),
+            Fact("peer.A.cost.perQuestion", "$0.052", JsonValue.Create(0.052)),
+            Fact("peer.A.intervalOverlap", "its 95 % interval overlaps the subject's", JsonValue.Create(true)),
+            Fact("peer.A.pairedDifference", "-4.6 points", JsonValue.Create(-4.6)),
+            Fact("peer.A.pairedInterval", "-9.8 to +0.7"),
+            Fact("peer.A.quality.index", "85 / 100", JsonValue.Create(85.2)),
+            Fact("peer.A.quality.interval", "81–89"),
+            Fact("peer.A.quality.rank", "1st of 3", JsonValue.Create(1)),
+            Fact("peer.A.runs", "1 run", JsonValue.Create(1)),
+            Fact("peer.A.sharedQuestions", "4 questions", JsonValue.Create(4)),
+            Fact("peer.A.speed.medianSeconds", "9.8 s", JsonValue.Create(9800.0)),
+            Fact("peer.B.cost.perQuestion", "$0.021", JsonValue.Create(0.021)),
+            Fact("peer.B.intervalOverlap", "its 95 % interval overlaps the subject's", JsonValue.Create(true)),
+            Unavailable("peer.B.pairedDifference", PairedTooFewReason),
+            Unavailable("peer.B.pairedInterval", PairedTooFewReason),
+            Fact("peer.B.quality.index", "78 / 100", JsonValue.Create(78.3)),
+            Fact("peer.B.quality.interval", "74–83"),
+            Fact("peer.B.quality.rank", "3rd of 3", JsonValue.Create(3)),
+            Fact("peer.B.runs", "1 run", JsonValue.Create(1)),
+            Unavailable("peer.B.sharedQuestions", PairedTooFewReason),
+            Unavailable("peer.B.speed.medianSeconds", "Degraded: speed was measured with parallel execution disabled."),
             Fact("quality.index", "80 / 100", JsonValue.Create(80.4)),
             Fact("quality.interval", "77–83"),
             Fact("quality.intervalBasis", "Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two."),
-            Fact("quality.intervalOverlap", "its 95 % interval overlaps those of Models A and B"),
+            Fact("quality.intervalOverlap", "its 95 % interval overlaps those of Models A and B", JsonValue.Create(2)),
             Fact("quality.intervalSpan", "6 points", JsonValue.Create(6)),
             Fact("quality.scoredItems", "4 of 4 questions", JsonValue.Create(4)),
             Fact("quality.rank", "2nd of 3"),
@@ -445,11 +519,13 @@ internal static class BenchmarkReportPackFixture
         Headline = "{{subject}} answers everyday GnollHack questions well but made one confident false claim about item destruction.",
         Sections = new Dictionary<string, string>
         {
+            [BenchmarkReportSlots.Comparison] = "{{subject}} places {{quality.rank}} on intelligence, but its interval overlaps those of {{peer:A}} and {{peer:B}}, so the order is not established. Its paired difference from {{peer:A}} is {{peer.A.pairedDifference}}.",
             [BenchmarkReportSlots.Meaning] = "{{subject}} is a capable assistant for everyday play, but its answers on item destruction need a source check.",
             [BenchmarkReportSlots.Confidence] = "The result rests on {{suite.questions}} questions; {{quality.intervalOverlap}}.",
             [BenchmarkReportSlots.Abstract] = "{{subject}} scored {{quality.index}} on {{suite.questions}} questions, ranking {{quality.rank}} against {{peer:A}} and {{peer:B}}.",
             [BenchmarkReportSlots.WhyItScored] = "One critical error on Q3 capped that answer at {{scoring.criticalErrorCap}}.\n\nCompleteness was {{dimension.completeness}} against a peer mean of {{dimension.completeness.peerMean}}.",
             [BenchmarkReportSlots.WhatWorked] = "Short, accurate answers on simple questions (R2).",
+            [BenchmarkReportSlots.Limitations] = "{{peer:B}} is degraded on speed, and every model rests on a single run, so no interval covers run-to-run variation.",
             [BenchmarkReportSlots.OverseerChat] = "Most tool calls went to the source code ({{tools.share.sourceCode}}).",
             [BenchmarkReportSlots.BenchmarkSystem] = "Both panel members flagged the Q3 error (R1).",
             [BenchmarkReportSlots.ModelResult] = "{{subject}} ranks {{quality.rank}} at {{cost.perQuestion}} per question."
@@ -488,8 +564,9 @@ internal static class BenchmarkReportPackFixture
     };
 
     /// <summary>
-    /// <see cref="Sheet"/> as a stand-alone run report builds it: no peers, every peer fact unavailable
-    /// with the stand-alone reason, no peer figures per question and the subject's figures alone.
+    /// <see cref="Sheet"/> as a stand-alone run report builds it: no peers, no per-peer facts or paired
+    /// differences, every peer fact unavailable with the stand-alone reason, no peer figures per
+    /// question and the subject's figures alone.
     /// </summary>
     public static BenchmarkReportFactSheet StandaloneSheet()
     {
@@ -497,7 +574,9 @@ internal static class BenchmarkReportPackFixture
         sheet.Peers.Clear();
         sheet.NoSignificanceSummary = string.Empty;
         sheet.NoSignificanceInstead = string.Empty;
+        sheet.PairedDifferences.Clear();
         sheet.Facts = sheet.Facts
+            .Where(f => !f.Key.StartsWith("peer.", StringComparison.Ordinal))
             .Select(f => BenchmarkReportFacts.IsPeerFact(f.Key)
                 ? new BenchmarkReportFact
                 {
@@ -521,7 +600,7 @@ internal static class BenchmarkReportPackFixture
         return sheet;
     }
 
-    /// <summary>A writer output for <see cref="StandaloneSheet"/>: no peer token and no comparison.</summary>
+    /// <summary>A writer output for <see cref="StandaloneSheet"/>: no peer token, no comparison and no comparison slot.</summary>
     public static BenchmarkReportWriterOutput StandaloneWriter()
     {
         var writer = Writer();
@@ -529,6 +608,8 @@ internal static class BenchmarkReportPackFixture
         writer.Sections[BenchmarkReportSlots.Confidence] = "The result rests on {{suite.questions}} questions, so it should be read with care.";
         writer.Sections[BenchmarkReportSlots.Abstract] = "{{subject}} scored {{quality.index}} on {{suite.questions}} questions, with one critical error on Q3.";
         writer.Sections[BenchmarkReportSlots.WhyItScored] = "One critical error on Q3 capped that answer at {{scoring.criticalErrorCap}}.\n\nCompleteness was its lowest dimension at {{dimension.completeness}}.";
+        writer.Sections.Remove(BenchmarkReportSlots.Comparison);
+        writer.Sections[BenchmarkReportSlots.Limitations] = "The result rests on a single run, so its interval covers question sampling alone.";
         writer.Weaknesses[0] = new BenchmarkReportWriterItem
         {
             Text = "Asserted a false outcome on Q3.",
@@ -561,6 +642,13 @@ internal static class BenchmarkReportPackFixture
 
     private static BenchmarkReportFact Fact(string key, string display, JsonNode? value = null)
         => new() { Key = key, Display = display, Value = value };
+
+    /// <summary>Why the fixture's Model B has no paired difference.</summary>
+    public const string PairedTooFewReason =
+        "Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference.";
+
+    private static BenchmarkReportFact Unavailable(string key, string reason)
+        => new() { Key = key, Display = BenchmarkReportFacts.NotAvailable, Available = false, UnavailableReason = reason };
 
     private static BenchmarkReportQuestion Question(
         int number, string key, int revision, string band, double score, double peerMean, bool critical, int refuted, double tools, double modelTimeMs)

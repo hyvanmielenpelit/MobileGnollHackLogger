@@ -1818,6 +1818,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       groupIds: idsOf('group'),
       pricingBasis: basis,
       entries: comparison.entries,
+      entryKeys: comparison.entries.map(entry => entry.key),
       suiteId: comparison.baselineSuiteId ?? null,
       suiteName: comparison.baselineSuiteName ?? null
     };

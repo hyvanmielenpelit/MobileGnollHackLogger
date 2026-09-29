@@ -26,13 +26,14 @@ public sealed class BenchmarkReportCleanResult
 /// <summary>
 /// The report-pack document rules (D7), checked against the fact sheet and the content snapshot.
 ///
-/// <para>Rules 2, 3, 8, 9, 10, 11 and 12 apply to every prose string: the headline, each paragraph of
-/// each section, and the text of every item, topic and note. A section's paragraphs are checked one by
-/// one, so <see cref="DropInvalid"/> can remove only the offending ones.</para>
+/// <para>Rules 2, 3, 8, 9, 10, 11, 12, 16 and 17 apply to every prose string: the headline, each
+/// paragraph of each section, and the text of every item, topic and note. A section's paragraphs are
+/// checked one by one, so <see cref="DropInvalid"/> can remove only the offending ones.</para>
 ///
 /// <list type="number">
-/// <item>Structure: headline and required slots present and non-empty; no unknown slots; no lists the
-/// audience does not use; item texts non-empty; <c>for</c> and <c>triage</c> from their fixed sets.</item>
+/// <item>Structure: headline and required slots present and non-empty (a peer-only slot only when
+/// the sheet has peers); no unknown slots; no lists the audience does not use; item texts non-empty;
+/// <c>for</c> and <c>triage</c> from their fixed sets.</item>
 /// <item>Tokens: <c>{{key}}</c> names a fact, <c>{{peer:X}}</c> a peer letter, <c>{{subject}}</c> the subject;
 /// written exactly, without inner spaces; no stray braces.</item>
 /// <item>No bare digit once tokens, known names and <c>Q&lt;n&gt;</c> / <c>R&lt;n&gt;</c> references are masked.</item>
@@ -41,8 +42,9 @@ public sealed class BenchmarkReportCleanResult
 /// one, and so do the recommendations of the Report for AI Researchers and Developers.</item>
 /// <item>A strength cites no weakness row and a weakness no strength row; a finding citing only
 /// Conflicting rows says the graders disagree.</item>
-/// <item>Word and item limits, the Executive Summary's slot and item word caps, and the report's
-/// slot word caps and recommendation count included.</item>
+/// <item>Word and item limits: every audience's slot word caps, the Executive Summary's item word
+/// cap, the report's recommendation count, and the Internal Improvement Brief's recommendation and
+/// lead counts.</item>
 /// <item>No headings, Markdown tables or HTML.</item>
 /// <item>No run of <see cref="ShingleLength"/> words shared with the content snapshot.</item>
 /// <item>No peer name, label, model id or provider other than the subject's own provider.</item>
@@ -55,6 +57,12 @@ public sealed class BenchmarkReportCleanResult
 /// <item>The headline and the abstract do not mention the claim verifier (<see cref="VerifierRegex"/>):
 /// its refutations are advisory and belong, attributed, in the weaknesses. A warning like rule 12: it
 /// asks for the repair turn, and <see cref="DropInvalid"/> keeps the text and records the note.</item>
+/// <item>Every question listed under QUESTIONS NEEDING A NOTE has a note in <c>questionNotes</c>, where
+/// the audience uses them. A warning with nothing to drop.</item>
+/// <item>A sentence holding <c>{{subject}}</c>, a <c>{{peer:X}}</c> token and a word of
+/// <see cref="ComparativeWords"/>, where <c>peer.X.intervalOverlap</c> is true, also says
+/// <c>overlap</c> or <c>not established</c>. A warning.</item>
+/// <item>No word of <see cref="HypeWords"/>, whole words ignoring case. A warning.</item>
 /// </list>
 /// </summary>
 public static class BenchmarkReportPackValidator
@@ -76,11 +84,32 @@ public static class BenchmarkReportPackValidator
     /// <summary>The Report for AI Researchers and Developers' "What worked well", before its strengths list.</summary>
     public const int WhatWorkedMaxWords = 150;
 
+    /// <summary>The Executive Summary's paragraph under "How it compares".</summary>
+    public const int ComparisonMaxWords = 70;
+
+    /// <summary>The Report for AI Researchers and Developers' last paragraph of "Threats to validity".</summary>
+    public const int LimitationsMaxWords = 120;
+
+    /// <summary>The Internal Improvement Brief's "The Overseer chat and its tools".</summary>
+    public const int OverseerChatMaxWords = 200;
+
+    /// <summary>The Internal Improvement Brief's "The benchmarking system".</summary>
+    public const int BenchmarkSystemMaxWords = 150;
+
+    /// <summary>The Internal Improvement Brief's "The model's result".</summary>
+    public const int ModelResultMaxWords = 150;
+
     /// <summary>Each strength and weakness of the Executive Summary.</summary>
     public const int ExecutiveItemMaxWords = 30;
 
     /// <summary>Recommendations the Report for AI Researchers and Developers holds.</summary>
     public const int TechnicalReportMaxRecommendations = 6;
+
+    /// <summary>Recommendations the Internal Improvement Brief holds.</summary>
+    public const int InternalBriefMaxRecommendations = 8;
+
+    /// <summary>Leads the Internal Improvement Brief holds.</summary>
+    public const int MaxLeads = 6;
 
     /// <summary>The rule number of the US English check, whose notes never drop an item.</summary>
     public const int UsSpellingRule = 12;
@@ -97,8 +126,35 @@ public static class BenchmarkReportPackValidator
     /// </summary>
     public const int VerifierInSummaryRule = 14;
 
+    /// <summary>The rule number of the check that every question needing a note has one; nothing to drop.</summary>
+    public const int MissingQuestionNoteRule = 15;
+
+    /// <summary>
+    /// The rule number of the check that a comparison of the subject with a peer whose interval
+    /// overlaps it says so; its notes never drop text.
+    /// </summary>
+    public const int OverlapHedgeRule = 16;
+
+    /// <summary>The rule number of the hype-word check, whose notes never drop text.</summary>
+    public const int HypeWordRule = 17;
+
     /// <summary>Whether a rule's notes are warnings: they ask for the repair turn but never drop text.</summary>
-    public static bool IsWarningRule(int rule) => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule;
+    public static bool IsWarningRule(int rule)
+        => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or MissingQuestionNoteRule or OverlapHedgeRule or HypeWordRule;
+
+    /// <summary>Words rule 16 reads as ranking one model over another, matched as whole words, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> ComparativeWords = new[]
+    {
+        "higher", "lower", "better", "worse", "ahead", "behind", "outperform", "outperforms", "outperformed",
+        "beat", "beats", "leads", "trails"
+    };
+
+    /// <summary>Hype and filler words rule 17 flags in prose, matched as whole words, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> HypeWords = new[]
+    {
+        "impressive", "remarkable", "outstanding", "stellar", "exceptional", "robust", "seamless", "leverage", "delve",
+        "game-changing", "cutting-edge"
+    };
 
     /// <summary>Adjectives rule 13 flags for the quality interval, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> IntervalWidthWords = new[]
@@ -154,6 +210,26 @@ public static class BenchmarkReportPackValidator
         @"(?<![\p{L}\p{N}])(?:" + string.Join("|", IntervalWidthWords) + @")(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    private static readonly Regex ComparativeRegex = new(
+        @"(?<![\p{L}\p{N}])(?:" + string.Join("|", ComparativeWords) + @")(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>What rule 16 accepts as saying that the order is open: "overlap" in any form, or "not established".</summary>
+    private static readonly Regex OverlapHedgeRegex = new(
+        @"(?<![\p{L}\p{N}])(?:overlap\p{L}*|not\s+established)(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    // A hyphenated hype word matches only as a whole: "cutting-edge", never "edge".
+    private static readonly Regex HypeWordRegex = new(
+        @"(?<![\p{L}\p{N}-])(?:" + string.Join("|", HypeWords.Select(Regex.Escape)) + @")(?![\p{L}\p{N}-])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>A sentence ends at <c>.</c>, <c>!</c> or <c>?</c> followed by whitespace, or at a line break.</summary>
+    private static readonly Regex SentenceSplitRegex = new(@"(?<=[.!?])\s+|\n+", RegexOptions.Compiled);
+
+    /// <summary>The placeholder rule 16 puts in place of a token before splitting sentences, so a fact key's dots never end one.</summary>
+    private static readonly Regex TokenPlaceholderRegex = new("\u0001(\\d+)\u0002", RegexOptions.Compiled);
+
     private enum ItemKind
     {
         Strength,
@@ -163,8 +239,12 @@ public static class BenchmarkReportPackValidator
     }
 
     /// <summary>How many recommendations the audience's document holds.</summary>
-    public static int MaxRecommendations(BenchmarkReportAudience audience)
-        => audience == BenchmarkReportAudience.TechnicalReport ? TechnicalReportMaxRecommendations : int.MaxValue;
+    public static int MaxRecommendations(BenchmarkReportAudience audience) => audience switch
+    {
+        BenchmarkReportAudience.TechnicalReport => TechnicalReportMaxRecommendations,
+        BenchmarkReportAudience.InternalBrief => InternalBriefMaxRecommendations,
+        _ => int.MaxValue
+    };
 
     /// <summary>Rule 5: the Report for AI Researchers and Developers backs every recommendation with evidence.</summary>
     public static bool RecommendationsRequireEvidence(BenchmarkReportAudience audience)
@@ -176,8 +256,13 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportSlots.Abstract => AbstractMaxWords,
         BenchmarkReportSlots.Meaning when audience == BenchmarkReportAudience.ExecutiveSummary => MeaningMaxWords,
         BenchmarkReportSlots.Confidence when audience == BenchmarkReportAudience.ExecutiveSummary => ConfidenceMaxWords,
+        BenchmarkReportSlots.Comparison when audience == BenchmarkReportAudience.ExecutiveSummary => ComparisonMaxWords,
         BenchmarkReportSlots.WhyItScored when audience == BenchmarkReportAudience.TechnicalReport => WhyItScoredMaxWords,
         BenchmarkReportSlots.WhatWorked when audience == BenchmarkReportAudience.TechnicalReport => WhatWorkedMaxWords,
+        BenchmarkReportSlots.Limitations when audience == BenchmarkReportAudience.TechnicalReport => LimitationsMaxWords,
+        BenchmarkReportSlots.OverseerChat when audience == BenchmarkReportAudience.InternalBrief => OverseerChatMaxWords,
+        BenchmarkReportSlots.BenchmarkSystem when audience == BenchmarkReportAudience.InternalBrief => BenchmarkSystemMaxWords,
+        BenchmarkReportSlots.ModelResult when audience == BenchmarkReportAudience.InternalBrief => ModelResultMaxWords,
         _ => null
     };
 
@@ -200,7 +285,7 @@ public static class BenchmarkReportPackValidator
         CheckHeadline(ctx, output.Headline, notes);
 
         var sections = output.Sections ?? new Dictionary<string, string>();
-        foreach (string slot in spec.RequiredSlots)
+        foreach (string slot in ctx.RequiredSlots)
         {
             string location = SectionLocation(slot);
             if (!sections.TryGetValue(slot, out string? text) || string.IsNullOrWhiteSpace(text))
@@ -223,9 +308,9 @@ public static class BenchmarkReportPackValidator
             }
         }
 
-        foreach (string key in ExtraSlots(spec, sections))
+        foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
         {
-            Issue(notes, 1, SectionLocation(key), UnknownSlotMessage(spec, key));
+            Issue(notes, 1, SectionLocation(key), UnknownSlotMessage(ctx, key));
         }
 
         CheckItems(ctx, "strengths", output.Strengths, ItemKind.Strength, spec.MaxStrengths, notes);
@@ -258,6 +343,7 @@ public static class BenchmarkReportPackValidator
         if (spec.UsesQuestionNotes)
         {
             var noteSeen = new HashSet<int>();
+            var noted = new HashSet<int>();
             for (int i = 0; i < questionNotes.Count; i++)
             {
                 var note = questionNotes[i] ?? new BenchmarkReportQuestionNote();
@@ -267,7 +353,9 @@ public static class BenchmarkReportPackValidator
                 {
                     Issue(notes, 4, location, $"{Q(note.Question)} already has a note in an earlier entry.");
                 }
+                if (!string.IsNullOrWhiteSpace(note.Note)) noted.Add(note.Question);
             }
+            CheckNoteCoverage(ctx, noted, notes);
         }
         else if (questionNotes.Count > 0)
         {
@@ -276,7 +364,7 @@ public static class BenchmarkReportPackValidator
 
         if (spec.UsesLeads)
         {
-            CheckItems(ctx, "leads", output.Leads, ItemKind.Lead, int.MaxValue, notes);
+            CheckItems(ctx, "leads", output.Leads, ItemKind.Lead, MaxLeads, notes);
         }
         else if (output.Leads is { Count: > 0 })
         {
@@ -293,8 +381,8 @@ public static class BenchmarkReportPackValidator
     /// <summary>
     /// Removes every item and section paragraph with an issue from a copy of the output. The headline
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty. Missing
-    /// question topics are recorded but not fatal, and so are a rule 12 spelling, a rule 13 interval
-    /// adjective and a rule 14 mention of the claim verifier: their text is kept.
+    /// question topics and notes are recorded but not fatal, and so are the warnings of rules 12 to
+    /// 17: their text is kept.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -320,7 +408,7 @@ public static class BenchmarkReportPackValidator
         }
 
         var sections = output.Sections ?? new Dictionary<string, string>();
-        foreach (string slot in spec.RequiredSlots)
+        foreach (string slot in ctx.RequiredSlots)
         {
             string location = SectionLocation(slot);
             if (!sections.TryGetValue(slot, out string? text) || string.IsNullOrWhiteSpace(text))
@@ -372,9 +460,9 @@ public static class BenchmarkReportPackValidator
             }
         }
 
-        foreach (string key in ExtraSlots(spec, sections))
+        foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
         {
-            Dropped(notes, 1, SectionLocation(key), UnknownSlotMessage(spec, key));
+            Dropped(notes, 1, SectionLocation(key), UnknownSlotMessage(ctx, key));
         }
 
         copy.Strengths = CleanItems(ctx, "strengths", output.Strengths, ItemKind.Strength, spec.MaxStrengths, notes, CloneItem);
@@ -437,6 +525,7 @@ public static class BenchmarkReportPackValidator
                 noteSeen.Add(note.Question);
                 copy.QuestionNotes.Add(new BenchmarkReportQuestionNote { Question = note.Question, Note = note.Note });
             }
+            CheckNoteCoverage(ctx, noteSeen, notes);
         }
         else if (questionNotes.Count > 0)
         {
@@ -445,7 +534,7 @@ public static class BenchmarkReportPackValidator
 
         if (spec.UsesLeads)
         {
-            copy.Leads = CleanItems(ctx, "leads", output.Leads, ItemKind.Lead, int.MaxValue, notes, CloneLead);
+            copy.Leads = CleanItems(ctx, "leads", output.Leads, ItemKind.Lead, MaxLeads, notes, CloneLead);
         }
         else if (output.Leads is { Count: > 0 })
         {
@@ -579,6 +668,60 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, UsSpellingRule, location, $"Uses the British spelling{Plural(british.Count)} \"{string.Join("\", \"", british)}\": write in US English (color, behavior, analyze, center, gray, labeled, canceled).");
         }
+
+        // Rule 16: an unhedged ranking against a peer whose interval overlaps the subject's.
+        var unhedged = UnhedgedOverlappingPeers(ctx, text);
+        if (unhedged.Count > 0)
+        {
+            string peers = string.Join(", ", unhedged.Select(l => "{{peer:" + l + "}}"));
+            Issue(notes, OverlapHedgeRule, location, $"Ranks {{{{subject}}}} against {peers}, whose 95 % interval overlaps the subject's, without saying so: in the same sentence, say that the intervals overlap and that the order between them is not established.");
+        }
+
+        // Rule 17: hype and filler words.
+        var hype = HypeWordRegex.Matches(stripped)
+            .Select(m => m.Value)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (hype.Count > 0)
+        {
+            Issue(notes, HypeWordRule, location, $"Uses the hype word{Plural(hype.Count)} \"{string.Join("\", \"", hype)}\": state what the figures and findings show in plain words instead.");
+        }
+    }
+
+    /// <summary>
+    /// Rule 16: the letters of the peers a sentence ranks <c>{{subject}}</c> against with a word of
+    /// <see cref="ComparativeWords"/> while <c>peer.X.intervalOverlap</c> is true, and the sentence
+    /// says neither <c>overlap</c> nor <c>not established</c>. Tokens are set aside before the text is
+    /// split into sentences, so the dots of a fact key never end one.
+    /// </summary>
+    private static List<string> UnhedgedOverlappingPeers(Context ctx, string text)
+    {
+        var tokens = new List<string>();
+        string masked = TokenRegex.Replace(text ?? string.Empty, m =>
+        {
+            tokens.Add(m.Groups[1].Value);
+            return "\u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002";
+        });
+        if (tokens.Count == 0) return new List<string>();
+
+        var letters = new List<string>();
+        foreach (string sentence in SentenceSplitRegex.Split(masked))
+        {
+            var inSentence = TokenPlaceholderRegex.Matches(sentence)
+                .Select(m => tokens[int.Parse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture)])
+                .ToList();
+            if (!inSentence.Contains("subject", StringComparer.Ordinal)) continue;
+
+            string plain = TokenPlaceholderRegex.Replace(sentence, " ");
+            if (!ComparativeRegex.IsMatch(plain) || OverlapHedgeRegex.IsMatch(plain)) continue;
+
+            letters.AddRange(inSentence
+                .Where(t => t.StartsWith("peer:", StringComparison.Ordinal))
+                .Select(t => t["peer:".Length..])
+                .Where(ctx.OverlapsSubject));
+        }
+
+        return letters.Distinct(StringComparer.Ordinal).ToList();
     }
 
     /// <summary>
@@ -849,6 +992,17 @@ public static class BenchmarkReportPackValidator
         }
     }
 
+    /// <summary>Rule 15: every question listed under QUESTIONS NEEDING A NOTE has a note; a warning with nothing to drop.</summary>
+    private static void CheckNoteCoverage(Context ctx, HashSet<int> noted, List<BenchmarkReportValidationNote> notes)
+    {
+        var missing = ctx.QuestionsNeedingNote.Where(n => !noted.Contains(n)).ToList();
+        if (missing.Count > 0)
+        {
+            Issue(notes, MissingQuestionNoteRule, "questionNotes",
+                $"No note for {string.Join(", ", missing.Select(Q))}: every question listed under QUESTIONS NEEDING A NOTE needs one.");
+        }
+    }
+
     // -----------------------------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------------------------
@@ -856,13 +1010,15 @@ public static class BenchmarkReportPackValidator
     private static bool IsConflicting(BenchmarkReportFindingRow row)
         => string.Equals(row.Status?.Trim(), "Conflicting", StringComparison.OrdinalIgnoreCase);
 
-    private static IEnumerable<string> ExtraSlots(BenchmarkReportAudienceSpec spec, Dictionary<string, string> sections)
+    private static IEnumerable<string> ExtraSlots(IReadOnlyList<string> requiredSlots, Dictionary<string, string> sections)
         => sections.Keys
-            .Where(k => !spec.RequiredSlots.Contains(k, StringComparer.Ordinal))
+            .Where(k => !requiredSlots.Contains(k, StringComparer.Ordinal))
             .OrderBy(k => k, StringComparer.Ordinal);
 
-    private static string UnknownSlotMessage(BenchmarkReportAudienceSpec spec, string key)
-        => $"\"{key}\" is not a slot of the {DocumentName(spec.Audience)}; its slots are {string.Join(", ", spec.RequiredSlots)}.";
+    private static string UnknownSlotMessage(Context ctx, string key)
+        => ctx.Spec.PeerOnlySlots.Contains(key, StringComparer.Ordinal)
+            ? $"\"{key}\" is a slot of the {DocumentName(ctx.Spec.Audience)} with peers only; a stand-alone document has none. Its slots are {string.Join(", ", ctx.RequiredSlots)}."
+            : $"\"{key}\" is not a slot of the {DocumentName(ctx.Spec.Audience)}; its slots are {string.Join(", ", ctx.RequiredSlots)}.";
 
     private static string UnusedListMessage(BenchmarkReportAudienceSpec spec, string array)
         => $"The {DocumentName(spec.Audience)} does not use \"{array}\"; leave it out.";
@@ -876,13 +1032,18 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportSlots.Confidence => "\"How reliable this result is\"",
         BenchmarkReportSlots.WhyItScored => "\"Why it scored this way\"",
         BenchmarkReportSlots.WhatWorked => "\"What worked well\"",
+        BenchmarkReportSlots.Comparison => "\"How it compares\"",
+        BenchmarkReportSlots.Limitations => "The limitations paragraph",
+        BenchmarkReportSlots.OverseerChat => "\"The Overseer chat and its tools\"",
+        BenchmarkReportSlots.BenchmarkSystem => "\"The benchmarking system\"",
+        BenchmarkReportSlots.ModelResult => "\"The model's result\"",
         _ => $"The \"{slot}\" slot"
     };
 
     private static string LowerFirst(string text)
         => text.Length > 0 && char.IsUpper(text[0]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 
-    /// <summary>Every rule but the warning rules 12, 13 and 14 removes the offending item or paragraph.</summary>
+    /// <summary>Every rule but the warning rules 12 to 17 removes the offending item or paragraph.</summary>
     private static bool Blocks(BenchmarkReportValidationNote note) => !IsWarningRule(note.Rule);
 
     /// <summary>A section's text split on blank lines, each paragraph trimmed, empty ones left out.</summary>
@@ -952,10 +1113,18 @@ public static class BenchmarkReportPackValidator
             ArgumentNullException.ThrowIfNull(content);
 
             Spec = BenchmarkReportSlots.For(audience);
+            RequiredSlots = Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
             PeerLetters = new HashSet<string>(sheet.Peers.Select(p => p.Letter), StringComparer.Ordinal);
             OrderedQuestions = sheet.Questions.Select(q => q.Number).Distinct().OrderBy(n => n).ToList();
             Questions = new HashSet<int>(OrderedQuestions);
+            QuestionsNeedingNote = BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet);
+            _overlappingPeers = new HashSet<string>(
+                sheet.Peers
+                    .Select(p => p.Letter)
+                    .Where(letter => sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, BenchmarkReportFacts.PeerPrefix(letter) + "intervalOverlap", StringComparison.Ordinal))
+                        is { } fact && BenchmarkReportPackPrompt.IsTrue(fact)),
+                StringComparer.Ordinal);
 
             Rows = new Dictionary<string, BenchmarkReportFindingRow>(StringComparer.Ordinal);
             foreach (var row in sheet.Rows)
@@ -1018,8 +1187,17 @@ public static class BenchmarkReportPackValidator
         private readonly Regex? _subjectNames;
         private readonly Regex? _peerNames;
         private readonly Dictionary<string, string> _shingles;
+        private readonly HashSet<string> _overlappingPeers;
 
         public BenchmarkReportAudienceSpec Spec { get; }
+
+        /// <summary>The audience's slots this sheet requires: the peer-only slots only when it has peers.</summary>
+        public IReadOnlyList<string> RequiredSlots { get; }
+
+        public IReadOnlyList<int> QuestionsNeedingNote { get; }
+
+        /// <summary>The peer's <c>peer.X.intervalOverlap</c> fact is true.</summary>
+        public bool OverlapsSubject(string letter) => _overlappingPeers.Contains(letter);
         public HashSet<string> FactKeys { get; }
         public HashSet<string> PeerLetters { get; }
         public HashSet<int> Questions { get; }

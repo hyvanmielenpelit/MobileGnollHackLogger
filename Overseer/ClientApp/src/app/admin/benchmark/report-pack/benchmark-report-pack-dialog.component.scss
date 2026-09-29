@@ -1,7 +1,7 @@
 @use '../benchmark-dialog-frame' as frame;
 
-/* The dialog itself is .gh-dialog-fullscreen (styles.scss); the frame fills it and owns the two
-   scrolling columns. */
+/* The dialog itself is .gh-dialog-fullscreen (styles.scss); the frame fills it and owns the sidebar,
+   the resizer and the main column. The documents table is the report document library's. */
 
 .rp-identity {
   display: flex;
@@ -28,11 +28,9 @@
   color: #a1a1aa;
 }
 
-.rp-section-title {
-  margin: 0 0 12px;
-  font-family: "Cinzel", serif;
-  font-size: 1.05rem;
-  color: var(--title-color);
+.rp-new-heading,
+.rp-documents-heading {
+  margin: 0;
 
   &:focus-visible {
     outline: 2px solid var(--primary-color);
@@ -42,14 +40,14 @@
 }
 
 .rp-subsection-title {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
   color: #ddd;
 }
 
 .rp-new,
-.rp-library {
+.rp-main {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -62,19 +60,18 @@
 
 .rp-note {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-secondary);
   color: #a1a1aa;
 }
 
-.rp-error {
-  margin: 0;
-  font-size: 13px;
-  color: #fca5a5;
+.rp-guide-link,
+.rp-retry-estimate {
+  align-self: flex-start;
+  font-size: var(--text-secondary);
 }
 
-.rp-guide-link {
-  align-self: flex-start;
-  font-size: 13px;
+.rp-scope-line {
+  margin: -4px 0 0;
 }
 
 /* The documents as cards of name and description, one checkbox each. */
@@ -101,54 +98,16 @@
 }
 
 .rp-audience-desc {
-  font-size: 12.5px;
+  font-size: var(--text-secondary);
   color: #a1a1aa;
 }
 
-.rp-refusal,
 .rp-same-provider {
   margin-bottom: 0;
 }
 
-.rp-acknowledge {
-  margin-top: 6px;
-  font-size: 14px;
-  color: #e4e4e7;
-}
-
-.rp-estimate,
-.rp-job {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-glass);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.18);
-}
-
-.rp-estimate-subject,
-.rp-job-meta {
-  margin: 0;
-  font-size: 13px;
-  color: #d4d4d8;
-  overflow-wrap: anywhere;
-}
-
-.rp-estimate-table,
-.rp-job-table {
-  inline-size: 100%;
-  font-size: 13px;
-
-  th[scope="row"] {
-    font-weight: 500;
-    text-align: start;
-  }
-}
-
-.rp-estimate-total {
-  font-weight: 700;
-  color: var(--primary-color);
+.rp-writer-advice-lead {
+  margin-top: 0;
 }
 
 .rp-generate-row {
@@ -158,16 +117,11 @@
   gap: 8px 16px;
 }
 
-.rp-start-error {
-  padding: 8px 12px;
-  border: 1px solid rgba(239, 68, 68, 0.45);
-  border-radius: 6px;
-  background: rgba(239, 68, 68, 0.1);
-}
+/* --- The job --- */
 
 .rp-job-status {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-body);
   color: #e4e4e7;
 
   &:empty {
@@ -175,16 +129,61 @@
   }
 }
 
+.rp-job {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+
+  /* The shared rail and strip carry their own bottom margin; the card's gap spaces them here. */
+  .run-stage-rail,
+  .run-stat-strip {
+    margin-bottom: 0;
+  }
+}
+
+.rp-job-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.rp-job-summary {
+  margin: 0;
+  font-size: var(--text-body);
+  color: #e4e4e7;
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-job-table {
+  inline-size: 100%;
+  font-size: var(--text-secondary);
+
+  th[scope="row"] {
+    font-weight: 500;
+    text-align: start;
+  }
+}
+
 .rp-job-row-error {
   display: block;
-  font-size: 12px;
-  color: #fca5a5;
+  font-size: var(--text-secondary);
+  color: var(--color-error-text);
+}
+
+.rp-job-log {
+  margin-top: 10px;
 }
 
 .rp-log-list {
   margin: 0;
   padding-inline-start: 1.2em;
-  font-size: 12.5px;
+  font-size: var(--text-secondary);
   color: #d4d4d8;
 
   li + li {
@@ -206,147 +205,17 @@
   align-self: flex-start;
 }
 
-/* --- Documents --- */
-
-.rp-library-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-
-.rp-selection-count {
-  margin: 0;
-  font-size: 13px;
-  color: #d4d4d8;
-}
-
-.rp-library-status {
-  margin: 0;
-  font-size: 13px;
-  color: #86efac;
-
-  &:empty {
-    display: none;
-  }
-}
-
-.rp-col-check {
-  inline-size: 2.5rem;
-}
-
-.rp-col-date,
-.rp-col-cost {
-  white-space: nowrap;
-}
-
-.rp-col-subject {
-  min-inline-size: 10rem;
-}
-
-.rp-row-actions {
-  display: inline-flex;
-  gap: 4px;
+.rp-download-notice {
+  margin-bottom: 0;
 }
 
 /* --- Nested dialogs --- */
 
-.rp-nested {
-  display: contents;
-}
-
-.gh-dialog.rp-preview-dialog {
-  @include frame.frame($width: 60rem, $full-height: true);
-}
-
-.gh-dialog.rp-delete-dialog {
+.gh-dialog.rp-confirm-dialog {
   @include frame.frame($width: 34rem);
-}
+  @include frame.confirm;
 
-.rp-preview-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  margin-bottom: 8px;
-}
-
-.rp-preview-control {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-inline-size: 12rem;
-}
-
-.rp-preview-control-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #a1a1aa;
-}
-
-.rp-preview-level {
-  margin: 0 0 12px;
-}
-
-.rp-preview-notes {
-  margin-bottom: 12px;
-}
-
-/* The rendered document: HTML from markdownToSafeHtmlFragment, inserted with [innerHTML], so its
-   elements carry no encapsulation attribute and are reached with ::ng-deep under the panel. */
-.rp-preview-doc {
-  padding: 16px 20px;
-  border: 1px solid var(--border-glass);
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.25);
-  color: #e4e4e7;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-
-  &:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-  }
-
-  ::ng-deep {
-    h1, h2, h3, h4 {
-      font-family: "Cinzel", serif;
-      color: var(--title-color);
-      margin: 1.2em 0 0.5em;
-    }
-
-    h1:first-child {
-      margin-top: 0;
-    }
-
-    table {
-      display: block;
-      max-inline-size: 100%;
-      overflow-x: auto;
-      border-collapse: collapse;
-      margin: 0.8em 0;
-      font-size: 13px;
-    }
-
-    th, td {
-      padding: 4px 8px;
-      border: 1px solid var(--border-glass);
-      text-align: start;
-      vertical-align: top;
-    }
-
-    blockquote {
-      margin: 0.8em 0;
-      padding: 4px 12px;
-      border-inline-start: 3px solid var(--primary-color);
-      color: #d4d4d8;
-    }
-
-    pre, code {
-      font-size: 12.5px;
-    }
-
-    pre {
-      white-space: pre-wrap;
-    }
+  .alert {
+    margin-bottom: 0;
   }
 }

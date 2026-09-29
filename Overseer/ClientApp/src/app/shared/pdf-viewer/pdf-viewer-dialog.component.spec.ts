@@ -578,4 +578,129 @@ describe('PdfViewerDialogComponent', () => {
       infoDialog.close();
     });
   });
+
+  describe('Secondary versions', () => {
+    const VARIANTS = [{ key: 'summary', label: 'Summary' }, { key: 'full', label: 'Full' }];
+    const NAMING = {
+      label: 'Peer names',
+      options: [{ key: 'named', label: 'Named' }, { key: 'anonymized', label: 'Anonymized' }],
+      initial: 'named'
+    };
+    const INFO: PdfViewerVariantsInfo = { title: 'What the versions mean', items: [{ term: 'Summary', text: 'Short.' }] };
+
+    const tablists = () => Array.from(dialog().querySelectorAll<HTMLElement>('[role="tablist"]'));
+    const secondaryTabs = () => Array.from(dialog().querySelectorAll<HTMLButtonElement>('.pdfv-secondary-variants [role="tab"]'));
+
+    it('renders one tab row and loads with the variant alone when the request has no second choice', async () => {
+      const calls: unknown[][] = [];
+      const tabCalls: unknown[][] = [];
+      await openReady(request({
+        variants: VARIANTS,
+        initialVariant: 'full',
+        load: (...args: unknown[]) => {
+          calls.push(args);
+          return of({ bytes: pdfBytes(), fileName: null });
+        },
+        tabUrl: (...args: unknown[]) => {
+          tabCalls.push(args);
+          return '/report.pdf';
+        }
+      }));
+
+      expect(tablists().length).toBe(1);
+      expect(dialog().querySelector('.pdfv-secondary-variants')).toBeNull();
+      expect(calls).toEqual([['full']]);
+      expect(tabCalls).toEqual([['full']]);
+      expect(dialog().querySelector('.pdfv-body')!.getAttribute('aria-labelledby'))
+        .toBe(host.viewer.variantTabId('full'));
+    });
+
+    it('renders the second row after the variants and their explanation, named by its label, opening at its initial option', async () => {
+      const calls: unknown[][] = [];
+      await openReady(request({
+        variants: VARIANTS,
+        initialVariant: 'full',
+        variantsInfo: INFO,
+        secondaryVariants: NAMING,
+        load: (...args: unknown[]) => {
+          calls.push(args);
+          return of({ bytes: pdfBytes(), fileName: null });
+        }
+      }));
+
+      const lists = tablists();
+      expect(lists.length).toBe(2);
+      expect(lists[1].classList).toContain('gh-tabs-segmented');
+      expect(lists[1].getAttribute('aria-label')).toBe('Peer names');
+      expect(lists[1].previousElementSibling!.tagName.toLowerCase()).toBe('app-info-tip');
+      expect(lists[0].compareDocumentPosition(lists[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+      const tabs = secondaryTabs();
+      expect(tabs.map(tab => tab.textContent!.trim())).toEqual(['Named', 'Anonymized']);
+      expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false']);
+      expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1']);
+      expect(tabs.every(tab => tab.getAttribute('aria-controls') === `${host.viewer.idPrefix}-body`)).toBeTrue();
+      expect(new Set([...tabs, ...Array.from(lists[0].querySelectorAll('[role="tab"]'))].map(tab => tab.id)).size).toBe(4);
+      expect(calls).toEqual([['full', 'named']]);
+
+      const body = dialog().querySelector('.pdfv-body')!;
+      expect(body.getAttribute('role')).toBe('tabpanel');
+      expect(body.getAttribute('aria-labelledby'))
+        .toBe(`${host.viewer.variantTabId('full')} ${host.viewer.secondaryTabId('named')}`);
+    });
+
+    it('reloads with both keys when the second choice changes, and the tab URL follows', async () => {
+      const calls: unknown[][] = [];
+      await openReady(request({
+        variants: VARIANTS,
+        initialVariant: 'full',
+        secondaryVariants: NAMING,
+        load: (...args: unknown[]) => {
+          calls.push(args);
+          return of({ bytes: pdfBytes(), fileName: null });
+        },
+        tabUrl: (variant, secondary) => `/report.pdf?d=${variant}&p=${secondary}`
+      }));
+      expect(dialog().querySelector<HTMLAnchorElement>('a.action-btn')!.getAttribute('href')).toBe('/report.pdf?d=full&p=named');
+
+      secondaryTabs()[1].click();
+      await settle();
+
+      expect(calls).toEqual([['full', 'named'], ['full', 'anonymized']]);
+      expect(secondaryTabs()[1].getAttribute('aria-selected')).toBe('true');
+      expect(dialog().querySelector<HTMLAnchorElement>('a.action-btn')!.getAttribute('href')).toBe('/report.pdf?d=full&p=anonymized');
+
+      // The first row keeps the second choice.
+      dialog().querySelector<HTMLButtonElement>('.pdfv-variants [role="tab"]')!.click();
+      await settle();
+      expect(calls[calls.length - 1]).toEqual(['summary', 'anonymized']);
+    });
+
+    it('moves and wraps with the arrow keys, Home and End, focus following selection', async () => {
+      await openReady(request({ variants: VARIANTS, secondaryVariants: NAMING }));
+
+      const first = secondaryTabs()[0];
+      first.focus();
+      first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(host.viewer.secondaryVariant).toBe('anonymized');
+      expect(document.activeElement).toBe(secondaryTabs()[1]);
+
+      secondaryTabs()[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(host.viewer.secondaryVariant).toBe('named');
+      expect(document.activeElement).toBe(secondaryTabs()[0]);
+
+      secondaryTabs()[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(host.viewer.secondaryVariant).toBe('anonymized');
+      await settle();
+    });
+
+    it('falls back to the first option when the initial one is unknown', async () => {
+      await openReady(request({ variants: VARIANTS, secondaryVariants: { ...NAMING, initial: 'nobody' } }));
+
+      expect(host.viewer.secondaryVariant).toBe('named');
+    });
+  });
 });

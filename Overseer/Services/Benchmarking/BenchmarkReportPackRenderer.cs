@@ -91,13 +91,24 @@ public static class BenchmarkReportJson
 /// and the Report for AI Researchers and Developers end with the evaluation terms. Fact keys are
 /// printed only through <see cref="BenchmarkReportFactLabels"/>.</para>
 ///
+/// <para>With peers, the Executive Summary adds a Rank line to its key figures and a How it compares
+/// table followed by the writer's comparison paragraph, and the Report for AI Researchers and
+/// Developers adds a Compared models table and a paired-difference column. Both appear only on a sheet
+/// that carries the per-peer facts (format version 7 and later).</para>
+///
 /// <para>A document stored under an earlier format version renders with what it stored: a missing
-/// role, count or fact falls back to the wording that version printed, and its single-grader support
-/// labels are read in their provider wording.</para>
+/// role, count or fact falls back to the wording that version printed, a missing slot or column is
+/// left out, and its single-grader support labels are read in their provider wording.</para>
 /// </summary>
 public static class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 6;
+    public const int ReportFormatVersion = 7;
+
+    private const string PairedDifferenceNote = "Paired difference: mean per-question difference, subject minus peer, over the questions "
+        + "both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several "
+        + "models, and is not a significance test.";
+
+    private const string RankOverlapCaveat = " (the order is not established where intervals overlap)";
 
     /// <summary>A finding's text in the findings table below Full disclosure is cut to this many characters.</summary>
     private const int FindingTextChars = 160;
@@ -223,7 +234,11 @@ public static class BenchmarkReportPackRenderer
         Line(sb, Prose(ctx, ctx.Writer.Headline));
         Line(sb);
 
-        KeyFigures(sb, ctx, "## Key figures");
+        KeyFigures(sb, ctx, "## Key figures", rank: ctx.ComparesPeers);
+        if (ctx.ComparesPeers)
+        {
+            HowItCompares(sb, ctx);
+        }
 
         Heading(sb, "## What it did well");
         Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.", strengths: true);
@@ -376,7 +391,8 @@ public static class BenchmarkReportPackRenderer
         return string.Join("; ", peers.Select(p => "Model " + p.Letter + " = " + p.Label + " (" + p.Provider + ", " + p.ModelId + ")"));
     }
 
-    private static void KeyFigures(StringBuilder sb, Context ctx, string heading)
+    /// <summary>The key figures; with <paramref name="rank"/>, a Rank line after the intelligence line.</summary>
+    private static void KeyFigures(StringBuilder sb, Context ctx, string heading, bool rank = false)
     {
         Heading(sb, heading);
 
@@ -396,6 +412,14 @@ public static class BenchmarkReportPackRenderer
             if (IsAvailable(ctx, "quality.rank")) text += ", " + D(ctx, "quality.rank");
             if (IsAvailable(ctx, "quality.intervalOverlap")) text += "; " + D(ctx, "quality.intervalOverlap");
             Line(sb, "- **Intelligence:** " + text + ".");
+        }
+
+        var subject = ctx.Sheet.Entries.FirstOrDefault(e => e.IsSubject);
+        if (rank && subject?.QualityRank is int position)
+        {
+            int ranked = ctx.Sheet.Entries.Count(e => e.QualityIndex.HasValue);
+            Line(sb, "- **Rank:** " + Inv(position) + " of " + Inv(ranked) + " on intelligence"
+                + (SubjectIntervalOverlaps(ctx) ? RankOverlapCaveat : string.Empty) + ".");
         }
 
         var speed = Fact(ctx, "speed.modelTimeP50");
@@ -425,6 +449,53 @@ public static class BenchmarkReportPackRenderer
         var errors = Fact(ctx, "errors.critical");
         Line(sb, "- **" + Label("errors.critical") + ":** " + (errors == null || !errors.Available ? NotAvailableText(errors) : errors.Display + "."));
         Line(sb);
+    }
+
+    /// <summary>
+    /// The Executive Summary's comparison: every entry's Intelligence Index with its interval, median
+    /// answer time and cost per question, the subject in bold and then the peers by letter, followed
+    /// by the writer's comparison paragraph where it was written.
+    /// </summary>
+    private static void HowItCompares(StringBuilder sb, Context ctx)
+    {
+        Heading(sb, "## How it compares");
+        Line(sb, "| Model | " + Label("quality.index") + " | " + Label("speed.modelTimeP50") + " | " + Label("cost.perQuestion") + " |");
+        Line(sb, "|---|---|---|---|");
+        foreach (var (entry, peer) in OrderedEntries(ctx.Sheet))
+        {
+            string index = entry.QualityIndex.HasValue
+                ? BenchmarkReportFormat.Whole(entry.QualityIndex.Value)
+                    + (entry.QualityLower.HasValue && entry.QualityUpper.HasValue
+                        ? " (" + BenchmarkReportFormat.Whole(entry.QualityLower.Value) + "–" + BenchmarkReportFormat.Whole(entry.QualityUpper.Value) + ")"
+                        : string.Empty)
+                : BenchmarkReportFacts.NotAvailable;
+            string time = !entry.SpeedDegraded && entry.ModelTimeP50Ms.HasValue
+                ? BenchmarkReportFormat.Seconds(entry.ModelTimeP50Ms.Value)
+                : BenchmarkReportFacts.NotAvailable;
+            string cost = !entry.CostDegraded && entry.CostPerQuestionUsd.HasValue
+                ? BenchmarkReportFormat.Usd(entry.CostPerQuestionUsd.Value)
+                : BenchmarkReportFacts.NotAvailable;
+            Line(sb, "| " + TableName(ctx, peer) + " | " + index + " | " + time + " | " + cost + " |");
+        }
+        Line(sb);
+
+        OptionalSlot(sb, ctx, BenchmarkReportSlots.Comparison);
+    }
+
+    /// <summary>
+    /// The subject's 95 % interval overlaps a peer's: <c>quality.intervalOverlap</c> counts one, or a
+    /// peer's <c>peer.X.intervalOverlap</c> is true.
+    /// </summary>
+    private static bool SubjectIntervalOverlaps(Context ctx)
+    {
+        if (Fact(ctx, "quality.intervalOverlap") is { Available: true, Value: JsonValue value }
+            && ((value.TryGetValue(out double count) && count > 0) || (value.TryGetValue(out int whole) && whole > 0)))
+        {
+            return true;
+        }
+
+        return ctx.Sheet.Peers.Any(p => Fact(ctx, BenchmarkReportFacts.PeerPrefix(p.Letter) + "intervalOverlap") is { } fact
+                                        && BenchmarkReportPackPrompt.IsTrue(fact));
     }
 
     /// <summary>
@@ -599,6 +670,56 @@ public static class BenchmarkReportPackRenderer
         Line(sb, "- **" + Label("comparison.pricingBasis") + ":** " + PricingBasisText(ctx).Text);
         Line(sb, "- **Versions:** harness " + D(ctx, "run.harnessVersion") + ", scoring method " + D(ctx, "scoring.methodVersion") + ".");
         Line(sb);
+
+        if (!ctx.Standalone)
+        {
+            ComparedModels(sb, ctx);
+        }
+    }
+
+    /// <summary>
+    /// One row per entry: kind, runs, thinking level, and where the sheet stores them, the harness
+    /// version and the runs' dates. A column no entry has data for is left out.
+    /// </summary>
+    private static void ComparedModels(StringBuilder sb, Context ctx)
+    {
+        var rows = OrderedEntries(ctx.Sheet);
+        if (rows.Count == 0) return;
+
+        bool harness = rows.Any(r => r.Entry.HarnessVersion != null);
+        bool dates = rows.Any(r => r.Entry.FirstRunUtc.HasValue || r.Entry.LastRunUtc.HasValue);
+
+        var columns = new List<string> { "Kind", "Runs", "Thinking level" };
+        if (harness) columns.Add("Harness version");
+        if (dates) columns.Add("Run dates (UTC)");
+
+        Heading(sb, "### Compared models");
+        TableHeader(sb, ctx, columns);
+        foreach (var (entry, peer) in rows)
+        {
+            var cells = new List<string>
+            {
+                entry.EntryKey.StartsWith("group:", StringComparison.Ordinal) ? "group" : "run",
+                Inv(entry.RunCount),
+                Cell((peer == null ? ctx.Sheet.SubjectThinkingLevel : peer.ThinkingLevel) ?? "not set")
+            };
+            if (harness) cells.Add(Cell(entry.HarnessVersion ?? NoValue));
+            if (dates) cells.Add(RunDates(entry));
+            TableRow(sb, ctx, peer, cells);
+        }
+        Line(sb);
+    }
+
+    /// <summary><c>2026-09-20</c>, or <c>2026-09-20 to 2026-09-22</c> when the runs span days; <see cref="NoValue"/> without dates.</summary>
+    private static string RunDates(BenchmarkReportEntryFigures entry)
+    {
+        var first = entry.FirstRunUtc ?? entry.LastRunUtc;
+        var last = entry.LastRunUtc ?? entry.FirstRunUtc;
+        if (first == null || last == null) return NoValue;
+
+        string a = first.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        string b = last.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        return string.Equals(a, b, StringComparison.Ordinal) ? a : a + " to " + b;
     }
 
     private static void ResultsAgainstPeers(StringBuilder sb, Context ctx)
@@ -608,17 +729,45 @@ public static class BenchmarkReportPackRenderer
 
         Heading(sb, "## Results against peers");
 
+        // The paired-difference column exists on sheets stored from format version 7.
+        bool paired = sheet.Peers.Any(p => Fact(ctx, BenchmarkReportFacts.PeerPrefix(p.Letter) + "pairedDifference") != null);
+
         Heading(sb, "### Quality");
-        TableHeader(sb, ctx, new[] { Label("quality.index"), Label("quality.interval"), "Rank" });
+        var qualityColumns = new List<string> { Label("quality.index"), Label("quality.interval"), "Rank" };
+        if (paired) qualityColumns.Add("Paired difference");
+        TableHeader(sb, ctx, qualityColumns);
         foreach (var (entry, peer) in rows)
         {
             string index = entry.QualityIndex.HasValue ? BenchmarkReportFormat.Whole(entry.QualityIndex.Value) : BenchmarkReportFacts.NotAvailable;
             string interval = entry.QualityLower.HasValue && entry.QualityUpper.HasValue
                 ? BenchmarkReportFormat.Whole(entry.QualityLower.Value) + "–" + BenchmarkReportFormat.Whole(entry.QualityUpper.Value)
                 : BenchmarkReportFacts.NotAvailable;
-            TableRow(sb, ctx, peer, new[] { index, interval, RankCell(entry.QualityRank) });
+            var cells = new List<string> { index, interval, RankCell(entry.QualityRank) };
+            if (paired) cells.Add(PairedCell(ctx, peer));
+            TableRow(sb, ctx, peer, cells);
         }
         Line(sb);
+
+        if (paired)
+        {
+            Line(sb, "*" + PairedDifferenceNote + "*");
+            Line(sb);
+
+            var unpaired = OrderedPeers(sheet)
+                .Select(p => (Peer: p, Fact: Fact(ctx, BenchmarkReportFacts.PeerPrefix(p.Letter) + "pairedDifference")))
+                .Where(x => x.Fact is { Available: false })
+                .ToList();
+            if (unpaired.Count > 0)
+            {
+                Line(sb, "No paired difference:");
+                Line(sb);
+                foreach (var (peer, fact) in unpaired)
+                {
+                    Line(sb, "- " + PlainName(ctx, peer) + ": " + NotAvailableReason(fact));
+                }
+                Line(sb);
+            }
+        }
 
         if (IsAvailable(ctx, "quality.intervalOverlap"))
         {
@@ -1123,6 +1272,8 @@ public static class BenchmarkReportPackRenderer
             Line(sb, "- " + caveat);
         }
         Line(sb);
+
+        OptionalSlot(sb, ctx, BenchmarkReportSlots.Limitations);
     }
 
     private static void Reproducibility(StringBuilder sb, Context ctx)
@@ -1253,9 +1404,13 @@ public static class BenchmarkReportPackRenderer
             + " · disclosure " + ctx.Options.Disclosure.ToString()
             + " · peers " + (ctx.Anonymized ? "anonymized" : "named") + "*");
         Line(sb);
+        // Documents written from format version 7 were also checked for interval-overlap wording and hype words.
+        string claims = document.ReportFormatVersion >= 7
+            ? "significance claims, interval-overlap wording, hype words and spelling"
+            : "significance claims and spelling";
         Line(sb, "*Figures and tables were computed by Overseer. The prose was written by " + document.WriterDisplayName
             + " from those figures and checked automatically for structure, permitted figures and references, word limits, "
-            + "disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's "
+            + "disclosure of benchmark text, peer names, " + claims + "; the checks do not verify the prose's "
             + "interpretations.*");
     }
 
@@ -1341,7 +1496,7 @@ public static class BenchmarkReportPackRenderer
             if (QuestionNumber(id) != null || rows.Any(r => string.Equals(r.Id, id, StringComparison.Ordinal))) continue;
 
             var fact = Fact(ctx, id);
-            parts.Add(Label(id) + (fact == null ? string.Empty : ": " + (fact.Available ? DisplayOf(fact) : BenchmarkReportFacts.NotAvailable)));
+            parts.Add(FactLabel(ctx, id) + (fact == null ? string.Empty : ": " + (fact.Available ? DisplayOf(fact) : BenchmarkReportFacts.NotAvailable)));
         }
 
         var numbers = CitedQuestions(ctx, item, ids);
@@ -1431,6 +1586,15 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
     }
 
+    /// <summary>A slot a document stored before format version 7 lacks: its prose where written, nothing otherwise.</summary>
+    private static void OptionalSlot(StringBuilder sb, Context ctx, string slot)
+    {
+        if (!ctx.Writer.Sections.TryGetValue(slot, out var text) || string.IsNullOrWhiteSpace(text)) return;
+
+        Line(sb, Prose(ctx, text));
+        Line(sb);
+    }
+
     private static void Heading(StringBuilder sb, string heading)
     {
         Line(sb, heading);
@@ -1478,6 +1642,25 @@ public static class BenchmarkReportPackRenderer
             : ctx.Anonymized ? "Model " + peer.Letter : peer.Label + " (" + peer.Letter + ")";
 
     private static string RankCell(int? rank) => rank.HasValue ? Inv(rank.Value) : NoValue;
+
+    /// <summary>A peer's paired difference with its interval, <c>+4.2 points (-1.3 to +9.8)</c>; <see cref="NoValue"/> for the subject.</summary>
+    private static string PairedCell(Context ctx, BenchmarkReportPeer? peer)
+    {
+        if (peer == null) return NoValue;
+
+        string prefix = BenchmarkReportFacts.PeerPrefix(peer.Letter);
+        if (Fact(ctx, prefix + "pairedDifference") is not { Available: true } difference) return BenchmarkReportFacts.NotAvailable;
+
+        return Cell(IsAvailable(ctx, prefix + "pairedInterval")
+            ? difference.Display + " (" + D(ctx, prefix + "pairedInterval") + ")"
+            : difference.Display);
+    }
+
+    private static string NotAvailableReason(BenchmarkReportFact? fact)
+    {
+        string reason = fact?.UnavailableReason?.Trim() ?? string.Empty;
+        return reason.Length == 0 ? "not recorded." : reason;
+    }
 
     /// <summary>The subject's figures first, then each peer's in letter order.</summary>
     private static List<(BenchmarkReportEntryFigures Entry, BenchmarkReportPeer? Peer)> OrderedEntries(BenchmarkReportFactSheet sheet)
@@ -1546,6 +1729,23 @@ public static class BenchmarkReportPackRenderer
     private static string Num(Context ctx, string key) => Fact(ctx, key) is { Available: true } fact ? Cell(fact.Display) : NoValue;
 
     private static string Label(string key) => BenchmarkReportFactLabels.Label(key);
+
+    /// <summary>
+    /// A fact's label with the peer naming applied: a peer's own fact reads <c>Model A's …</c> when
+    /// peers are anonymized and <c>Grok 5 (A)'s …</c> when they are named.
+    /// </summary>
+    private static string FactLabel(Context ctx, string key)
+    {
+        string label = Label(key);
+        if (ctx.Anonymized || !key.StartsWith("peer.", StringComparison.Ordinal)) return label;
+
+        string[] parts = key.Split('.');
+        var peer = parts.Length >= 3 ? ctx.Sheet.Peers.FirstOrDefault(p => string.Equals(p.Letter, parts[1], StringComparison.Ordinal)) : null;
+        if (peer == null) return label;
+
+        return Regex.Replace(label, @"\bModel " + Regex.Escape(peer.Letter) + @"(?![A-Za-z])",
+            _ => peer.Label + " (" + peer.Letter + ")", RegexOptions.CultureInvariant);
+    }
 
     private static string NotAvailableText(BenchmarkReportFact? fact)
     {
@@ -1674,6 +1874,9 @@ public static class BenchmarkReportPackRenderer
 
         /// <summary>The sheet has no peers: a stand-alone report.</summary>
         public bool Standalone => Sheet.Peers.Count == 0;
+
+        /// <summary>The sheet has peers and their own facts, as sheets from format version 7 do.</summary>
+        public bool ComparesPeers => !Standalone && Sheet.Facts.Any(f => f.Key.StartsWith("peer.", StringComparison.Ordinal));
 
         /// <summary>Evidence lines belong to the Report for AI Researchers and Developers alone, at Detailed and Full.</summary>
         public bool PrintsEvidence => Document.Audience == BenchmarkReportAudience.TechnicalReport

@@ -27,6 +27,9 @@ public sealed class BenchmarkReportPackPreparation
     /// <summary>The subject's runs, in run-id order.</summary>
     public IReadOnlyList<BenchmarkRun> SubjectRuns { get; init; } = default!;
 
+    /// <summary>The peers' runs that still exist, in run-id order; never a subject run.</summary>
+    public IReadOnlyList<BenchmarkRun> PeerRuns { get; init; } = Array.Empty<BenchmarkRun>();
+
     public const int DefaultAnswerExcerptChars = 600;
     public const int DefaultMaxOutputTokens = 16000;
 
@@ -112,13 +115,23 @@ public sealed class BenchmarkReportPackPreparation
             return (null, "The subject's runs no longer exist.");
         }
 
+        var subjectRunIds = subjectRuns.Select(r => r.Id).ToHashSet();
+        var peerRuns = facts.Sheet.Peers
+            .SelectMany(p => p.RunIds)
+            .Distinct()
+            .Where(id => !subjectRunIds.Contains(id) && runsById.ContainsKey(id))
+            .OrderBy(id => id)
+            .Select(id => runsById[id])
+            .ToList();
+
         return (new BenchmarkReportPackPreparation
         {
             Comparison = comparison,
             Subject = subject,
             Sheet = facts.Sheet,
             Content = BenchmarkReportContent.Build(subjectRuns, answerExcerptChars),
-            SubjectRuns = subjectRuns
+            SubjectRuns = subjectRuns,
+            PeerRuns = peerRuns
         }, null);
     }
 
@@ -410,6 +423,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             ? BenchmarkReportDocumentStatus.CompletedWithWarnings
             : BenchmarkReportDocumentStatus.Completed;
 
+        var requestRunIds = job.Request.RunIds.OrderBy(id => id).ToList();
+        var requestGroupIds = job.Request.GroupIds.OrderBy(id => id).ToList();
         var document = new BenchmarkReportDocument
         {
             PackId = job.PackId,
@@ -420,10 +435,11 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             SubjectRunIdsJson = BenchmarkReportJson.Serialize(prep.SubjectRuns.Select(r => r.Id).ToList()),
             ComparisonRequestJson = BenchmarkReportJson.Serialize(new BenchmarkModelComparisonRequest
             {
-                RunIds = job.Request.RunIds.OrderBy(id => id).ToList(),
-                GroupIds = job.Request.GroupIds.OrderBy(id => id).ToList(),
+                RunIds = requestRunIds,
+                GroupIds = requestGroupIds,
                 PricingBasis = job.Request.PricingBasis
             }),
+            ComparisonKey = BenchmarkReportComparisonKey.From(requestRunIds, requestGroupIds),
             SuiteId = prep.Sheet.SuiteId,
             SuiteName = Truncate(prep.Sheet.SuiteName, 256),
             WriterConfigId = config.Id,
@@ -449,16 +465,11 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             DurationMs = turns.Sum(t => t.DurationMs),
             CostUsd = turns.All(t => t.CostUsd != null) ? turns.Sum(t => t.CostUsd!.Value) : null,
             PricingSource = pricing == null ? null : pricing.Source == ModelPricingSource.Custom ? "custom" : "catalog",
-            Runs = prep.SubjectRuns.Select(r => new BenchmarkReportDocumentRun
-            {
-                RunId = r.Id,
-                FinalScore = r.FinalScore,
-                QualityIndex = r.QualityIndex,
-                SpeedIndex = r.SpeedIndex,
-                ScoringMethodVersion = r.ScoringMethodVersion,
-                RerunCompletedAtUtc = r.RerunCompletedAtUtc,
-                SynthesisSha256 = BenchmarkReportRenderService.SynthesisSha256(r.AssessmentJson, r.CoAssessorSynthesisJson)
-            }).ToList()
+            Runs = prep.SubjectRuns.Select(r => Fingerprint(r, isPeer: false))
+                .Concat(prep.PeerRuns
+                    .Where(r => prep.SubjectRuns.All(s => s.Id != r.Id))
+                    .Select(r => Fingerprint(r, isPeer: true)))
+                .ToList()
         };
 
         _db.BenchmarkReportDocuments.Add(document);
@@ -563,6 +574,18 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
         return (inputTokens, outputTokens, cost);
     }
+
+    private static BenchmarkReportDocumentRun Fingerprint(BenchmarkRun run, bool isPeer) => new()
+    {
+        RunId = run.Id,
+        IsPeer = isPeer,
+        FinalScore = run.FinalScore,
+        QualityIndex = run.QualityIndex,
+        SpeedIndex = run.SpeedIndex,
+        ScoringMethodVersion = run.ScoringMethodVersion,
+        RerunCompletedAtUtc = run.RerunCompletedAtUtc,
+        SynthesisSha256 = BenchmarkReportRenderService.SynthesisSha256(run.AssessmentJson, run.CoAssessorSynthesisJson)
+    };
 
     private static string Truncate(string? value, int max)
     {

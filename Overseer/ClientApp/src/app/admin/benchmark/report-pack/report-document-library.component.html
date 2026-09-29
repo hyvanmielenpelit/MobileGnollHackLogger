@@ -1,0 +1,232 @@
+<!--
+  THE REPORT DOCUMENT LIBRARY
+
+  A comparison's stored report documents, or every comparison's: a toolbar, a pager above and below
+  a sortable, filterable table, and per row View, Download and Delete. Its nested dialogs (the PDF
+  viewer, the Download Center, the delete confirmation) stop their own close and cancel events here.
+-->
+<div class="rdl" [attr.aria-busy]="loading ? 'true' : null">
+  @if (heading) {
+    <h4 class="gh-section-title rdl-heading" [id]="idPrefix + '-heading'">{{ heading }}</h4>
+  }
+
+  <div class="rdl-toolbar">
+    <button #downloadButton type="button" class="btn-ghost rdl-download" [id]="idPrefix + '-download'"
+            [attr.aria-label]="downloadLabel"
+            [attr.aria-disabled]="downloadDisabled ? 'true' : null"
+            (click)="downloadFromToolbar(downloadButton)">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+      Download&hellip;
+    </button>
+    @if (selectedIds.size > 0) {
+      <p class="rdl-selection-count">
+        {{ selectedIds.size }} selected@if (offPageSelectedCount > 0) {<span> — {{ offPageSelectedCount }} not on this page</span>}
+      </p>
+      <button type="button" class="gh-filter-toggle rdl-show-selected"
+              [attr.aria-pressed]="showSelectedOnly" (click)="toggleShowSelectedOnly()">Show selected only</button>
+      <button type="button" class="gh-filter-clear rdl-clear-selection" (click)="clearSelection()">Clear Selection</button>
+    } @else if (documents.length > 0) {
+      <span class="rdl-note">Select documents to download only those.</span>
+    }
+  </div>
+
+  <p class="rdl-status" role="status">{{ status }}</p>
+
+  @if (loadError) {
+    <p class="gh-field-error rdl-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ loadError }}</span>
+    </p>
+  }
+
+  @if (!loaded && loading) {
+    <p class="rdl-note">Loading report documents&hellip;</p>
+  } @else if (documents.length === 0) {
+    @if (!loadError) {
+      <p class="rdl-note rdl-empty">{{ emptyText }}</p>
+    }
+  } @else {
+    <app-table-pager [state]="table" [rows]="documents" noun="documents"
+                     (changed)="onTableChanged()"></app-table-pager>
+    <div class="gh-datatable-scroll rdl-scroll">
+      <table class="gh-table gh-datatable rdl-table" [class.rdl-with-comparison]="showComparisonColumn">
+        <caption class="visually-hidden">{{ heading || 'Report documents' }}</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="rdl-col-check"><span class="visually-hidden">Select</span></th>
+            <th app-sort-header [state]="table" column="createdAtUtc" label="Created (UTC)"
+                (changed)="onTableChanged()"></th>
+            <th app-sort-header [state]="table" column="subject" label="Subject"
+                (changed)="onTableChanged()"></th>
+            <th app-sort-header [state]="table" column="document" label="Document"
+                (changed)="onTableChanged()"></th>
+            @if (showComparisonColumn) {
+              <th scope="col" class="rdl-col-compared">Compared with</th>
+            }
+            <th app-sort-header class="rdl-col-writer" [state]="table" column="writer" label="Writer"
+                (changed)="onTableChanged()"></th>
+            <th app-sort-header [state]="table" column="status" label="Status"
+                (changed)="onTableChanged()"></th>
+            <th app-sort-header class="rdl-col-cost" [state]="table" column="cost" label="Cost"
+                (changed)="onTableChanged()"></th>
+            <th scope="col" class="rdl-col-actions">Actions</th>
+          </tr>
+          <tr class="gh-filter-row">
+            <td class="rdl-col-check">
+              @if (table.hasActiveFilters) {
+                <button type="button" class="gh-filter-clear rdl-clear-filters" (click)="clearFilters()">Clear filters</button>
+              }
+            </td>
+            <td></td>
+            <td>
+              <label class="visually-hidden" [for]="idPrefix + '-f-subject'">Filter by subject</label>
+              <input type="text" class="gh-input gh-filter-input" [id]="idPrefix + '-f-subject'" placeholder="Subject"
+                     [value]="filterValue('subject')" (input)="setFilter('subject', $event)">
+            </td>
+            <td>
+              <label class="visually-hidden" [for]="idPrefix + '-f-document'">Filter by document</label>
+              <select class="gh-input gh-filter-select" [id]="idPrefix + '-f-document'" (change)="setFilter('document', $event)">
+                <option value="" [selected]="filterValue('document') === ''">All documents</option>
+                @for (option of documentOptions; track option) {
+                  <option [value]="option" [selected]="filterValue('document') === option">{{ option }}</option>
+                }
+              </select>
+            </td>
+            @if (showComparisonColumn) {
+              <td class="rdl-col-compared">
+                <label class="visually-hidden" [for]="idPrefix + '-f-suite'">Filter by suite</label>
+                <select class="gh-input gh-filter-select" [id]="idPrefix + '-f-suite'" (change)="setFilter('suite', $event)">
+                  <option value="" [selected]="filterValue('suite') === ''">All suites</option>
+                  @for (option of suiteOptions; track option) {
+                    <option [value]="option" [selected]="filterValue('suite') === option">{{ option }}</option>
+                  }
+                </select>
+              </td>
+            }
+            <td class="rdl-col-writer"></td>
+            <td></td>
+            <td class="rdl-col-cost"></td>
+            <td></td>
+          </tr>
+        </thead>
+        <tbody>
+          @for (doc of view; track doc.id) {
+            <tr class="rdl-row" [attr.data-document-id]="doc.id">
+              <td class="rdl-col-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" [id]="idPrefix + '-doc-' + doc.id + '-select'"
+                         [checked]="isSelected(doc)"
+                         [attr.aria-label]="'Select ' + documentName(doc)"
+                         (change)="onSelectChange(doc, $event)">
+                </label>
+              </td>
+              <td class="rdl-col-date">{{ formatUtc(doc.createdAtUtc) }}</td>
+              <td class="rdl-col-subject">
+                {{ doc.subjectLabel }}
+                @if (doc.runChangedSinceGeneration) {
+                  <span class="gh-tag gh-tag-changed rdl-tag-run-changed">Run changed<span class="visually-hidden"> since this document was written</span></span>
+                }
+                @if (doc.peersChangedSinceGeneration) {
+                  <span class="gh-tag gh-tag-changed rdl-tag-comparison-changed">Comparison changed<span class="visually-hidden">: a peer’s run changed since this document was written</span></span>
+                }
+              </td>
+              <td class="rdl-col-document">
+                <span class="rdl-doc-name">{{ audienceLabel(doc.audience) }}</span>
+                <!-- Shown only while the Writer and Cost columns are hidden, below 44rem. -->
+                <span class="rdl-doc-meta">{{ doc.writerDisplayName }} · {{ formatCostUsd(doc.costUsd) }}</span>
+              </td>
+              @if (showComparisonColumn) {
+                <td class="rdl-col-compared">
+                  <span class="rdl-peers">{{ peerCountLabel(peerCountOf(doc)) }}</span>
+                  <span class="rdl-suite">{{ doc.suiteName }}</span>
+                </td>
+              }
+              <td class="rdl-col-writer">{{ doc.writerDisplayName }}</td>
+              <td class="rdl-col-status">
+                <span class="gh-tag rdl-status-tag" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ documentStatusLabel(doc.status) }}</span>
+              </td>
+              <td class="rdl-col-cost">{{ formatCostUsd(doc.costUsd) }}</td>
+              <td class="rdl-col-actions">
+                <span class="rdl-row-actions">
+                  <button #viewButton type="button" class="action-btn rdl-view-btn" [id]="idPrefix + '-doc-' + doc.id + '-view'"
+                          [attr.aria-label]="'View ' + documentName(doc)"
+                          [attr.interestfor]="idPrefix + '-tip-view-' + doc.id"
+                          [attr.style]="'anchor-name: --' + idPrefix + '-tip-view-' + doc.id"
+                          (click)="viewDocument(doc, viewButton)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-tip-view-' + doc.id"
+                       [attr.style]="'position-anchor: --' + idPrefix + '-tip-view-' + doc.id">View</div>
+
+                  <button #rowDownloadButton type="button" class="action-btn rdl-download-btn" [id]="idPrefix + '-doc-' + doc.id + '-download'"
+                          [attr.aria-label]="'Download ' + documentName(doc)"
+                          [attr.interestfor]="idPrefix + '-tip-download-' + doc.id"
+                          [attr.style]="'anchor-name: --' + idPrefix + '-tip-download-' + doc.id"
+                          (click)="downloadDocument(doc, rowDownloadButton)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-tip-download-' + doc.id"
+                       [attr.style]="'position-anchor: --' + idPrefix + '-tip-download-' + doc.id">Download&hellip;</div>
+
+                  <button #deleteButton type="button" class="action-btn action-btn-danger rdl-delete-btn" [id]="idPrefix + '-doc-' + doc.id + '-delete'"
+                          [attr.aria-label]="'Delete ' + documentName(doc)"
+                          [attr.interestfor]="idPrefix + '-tip-delete-' + doc.id"
+                          [attr.style]="'anchor-name: --' + idPrefix + '-tip-delete-' + doc.id"
+                          (click)="requestDelete(doc, deleteButton)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-tip-delete-' + doc.id"
+                       [attr.style]="'position-anchor: --' + idPrefix + '-tip-delete-' + doc.id">Delete</div>
+                </span>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (table.noMatches(documents)) {
+      <p class="rdl-note rdl-no-matches">No documents match these filters.
+        <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear filters</button>
+      </p>
+    }
+    <app-table-pager [state]="table" [rows]="documents" noun="documents" [announce]="false"
+                     (changed)="onTableChanged()"></app-table-pager>
+  }
+</div>
+
+<!-- DELETE CONFIRMATION -->
+<dialog #deleteDialog class="gh-dialog rdl-delete-dialog" [attr.aria-labelledby]="idPrefix + '-delete-title'"
+        (cancel)="onDeleteDialogEvent($event)" (close)="onDeleteDialogEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <h3 [id]="idPrefix + '-delete-title'">Delete Document</h3>
+    </div>
+    <div class="dialog-body">
+      @if (deleteTarget) {
+        <p class="rdl-delete-text">
+          Delete <strong>{{ deleteTarget.title }}</strong>, written {{ formatUtc(deleteTarget.createdAtUtc) }} by
+          {{ deleteTarget.writerDisplayName }}? This cannot be undone. The runs are not affected.
+        </p>
+      }
+      @if (deleteError) {
+        <p class="gh-field-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ deleteError }}</span>
+        </p>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel rdl-delete-cancel" (click)="cancelDelete()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-delete rdl-delete-confirm" [disabled]="deleting" (click)="confirmDelete()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+        Delete Document
+      </button>
+    </div>
+  </div>
+</dialog>
+
+<!-- The PDF viewer's and the Download Center's own dialogs: their events stop at this wrapper. -->
+<div class="rdl-nested" (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
+  <app-pdf-viewer-dialog (closed)="onNestedClosed()"></app-pdf-viewer-dialog>
+  <app-benchmark-download-center (closed)="onNestedClosed()" />
+</div>

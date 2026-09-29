@@ -133,6 +133,13 @@ export const REPORT_DISCLOSURE_GUIDES: readonly ReportDisclosureGuide[] = [
 export const REPORT_DISCLOSURE_NOTE = 'Every level prints the same stored document; the level only decides what is printed, '
   + 'and the title block’s Disclosure line names it. This viewer always names the peers.';
 
+/**
+ * The PDF viewer's closing paragraph for a document with peers, which the viewer offers named and
+ * anonymized.
+ */
+export const REPORT_DISCLOSURE_NOTE_PEERS = 'Every level prints the same stored document; the level only decides what is '
+  + 'printed, and the title block’s Disclosure line names it. Switch Peer names to see the copy a provider would receive.';
+
 /** The same paragraph without the viewer-only sentence, for the Download Center. */
 export const REPORT_DISCLOSURE_NOTE_SHARED = 'Every level prints the same stored document; the level only decides what is '
   + 'printed, and the title block’s Disclosure line names it.';
@@ -150,12 +157,18 @@ export function reportDisclosureGuide(audience: BenchmarkReportAudience): Report
     ?? REPORT_DISCLOSURE_GUIDES.find(guide => guide.audience === BenchmarkReportAudience.TechnicalReport)!;
 }
 
-/** The PDF viewer's explanation of one document type's versions. */
-export function reportDisclosureInfo(audience: BenchmarkReportAudience): PdfViewerVariantsInfo {
+/**
+ * The PDF viewer's explanation of one document type's versions. With `peerNaming`, the viewer also
+ * offers the peers named and anonymized, and the note says so.
+ */
+export function reportDisclosureInfo(
+  audience: BenchmarkReportAudience,
+  options: { readonly peerNaming?: boolean } = {}
+): PdfViewerVariantsInfo {
   const guide = reportDisclosureGuide(audience);
   return {
     title: guide.title,
     items: guide.items.map(item => item.points ? { ...item, points: [...item.points] } : { ...item }),
-    note: REPORT_DISCLOSURE_NOTE
+    note: options.peerNaming ? REPORT_DISCLOSURE_NOTE_PEERS : REPORT_DISCLOSURE_NOTE
   };
 }

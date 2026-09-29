@@ -69,6 +69,10 @@ export interface DownloadCenterRunContext {
 export interface DownloadCenterDocumentsContext {
   kind: 'documents';
   documentIds: number[];
+  /** The dialog title in place of *Downloads*. */
+  title?: string;
+  /** The subtitle in place of the document count line. */
+  subtitle?: string;
 }
 
 export type DownloadCenterContext = DownloadCenterRunContext | DownloadCenterDocumentsContext;
@@ -394,6 +398,11 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
       : `The AI-written reports of this run are being written (${reportJobPhaseText(phase)}). They appear here when they are done.`;
   }
 
+  get title(): string {
+    const context = this.context;
+    return context?.kind === 'documents' && context.title ? context.title : 'Downloads';
+  }
+
   get subtitle(): string {
     const context = this.context;
     if (!context) {
@@ -401,6 +410,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
     }
     if (context.kind === 'run') {
       return `Run #${context.run.id} · ${context.run.suiteName} · ${context.run.modelLabel}`;
+    }
+    if (context.subtitle) {
+      return context.subtitle;
     }
     const count = context.documentIds.length;
     return `${count} report document${count === 1 ? '' : 's'} and the reports of their runs`;

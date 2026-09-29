@@ -540,6 +540,15 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         await Overseer.Services.Benchmarking.BenchmarkRunReportDocumentService.SettleInterruptedAsync(db);
     }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark run-report document settlement failed."); }
+
+    // Report documents stored without a comparison key get one from their stored comparison request.
+    try
+    {
+        var db = benchmarkCleanupScope.ServiceProvider
+            .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        await Overseer.Services.Benchmarking.BenchmarkReportDocumentBackfill.BackfillComparisonKeysAsync(db, app.Logger, CancellationToken.None);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark report-document comparison-key backfill failed."); }
 }
 
 app.Run();

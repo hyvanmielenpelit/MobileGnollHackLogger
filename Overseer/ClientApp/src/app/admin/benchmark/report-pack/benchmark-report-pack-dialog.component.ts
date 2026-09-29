@@ -11,37 +11,39 @@ import {
   inject
 } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import type { Subscription } from 'rxjs';
 
 import {
   AdminBenchmarkService,
   BenchmarkReportAudience,
-  BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportPackDocumentProgressDto,
   BenchmarkReportPackJobDto,
   BenchmarkReportPackPreviewDto,
   BenchmarkReportPackPricingBasis,
   BenchmarkReportPackRequest,
-  BenchmarkReportPeerNaming,
-  BenchmarkReportValidationNote,
   SameProviderWarningDto
 } from '../../../services/admin-benchmark.service';
 import { AdminService, SystemAiConfigDto } from '../../../services/admin.service';
 import { ModelPickerComponent, ModelPickerKey, ModelPickerOption, toModelPickerOptions } from '../../../shared/model-picker/model-picker.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
-import { TableState, exactFilter } from '../../../shared/data-table/table-state';
-import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
-import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { RunReportFrameComponent } from '../run-report-frame/run-report-frame.component';
-import { BenchmarkDownloadCenterComponent } from '../download-center/benchmark-download-center.component';
-import { markdownToSafeHtmlFragment } from '../download-center/printable-html';
+import { REPORT_PACK_WRITER_ADVICE, REPORT_WRITER_ADVICE_LEAD } from '../run-ai-reports/report-writer-advice';
 import type {
   BenchmarkModelComparisonEntryDto,
   BenchmarkModelComparisonPricingBasis
 } from '../model-comparison/model-comparison.models';
+import {
+  ReportDocumentLibraryComponent,
+  ReportDocumentLibraryScope,
+  disclosureLabel,
+  formatCostUsd,
+  formatUtc,
+  statusLabel
+} from './report-document-library.component';
+
+export { disclosureLabel, formatCostUsd, formatUtc, statusLabel };
 
 /** What the Report Pack dialog is opened on: the comparison request, its entries and its suite. */
 export interface ReportPackContext {
@@ -50,6 +52,11 @@ export interface ReportPackContext {
   readonly pricingBasis: BenchmarkModelComparisonPricingBasis;
   /** Every entry of the comparison; the non-Excluded ones are the possible subjects. */
   readonly entries: readonly BenchmarkModelComparisonEntryDto[];
+  /**
+   * Every entry's key (`run:<id>`, `group:<id>`), Excluded ones included: the set the server's
+   * comparison key is computed from, the same runs and groups the request carries.
+   */
+  readonly entryKeys: readonly string[];
   readonly suiteId: number | null;
   readonly suiteName: string | null;
 }
@@ -68,7 +75,20 @@ export interface ReportPackSubjectOption {
   readonly label: string;
 }
 
-export type ReportPackPreviewAxis = 'disclosure' | 'naming';
+/** One stage of the job's rail: Queued, Preparing, one per document, Done. */
+export interface ReportPackJobStage {
+  readonly key: string;
+  readonly name: string;
+  readonly state: 'done' | 'current' | 'pending';
+}
+
+/** The estimate panel: waiting, failed, no price for the writer, or the total with its parts. */
+export interface ReportPackEstimateView {
+  readonly state: 'loading' | 'failed' | 'noPrice' | 'ready';
+  readonly total: string | null;
+  /** One entry per document, only when there are two or more. */
+  readonly parts: readonly { name: string; cost: string }[];
+}
 
 export const REPORT_PACK_AUDIENCES: readonly ReportPackAudienceOption[] = [
   {
@@ -91,17 +111,6 @@ export const REPORT_PACK_AUDIENCES: readonly ReportPackAudienceOption[] = [
   }
 ];
 
-export const DISCLOSURE_ORDER: readonly BenchmarkReportDisclosure[] = [
-  BenchmarkReportDisclosure.Summary,
-  BenchmarkReportDisclosure.Detailed,
-  BenchmarkReportDisclosure.Full
-];
-
-export const NAMING_ORDER: readonly BenchmarkReportPeerNaming[] = [
-  BenchmarkReportPeerNaming.Anonymized,
-  BenchmarkReportPeerNaming.Named
-];
-
 /** The wait after the last change of subject, documents or writer before the estimate is requested. */
 export const REPORT_PACK_PREVIEW_DEBOUNCE_MS = 400;
 
@@ -111,45 +120,20 @@ export const REPORT_PACK_POLL_MS = 2000;
 /** The longest wait between progress requests after repeated failures. */
 export const REPORT_PACK_POLL_MAX_BACKOFF_MS = 30000;
 
-/** The per-viewer memory of the last writer used. */
+/** The per-viewer memory of the last writer used and of the sidebar's width. */
 export const REPORT_PACK_STORAGE_KEY = 'overseer.benchmark.reportPack';
 
 /** The job statuses after which nothing changes. */
 const FINISHED_JOB_STATUSES = new Set(['Completed', 'CompletedWithErrors', 'Canceled', 'Failed']);
 
-/**
- * The Markdown-to-HTML step of the preview. A holder, so a spec can observe each conversion; it is the
- * Download Center's converter, so what is previewed is what an HTML download contains.
- */
-export const reportPackPreviewIo = {
-  toHtml: (markdown: string): string => markdownToSafeHtmlFragment(markdown)
-};
+/** A document's statuses once it is written or given up. */
+const FINISHED_DOCUMENT_STATUSES = new Set(['Completed', 'CompletedWithWarnings', 'Failed', 'Canceled']);
+
+/** A document's statuses while the writer works on it. */
+const ACTIVE_DOCUMENT_STATUSES = new Set(['Writing', 'Repairing']);
 
 export function audienceLabel(audience: BenchmarkReportAudience): string {
   return REPORT_PACK_AUDIENCES.find(option => option.audience === audience)?.label ?? `Document ${audience}`;
-}
-
-export function disclosureLabel(disclosure: BenchmarkReportDisclosure): string {
-  switch (disclosure) {
-    case BenchmarkReportDisclosure.Detailed: return 'Detailed';
-    case BenchmarkReportDisclosure.Full: return 'Full';
-    default: return 'Summary';
-  }
-}
-
-export function disclosureDescription(disclosure: BenchmarkReportDisclosure): string {
-  switch (disclosure) {
-    case BenchmarkReportDisclosure.Detailed:
-      return 'Detailed: verbatim question text and answer excerpts for the questions the notes discuss; no rubrics or grader evidence.';
-    case BenchmarkReportDisclosure.Full:
-      return 'Full: everything, rubrics and grader evidence included. Internal only.';
-    default:
-      return 'Summary: questions described by topic; no question text, rubric, answer or grader evidence.';
-  }
-}
-
-export function namingLabel(naming: BenchmarkReportPeerNaming): string {
-  return naming === BenchmarkReportPeerNaming.Named ? 'Named' : 'Anonymized';
 }
 
 /** An entry's option text, with the axes a Degraded entry is degraded on. */
@@ -160,37 +144,6 @@ export function subjectOptionLabel(entry: BenchmarkModelComparisonEntryDto): str
   const axes = [entry.speedDegraded ? 'speed' : null, entry.costDegraded ? 'cost' : null]
     .filter((axis): axis is string => axis !== null);
   return axes.length > 0 ? `${entry.label} (${axes.join(' and ')} degraded)` : `${entry.label} (degraded)`;
-}
-
-/** `CompletedWithWarnings` → `Completed with warnings`. */
-export function statusLabel(status: string | null | undefined): string {
-  if (!status) {
-    return '';
-  }
-  const words = status.replace(/([a-z])([A-Z])/g, '$1 $2').split(' ');
-  return words.map((word, i) => (i === 0 ? word : word.toLowerCase())).join(' ');
-}
-
-export function formatCostUsd(cost: number | null | undefined): string {
-  if (cost === null || cost === undefined || !Number.isFinite(cost)) {
-    return 'Unknown';
-  }
-  if (cost === 0) {
-    return '$0.00';
-  }
-  return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`;
-}
-
-/** `2026-09-21 16:00 UTC`, from an ISO timestamp. */
-export function formatUtc(iso: string | null | undefined): string {
-  if (!iso) {
-    return '';
-  }
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) {
-    return iso;
-  }
-  return `${date.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
 /** `42 s`, `3 min 05 s`, `1 h 02 min`. */
@@ -204,6 +157,10 @@ export function formatElapsed(ms: number): string {
     return `${minutes} min ${String(seconds % 60).padStart(2, '0')} s`;
   }
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
 }
 
 function isJobDto(body: unknown): body is BenchmarkReportPackJobDto {
@@ -231,31 +188,44 @@ function serverMessage(error: HttpErrorResponse): string | null {
   return null;
 }
 
-function readStoredWriterId(): number | null {
+/** The dialog's stored record: the last writer used and the sidebar's width. */
+interface StoredReportPackSettings {
+  writerConfigId?: number;
+  sidebarWidth?: number;
+}
+
+function readStoredSettings(): StoredReportPackSettings {
   try {
     const raw = localStorage.getItem(REPORT_PACK_STORAGE_KEY);
     if (!raw) {
-      return null;
+      return {};
     }
-    const parsed = JSON.parse(raw) as { writerConfigId?: unknown };
-    return typeof parsed?.writerConfigId === 'number' ? parsed.writerConfigId : null;
+    const parsed = JSON.parse(raw) as { writerConfigId?: unknown; sidebarWidth?: unknown } | null;
+    const settings: StoredReportPackSettings = {};
+    if (typeof parsed?.writerConfigId === 'number') {
+      settings.writerConfigId = parsed.writerConfigId;
+    }
+    if (typeof parsed?.sidebarWidth === 'number' && Number.isFinite(parsed.sidebarWidth)) {
+      settings.sidebarWidth = parsed.sidebarWidth;
+    }
+    return settings;
   } catch {
-    return null;
+    return {};
   }
 }
 
-function writeStoredWriterId(writerConfigId: number): void {
+function writeStoredSettings(patch: StoredReportPackSettings): void {
   try {
-    localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId }));
+    localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ ...readStoredSettings(), ...patch }));
   } catch {
-    // Storage unavailable: the writer is simply not remembered.
+    // Storage unavailable: the choice is simply not remembered.
   }
 }
 
 /**
- * The Report Pack dialog, full-screen over the Model Comparison wizard: the left column starts a
- * report pack for one entry of the comparison, and follows its job; the right column lists the stored
- * documents of the comparison's suite, with preview, download (through the Download Center) and delete.
+ * The Report Pack dialog, full-screen over the Model Comparison wizard: the sidebar starts a report
+ * pack for one entry of the comparison; the main area follows its job and lists the documents written
+ * for this comparison, with view, download and delete (the report document library).
  *
  * `open(context)` shows it; `closed` fires however it closes. The dialog is a DOM descendant of the
  * wizard's `<dialog>`, so it stops its own close and cancel events, and those of the dialogs nested in
@@ -264,10 +234,7 @@ function writeStoredWriterId(writerConfigId: number): void {
 @Component({
   selector: 'app-benchmark-report-pack-dialog',
   standalone: true,
-  imports: [
-    RunReportFrameComponent, BenchmarkDownloadCenterComponent, ModelPickerComponent, InfoTipComponent,
-    SortHeaderComponent, TablePagerComponent
-  ],
+  imports: [RunReportFrameComponent, ModelPickerComponent, InfoTipComponent, ReportDocumentLibraryComponent],
   templateUrl: './benchmark-report-pack-dialog.component.html',
   styleUrls: ['./benchmark-report-pack-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -275,19 +242,18 @@ function writeStoredWriterId(writerConfigId: number): void {
 export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   private readonly benchmarkService = inject(AdminBenchmarkService);
   private readonly adminService = inject(AdminService);
-  private readonly sanitizer = inject(DomSanitizer);
   private readonly cdr = inject(ChangeDetectorRef);
 
   @ViewChild('reportPackDialog') dialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('reportPackHeading') heading?: ElementRef<HTMLElement>;
-  @ViewChild('previewDialog') previewDialog?: ElementRef<HTMLDialogElement>;
-  @ViewChild('deleteDialog') deleteDialog?: ElementRef<HTMLDialogElement>;
-  @ViewChild('downloadCenter') downloadCenter?: BenchmarkDownloadCenterComponent;
+  @ViewChild('sameProviderDialog') sameProviderDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('generateButton') generateButton?: ElementRef<HTMLButtonElement>;
+  @ViewChild(ReportDocumentLibraryComponent) library?: ReportDocumentLibraryComponent;
 
   /** Emitted when the dialog closes, however it was closed. */
   @Output() readonly closed = new EventEmitter<void>();
 
-  /** The writer tip's *How the graders work* link: the host opens the guide at *Choosing grader models*. */
+  /** The writer field's *How the graders work* link: the host opens the guide at *Choosing grader models*. */
   @Output() readonly graderGuideRequested = new EventEmitter<void>();
 
   readonly audiences = REPORT_PACK_AUDIENCES;
@@ -295,8 +261,8 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   readonly statusLabel = statusLabel;
   readonly formatCostUsd = formatCostUsd;
   readonly formatUtc = formatUtc;
-  readonly disclosureLabel = disclosureLabel;
-  readonly namingLabel = namingLabel;
+  readonly writerAdvice = REPORT_PACK_WRITER_ADVICE;
+  readonly writerAdviceLead = REPORT_WRITER_ADVICE_LEAD;
   readonly writerEmptyHint =
     'No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.';
 
@@ -320,7 +286,8 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   previewError: string | null = null;
   /** The same-provider warning a 409 carried, shown until the subject or writer changes. */
   private serverWarning: string | null = null;
-  acknowledgeSameProvider = false;
+  /** The same-provider confirmation's sentence. */
+  confirmWarningText = '';
 
   starting = false;
   startError: string | null = null;
@@ -330,43 +297,21 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   job: BenchmarkReportPackJobDto | null = null;
   /** When `job` was last read, for the elapsed time of a running job. */
   jobReadAt = 0;
+  /** The estimate when the job was started here, for its stat strip. */
+  jobEstimateUsd: number | null = null;
   pollError: string | null = null;
   canceling = false;
 
   // --- Documents ---
-  documents: BenchmarkReportDocumentListItemDto[] = [];
-  documentsLoading = false;
-  documentsError: string | null = null;
-  libraryStatus = '';
-  readonly selectedIds = new Set<number>();
-  readonly documentTable = new TableState<BenchmarkReportDocumentListItemDto>('createdAtUtc', 'desc').registerAccessors(
-    {
-      createdAtUtc: d => d.createdAtUtc,
-      subjectLabel: d => d.subjectLabel,
-      audience: d => audienceLabel(d.audience),
-      writerDisplayName: d => d.writerDisplayName,
-      status: d => statusLabel(d.status),
-      costUsd: d => d.costUsd ?? null
-    },
-    { selected: exactFilter(d => (this.selectedIds.has(d.id) ? 'yes' : 'no')) }
-  );
+  /** What the library lists; set on open, so its identity changes only with the comparison. */
+  libraryScope: ReportDocumentLibraryScope | null = null;
+  /** Bumped to make the library list its documents again. */
+  libraryReloadToken = 0;
+  /** How many documents the library holds. */
+  libraryDocumentCount = 0;
 
-  // --- Preview ---
-  previewDoc: BenchmarkReportDocumentListItemDto | null = null;
-  previewDisclosure: BenchmarkReportDisclosure = BenchmarkReportDisclosure.Summary;
-  previewNaming: BenchmarkReportPeerNaming = BenchmarkReportPeerNaming.Anonymized;
-  previewHtml: SafeHtml | null = null;
-  previewRendering = false;
-  previewRenderError: string | null = null;
-  previewNotes: BenchmarkReportValidationNote[] | null = null;
-
-  // --- Delete ---
-  deleteTarget: BenchmarkReportDocumentListItemDto | null = null;
-  deleting = false;
-  deleteError: string | null = null;
-
-  /** Where focus returns when a nested dialog closes. */
-  private returnFocusId: string | null = null;
+  /** The sidebar's width in CSS px, as last stored; null for the frame's default. */
+  sidebarWidth: number | null = readStoredSettings().sidebarWidth ?? null;
 
   /** Bumped on every open and close, so a response for an earlier opening never lands. */
   private generation = 0;
@@ -375,7 +320,6 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   private pollFailures = 0;
   /** The job whose finish already refreshed the documents list. */
   private refreshedForJobId: string | null = null;
-  private renderGeneration = 0;
   private readonly subscriptions: Record<string, Subscription | undefined> = {};
 
   ngOnInit(): void {
@@ -411,24 +355,23 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.previewPending = false;
     this.previewError = null;
     this.serverWarning = null;
-    this.acknowledgeSameProvider = false;
+    this.confirmWarningText = '';
     this.starting = false;
     this.startError = null;
     this.activeJobId = null;
     this.job = null;
+    this.jobEstimateUsd = null;
     this.pollError = null;
     this.pollFailures = 0;
     this.canceling = false;
     this.refreshedForJobId = null;
-    this.documents = [];
-    this.selectedIds.clear();
-    this.documentTable.clearFilters();
-    this.documentTable.page = 1;
-    this.libraryStatus = '';
+    this.libraryScope = { kind: 'comparison', entryKeys: [...context.entryKeys] };
+    this.libraryReloadToken++;
+    this.libraryDocumentCount = 0;
+    this.sidebarWidth = readStoredSettings().sidebarWidth ?? null;
 
     const generation = this.generation;
     this.loadWriters(generation);
-    this.loadDocuments();
     this.loadActiveJob(generation);
 
     const dialog = this.dialog?.nativeElement;
@@ -455,19 +398,34 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.closed.emit();
   }
 
-  /** A nested dialog's cancel event, stopped so it reaches neither this dialog nor the wizard. */
+  /** A nested dialog's close or cancel event, stopped so it reaches neither this dialog nor the wizard. */
   stopNestedEvent(event: Event): void {
     event.stopPropagation();
   }
 
+  /** `<suite> · N models · M possible subjects`. */
   get subtitle(): string {
     const suite = this.context?.suiteName || 'Suite not set';
+    const models = this.context?.entries.length ?? 0;
     const count = this.subjects.length;
-    return `${suite} · ${count} possible ${count === 1 ? 'subject' : 'subjects'}`;
+    return `${suite} · ${plural(models, 'model', 'models')} · ${count} possible ${count === 1 ? 'subject' : 'subjects'}`;
+  }
+
+  /** The line under *Documents of this comparison*: which documents it lists. */
+  get libraryScopeLine(): string {
+    const models = this.context?.entries.length ?? 0;
+    return `Reports whose subject is one of the ${plural(models, 'model', 'models')} of this comparison, `
+      + 'written for this same set of models.';
   }
 
   requestGraderGuide(): void {
     this.graderGuideRequested.emit();
+  }
+
+  onSidebarWidthChange(width: number): void {
+    this.sidebarWidth = width;
+    writeStoredSettings({ sidebarWidth: width });
+    this.cdr.markForCheck();
   }
 
   // -------------------------------------------------------------------------------------------
@@ -479,7 +437,6 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
       return;
     }
     this.subjectKey = key;
-    this.acknowledgeSameProvider = false;
     this.serverWarning = null;
     this.startError = null;
     this.schedulePreview();
@@ -526,7 +483,6 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
       return;
     }
     this.writerId = id;
-    this.acknowledgeSameProvider = false;
     this.serverWarning = null;
     this.startError = null;
     this.schedulePreview();
@@ -536,23 +492,23 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     return this.writers.find(writer => writer.id === this.writerId) ?? null;
   }
 
-  /** The preview's same-provider warning, or the one a 409 carried. */
+  /** The preview's same-provider warning, or the one a 409 carried. Generate then asks first. */
   get sameProviderWarning(): string | null {
+    if (this.preview?.refusal) {
+      return null;
+    }
     return this.preview?.sameProviderWarning ?? this.serverWarning;
   }
 
-  setAcknowledgeSameProvider(checked: boolean): void {
-    this.acknowledgeSameProvider = checked;
-    this.startError = null;
-    this.cdr.markForCheck();
-  }
-
-  onAcknowledgeChange(event: Event): void {
-    this.setAcknowledgeSameProvider((event.target as HTMLInputElement).checked);
+  /** The picker's description: the refusal or the warning while there is one. */
+  get writerDescribedBy(): string | null {
+    const ids = [this.preview?.refusal ? 'rp-writer-refusal' : '', this.sameProviderWarning ? 'rp-same-provider-text' : '']
+      .filter(id => id !== '');
+    return ids.length > 0 ? ids.join(' ') : null;
   }
 
   /** The request body, or null while the form is incomplete. */
-  buildRequest(): BenchmarkReportPackRequest | null {
+  buildRequest(acknowledgeSameProvider = false): BenchmarkReportPackRequest | null {
     const context = this.context;
     if (!context || this.subjectKey === null || this.writerId === null) {
       return null;
@@ -566,7 +522,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
       subjectKey: this.subjectKey,
       audiences: this.selectedAudiences,
       writerModelConfigurationId: this.writerId,
-      acknowledgeSameProvider: this.acknowledgeSameProvider
+      acknowledgeSameProvider
     };
   }
 
@@ -623,17 +579,36 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** One line per checked document: its estimated tokens and cost. */
-  get estimateRows(): { label: string; tokens: string; cost: string }[] {
-    return (this.preview?.estimates ?? []).map(estimate => ({
-      label: audienceLabel(estimate.audience),
-      tokens: `${estimate.estimatedInputTokens.toLocaleString('en-US')} in · ${estimate.estimatedOutputTokens.toLocaleString('en-US')} out`,
-      cost: formatCostUsd(estimate.estimatedCostUsd)
-    }));
+  /** The *Estimated cost* panel, or null while there is nothing to say. */
+  get estimateView(): ReportPackEstimateView | null {
+    if (this.previewPending) {
+      return { state: 'loading', total: null, parts: [] };
+    }
+    if (this.previewError) {
+      return { state: 'failed', total: null, parts: [] };
+    }
+    const preview = this.preview;
+    if (!preview || preview.refusal) {
+      return null;
+    }
+    const total = preview.estimatedTotalCostUsd;
+    if (total === null || total === undefined) {
+      return { state: 'noPrice', total: null, parts: [] };
+    }
+    const parts = preview.estimates.length > 1
+      ? preview.estimates.map(estimate => ({ name: audienceLabel(estimate.audience), cost: formatCostUsd(estimate.estimatedCostUsd) }))
+      : [];
+    return { state: 'ready', total: formatCostUsd(total), parts };
   }
 
-  get estimateTotal(): string {
-    return formatCostUsd(this.preview?.estimatedTotalCostUsd ?? null);
+  /** The estimate's subject and peers, under the total. */
+  get estimateSubjectLine(): string {
+    const preview = this.preview;
+    if (!preview) {
+      return '';
+    }
+    return `For ${preview.subjectLabel} against ${plural(preview.peers.length, 'peer', 'peers')}. `
+      + 'A repair turn can roughly double a document’s cost.';
   }
 
   // -------------------------------------------------------------------------------------------
@@ -663,21 +638,56 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     if (this.preview?.refusal) {
       return 'This writer is refused for this subject. Choose another writer.';
     }
-    if (this.sameProviderWarning && !this.acknowledgeSameProvider) {
-      return 'Acknowledge the same-provider warning first.';
-    }
     return null;
   }
 
+  /** The Generate button's description: the estimate, and the reason it is blocked while it is. */
+  get generateDescribedBy(): string {
+    return this.generateBlockedReason !== null ? 'rp-estimate rp-generate-blocked' : 'rp-estimate';
+  }
+
+  /** Generate: a same-provider writer asks first, on every generate; any other writer starts at once. */
   generate(): void {
-    const request = this.buildRequest();
-    if (!request || this.generateBlockedReason !== null) {
+    if (this.buildRequest() === null || this.generateBlockedReason !== null) {
+      return;
+    }
+    const warning = this.sameProviderWarning;
+    if (warning) {
+      this.openSameProviderConfirm(warning);
+      return;
+    }
+    this.startPack(false);
+  }
+
+  confirmSameProvider(): void {
+    this.sameProviderDialog?.nativeElement.close();
+    this.startPack(true);
+  }
+
+  cancelSameProvider(): void {
+    this.sameProviderDialog?.nativeElement.close();
+    this.generateButton?.nativeElement.focus();
+  }
+
+  private openSameProviderConfirm(text: string): void {
+    this.confirmWarningText = text;
+    this.cdr.detectChanges();
+    const dialog = this.sameProviderDialog?.nativeElement;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
+  }
+
+  private startPack(acknowledgeSameProvider: boolean): void {
+    const request = this.buildRequest(acknowledgeSameProvider);
+    if (!request || this.starting || this.jobInProgress) {
       return;
     }
     this.starting = true;
     this.startError = null;
     this.pollError = null;
-    writeStoredWriterId(request.writerModelConfigurationId);
+    const estimateUsd = this.preview?.estimatedTotalCostUsd ?? null;
+    writeStoredSettings({ writerConfigId: request.writerModelConfigurationId });
     const generation = this.generation;
     this.subscriptions['start'] = this.benchmarkService.startReportPack(request).subscribe({
       next: response => {
@@ -687,6 +697,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
         this.starting = false;
         this.activeJobId = response.jobId;
         this.job = null;
+        this.jobEstimateUsd = estimateUsd;
         this.refreshedForJobId = null;
         this.pollFailures = 0;
         this.pollJob();
@@ -697,6 +708,14 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
           return;
         }
         this.starting = false;
+        const body = error.error;
+        // The server saw a same-provider writer the preview did not: ask, as for the preview's.
+        if (error.status === 409 && !acknowledgeSameProvider && !isJobDto(body) && isSameProviderWarning(body)) {
+          this.serverWarning = body.message;
+          this.cdr.markForCheck();
+          this.openSameProviderConfirm(body.message);
+          return;
+        }
         this.startError = this.startErrorMessage(error);
         this.cdr.markForCheck();
       }
@@ -709,11 +728,10 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     if (error.status === 409 && isJobDto(body)) {
       this.adoptJob(body);
       return `Another report pack is being written, for ${body.subjectLabel}, started ${formatUtc(body.startedAtUtc)}. `
-        + 'One job runs at a time; its progress is shown below.';
+        + 'One job runs at a time; its progress is shown in Documents of this comparison.';
     }
     if (error.status === 409 && isSameProviderWarning(body)) {
       this.serverWarning = body.message;
-      this.acknowledgeSameProvider = false;
       return body.message;
     }
     if (error.status === 429) {
@@ -737,6 +755,11 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     return this.job === null || !FINISHED_JOB_STATUSES.has(this.job.status);
   }
 
+  /** The job has finished; its card shows a one-line summary. */
+  get jobFinished(): boolean {
+    return this.job !== null && FINISHED_JOB_STATUSES.has(this.job.status);
+  }
+
   get jobDocuments(): BenchmarkReportPackDocumentProgressDto[] {
     return this.job?.documents ?? [];
   }
@@ -751,19 +774,107 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     return Number.isNaN(start) || Number.isNaN(end) ? '' : formatElapsed(end - start);
   }
 
-  /** The live line: announced as the job advances. */
+  /** The live line: announced as the job advances from phase to phase. */
   get jobStatusLine(): string {
     const job = this.job;
     if (!job) {
       return this.activeJobId ? 'Starting the report pack…' : '';
     }
     const total = job.documents.length;
-    const finished = job.documents.filter(d => FINISHED_JOB_STATUSES.has(d.status)
-      || d.status === 'CompletedWithWarnings').length;
+    const finished = job.documents.filter(d => FINISHED_DOCUMENT_STATUSES.has(d.status)).length;
     if (job.status === 'Running') {
       return `Writing ${total} ${total === 1 ? 'document' : 'documents'} for ${job.subjectLabel}: ${finished} of ${total} finished.`;
     }
     return `Report pack for ${job.subjectLabel}: ${statusLabel(job.status)}.`;
+  }
+
+  /** Queued, Preparing, one stage per document, Done; the current one is where the job stands. */
+  get jobStages(): ReportPackJobStage[] {
+    const job = this.job;
+    const documents = job?.documents ?? [];
+    const stages = [
+      { key: 'queued', name: 'Queued' },
+      { key: 'preparing', name: 'Preparing' },
+      ...documents.map(doc => ({ key: `doc-${doc.audience}`, name: audienceLabel(doc.audience) })),
+      { key: 'done', name: 'Done' }
+    ];
+    let current = 0;
+    if (job && FINISHED_JOB_STATUSES.has(job.status)) {
+      current = stages.length;
+    } else if (job) {
+      const started = job.totalModelCalls > 0 || documents.some(doc => doc.status !== 'Pending');
+      if (!started) {
+        current = 1;
+      } else {
+        let index = documents.findIndex(doc => ACTIVE_DOCUMENT_STATUSES.has(doc.status));
+        if (index < 0) {
+          index = documents.findIndex(doc => doc.status === 'Pending');
+        }
+        if (index < 0) {
+          index = Math.max(documents.length - 1, 0);
+        }
+        current = 2 + index;
+      }
+    }
+    return stages.map((stage, i): ReportPackJobStage => ({
+      ...stage,
+      state: i < current ? 'done' : i === current ? 'current' : 'pending'
+    }));
+  }
+
+  get jobTokens(): string {
+    const job = this.job;
+    if (!job) {
+      return '—';
+    }
+    return `${job.inputTokens.toLocaleString('en-US')} in · ${job.outputTokens.toLocaleString('en-US')} out`;
+  }
+
+  get jobCostLabel(): string {
+    return this.jobFinished ? 'Cost' : 'Cost so far';
+  }
+
+  get jobEstimate(): string | null {
+    return this.jobEstimateUsd === null ? null : `about ${formatCostUsd(this.jobEstimateUsd)}`;
+  }
+
+  /** The finished job in one line: `Written: 2 documents, 1 min 12 s, $0.21`. */
+  get jobSummary(): string {
+    const job = this.job;
+    if (!job) {
+      return '';
+    }
+    const total = job.documents.length;
+    const written = job.documents.filter(d => d.status === 'Completed' || d.status === 'CompletedWithWarnings').length;
+    const tail = [this.jobElapsed, formatCostUsd(job.costUsd)].filter(part => part !== '').join(', ');
+    let head: string;
+    switch (job.status) {
+      case 'Completed':
+        head = `Written: ${plural(written, 'document', 'documents')}`;
+        break;
+      case 'CompletedWithErrors':
+        head = `Written with errors: ${written} of ${plural(total, 'document', 'documents')}`;
+        break;
+      case 'Canceled':
+        head = `Canceled: ${written} of ${plural(total, 'document', 'documents')} written`;
+        break;
+      default:
+        head = `Failed: ${written} of ${plural(total, 'document', 'documents')} written`;
+    }
+    return tail ? `${head}, ${tail}` : head;
+  }
+
+  /** Dismiss: the finished job's card goes away. */
+  dismissJob(): void {
+    if (this.jobInProgress) {
+      return;
+    }
+    this.activeJobId = null;
+    this.job = null;
+    this.jobEstimateUsd = null;
+    this.pollError = null;
+    this.cdr.markForCheck();
+    document.getElementById('rp-documents-heading')?.focus();
   }
 
   cancelJob(): void {
@@ -824,7 +935,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
       this.clearPollTimer();
       if (this.refreshedForJobId !== job.id) {
         this.refreshedForJobId = job.id;
-        this.loadDocuments();
+        this.libraryReloadToken++;
       }
     } else {
       this.schedulePoll(REPORT_PACK_POLL_MS);
@@ -883,7 +994,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
         }
         this.writersLoading = false;
         this.writers = (configs ?? []).filter(c => (c.modelRole & 4) === 4 && c.hasApiKey && c.isEnabled);
-        const remembered = readStoredWriterId();
+        const remembered = readStoredSettings().writerConfigId ?? null;
         if (this.writerId === null && remembered !== null && this.writers.some(w => w.id === remembered)) {
           this.selectWriter(remembered);
         }
@@ -904,339 +1015,19 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   // Documents
   // -------------------------------------------------------------------------------------------
 
-  loadDocuments(): void {
-    const generation = this.generation;
-    this.documentsLoading = true;
-    this.documentsError = null;
-    this.subscriptions['documents']?.unsubscribe();
-    this.subscriptions['documents'] = this.benchmarkService
-      .listReportDocuments({ suiteId: this.context?.suiteId ?? null })
-      .subscribe({
-        next: documents => {
-          if (generation !== this.generation) {
-            return;
-          }
-          this.documentsLoading = false;
-          this.documents = documents ?? [];
-          const present = new Set(this.documents.map(d => d.id));
-          for (const id of [...this.selectedIds]) {
-            if (!present.has(id)) {
-              this.selectedIds.delete(id);
-            }
-          }
-          this.cdr.markForCheck();
-        },
-        error: (error: HttpErrorResponse) => {
-          if (generation !== this.generation) {
-            return;
-          }
-          this.documentsLoading = false;
-          this.documentsError = serverMessage(error) ?? 'The report documents could not be loaded.';
-          this.cdr.markForCheck();
-        }
-      });
-  }
-
-  get documentView(): BenchmarkReportDocumentListItemDto[] {
-    return this.documentTable.view(this.documents);
-  }
-
-  onTableChanged(): void {
+  onLibraryDocuments(documents: readonly BenchmarkReportDocumentListItemDto[]): void {
+    this.libraryDocumentCount = documents.length;
     this.cdr.markForCheck();
   }
 
-  documentName(doc: BenchmarkReportDocumentListItemDto): string {
-    return `${doc.title}, ${formatUtc(doc.createdAtUtc)}`;
-  }
-
-  isSelected(doc: BenchmarkReportDocumentListItemDto): boolean {
-    return this.selectedIds.has(doc.id);
-  }
-
-  toggleSelected(doc: BenchmarkReportDocumentListItemDto, checked: boolean): void {
-    if (checked) {
-      this.selectedIds.add(doc.id);
-    } else {
-      this.selectedIds.delete(doc.id);
-    }
-    this.cdr.markForCheck();
-  }
-
-  onSelectChange(doc: BenchmarkReportDocumentListItemDto, event: Event): void {
-    this.toggleSelected(doc, (event.target as HTMLInputElement).checked);
-  }
-
-  clearSelection(): void {
-    this.selectedIds.clear();
-    if (this.showSelectedOnly) {
-      this.documentTable.setFilter('selected', '');
-    }
-    this.cdr.markForCheck();
-  }
-
-  /** Selected documents the current page does not show. */
-  get offPageSelectedCount(): number {
-    const onPage = new Set(this.documentView.map(d => d.id));
-    return [...this.selectedIds].filter(id => !onPage.has(id)).length;
-  }
-
-  get showSelectedOnly(): boolean {
-    return this.documentTable.filters['selected'] === 'yes';
-  }
-
-  toggleShowSelectedOnly(): void {
-    this.documentTable.setFilter('selected', this.showSelectedOnly ? '' : 'yes');
-    this.cdr.markForCheck();
-  }
-
-  /** The selected ids in the list's order. */
-  get selectedDocumentIds(): number[] {
-    return this.documents.filter(d => this.selectedIds.has(d.id)).map(d => d.id);
-  }
-
-  // -------------------------------------------------------------------------------------------
-  // Download
-  // -------------------------------------------------------------------------------------------
-
-  downloadDocument(doc: BenchmarkReportDocumentListItemDto): void {
-    this.openDownloadCenter([doc.id], `rp-doc-${doc.id}-download`);
-  }
-
-  downloadSelected(): void {
-    const ids = this.selectedDocumentIds;
-    if (ids.length === 0) {
-      return;
-    }
-    this.openDownloadCenter(ids, 'rp-download-selected');
-  }
-
-  private openDownloadCenter(documentIds: number[], returnFocusId: string): void {
-    this.returnFocusId = returnFocusId;
-    this.downloadCenter?.open({ kind: 'documents', documentIds });
-  }
-
-  onDownloadCenterClosed(): void {
-    this.restoreFocus();
-  }
-
-  // -------------------------------------------------------------------------------------------
-  // Preview
-  // -------------------------------------------------------------------------------------------
-
-  /** The disclosures this document renders at, in the fixed order. */
-  get previewDisclosures(): BenchmarkReportDisclosure[] {
-    const allowed = this.previewDoc?.allowedDisclosures ?? [];
-    return DISCLOSURE_ORDER.filter(d => allowed.includes(d));
-  }
-
-  readonly previewNamings = NAMING_ORDER;
-
-  get previewDisclosureDescription(): string {
-    return disclosureDescription(this.previewDisclosure);
-  }
-
-  openPreview(doc: BenchmarkReportDocumentListItemDto): void {
-    this.previewDoc = doc;
-    this.returnFocusId = `rp-doc-${doc.id}-preview`;
-    const disclosures = this.previewDisclosures;
-    this.previewDisclosure = disclosures[0] ?? BenchmarkReportDisclosure.Summary;
-    this.previewNaming = BenchmarkReportPeerNaming.Anonymized;
-    this.previewHtml = null;
-    this.previewNotes = null;
-    this.previewRenderError = null;
-    this.loadPreviewNotes(doc.id);
-    this.renderPreview();
-    const dialog = this.previewDialog?.nativeElement;
-    if (dialog && !dialog.open) {
-      dialog.showModal();
-    }
-    this.cdr.markForCheck();
-  }
-
-  setPreviewDisclosure(disclosure: BenchmarkReportDisclosure): void {
-    if (disclosure === this.previewDisclosure || !this.previewDisclosures.includes(disclosure)) {
-      return;
-    }
-    this.previewDisclosure = disclosure;
-    this.renderPreview();
-  }
-
-  setPreviewNaming(naming: BenchmarkReportPeerNaming): void {
-    if (naming === this.previewNaming) {
-      return;
-    }
-    this.previewNaming = naming;
-    this.renderPreview();
-  }
-
-  /** Arrow keys, Home and End in either segmented row; focus follows selection. */
-  onSegmentKeydown(event: KeyboardEvent, axis: ReportPackPreviewAxis, index: number): void {
-    const count = axis === 'disclosure' ? this.previewDisclosures.length : this.previewNamings.length;
-    const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
-    const requested = targets[event.key];
-    if (requested === undefined || count === 0) {
-      return;
-    }
-    event.preventDefault();
-    const next = (requested + count) % count;
-    if (axis === 'disclosure') {
-      const disclosure = this.previewDisclosures[next];
-      this.setPreviewDisclosure(disclosure);
-      this.cdr.detectChanges();
-      document.getElementById(`rp-preview-disclosure-${disclosure}`)?.focus();
-    } else {
-      const naming = this.previewNamings[next];
-      this.setPreviewNaming(naming);
-      this.cdr.detectChanges();
-      document.getElementById(`rp-preview-naming-${naming}`)?.focus();
-    }
-  }
-
-  closePreview(): void {
-    this.previewDialog?.nativeElement?.close();
-  }
-
-  onPreviewDialogEvent(event: Event): void {
-    event.stopPropagation();
-    if (event.type !== 'close' || this.previewDialog?.nativeElement?.open) {
-      return;
-    }
-    this.renderGeneration++;
-    this.subscriptions['render']?.unsubscribe();
-    this.subscriptions['notes']?.unsubscribe();
-    this.previewDoc = null;
-    this.previewHtml = null;
-    this.previewRendering = false;
-    this.cdr.markForCheck();
-    this.restoreFocus();
-  }
-
-  private renderPreview(): void {
-    const doc = this.previewDoc;
-    if (!doc) {
-      return;
-    }
-    const render = ++this.renderGeneration;
-    this.previewRendering = true;
-    this.previewRenderError = null;
-    this.subscriptions['render']?.unsubscribe();
-    this.subscriptions['render'] = this.benchmarkService
-      .renderReportDocument(doc.id, this.previewDisclosure, this.previewNaming)
-      .subscribe({
-        next: markdown => {
-          if (render !== this.renderGeneration) {
-            return;
-          }
-          this.previewRendering = false;
-          // Already sanitized by the Download Center's private DOMPurify; Angular's own sanitizer
-          // would alter it further, and the preview would no longer match the downloaded file.
-          this.previewHtml = this.sanitizer.bypassSecurityTrustHtml(reportPackPreviewIo.toHtml(markdown ?? ''));
-          this.cdr.markForCheck();
-        },
-        error: (error: HttpErrorResponse) => {
-          if (render !== this.renderGeneration) {
-            return;
-          }
-          this.previewRendering = false;
-          this.previewHtml = null;
-          this.previewRenderError = serverMessage(error) ?? 'The document could not be rendered.';
-          this.cdr.markForCheck();
-        }
-      });
-    this.cdr.markForCheck();
-  }
-
-  private loadPreviewNotes(id: number): void {
-    this.subscriptions['notes']?.unsubscribe();
-    this.subscriptions['notes'] = this.benchmarkService.getReportDocument(id).subscribe({
-      next: detail => {
-        if (this.previewDoc?.id !== id) {
-          return;
-        }
-        this.previewNotes = detail.validationNotes ?? [];
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        // The notes are supplementary; the rendered document is still shown.
-      }
-    });
-  }
-
-  // -------------------------------------------------------------------------------------------
-  // Delete
-  // -------------------------------------------------------------------------------------------
-
-  requestDelete(doc: BenchmarkReportDocumentListItemDto): void {
-    this.deleteTarget = doc;
-    this.deleteError = null;
-    this.deleting = false;
-    this.returnFocusId = `rp-doc-${doc.id}-delete`;
-    const dialog = this.deleteDialog?.nativeElement;
-    if (dialog && !dialog.open) {
-      dialog.showModal();
-    }
-    this.cdr.markForCheck();
-  }
-
-  cancelDelete(): void {
-    this.deleteDialog?.nativeElement?.close();
-  }
-
-  confirmDelete(): void {
-    const doc = this.deleteTarget;
-    if (!doc || this.deleting) {
-      return;
-    }
-    this.deleting = true;
-    this.deleteError = null;
-    const generation = this.generation;
-    this.subscriptions['delete'] = this.benchmarkService.deleteReportDocument(doc.id).subscribe({
-      next: () => {
-        if (generation !== this.generation) {
-          return;
-        }
-        this.deleting = false;
-        this.documents = this.documents.filter(d => d.id !== doc.id);
-        this.selectedIds.delete(doc.id);
-        this.libraryStatus = `Deleted ${this.documentName(doc)}.`;
-        this.returnFocusId = 'rp-documents-heading';
-        this.deleteDialog?.nativeElement?.close();
-        this.cdr.markForCheck();
-      },
-      error: (error: HttpErrorResponse) => {
-        if (generation !== this.generation) {
-          return;
-        }
-        this.deleting = false;
-        this.deleteError = serverMessage(error) ?? 'The document could not be deleted.';
-        this.cdr.markForCheck();
-      }
-    });
-    this.cdr.markForCheck();
-  }
-
-  onDeleteDialogEvent(event: Event): void {
-    event.stopPropagation();
-    if (event.type !== 'close' || this.deleteDialog?.nativeElement?.open) {
-      return;
-    }
-    this.deleteTarget = null;
-    this.deleteError = null;
-    this.cdr.markForCheck();
-    this.restoreFocus();
+  /** The *Downloads* notice's Open Download Center: every document of the comparison. */
+  openAllDownloads(button: HTMLElement): void {
+    this.library?.openDownloadCenterForAll(button);
   }
 
   // -------------------------------------------------------------------------------------------
   // Housekeeping
   // -------------------------------------------------------------------------------------------
-
-  private restoreFocus(): void {
-    const id = this.returnFocusId;
-    this.returnFocusId = null;
-    if (id) {
-      document.getElementById(id)?.focus();
-    }
-  }
 
   private clearPreviewTimer(): void {
     if (this.previewTimer !== null) {

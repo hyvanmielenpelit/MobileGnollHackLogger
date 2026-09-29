@@ -1389,85 +1389,112 @@
         dialog and this panel stays short.
 
         It deliberately duplicates none of the wizard's controls: the selection has one owner, and
-        a second Clear or a second suite scope here would let the two disagree.
+        a second Clear or a second suite scope here would let the two disagree. The Comparison
+        reports library below the hero card is a list of documents already written, not a
+        comparison control: it selects nothing and changes nothing the wizard owns.
       -->
       <div class="mc-launcher">
-        <h3>Cross-model comparison</h3>
-        <p class="mc-launcher-lead">
-          Compare AI models side by side on quality, speed and cost, using the benchmark runs of one
-          suite.
-        </p>
+        <div class="mc-launcher-hero">
+          <h3>Cross-model comparison</h3>
+          <p class="mc-launcher-lead">
+            Compare AI models side by side on quality, speed and cost, using the benchmark runs of one
+            suite.
+          </p>
 
-        <div class="alert alert-info" role="note">
-          <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="12" y1="16" x2="12" y2="12"></line>
-            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-          </svg>
-          <div class="alert-content">
-            <p class="alert-heading">Only like-for-like runs are charted together</p>
-            <div class="alert-body">
-              Runs are comparable only when they were measured the same way: the same questions,
-              grading and settings. The wizard shows which runs are left out, and why.
-            </div>
+          <div class="mc-launcher-actions">
+            <button type="button" class="btn-gh" (click)="openComparisonWizard()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+              Open Comparison Wizard
+            </button>
           </div>
+
+          <!-- Only what the last comparison produced. Nothing about a pending selection is reported
+               here: this panel holds no control that could change one, and a labelled read-out beside
+               no selector reads as a control that has stopped working. -->
+          @if (comparison) {
+            <section class="mc-launcher-last" aria-labelledby="mc-launcher-last-heading">
+              <h4 id="mc-launcher-last-heading">Last comparison</h4>
+              <dl class="mc-launcher-state">
+                <div>
+                  <dt>Suite</dt>
+                  <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
+                </div>
+                <div>
+                  <dt>Pricing basis</dt>
+                  <dd>{{ comparison.pricingBasisLabel || comparison.pricingBasis }}</dd>
+                </div>
+                <div>
+                  <dt>Charted</dt>
+                  <dd>{{ comparison.comparableCount }} of {{ comparison.entries.length }} entries</dd>
+                </div>
+                <div>
+                  <dt>Computed</dt>
+                  <dd>{{ comparison.computedAtUtc | date:'short' }}</dd>
+                </div>
+              </dl>
+            </section>
+          }
+
+          @if (comparabilityIndexError) {
+            <!-- Non-fatal: the index is a disclosure aid, and the comparison itself is unaffected. -->
+            <div class="alert alert-warning" role="note">
+              <div class="alert-content">
+                <div class="alert-body">{{ comparabilityIndexError }}</div>
+              </div>
+            </div>
+          }
+
+          <!-- Non-exclusive (no name), so it never closes another disclosure. Open on the first visit,
+               then as the operator last left it. -->
+          <details class="gh-disclosure mc-launcher-howto"
+                   [open]="comparisonHowItWorksOpen ?? false"
+                   (toggle)="onComparisonHowItWorksToggle($event)">
+            <summary>How the comparison works</summary>
+            <div class="gh-disclosure-body">
+              <!-- A static list, not `.gh-steps`: that class is a live stepper keyed on
+                   `aria-current="step"`, which nothing here is. The titles are the wizard's own. -->
+              <ol class="mc-launcher-steps">
+                @for (s of comparisonWizardSteps; track s.step) {
+                  <li>
+                    <span class="mc-launcher-step-number" aria-hidden="true">{{ s.step }}</span>
+                    <span><strong>{{ s.title }}</strong> — {{ s.summary }}</span>
+                  </li>
+                }
+              </ol>
+
+              <div class="alert alert-info" role="note">
+                <svg class="alert-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="16" x2="12" y2="12"></line>
+                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                </svg>
+                <div class="alert-content">
+                  <p class="alert-heading">Only like-for-like runs are charted together</p>
+                  <div class="alert-body">
+                    Runs are comparable only when they were measured the same way: the same questions,
+                    grading and settings. The wizard shows which runs are left out, and why.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </details>
         </div>
 
-        <!-- A static list, not `.gh-steps`: that class is a live stepper keyed on
-             `aria-current="step"`, which nothing here is. The titles are the wizard's own. -->
-        <section aria-labelledby="mc-launcher-steps-heading">
-          <h4 id="mc-launcher-steps-heading">How it works</h4>
-          <ol class="mc-launcher-steps">
-            @for (s of comparisonWizardSteps; track s.step) {
-              <li>
-                <span class="mc-launcher-step-number" aria-hidden="true">{{ s.step }}</span>
-                <span><strong>{{ s.title }}</strong> — {{ s.summary }}</span>
-              </li>
-            }
-          </ol>
-        </section>
-
-        <!-- Only what the last comparison produced. Nothing about a pending selection is reported
-             here: this panel holds no control that could change one, and a labelled read-out beside
-             no selector reads as a control that has stopped working. -->
-        @if (comparison) {
-          <section aria-labelledby="mc-launcher-last-heading">
-            <h4 id="mc-launcher-last-heading">Last comparison</h4>
-            <dl class="mc-launcher-state">
-              <div>
-                <dt>Suite</dt>
-                <dd>{{ comparison.baselineSuiteName || 'Not set' }}</dd>
-              </div>
-              <div>
-                <dt>Pricing basis</dt>
-                <dd>{{ comparison.pricingBasisLabel || comparison.pricingBasis }}</dd>
-              </div>
-              <div>
-                <dt>Charted</dt>
-                <dd>{{ comparison.comparableCount }} of {{ comparison.entries.length }} entries</dd>
-              </div>
-              <div>
-                <dt>Computed</dt>
-                <dd>{{ comparison.computedAtUtc | date:'short' }}</dd>
-              </div>
-            </dl>
-          </section>
-        }
-
-        @if (comparabilityIndexError) {
-          <!-- Non-fatal: the index is a disclosure aid, and the comparison itself is unaffected. -->
-          <div class="alert alert-warning" role="note">
-            <div class="alert-content">
-              <div class="alert-body">{{ comparabilityIndexError }}</div>
-            </div>
-          </div>
-        }
-
-        <div class="mc-launcher-actions">
-          <button type="button" class="btn-gh" (click)="openComparisonWizard()">
-            Open comparison wizard
-          </button>
+        <!-- Rendered only inside this tab's @if, so it loads when the tab is shown, not on page load,
+             and afresh on every showing; the reload token covers the wizard closing. -->
+        <div class="mc-launcher-library">
+          <p class="mc-launcher-library-lead">
+            Every report document written from a model comparison, newest first. A run's own reports
+            are in its run report.
+          </p>
+          <app-report-document-library
+            [scope]="comparisonReportsScope"
+            heading="Comparison reports"
+            idPrefix="mcl"
+            [showComparisonColumn]="true"
+            [reloadToken]="comparisonReportsReloadToken">
+          </app-report-document-library>
         </div>
       </div>
     </div>

@@ -35,15 +35,29 @@ GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Grok 5 and
 - **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 - **Versions:** harness 41, scoring method 12.
 
+### Compared models
+
+| Model | Provider | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |
+|---|---|---|---|---|---|---|
+| **GPT-5.6 Luna** | OpenAI | run | 1 | high | 41 | 2026-09-20 |
+| Grok 5 (A) | xAI | run | 1 | high | 41 | 2026-09-19 |
+| Mistral Large 4 (B) | Mistral | run | 1 | not set | 41 | 2026-09-12 |
+
 ## Results against peers
 
 ### Quality
 
-| Model | Provider | Intelligence Index | 95 % interval | Rank |
-|---|---|---|---|---|
-| **GPT-5.6 Luna** | OpenAI | 80 | 77–83 | 2 |
-| Grok 5 (A) | xAI | 85 | 81–89 | 1 |
-| Mistral Large 4 (B) | Mistral | 78 | 74–83 | 3 |
+| Model | Provider | Intelligence Index | 95 % interval | Rank | Paired difference |
+|---|---|---|---|---|---|
+| **GPT-5.6 Luna** | OpenAI | 80 | 77–83 | 2 | — |
+| Grok 5 (A) | xAI | 85 | 81–89 | 1 | -4.6 points (-9.8 to +0.7) |
+| Mistral Large 4 (B) | Mistral | 78 | 74–83 | 3 | not available |
+
+*Paired difference: mean per-question difference, subject minus peer, over the questions both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several models, and is not a significance test.*
+
+No paired difference:
+
+- Mistral Large 4 (B): Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference.
 
 *GPT-5.6 Luna: its 95 % interval overlaps those of Models A and B. This describes where the intervals overlap; it is not a significance test.*
 
@@ -286,6 +300,8 @@ Short, accurate answers on simple questions (R2).
 - Significance: Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none.
 - The graders are AI models. Each grader's provider relation to the model under test is stated under Setup and method; a grader from the model's own provider may read it more favorably.
 
+Mistral Large 4 is degraded on speed, and every model rests on a single run, so no interval covers run-to-run variation.
+
 ## Reproducibility appendix
 
 - **Run IDs:** 12
@@ -313,6 +329,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 6 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 7 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
-*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's interpretations.*
+*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

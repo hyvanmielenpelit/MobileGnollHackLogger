@@ -24,7 +24,8 @@ Implementation:
 | Fact sheet, content snapshot, writer output, validation notes and DTOs | `Overseer/Models/BenchmarkReportPackModels.cs` |
 | The writer's prompts and the repair message | `BenchmarkReportPackPrompt` |
 | Parsing the writer's JSON | `BenchmarkReportPackParser` |
-| The twelve validation rules and the drop policy | `BenchmarkReportPackValidator` |
+| The seventeen validation rules and the drop policy | `BenchmarkReportPackValidator` |
+| A comparison's identity, and its startup backfill | `BenchmarkReportComparisonKey`, `BenchmarkReportDocumentBackfill` |
 | Generation: preparation, the writer call, repair, storage | `BenchmarkReportPackService` |
 | The background job and its progress | `BenchmarkReportPackJob`, `BenchmarkReportPackJobManager` |
 | A run's run-completion documents: scheduling, the queued job, the run's status | `BenchmarkRunReportDocumentService` (singleton) |
@@ -46,14 +47,20 @@ is omitted from ranking, and the fact sheet marks the affected facts unavailable
 
 | Document | Reader | Disclosure | Skeleton |
 |---|---|---|---|
-| **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Summary or Full (§ 6) | Headline (one sentence) · key figures · *What it did well* (at most 3, each at most 30 words) · *Where it fell short* (at most 3, each at most 30 words) · *What this means for use as a game assistant* (at most 90 words) · *How reliable this result is* (at most 60 words) · *Evaluation terms* |
-| **Report for AI Researchers and Developers** (stored as `TechnicalReport`) | AI researchers and model developers. Precise and neutral | Any level | Headline · abstract (at most 150 words) · figures against the peers · *Speed and cost* · *Why it scored this way* (the patterns and causes behind the weaknesses, by category, at most 300 words) then *Weaknesses* · *What worked well* (the patterns behind the strengths, at most 150 words) then *Strengths* (at most 8 of each) · question topics for every question · a note for each question more than 15 points below the peer mean or with a critical error (with no peers: scoring below 50 or with a critical error) · at most 6 recommendations for the model's next iteration, each naming the change proposed and, in a few words, the weakness it answers, with its evidence · *Evaluation terms* |
-| **Internal Improvement Brief** | The Overseer team and its AI agents. Direct and practical | **Full only**; internal | Headline · three parts in the order of *What the Benchmark Is For*: the Overseer chat and its tools, the benchmarking system, the model's result · strengths and weaknesses · question topics and notes · recommendations for the chat, the benchmark or model developers · **leads** |
+| **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Summary or Full (§ 6) | Headline (one sentence) · key figures, with a *Rank* line when there are peers · *How it compares* (peers only: a code-rendered table of every entry's Intelligence Index with its interval, median answer time and cost per question, then a paragraph of at most 70 words on where the model stands and whether that position is established) · *What it did well* (at most 3, each at most 30 words) · *Where it fell short* (at most 3, each at most 30 words) · *What this means for use as a game assistant* (at most 90 words) · *How reliable this result is* (at most 60 words) · *Evaluation terms* |
+| **Report for AI Researchers and Developers** (stored as `TechnicalReport`) | AI researchers and model developers. Precise and neutral | Any level | Headline · abstract (at most 150 words) · *Setup and method*, with a *Compared models* table when there are peers (model, provider, kind, runs, thinking level, harness version, run dates) · figures against the peers, with each peer's *Paired difference* · *Speed and cost* · *Why it scored this way* (the patterns and causes behind the weaknesses, by category, at most 300 words) then *Weaknesses* · *What worked well* (the patterns behind the strengths, at most 150 words) then *Strengths* (at most 8 of each) · question topics for every question · a note for each question more than 15 points below the peer mean or with a critical error (with no peers: scoring below 50 or with a critical error) · at most 6 recommendations for the model's next iteration, each naming the change proposed and, in a few words, the weakness it answers, with its evidence · *Threats to validity*, ending in the writer's *limitations* paragraph (at most 120 words) · *Evaluation terms* |
+| **Internal Improvement Brief** | The Overseer team and its AI agents. Direct and practical | **Full only**; internal | Headline · three parts in the order of *What the Benchmark Is For*: the Overseer chat and its tools (at most 200 words), the benchmarking system (at most 150), the model's result (at most 150) · strengths and weaknesses (at most 8 of each) · question topics and notes · at most 8 recommendations for the chat, the benchmark or model developers · at most 6 **leads** |
 
 The writer fills named **slots** and **lists** only; the renderer supplies every heading, table and
-figure. The slot ids are in `BenchmarkReportSlots`: `meaning` and `confidence` (Executive Summary);
-`abstract`, `whyItScored` and `whatWorked` (Report for AI Researchers and Developers); `overseerChat`, `benchmarkSystem` and
-`modelResult` (Internal Brief). The *Why it scored this way* categories are domain knowledge, reading
+figure. The slot ids are in `BenchmarkReportSlots`: `comparison`, `meaning` and `confidence` (Executive
+Summary); `abstract`, `whyItScored`, `whatWorked` and `limitations` (Report for AI Researchers and
+Developers); `overseerChat`, `benchmarkSystem` and `modelResult` (Internal Brief). The slots are
+**peer-aware**: `comparison` is required only when the fact sheet has peers
+(`BenchmarkReportAudienceSpec.PeerOnlySlots`, `SlotsFor(hasPeers)`), and a stand-alone reply that
+supplies it has the extra slot dropped with a rule 1 note. `limitations` is required in both forms: it
+names limitations of this data that the code-rendered *Threats to validity* lines do not already state —
+a degraded peer, a single-run subject or peer, heavy grader disagreement on particular questions, a band
+with few questions — and the prompt lists those lines so the writer does not restate them. The *Why it scored this way* categories are domain knowledge, reading
 the game state, tool use, instruction following, completeness under the concise answer style, and
 calibration; a category the data does not support is left out. The renderer prints the weaknesses list
 right after the `whyItScored` text under `### Weaknesses`, and the strengths list after `whatWorked`
@@ -141,7 +148,31 @@ The writer never writes a figure. It references:
 
 Counts in prose are number words. Interval overlap is stated descriptively — *"its 95 % interval
 overlaps those of Models B and C"*. The comparison runs **no significance test**, and every document
-repeats the comparison's *Pairwise significance* excluded-measure statement.
+repeats the comparison's *Pairwise significance* excluded-measure statement; the writer prompt carries it
+too, as its *NO SIGNIFICANCE TEST* block.
+
+**Per-peer facts.** Each peer `X` has its own facts, so the writer can say how the subject compares with
+it: `peer.X.quality.index`, `peer.X.quality.interval`, `peer.X.quality.rank`,
+`peer.X.speed.medianSeconds`, `peer.X.cost.perQuestion`, `peer.X.runs` (*"3 runs"*) and the boolean
+`peer.X.intervalOverlap` (the peer's 95 % interval overlaps the subject's). A fact on an axis the peer is
+degraded on is unavailable with the entry's explanation. The prompt's PEERS block lists each peer's fact
+keys and its explanation as data, and SUBJECT carries the subject's own explanation. Their labels read
+*Model X's Intelligence Index* and so on; the label never names the peer, and the renderer puts the
+name in when peers are named.
+
+**Paired differences.** For each peer, the fact sheet's `pairedDifferences` list
+(`BenchmarkReportPairedDifference`: `peerLetter`, `sharedQuestions`, `meanDifference`, `lower`, `upper`, in
+letter order) holds the mean per-question difference, subject minus peer, over the questions both scored
+on the same item revision — the subject's per-question score (a mean over runs for a group) against the
+peer's own per-question mean. Its 95 % interval is a paired bootstrap of 10,000 resamples of that
+question list (`BenchmarkReportFacts.PairedBootstrap`), seeded from the first eight hex characters of the
+comparison's key (§ 5), each peer from a fresh generator, so the same comparison always prints the same
+interval. The facts are `peer.X.pairedDifference` (*"+4.2 points"*), `peer.X.pairedInterval` (*"-1.3 to
++9.8"*) and `peer.X.sharedQuestions`; below five shared questions
+(`BenchmarkReportFacts.PairedMinimumQuestions`) all three are unavailable with the reason. The figure is
+an estimate: it reflects question sampling only, is not adjusted for comparing several models, and is
+**not a significance test** — rule 11 still bans *significant* and its kin, and the renderer prints that
+caveat under the table that shows it (§ 7).
 
 **Support labels.** Each strength and weakness is printed with a support label computed by code from the
 finding rows it cites, never written by the model:
@@ -177,7 +208,7 @@ whether that member shares the subject's provider.
 
 ## 3. Validation, Repair and Drops
 
-`BenchmarkReportPackValidator` checks the writer's JSON against fourteen rules. Each failure is a
+`BenchmarkReportPackValidator` checks the writer's JSON against seventeen rules. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message.
 
@@ -189,7 +220,7 @@ whether that member shares the subject's provider.
 | 4 | Every question number exists, and the question topics cover every question where the document requires them |
 | 5 | Every evidence id exists, and every strength, weakness and lead cites at least one — and so does every recommendation of the Report for AI Researchers and Developers |
 | 6 | A strength may not cite a weakness row and a weakness may not cite a strength row; a finding citing only Conflicting rows must say the graders disagree |
-| 7 | Length limits: headline at most 35 words; abstract at most 150 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words and *How reliable this result is* (`confidence`) at most 60 words; in the Report for AI Researchers and Developers *Why it scored this way* (`whyItScored`) at most 300 words, *What worked well* (`whatWorked`) at most 150 words and at most 6 recommendations |
+| 7 | Length limits: headline at most 35 words; abstract at most 150 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words, *How reliable this result is* (`confidence`) at most 60 words and the *How it compares* paragraph (`comparison`) at most 70 words; in the Report for AI Researchers and Developers *Why it scored this way* (`whyItScored`) at most 300 words, *What worked well* (`whatWorked`) at most 150 words, `limitations` at most 120 words and at most 6 recommendations; in the Internal Improvement Brief `overseerChat` at most 200 words, `benchmarkSystem` and `modelResult` at most 150 each, at most 8 recommendations and at most 6 leads |
 | 8 | No headings, tables or HTML inside any text |
 | 9 | No run of 8 or more words shared with any question, rubric, answer or grader-evidence text |
 | 10 | No peer names, model ids or providers in prose |
@@ -197,10 +228,20 @@ whether that member shares the subject's provider.
 | 12 | US English: no word of the fixed British-spelling list (`BenchmarkReportPackValidator.BritishSpellings`: *colour, behaviour, analyse, analysed, organise, recognise, favour, honour, centre, defence, catalogue, programme, grey, travelled, modelling, labelled, cancelled, judgement*), matched as whole words ignoring case, in any prose |
 | 13 | In the Executive Summary's `confidence` slot only: the quality interval is not called *narrow*, *narrower*, *wide*, *wider*, *tight*, *tighter* or *broad* (`BenchmarkReportPackValidator.IntervalWidthWords`, whole words ignoring case); the code-rendered sentence after the slot states the interval and its span |
 | 14 | The headline and the abstract do not mention the claim verifier: *verifier* or *verifiers*, as a whole word ignoring case (`VerifierInSummaryRule`). A claim-verifier ruling is advisory and belongs, attributed, among the weaknesses |
+| 15 | Every question the prompt lists under *QUESTIONS NEEDING A NOTE* has a note in `questionNotes` (`MissingQuestionNoteRule`) |
+| 16 | A sentence that holds `{{subject}}` and a `{{peer:X}}` token together with a comparative word (`ComparativeWords`: *higher, lower, better, worse, ahead, behind, outperform(s/ed), beat(s), leads, trails*), where `peer.X.intervalOverlap` says the two intervals overlap, also says *overlap* or *not established* (`OverlapHedgeRule`). Tokens are set aside before the text is split into sentences, so a fact key's dots never end one |
+| 17 | No hype or filler words (`HypeWords`: *impressive, remarkable, outstanding, stellar, exceptional, robust, seamless, leverage, delve, game-changing, cutting-edge*), as whole words ignoring case, in any prose (`HypeWordRule`) |
 
-Rules 2, 3, 8, 9, 10, 11 and 12 apply to every prose string: the headline, each paragraph of each slot,
-and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive Summary's
-`confidence` slot, and rule 14 to the headline and each paragraph of the abstract.
+Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
+slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
+Summary's `confidence` slot, rule 14 to the headline and each paragraph of the abstract, and rule 16 to
+each sentence of the prose.
+
+**Readability.** The system prompt of every audience adds: one idea per sentence; sentences of at most
+about 25 words; active voice; a count from the facts rather than *many* or *several*; the category of a
+finding named rather than *"issues across many topics"*; and no hype words (the rule 17 list). The
+Executive Summary keeps its plain-language rule, and the Internal Brief adds *"Lead with the action,
+then the evidence."*
 
 **Repair and drop policy.**
 
@@ -208,13 +249,17 @@ and the text of every item, topic and note. Rule 13 applies to each paragraph of
    (`BenchmarkReportPackPrompt.BuildRepairMessage`).
 2. What still fails after the repair is **dropped** — the item or paragraph is removed from the stored
    output, the note records `Dropped`, and the document is stored as **CompletedWithWarnings**. An
-   over-cap slot with a word limit (the abstract, `meaning`, `confidence`, `whyItScored`, `whatWorked`)
-   loses its last paragraphs until it fits.
-3. **Rules 12, 13 and 14 never drop** (`BenchmarkReportPackValidator.IsWarningRule`). A spelling slip,
-   an interval adjective or a mention of the claim verifier is not worth losing a finding or the one
-   paragraph of a required slot: after the repair turn, text that still uses a British spelling, calls
-   the interval narrow or wide, or names the verifier in the headline or the abstract is **kept**, its
-   note is recorded without `Dropped`, and the document is stored as **CompletedWithWarnings**. The
+   over-cap slot with a word limit (the abstract, `meaning`, `confidence`, `comparison`, `whyItScored`,
+   `whatWorked`, `limitations`, `overseerChat`, `benchmarkSystem`, `modelResult`) loses its last
+   paragraphs until it fits.
+3. **Rules 12 to 17 never drop** (`BenchmarkReportPackValidator.IsWarningRule`). A missing question
+   note (rule 15) has nothing to drop. A spelling slip, an interval adjective, a mention of the claim
+   verifier, an unhedged comparison across overlapping intervals or a hype word is not worth losing a
+   finding or the one paragraph of a required slot: after the repair turn, text that still uses a
+   British spelling, calls the interval narrow or wide, names the verifier in the headline or the
+   abstract, ranks the subject against an overlapping peer without saying so, or uses a hype word is
+   **kept**, its note is recorded without `Dropped`, and the document is stored as
+   **CompletedWithWarnings**. The
    Executive Summary states the interval's span in a code-rendered sentence whatever the writer wrote
    (§ 6).
 4. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
@@ -229,9 +274,11 @@ The dialog and the Download Center show the validation notes, so a dropped item 
 **Rules enforced by the server.**
 
 - **The model under report is refused as its own writer** — the same provider and model id (400).
-- **A writer from the subject's provider** triggers a warning that must be acknowledged: a checkbox in
-  the dialog, sent as `acknowledgeSameProvider`; without it the start answers 409 with the warning. The
-  acknowledgment is stored on each document as `SameProviderAcknowledged`.
+- **A writer from the subject's provider** triggers a warning that must be acknowledged: the dialog
+  shows it in amber, and **Generate** then asks a nested *Same-Provider Report Writer* confirmation
+  (**Write Anyway**) on every write (§ 12) before sending `acknowledgeSameProvider`; without it the start
+  answers 409 with the warning. The acknowledgment is stored on each document as
+  `SameProviderAcknowledged` and is never remembered.
 - The writer must be an enabled Benchmark-role configuration with a key, and allowed by the endpoint
   policy.
 - **Run-completion documents follow the same rule** (§ 11): the model under test itself is refused
@@ -253,10 +300,10 @@ info tip of the run report's **AI Reports** tab.
 **Per document.** The two documents a run or a pack writes most often ask different things of the
 writer, and each can be written by a different model:
 
-- **Executive Summary** — short (about 2,000 output tokens) and plain-language, for decision-makers;
+- **Executive Summary** — short (about 2,400 output tokens) and plain-language, for decision-makers;
   clear, careful wording matters more than depth. A strong writing model — Claude Opus or GPT Sol — at
   medium effort; it is cheap even with a strong model.
-- **Report for AI Researchers and Developers** — long (about 7,000 output tokens) and number-dense, and it
+- **Report for AI Researchers and Developers** — long (about 7,400 output tokens) and number-dense, and it
   must keep every figure exact and follow a strict schema. The strongest scoring-tier reasoning model you
   trust with numbers — Claude Opus or GPT Sol — at medium effort, high if its documents often need the
   repair turn. It costs roughly three to four times the summary.
@@ -294,7 +341,13 @@ Each document is one **immutable** `BenchmarkReportDocument` row; there is no up
   version 3), all taken from the subject's **answer rows**, never from the live suite, so a later suite
   edit cannot change a document. The writer sees only the excerpts;
 - `WriterOutputJson` — the final validated writer output, with dropped items already removed;
-- `ValidationNotesJson`, status, tokens, duration and cost.
+- `ValidationNotesJson`, status, tokens, duration and cost;
+- `ComparisonKey` — the identity of the comparison the document was written for: the lower-case hex
+  SHA-256 of `runs=<ids>;groups=<ids>`, each list sorted, distinct and comma-joined, over the comparison
+  request's `RunIds` and `GroupIds` (`BenchmarkReportComparisonKey`, the only implementation). Documents
+  of the same **set of entries** share it whatever their subject; the pricing basis is not part of it, so
+  changing *Prices* in the wizard keeps the same documents listed. A run-completion document carries its
+  one run's key. An index on `(ComparisonKey, Origin, CreatedAtUtc)` serves the list.
 
 The child table **`BenchmarkReportDocumentRuns (DocumentId, RunId)`** stores each subject run's
 **scoring fingerprint at generation**: `FinalScore`, `QualityIndex`, `SpeedIndex`,
@@ -302,6 +355,18 @@ The child table **`BenchmarkReportDocumentRuns (DocumentId, RunId)`** stores eac
 `AssessmentJson + "\n" + CoAssessorSynthesisJson`. List responses compare it with the run as it is now
 and flag *Run changed since this document was written* (`runChangedSinceGeneration`) when a run was
 re-scored or re-run afterwards.
+
+Each **peer** run gets a row too, with `IsPeer = true` and the same fingerprint fields. A run is never
+both subject and peer of one document; if it were, the subject row would win. List responses compare
+the peer rows the same way and flag *Comparison changed* (`peersChangedSinceGeneration`) when a peer run
+was re-scored, re-run or deleted. `runChangedSinceGeneration` and `missingRunIds` look at subject rows
+only, and so does the list's `runId` filter (§ 9), so a run's report lists exactly its own documents.
+
+**Rows written before these columns existed.** At startup, `BenchmarkReportDocumentBackfill` gives every
+row with no `ComparisonKey` one derived from its stored `ComparisonRequestJson`, in batches of 200,
+beside the run-completion settlement in `Program.cs`; a row it cannot read is logged and stays null, and
+lists only where no comparison filter applies. The backfill is idempotent. Those rows have **no peer
+rows** — their peers' fingerprints were never stored — so they are never flagged *Comparison changed*.
 
 There is **no foreign key to runs**: deleting a run keeps its documents. Deleting a document cascades to
 its child rows.
@@ -394,7 +459,43 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 6** (the current one, 2026-09-29, with harness 43 in `ai-benchmark.md`) makes the
+**Format version 7** (the current one, 2026-09-29) makes a comparison document say how the model compares
+with its peers, and gives the writer the peers' own figures to say it with. It changes no score, index,
+grading prompt, comparability key or `HarnessVersion`.
+
+- **Per-peer facts and paired differences** (§ 2): the `peer.X.*` facts and the fact sheet's
+  `pairedDifferences` list; each entry of `entries` gains `harnessVersion` (*mixed* when its runs differ),
+  `firstRunUtc` and `lastRunUtc` (each run's completion time, or its start when none was recorded).
+- **Executive Summary**: *Key figures* gains a *Rank* line, *"2 of 3 on intelligence"*, followed by
+  *"(the order is not established where intervals overlap)"* when the subject's interval overlaps any
+  peer's. A code-rendered section **How it compares** follows *Key figures*: one row per entry — Model,
+  Intelligence Index with its interval, Median answer time, Cost per question — the subject in bold, then
+  the peers by letter, and under it the writer's `comparison` paragraph. Peer mode only.
+- **Report for AI Researchers and Developers**:
+  - *Setup and method* gains **Compared models** (peer mode only): Model, Provider, Kind (run or group),
+    Runs, Thinking level, Harness version and Run dates (UTC). The stand-alone form keeps its single-run
+    setup lines;
+  - the *Quality* table gains a **Paired difference** column (*"-4.6 points (-9.8 to +0.7)"*, *not
+    available* below the minimum, with the reasons listed under the table) and the code-rendered note
+    *"Paired difference: mean per-question difference, subject minus peer, over the questions both
+    answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for
+    comparing several models, and is not a significance test."*;
+  - *Threats to validity* ends with the writer's `limitations` paragraph, in both forms.
+- **Evidence lines** print a `peer.X.*` fact under its label with the peer's name put in when peers are
+  named (`FactLabel`).
+- **Writer prompt**: the PEERS block, the subject's explanation, the *NO SIGNIFICANCE TEST* block, the
+  readability rules (§ 3), the `comparison` and `limitations` slots and the Internal Brief's word caps.
+  Validator rules 15–17 (§ 3). The output-token estimates are 2,400 (Executive Summary), 7,400 (Report for
+  AI Researchers and Developers) and 7,000 (Internal Brief).
+- **Footer**: from format 7 the checks line names *interval-overlap wording* and *hype words* among the
+  automatic checks; an older document keeps the wording of the checks it received.
+
+A document stored under format 6 renders as before: *How it compares* and the *Rank* line appear only when
+its sheet has `peer.*` facts, the *Paired difference* column only when a `peer.X.pairedDifference` fact
+exists, *Compared models* without the *Harness version* and *Run dates* columns it has no data for, and
+the `comparison` and `limitations` paragraphs only when the slot is present.
+
+**Format version 6** (2026-09-29, with harness 43 in `ai-benchmark.md`) makes the
 documents read the same figures as the run report and tightens what the writer may say about the claim
 verifier:
 
@@ -562,6 +663,12 @@ The summary line, the ZIP's `MANIFEST.md` and its file name call them *Internal 
 Opened on a run, the dialog lists every document whose subject includes the run, so a run's
 run-completion documents (§ 11) appear under both packages beside any Report Pack documents about it;
 while they are still being written, a notice says so and the list reloads when they are done (§ 11).
+
+Opened on a list of documents (`DownloadCenterDocumentsContext`), the dialog may take a `title` and a
+`subtitle` in place of *Downloads* and the document count. The documents library (§ 12) passes the title
+*Comparison reports* and the subtitle *"N documents of the comparison of M models"* (a comparison's
+documents) or *"N comparison report documents"* (the launcher's library); without them the current
+subtitle stands. Packages, disclosure levels, naming, formats and the ZIP are the same either way.
 
 Each row offers its formats PDF first, then Word: pack documents and the run report PDF, Word, Markdown
 and HTML; the tool-call log PDF, Word and Markdown; diagnostics PDF, Word and Text. The choices are
@@ -755,8 +862,18 @@ The start's refusals, in the order they are checked:
 
 ### Report documents (`AdminBenchmarkReportDocumentsController`)
 
-- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&take=`: List documents, without rendered
-  text, each with `runChangedSinceGeneration`.
+- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&take=`: List documents,
+  newest first, without rendered text, each with `runChangedSinceGeneration`,
+  `peersChangedSinceGeneration`, `comparisonKey`, `comparisonEntryCount` (the subject and its peers; a
+  group counts once), `peerCount` and `pricingBasis` (`AsRun` or `Current`). Every filter is optional:
+  - `runId` matches a run of the **subject** only, never a peer's run (§ 5);
+  - `comparison=run:1,run:2,group:4` takes the comparison's entry keys, in any order, and matches the
+    documents whose `ComparisonKey` they hash to; any other form answers 400 *The comparison must be a
+    comma-separated list of run:&lt;id&gt; and group:&lt;id&gt; keys.*, and a key that matches nothing lists
+    nothing. The client sends entry keys and never hashes;
+  - `origin=reportPack|runCompletion` filters on `Origin`; absent lists every origin, and any other value
+    is a 400;
+  - `take` defaults to 200 and is capped at 500.
 - `GET /api/admin/benchmark/report-documents/{id}`: Detail: metadata, validation notes and the facts JSON.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`:
   The rendered Markdown (`text/markdown; charset=utf-8`), deterministic, with no model call; 400 for a
@@ -975,3 +1092,76 @@ run-completion document through either delete endpoint returns the run's status 
 no message, unless a job is in progress, so the status never describes a document that is gone; the run
 keeps its report writer. After a delete the tab clears the writer picker when it held the model that
 wrote the deleted document, so a rewrite starts from a deliberate choice.
+
+---
+
+## 12. The Report Pack Dialog and the Comparison Reports Library
+
+**The documents library.** One component, `app-report-document-library`
+(`report-pack/report-document-library.component.*`), lists stored documents wherever they are shown
+outside a run: the Report Pack dialog and the Model Comparison launcher. It owns loading, selection,
+viewing, downloading and deleting, and both hosts only place it.
+
+- **Scope.** `{ kind: 'comparison', entryKeys }` lists this comparison's Report Pack documents
+  (`comparison=<entry keys>&origin=reportPack`, § 9); `{ kind: 'all' }` lists every Report Pack document
+  (`origin=reportPack&take=500`). Run-completion documents stay in their run's report. A document belongs
+  to a comparison when the comparison has the same set of entries (§ 5), so changing *Prices* keeps the
+  list, and adding or removing a model empties it.
+- **Columns.** A select column; *Created (UTC)*; *Subject*, with *Run changed since this document was
+  written* and *Comparison changed* tags in words; *Document*; *Compared with* in the `all` scope only
+  (*"4 other models"* and the suite on a second line); *Writer*; *Status* (*Written*, *Written with
+  warnings*); *Cost*; *Actions*. *Created*, *Subject*, *Document*, *Writer*, *Status* and *Cost* sort; a
+  filter row filters *Subject* by text, *Document* and, in the `all` scope, *Suite* by exact value. The
+  table uses the shared `TableState`, with pagers above and below the scrolling wrapper and a sticky
+  header. The component is an inline-size container: below 44rem of its own width, *Writer* and *Cost*
+  move into a second line of the *Document* cell instead of scrolling sideways.
+- **Selection and downloading.** Selection is by id, with *N selected — M not on this page*, **Show
+  selected only** and **Clear Selection**, and no select-all. **Download…** opens the Download Center
+  (§ 8) on the selection, or with none on every document of the filtered view, and says so in its
+  accessible name (*"Download all 6 documents shown"*).
+- **Row actions.** **View** opens the in-app PDF viewer at the document's highest allowed disclosure,
+  the others offered as disclosure tabs with the per-document disclosure guide. A document with peers
+  gets a second segmented row, *Peer names* (*Named*, *Anonymized*), opening at *Named*, and the guide's
+  note *"Switch Peer names to see the copy a provider would receive."*; *Open in new tab* and *Download
+  PDF* use the chosen pair. **Download** opens the Download Center on that document, and **Delete** asks
+  the delete confirmation first.
+- **Ids** derive from the host's `idPrefix` (`rp` in the dialog, `mcl` on the launcher), so both can live
+  in one page: `<prefix>-doc-<id>-view|download|delete|select`. The nested viewer, Download Center and
+  confirmation stop their own `close` and `cancel` events, and focus returns to the button that opened
+  them.
+
+**The Report Pack dialog** (`benchmark-report-pack-dialog`) uses `app-run-report-frame` in its
+**sidebar** layout: a resizable sidebar with the form, then the main area with the documents, in reading
+and tab order. From 60rem of body width the sidebar is 20–32rem wide, at most 40 % of the body, 24rem by
+default, set by the `app-pane-resizer` between the two (drag, or Left and Right on it); the width is kept
+under `sidebarWidth` in `localStorage['overseer.benchmark.reportPack']`. Below 60rem the two stack, the
+sidebar first. Each column scrolls on its own.
+
+- **Sidebar**: *Subject*; *Documents* (the three checkbox cards); *Report writer*, with the dialog-mode
+  info tip *Choosing a report writer* (`run-ai-reports/report-writer-advice.ts`, shared with the run
+  report's **AI Reports** tab, with an Internal Brief entry) and the *How the graders work* link; the
+  refusal or the amber same-provider warning; the *Estimated cost* panel (`.gh-estimate-panel`, shared
+  with the AI Reports tab); **Generate**.
+- **Same-provider writer**: Generate opens a nested *Same-Provider Report Writer* confirmation, **Write
+  Anyway**, on every write, and only then sends `acknowledgeSameProvider: true`. Nothing is remembered.
+- **Main area**: *Documents of this comparison*, a one-line scope, the job card while a job exists, a
+  *Downloads* notice with **Open Download Center** once the comparison has a document, and the library in
+  the comparison scope. The job card shows the stage rail (*Queued*, *Preparing*, one stage per document,
+  *Done*) and a stat strip (elapsed, writer, model calls, tokens, cost, estimate), and collapses when the
+  job finishes to a one-line summary with **Dismiss**, the per-document table and the log in a closed
+  disclosure; the library then reloads.
+- There is no Markdown preview: documents are read in the PDF viewer.
+
+The dialog is opened with a `ReportPackContext` whose `entryKeys` are every entry of the comparison,
+Excluded ones included, because the Report Pack request sends every entry's run and group ids and the
+stored key hashes those.
+
+**The Model Comparison launcher** (Admin → AI Benchmark → Model Comparison) leads with the action: a hero
+card with *Cross-model comparison*, its lead and **Open Comparison Wizard** (the page's only `.btn-gh`,
+*compass* glyph), then the *Last comparison* read-out, then *How the comparison works* — the two wizard
+steps and the like-for-like note — in a disclosure that is open on the first visit and afterwards as the
+operator left it (`localStorage['overseer.benchmark.modelComparison.launcher']`). Below it, **Comparison
+reports** is the library in the `all` scope. It loads when the tab is shown, not with the page, and again
+each time the tab is shown or the wizard closes, since the wizard may have written documents. The library
+is a list of documents, not a comparison control: the launcher still duplicates none of the wizard's
+controls.

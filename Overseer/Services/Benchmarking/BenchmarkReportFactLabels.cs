@@ -104,6 +104,24 @@ public static class BenchmarkReportFactLabels
         ["run.toolGuidesSha256"] = "Tool guides SHA-256 prefix",
     };
 
+    /// <summary>
+    /// The labels of a peer's own facts (<c>peer.&lt;letter&gt;.&lt;suffix&gt;</c>) by suffix, <c>{0}</c> standing
+    /// for <c>Model &lt;letter&gt;</c>. A label never names the peer; the renderer resolves the naming.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> PeerLabels = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["quality.index"] = "{0}'s Intelligence Index",
+        ["quality.interval"] = "{0}'s 95 % interval",
+        ["quality.rank"] = "{0}'s intelligence rank",
+        ["speed.medianSeconds"] = "{0}'s median answer time",
+        ["cost.perQuestion"] = "{0}'s cost per question",
+        ["runs"] = "{0}'s runs",
+        ["intervalOverlap"] = "Interval overlap with {0}",
+        ["pairedDifference"] = "Paired difference from {0}",
+        ["pairedInterval"] = "Paired-bootstrap interval against {0}",
+        ["sharedQuestions"] = "Questions shared with {0}",
+    };
+
     private static readonly IReadOnlyDictionary<string, string> DimensionNames = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["accuracy"] = "Accuracy",
@@ -170,11 +188,20 @@ public static class BenchmarkReportFactLabels
         }
 
         // peer.<letter>.<key>: another model's own figure
-        if (parts[0] == "peer" && parts.Length >= 3 && parts[1].Length > 0 && parts[1].All(char.IsAsciiLetterUpper)
-            && TryLabel(string.Join('.', parts.Skip(2)), out var inner))
+        if (parts[0] == "peer" && parts.Length >= 3 && parts[1].Length > 0 && parts[1].All(char.IsAsciiLetterUpper))
         {
-            label = "Model " + parts[1] + ": " + LowerFirst(inner);
-            return true;
+            string suffix = string.Join('.', parts.Skip(2));
+            if (PeerLabels.TryGetValue(suffix, out var peerLabel))
+            {
+                label = string.Format(CultureInfo.InvariantCulture, peerLabel, "Model " + parts[1]);
+                return true;
+            }
+
+            if (TryLabel(suffix, out var inner))
+            {
+                label = "Model " + parts[1] + ": " + LowerFirst(inner);
+                return true;
+            }
         }
 
         return false;

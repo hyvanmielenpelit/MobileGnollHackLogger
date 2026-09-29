@@ -1626,6 +1626,28 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(Object.keys(zip.files).sort()).toEqual(['MANIFEST.md', 'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.md']);
       expect(component.failures[0].reason).toBe('the run no longer exists');
     });
+
+    it('titles itself Downloads with the document count, unless the context names a title and subtitle', () => {
+      const heading = (): string => (host().querySelector('.dialog-title-group h3')?.textContent ?? '').trim();
+      const subtitle = (): string => (host().querySelector('.dialog-title-group .dialog-subtitle')?.textContent ?? '').trim();
+
+      openDocuments({ 1: doc(1, ExecutiveSummary), 2: doc(2, TechnicalReport) });
+      expect(heading()).toBe('Downloads');
+      expect(subtitle()).toBe('2 report documents and the reports of their runs');
+
+      component.open({
+        kind: 'documents',
+        documentIds: [1],
+        title: 'Comparison reports',
+        subtitle: '1 document of the comparison of 3 models'
+      });
+      httpMock.expectOne('/api/admin/benchmark/report-documents/1').flush(doc(1, ExecutiveSummary));
+      render();
+      expect(heading()).toBe('Comparison reports');
+      expect(subtitle()).toBe('1 document of the comparison of 3 models');
+      // The rows and packages are those of any document context.
+      expect(component.rows.map(r => r.key)).toEqual(['doc:1', 'report:42']);
+    });
   });
 
   it('emits closed when the dialog closes', () => {

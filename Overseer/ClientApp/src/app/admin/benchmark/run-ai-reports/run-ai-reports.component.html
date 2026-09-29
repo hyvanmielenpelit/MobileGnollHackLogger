@@ -126,27 +126,12 @@
             <app-info-tip trigger="dialog" tipId="rrReportWriterHint" subject="Report writer"
                           dialogTitle="Choosing a report writer">
               <dl>
-                <div>
-                  <dt><span class="gh-info-term">Executive Summary</span> <span class="gh-info-badge">Short</span></dt>
-                  <dd>For decision-makers. A short, plain-language document (about 2,000 output tokens) where clear,
-                    careful wording matters more than depth. Use a strong writing model — Claude Opus or GPT Sol — at
-                    medium effort. It is cheap even with a strong model.</dd>
-                </div>
-                <div>
-                  <dt><span class="gh-info-term">Report for AI Researchers and Developers</span> <span class="gh-info-badge">Long</span></dt>
-                  <dd>For specialists. A long, number-dense document (about 7,000 output tokens) that must keep every
-                    figure exact and follow a strict schema. Use the strongest scoring-tier reasoning model you trust
-                    with numbers — Claude Opus or GPT Sol — at medium effort, high if its documents often need repair.
-                    It costs roughly three to four times the summary.</dd>
-                </div>
-                <div>
-                  <dt><span class="gh-info-term">Both</span></dt>
-                  <dd>Prefer a writer from another provider than the model under test; a writer from the same provider
-                    is allowed after a warning. Where the roster allows, prefer one that shares a family with neither
-                    panel member either. Avoid economy tiers (Flash, Flash-Lite) and the top tiers (Claude Fable, GPT
-                    Astra). Each document can be written by a different model: write one, then choose another writer
-                    for the other.</dd>
-                </div>
+                @for (entry of writerAdvice; track entry.term) {
+                  <div>
+                    <dt><span class="gh-info-term">{{ entry.term }}</span>@if (entry.badge) { <span class="gh-info-badge">{{ entry.badge }}</span>}</dt>
+                    <dd>{{ entry.text }}</dd>
+                  </div>
+                }
               </dl>
             </app-info-tip>
           </div>
@@ -180,19 +165,19 @@
       }
 
       <!-- Always rendered, so the live region is in place before an estimate arrives. -->
-      <div id="rrWriteEstimate" class="rr-ai-estimate" role="status"
+      <div id="rrWriteEstimate" class="gh-estimate-panel" role="status"
            [class.is-empty]="!estimateView"
            [class.is-muted]="estimateView !== null && estimateView.state !== 'ready'"
            [attr.aria-busy]="estimateView?.state === 'loading' ? 'true' : null">
         @if (estimateView; as est) {
           @switch (est.state) {
             @case ('ready') {
-              <div class="rr-ai-estimate-head">
-                <span class="rr-ai-estimate-label">Estimated cost</span>
-                <span class="rr-ai-estimate-total">about {{ est.total }}</span>
+              <div class="gh-estimate-head">
+                <span class="gh-estimate-label">Estimated cost</span>
+                <span class="gh-estimate-total">about {{ est.total }}</span>
               </div>
               @if (est.parts.length > 1) {
-                <dl class="rr-ai-estimate-parts">
+                <dl class="gh-estimate-parts">
                   @for (part of est.parts; track part.name) {
                     <div>
                       <dt>{{ part.name }}</dt>
@@ -201,16 +186,16 @@
                   }
                 </dl>
               }
-              <p class="rr-ai-estimate-note">The actual cost is shown while the reports are written.</p>
+              <p class="gh-estimate-note">The actual cost is shown while the reports are written.</p>
             }
             @case ('loading') {
-              <p class="rr-ai-estimate-note">Estimating…</p>
+              <p class="gh-estimate-note">Estimating…</p>
             }
             @case ('failed') {
-              <p class="rr-ai-estimate-note">The cost could not be estimated.</p>
+              <p class="gh-estimate-note">The cost could not be estimated.</p>
             }
             @default {
-              <p class="rr-ai-estimate-note">No price card for this model; the cost cannot be estimated.</p>
+              <p class="gh-estimate-note">No price card for this model; the cost cannot be estimated.</p>
             }
           }
         }

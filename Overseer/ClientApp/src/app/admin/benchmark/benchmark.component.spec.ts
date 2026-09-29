@@ -18,6 +18,7 @@ import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.component';
 import { keyFiguresImageIo } from './run-report-frame/key-figures-image';
 import { PDFJS_LOADER } from '../../shared/pdf-viewer/pdfjs-loader';
+import { ReportDocumentLibraryComponent } from './report-pack/report-document-library.component';
 
 describe('AdminBenchmarkComponent', () => {
   let component: AdminBenchmarkComponent;
@@ -31,12 +32,16 @@ describe('AdminBenchmarkComponent', () => {
   /** The key it remembers the Model Comparison selection under. */
   const COMPARISON_SELECTION_KEY = 'overseer_admin_benchmark_comparison_selection';
 
+  /** The key the Model Comparison launcher remembers its "How the comparison works" disclosure under. */
+  const COMPARISON_LAUNCHER_KEY = 'overseer.benchmark.modelComparison.launcher';
+
   function clearStoredState(): void {
     // All are real browser state, so without this a spec that starts a run, picks a comparison or
     // chooses a run report tab leaks its selections into every spec that constructs the component afterwards.
     try {
       localStorage.removeItem(RUN_SETTINGS_KEY);
       localStorage.removeItem(COMPARISON_SELECTION_KEY);
+      localStorage.removeItem(COMPARISON_LAUNCHER_KEY);
       localStorage.removeItem(RUN_REPORT_TAB_STORAGE_KEY);
     } catch { /* private-browsing modes throw */ }
   }
@@ -9142,7 +9147,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const panel = fixture.nativeElement.querySelector('#bm-panel-modelcomparison');
-      expect(panel.querySelector('.mc-launcher')).toBeTruthy();
+      expect(panel.querySelector('.mc-launcher .mc-launcher-hero')).toBeTruthy();
       // The task itself is a dialog, so neither of the two components is in the panel.
       expect(panel.querySelector('app-comparison-source-picker')).toBeNull();
       expect(panel.querySelector('app-benchmark-model-comparison')).toBeNull();
@@ -9162,7 +9167,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();
 
-      const launcher = fixture.nativeElement.querySelector('.mc-launcher');
+      const launcher = fixture.nativeElement.querySelector('.mc-launcher-hero');
       // The picker lives in the wizard, so a "Selected" read-out here would label a control that
       // is not on this panel, and Clear would clear something it never showed.
       const terms = Array.from(launcher.querySelectorAll('dt'))
@@ -9175,7 +9180,147 @@ describe('AdminBenchmarkComponent', () => {
       // One action, and it is the one that opens the surface that owns the selection.
       const actions = launcher.querySelectorAll('.mc-launcher-actions button');
       expect(actions.length).toBe(1);
-      expect(actions[0].textContent.trim()).toBe('Open comparison wizard');
+      expect(actions[0].textContent.trim()).toBe('Open Comparison Wizard');
+      // The page's primary task, and its only image button outside a dialog footer.
+      expect(actions[0].classList.contains('btn-gh')).toBeTrue();
+      expect(actions[0].classList.contains('btn-gh-small')).toBeFalse();
+      const imageButtons = (Array.from(
+        fixture.nativeElement.querySelectorAll('#bm-panel-modelcomparison .btn-gh')) as HTMLElement[])
+        .filter(button => !button.closest('dialog'));
+      expect(imageButtons).toEqual([actions[0]]);
+    });
+
+    it('puts Open Comparison Wizard directly under the lead, before the steps', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const hero = fixture.nativeElement.querySelector('.mc-launcher-hero') as HTMLElement;
+      const lead = hero.querySelector('.mc-launcher-lead') as HTMLElement;
+      const actions = hero.querySelector('.mc-launcher-actions') as HTMLElement;
+      expect(lead.nextElementSibling).toBe(actions);
+
+      const steps = hero.querySelector('ol.mc-launcher-steps') as HTMLElement;
+      expect(actions.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('keeps the steps and the like-for-like note in a non-exclusive disclosure after the action', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const hero = fixture.nativeElement.querySelector('.mc-launcher-hero') as HTMLElement;
+      const details = hero.querySelector('details.gh-disclosure.mc-launcher-howto') as HTMLDetailsElement;
+      expect(details).toBeTruthy();
+      expect(details.hasAttribute('name')).toBeFalse();
+      expect(details.querySelector('summary')?.textContent?.trim()).toBe('How the comparison works');
+      expect(details.querySelector('ol.mc-launcher-steps')).toBeTruthy();
+      expect(details.querySelector('.alert.alert-info[role="note"]')?.textContent)
+        .toContain('Only like-for-like runs are charted together');
+    });
+
+    it('opens the disclosure on the first visit only, and remembers how the operator left it', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      let details = fixture.nativeElement.querySelector('.mc-launcher-howto') as HTMLDetailsElement;
+      expect(details.open).toBeTrue();
+      // Recorded closed at once, so the next visit starts closed unless the operator keeps it open.
+      expect(JSON.parse(localStorage.getItem(COMPARISON_LAUNCHER_KEY)!)).toEqual({ howItWorksOpen: false });
+
+      // As a page reload does: the state is read from storage again on the next showing.
+      component.comparisonHowItWorksOpen = null;
+      fixture.nativeElement.querySelector('#bm-tab-run').click();
+      fixture.detectChanges();
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      details = fixture.nativeElement.querySelector('.mc-launcher-howto') as HTMLDetailsElement;
+      expect(details.open).toBeFalse();
+
+      // The native toggle, dispatched synchronously rather than awaited.
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+      expect(JSON.parse(localStorage.getItem(COMPARISON_LAUNCHER_KEY)!)).toEqual({ howItWorksOpen: true });
+
+      component.comparisonHowItWorksOpen = null;
+      fixture.nativeElement.querySelector('#bm-tab-run').click();
+      fixture.detectChanges();
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      details = fixture.nativeElement.querySelector('.mc-launcher-howto') as HTMLDetailsElement;
+      expect(details.open).toBeTrue();
+    });
+
+    it('opens the disclosure when storage throws, and does not throw itself', () => {
+      spyOn(localStorage, 'getItem').and.throwError('private browsing');
+      spyOn(localStorage, 'setItem').and.throwError('private browsing');
+
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const details = fixture.nativeElement.querySelector('.mc-launcher-howto') as HTMLDetailsElement;
+      expect(details.open).toBeTrue();
+      details.open = false;
+      expect(() => details.dispatchEvent(new Event('toggle'))).not.toThrow();
+      expect(component.comparisonHowItWorksOpen).toBeFalse();
+    });
+
+    // --- The Comparison reports library ---
+
+    /** The library's list requests: the report-pack documents, apart from any run's own list. */
+    function comparisonReportLoads(): number {
+      return benchmarkServiceMock.listReportDocuments.calls.all()
+        .filter(call => (call.args[0] as { origin?: string } | undefined)?.origin === 'reportPack')
+        .length;
+    }
+
+    it('renders the Comparison reports library below the hero card, over every comparison document', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const libraryDebug = fixture.debugElement.query(By.directive(ReportDocumentLibraryComponent));
+      expect(libraryDebug).toBeTruthy();
+      const library = libraryDebug.componentInstance as ReportDocumentLibraryComponent;
+      expect(library.scope).toEqual({ kind: 'all' });
+      expect(library.heading).toBe('Comparison reports');
+      expect(library.idPrefix).toBe('mcl');
+      expect(library.showComparisonColumn).toBeTrue();
+
+      const host = libraryDebug.nativeElement as HTMLElement;
+      const hero = fixture.nativeElement.querySelector('.mc-launcher-hero') as HTMLElement;
+      expect(hero.contains(host)).toBeFalse();
+      expect(hero.compareDocumentPosition(host) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('.mc-launcher-library-lead')?.textContent)
+        .toContain('Every report document written from a model comparison, newest first.');
+
+      expect(benchmarkServiceMock.listReportDocuments).toHaveBeenCalledWith(
+        jasmine.objectContaining({ origin: 'reportPack', take: 500 }));
+    });
+
+    it('loads the Comparison reports only once the tab is shown, then on every showing and wizard close', () => {
+      // Page load, on another tab: nothing of the library exists and nothing is fetched for it.
+      expect(fixture.nativeElement.querySelector('app-report-document-library')).toBeNull();
+      expect(comparisonReportLoads()).toBe(0);
+
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+      // One load on the first showing, not one on init and a second for the reload token.
+      expect(comparisonReportLoads()).toBe(1);
+
+      // A stable scope: another change-detection pass does not read it as a new one.
+      fixture.detectChanges();
+      expect(comparisonReportLoads()).toBe(1);
+
+      fixture.nativeElement.querySelector('#bm-tab-run').click();
+      fixture.detectChanges();
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+      expect(comparisonReportLoads()).toBe(2);
+
+      // The wizard's Report Pack may have written documents.
+      component.onComparisonWizardClose();
+      fixture.detectChanges();
+      expect(comparisonReportLoads()).toBe(3);
     });
 
     it('states what the last comparison produced once one exists', () => {
@@ -9203,7 +9348,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const items = Array.from(
-        fixture.nativeElement.querySelectorAll('.mc-launcher ol.mc-launcher-steps > li')) as HTMLElement[];
+        fixture.nativeElement.querySelectorAll('.mc-launcher-hero .mc-launcher-howto ol.mc-launcher-steps > li')) as HTMLElement[];
       expect(items.length).toBe(2);
       expect(items.map(item => item.querySelector('strong')?.textContent?.trim()))
         .toEqual(COMPARISON_WIZARD_STEPS.map(step => step.title));
@@ -9213,7 +9358,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();
 
-      const launcher = fixture.nativeElement.querySelector('.mc-launcher') as HTMLElement;
+      const launcher = fixture.nativeElement.querySelector('.mc-launcher-hero') as HTMLElement;
       expect(launcher.querySelectorAll('.alert.alert-info[role="note"]').length).toBe(1);
       expect(launcher.textContent).not.toContain('must-match');
     });

@@ -508,6 +508,183 @@ public class BenchmarkReportPackPromptTests
         Assert.DoesNotContain(sentinel, prompt.SystemPrompt);
     }
 
+    // Format version 7: the comparison and limitations slots, caps, readability, the peer block ----
+
+    [Fact]
+    public void ExecutiveSummary_AsksForTheComparisonSlot_ForPeersOnly()
+    {
+        string system = Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt;
+        string comparison = system.Split('\n').Single(l => l.StartsWith("- comparison:", StringComparison.Ordinal));
+
+        Assert.Contains("For peers only: write it only when PEERS lists peers, and leave the key out otherwise.", comparison);
+        Assert.Contains("At most 70 words in one paragraph", comparison);
+        Assert.Contains("whether that position is established", comparison);
+        Assert.Contains("say so and that the order between them is not established", comparison);
+        Assert.Contains("the paired-difference facts included", comparison);
+        Assert.Contains("\"comparison\": \"Markdown paragraph, only when PEERS lists peers\"", system);
+        Assert.Contains("a slot marked as for peers only is left out of a stand-alone run report", system);
+
+        Assert.DoesNotContain("\"comparison\"", Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt);
+        Assert.DoesNotContain("\"comparison\"", Build(BenchmarkReportAudience.InternalBrief).SystemPrompt);
+        Assert.Equal(new[] { BenchmarkReportSlots.Comparison }, BenchmarkReportSlots.ExecutiveSummary.PeerOnlySlots);
+        Assert.Empty(BenchmarkReportSlots.TechnicalReport.PeerOnlySlots);
+        Assert.Empty(BenchmarkReportSlots.InternalBrief.PeerOnlySlots);
+    }
+
+    [Fact]
+    public void TechnicalReport_AsksForTheLimitationsSlot_AndListsTheCodeLinesItMustNotRestate()
+    {
+        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
+        string limitations = system.Split('\n').Single(l => l.StartsWith("- limitations:", StringComparison.Ordinal));
+
+        Assert.Contains("At most 120 words, printed as the last paragraph of Threats to validity", limitations);
+        Assert.Contains("a degraded peer, a subject or peer with a single run, heavy grader disagreement on particular questions, or a difficulty band with few questions", limitations);
+        Assert.Contains("single-turn questions under one chat configuration", limitations);
+        Assert.Contains("which sources of variation the interval covers", limitations);
+        Assert.Contains("the graders are AI models", limitations);
+        Assert.Contains("do not restate any of them", limitations);
+        Assert.DoesNotContain("For peers only", limitations);
+        Assert.Contains("\"limitations\": \"Markdown paragraphs\"", system);
+
+        Assert.DoesNotContain("\"limitations\"", Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt);
+    }
+
+    [Fact]
+    public void InternalBrief_StatesItsWordAndItemCaps()
+    {
+        string system = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
+
+        Assert.Contains("- overseerChat: At most 200 words. The brief's first part", system);
+        Assert.Contains("- benchmarkSystem: At most 150 words. The brief's second part", system);
+        Assert.Contains("- modelResult: At most 150 words. The brief's third part", system);
+        Assert.Contains("- recommendations: at most eight concrete next steps.", system);
+        Assert.Contains("- leads: at most six things worth checking", system);
+        Assert.Contains("- strengths: at most eight items", system);
+        Assert.Contains("- weaknesses: at most eight items", system);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_StatesTheReadabilityRules(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("READABILITY:", system);
+        Assert.Contains("- One idea per sentence, in sentences of at most about twenty-five words.", system);
+        Assert.Contains("- Use the active voice.", system);
+        Assert.Contains("- Prefer a count from the facts to vague words such as many or several.", system);
+        Assert.Contains("rather than writing \"issues across many topics\"", system);
+        foreach (string word in BenchmarkReportPackValidator.HypeWords)
+        {
+            Assert.Contains(word, system);
+        }
+
+        if (audience == BenchmarkReportAudience.InternalBrief)
+        {
+            Assert.Contains("- Lead with the action, then the evidence.", system);
+        }
+        else
+        {
+            Assert.DoesNotContain("Lead with the action", system);
+        }
+
+        if (audience == BenchmarkReportAudience.ExecutiveSummary)
+        {
+            Assert.Contains("Tone: plain US English in short sentences, with no jargon.", system);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_StatesTheOverlapAndPairedDifferenceRules(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("must also say in the same sentence that the intervals overlap or that the order is not established", system);
+        foreach (string word in new[] { "higher", "lower", "better", "worse", "ahead", "behind", "outperforms", "beats", "leads", "trails" })
+        {
+            Assert.Contains(word, system);
+        }
+        Assert.Contains("an estimate from question sampling only, not adjusted for comparing several models and not a significance test", system);
+    }
+
+    [Fact]
+    public void PromptSha256_CoversTheNewInstructions()
+    {
+        // The hash is of the whole system prompt, so each audience's new slot and rules are inside it.
+        foreach (var (audience, marker) in new[]
+        {
+            (BenchmarkReportAudience.ExecutiveSummary, "- comparison:"),
+            (BenchmarkReportAudience.TechnicalReport, "- limitations:"),
+            (BenchmarkReportAudience.InternalBrief, "- Lead with the action, then the evidence.")
+        })
+        {
+            string system = BenchmarkReportPackPrompt.BuildSystemPrompt(audience);
+            Assert.Contains(marker, system);
+            Assert.Contains("READABILITY:", system);
+            Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(system))), BenchmarkReportPackPrompt.PromptSha256(audience));
+
+            string withoutReadability = system[..system.IndexOf("READABILITY:", StringComparison.Ordinal)];
+            Assert.NotEqual(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(withoutReadability))), BenchmarkReportPackPrompt.PromptSha256(audience));
+        }
+    }
+
+    /// <summary>The writer test sheet with the subject's and each peer's explanation and per-peer facts.</summary>
+    private static BenchmarkReportFactSheet PeerFactSheet()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.SubjectExplanation = "Comparable: every key outside the model axis matches the baseline.";
+        sheet.Peers[1].Explanation = "Plotted with a degraded axis: quality is sound, and speed mixes conditions across the set.";
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.B.quality.index", Value = System.Text.Json.Nodes.JsonValue.Create(71.0), Display = "71 / 100" });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.A.quality.index", Value = System.Text.Json.Nodes.JsonValue.Create(83.0), Display = "83 / 100" });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.A.intervalOverlap", Value = System.Text.Json.Nodes.JsonValue.Create(true), Display = "its 95 % interval overlaps the subject's" });
+        sheet.Facts.Add(new BenchmarkReportFact
+        {
+            Key = "peer.A.pairedDifference", Display = BenchmarkReportFacts.NotAvailable, Available = false,
+            UnavailableReason = "Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference."
+        });
+        return sheet;
+    }
+
+    [Fact]
+    public void UserMessage_ListsEachPeersExplanationAndFactKeys_TheSubjectsExplanation_AndTheNoSignificanceStatement()
+    {
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary, PeerFactSheet()).UserMessage;
+
+        Assert.Contains("State: Comparable\nExplanation: Comparable: every key outside the model axis matches the baseline.\n", message);
+        Assert.Contains("- {{peer:A}}: Comparable\n  its facts (values under FACTS): peer.A.intervalOverlap, peer.A.pairedDifference, peer.A.quality.index\n", message);
+        Assert.Contains("- {{peer:B}}: Degraded; speed figures degraded\n"
+            + "  explanation: Plotted with a degraded axis: quality is sound, and speed mixes conditions across the set.\n"
+            + "  its facts (values under FACTS): peer.B.quality.index\n", message);
+        Assert.Contains("peer.A.quality.index = 83 / 100", message);
+        Assert.Contains("peer.A.pairedDifference = unavailable: Fewer than five questions", message);
+        Assert.Contains("NO SIGNIFICANCE TEST (the comparison's own statement; code prints it in the document)\nNo pairwise significance test is run.\n", message);
+        Assert.True(message.IndexOf("PEERS", StringComparison.Ordinal) < message.IndexOf("NO SIGNIFICANCE TEST", StringComparison.Ordinal));
+        Assert.True(message.IndexOf("NO SIGNIFICANCE TEST", StringComparison.Ordinal) < message.IndexOf("FACTS (", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void UserMessage_OfAStandaloneSheet_HasNoPeerBlockLinesAndNoSignificanceStatement()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Peers.Clear();
+
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary, sheet).UserMessage;
+
+        Assert.DoesNotContain("its facts (values under FACTS)", message);
+        Assert.DoesNotContain("NO SIGNIFICANCE TEST", message);
+        Assert.DoesNotContain("Explanation:", message);
+    }
+
+    [Fact]
+    public void RepairMessage_RemindsOfTheOverlapHypeAndNoteRules()
+    {
+        string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>());
+
+        Assert.Contains("says that the intervals overlap or that the order is not established. No hype or filler words.", message);
+        Assert.Contains("Every question under QUESTIONS NEEDING A NOTE gets a note", message);
+    }
+
     // Repair ------------------------------------------------------------------------------------
 
     [Fact]

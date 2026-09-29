@@ -180,7 +180,10 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "costRank": 2,
       "entryKey": "run:12",
       "extra": [],
+      "firstRunUtc": "2026-09-20T14:05:00Z",
+      "harnessVersion": "41",
       "isSubject": true,
+      "lastRunUtc": "2026-09-20T14:05:00Z",
       "modelTimeP50Ms": 12300,
       "qualityIndex": 80.4,
       "qualityLower": 77.1,
@@ -196,7 +199,10 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "costRank": 3,
       "entryKey": "run:14",
       "extra": [],
+      "firstRunUtc": "2026-09-19T09:30:00Z",
+      "harnessVersion": "41",
       "isSubject": false,
+      "lastRunUtc": "2026-09-19T09:30:00Z",
       "modelTimeP50Ms": 9800,
       "peerLetter": "A",
       "qualityIndex": 85.2,
@@ -213,7 +219,10 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "costRank": 1,
       "entryKey": "run:13",
       "extra": [],
+      "firstRunUtc": "2026-09-12T18:00:00Z",
+      "harnessVersion": "41",
       "isSubject": false,
+      "lastRunUtc": "2026-09-12T18:00:00Z",
       "peerLetter": "B",
       "qualityIndex": 78.3,
       "qualityLower": 74.1,
@@ -440,6 +449,123 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     },
     {
       "available": true,
+      "display": "$0.052",
+      "key": "peer.A.cost.perQuestion",
+      "value": 0.052
+    },
+    {
+      "available": true,
+      "display": "its 95 % interval overlaps the subject's",
+      "key": "peer.A.intervalOverlap",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "-4.6 points",
+      "key": "peer.A.pairedDifference",
+      "value": -4.6
+    },
+    {
+      "available": true,
+      "display": "-9.8 to +0.7",
+      "key": "peer.A.pairedInterval"
+    },
+    {
+      "available": true,
+      "display": "85 / 100",
+      "key": "peer.A.quality.index",
+      "value": 85.2
+    },
+    {
+      "available": true,
+      "display": "81–89",
+      "key": "peer.A.quality.interval"
+    },
+    {
+      "available": true,
+      "display": "1st of 3",
+      "key": "peer.A.quality.rank",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "1 run",
+      "key": "peer.A.runs",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "4 questions",
+      "key": "peer.A.sharedQuestions",
+      "value": 4
+    },
+    {
+      "available": true,
+      "display": "9.8 s",
+      "key": "peer.A.speed.medianSeconds",
+      "value": 9800
+    },
+    {
+      "available": true,
+      "display": "$0.021",
+      "key": "peer.B.cost.perQuestion",
+      "value": 0.021
+    },
+    {
+      "available": true,
+      "display": "its 95 % interval overlaps the subject's",
+      "key": "peer.B.intervalOverlap",
+      "value": true
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "peer.B.pairedDifference",
+      "unavailableReason": "Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "peer.B.pairedInterval",
+      "unavailableReason": "Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference."
+    },
+    {
+      "available": true,
+      "display": "78 / 100",
+      "key": "peer.B.quality.index",
+      "value": 78.3
+    },
+    {
+      "available": true,
+      "display": "74–83",
+      "key": "peer.B.quality.interval"
+    },
+    {
+      "available": true,
+      "display": "3rd of 3",
+      "key": "peer.B.quality.rank",
+      "value": 3
+    },
+    {
+      "available": true,
+      "display": "1 run",
+      "key": "peer.B.runs",
+      "value": 1
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "peer.B.sharedQuestions",
+      "unavailableReason": "Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "peer.B.speed.medianSeconds",
+      "unavailableReason": "Degraded: speed was measured with parallel execution disabled."
+    },
+    {
+      "available": true,
       "display": "80 / 100",
       "key": "quality.index",
       "value": 80.4
@@ -457,7 +583,8 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
     {
       "available": true,
       "display": "its 95 % interval overlaps those of Models A and B",
-      "key": "quality.intervalOverlap"
+      "key": "quality.intervalOverlap",
+      "value": 2
     },
     {
       "available": true,
@@ -664,6 +791,19 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
   ],
   "noSignificanceInstead": "Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and choose the other under Compare with group.",
   "noSignificanceSummary": "Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none.",
+  "pairedDifferences": [
+    {
+      "lower": -9.8,
+      "meanDifference": -4.6,
+      "peerLetter": "A",
+      "sharedQuestions": 4,
+      "upper": 0.7
+    },
+    {
+      "peerLetter": "B",
+      "sharedQuestions": 4
+    }
+  ],
   "peers": [
     {
       "costDegraded": false,
@@ -835,6 +975,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 6 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 7 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
-*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's interpretations.*
+*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

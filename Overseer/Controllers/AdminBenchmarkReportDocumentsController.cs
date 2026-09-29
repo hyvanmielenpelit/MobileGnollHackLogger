@@ -28,9 +28,47 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         _renderService = renderService;
     }
 
+    public const string ComparisonError = "The comparison must be a comma-separated list of run:<id> and group:<id> keys.";
+    public const string OriginError = "origin must be reportPack or runCompletion.";
+
+    /// <summary>
+    /// Newest first. <paramref name="comparison"/> is the comparison's entry keys
+    /// (<c>run:1,run:2,group:4</c>), matched against each document's stored comparison key;
+    /// <paramref name="origin"/> is <c>reportPack</c> or <c>runCompletion</c>; <paramref name="runId"/>
+    /// matches a run of the subject, never of a peer.
+    /// </summary>
     [HttpGet("report-documents")]
-    public async Task<IActionResult> List([FromQuery] long? suiteId, [FromQuery] long? runId, [FromQuery] int? take, CancellationToken ct)
-        => Ok(await _renderService.ListAsync(suiteId, runId, take, ct));
+    public async Task<IActionResult> List(
+        [FromQuery] long? suiteId, [FromQuery] long? runId, [FromQuery] int? take, CancellationToken ct,
+        [FromQuery] string? comparison = null, [FromQuery] string? origin = null)
+    {
+        string? comparisonKey = null;
+        if (comparison != null)
+        {
+            if (!BenchmarkReportComparisonKey.TryFromEntryKeys(comparison.Split(','), out var key))
+            {
+                return BadRequest(new { error = ComparisonError });
+            }
+            comparisonKey = key;
+        }
+
+        MobileGnollHackLogger.Data.BenchmarkReportDocumentOrigin? originFilter = null;
+        if (origin != null)
+        {
+            if (string.Equals(origin, "reportPack", StringComparison.OrdinalIgnoreCase)) originFilter = MobileGnollHackLogger.Data.BenchmarkReportDocumentOrigin.ReportPack;
+            else if (string.Equals(origin, "runCompletion", StringComparison.OrdinalIgnoreCase)) originFilter = MobileGnollHackLogger.Data.BenchmarkReportDocumentOrigin.RunCompletion;
+            else return BadRequest(new { error = OriginError });
+        }
+
+        return Ok(await _renderService.ListAsync(new BenchmarkReportDocumentListFilter
+        {
+            SuiteId = suiteId,
+            RunId = runId,
+            ComparisonKey = comparisonKey,
+            Origin = originFilter,
+            Take = take
+        }, ct));
+    }
 
     [HttpGet("report-documents/{id:long}")]
     public async Task<IActionResult> Get(long id, CancellationToken ct)

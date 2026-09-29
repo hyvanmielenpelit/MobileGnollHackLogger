@@ -2,6 +2,7 @@ namespace Overseer.Models;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using MobileGnollHackLogger.Data;
@@ -76,11 +77,20 @@ public sealed record BenchmarkReportAudienceSpec(
     IReadOnlyList<string> RecommendationTargets,
     bool UsesQuestionNotes,
     bool RequiresQuestionTopics,
-    bool UsesLeads);
+    bool UsesLeads)
+{
+    /// <summary>Slots of <see cref="RequiredSlots"/> that a document with peers requires and a stand-alone one never has.</summary>
+    public IReadOnlyList<string> PeerOnlySlots { get; init; } = Array.Empty<string>();
+
+    /// <summary>The slots a document requires: every slot with peers, the slots outside <see cref="PeerOnlySlots"/> without.</summary>
+    public IReadOnlyList<string> SlotsFor(bool hasPeers)
+        => hasPeers ? RequiredSlots : RequiredSlots.Where(s => !PeerOnlySlots.Contains(s, StringComparer.Ordinal)).ToList();
+}
 
 public static class BenchmarkReportSlots
 {
     // Executive Summary
+    public const string Comparison = "comparison";   // How it compares, ≤ 70 words, peer mode only
     public const string Meaning = "meaning";         // What this means for use as a game assistant
     public const string Confidence = "confidence";   // How reliable this result is
 
@@ -88,11 +98,12 @@ public static class BenchmarkReportSlots
     public const string Abstract = "abstract";       // ≤ 150 words
     public const string WhyItScored = "whyItScored"; // patterns behind the weaknesses, ≤ 300 words
     public const string WhatWorked = "whatWorked";   // patterns behind the strengths, ≤ 150 words
+    public const string Limitations = "limitations"; // the last paragraph of Threats to validity, ≤ 120 words
 
     // Internal Improvement Brief, in the order of What the Benchmark Is For
-    public const string OverseerChat = "overseerChat";
-    public const string BenchmarkSystem = "benchmarkSystem";
-    public const string ModelResult = "modelResult";
+    public const string OverseerChat = "overseerChat";       // ≤ 200 words
+    public const string BenchmarkSystem = "benchmarkSystem"; // ≤ 150 words
+    public const string ModelResult = "modelResult";         // ≤ 150 words
 
     public const string TargetModelDevelopers = "model_developers";
     public const string TargetOverseerChat = "overseer_chat";
@@ -100,18 +111,21 @@ public static class BenchmarkReportSlots
 
     public static readonly BenchmarkReportAudienceSpec ExecutiveSummary = new(
         BenchmarkReportAudience.ExecutiveSummary,
-        new[] { Meaning, Confidence },
+        new[] { Comparison, Meaning, Confidence },
         MaxStrengths: 3,
         MaxWeaknesses: 3,
         UsesRecommendations: false,
         RecommendationTargets: Array.Empty<string>(),
         UsesQuestionNotes: false,
         RequiresQuestionTopics: false,
-        UsesLeads: false);
+        UsesLeads: false)
+    {
+        PeerOnlySlots = new[] { Comparison }
+    };
 
     public static readonly BenchmarkReportAudienceSpec TechnicalReport = new(
         BenchmarkReportAudience.TechnicalReport,
-        new[] { Abstract, WhyItScored, WhatWorked },
+        new[] { Abstract, WhyItScored, WhatWorked, Limitations },
         MaxStrengths: 8,
         MaxWeaknesses: 8,
         UsesRecommendations: true,
@@ -337,6 +351,31 @@ public sealed class BenchmarkReportFactSheet
     /// code-rendered comparison tables. Keyed by entry key in the row itself, never by dictionary order.
     /// </summary>
     public List<BenchmarkReportEntryFigures> Entries { get; set; } = new();
+
+    /// <summary>
+    /// The subject's paired difference against each peer, by letter; empty on a stand-alone sheet
+    /// and on a document stored before format version 7.
+    /// </summary>
+    public List<BenchmarkReportPairedDifference> PairedDifferences { get; set; } = new();
+}
+
+/// <summary>
+/// The subject's mean per-question difference from one peer over the questions both scored on the
+/// same item revision, with a 95 % paired-bootstrap interval. An estimate from question sampling
+/// only: not adjusted for comparing several models, and not a significance test.
+/// </summary>
+public sealed class BenchmarkReportPairedDifference
+{
+    public string PeerLetter { get; set; } = string.Empty;
+
+    /// <summary>Questions both sides scored on the same item revision.</summary>
+    public int SharedQuestions { get; set; }
+
+    /// <summary>Subject minus peer, in quality points; null below the minimum of shared questions.</summary>
+    public double? MeanDifference { get; set; }
+
+    public double? Lower { get; set; }
+    public double? Upper { get; set; }
 }
 
 /// <summary>One entry's figures for the code-rendered comparison tables.</summary>
@@ -363,6 +402,18 @@ public sealed class BenchmarkReportEntryFigures
     public bool CostDegraded { get; set; }
 
     public int RunCount { get; set; }
+
+    /// <summary>
+    /// The entry's runs' harness version, or <c>mixed</c> when they differ; null on a document stored
+    /// before format version 7.
+    /// </summary>
+    public string? HarnessVersion { get; set; }
+
+    /// <summary>The earliest completion time of the entry's runs (the start time of a run that recorded none), UTC.</summary>
+    public DateTime? FirstRunUtc { get; set; }
+
+    /// <summary>The latest completion time of the entry's runs, UTC.</summary>
+    public DateTime? LastRunUtc { get; set; }
 
     /// <summary>Additional per-entry figures (dimensions, bands, tools), sorted by key.</summary>
     public List<BenchmarkReportFact> Extra { get; set; } = new();
@@ -537,7 +588,7 @@ public sealed class BenchmarkReportQuestionNote
 /// <summary>One validation problem, and whether the offending item was dropped (stored as ValidationNotesJson).</summary>
 public sealed class BenchmarkReportValidationNote
 {
-    /// <summary>The D7 rule number, 1–12.</summary>
+    /// <summary>The D7 rule number, 1–17.</summary>
     public int Rule { get; set; }
 
     /// <summary>Where: <c>headline</c>, <c>sections.abstract</c>, <c>weaknesses[1]</c>, ….</summary>
@@ -710,6 +761,40 @@ public class BenchmarkReportDocumentListItemDto
 
     /// <summary>The disclosure levels this document renders at.</summary>
     public List<BenchmarkReportDisclosure> AllowedDisclosures { get; set; } = new();
+
+    /// <summary>The comparison's entry-set key (<see cref="BenchmarkReportDocument.ComparisonKey"/>); null when it could not be derived.</summary>
+    public string? ComparisonKey { get; set; }
+
+    /// <summary>The comparison's entries, the subject included; an analysis group counts once.</summary>
+    public int ComparisonEntryCount { get; set; }
+
+    /// <summary>The fact sheet's peers.</summary>
+    public int PeerCount { get; set; }
+
+    /// <summary><c>AsRun</c> or <c>Current</c>, from the stored comparison request.</summary>
+    public string PricingBasis { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A peer run was re-scored, re-run or deleted since the document was written. Always false for a
+    /// document stored without peer rows.
+    /// </summary>
+    public bool PeersChangedSinceGeneration { get; set; }
+}
+
+/// <summary>What <c>GET report-documents</c> filters on; every field is optional.</summary>
+public sealed class BenchmarkReportDocumentListFilter
+{
+    public long? SuiteId { get; init; }
+
+    /// <summary>A run the subject includes; a peer's run never matches.</summary>
+    public long? RunId { get; init; }
+
+    /// <summary>A <see cref="BenchmarkReportDocument.ComparisonKey"/>.</summary>
+    public string? ComparisonKey { get; init; }
+
+    public BenchmarkReportDocumentOrigin? Origin { get; init; }
+
+    public int? Take { get; init; }
 }
 
 public class BenchmarkReportDocumentDetailDto : BenchmarkReportDocumentListItemDto

@@ -78,11 +78,37 @@ public class BenchmarkReportFactLabelsTests
     [InlineData("style.responseStyleConflict", "Response-style conflict")]
     [InlineData("tools.callsPerQuestion", "Tool calls per question")]
     [InlineData("peer.B.dimension.accuracy", "Model B: accuracy score")]
+    [InlineData("peer.A.quality.index", "Model A's Intelligence Index")]
+    [InlineData("peer.A.quality.interval", "Model A's 95 % interval")]
+    [InlineData("peer.C.quality.rank", "Model C's intelligence rank")]
+    [InlineData("peer.A.speed.medianSeconds", "Model A's median answer time")]
+    [InlineData("peer.B.cost.perQuestion", "Model B's cost per question")]
+    [InlineData("peer.AB.runs", "Model AB's runs")]
+    [InlineData("peer.A.intervalOverlap", "Interval overlap with Model A")]
+    [InlineData("peer.A.pairedDifference", "Paired difference from Model A")]
+    [InlineData("peer.A.pairedInterval", "Paired-bootstrap interval against Model A")]
+    [InlineData("peer.B.sharedQuestions", "Questions shared with Model B")]
     public void Labels_AreExplicitOrFollowTheirPattern(string key, string expected)
     {
         Assert.True(BenchmarkReportFactLabels.TryLabel(key, out string label));
         Assert.Equal(expected, label);
         Assert.Equal(expected, BenchmarkReportFactLabels.Label(key));
+    }
+
+    [Fact]
+    public void EveryPeerKeyTheFactBuilderEmits_IsLabeledByLetter_NeverByName()
+    {
+        var keys = EmittedKeys().Where(k => k.StartsWith("peer.", System.StringComparison.Ordinal)).ToList();
+
+        Assert.Contains("peer.A.quality.index", keys);
+        Assert.Contains("peer.A.pairedDifference", keys);
+        foreach (string key in keys)
+        {
+            string label = BenchmarkReportFactLabels.Label(key);
+            Assert.Contains("Model " + key.Split('.')[1], label);
+            Assert.DoesNotContain("Peer", label);
+            Assert.DoesNotContain("Google", label);
+        }
     }
 
     [Theory]

@@ -72,6 +72,8 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- A strength never cites a weakness row and a weakness never cites a strength row. A finding resting only on Conflicting rows says the graders disagree.");
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
         Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say only whether intervals overlap.");
+        Line(sb, "- A sentence ranking {{subject}} against a peer whose interval overlaps it says that the intervals overlap or that the order is not established. No hype or filler words.");
+        Line(sb, "- Every question under QUESTIONS NEEDING A NOTE gets a note where the document has notes.");
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
         return sb.ToString();
     }
@@ -143,7 +145,7 @@ public static class BenchmarkReportPackPrompt
         AppendEvidenceRules(sb, spec);
         AppendWeighingRules(sb);
         AppendDisclosureRules(sb);
-        AppendFormatRules(sb);
+        AppendFormatRules(sb, spec);
         AppendOutput(sb, spec);
 
         return sb.ToString();
@@ -176,16 +178,23 @@ public static class BenchmarkReportPackPrompt
 
     private static void AppendSlots(StringBuilder sb, BenchmarkReportAudienceSpec spec)
     {
-        Line(sb, "SLOTS (the keys of \"sections\"; each one is required and holds Markdown paragraphs):");
+        Line(sb, spec.PeerOnlySlots.Count == 0
+            ? "SLOTS (the keys of \"sections\"; each one is required and holds Markdown paragraphs):"
+            : "SLOTS (the keys of \"sections\"; each holds Markdown paragraphs and is required, except that a slot marked as for peers only is left out of a stand-alone run report):");
         foreach (string slot in spec.RequiredSlots)
         {
-            Line(sb, $"- {slot}: {SlotDescription(slot)}");
+            string peersOnly = spec.PeerOnlySlots.Contains(slot, StringComparer.Ordinal)
+                ? "For peers only: write it only when PEERS lists peers, and leave the key out otherwise. "
+                : string.Empty;
+            Line(sb, $"- {slot}: {peersOnly}{SlotDescription(slot)}");
         }
         Line(sb);
     }
 
     private static string SlotDescription(string slot) => slot switch
     {
+        BenchmarkReportSlots.Comparison =>
+            $"At most {BenchmarkReportPackValidator.ComparisonMaxWords.ToString(CultureInfo.InvariantCulture)} words in one paragraph, printed under a code-rendered table of every model's Intelligence Index, interval, median answer time and cost per question: where {{{{subject}}}} stands among its peers and whether that position is established. Where the subject's interval overlaps a peer's (that peer's intervalOverlap fact is true), say so and that the order between them is not established. You may cite each peer's own facts listed under PEERS, the paired-difference facts included. Do not restate the table's figures one by one.",
         BenchmarkReportSlots.Meaning =>
             $"At most {BenchmarkReportPackValidator.MeaningMaxWords.ToString(CultureInfo.InvariantCulture)} words: what this means for use as a game assistant, that is, what a player relying on {{{{subject}}}} could expect, drawn from the facts and findings.",
         BenchmarkReportSlots.Confidence =>
@@ -196,12 +205,14 @@ public static class BenchmarkReportPackPrompt
             $"Explain the patterns and causes across the weaknesses, grouped by category (domain knowledge, reading the game state, tool use, instruction following, completeness under the concise answer style, calibration), in at most {BenchmarkReportPackValidator.WhyItScoredMaxWords.ToString(CultureInfo.InvariantCulture)} words. Leave out a category the data does not support. The weaknesses list is printed right after this text; do not restate its items.",
         BenchmarkReportSlots.WhatWorked =>
             $"Explain the patterns and causes across the strengths, grouped by category, in at most {BenchmarkReportPackValidator.WhatWorkedMaxWords.ToString(CultureInfo.InvariantCulture)} words. The strengths list is printed right after this text; do not restate its items.",
+        BenchmarkReportSlots.Limitations =>
+            $"At most {BenchmarkReportPackValidator.LimitationsMaxWords.ToString(CultureInfo.InvariantCulture)} words, printed as the last paragraph of Threats to validity: the limitations specific to this data, for example a degraded peer, a subject or peer with a single run, heavy grader disagreement on particular questions, or a difficulty band with few questions. Code already prints lines stating that the benchmark asks single-turn questions under one chat configuration, which sources of variation the interval covers, that the comparison runs no significance test when there are peers, that the graders are AI models whose provider relation to the subject is stated, the subject's degraded state when it has one, and the caveat of a writer from the subject's provider; do not restate any of them.",
         BenchmarkReportSlots.OverseerChat =>
-            "The brief's first part, the Overseer chat and its tools: what the result suggests about the chat system prompt, the tools and the knowledge the assistant can reach, such as tool calls that found nothing or missing wiki, source or knowledge-base content. State these as things to check, not as conclusions.",
+            $"At most {BenchmarkReportPackValidator.OverseerChatMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's first part, the Overseer chat and its tools: what the result suggests about the chat system prompt, the tools and the knowledge the assistant can reach, such as tool calls that found nothing or missing wiki, source or knowledge-base content. State these as things to check, not as conclusions.",
         BenchmarkReportSlots.BenchmarkSystem =>
-            "The brief's second part, the benchmarking system: signs of harness, grading or rubric problems, such as grader disagreement, a rubric that may lack a fact the claim verifier supported, or a question the data suggests is ambiguous.",
+            $"At most {BenchmarkReportPackValidator.BenchmarkSystemMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's second part, the benchmarking system: signs of harness, grading or rubric problems, such as grader disagreement, a rubric that may lack a fact the claim verifier supported, or a question the data suggests is ambiguous.",
         BenchmarkReportSlots.ModelResult =>
-            "The brief's third part, the model's result: how the subject performed against its peers and why, as far as the data shows.",
+            $"At most {BenchmarkReportPackValidator.ModelResultMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's third part, the model's result: how the subject performed against its peers and why, as far as the data shows.",
         _ => "Markdown paragraphs."
     };
 
@@ -229,7 +240,7 @@ public static class BenchmarkReportPackPrompt
             }
             else
             {
-                Line(sb, $"- recommendations: concrete next steps. \"for\" is one of: \"{BenchmarkReportSlots.TargetOverseerChat}\" (the chat system prompt, tools or knowledge base), \"{BenchmarkReportSlots.TargetBenchmark}\" (the benchmarking system: harness, graders, questions or rubrics), \"{BenchmarkReportSlots.TargetModelDevelopers}\" (the model's developers).");
+                Line(sb, $"- recommendations: at most {Words(BenchmarkReportPackValidator.MaxRecommendations(spec.Audience))} concrete next steps. \"for\" is one of: \"{BenchmarkReportSlots.TargetOverseerChat}\" (the chat system prompt, tools or knowledge base), \"{BenchmarkReportSlots.TargetBenchmark}\" (the benchmarking system: harness, graders, questions or rubrics), \"{BenchmarkReportSlots.TargetModelDevelopers}\" (the model's developers).");
             }
         }
 
@@ -244,7 +255,7 @@ public static class BenchmarkReportPackPrompt
 
         if (spec.UsesLeads)
         {
-            Line(sb, "- leads: things worth checking, each with \"triage\" set to one of: \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"chat\" (the Overseer chat prompt or tools), \"corpus\" (missing or stale wiki, source or knowledge-base content). Leads are provisional and un-triaged, never findings: phrase each as something to check, not as a conclusion.");
+            Line(sb, $"- leads: at most {Words(BenchmarkReportPackValidator.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"chat\" (the Overseer chat prompt or tools), \"corpus\" (missing or stale wiki, source or knowledge-base content). Leads are provisional and un-triaged, never findings: phrase each as something to check, not as a conclusion.");
         }
 
         Line(sb);
@@ -297,6 +308,8 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- The response-style note is Overseer's own observation. Never attribute it to a grader.");
         Line(sb, "- Never re-grade an answer with your own judgment, and never invent a cause the data does not show.");
         Line(sb, "- The comparison runs no significance test. When two quality intervals overlap, say they overlap and that the order between the models is not established; when they do not overlap, say only that. Never use the words significant, significantly or statistically, and never write reliably better, reliably worse or clearly outperforms.");
+        Line(sb, "- A sentence that ranks {{subject}} above or below a peer whose interval overlaps the subject's (that peer's intervalOverlap fact is true), with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails, must also say in the same sentence that the intervals overlap or that the order is not established.");
+        Line(sb, "- A peer's paired difference (its pairedDifference and pairedInterval facts) is the subject's mean per-question difference from that peer over the questions both answered. It is an estimate from question sampling only, not adjusted for comparing several models and not a significance test; never present it as one.");
         Line(sb, "- Mention a degraded state, of the subject or of a peer, wherever a comparison depends on it.");
         Line(sb);
     }
@@ -309,13 +322,25 @@ public static class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    private static void AppendFormatRules(StringBuilder sb)
+    private static void AppendFormatRules(StringBuilder sb, BenchmarkReportAudienceSpec spec)
     {
         Line(sb, "FORMAT OF THE TEXT:");
         Line(sb, "- Slots hold Markdown paragraphs separated by blank lines. Bullet lists and emphasis are allowed.");
         Line(sb, "- No headings, no tables, no HTML, no numbered lists and no code blocks anywhere in the text.");
         Line(sb, "- Keep each text self-contained: it is placed into a document whose headings and tables code has already written.");
         Line(sb, "- Write in US English: color, behavior, analyze, center, gray, labeled, canceled.");
+        Line(sb);
+
+        Line(sb, "READABILITY:");
+        Line(sb, "- One idea per sentence, in sentences of at most about twenty-five words.");
+        Line(sb, "- Use the active voice.");
+        Line(sb, "- Prefer a count from the facts to vague words such as many or several.");
+        Line(sb, "- Name the category of a finding, for example tool use or reading the game state, rather than writing \"issues across many topics\".");
+        Line(sb, $"- No hype or filler words: {string.Join(", ", BenchmarkReportPackValidator.HypeWords)}.");
+        if (spec.Audience == BenchmarkReportAudience.InternalBrief)
+        {
+            Line(sb, "- Lead with the action, then the evidence.");
+        }
         Line(sb);
     }
 
@@ -329,7 +354,10 @@ public static class BenchmarkReportPackPrompt
         for (int i = 0; i < spec.RequiredSlots.Count; i++)
         {
             string comma = i < spec.RequiredSlots.Count - 1 ? "," : string.Empty;
-            Line(sb, $"    \"{spec.RequiredSlots[i]}\": \"Markdown paragraphs\"{comma}");
+            string value = spec.PeerOnlySlots.Contains(spec.RequiredSlots[i], StringComparer.Ordinal)
+                ? "Markdown paragraph, only when PEERS lists peers"
+                : "Markdown paragraphs";
+            Line(sb, $"    \"{spec.RequiredSlots[i]}\": \"{value}\"{comma}");
         }
         Line(sb, "  },");
 
@@ -382,6 +410,10 @@ public static class BenchmarkReportPackPrompt
         Line(sb, $"Kind: {OneLine(sheet.SubjectKind)}");
         Line(sb, $"Runs: {runCount.ToString(CultureInfo.InvariantCulture)}");
         Line(sb, $"State: {OneLine(sheet.SubjectState)}");
+        if (!string.IsNullOrWhiteSpace(sheet.SubjectExplanation))
+        {
+            Line(sb, $"Explanation: {OneLine(sheet.SubjectExplanation)}");
+        }
         Line(sb, $"Questions in the exam: {sheet.Questions.Count.ToString(CultureInfo.InvariantCulture)}");
         Line(sb);
 
@@ -408,8 +440,32 @@ public static class BenchmarkReportPackPrompt
             if (peer.SpeedDegraded) sbPeer.Append("; speed figures degraded");
             if (peer.CostDegraded) sbPeer.Append("; cost figures degraded");
             Line(sb, sbPeer.ToString());
+
+            if (!string.IsNullOrWhiteSpace(peer.Explanation))
+            {
+                Line(sb, $"  explanation: {OneLine(peer.Explanation)}");
+            }
+
+            string prefix = BenchmarkReportFacts.PeerPrefix(peer.Letter);
+            var peerFacts = sheet.Facts
+                .Where(f => f.Key.StartsWith(prefix, StringComparison.Ordinal))
+                .Select(f => f.Key)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(k => k, StringComparer.Ordinal)
+                .ToList();
+            if (peerFacts.Count > 0)
+            {
+                Line(sb, $"  its facts (values under FACTS): {string.Join(", ", peerFacts)}");
+            }
         }
         Line(sb);
+
+        if (peers.Count > 0 && !string.IsNullOrWhiteSpace(sheet.NoSignificanceSummary))
+        {
+            Line(sb, "NO SIGNIFICANCE TEST (the comparison's own statement; code prints it in the document)");
+            Line(sb, OneLine(sheet.NoSignificanceSummary));
+            Line(sb);
+        }
 
         Line(sb, "FACTS (write {{key}} to place a figure; key = value as printed)");
         var facts = sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();

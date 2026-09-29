@@ -682,7 +682,8 @@ public class BenchmarkReportPackRendererTests
         Assert.Contains("*Document ID 101 · format version " + BenchmarkReportPackRenderer.ReportFormatVersion.ToString(CultureInfo.InvariantCulture) + " · ", withFooter);
         Assert.Contains("*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and "
             + "checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, "
-            + "peer names, significance claims and spelling; the checks do not verify the prose's interpretations.*\n", withFooter);
+            + "peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the "
+            + "prose's interpretations.*\n", withFooter);
         Assert.DoesNotContain("generated under format version", withFooter);
         if (audience != BenchmarkReportAudience.InternalBrief)
         {
@@ -1192,9 +1193,9 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void TheFormatVersion_IsSix()
+    public void TheFormatVersion_IsSeven()
     {
-        Assert.Equal(6, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(7, BenchmarkReportPackRenderer.ReportFormatVersion);
     }
 
     [Fact]
@@ -1368,5 +1369,213 @@ public class BenchmarkReportPackRendererTests
         Assert.Equal(h2 + spacing + Overseer.Services.Benchmarking.Pdf.BenchmarkPdfStyle.KeepWithNextHeight,
             Overseer.Services.Benchmarking.Pdf.BenchmarkPdfMarkdownComposer.KeepWithNextHeight(new[] { terms }, blocks[4]), 3);
         Assert.Equal(h2, Overseer.Services.Benchmarking.Pdf.BenchmarkPdfMarkdownComposer.KeepWithNextHeight(new[] { last }, null), 3);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Format version 7: how it compares, rank, paired differences, compared models, limitations
+    // ---------------------------------------------------------------------------------------------
+
+    private const string PairedNote = "*Paired difference: mean per-question difference, subject minus peer, over the questions both answered; "
+        + "95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several models, and is "
+        + "not a significance test.*";
+
+    [Fact]
+    public void TheExecutiveSummary_SaysHowTheModelCompares_AfterItsKeyFigures()
+    {
+        string named = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        string anonymized = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+
+        Assert.Contains("## How it compares\n\n"
+            + "| Model | Intelligence Index | Median answer time | Cost per question |\n|---|---|---|---|\n"
+            + "| **GPT-5.6 Luna** | 80 (77–83) | 12.3 s | $0.036 |\n"
+            + "| Grok 5 (A) | 85 (81–89) | 9.8 s | $0.052 |\n"
+            + "| Mistral Large 4 (B) | 78 (74–83) | not available | $0.021 |\n\n"
+            + "GPT-5.6 Luna places 2nd of 3 on intelligence, but its interval overlaps those of Grok 5 and Mistral Large 4, so the order "
+            + "is not established. Its paired difference from Grok 5 is -4.6 points.\n\n## What it did well\n", named);
+        Assert.Contains("| Model A | 85 (81–89) | 9.8 s | $0.052 |\n", anonymized);
+        Assert.Contains("its interval overlaps those of Model A and Model B, so the order is not established.", anonymized);
+
+        Assert.True(named.IndexOf("## Key figures", StringComparison.Ordinal) < named.IndexOf("## How it compares", StringComparison.Ordinal));
+        Assert.Single(AllIndexesOf(named, "## How it compares"));
+    }
+
+    [Fact]
+    public void HowItCompares_AndTheRankLine_BelongToTheExecutiveSummaryWithPeers_Only()
+    {
+        string standalone = BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary), new BenchmarkReportRenderOptions());
+        Assert.DoesNotContain("## How it compares", standalone);
+        Assert.DoesNotContain("- **Rank:**", standalone);
+
+        foreach (var audience in new[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
+        {
+            string text = Render(audience, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+            Assert.DoesNotContain("## How it compares", text);
+            Assert.DoesNotContain("- **Rank:**", text);
+        }
+    }
+
+    [Fact]
+    public void TheExecutiveSummarysKeyFigures_StateTheRank_AndThatOverlappingIntervalsLeaveTheOrderOpen()
+    {
+        string text = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+
+        Assert.Contains("; its 95 % interval overlaps those of Models A and B.\n"
+            + "- **Rank:** 2 of 3 on intelligence (the order is not established where intervals overlap).\n"
+            + "- **Speed:**", text);
+
+        // Without an overlap the rank stands alone.
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = Sheet();
+        sheet.Facts.Single(f => f.Key == "quality.intervalOverlap").Value = JsonValue.Create(0);
+        foreach (var fact in sheet.Facts.Where(f => f.Key.EndsWith(".intervalOverlap", StringComparison.Ordinal) && f.Key.StartsWith("peer.", StringComparison.Ordinal)))
+        {
+            fact.Value = JsonValue.Create(false);
+        }
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+        string apart = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+        Assert.Contains("- **Rank:** 2 of 3 on intelligence.\n", apart);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportPeerNaming.Named, "Grok 5 (A)", "Mistral Large 4 (B)", "| xAI ")]
+    [InlineData(BenchmarkReportPeerNaming.Anonymized, "Model A", "Model B", "")]
+    public void TheResearcherReport_PrintsThePairedDifference_OnceInItsResults_WithItsNote(
+        BenchmarkReportPeerNaming naming, string a, string b, string provider)
+    {
+        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, naming);
+
+        Assert.Contains(" | Intelligence Index | 95 % interval | Rank | Paired difference |\n", text);
+        Assert.Contains("| " + a + " " + provider + "| 85 | 81–89 | 1 | -4.6 points (-9.8 to +0.7) |\n", text);
+        Assert.Contains("| " + b + " ", text);
+        Assert.Contains(" | 78 | 74–83 | 3 | not available |\n", text);
+        Assert.Contains(" | 80 | 77–83 | 2 | — |\n", text);
+        Assert.Contains(PairedNote + "\n\nNo paired difference:\n\n- " + b + ": " + PairedTooFewReason + "\n\n", text);
+        Assert.Single(AllIndexesOf(text, PairedNote));
+
+        int results = text.IndexOf("## Results against peers", StringComparison.Ordinal);
+        int speed = text.IndexOf("### Speed", StringComparison.Ordinal);
+        int note = text.IndexOf(PairedNote, StringComparison.Ordinal);
+        Assert.True(results < note && note < speed);
+
+        Assert.DoesNotContain("Paired difference", Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, naming));
+        Assert.DoesNotContain("Paired difference", BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions()));
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportPeerNaming.Named)]
+    [InlineData(BenchmarkReportPeerNaming.Anonymized)]
+    public void TheResearcherReport_ListsTheComparedModels_UnderSetupAndMethod(BenchmarkReportPeerNaming naming)
+    {
+        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, naming);
+
+        if (naming == BenchmarkReportPeerNaming.Named)
+        {
+            Assert.Contains("### Compared models\n\n"
+                + "| Model | Provider | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |\n|---|---|---|---|---|---|---|\n"
+                + "| **GPT-5.6 Luna** | OpenAI | run | 1 | high | 41 | 2026-09-20 |\n"
+                + "| Grok 5 (A) | xAI | run | 1 | high | 41 | 2026-09-19 |\n"
+                + "| Mistral Large 4 (B) | Mistral | run | 1 | not set | 41 | 2026-09-12 |\n\n", text);
+        }
+        else
+        {
+            Assert.Contains("### Compared models\n\n"
+                + "| Model | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |\n|---|---|---|---|---|---|\n"
+                + "| **GPT-5.6 Luna** | run | 1 | high | 41 | 2026-09-20 |\n"
+                + "| Model A | run | 1 | high | 41 | 2026-09-19 |\n"
+                + "| Model B | run | 1 | not set | 41 | 2026-09-12 |\n\n", text);
+        }
+
+        int setup = text.IndexOf("## Setup and method", StringComparison.Ordinal);
+        int compared = text.IndexOf("### Compared models", StringComparison.Ordinal);
+        int results = text.IndexOf("## Results against peers", StringComparison.Ordinal);
+        Assert.True(setup < compared && compared < results);
+
+        // The stand-alone form keeps its single-run setup lines.
+        string standalone = BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions());
+        Assert.DoesNotContain("### Compared models", standalone);
+        Assert.Contains("- **Model under test:** GPT-5.6 Luna (OpenAI, gpt-5.6-luna), thinking level high; 1 run.\n", standalone);
+    }
+
+    [Fact]
+    public void ComparedModels_SpansTheRunDates_AndMarksAGroup()
+    {
+        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var sheet = Sheet();
+        var peer = sheet.Entries.Single(e => e.PeerLetter == "A");
+        peer.EntryKey = "group:4";
+        peer.RunCount = 3;
+        peer.HarnessVersion = BenchmarkReportFacts.MixedHarnessVersion;
+        peer.LastRunUtc = new DateTime(2026, 9, 22, 7, 0, 0, DateTimeKind.Utc);
+        sheet.Peers.Single(p => p.Letter == "A").EntryKey = "group:4";
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+
+        Assert.Contains("| Model A | group | 3 | high | mixed | 2026-09-19 to 2026-09-22 |\n", text);
+    }
+
+    [Fact]
+    public void TheResearcherReport_EndsItsThreatsToValidity_WithTheWritersLimitations()
+    {
+        string named = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        string anonymized = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+
+        Assert.Contains("a grader from the model's own provider may read it more favorably.\n\n"
+            + "Mistral Large 4 is degraded on speed, and every model rests on a single run, so no interval covers run-to-run variation.\n\n"
+            + "## Reproducibility appendix\n", named);
+        Assert.Contains("\n\nModel B is degraded on speed, and every model rests on a single run", anonymized);
+
+        string standalone = BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions());
+        Assert.Contains("\n\nThe result rests on a single run, so its interval covers question sampling alone.\n\n## Reproducibility appendix\n", standalone);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportPeerNaming.Named, "Grok 5 (A)'s Intelligence Index: 85 / 100")]
+    [InlineData(BenchmarkReportPeerNaming.Anonymized, "Model A's Intelligence Index: 85 / 100")]
+    public void APeersOwnFact_InAnEvidenceLine_IsLabeledWithThePeerNaming(BenchmarkReportPeerNaming naming, string expected)
+    {
+        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var writer = Writer();
+        writer.Weaknesses[1].Evidence = new List<string> { "band.intermediate.score", "peer.A.quality.index" };
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = naming });
+
+        Assert.Contains("  - *Evidence:* Intermediate band score: 49 · " + expected + " · Q2 (72 / 100)", text);
+        if (naming == BenchmarkReportPeerNaming.Anonymized)
+        {
+            Assert.DoesNotContain("Grok 5", text);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Combinations))]
+    public void AStoredVersion6Document_RendersWithoutTheSectionsItHasNoDataFor(
+        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming, string file)
+    {
+        string text = BenchmarkReportPackRenderer.Render(
+            StoredV6Document(audience), new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
+
+        Assert.Contains("*Document ID 101 · generated under format version 6 · rendered with format version 7 ·", text);
+        Assert.DoesNotContain("## How it compares", text);
+        Assert.DoesNotContain("- **Rank:**", text);
+        Assert.DoesNotContain("Paired difference", text);
+        Assert.DoesNotContain("Harness version |", text);
+        Assert.DoesNotContain("Run dates (UTC)", text);
+        Assert.DoesNotContain("run-to-run variation", text);
+        Assert.DoesNotContain("*Not written.*", text);
+        Assert.DoesNotContain("{{", text);
+        Assert.Contains("peer names, significance claims and spelling; the checks", text);
+        if (audience == BenchmarkReportAudience.TechnicalReport)
+        {
+            // The table keeps the columns a version 6 sheet has data for.
+            Assert.Contains("### Compared models\n\n", text);
+            Assert.Contains(naming == BenchmarkReportPeerNaming.Named
+                ? "| Model | Provider | Kind | Runs | Thinking level |\n"
+                : "| Model | Kind | Runs | Thinking level |\n", text);
+        }
+        Assert.NotEmpty(file);
     }
 }

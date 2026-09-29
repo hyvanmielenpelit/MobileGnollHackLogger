@@ -116,6 +116,7 @@ import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from './run
 import { ImageContext, KeyFiguresAction, exportKeyFiguresImage } from './run-report-frame/key-figures-image';
 import { BenchmarkDownloadCenterComponent, audienceLabel } from './download-center/benchmark-download-center.component';
 import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/run-ai-reports.component';
+import { ReportDocumentLibraryComponent } from './report-pack/report-document-library.component';
 import { reportWriterRefusal, reportWriterWarning } from './run-ai-reports/report-writer-policy';
 import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../utils/download.util';
@@ -340,7 +341,8 @@ interface BenchmarkRunSettings {
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
-    RunReportFrameComponent, KeyFigureCardActionsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent
+    RunReportFrameComponent, KeyFigureCardActionsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent,
+    ReportDocumentLibraryComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -394,6 +396,24 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The wizard's steps, which the launcher lists under the same titles as the wizard's stepper. */
   readonly comparisonWizardSteps = COMPARISON_WIZARD_STEPS;
+
+  /**
+   * The Comparison reports library's scope: every report document a model comparison wrote. One
+   * stable object, so change detection never reads it as a new scope and reloads the list.
+   */
+  readonly comparisonReportsScope = { kind: 'all' } as const;
+
+  /**
+   * Bumped when the wizard closes, since it may have written report documents. The library lives
+   * inside the tab's @if, so each showing of the tab creates it afresh and it loads on init.
+   */
+  comparisonReportsReloadToken = 0;
+
+  /**
+   * Whether the launcher's "How the comparison works" disclosure is open; null until the tab is
+   * first shown, when it is read from storage.
+   */
+  comparisonHowItWorksOpen: boolean | null = null;
 
   /**
    * The criteria editor, for the one thing the host cannot reach through the DOM: putting it
@@ -1228,6 +1248,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.loadProfiles();
     }
     if (tab === 'modelcomparison') {
+      this.restoreComparisonLauncherDisclosure();
       // The three lists the picker offers. No comparison is fetched here: an unattended request on
       // tab entry re-prices every entry for a selection the operator has not confirmed.
       this.loadHistory();
@@ -1466,9 +1487,67 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  /** Nothing is torn down here: the mounted content is what reopening is supposed to preserve. */
+  /**
+   * Nothing is torn down here: the mounted content is what reopening is supposed to preserve. The
+   * Comparison reports list reloads, since the wizard's Report Pack may have written documents.
+   */
   onComparisonWizardClose(): void {
+    this.comparisonReportsReloadToken++;
     this.cdr.detectChanges();
+  }
+
+  private static readonly COMPARISON_LAUNCHER_STORAGE_KEY = 'overseer.benchmark.modelComparison.launcher';
+
+  /**
+   * Reads the "How the comparison works" disclosure state once per page. With no stored record it
+   * opens, and records it closed, so only the first visit shows it open unless the operator leaves
+   * it that way.
+   */
+  private restoreComparisonLauncherDisclosure(): void {
+    if (this.comparisonHowItWorksOpen !== null) { return; }
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(AdminBenchmarkComponent.COMPARISON_LAUNCHER_STORAGE_KEY);
+    } catch {
+      this.comparisonHowItWorksOpen = true;
+      return;
+    }
+
+    if (stored === null) {
+      this.comparisonHowItWorksOpen = true;
+      this.persistComparisonLauncherDisclosure(false);
+      return;
+    }
+
+    let open = false;
+    try {
+      const parsed = JSON.parse(stored) as { howItWorksOpen?: unknown } | null;
+      open = parsed?.howItWorksOpen === true;
+    } catch {
+      // An unreadable record leaves the disclosure closed, its default.
+    }
+    this.comparisonHowItWorksOpen = open;
+  }
+
+  /**
+   * The disclosure's native toggle. Setting [open] from the binding fires it too, so a state that
+   * matches the field is the binding's own echo and is not stored.
+   */
+  onComparisonHowItWorksToggle(event: Event): void {
+    const open = (event.target as HTMLDetailsElement).open;
+    if (open === this.comparisonHowItWorksOpen) { return; }
+    this.comparisonHowItWorksOpen = open;
+    this.persistComparisonLauncherDisclosure(open);
+  }
+
+  private persistComparisonLauncherDisclosure(open: boolean): void {
+    try {
+      localStorage.setItem(
+        AdminBenchmarkComponent.COMPARISON_LAUNCHER_STORAGE_KEY, JSON.stringify({ howItWorksOpen: open }));
+    } catch {
+      // Storage throws in private-browsing modes. Forgetting a disclosure state is not worth
+      // surfacing to the operator.
+    }
   }
 
   /**

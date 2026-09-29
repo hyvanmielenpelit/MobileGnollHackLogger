@@ -15,9 +15,20 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 ## Key figures
 
 - **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps those of Models A and B.
+- **Rank:** 2 of 3 on intelligence (the order is not established where intervals overlap).
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
+
+## How it compares
+
+| Model | Intelligence Index | Median answer time | Cost per question |
+|---|---|---|---|
+| **GPT-5.6 Luna** | 80 (77–83) | 12.3 s | $0.036 |
+| Model A | 85 (81–89) | 9.8 s | $0.052 |
+| Model B | 78 (74–83) | not available | $0.021 |
+
+GPT-5.6 Luna places 2nd of 3 on intelligence, but its interval overlaps those of Model A and Model B, so the order is not established. Its paired difference from Model A is -4.6 points.
 
 ## What it did well
 
@@ -64,6 +75,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 6 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
+*Document ID 101 · format version 7 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
 
-*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims and spelling; the checks do not verify the prose's interpretations.*
+*Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

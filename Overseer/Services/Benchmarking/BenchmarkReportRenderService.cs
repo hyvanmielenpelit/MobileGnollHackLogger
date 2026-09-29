@@ -65,14 +65,27 @@ public class BenchmarkReportRenderService
     /// <summary>A document's run as it was when the document was written, and as it is now.</summary>
     private sealed record RunFingerprint(int? FinalScore, int? QualityIndex, int? SpeedIndex, int ScoringMethodVersion, DateTime? RerunCompletedAtUtc, string SynthesisSha256);
 
-    /// <summary>Newest first; filtered by suite, by a run the subject includes, or both.</summary>
+    /// <summary>
+    /// Newest first; filtered by suite, by a run the subject includes (peer runs never match), by a
+    /// comparison key, by origin, or any combination.
+    /// </summary>
     public async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(long? suiteId, long? runId, int? take, CancellationToken ct)
+        => await ListAsync(new BenchmarkReportDocumentListFilter { SuiteId = suiteId, RunId = runId, Take = take }, ct);
+
+    public async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(BenchmarkReportDocumentListFilter filter, CancellationToken ct)
     {
-        int limit = Math.Clamp(take ?? 200, 1, MaxListSize);
+        ArgumentNullException.ThrowIfNull(filter);
+        int limit = Math.Clamp(filter.Take ?? 200, 1, MaxListSize);
+        long? suiteId = filter.SuiteId;
+        long? runId = filter.RunId;
+        string? comparisonKey = filter.ComparisonKey;
+        BenchmarkReportDocumentOrigin? origin = filter.Origin;
 
         var query = _db.BenchmarkReportDocuments.AsNoTracking().IgnoreAutoIncludes();
         if (suiteId != null) query = query.Where(d => d.SuiteId == suiteId);
-        if (runId != null) query = query.Where(d => d.Runs.Any(r => r.RunId == runId));
+        if (runId != null) query = query.Where(d => d.Runs.Any(r => r.RunId == runId && !r.IsPeer));
+        if (comparisonKey != null) query = query.Where(d => d.ComparisonKey == comparisonKey);
+        if (origin != null) query = query.Where(d => d.Origin == origin);
 
         var rows = await query
             .OrderByDescending(d => d.CreatedAtUtc).ThenByDescending(d => d.Id)
@@ -83,7 +96,8 @@ public class BenchmarkReportRenderService
                 d.SuiteId, d.SuiteName, d.WriterDisplayName, d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel,
                 d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
                 d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd,
-                Runs = d.Runs.Select(r => new { r.RunId, r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256 }).ToList()
+                d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson,
+                Runs = d.Runs.Select(r => new { r.RunId, r.IsPeer, r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256 }).ToList()
             })
             .ToListAsync(ct);
 
@@ -91,19 +105,76 @@ public class BenchmarkReportRenderService
 
         return rows.Select(d =>
         {
-            var missing = d.Runs.Where(r => !current.ContainsKey(r.RunId)).Select(r => r.RunId).OrderBy(id => id).ToList();
-            bool changed = missing.Count > 0 || d.Runs.Any(r => current.TryGetValue(r.RunId, out var now)
-                && now != new RunFingerprint(r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256));
+            var stored = d.Runs.Select(r => new StoredRun(r.RunId, r.IsPeer,
+                new RunFingerprint(r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256))).ToList();
+            var subjectRuns = stored.Where(r => !r.IsPeer).ToList();
+            var missing = subjectRuns.Where(r => !current.ContainsKey(r.RunId)).Select(r => r.RunId).OrderBy(id => id).ToList();
 
             var item = new BenchmarkReportDocumentListItemDto();
             Fill(item, d.Id, d.PackId, d.Audience, d.Origin, d.Title, d.SubjectKey, d.SubjectLabel, d.SubjectRunIdsJson,
                 d.SuiteId, d.SuiteName, d.WriterDisplayName, d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel,
                 d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
                 d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd);
-            item.RunChangedSinceGeneration = changed;
+            item.RunChangedSinceGeneration = AnyChanged(subjectRuns, current);
+            item.PeersChangedSinceGeneration = AnyChanged(stored.Where(r => r.IsPeer), current);
             item.MissingRunIds = missing;
+            FillComparison(item, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
             return item;
         }).ToList();
+    }
+
+    /// <summary>A stored run row: whose it is, and its fingerprint at generation.</summary>
+    private sealed record StoredRun(long RunId, bool IsPeer, RunFingerprint Fingerprint);
+
+    /// <summary>True when any run is gone or its fingerprint differs from the run as it is now.</summary>
+    private static bool AnyChanged(IEnumerable<StoredRun> runs, IReadOnlyDictionary<long, RunFingerprint> current)
+        => runs.Any(r => !current.TryGetValue(r.RunId, out var now) || now != r.Fingerprint);
+
+    /// <summary>The comparison's identity and shape, read from the stored request and fact sheet.</summary>
+    private static void FillComparison(BenchmarkReportDocumentListItemDto item, string? comparisonKey, string? comparisonRequestJson, string? factsJson)
+    {
+        item.ComparisonKey = comparisonKey;
+
+        BenchmarkModelComparisonRequest? request = null;
+        try
+        {
+            request = string.IsNullOrWhiteSpace(comparisonRequestJson) ? null : BenchmarkReportJson.Deserialize<BenchmarkModelComparisonRequest>(comparisonRequestJson);
+        }
+        catch (Exception)
+        {
+            request = null;
+        }
+        if (request != null)
+        {
+            item.ComparisonEntryCount = (request.RunIds?.Distinct().Count() ?? 0) + (request.GroupIds?.Distinct().Count() ?? 0);
+            item.PricingBasis = request.PricingBasis.ToString();
+        }
+
+        item.PeerCount = PeerCountOf(factsJson);
+    }
+
+    /// <summary>The length of the stored fact sheet's <c>peers</c> array; 0 when absent or unreadable.</summary>
+    private static int PeerCountOf(string? factsJson)
+    {
+        if (string.IsNullOrWhiteSpace(factsJson)) return 0;
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(factsJson);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return 0;
+            foreach (var property in doc.RootElement.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "peers", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    return property.Value.GetArrayLength();
+                }
+            }
+            return 0;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return 0;
+        }
     }
 
     public async Task<BenchmarkReportDocumentDetailDto?> GetAsync(long id, CancellationToken ct)
@@ -116,7 +187,10 @@ public class BenchmarkReportRenderService
         if (d == null) return null;
 
         var current = await CurrentFingerprintsAsync(d.Runs.Select(r => r.RunId).ToList(), ct);
-        var missing = d.Runs.Where(r => !current.ContainsKey(r.RunId)).Select(r => r.RunId).OrderBy(x => x).ToList();
+        var stored = d.Runs.Select(r => new StoredRun(r.RunId, r.IsPeer,
+            new RunFingerprint(r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256))).ToList();
+        var subjectRuns = stored.Where(r => !r.IsPeer).ToList();
+        var missing = subjectRuns.Where(r => !current.ContainsKey(r.RunId)).Select(r => r.RunId).OrderBy(x => x).ToList();
 
         var dto = new BenchmarkReportDocumentDetailDto
         {
@@ -126,13 +200,14 @@ public class BenchmarkReportRenderService
             ValidationNotes = DeserializeNotes(d.ValidationNotesJson, d.Id),
             FactsJson = d.FactsJson,
             MissingRunIds = missing,
-            RunChangedSinceGeneration = missing.Count > 0 || d.Runs.Any(r => current.TryGetValue(r.RunId, out var now)
-                && now != new RunFingerprint(r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256))
+            RunChangedSinceGeneration = AnyChanged(subjectRuns, current),
+            PeersChangedSinceGeneration = AnyChanged(stored.Where(r => r.IsPeer), current)
         };
         Fill(dto, d.Id, d.PackId, d.Audience, d.Origin, d.Title, d.SubjectKey, d.SubjectLabel, d.SubjectRunIdsJson,
             d.SuiteId, d.SuiteName, d.WriterDisplayName, d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel,
             d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
             d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd);
+        FillComparison(dto, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
         return dto;
     }
 

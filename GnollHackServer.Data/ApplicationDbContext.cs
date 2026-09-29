@@ -459,6 +459,8 @@ namespace MobileGnollHackLogger.Data
                 e.HasIndex(d => d.PackId);
                 // A run's own documents are found by their subject and origin.
                 e.HasIndex(d => new { d.SubjectKey, d.Origin });
+                // A comparison's documents are found by its entry-set key.
+                e.HasIndex(d => new { d.ComparisonKey, d.Origin, d.CreatedAtUtc });
                 e.Property(d => d.Origin).HasDefaultValue(BenchmarkReportDocumentOrigin.ReportPack);
                 e.Property(d => d.CostUsd).HasPrecision(18, 8);
                 e.HasOne(d => d.WriterModelSnapshot).WithMany().HasForeignKey(d => d.WriterModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
@@ -470,6 +472,7 @@ namespace MobileGnollHackLogger.Data
             {
                 e.HasKey(r => new { r.DocumentId, r.RunId });
                 e.HasIndex(r => r.RunId);
+                e.Property(r => r.IsPeer).HasDefaultValue(false);
                 e.HasOne(r => r.Document).WithMany(d => d.Runs).HasForeignKey(r => r.DocumentId).OnDelete(DeleteBehavior.Cascade);
             });
 

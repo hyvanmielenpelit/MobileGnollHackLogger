@@ -111,7 +111,8 @@
 }
 
 .rrf-main,
-.rrf-aside {
+.rrf-aside,
+.rrf-sidebar {
   min-inline-size: 0;
   border-radius: 6px;
 
@@ -119,6 +120,11 @@
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
+}
+
+/* Sidebar layout, narrow: the sidebar stacks above the main column, and the resizer is hidden. */
+.rrf-resizer {
+  display: none;
 }
 
 @container run-report-frame (inline-size >= 60rem) {
@@ -152,11 +158,26 @@
   }
 
   .rrf-main,
-  .rrf-aside {
+  .rrf-aside,
+  .rrf-sidebar {
     min-block-size: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
+  }
+
+  /* The sidebar at its stored width, kept within 20–32rem and 40 % of the body, then the
+     resizer's own 12px track, then the main column. */
+  .rrf-columns.rrf-columns-sidebar {
+    grid-template-columns:
+      clamp(20rem, var(--rrf-sidebar-width, 24rem), min(32rem, 40%))
+      12px
+      minmax(0, 1fr);
+    column-gap: 8px;
+  }
+
+  .rrf-resizer {
+    display: block;
   }
 }
 

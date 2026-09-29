@@ -53,6 +53,7 @@ import {
   reportWriterWarning,
   reportWriterWarningText
 } from './report-writer-policy';
+import { RUN_REPORT_WRITER_ADVICE } from './report-writer-advice';
 import { RunReportWritingDialogComponent } from './run-report-writing-dialog.component';
 
 /** The interval of the tab's status poll while a finished run's reports are queued or written. */
@@ -237,6 +238,9 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
   @ViewChild('deleteDialog') deleteDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('sameProviderDialog') sameProviderDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('writeButton') writeButton?: ElementRef<HTMLButtonElement>;
+
+  /** The *Choosing a report writer* tip's entries. */
+  readonly writerAdvice = RUN_REPORT_WRITER_ADVICE;
 
   /**
    * The run's AI-written (run-completion) documents, one per audience, from the document list.

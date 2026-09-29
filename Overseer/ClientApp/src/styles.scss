@@ -942,6 +942,84 @@ a:hover {
   }
 }
 
+/* An estimated cost beside the button that spends it: the AI Reports tab's Write Reports and the
+   Report Pack dialog's Generate. A quiet panel with a gold start edge: .gh-estimate-head holds the
+   .gh-estimate-label and the .gh-estimate-total, a .gh-estimate-parts dl breaks the total down per
+   document, and .gh-estimate-note lines follow. The markup keeps it in the DOM as a role="status"
+   region; .is-empty takes no space while there is nothing to say, and .is-muted drops the gold
+   edge while the estimate waits, failed or has no price. Its outer margin is the host's. */
+.gh-estimate-panel {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-inline-start: 3px solid var(--primary-color);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-body);
+
+  &.is-empty {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  &.is-muted {
+    border-inline-start-color: var(--border-glass);
+  }
+
+  .gh-estimate-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+  }
+
+  .gh-estimate-label {
+    font-size: var(--text-secondary);
+    color: #a1a1aa;
+  }
+
+  .gh-estimate-total {
+    font-size: var(--text-body);
+    font-weight: 600;
+    color: var(--primary-color);
+  }
+
+  .gh-estimate-parts {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) max-content;
+    gap: 0.125rem 1rem;
+    max-inline-size: 28rem;
+    margin: 0.375rem 0 0;
+    font-size: var(--text-secondary);
+
+    > div {
+      display: contents;
+    }
+
+    dt {
+      font-weight: 400;
+      color: #d4d4d8;
+    }
+
+    dd {
+      margin: 0;
+      text-align: end;
+      color: #e4e4e7;
+    }
+  }
+
+  .gh-estimate-note {
+    margin: 0.375rem 0 0;
+    font-size: var(--text-secondary);
+    color: #a1a1aa;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+}
+
 /* Custom Scrollbar */
 * {
   scrollbar-width: thin;

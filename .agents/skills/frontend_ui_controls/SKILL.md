@@ -197,11 +197,11 @@ you already read the label, it is noise; drop it.
 | trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, in the Report Pack dialog and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions, **Re-run** (the run report's popover trigger, followed by a chevron state indicator) | "This runs again" — the circular-arrow convention is universal |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
-| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog) | "A file arrives on your disk" |
+| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog), **Download…** and each row's icon-only **Download** (the documents library, `app-report-document-library`; both open the Download Center) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
 | copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header and the report writing progress dialog) | "Copies to the clipboard" — nothing is saved to disk |
-| eye | Open in Single view, **Preview** a rendered report document, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer) | "Look at it here" — shows content without changing or downloading it |
+| eye | Open in Single view, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a comparison report (the documents library; opens the PDF viewer) | "Look at it here" — shows content without changing or downloading it |
 | external-link (a box with an arrow leaving it) | **Open in new tab** (icon-only, the PDF viewer) | "Leaves this page for a browser tab" — the same content, outside the application |
 | map | **View game snapshot** (icon-only, the run report's header) | The game board the suite's questions are asked about |
 | layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
@@ -209,7 +209,7 @@ you already read the label, it is noise; drop it.
 | zap | Generate Questions, **Reports** (Model Comparison; opens the Report Pack dialog), **Write Report** / **Write Reports** (the run report's AI Reports tab) and its **Write Anyway** confirmation | AI generation: content is produced by a model, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
-| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard | A guided route through several steps: the wizard finds the way, the admin follows it |
+| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher) | A guided route through several steps: the wizard finds the way, the admin follows it |
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
@@ -329,6 +329,15 @@ diagnostics** take* file-with-arrow*, and **Copy diagnostics** there takes* copy
 new glyph,* external-link*, for the icon-only **Open in new tab**: it leaves this page for a browser
 tab, which neither* eye *(look here) nor* file-with-arrow *(save to disk) says. Dismissals — **Keep
 It**, **Keep Writing**, **Run in Background**, **Done** — and **Cancel Writing** stay text-only.*
+
+*Changed 2026-09-29 (Report Pack dialog and Comparison reports): the Report Pack dialog lost its
+Markdown preview. Its documents, and the Model Comparison launcher's* Comparison reports*, are one
+shared table, `app-report-document-library`: **View** (*eye*) opens the in-app PDF viewer, **Download**
+and the toolbar's **Download…** (*file-with-arrow*) open the Download Center, and **Delete** (*trash*,
+`.action-btn-danger`) asks its confirmation. The dialog's same-provider acknowledgment checkbox became
+the AI Reports tab's nested confirmation, **Write Anyway** (*zap*), and **Generate** keeps* zap*. The
+launcher's **Open Comparison Wizard** takes* compass*, like the Snapshot Suite Wizard, and is the page's
+only `.btn-gh`. The estimate panel of both writers is the global `.gh-estimate-panel`.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -796,6 +805,12 @@ treatment with horizontal scroll-snap and scroll-edge indicator support.
 | `.gh-tab` | Each tab button |
 | `.gh-tabs-secondary` | Modifier on the container for a **nested** row — smaller type, tighter spacing, fainter rule, so it reads as subordinate to the row above it |
 | `.gh-tabs-segmented` | Modifier for a small fixed set of views nested under another tab row: equal segments in one rounded track, so it does not read as a second row at the same level |
+
+The PDF viewer (`shared/pdf-viewer/pdf-viewer-dialog`) uses `.gh-tabs-segmented` for its disclosure
+versions (`variants`) and, when the request carries `secondaryVariants`, for a second, independent row
+after it — each its own `role="tablist"` named by its `label` (*Peer names*: *Named*, *Anonymized*),
+each with the full contract below. `load(variant, secondary?)` and `tabUrl(variant, secondary?)` receive
+the second key only when the second row exists; without it the viewer is unchanged.
 
 ### The markup contract
 
