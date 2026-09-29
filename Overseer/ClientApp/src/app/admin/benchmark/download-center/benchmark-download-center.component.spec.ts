@@ -27,7 +27,14 @@ import {
   internalServerName,
   reportDocumentFileStem
 } from './benchmark-download-center.component';
-import { REPORT_DISCLOSURE_GUIDE, reportDisclosureInfo } from '../report-disclosure-guide';
+import {
+  REPORT_DISCLOSURE_FORMATS_NOTE,
+  REPORT_DISCLOSURE_GUIDES,
+  REPORT_DISCLOSURE_NOTE,
+  REPORT_DISCLOSURE_NOTE_SHARED,
+  reportDisclosureGuide,
+  reportDisclosureInfo
+} from '../report-disclosure-guide';
 import { sha256Hex } from './text-archive';
 import { zipEntryTimes } from './zip-entry-times.testing';
 
@@ -648,7 +655,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(host().querySelector('.dc-reason')).toBeNull();
     });
 
-    it('explains the disclosure levels in a dialog, from the shared guide, the Executive Summary note included', async () => {
+    it('explains the disclosure levels in a dialog, one section per document type, then the notes', async () => {
       openRun();
       const p = component.idPrefix;
 
@@ -663,20 +670,33 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const infoDialog = tip.querySelector<HTMLDialogElement>('dialog')!;
       expect(infoDialog.open).toBeTrue();
       expect(infoDialog.classList).toContain('gh-info-dialog');
-      expect(infoDialog.textContent).toContain('What Summary, Detailed and Full mean');
-      expect(REPORT_DISCLOSURE_GUIDE.title).toBe('What Summary, Detailed and Full mean');
-      const pairs = Array.from(infoDialog.querySelectorAll('dl > div')).map(group => ({
-        term: group.querySelector('dt .gh-info-term')!.textContent!.trim(),
-        text: group.querySelector('dd')!.textContent!.trim()
-      }));
-      expect(pairs).toEqual(REPORT_DISCLOSURE_GUIDE.items.map(item => ({ term: item.term, text: item.text })));
-      expect(pairs.map(pair => pair.term)).toEqual(['Summary', 'Detailed', 'Full', 'Every level']);
-      expect(pairs[0].text).toContain('Safe to send to the model’s company.');
-      expect(pairs[2].text).toContain('never share it outside the Overseer team');
-      expect(pairs[3].text).toBe('The stored document is the same; the level only decides what is printed.');
-      expect(infoDialog.querySelector('p.dc-disclosure-guide-note')!.textContent!.trim())
-        .toBe(REPORT_DISCLOSURE_GUIDE.executiveSummaryNote);
-      expect(REPORT_DISCLOSURE_GUIDE.executiveSummaryNote).toContain('Summary (for the model’s company) or Full');
+      expect(infoDialog.textContent).toContain('What each disclosure level contains');
+
+      const sections = Array.from(infoDialog.querySelectorAll('section.dc-disclosure-guide-section'));
+      expect(sections.map(section => section.querySelector('h4')!.textContent!.trim()))
+        .toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
+      expect(sections.map(section => Array.from(section.querySelectorAll('dl > div > dt .gh-info-term'))
+        .map(term => term.textContent!.trim())))
+        .toEqual([['Summary', 'Full', 'Both levels'], ['Summary', 'Detailed', 'Full'], ['Full']]);
+
+      const ddText = (dd: Element) => {
+        const copy = dd.cloneNode(true) as Element;
+        copy.querySelector('ul')?.remove();
+        return copy.textContent!.trim();
+      };
+      sections.forEach((section, index) => {
+        const rendered = Array.from(section.querySelectorAll('dl > div > dd')).map(dd => ({
+          text: ddText(dd),
+          points: Array.from(dd.querySelectorAll(':scope > ul > li')).map(li => li.textContent!.trim())
+        }));
+        expect(rendered).toEqual(REPORT_DISCLOSURE_GUIDES[index].items.map(item => ({
+          text: item.text,
+          points: [...(item.points ?? [])]
+        })));
+      });
+
+      const notes = Array.from(infoDialog.querySelectorAll('p.dc-disclosure-guide-note')).map(note => note.textContent!.trim());
+      expect(notes).toEqual([REPORT_DISCLOSURE_NOTE_SHARED, REPORT_DISCLOSURE_FORMATS_NOTE]);
 
       // In dialog mode no control is described by the tip.
       const describedByTip = Array.from(host().querySelectorAll('[aria-describedby]'))
@@ -690,16 +710,60 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.dialog!.nativeElement.open).toBeTrue();
     });
 
-    it('builds the viewer explanation from the guide, with the Executive Summary note for that audience only', () => {
+    it('builds each document type\'s viewer explanation from its own guide', () => {
+      const terms = (audience: BenchmarkReportAudience) => reportDisclosureInfo(audience).items.map(item => item.term);
+
       const executive = reportDisclosureInfo(ExecutiveSummary);
-      expect(executive.title).toBe('What Summary, Detailed and Full mean');
-      expect(executive.items).toEqual(REPORT_DISCLOSURE_GUIDE.items.map(item => ({ ...item })));
-      expect(executive.note).toBe(REPORT_DISCLOSURE_GUIDE.executiveSummaryNote);
+      expect(executive.title).toBe('What Summary and Full contain');
+      expect(terms(ExecutiveSummary)).toEqual(['Summary', 'Full', 'Both levels']);
+      expect(executive.note).toBe(REPORT_DISCLOSURE_NOTE);
+      expect(executive.items).toEqual(reportDisclosureGuide(ExecutiveSummary).items.map(item => ({ ...item })));
 
       const researcher = reportDisclosureInfo(TechnicalReport);
-      expect(researcher.items).toEqual(executive.items);
-      expect(researcher.note).toBeUndefined();
-      expect(reportDisclosureInfo(InternalBrief).note).toBeUndefined();
+      expect(researcher.title).toBe('What Summary, Detailed and Full contain');
+      expect(terms(TechnicalReport)).toEqual(['Summary', 'Detailed', 'Full']);
+      expect(researcher.note).toBe(REPORT_DISCLOSURE_NOTE);
+
+      const brief = reportDisclosureInfo(InternalBrief);
+      expect(brief.title).toBe('What Full contains');
+      expect(terms(InternalBrief)).toEqual(['Full']);
+
+      // The returned items are copies: changing one leaves the guide as it was.
+      const original = reportDisclosureGuide(TechnicalReport).items[0];
+      const originalPoints = [...original.points!];
+      researcher.items[0].text = 'changed';
+      (researcher.items[0].points as string[]).push('changed');
+      expect(original.text).toBe('Safe to send to the model’s company.');
+      expect(original.points).toEqual(originalPoints);
+    });
+
+    it('keeps each document type\'s explanation to what that document actually prints', () => {
+      const allText = (audience: BenchmarkReportAudience) => reportDisclosureGuide(audience).items
+        .map(item => [item.term, item.text, ...(item.points ?? [])].join(' '));
+
+      expect(allText(ExecutiveSummary).some(text => /topic/i.test(text))).toBeFalse();
+      expect(allText(ExecutiveSummary).some(text => text.includes('Evidence'))).toBeFalse();
+      expect(allText(InternalBrief).some(text => /Evidence line under/.test(text))).toBeFalse();
+      expect(allText(TechnicalReport).some(text => text.includes('An Evidence line'))).toBeTrue();
+
+      const executiveFull = reportDisclosureGuide(ExecutiveSummary).items.find(item => item.term === 'Full')!;
+      expect(executiveFull.points!.join(' ')).toContain('“INTERNAL — unpublished benchmark results.');
+    });
+
+    it('offers in each guide exactly the levels the server allows for that document type', () => {
+      // BenchmarkReportPackRenderer.AllowedDisclosures, stated once here because the client cannot import it.
+      const allowed: [BenchmarkReportAudience, string[]][] = [
+        [ExecutiveSummary, ['Summary', 'Full']],
+        [TechnicalReport, ['Summary', 'Detailed', 'Full']],
+        [InternalBrief, ['Full']]
+      ];
+      const levelNames = ['Summary', 'Detailed', 'Full'];
+
+      expect(REPORT_DISCLOSURE_GUIDES.map(guide => guide.audience)).toEqual(allowed.map(([audience]) => audience));
+      for (const [audience, levels] of allowed) {
+        const offered = reportDisclosureGuide(audience).items.map(item => item.term).filter(term => levelNames.includes(term));
+        expect(offered).withContext(`audience ${audience}`).toEqual(levels);
+      }
     });
 
     it('gives every id once, from the instance prefix, and resolves every description', () => {

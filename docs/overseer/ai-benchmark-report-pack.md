@@ -875,9 +875,11 @@ administrator does it:
 - **The PDF viewer** (`app-pdf-viewer-dialog`): **View** opens the stored document in a full-screen
   in-app viewer, rendered by pdf.js from the server's PDF with peers named, at the fullest disclosure the
   document allows, and the others offered as *Summary* / *Detailed* / *Full* tabs (*Summary* / *Full*
-  for the Executive Summary). An (i) button after the tabs opens *What Summary, Detailed and Full mean*,
-  a modal explanation of the three levels (`report-disclosure-guide.ts`, shared with the Download
-  Center's *Disclosure* column). It has page
+  for the Executive Summary). An (i) button after the tabs opens a modal that explains what each offered
+  level contains in that document — Summary and Full for the Executive Summary; Summary, Detailed and
+  Full for the Report for AI Researchers and Developers (`report-disclosure-guide.ts`, whose
+  per-document texts the Download Center's *Disclosure* column also shows, one section per document).
+  It has page
   navigation, zoom, a selectable text layer, **Download PDF** (under the server's file name) and **Open
   in new tab**, a real same-origin URL with `inline=true`. No PDF is framed or embedded, so the CSP is
   unchanged.

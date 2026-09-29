@@ -992,10 +992,41 @@ describe('AiModelFormComponent', () => {
       expect(component.apiKeyChoice).toBe('default');
       expect(defaultRadio().checked).toBeTrue();
       expect(defaultRadio().disabled).toBeFalse();
-      expect(defaultRadio().closest('label')!.textContent).toContain('the Anthropic default key, …ab12');
-      expect(customRadio().closest('label')!.textContent).toContain('a key for this configuration only');
+      expect(defaultRadio().closest('label')!.textContent).toContain('The Anthropic default key, …ab12');
+      expect(customRadio().closest('label')!.textContent).toContain('A key for this configuration only');
       expect(el().querySelector('.custom-api-key-input')).toBeNull();
       expect(reason()).toBeNull();
+    });
+
+    it('names each radio by its short name and describes it by its detail line', () => {
+      component.mode = 'add';
+      fixture.detectChanges();
+
+      const nameId = defaultRadio().getAttribute('aria-labelledby');
+      expect(nameId).toBe('apiKeyChoiceDefaultName');
+      expect(el().querySelector('#' + nameId)!.textContent!.trim()).toBe('Default key');
+      expect(defaultRadio().getAttribute('aria-describedby')).toBe('apiKeyChoiceDefaultDetail');
+      expect(customRadio().getAttribute('aria-labelledby')).toBe('apiKeyChoiceCustomName');
+      expect(customRadio().getAttribute('aria-describedby')).toBe('apiKeyChoiceCustomDetail');
+
+      const label = defaultRadio().closest('label') as HTMLElement;
+      const name = label.querySelector('.api-key-option-name') as HTMLElement;
+      const detail = label.querySelector('.api-key-option-detail') as HTMLElement;
+      expect(name).not.toBeNull();
+      expect(detail).not.toBeNull();
+      expect(name.contains(detail)).toBeFalse();
+      expect(getComputedStyle(label).display).toBe('grid');
+    });
+
+    it('describes the Default radio by both its key line and its reason while a Base URL is filled', () => {
+      component.mode = 'add';
+      fixture.detectChanges();
+
+      component.onBaseUrlChange('https://gateway.example.com/anthropic');
+      fixture.detectChanges();
+
+      expect(defaultRadio().getAttribute('aria-describedby')).toBe('apiKeyChoiceDefaultDetail apiKeyChoiceDefaultReason');
+      expect(defaultRadio().closest('label')!.contains(reason())).toBeTrue();
     });
 
     it('keeps a default key that is not verified selectable, and says so', () => {

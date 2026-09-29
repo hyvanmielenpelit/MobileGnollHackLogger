@@ -389,8 +389,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     `import()` in `pdfjs-loader.ts`, behind the `PDFJS_LOADER` token specs replace) draws canvases and a
     selectable text layer. The toolbar holds the variants as a segmented `gh-tabs` row (the AI Reports
     tab passes the document's allowed disclosures) followed, when the caller passes `variantsInfo`, by a
-    dialog-mode `app-info-tip` (*Versions*; the AI Reports tab passes `reportDisclosureInfo(audience)`
-    from `admin/benchmark/report-disclosure-guide.ts`), page navigation, zoom, **Download PDF** (the server's
+    dialog-mode `app-info-tip` (*Versions*; the AI Reports tab passes `reportDisclosureInfo(audience)`,
+    that document type's own explanation — items may carry `points`, rendered as a list — from
+    `admin/benchmark/report-disclosure-guide.ts`), page navigation, zoom, **Download PDF** (the server's
     file name) and **Open in new tab** (*external-link*), with **Close** in the header. **It uses
     `ViewEncapsulation.None`**, because pdf.js builds the page DOM outside Angular's templates, where
     emulated encapsulation cannot reach; every rule in its stylesheet is therefore scoped under `.pdfv`,
@@ -417,8 +418,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     Report Pack dialog keeps the global 28 px — and **its title is the focus target on open**
     (`<h3 #downloadCenterHeading tabindex="-1">`, focused after `showModal()`), so the Close button's
     `interestfor` tooltip does not open by itself. Its explanations are click-mode `app-info-tip`s,
-    except the *Disclosure* column's, a dialog-mode tip with the three levels from
-    `report-disclosure-guide.ts` (the same text the PDF viewer shows); the *Internal only* tag, the
+    except the *Disclosure* column's, a dialog-mode tip (*What each disclosure level contains*) with
+    one section per document type from `report-disclosure-guide.ts` — the same per-document texts the
+    PDF viewer shows — and a note on how Markdown and HTML differ; the *Internal only* tag, the
     *Peers are named* warning and failures stay visible. Its *Documents* heading and the two package
     legends use the shared `gh-section-title`; the legends keep a `dc-section-title` override only for
     what the global `.gh-choice > legend` rule would otherwise change.

@@ -125,16 +125,32 @@
                     <th scope="col" class="dc-col-disclosure">
                       <span class="dc-th">
                         Disclosure
-                        <app-info-tip trigger="dialog" [tipId]="idPrefix + '-disclosure-tip'" subject="Disclosure" [dialogTitle]="disclosureGuide.title">
-                          <dl class="dc-disclosure-guide">
-                            @for (item of disclosureGuide.items; track item.term) {
-                              <div>
-                                <dt><span class="gh-info-term">{{ item.term }}</span></dt>
-                                <dd>{{ item.text }}</dd>
-                              </div>
-                            }
-                          </dl>
-                          <p class="dc-disclosure-guide-note">{{ disclosureGuide.executiveSummaryNote }}</p>
+                        <app-info-tip trigger="dialog" [tipId]="idPrefix + '-disclosure-tip'" subject="Disclosure" [dialogTitle]="disclosureTitle">
+                          @for (guide of disclosureGuides; track guide.audience) {
+                            <section class="dc-disclosure-guide-section">
+                              <h4 class="gh-section-title dc-disclosure-guide-heading">{{ guide.heading }}</h4>
+                              <dl class="dc-disclosure-guide">
+                                @for (item of guide.items; track item.term) {
+                                  <div>
+                                    <dt><span class="gh-info-term">{{ item.term }}</span></dt>
+                                    <dd>
+                                      {{ item.text }}
+                                      @if (item.points?.length) {
+                                        <ul>
+                                          @for (point of item.points; track $index) {
+                                            <li>{{ point }}</li>
+                                          }
+                                        </ul>
+                                      }
+                                    </dd>
+                                  </div>
+                                }
+                              </dl>
+                            </section>
+                          }
+                          @for (note of disclosureNotes; track $index) {
+                            <p class="dc-disclosure-guide-note">{{ note }}</p>
+                          }
                         </app-info-tip>
                       </span>
                     </th>

@@ -549,6 +549,15 @@ a:hover {
     color: var(--info-popup-muted);
   }
 
+  ul {
+    margin: 4px 0 0;
+    padding-inline-start: 1.1rem;
+  }
+
+  li + li {
+    margin-block-start: 3px;
+  }
+
   /* Ungrouped term/description pairs. */
   dd + dt {
     margin-block-start: 10px;

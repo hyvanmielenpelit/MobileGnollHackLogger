@@ -31,6 +31,8 @@ export interface PdfViewerVariant {
 export interface PdfViewerVariantsInfoItem {
   term: string;
   text: string;
+  /** Shown as a list after the text. */
+  points?: readonly string[];
 }
 
 /** What the variants mean, behind an info button after the variant tab row. */

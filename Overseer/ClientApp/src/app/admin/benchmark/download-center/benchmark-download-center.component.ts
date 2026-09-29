@@ -28,7 +28,12 @@ import { downloadTextFile, safeFileName } from '../../../utils/download.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { exportTimestamp, saveFigureBlob } from '../model-comparison/figure-export';
-import { REPORT_DISCLOSURE_GUIDE } from '../report-disclosure-guide';
+import {
+  DOWNLOAD_CENTER_DISCLOSURE_TITLE,
+  REPORT_DISCLOSURE_FORMATS_NOTE,
+  REPORT_DISCLOSURE_GUIDES,
+  REPORT_DISCLOSURE_NOTE_SHARED
+} from '../report-disclosure-guide';
 import { markdownToPrintableHtml } from './printable-html';
 import {
   ArchiveEntry,
@@ -273,7 +278,9 @@ export class BenchmarkDownloadCenterComponent implements OnInit, OnDestroy {
   readonly idPrefix = `dc${++nextInstanceId}`;
   readonly packages = DOWNLOAD_PACKAGES;
   readonly papers = PDF_PAPERS;
-  readonly disclosureGuide = REPORT_DISCLOSURE_GUIDE;
+  readonly disclosureGuides = REPORT_DISCLOSURE_GUIDES;
+  readonly disclosureTitle = DOWNLOAD_CENTER_DISCLOSURE_TITLE;
+  readonly disclosureNotes = [REPORT_DISCLOSURE_NOTE_SHARED, REPORT_DISCLOSURE_FORMATS_NOTE];
 
   context: DownloadCenterContext | null = null;
   packageId: DownloadPackageId = 'internal';

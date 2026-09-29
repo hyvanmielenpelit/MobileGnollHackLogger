@@ -35,27 +35,30 @@
     @if (isAdmin) {
       <fieldset class="gh-choice api-key-choice">
         <legend>API key</legend>
-        <label class="gh-radio">
+        <label class="gh-radio api-key-option">
           <input type="radio" name="aiModelFormApiKeyChoice" id="apiKeyChoiceDefault" value="default"
+                 aria-labelledby="apiKeyChoiceDefaultName"
+                 [attr.aria-describedby]="defaultKeyDescribedBy"
                  [checked]="apiKeyChoice === 'default'"
                  [disabled]="defaultKeyUnavailableReason !== null"
-                 [attr.aria-describedby]="defaultKeyUnavailableReason !== null ? 'apiKeyChoiceDefaultReason' : null"
                  (change)="onApiKeyChoiceChange('default')">
-          <span><strong>Default key</strong>
-            @if (defaultKeyInfo) {
-              <span class="api-key-choice-detail">{{ defaultKeyDescription }}</span>
-            }
-          </span>
+          <span class="api-key-option-name" id="apiKeyChoiceDefaultName">Default key</span>
+          @if (defaultKeyInfo) {
+            <span class="api-key-option-detail" id="apiKeyChoiceDefaultDetail">{{ defaultKeyDescription }}</span>
+          }
+          @if (defaultKeyUnavailableReason !== null) {
+            <span class="form-hint api-key-option-reason" id="apiKeyChoiceDefaultReason">{{ defaultKeyUnavailableReason }}</span>
+          }
         </label>
-        <label class="gh-radio">
+        <label class="gh-radio api-key-option">
           <input type="radio" name="aiModelFormApiKeyChoice" id="apiKeyChoiceCustom" value="custom"
+                 aria-labelledby="apiKeyChoiceCustomName"
+                 aria-describedby="apiKeyChoiceCustomDetail"
                  [checked]="apiKeyChoice === 'custom'"
                  (change)="onApiKeyChoiceChange('custom')">
-          <span><strong>Custom key</strong> <span class="api-key-choice-detail">a key for this configuration only</span></span>
+          <span class="api-key-option-name" id="apiKeyChoiceCustomName">Custom key</span>
+          <span class="api-key-option-detail" id="apiKeyChoiceCustomDetail">A key for this configuration only</span>
         </label>
-        @if (defaultKeyUnavailableReason !== null) {
-          <p id="apiKeyChoiceDefaultReason" class="form-hint api-key-choice-reason">{{ defaultKeyUnavailableReason }}</p>
-        }
       </fieldset>
     }
 

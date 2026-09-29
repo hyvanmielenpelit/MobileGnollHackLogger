@@ -385,7 +385,19 @@ describe('RunAiReportsComponent', () => {
     expect(request.tabUrl!('summary')).toBe(`/pdf/71/1/1/${paper}/inline`);
     expect(service.reportDocumentPdfUrl.calls.mostRecent().args).toEqual([71, 1, 1, paper, true]);
     expect(request.variantsInfo).toEqual(reportDisclosureInfo(1));
-    expect(request.variantsInfo?.title).toBe('What Summary, Detailed and Full mean');
+    expect(request.variantsInfo?.title).toBe('What Summary and Full contain');
+  });
+
+  it('should explain the researcher report\'s three levels with its own text', () => {
+    service.listReportDocuments.and.returnValue(of([aiDoc(72, 2, { allowedDisclosures: [1, 2, 3] })]));
+    setUp();
+    load(reportRun({ assessmentJson: '{}' }));
+
+    (section().querySelector('button.rr-ai-doc-view') as HTMLButtonElement).click();
+
+    const request = viewerOpen.calls.mostRecent().args[0];
+    expect(request.variantsInfo).toEqual(reportDisclosureInfo(2));
+    expect(request.variantsInfo?.title).toBe('What Summary, Detailed and Full contain');
   });
 
   it('should refuse the model under test as its own writer inline, in red, joined to the picker\'s description', () => {

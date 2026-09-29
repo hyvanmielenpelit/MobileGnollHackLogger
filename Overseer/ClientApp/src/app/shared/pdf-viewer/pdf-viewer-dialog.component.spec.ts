@@ -480,7 +480,7 @@ describe('PdfViewerDialogComponent', () => {
       title: 'What the versions mean',
       items: [
         { term: 'Summary', text: 'The short version.' },
-        { term: 'Full', text: 'Everything, for the team.' }
+        { term: 'Full', text: 'Everything, for the team.', points: ['Marked internal.', 'Never shared.'] }
       ],
       note: 'Both come from one stored document.'
     };
@@ -521,9 +521,14 @@ describe('PdfViewerDialogComponent', () => {
       const infoDialog = tip.querySelector<HTMLDialogElement>('dialog')!;
       expect(infoDialog.open).toBeTrue();
       expect(infoDialog.textContent).toContain(INFO.title);
+      const ddText = (dd: Element) => {
+        const copy = dd.cloneNode(true) as Element;
+        copy.querySelector('ul')?.remove();
+        return copy.textContent!.trim();
+      };
       const pairs = Array.from(infoDialog.querySelectorAll('dl > div')).map(group => [
         group.querySelector('dt')!.textContent!.trim(),
-        group.querySelector('dd')!.textContent!.trim()
+        ddText(group.querySelector('dd')!)
       ]);
       expect(pairs).toEqual([['Summary', 'The short version.'], ['Full', 'Everything, for the team.']]);
       expect(infoDialog.querySelector('p.pdfv-variants-info-note')!.textContent!.trim()).toBe(INFO.note!);
@@ -555,6 +560,21 @@ describe('PdfViewerDialogComponent', () => {
       const infoDialog = dialog().querySelector<HTMLDialogElement>('app-info-tip dialog')!;
       expect(infoDialog.querySelectorAll('dl > div').length).toBe(2);
       expect(infoDialog.querySelector('p.pdfv-variants-info-note')).toBeNull();
+      infoDialog.close();
+    });
+
+    it('lists an item\'s points under its text, and renders no list for an item without points', async () => {
+      host.viewer.open(request({ variants: VARIANTS, variantsInfo: INFO }));
+      await settle();
+
+      versionsButton()!.click();
+      fixture.detectChanges();
+
+      const infoDialog = dialog().querySelector<HTMLDialogElement>('app-info-tip dialog')!;
+      const groups = Array.from(infoDialog.querySelectorAll('dl > div'));
+      expect(groups[0].querySelector('dd ul')).toBeNull();
+      const points = Array.from(groups[1].querySelectorAll('dd > ul > li')).map(li => li.textContent!.trim());
+      expect(points).toEqual(['Marked internal.', 'Never shared.']);
       infoDialog.close();
     });
   });

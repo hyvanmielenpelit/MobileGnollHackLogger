@@ -45,7 +45,16 @@
                 @for (item of info.items; track item.term) {
                   <div>
                     <dt><span class="gh-info-term">{{ item.term }}</span></dt>
-                    <dd>{{ item.text }}</dd>
+                    <dd>
+                      {{ item.text }}
+                      @if (item.points?.length) {
+                        <ul class="pdfv-variants-info-points">
+                          @for (point of item.points; track $index) {
+                            <li>{{ point }}</li>
+                          }
+                        </ul>
+                      }
+                    </dd>
                   </div>
                 }
               </dl>

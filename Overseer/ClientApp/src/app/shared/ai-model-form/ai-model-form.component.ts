@@ -140,14 +140,23 @@ export class AiModelFormComponent implements OnInit, OnChanges {
     return null;
   }
 
+  /** The Default radio's description ids: its key line and, when it cannot be chosen, why. */
+  get defaultKeyDescribedBy(): string | null {
+    const ids = [
+      this.defaultKeyInfo ? 'apiKeyChoiceDefaultDetail' : null,
+      this.defaultKeyUnavailableReason !== null ? 'apiKeyChoiceDefaultReason' : null
+    ].filter((id): id is string => id !== null);
+    return ids.length > 0 ? ids.join(' ') : null;
+  }
+
   /** The Default option's description: which key, and whether it is verified. */
   get defaultKeyDescription(): string {
     const info = this.defaultKeyInfo;
     if (!info) {
-      return `the ${this.provider} default key`;
+      return `The ${this.provider} default key`;
     }
     const hint = info.keyHint ? `, …${info.keyHint}` : '';
-    return `the ${this.provider} default key${hint}${info.verified ? '' : ' (not verified)'}`;
+    return `The ${this.provider} default key${hint}${info.verified ? '' : ' (not verified)'}`;
   }
 
   get usesDefaultKey(): boolean {

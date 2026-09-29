@@ -391,6 +391,14 @@
   margin: 12px 0 0;
 }
 
+.dc-disclosure-guide-heading {
+  white-space: normal;
+}
+
+.dc-disclosure-guide-section + .dc-disclosure-guide-section {
+  margin-block-start: 16px;
+}
+
 .dc-row.is-unselectable {
   .dc-doc-label {
     color: #a1a1aa;
