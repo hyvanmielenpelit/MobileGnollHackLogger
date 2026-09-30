@@ -187,6 +187,50 @@ describe('RunFactsComponent', () => {
     }
   });
 
+  it('stacks each label above its value with layout="stacked", the facts still side by side', () => {
+    const shell = document.createElement('div');
+    shell.style.cssText = 'width: 1800px;';
+    document.body.appendChild(shell);
+    try {
+      shell.appendChild(root());
+      const keys = ['prompt', 'profile', 'started'];
+      fixture.componentRef.setInput('layout', 'stacked');
+      fixture.componentRef.setInput('rows', ROWS.filter(row => keys.includes(row.key)));
+      fixture.detectChanges();
+
+      expect(root().classList).toContain('rr-facts-stacked');
+      const list = getComputedStyle(root().querySelector('.rr-facts') as HTMLElement);
+      expect(list.display).toBe('flex');
+      expect(list.flexWrap).toBe('wrap');
+      for (const key of keys) {
+        const pair = fact(key);
+        expect(getComputedStyle(pair).flexDirection).withContext(key).toBe('column');
+        const term = (pair.querySelector('dt') as HTMLElement).getBoundingClientRect();
+        const value = (pair.querySelector('dd') as HTMLElement).getBoundingClientRect();
+        expect(term.bottom).withContext(key).toBeLessThanOrEqual(value.top);
+      }
+      const tops = keys.map(key => fact(key).getBoundingClientRect().top);
+      for (const top of tops) {
+        expect(Math.abs(top - tops[0])).toBeLessThanOrEqual(1);
+      }
+    } finally {
+      shell.remove();
+    }
+  });
+
+  it('keeps the inline layout by default', () => {
+    const shell = document.createElement('div');
+    shell.style.cssText = 'width: 1800px;';
+    document.body.appendChild(shell);
+    try {
+      shell.appendChild(root());
+      expect(root().classList).not.toContain('rr-facts-stacked');
+      expect(getComputedStyle(fact('profile')).flexDirection).toBe('row');
+    } finally {
+      shell.remove();
+    }
+  });
+
   it('renders nothing but an empty list for no rows', () => {
     fixture.componentRef.setInput('rows', []);
     fixture.detectChanges();

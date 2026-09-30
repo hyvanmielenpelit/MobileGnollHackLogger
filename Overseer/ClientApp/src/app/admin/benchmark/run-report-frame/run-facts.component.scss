@@ -91,6 +91,13 @@ dd {
   color: #fcd34d;
 }
 
+// Stacked: each label above its value; the facts still flow side by side and wrap. These outrank
+// the narrow container query below, which then contributes only its full-width flex basis.
+:host(.rr-facts-stacked) {
+  .rr-facts { align-items: flex-start; gap: 0.75rem 2.5rem; }
+  .rr-fact { flex-direction: column; align-items: flex-start; gap: 0.25rem; }
+}
+
 @container rr-facts (inline-size < 36rem) {
   .rr-facts { row-gap: 6px; }
   .rr-fact { flex: 1 1 100%; flex-direction: column; align-items: stretch; gap: 1px; }

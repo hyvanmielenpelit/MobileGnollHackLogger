@@ -8994,6 +8994,12 @@ describe('AdminBenchmarkComponent', () => {
           Math.round((card.querySelectorAll('.rh-metrics > .rh-metric')[column] as HTMLElement).getBoundingClientRect().left));
         expect(new Set(lefts).size).withContext(`metric column ${column}`).toBe(1);
       }
+
+      // The model under test is the card's headline.
+      const model = getComputedStyle(cards[0].querySelector('.rh-card-model') as HTMLElement);
+      const meta = getComputedStyle(cards[0].querySelector('.rh-card-meta') as HTMLElement);
+      expect(parseFloat(model.fontSize)).toBeGreaterThan(parseFloat(meta.fontSize));
+      expect(parseFloat(model.fontWeight)).toBeGreaterThanOrEqual(700);
     });
 
     it('should filter by the Suite facet without asking the server again', () => {
@@ -9041,6 +9047,19 @@ describe('AdminBenchmarkComponent', () => {
       search.dispatchEvent(new Event('input'));
       await afterSearchDebounce();
       expect(shownIds()).toEqual([7]);
+    });
+
+    it('should start the search text to the right of its glyph', async () => {
+      openHistoryWith([buildHistoryRun({ id: 1 })]);
+      await document.fonts.ready;
+      fixture.detectChanges();
+
+      const search = fixture.nativeElement.querySelector('#rh-search') as HTMLInputElement;
+      const glyph = fixture.nativeElement.querySelector('.rh-search > svg') as SVGElement;
+      expect(getComputedStyle(search).paddingInlineStart).toBe('34px');
+      const field = search.getBoundingClientRect();
+      expect(field.left + 34).toBeGreaterThanOrEqual(glyph.getBoundingClientRect().right);
+      expect(field.height).toBeLessThanOrEqual(33);
     });
 
     it('should clear the search on Escape without closing anything, and let Escape through when it is empty', async () => {
@@ -11441,6 +11460,26 @@ describe('AdminBenchmarkComponent', () => {
           expect(height).withContext(fact.getAttribute('data-fact')!).toBeGreaterThan(0);
           expect(height).withContext(fact.getAttribute('data-fact')!).toBeLessThanOrEqual(tallest + 2);
         }
+      });
+
+      it('should lay the open Run details out as a fact sheet, not one word per line', async () => {
+        openWide(reportRun({ candidatePromptOptionsJson: HEADER_PROMPT_OPTIONS, boardDelivery: FULL_BOARD, hasBoardRecord: true }));
+        const toggled = nextEvent(runDetails(), 'toggle');
+        (runDetails().querySelector(':scope > summary') as HTMLElement).click();
+        await toggled;
+        await document.fonts.ready;
+        fixture.detectChanges();
+
+        const details = runDetails();
+        expect(details.open).toBeTrue();
+        const primary = reportDialog().querySelector('.rr-run-facts-primary') as HTMLElement;
+        expect(Math.abs(details.getBoundingClientRect().width - primary.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
+        expect(details.querySelector('app-run-facts')?.classList).toContain('rr-facts-stacked');
+
+        const fact = (key: string) => (details.querySelector(`[data-fact="${key}"]`) as HTMLElement).getBoundingClientRect();
+        expect(Math.abs(fact('profile').top - fact('started').top)).toBeLessThanOrEqual(1);
+        expect(fact('board').top).toBeGreaterThanOrEqual(fact('profile').top - 1);
+        expect(fact('profile').height).toBeLessThan(60);
       });
     });
 

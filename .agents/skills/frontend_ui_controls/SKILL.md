@@ -1336,7 +1336,9 @@ line up down the list at a wide width, as Run History's `.rh-metrics` does.
 **The filter bar**, above the list, in this order:
 
 1. A **search** field: `<input type="search">` with a real visually hidden `<label for>`, a
-   decorative leading glyph (`.gh-search-field`), debounced (~200 ms) so the status line is not
+   decorative leading glyph (`.gh-search-field`). `.gh-search-field` pads `input.gh-input`,
+   element-qualified, so a component-local `.gh-input` rule of equal specificity cannot reset the
+   padding and slide the text under the glyph. Debounced (~200 ms) so the status line is not
    announced per keystroke. **Escape with text clears it at once** and calls `preventDefault()` and
    `stopPropagation()`, so the `<dialog>` around it stays open; with no text, Escape is left alone.
    Pair it with **Sort by**: one native `<select>` of named orders (*Newest first*, *Title (A–Z)*…)

@@ -5487,13 +5487,15 @@ the Download Center's card-list pattern (`frontend_ui_controls` § 8h):
   and *degraded answers*, no ⚠ character and no hover-only `title`), the `answered / total` badge, and
   `INSTRUMENT CHANGED` / `OPTIONS CHANGED`.
 - **Title:** the model under test, with the same thinking-level, reasoning-mode and provider badges the
-  run report header uses (no service-tier badge, which the run summary does not carry).
+  run report header uses (no service-tier badge, which the run summary does not carry). It is the
+  card's headline, larger and brighter than the kicker and the meta line.
 - **Meta line:** suite · *assessed by* the assessor · the start time in UTC · *by* the user who started
   it, when recorded.
 - **Metrics:** *Intelligence*, *Speed*, *Duration* and *Cost*, in fixed-width columns so the figures
   line up down the list. Their qualifiers are visible second lines (see *Run History shows the duration
   and the shortfall* above), and the cost shows the model under test's own figure with the whole run's
-  *catalog* total beneath.
+  *catalog* total beneath. A hairline separates them from the identity block; below 60 rem it runs
+  above them instead.
 - **Actions:** icon-only **View details**, **Download Markdown report** (now the *file-with-arrow*
   glyph), **Download tool-call log** and, set apart, **Delete run**. After a delete, focus moves to the
   card now in the deleted one's place.
@@ -5539,8 +5541,10 @@ this list.
   complete, else *Board incomplete*. While the board has gaps, a *Graded without the board* tag stays in
   the summary whether the section is open or closed, because a warning never hides behind a disclosure.
   Open or closed is remembered per browser in `localStorage['overseer.benchmark.runReport.header']`
-  (`{ "version": 1, "detailsOpen": … }`) and applies to every run report. Both parts use the flowing
-  facts layout described under *Widths* above, so the header has no empty rows.
+  (`{ "version": 1, "detailsOpen": … }`) and applies to every run report. The primary facts use the
+  flowing layout described under *Widths* above. Open, the Run details facts are a stacked fact sheet
+  in a quiet inset panel, each label above its value, the facts side by side and wrapping; the
+  disclosure stretches to the header's width, so the header has no empty rows either way.
 - **Actions.** The *Run actions* group is a two-column grid: **Downloads** over **Re-run**, equal in
   width, then the icon-only **View game snapshot** over **Copy diagnostics**. *Copied* appears under the
   group without moving the buttons. **Close** is no longer in the group, since it is a dialog control and

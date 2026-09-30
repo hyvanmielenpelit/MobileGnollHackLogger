@@ -324,9 +324,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     kicker (`#N`, the status badge, the degraded count with a Feather *alert-triangle* SVG and visually
     hidden *degraded answers*, the progress count, `INSTRUMENT CHANGED` / `OPTIONS CHANGED`, parts
     separated by an `aria-hidden` dot and a visually hidden comma), the `h5.rh-card-title`
-    (`#rh-run-{id}-title`, `tabindex="-1"`) with the model under test's `runFactBadges`, a meta line
+    (`#rh-run-{id}-title`, `tabindex="-1"`) with the model under test's `runFactBadges`
+    (`.rh-card-model` is `1.125rem`/700, the card's headline), a meta line
     (suite · *assessed by* · `<time datetime>` · *by* user), `dl.rh-metrics` (*Intelligence*, *Speed*,
-    *Duration*, *Cost*, fixed 7.5 rem columns; *advisory timing*, *until stopped*, *pricing incomplete*
+    *Duration*, *Cost*, fixed 7.5 rem columns behind an inline-start hairline, which moves to their
+    block-start side below 60 rem; *advisory timing*, *until stopped*, *pricing incomplete*
     and *catalog …* as visible second lines, never `*` with `title`), the `role="group"` *Actions for
     run N* (**View details** *eye*, **Download Markdown report** *file-with-arrow*, **Download tool-call
     log**, and **Delete run** `.action-btn-danger` set apart) and, under a hairline, `dl.rh-instrument`
@@ -388,7 +390,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     model under test, as `.config-badge`); no `title` attributes. **The primary rows**
     (`RUN_FACT_PRIMARY_KEYS`: *Model*, *Assessor(s)*) are always shown, in `.rr-run-facts-primary`
     (`selectedRunPrimaryFacts`); **the rest** (`selectedRunDetailFacts`) sit in
-    `details.gh-disclosure.rr-run-details` *Run details*, closed by default. Its text-only summary holds
+    `details.gh-disclosure.rr-run-details` *Run details*, closed by default, as
+    `app-run-facts layout="stacked"` (`.rr-run-details-facts`, an inset panel: label above value, facts
+    side by side). The disclosure is `align-self: stretch`, because the size container inside gives it
+    no width. Its text-only summary holds
     the title, the `aria-hidden` one-line read-out `runFactsReadout` (*Gameplay Help · Standard
     Intelligence Index · Started … · Board 18/18*, or *Board incomplete*) while closed, and, while the
     board has gaps, a visible `gh-tag gh-tag-changed` *Graded without the board*, open or closed. The
