@@ -4734,7 +4734,7 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("### 6.2 Panel Member B: Claude Judge (Anthropic)", report);
         Assert.Contains("Member B's reading of the run.", report);
         Assert.Contains("### 6.3 Where the Readers Agree and Disagree (computed)", report);
-        Assert.Contains("| weakness · accuracy | Q2 | Q2 misstates the item weight. | The weight in Q2 is wrong. | Convergent |", report);
+        Assert.Contains("| weakness · accuracy | both Q2 | Q2 misstates the item weight. | The weight in Q2 is wrong. | Convergent |", report);
         Assert.Contains("| strength · tool use | — | — | Consistent source lookups. | Member B only |", report);
 
         int sixOne = report.IndexOf("### 6.1 Panel Member A:", StringComparison.Ordinal);
@@ -5136,7 +5136,167 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("| strength (A) vs weakness (B) · accuracy | Q4, Q5 | Q4 is exact. | Q4 and Q5 misstate the damage. | Conflicting |", report);
+        Assert.Contains("| strength (A) vs weakness (B) · accuracy | both Q4 · B only Q5 | Q4 is exact. | Q4 and Q5 misstate the damage. | Conflicting |", report);
+    }
+
+    [Fact]
+    public void PanelRun_SplitsAConvergentRowsQuestions_IntoBothAOnlyAndBOnly()
+    {
+        var run = PanelReportRun();
+        run.AssessmentJson = "{\"overallScore\":72,\"findings\":[{\"kind\":\"weakness\",\"category\":\"accuracy\",\"questions\":[1,3,11,13,15],\"text\":\"A: weights are wrong.\"}]}";
+        run.CoAssessorSynthesisJson = "{\"overallScore\":78,\"findings\":["
+            + "{\"kind\":\"weakness\",\"category\":\"accuracy\",\"questions\":[13,15,16,9,18],\"text\":\"B: weights are wrong.\"},"
+            + "{\"kind\":\"strength\",\"category\":\"tool_use\",\"questions\":[],\"text\":\"Consistent source lookups.\"}]}";
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("| weakness · accuracy | both Q13, Q15 · A only Q1, Q3, Q11 · B only Q9, Q16, Q18 | A: weights are wrong. | B: weights are wrong. | Convergent |", report);
+        // A one-member row lists its questions; a run-wide row keeps the dash.
+        Assert.Contains("| strength · tool use | — | — | Consistent source lookups. | Member B only |", report);
+
+        // At a Glance names only the questions both members named, with the row's text unchanged.
+        string section = AtAGlanceOf(report);
+        Assert.Contains("- Weakness · accuracy · Q13, Q15 — A: weights are wrong. / B: weights are wrong.", section);
+        Assert.DoesNotContain("Q1, Q3", section);
+    }
+
+    [Fact]
+    public void ConvergenceQuestionsText_OmitsAnEmptyGroup()
+    {
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[] { new BenchmarkSynthesisFinding("weakness", "accuracy", new[] { 2, 4 }, "A.") },
+            new[] { new BenchmarkSynthesisFinding("weakness", "accuracy", new[] { 4, 2 }, "B.") });
+
+        Assert.Equal("both Q2, Q4", BenchmarkReportBuilder.ConvergenceQuestionsText(Assert.Single(rows)));
+    }
+
+    [Fact]
+    public void PanelRun_AttributesAnAccusationToTheAccuserAlone_WhenTheOtherMemberListedTheSentenceAsAClaim()
+    {
+        var run = PanelReportRunWithVerification();
+        var q3 = run.Answers.Single(a => a.OrderIndex == 3);
+        q3.ClaimVerificationJson = "["
+            + "{\"claimIndex\":0,\"claim\":\"The sword is silver.\",\"verdict\":\"Supported\",\"citation\":\"src/objects.c:121\",\"basis\":\"src/objects.c:121\",\"roles\":[\"unverifiedClaim\",\"accusedQuote\"],\"raisedBy\":[\"A\",\"B\"],\"accusedBy\":[\"A\"]},"
+            + "{\"claimIndex\":1,\"claim\":\"Wielding it is free.\",\"verdict\":\"Refuted\",\"citation\":\"src/wield.c:40\",\"basis\":\"src/wield.c:40\",\"roles\":[\"unverifiedClaim\"],\"raisedBy\":[\"A\",\"B\"],\"suspectedFalse\":true,\"suspectedBy\":[\"B\"]}"
+            + "]";
+        q3.UnverifiedClaimCount = 2;
+        q3.ClaimsSupportedCount = 1;
+        q3.ClaimsRefutedCount = 1;
+        q3.ClaimsIndeterminateCount = 0;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("> - **Accused sentences checked:** 1 (A 1, B 0, both 0) — supported 1, refuted 0, indeterminate 0", report);
+        Assert.Contains("> - **Supported accusation:** a sentence member A charged as false was checked by the claim verifier and **supported** — \"The sword is silver.\"", report);
+        Assert.Contains("- **Accused Sentences Checked:** 1 (A 1, B 0, both 0) across 1 answer(s) (Q3)", report);
+        Assert.Contains("- **Supported Accusations:** 1 (A 1, B 0, both 0) (Q3)", report);
+        Assert.Contains("> - **Suspected false by the panel:** 1 (A 0, B 1, both 0)", report);
+        Assert.Contains("- **Suspected False by the Panel:** 1 (A 0, B 1, both 0) across 1 answer(s) (Q3)", report);
+        Assert.Contains("- **Q3:** \"Wielding it is free.\" *(suspected false by member B)*", report);
+        Assert.Contains("- **Contested Accuracy Deductions:** A 1, B 1 — member A — a sentence the assessor quoted as false was supported: Q3; member B — cause not recorded: Q3.", report);
+        Assert.DoesNotContain("a sentence both members charged as false", report);
+    }
+
+    [Fact]
+    public void PanelRun_PrintsEachMembersSpread_AfterTheIcc()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun());
+
+        // A 70 60 80 90 50: mean 70, sample SD √(1000 / 4) = 15.8. B 80 90 84 88 60: SD √(579.2 / 4) = 12.0.
+        Assert.Contains("- **Member spread:** A 50–90 (SD 15.8), most frequent levels 5/5/5/5 on 5 of 5; B 60–90 (SD 12.0), most frequent levels 4/5/6/5 on 5 of 5.", report);
+        Assert.True(report.IndexOf("- **ICC(A,1):**", StringComparison.Ordinal) < report.IndexOf("- **Member spread:**", StringComparison.Ordinal));
+        Assert.True(report.IndexOf("- **Member spread:**", StringComparison.Ordinal) < report.IndexOf("- **Critical-error splits:**", StringComparison.Ordinal));
+        Assert.DoesNotContain("Both members used a narrow range", report);
+    }
+
+    [Fact]
+    public void PanelRun_SaysIccSaysLittle_WhenBothMembersUsedANarrowRange()
+    {
+        var run = PanelReportRun();
+        int[] a = { 80, 82, 84, 86, 88 };
+        int[] b = { 78, 80, 82, 84, 86 };
+        for (int i = 0; i < run.Answers.Count; i++)
+        {
+            run.Answers[i].QualityScore = a[i];
+            run.Answers[i].CoAssessmentQualityScore = b[i];
+        }
+        run.Answers[0].AccuracyLevel = 6;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // SD √(40 / 4) = 3.2 for both; member A's tuple 5/5/5/5 holds on four answers of five.
+        Assert.Contains("- **Member spread:** A 80–88 (SD 3.2), most frequent levels 5/5/5/5 on 4 of 5; B 78–86 (SD 3.2), most frequent levels 4/5/6/5 on 5 of 5. *Both members used a narrow range, so ICC measures agreement on a few points' difference and says little; read the mean |B − A| and the disagreements instead.*", report);
+    }
+
+    [Fact]
+    public void SingleAssessorRun_PrintsNoMemberSpread()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80),
+            ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 60)));
+
+        Assert.DoesNotContain("Member spread", report);
+    }
+
+    /// <summary>Three Ok answers with model times 10.0 s, 14.7 s and 26.9 s: mean 17.2 s, median 14.7 s.</summary>
+    private static BenchmarkRunAnswer[] ModelTimeAnswers(int speedScore)
+        => new[] { 10_000L, 14_700L, 26_900L }
+            .Select((ms, i) =>
+            {
+                var answer = ScoredAnswer(i + 1, BenchmarkDifficulty.Simple, 25, 80);
+                answer.DurationMs = ms;
+                answer.ToolTimeMs = 0;
+                answer.SpeedScore = speedScore;
+                return answer;
+            })
+            .ToArray();
+
+    [Fact]
+    public void ModelTimeMean_IsPrintedBesideTheMedian_InAtAGlanceAndTheResultsSummary()
+    {
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ModelTimeAnswers(60));
+        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-quick", displayName: "GPT Quick");
+        run.SpeedIndex = 73;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("| Speed | Speed Index: 73 / 100 · mean 17.2 s, median 14.7 s model time per question |", AtAGlanceOf(report));
+        Assert.Contains("- **Model Time Mean:** 17,200 ms per answered question", report);
+        Assert.True(report.IndexOf("- **Model Time Percentiles:**", StringComparison.Ordinal) < report.IndexOf("- **Model Time Mean:**", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ModelTimeMean_FollowsTheMedian_WhenTheSpeedIndexIsDemoted()
+    {
+        // Thinking level "max" under the standard profile: the median leads and the index is advisory.
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ModelTimeAnswers(100));
+        run.SpeedIndex = 73;
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        string section = AtAGlanceOf(report);
+
+        Assert.Contains("| Speed | Median Model Time: 14,700 ms · mean 17.2 s model time per question (Speed Index 73 / 100 — advisory for this run", section);
+        Assert.DoesNotContain("median 14.7 s", section);
+        Assert.Contains("- **Model Time Mean:** 17,200 ms per answered question", report);
+    }
+
+    [Fact]
+    public void ChatPromptUnderTest_NotesAllowedSourceReferences_OnlyWhenTheRunAllowedThem()
+    {
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80));
+
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { AllowSourceCodeReferences = true }.ToCanonicalJson();
+        var allowed = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.Contains("Every quality verdict below is a verdict on the prompt real users receive with these settings.", allowed);
+        Assert.Contains("**Source code references:** allowed" + Environment.NewLine + "  - " + BenchmarkReportBuilder.SourceCodeReferencesAllowedNote, allowed);
+        Assert.Contains("Source code references: allowed — a user's default is disallowed (the Show source code references setting), so these answers may cite files and lines a default user's would not.", allowed);
+
+        run.CandidatePromptOptionsJson = new BenchmarkCandidatePromptOptions { AllowSourceCodeReferences = false }.ToCanonicalJson();
+        var disallowed = BenchmarkReportBuilder.BuildMarkdownReport(run);
+        Assert.Contains("Every quality verdict below is a verdict on the prompt real users receive with these settings.", disallowed);
+        Assert.Contains("**Source code references:** disallowed", disallowed);
+        Assert.DoesNotContain("a user's default is disallowed", disallowed);
     }
 
     // --- At a Glance ------------------------------------------------------------------------------

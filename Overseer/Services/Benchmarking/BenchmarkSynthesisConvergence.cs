@@ -20,7 +20,8 @@ public enum BenchmarkConvergenceStatus
 /// One row of the computed agreement between the two members' syntheses: a finding kind, its
 /// category and the questions it names (empty for a run-wide finding), with each member's text where
 /// that member raised it. A <see cref="BenchmarkConvergenceStatus.Conflicting"/> row carries member
-/// A's kind; member B raised the opposite one.
+/// A's kind; member B raised the opposite one. <see cref="Questions"/> is the union of
+/// <see cref="QuestionsA"/> and <see cref="QuestionsB"/>.
 /// </summary>
 public sealed record BenchmarkSynthesisConvergenceRow(
     string Kind,
@@ -28,7 +29,17 @@ public sealed record BenchmarkSynthesisConvergenceRow(
     IReadOnlyList<int> Questions,
     BenchmarkConvergenceStatus Status,
     string? MemberAText,
-    string? MemberBText);
+    string? MemberBText)
+{
+    /// <summary>The questions member A's findings in this row name, sorted; empty when A raised none or only run-wide ones.</summary>
+    public IReadOnlyList<int> QuestionsA { get; init; } = Array.Empty<int>();
+
+    /// <summary>The questions member B's findings in this row name, sorted; empty when B raised none or only run-wide ones.</summary>
+    public IReadOnlyList<int> QuestionsB { get; init; } = Array.Empty<int>();
+
+    /// <summary>The questions both members' findings in this row name, sorted: the intersection of <see cref="QuestionsA"/> and <see cref="QuestionsB"/>.</summary>
+    public IReadOnlyList<int> SharedQuestions { get; init; } = Array.Empty<int>();
+}
 
 /// <summary>
 /// The agreement between member A's and member B's structured synthesis findings in a panel run.
@@ -188,8 +199,9 @@ public static class BenchmarkSynthesisConvergence
 
     /// <summary>
     /// A row from the findings of each member it joins: kind and category from the first finding
-    /// (member A's when present), the sorted union of their questions, and each member's distinct
-    /// texts in the order given.
+    /// (member A's when present), the sorted union of their questions, each member's sorted
+    /// questions and the sorted questions both name, and each member's distinct texts in the order
+    /// given.
     /// </summary>
     private static BenchmarkSynthesisConvergenceRow RowOf(
         IEnumerable<Item> fromA, IEnumerable<Item> fromB, BenchmarkConvergenceStatus status)
@@ -198,8 +210,15 @@ public static class BenchmarkSynthesisConvergence
         var listB = fromB.ToList();
         var first = listA.Count > 0 ? listA[0] : listB[0];
         var questions = listA.Concat(listB).SelectMany(x => x.Questions).Distinct().OrderBy(q => q).ToList();
+        var questionsA = listA.SelectMany(x => x.Questions).Distinct().OrderBy(q => q).ToList();
+        var questionsB = listB.SelectMany(x => x.Questions).Distinct().OrderBy(q => q).ToList();
         return new BenchmarkSynthesisConvergenceRow(
-            first.Kind, first.Category, questions, status, JoinTexts(listA), JoinTexts(listB));
+            first.Kind, first.Category, questions, status, JoinTexts(listA), JoinTexts(listB))
+        {
+            QuestionsA = questionsA,
+            QuestionsB = questionsB,
+            SharedQuestions = questionsA.Intersect(questionsB).OrderBy(q => q).ToList()
+        };
     }
 
     /// <summary>The distinct texts of the findings, joined in order; null when there are none.</summary>

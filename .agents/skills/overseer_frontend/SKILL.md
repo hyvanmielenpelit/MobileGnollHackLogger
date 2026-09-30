@@ -343,11 +343,23 @@ To find specific popups, look in the corresponding component's `.html` template:
     selects *Questions*. While `hasRunIntegrityNotice` — the one getter the notice and the tab both read —
     the Integrity tab carries a `gh-tag` *Notice*. Only the *Action Error* alert and the *Retry in
     progress* strip sit above the panels. *Summary* heads the key figures with an `h4.gh-section-title`
-    *Key figures* and, beside it, icon-only **Copy** and **Download** for the whole set; the cards sit in
-    `.rr-figures` (a grid), and every `.score-card` ends in an `app-key-figure-card-actions` pair shown on
-    hover or focus (opacity only). The PNGs come from `run-report-frame/key-figures-image.ts`, which
-    reads the rendered cards and composes them **square, or landscape as near square as possible, never
-    portrait**; the spec pins the layouts. While loading or after a failed load there is no tab row.
+    *Key figures* and, beside it, icon-only **Copy** and **Download** for the whole set and a text-only
+    `.btn-ghost` **Choose figures** (*(9 of 12)* while a subset is selected); the cards sit in
+    `.rr-figures` (a grid), and every `.score-card` carries a stable `data-figure` key (`intelligence`,
+    `raw-quality`, `unweighted-mean`, `speed`, `mean-time`, `panel`, `agreement`, `holistic`,
+    `answer-duration`, `wall-time`, `model-cost`, `estimated-cost` — unchanged by a label variant) and
+    ends in an `app-key-figure-card-actions` pair shown on hover or focus (opacity only). *Mean Time per
+    Question* sits right after the Speed Index card and is always shown (`—` with no answered
+    question). **Choose figures** opens `app-key-figures-chooser` (`run-report-frame/`), a nested
+    `<dialog class="gh-dialog">` with light dismiss whose checklist, *All* / *None*, status count and
+    footer **Cancel** · **Copy Image** · **Download PNG** commit the choice and export it in one click;
+    the choice is stored as the *excluded* keys in
+    `localStorage['overseer.benchmark.runReport.keyFigures']` (`{ version: 1, excluded: [...] }`), so a
+    card added later is included, and the header's one-click Copy and Download export the saved
+    selection. The PNGs come from `run-report-frame/key-figures-image.ts`, which reads the rendered
+    cards, filters them by the selection (footnotes from the included cells only) and composes them
+    **square, or landscape as near square as possible, never portrait**, for any subset; the spec pins
+    the layouts. While loading or after a failed load there is no tab row.
     **No footer.** Escape and the header Close both close it, and closing always stops detail polling.
     Question cards have real `<button>` headers, filter toggles (*Critical errors*, *Disputed*,
     *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*. The **AI Reports**

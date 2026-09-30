@@ -257,12 +257,13 @@ whether that member shares the subject's provider.
 | 15 | Every question the prompt lists under *QUESTIONS NEEDING A NOTE* has a note in `questionNotes` (`MissingQuestionNoteRule`) |
 | 16 | A sentence that holds `{{subject}}` and a `{{peer:X}}` token together with a comparative word (`ComparativeWords`: *higher, lower, better, worse, ahead, behind, outperform(s/ed), beat(s), leads, trails*), where `peer.X.intervalOverlap` says the two intervals overlap, also says *overlap* or *not established* (`OverlapHedgeRule`); where that peer's `peer.X.pairedExcludesZero` is true, stating the paired result — *paired* and *excludes zero* in the sentence, or the fact's token — satisfies it as well. Tokens are set aside before the text is split into sentences, so a fact key's dots never end one |
 | 17 | No hype or filler words (`HypeWords`: *impressive, remarkable, outstanding, stellar, exceptional, robust, seamless, leverage, delve, game-changing, cutting-edge*), as whole words ignoring case, in any prose (`HypeWordRule`) |
-| 18 | A `model_developers` recommendation mentions nothing a model developer cannot change (`OverseerOnlyTerms`: *rubric, retrieval, index, corpus, regression test, system prompt, tool guide*, with their plural and inflected forms, as whole words ignoring case; `ModelDeveloperScopeRule`) |
+| 18 | A `model_developers` recommendation mentions nothing a model developer cannot change (`OverseerOnlyTerms`: *rubric, retrieval, index, corpus, regression test, system prompt, tool guide, prompt the model, the assistant's prompt, GnollHack*, with their plural and inflected forms, as whole words ignoring case; `ModelDeveloperScopeRule`) |
+| 19 | No negation — *no, none, never, without, zero*, ignoring case — among the four words before a token whose display value starts with `0` in the same sentence, as in *"no critical errors across {{errors.critical}}"* reading *"0 of 18 answers"* (format 9). Tokens are set aside before the text is split into sentences |
 
 Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
 slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
-Summary's `confidence` slot, rule 14 to the headline and each paragraph of the abstract, rule 16 to
-each sentence of the prose, and rule 18 to the text of each recommendation for `model_developers`.
+Summary's `confidence` slot, rule 14 to the headline and each paragraph of the abstract, rules 16 and 19
+to each sentence of the prose, and rule 18 to the text of each recommendation for `model_developers`.
 
 **Readability.** The system prompt of every audience adds: one idea per sentence; sentences of at most
 about 25 words; active voice; a count from the facts rather than *many* or *several*; the category of a
@@ -279,7 +280,8 @@ then the evidence."*
    over-cap slot with a word limit (the abstract, `meaning`, `confidence`, `comparison`, `whyItScored`,
    `whatWorked`, `limitations`, `overseerChat`, `benchmarkSystem`, `modelResult`) loses its last
    paragraphs until it fits.
-3. **Rules 12 to 18 never drop** (`BenchmarkReportPackValidator.IsWarningRule`). A missing question
+3. **Rules 12 to 19 never drop** (`BenchmarkReportPackValidator.IsWarningRule`); a zero-count token
+   after a negation (rule 19) is kept after the repair turn like the others. A missing question
    note (rule 15) has nothing to drop. A spelling slip, an interval adjective, a mention of the claim
    verifier, an unhedged comparison across overlapping intervals, a hype word or a model-developer
    recommendation that strays into the Overseer is not worth losing a finding or the one paragraph of a
@@ -519,7 +521,45 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 8** (the current one, 2026-09-30) comes from a review of the first comparison
+**Format version 9** (the current one, 2026-09-30, with harness 44 in `ai-benchmark.md`) comes from a
+review of run 75's run-completion documents. It changes no score, index, grading prompt, comparability
+key or `HarnessVersion`. Stored documents re-render with the new renderer on their next download
+(*generated under 8 · rendered with 9*); the prompt changes reach only documents written from now on.
+
+- **Assessed and authored bands (N1, R4)**: *Difficulty bands* is *Difficulty bands (assessed)* with an
+  *Authored questions* column, and the per-question table's *Band* column is *Assessed band*, followed by
+  *Authored*. The facts `bands.authored.simple|intermediate|advanced` (*Questions authored as …*) carry
+  the authored counts, and the FACTS header tells the writer the bands are assessed difficulty, so it no
+  longer writes "no simple-band questions" about a suite with authored Simple items.
+- **Question details last (N2)**: in the Report for AI Researchers and Developers, `## Question details`
+  (one `### Q<n>` per question, `#### Run` per run) follows the *Reproducibility appendix* and precedes
+  *Removed content* and *Evaluation terms*; *Per-question results* (the table and its note) stays where
+  it was, and the table of contents follows. The Internal Improvement Brief keeps its details under
+  section 5.
+- **Mean time (N4)**: the fact `speed.modelTimeMean` (*Mean answer time*, from
+  `BenchmarkModelComparisonSpeedDto.ModelTimeMeanMs`, formatted like the median); *Key figures* reads
+  *"median answer time 14.7 s, mean 17.2 s"* and *Speed and cost* adds *Mean answer time*.
+- **Zero-count tokens (R1)**: the fact `answers.scored` (*Scored answers*, the denominator of
+  `errors.critical`), a writer rule that an *N of M* token is a noun phrase — never after *no* or the
+  object of *made*; to say none occurred, *"no critical errors across all {{answers.scored}} answers"* —
+  and validator rule 19 (§ 3).
+- **Model-developer recommendations (R2)** name a general capability a model developer can train or
+  tune — stating the decisive mechanic behind a verdict, committing to a conclusion the inputs settle —
+  never a GnollHack fact, a change to the assistant's prompt or tools, or a rubric point; game-specific
+  gaps are Internal Brief leads (`corpus` or `chat`). It replaces format 8's R12 wording, and rule 18's
+  vocabulary grows (§ 3).
+- **Support labels (H3)**: a finding row carries `questionsA`, `questionsB` and `sharedQuestions` (the
+  FINDING ROWS print *shared* / *A only* / *B only*). A strength or weakness citing a Convergent row
+  reads *Both graders* only when its questions meet the row's shared questions; otherwise *One grader*
+  with that member's provider relation. A run-wide Convergent row, and a row stored before format 9
+  without the lists, keep the row's label.
+- **PDF layout 4 (N3)**: the closing section is kept on one page (§ 8).
+
+A document stored under format 8 or earlier renders every change above that needs no new fact: the
+authored columns and the mean print *—* or nothing without their facts, and its support labels are the
+row's.
+
+**Format version 8** (2026-09-30) comes from a review of the first comparison
 documents, and adds charts to the PDF and Word copies (§ 13). It changes no score, index, grading
 prompt, comparability key or `HarnessVersion`: the report writer is not part of the graded instrument,
 and no comparability code reads `WriterPromptSha256` or the format and layout versions. Stored documents
@@ -896,7 +936,7 @@ still reaches no model client, clock or configuration, and the architecture pins
   drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
   never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
 - **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex of the source hash} · PDF layout 3*, and a classification banner — amber
+  *Source {first 16 hex of the source hash} · PDF layout 4*, and a classification banner — amber
   *Confidential …* for a provider copy (the audience-aware stamp of § 6), red *INTERNAL …* for everything
   else, the text saying what the color says. A report document with peers has the subject line
   *"{Suite} · run #68 · compared with 4 models"* (*group #N* for a group subject); a stand-alone one
@@ -934,6 +974,10 @@ still reaches no model client, clock or configuration, and the architecture pins
   chart's alternative text (its title, else *Chart*, when the text is empty), and the caption below it,
   tagged `SemanticCaption`, reads **Figure N.** *Title* — caption, in the table text size. Image and
   caption are kept on one page, and figures are numbered in order of appearance.
+- **Closing section** (*PDF layout 4*, 2026-09-30): the last `##` section of a document with at least two
+  (*Evaluation terms*) is kept on one page when its estimated height fits a page
+  (`BenchmarkPdfMarkdownComposer.KeptTogetherSectionStart`, an estimate that errs high), so no document
+  ends on a page holding one bullet; a taller section flows as before.
 - **Source hash**: SHA-256 over the UTF-8 Markdown followed by each drawn chart's SHA-256 (lowercase hex)
   in figure order, so a changed chart changes the hash; with no chart drawn it equals the Markdown's own
   hash, as before layout 3. The cover and the footer print its first 16 hex characters.

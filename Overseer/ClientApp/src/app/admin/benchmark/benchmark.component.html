@@ -322,6 +322,22 @@
                   <span id="candidateResponseStyleNote" class="form-hint">{{ candidateResponseStyleHint }}</span>
                 }
               </div>
+
+              <div class="form-group">
+                <label for="candidateSourceCodeReferences">Source Code References</label>
+                <div class="gh-field-row">
+                  <select id="candidateSourceCodeReferences" class="gh-input"
+                          [(ngModel)]="candidateAllowSourceCodeReferences"
+                          aria-describedby="candidateSourceCodeReferencesHint">
+                    <option [ngValue]="false">Disallowed — production default</option>
+                    <option [ngValue]="true">Allowed — answers cite source files and lines</option>
+                  </select>
+                  <app-info-tip trigger="click" tipId="candidateSourceCodeReferencesHint" subject="Source Code References">
+                    Regular users see source file and line references only when they turn on Show source code
+                    references, so Disallowed matches what most of them get. Allowed lets the answers cite them.
+                  </app-info-tip>
+                </div>
+              </div>
             </fieldset>
 
             <fieldset class="gh-fieldset setup-group setup-group-grading">
@@ -1730,7 +1746,7 @@
               <h4 class="gh-section-title" id="rrFiguresTitle">Key figures</h4>
               <div class="rr-figure-actions" role="group" aria-label="Key figures actions">
                 <button type="button" class="action-btn" id="rr-figures-copy-btn"
-                        [attr.aria-label]="'Copy key figures of run ' + selectedRunDetail.id + ' as an image'"
+                        [attr.aria-label]="'Copy key figures of run ' + selectedRunDetail.id + ' as an image' + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' key figures' : '')"
                         [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
                         interestfor="rr-figures-copy-tip" [attr.style]="'anchor-name: --rr-figures-copy-tip'"
                         (click)="copyKeyFigures()">
@@ -1739,7 +1755,7 @@
                 <div popover="hint" class="gh-tooltip" id="rr-figures-copy-tip"
                      [attr.style]="'position-anchor: --rr-figures-copy-tip'">Copy key figures as an image</div>
                 <button type="button" class="action-btn" id="rr-figures-download-btn"
-                        [attr.aria-label]="'Download key figures of run ' + selectedRunDetail.id + ' as a PNG image'"
+                        [attr.aria-label]="'Download key figures of run ' + selectedRunDetail.id + ' as a PNG image' + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' key figures' : '')"
                         [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
                         interestfor="rr-figures-download-tip" [attr.style]="'anchor-name: --rr-figures-download-tip'"
                         (click)="downloadKeyFigures()">
@@ -1747,10 +1763,22 @@
                 </button>
                 <div popover="hint" class="gh-tooltip" id="rr-figures-download-tip"
                      [attr.style]="'position-anchor: --rr-figures-download-tip'">Download key figures as PNG</div>
+                <button #keyFiguresChooserTrigger type="button" class="btn-ghost" id="rr-figures-choose-btn"
+                        aria-haspopup="dialog"
+                        [attr.aria-label]="'Choose key figures for the image of run ' + selectedRunDetail.id + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' selected' : '')"
+                        interestfor="rr-figures-choose-tip" [attr.style]="'anchor-name: --rr-figures-choose-tip'"
+                        (click)="openKeyFiguresChooser(keyFiguresChooserTrigger)">
+                  Choose figures
+                  @if (keyFiguresSelectionLabel) {
+                    <span class="rr-figures-choose-count" aria-hidden="true">({{ keyFiguresSelectionLabel }})</span>
+                  }
+                </button>
+                <div popover="hint" class="gh-tooltip" id="rr-figures-choose-tip"
+                     [attr.style]="'position-anchor: --rr-figures-choose-tip'">Choose the key figures in the image</div>
               </div>
             </div>
             <div class="rr-figures" role="group" aria-labelledby="rrFiguresTitle">
-              <div class="score-card main-score">
+              <div class="score-card main-score" data-figure="intelligence">
                 <span class="score-label">Intelligence Index</span>
                 @if (selectedRunDetail.qualityIndex == null && selectedRunDetail.finalScore == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
                   <span class="score-value text-muted">Not computed</span>
@@ -1768,8 +1796,8 @@
                 }
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Intelligence Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
-              @if (selectedRunDetail.rawQualityIndex != null && selectedRunDetail.rawQualityIndex !== (selectedRunDetail.qualityIndex ?? selectedRunDetail.finalScore)) {
-                <div class="score-card">
+              @if (showRawQualityTile) {
+                <div class="score-card" data-figure="raw-quality">
                   <span class="score-label">Raw Quality Index</span>
                   <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.rawQualityIndex)">
                     {{ selectedRunDetail.rawQualityIndex }} / 100
@@ -1784,7 +1812,7 @@
                 because the model's two weakest answers were two of its easiest questions.
               -->
               @if (showUnweightedQualityTile) {
-                <div class="score-card">
+                <div class="score-card" data-figure="unweighted-mean">
                   <span class="score-label">Unweighted Mean</span>
                   <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.unweightedQualityIndex)">
                     {{ selectedRunDetail.unweightedQualityIndex }} / 100
@@ -1798,7 +1826,7 @@
                 the index moves to the sub-line. The demoted form is presentational: nothing about the
                 score, the profile or the scoring method version changes with it.
               -->
-              <div class="score-card">
+              <div class="score-card" data-figure="speed">
                 @if (demoteSpeedIndex) {
                   <span class="score-label">Median Model Time</span>
                   <span class="score-subvalue">
@@ -1834,6 +1862,13 @@
                 }
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="demoteSpeedIndex ? 'Median Model Time' : 'Speed Index'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
+              <!-- Model time only, tools excluded, over the answered questions; the median beside it. -->
+              <div class="score-card" data-figure="mean-time">
+                <span class="score-label">Mean Time per Question</span>
+                <span class="score-subvalue" [class.text-muted]="meanModelTimeMs == null">{{ meanModelTimeLabel }}</span>
+                <span class="score-note">{{ meanModelTimeNote }}</span>
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Mean Time per Question" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
               <!--
                 Grader agreement, never without its coverage. A mean delta over trigger-selected
                 answers is conditioned on the first assessor's own uncertainty; the same figure over
@@ -1844,7 +1879,7 @@
                 absolute-agreement ICC and the mean B − A. The headline index above is the panel's.
               -->
               @if (selectedRunDetail.isPanelRun) {
-                <div class="score-card panel-tile">
+                <div class="score-card panel-tile" data-figure="panel">
                   <span class="score-label">Panel</span>
                   <span class="score-subvalue">
                     A {{ selectedRunDetail.assessorOnlyQualityIndex ?? 'N/A' }} · B {{ selectedRunDetail.coAssessorOnlyQualityIndex ?? 'N/A' }}
@@ -1855,7 +1890,7 @@
                 </div>
               }
               @if (showAgreementTile) {
-                <div class="score-card">
+                <div class="score-card" data-figure="agreement">
                   <span class="score-label">{{ selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement' }}</span>
                   <span class="score-subvalue">
                     {{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · ' + agreementMeanSignedDeltaLabel : '' }}
@@ -1872,7 +1907,7 @@
                   <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
               }
-              <div class="score-card">
+              <div class="score-card" data-figure="holistic">
                 <span class="score-label">Holistic Assessor Score</span>
                 <span class="score-subvalue">{{ selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A' }} / 100</span>
                 @if (selectedRunDetail.isPanelRun) {
@@ -1885,13 +1920,13 @@
                 Two cards rather than one because the gap between them is the grading pipeline: on run 24
                 the candidate answered for 12m 45s inside a 23m 39s run.
               -->
-              <div class="score-card">
+              <div class="score-card" data-figure="answer-duration">
                 <span class="score-label">Answer Duration</span>
                 <span class="score-subvalue">{{ runAnswerDurationLabel(selectedRunDetail) }}</span>
                 <span class="score-note">{{ runAnswerDurationNote(selectedRunDetail) }}</span>
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Answer Duration" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
-              <div class="score-card">
+              <div class="score-card" data-figure="wall-time">
                 <span class="score-label">Elapsed Wall Time</span>
                 <span class="score-subvalue">{{ runWallClockLabel(selectedRunDetail) }}</span>
                 <span class="score-note">{{ runWallClockNote(selectedRunDetail) }}</span>
@@ -1905,7 +1940,7 @@
                 card is absent on a run costed before that figure was recorded.
               -->
               @if (selectedRunDetail.estimatedCandidateCost != null) {
-                <div class="score-card">
+                <div class="score-card" data-figure="model-cost">
                   <span class="score-label">Model Under Test</span>
                   <span class="score-subvalue">
                     {{ formatRunCandidateCost(selectedRunDetail) }}
@@ -1917,7 +1952,7 @@
                   <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Model Under Test" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
               }
-              <div class="score-card">
+              <div class="score-card" data-figure="estimated-cost">
                 <span class="score-label">Estimated Cost</span>
                 <span class="score-subvalue">
                   {{ formatRunEstimatedCost(selectedRunDetail) }}
@@ -2547,7 +2582,7 @@
                                       {{ v.verdict }}
                                     </span>
                                     <span class="claim-text">“{{ v.claim }}”</span>
-                                    @for (label of claimRoleLabels(v.roles, v.raisedBy); track label) {
+                                    @for (label of claimRoleLabels(v.roles, v.raisedBy, v.accusedBy); track label) {
                                       <span class="claim-role-label text-muted rr-fine-print">({{ label }})</span>
                                     }
                                   </div>
@@ -3110,6 +3145,8 @@
       </div>
     </app-run-report-frame>
   }
+  <!-- Key Figures in the Image: nested in the run report, opened by Choose figures. -->
+  <app-key-figures-chooser (exportRequested)="onKeyFiguresChosen($event)"></app-key-figures-chooser>
 </dialog>
 
 <!-- The Download Center of the run report's Downloads. -->

@@ -10,7 +10,9 @@ import {
   chooseStripLayout,
   composeCardImage,
   composeStripImage,
+  KEY_FIGURES_STORAGE_KEY,
   exportKeyFiguresImage,
+  filterKeyFigureCells,
   keyFigureCardFileName,
   keyFigureSlug,
   keyFiguresFileName,
@@ -19,13 +21,16 @@ import {
   keyFiguresStatusMessage,
   loadKeyFigureLogos,
   readKeyFigureCell,
-  readKeyFigureCells
+  readKeyFigureCells,
+  readStoredKeyFigureExclusions,
+  storeKeyFigureExclusions,
+  stripFootnotes
 } from './key-figures-image';
 
 /** Every card kind the run report renders, each with a card-actions element that must be ignored. */
 const STRIP_FIXTURE = `
   <div class="rrf-figures">
-    <div class="score-card main-score">
+    <div class="score-card main-score" data-figure="intelligence">
       <span class="score-label">Intelligence Index</span>
       <span class="score-value badge-score-mid">
         73 / 100
@@ -36,17 +41,17 @@ const STRIP_FIXTURE = `
         <div popover="hint" class="gh-tooltip">Copy as image</div>
       </app-key-figure-card-actions>
     </div>
-    <div class="score-card">
+    <div class="score-card" data-figure="raw-quality">
       <span class="score-label">Raw Quality Index</span>
       <span class="score-subvalue badge-score-high">85 / 100</span>
       <app-key-figure-card-actions><div popover="hint" class="gh-tooltip">Download as PNG</div></app-key-figure-card-actions>
     </div>
-    <div class="score-card">
+    <div class="score-card" data-figure="unweighted-mean">
       <span class="score-label">Unweighted Mean</span>
       <span class="score-subvalue badge-score-na">N/A / 100</span>
       <span class="score-note">weighting +2</span>
     </div>
-    <div class="score-card">
+    <div class="score-card" data-figure="speed">
       <span class="score-label">Speed Index</span>
       <span class="score-subvalue badge-score-low">
         40 / 100
@@ -55,28 +60,33 @@ const STRIP_FIXTURE = `
       </span>
       <span class="score-note">saturated — 9 of 10 at the ceiling</span>
     </div>
-    <div class="score-card">
+    <div class="score-card" data-figure="speed">
       <span class="score-label">Median Model Time</span>
       <span class="score-subvalue">24,985 ms</span>
       <span class="score-note">Speed Index 99 / 100 — advisory</span>
     </div>
-    <div class="score-card">
+    <div class="score-card" data-figure="speed">
       <span class="score-label">Speed Index</span>
       <span class="score-subvalue text-muted">Not computed</span>
       <span class="score-note">2 question(s) failed at the provider</span>
     </div>
-    <div class="score-card panel-tile">
+    <div class="score-card" data-figure="mean-time">
+      <span class="score-label">Mean Time per Question</span>
+      <span class="score-subvalue">17.2 s</span>
+      <span class="score-note">model time, tools excluded · median 14.7 s</span>
+    </div>
+    <div class="score-card panel-tile" data-figure="panel">
       <span class="score-label">Panel</span>
       <span class="score-subvalue">A 70 · B 72</span>
       <span class="score-note">ICC 0.81 · mean B − A +1.2</span>
       <span class="score-note">3 disagreement(s) over 10 answers both scored</span>
     </div>
-    <div class="score-card">
+    <div class="score-card" data-figure="agreement">
       <span class="score-label">Assessor Agreement</span>
       <span class="score-subvalue">0.0 pts <span class="degraded-tag" title="One answer only">*</span></span>
       <span class="score-note">1 of 10 · triggered · blind</span>
     </div>
-    <div class="score-card">
+    <div class="score-card" data-figure="model-cost">
       <span class="score-label">Model Under Test</span>
       <span class="score-subvalue">$1.0000 <span class="degraded-tag" title="Some participating models lack pricing">*</span></span>
       <span class="score-note">31 % of catalog total</span>
@@ -119,12 +129,17 @@ const charWrap: TextWrapper = (text, maxWidth, sizePx) => {
 };
 
 function cell(label: string, main = false, notes: string[] = ['note']): KeyFigureCell {
-  return { label, value: main ? '73 / 100' : '24 / 100', notes, main, tone: null, footnotes: [] };
+  return { key: keyFigureSlug(label), label, value: main ? '73 / 100' : '24 / 100', notes, main, tone: null, footnotes: [] };
 }
 
 /** A main card and `count - 1` ordinary cards, each with one note. */
 function cellsOf(count: number): KeyFigureCell[] {
   return [cell('Intelligence Index', true), ...Array.from({ length: count - 1 }, (_, i) => cell(`Card ${i + 2}`))];
+}
+
+/** `count` ordinary cards and no main card, each with one note. */
+function plainCellsOf(count: number): KeyFigureCell[] {
+  return Array.from({ length: count }, (_, i) => cell(`Card ${i + 1}`));
 }
 
 const STRIP_TEXT: StripText = {
@@ -172,13 +187,21 @@ describe('key figures image', () => {
       const cells = readKeyFigureCells(root);
       expect(cells.map(c => c.label)).toEqual([
         'Intelligence Index', 'Raw Quality Index', 'Unweighted Mean', 'Speed Index', 'Median Model Time',
-        'Speed Index', 'Panel', 'Assessor Agreement', 'Model Under Test', 'Estimated Cost'
+        'Speed Index', 'Mean Time per Question', 'Panel', 'Assessor Agreement', 'Model Under Test', 'Estimated Cost'
+      ]);
+    });
+
+    it("reads each card's key from data-figure, and from its label where it has none", () => {
+      expect(readKeyFigureCells(root).map(c => c.key)).toEqual([
+        'intelligence', 'raw-quality', 'unweighted-mean', 'speed', 'speed', 'speed', 'mean-time', 'panel',
+        'agreement', 'model-cost', 'estimated-cost'
       ]);
     });
 
     it('reads label, value, notes and the main card, ignoring the card actions', () => {
       const [main, raw] = readKeyFigureCells(root);
       expect(main).toEqual({
+        key: 'intelligence',
         label: 'Intelligence Index',
         value: '73 / 100',
         notes: ['± 8 (95%)'],
@@ -197,7 +220,7 @@ describe('key figures image', () => {
 
     it('reads the tone from the badge class, muted text as na, and none otherwise', () => {
       const tones = readKeyFigureCells(root).map(c => c.tone);
-      expect(tones).toEqual(['mid', 'high', 'na', 'low', null, 'na', null, null, null, null]);
+      expect(tones).toEqual(['mid', 'high', 'na', 'low', null, 'na', null, null, null, null, null]);
     });
 
     it('keeps one star per advisory marker and turns each distinct title into a footnote', () => {
@@ -208,13 +231,13 @@ describe('key figures image', () => {
         '* Concurrency enabled; speed advisory',
         '* Profile latency target does not fit'
       ]);
-      expect(cells[7].value).toBe('0.0 pts*');
-      expect(cells[9].value).toBe('$3.2322*');
-      expect(cells[9].footnotes).toEqual(['* Some participating models lack pricing']);
+      expect(cells[8].value).toBe('0.0 pts*');
+      expect(cells[10].value).toBe('$3.2322*');
+      expect(cells[10].footnotes).toEqual(['* Some participating models lack pricing']);
     });
 
     it('reads every note of a card', () => {
-      const panel = readKeyFigureCells(root)[6];
+      const panel = readKeyFigureCells(root)[7];
       expect(panel.notes).toEqual(['ICC 0.81 · mean B − A +1.2', '3 disagreement(s) over 10 answers both scored']);
     });
 
@@ -224,6 +247,61 @@ describe('key figures image', () => {
       expect(readKeyFigureCell(card).label).toBe('Intelligence Index');
       expect(card.innerHTML).toBe(before);
       expect(card.querySelector('app-key-figure-card-actions')).not.toBeNull();
+    });
+  });
+
+  describe('choosing the figures', () => {
+    let root: HTMLElement;
+
+    beforeEach(() => {
+      root = fixtureRoot();
+      localStorage.removeItem(KEY_FIGURES_STORAGE_KEY);
+    });
+
+    afterEach(() => {
+      root.remove();
+      localStorage.removeItem(KEY_FIGURES_STORAGE_KEY);
+    });
+
+    it('keeps the cells the filter accepts, in order, and every cell without one', () => {
+      const cells = readKeyFigureCells(root);
+      expect(filterKeyFigureCells(cells).length).toBe(11);
+      const kept = filterKeyFigureCells(cells, key => key === 'estimated-cost' || key === 'intelligence');
+      expect(kept.map(c => c.label)).toEqual(['Intelligence Index', 'Estimated Cost']);
+    });
+
+    it('takes footnotes from the included cells only', () => {
+      const cells = readKeyFigureCells(root);
+      expect(stripFootnotes(cells)).toContain('* Concurrency enabled; speed advisory');
+      const withoutSpeed = filterKeyFigureCells(cells, key => key !== 'speed');
+      expect(stripFootnotes(withoutSpeed)).toEqual([
+        '* One answer only',
+        '* Some participating models lack pricing'
+      ]);
+      expect(stripFootnotes(filterKeyFigureCells(cells, key => key === 'mean-time'))).toEqual([]);
+    });
+
+    it('remembers the excluded keys as version 1, and reads nothing from an unknown shape', () => {
+      expect(readStoredKeyFigureExclusions()).toEqual([]);
+
+      storeKeyFigureExclusions(['raw-quality', ' panel ', 'raw-quality', '']);
+      expect(JSON.parse(localStorage.getItem(KEY_FIGURES_STORAGE_KEY)!))
+        .toEqual({ version: 1, excluded: ['raw-quality', 'panel'] });
+      expect(readStoredKeyFigureExclusions()).toEqual(['raw-quality', 'panel']);
+
+      localStorage.setItem(KEY_FIGURES_STORAGE_KEY, JSON.stringify({ version: 2, excluded: ['panel'] }));
+      expect(readStoredKeyFigureExclusions()).toEqual([]);
+      localStorage.setItem(KEY_FIGURES_STORAGE_KEY, '{not json');
+      expect(readStoredKeyFigureExclusions()).toEqual([]);
+      localStorage.setItem(KEY_FIGURES_STORAGE_KEY, JSON.stringify({ version: 1, excluded: ['speed', 3, null] }));
+      expect(readStoredKeyFigureExclusions()).toEqual(['speed']);
+    });
+
+    it('survives storage that throws', () => {
+      spyOn(localStorage, 'getItem').and.throwError('denied');
+      spyOn(localStorage, 'setItem').and.throwError('denied');
+      expect(readStoredKeyFigureExclusions()).toEqual([]);
+      expect(() => storeKeyFigureExclusions(['panel'])).not.toThrow();
     });
   });
 
@@ -261,6 +339,33 @@ describe('key figures image', () => {
       expect(layout.placements.length).toBe(11);
     });
 
+    it('pads 12 cards in three columns, the main card spanning two, to an exact square', () => {
+      const layout = chooseStripLayout(cellsOf(12), STRIP_TEXT, noWrap);
+      expect([layout.columns, layout.cardWidth, layout.mainSpans]).toEqual([3, 220, true]);
+      expect(layout.naturalHeight).toBe(719);
+      expect([layout.width, layout.height, layout.square]).toEqual([728, 728, true]);
+
+      const byIndex = (index: number) => layout.placements.find(p => p.index === index)!;
+      expect([byIndex(0).x, byIndex(0).y, byIndex(0).width]).toEqual([0, 0, 450]);
+      expect([byIndex(1).x, byIndex(1).y]).toEqual([460, 0]);
+      expect([byIndex(2).x, byIndex(2).y]).toEqual([0, 111]);
+      expect([byIndex(11).x, byIndex(11).y]).toEqual([0, 417]);
+      expect(layout.placements.length).toBe(12);
+      expect(layout.gridHeight).toBe(509);
+    });
+
+    it('lays out a selection without the main card, never spanning', () => {
+      const five = chooseStripLayout(plainCellsOf(5), STRIP_TEXT, noWrap);
+      expect([five.columns, five.cardWidth, five.mainSpans]).toEqual([2, 230, false]);
+      expect(five.naturalHeight).toBe(506);
+      expect([five.width, five.height, five.square]).toEqual([518, 518, true]);
+
+      const one = chooseStripLayout(plainCellsOf(1), STRIP_TEXT, noWrap);
+      expect([one.columns, one.cardWidth, one.mainSpans]).toEqual([1, 260, false]);
+      expect(one.naturalHeight).toBe(302);
+      expect([one.width, one.height, one.square]).toEqual([308, 308, true]);
+    });
+
     it('pads a single card to an exact square', () => {
       const layout = chooseStripLayout(cellsOf(1), STRIP_TEXT, noWrap);
       expect([layout.columns, layout.cardWidth]).toEqual([1, 270]);
@@ -276,15 +381,19 @@ describe('key figures image', () => {
       expect([layout.width, layout.height, layout.square]).toEqual([428, 428, true]);
     });
 
-    it('is never portrait, and square whenever it is within 1.1', () => {
+    it('is never portrait, and square whenever it is within 1.1, for every selection size 1 to 12', () => {
       for (const wrap of [noWrap, charWrap]) {
-        for (let count = 1; count <= 11; count++) {
-          const layout = chooseStripLayout(cellsOf(count), STRIP_TEXT, wrap);
-          expect(layout.width).withContext(`${count} cards`).toBeGreaterThanOrEqual(layout.height);
-          if (layout.width / layout.naturalHeight <= 1.1) {
-            expect(layout.height).withContext(`${count} cards`).toBe(layout.width);
-          } else {
-            expect(layout.height).withContext(`${count} cards`).toBe(layout.naturalHeight);
+        for (let count = 1; count <= 12; count++) {
+          for (const [kind, cells] of [['with main', cellsOf(count)], ['without main', plainCellsOf(count)]] as const) {
+            const context = `${count} cards ${kind}`;
+            const layout = chooseStripLayout(cells, STRIP_TEXT, wrap);
+            expect(layout.width).withContext(context).toBeGreaterThanOrEqual(layout.height);
+            expect(layout.placements.length).withContext(context).toBe(count);
+            if (layout.width / layout.naturalHeight <= 1.1) {
+              expect(layout.height).withContext(context).toBe(layout.width);
+            } else {
+              expect(layout.height).withContext(context).toBe(layout.naturalHeight);
+            }
           }
         }
       }
@@ -354,6 +463,7 @@ describe('key figures image', () => {
       expect(keyFiguresStatusMessage('unsupported', 'Key figures')).toBe('This browser cannot copy images here; use Download instead.');
       expect(keyFiguresStatusMessage('denied', 'Key figures')).toBe('Could not copy the image.');
       expect(keyFiguresStatusMessage('downloaded', 'Key figures')).toBe('Image downloaded.');
+      expect(keyFiguresStatusMessage('empty', 'Key figures')).toBe("None of this run's key figures is selected; use Choose figures.");
       expect(keyFiguresStatusMessage('failed', 'Key figures')).toBe('Could not create the image.');
     });
   });
@@ -409,6 +519,25 @@ describe('key figures image', () => {
       expect(message).toBe('Speed Index copied as an image.');
       expect(copy).toHaveBeenCalledTimes(1);
       expect(copy.calls.mostRecent().args[0].type).toBe('image/png');
+    });
+
+    it('downloads only the cells the filter accepts, and composes nothing when none is left', async () => {
+      const save = spyOn(keyFiguresImageIo, 'save');
+      expect(await exportKeyFiguresImage('download', root, null, CONTEXT, key => key === 'mean-time'))
+        .toBe('Image downloaded.');
+      expect(save).toHaveBeenCalledTimes(1);
+
+      save.calls.reset();
+      expect(await exportKeyFiguresImage('download', root, null, CONTEXT, () => false))
+        .toBe("None of this run's key figures is selected; use Choose figures.");
+      expect(save).not.toHaveBeenCalled();
+    });
+
+    it('exports one card whatever the filter says', async () => {
+      const save = spyOn(keyFiguresImageIo, 'save');
+      const card = root.querySelectorAll<HTMLElement>('.score-card')[0];
+      expect(await exportKeyFiguresImage('download', root, card, CONTEXT, () => false)).toBe('Image downloaded.');
+      expect(save).toHaveBeenCalledTimes(1);
     });
 
     it('reports a copy the browser refuses or cannot make', async () => {

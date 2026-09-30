@@ -1150,6 +1150,233 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Equal(4, BenchmarkService.RaisedByMembers(verifications, BenchmarkPanelMember.Both).Count);
     }
 
+    // One member accuses a sentence the other only lists as an unverified claim.
+    [Fact]
+    public void UnionManifest_AnAccusationIsTheAccusersAlone_WhenTheOtherMemberListedTheSentenceAsAPlainClaim()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, accused: new[]
+            {
+                new BenchmarkService.AccusedQuote(Spelltool, null, new[] { "spelltool" }, "A: it is a tool.")
+            }),
+            Contribution(BenchmarkPanelMember.B, new[] { Spelltool })
+        }, AnswerText);
+
+        var item = Assert.Single(manifest);
+        Assert.Equal(new[] { BenchmarkClaimRoles.UnverifiedClaim, BenchmarkClaimRoles.AccusedQuote }, item.Roles);
+        Assert.Equal(new[] { "A", "B" }, item.RaisedBy);
+        Assert.Equal(new[] { "A" }, item.AccusedBy);
+        Assert.Null(item.SuspectedBy);
+    }
+
+    [Fact]
+    public void UnionManifest_ASuspectedFalseEntry_RecordsOnlyItsMemberInSuspectedBy()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool }),
+            Contribution(BenchmarkPanelMember.B, new[] { "Suspected false: " + Spelltool + " — it is a relic." })
+        }, AnswerText);
+
+        var item = Assert.Single(manifest);
+        Assert.Equal(Spelltool, item.Text);
+        Assert.True(item.SuspectedFalse);
+        Assert.Equal(new[] { "A", "B" }, item.RaisedBy);
+        Assert.Equal(new[] { "B" }, item.SuspectedBy);
+        Assert.Null(item.AccusedBy);
+
+        // A plain unverified claim raises the item and nothing more.
+        var plain = Assert.Single(BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Spelltool })
+        }, AnswerText));
+        Assert.Equal(new[] { "A" }, plain.RaisedBy);
+        Assert.Null(plain.AccusedBy);
+        Assert.Null(plain.SuspectedBy);
+    }
+
+    [Fact]
+    public void MergeContainedItems_UnitesTheRaisedAccusedAndSuspectedSetsSeparately()
+    {
+        var merged = BenchmarkService.MergeContainedItems(new List<BenchmarkService.ClaimSubmission>
+        {
+            new(DonateAndCheapest, new[] { BenchmarkClaimRoles.AccusedQuote }, null) { RaisedBy = new[] { "B" }, AccusedBy = new[] { "B" } },
+            new(Cheapest, new[] { BenchmarkClaimRoles.AccusedQuote }, null) { RaisedBy = new[] { "A" }, AccusedBy = new[] { "A" } },
+            new(NoCharges, new[] { BenchmarkClaimRoles.UnverifiedClaim }, null) { RaisedBy = new[] { "A" } },
+            new("It has no charges", new[] { BenchmarkClaimRoles.UnverifiedClaim }, null)
+            {
+                RaisedBy = new[] { "B" },
+                SuspectedFalse = true,
+                SuspectedBy = new[] { "B" }
+            }
+        });
+
+        Assert.Equal(new[] { DonateAndCheapest, NoCharges }, merged.Select(m => m.Text));
+        Assert.Equal(new[] { "A", "B" }, merged[0].RaisedBy);
+        Assert.Equal(new[] { "A", "B" }, merged[0].AccusedBy);
+        Assert.Null(merged[0].SuspectedBy);
+        Assert.Equal(new[] { "A", "B" }, merged[1].RaisedBy);
+        Assert.Null(merged[1].AccusedBy);
+        Assert.Equal(new[] { "B" }, merged[1].SuspectedBy);
+        Assert.True(merged[1].SuspectedFalse);
+    }
+
+    [Fact]
+    public void StampRoles_CarriesAccusedByAndSuspectedBy_WhichRoundTripAndAreOmittedWhenNull()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { "Suspected false: " + Regenerate + " — racial regeneration does not vary." },
+                accused: new[] { new BenchmarkService.AccusedQuote(Spelltool, null, new[] { "spelltool" }, "A: it is a tool.") }),
+            Contribution(BenchmarkPanelMember.B, new[] { Spelltool, Regenerate })
+        }, AnswerText);
+        var stamped = BenchmarkService.StampRoles(manifest
+            .Select((m, i) => new BenchmarkClaimVerification(i, m.Text, BenchmarkClaimVerdict.Supported, "src/objects.c:10", "True."))
+            .ToList(), manifest);
+
+        var accused = Assert.Single(stamped, v => v.Claim == Spelltool);
+        var suspected = Assert.Single(stamped, v => v.Claim == Regenerate);
+        Assert.Equal(new[] { "A" }, accused.AccusedBy);
+        Assert.Null(accused.SuspectedBy);
+        Assert.Equal(new[] { "A" }, suspected.SuspectedBy);
+        Assert.Null(suspected.AccusedBy);
+
+        string json = JsonSerializer.Serialize(stamped);
+        Assert.Contains("\"accusedBy\":[\"A\"]", json);
+        Assert.Contains("\"suspectedBy\":[\"A\"]", json);
+        Assert.DoesNotContain("AccusingMembers", json);
+        Assert.DoesNotContain("SuspectingMembers", json);
+
+        var read = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        Assert.Equal(new[] { "A" }, read.Single(v => v.Claim == Spelltool).AccusedBy);
+        Assert.Equal(new[] { "A" }, read.Single(v => v.Claim == Regenerate).SuspectedBy);
+
+        string plainJson = JsonSerializer.Serialize(new[] { new BenchmarkClaimVerification(0, Spelltool, BenchmarkClaimVerdict.Supported, "x", null) { RaisedBy = new[] { "A" } } });
+        Assert.DoesNotContain("accusedBy", plainJson);
+        Assert.DoesNotContain("suspectedBy", plainJson);
+    }
+
+    [Fact]
+    public void AccusedAndSuspectedByMembers_ReadTheRolesOwnSet_AndFallBackToRaisedByOnALegacyRecord()
+    {
+        var verifications = new[]
+        {
+            new BenchmarkClaimVerification(0, "accusedByA", BenchmarkClaimVerdict.Supported, "x", null)
+                { RaisedBy = new[] { "A", "B" }, AccusedBy = new[] { "A" } },
+            new BenchmarkClaimVerification(1, "suspectedByB", BenchmarkClaimVerdict.Supported, "x", null)
+                { RaisedBy = new[] { "A", "B" }, SuspectedBy = new[] { "B" } },
+            new BenchmarkClaimVerification(2, "legacyPanel", BenchmarkClaimVerdict.Supported, "x", null)
+                { RaisedBy = new[] { "B" } },
+            new BenchmarkClaimVerification(3, "singleAssessor", BenchmarkClaimVerdict.Supported, "x", null)
+        };
+
+        Assert.Equal(new[] { "accusedByA", "suspectedByB", "singleAssessor" },
+            BenchmarkService.AccusedByMembers(verifications, BenchmarkPanelMember.A).Select(v => v.Claim));
+        Assert.Equal(new[] { "suspectedByB", "legacyPanel", "singleAssessor" },
+            BenchmarkService.AccusedByMembers(verifications, BenchmarkPanelMember.B).Select(v => v.Claim));
+        Assert.Equal(new[] { "accusedByA", "singleAssessor" },
+            BenchmarkService.SuspectedByMembers(verifications, BenchmarkPanelMember.A).Select(v => v.Claim));
+        Assert.Equal(new[] { "accusedByA", "suspectedByB", "legacyPanel", "singleAssessor" },
+            BenchmarkService.SuspectedByMembers(verifications, BenchmarkPanelMember.B).Select(v => v.Claim));
+    }
+
+    /// <summary>A panel answer both members scored at the given Accuracy levels, with the given accuracy evidence.</summary>
+    private static BenchmarkRunAnswer PanelAnswer(int accuracyA, string? evidenceA, int accuracyB, string? evidenceB)
+        => new()
+        {
+            AnswerText = AnswerText,
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            AccuracyLevel = accuracyA,
+            CompletenessLevel = 5,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5,
+            QualityScore = 70,
+            AssessmentEvidenceJson = evidenceA == null ? null : JsonSerializer.Serialize(new { accuracy = evidenceA }),
+            CoAssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            CoAssessmentQualityScore = 70,
+            CoAssessmentCriticalError = false,
+            CoAssessmentJson = new BenchmarkCoAssessmentRecord
+            {
+                AccuracyLevel = accuracyB,
+                CompletenessLevel = 5,
+                ConcisenessLevel = 5,
+                ReadabilityLevel = 5,
+                QualityScore = 70,
+                AccuracyEvidence = evidenceB,
+                Flags = new BenchmarkCoAssessmentFlags()
+            }.Serialize()
+        };
+
+    [Fact]
+    public void PanelOutcome_ASupportedAccusationContestsOnlyTheAccuser_NotTheMemberThatListedTheSentence()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, accused: new[]
+            {
+                new BenchmarkService.AccusedQuote(Spelltool, null, new[] { "spelltool" }, "A: it is a tool.")
+            }),
+            Contribution(BenchmarkPanelMember.B, new[] { Spelltool })
+        }, AnswerText);
+        var verifications = BenchmarkService.StampRoles(new[]
+        {
+            new BenchmarkClaimVerification(0, Spelltool, BenchmarkClaimVerdict.Supported, "src/objects.c:10", "It is a spelltool.")
+        }, manifest);
+        var answer = PanelAnswer(4, Evidence("spelltool"), 5, null);
+
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer, verifications, BenchmarkVerdictView.FromPrimary(answer), BenchmarkVerdictView.FromCoAssessment(answer));
+
+        Assert.True(((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction));
+        Assert.False(BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!.Flags!.ContestedAccuracyDeduction);
+        Assert.Contains("\"accusedBy\":[\"A\"]", answer.ClaimVerificationJson);
+    }
+
+    [Fact]
+    public void PanelOutcome_ASupportedSuspicionContestsOnlyTheSuspectingMember()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, new[] { Regenerate }),
+            Contribution(BenchmarkPanelMember.B, new[] { "Suspected false: " + Regenerate + " — racial regeneration does not vary." })
+        }, AnswerText);
+        var verifications = BenchmarkService.StampRoles(new[]
+        {
+            new BenchmarkClaimVerification(0, Regenerate, BenchmarkClaimVerdict.Supported, "src/attrib.c:20", "It does.")
+        }, manifest);
+        // Both members dock Accuracy quoting the sentence; only member B recorded it as suspected false.
+        string evidence = Evidence("regenerate hit points faster at night");
+        var answer = PanelAnswer(4, evidence, 4, evidence);
+
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer, verifications, BenchmarkVerdictView.FromPrimary(answer), BenchmarkVerdictView.FromCoAssessment(answer));
+
+        Assert.False(((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction));
+        Assert.True(BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!.Flags!.ContestedAccuracyDeduction);
+    }
+
+    [Fact]
+    public void PanelOutcome_ALegacyRecordWithoutAccusedBy_AttributesTheAccusationToEveryRaiser()
+    {
+        var verifications = new[]
+        {
+            new BenchmarkClaimVerification(0, Spelltool, BenchmarkClaimVerdict.Supported, "src/objects.c:10", "It is a spelltool.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim, BenchmarkClaimRoles.AccusedQuote },
+                RaisedBy = new[] { "A", "B" }
+            }
+        };
+        var answer = PanelAnswer(4, null, 5, null);
+
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer, verifications, BenchmarkVerdictView.FromPrimary(answer), BenchmarkVerdictView.FromCoAssessment(answer));
+
+        Assert.True(((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction));
+        Assert.True(BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!.Flags!.ContestedAccuracyDeduction);
+    }
+
     [Fact]
     public void PanelOutcome_ASupportedQuoteContestsOnlyTheMemberThatRaisedIt()
     {

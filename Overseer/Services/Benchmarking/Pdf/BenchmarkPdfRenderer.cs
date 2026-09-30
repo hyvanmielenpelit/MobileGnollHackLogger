@@ -40,8 +40,8 @@ public sealed class BenchmarkPdfSourceTooLargeException : Exception
 /// </summary>
 public static class BenchmarkPdfRenderer
 {
-    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 3".</summary>
-    public const int LayoutVersion = 3;
+    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 4".</summary>
+    public const int LayoutVersion = 4;
 
     /// <summary>The longest source text rendered; a longer one is refused before rendering starts.</summary>
     public const int MaxSourceCharacters = 6_000_000;
@@ -118,14 +118,14 @@ public static class BenchmarkPdfRenderer
     /// <summary>
     /// The room a figure's image takes on the paper: the text column's width, less half a point so
     /// rounding never overflows it, and <see cref="BenchmarkPdfMarkdownComposer.FigureMaxHeightShare"/>
-    /// of the height between the top and bottom margins.
+    /// of the height between the top and bottom margins; and that height itself.
     /// </summary>
     internal static BenchmarkPdfMarkdownComposer.FigureFrame FigureFrameFor(BenchmarkPdfPaper paper)
     {
         var size = paper == BenchmarkPdfPaper.Letter ? PageSizes.Letter : PageSizes.A4;
         float width = size.Width - 2 * HorizontalMarginMillimeters * PointsPerMillimeter - 0.5f;
         float height = size.Height - 2 * VerticalMarginMillimeters * PointsPerMillimeter;
-        return new BenchmarkPdfMarkdownComposer.FigureFrame(width, (float)(height * BenchmarkPdfMarkdownComposer.FigureMaxHeightShare));
+        return new BenchmarkPdfMarkdownComposer.FigureFrame(width, (float)(height * BenchmarkPdfMarkdownComposer.FigureMaxHeightShare), height);
     }
 
     /// <summary>

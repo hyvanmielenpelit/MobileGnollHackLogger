@@ -52,9 +52,10 @@ using Overseer.Models;
 //
 // Difficulty bands (b = simple, intermediate, advanced; the answer's assessed difficulty, else its fallback)
 //   band.<b>.questions, band.<b>.score, band.<b>.peerMean, band.<b>.difference
+//   bands.authored.<b>        the exam's questions authored in the band
 //
 // Speed (median model time per answer, tool time excluded; lower is better)
-//   speed.modelTimeP50, speed.modelTimeP90, speed.ttftP50, speed.rank
+//   speed.modelTimeP50, speed.modelTimeMean, speed.modelTimeP90, speed.ttftP50, speed.rank
 //
 // Cost (candidate spend per question; lower is better)
 //   cost.perQuestion, cost.perRun, cost.rank, cost.basis, cost.pricingAsOf, cost.totalRunPerRun
@@ -63,6 +64,7 @@ using Overseer.Models;
 //   tokens.inputPerQuestion, tokens.outputPerQuestion
 //
 // Errors and claims
+//   answers.scored           "4": the answers that count toward the index, the denominator of errors.critical
 //   errors.critical          "1 of 4 answers": answers at least one grader flagged with a critical error
 //   claims.supported, claims.refuted, claims.indeterminate   the claim verifier's rulings on the answers' own claims
 //
@@ -358,11 +360,22 @@ public static class BenchmarkReportFacts
 
     /// <summary>
     /// The support label of a writer item from the evidence it cites: the strongest label among the
-    /// <c>R&lt;n&gt;</c> rows it cites, in the order Both graders, One grader — different provider,
-    /// Single assessor, One grader — same provider as the model, Graders disagree; <c>Computed</c> when
-    /// it cites no row (fact keys and questions only).
+    /// <c>R&lt;n&gt;</c> rows it cites, each as <see cref="RowSupportLabelFor"/> reads it for the item's
+    /// questions, in the order Both graders, One grader — different provider, Single assessor, One
+    /// grader — same provider as the model, Graders disagree; <c>Computed</c> when it cites no row
+    /// (fact keys and questions only).
     /// </summary>
+    public static string SupportLabelFor(BenchmarkReportWriterItem item, BenchmarkReportFactSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return SupportLabelFor(item.Evidence, CitedQuestionsOf(item.Questions, item.Evidence), sheet);
+    }
+
+    /// <summary><see cref="SupportLabelFor(BenchmarkReportWriterItem, BenchmarkReportFactSheet)"/> for evidence alone: its <c>Q&lt;n&gt;</c> ids are the item's questions.</summary>
     public static string SupportLabelFor(IReadOnlyList<string>? evidence, BenchmarkReportFactSheet sheet)
+        => SupportLabelFor(evidence, CitedQuestionsOf(null, evidence), sheet);
+
+    private static string SupportLabelFor(IReadOnlyList<string>? evidence, IReadOnlyList<int> questions, BenchmarkReportFactSheet sheet)
     {
         ArgumentNullException.ThrowIfNull(sheet);
 
@@ -372,11 +385,79 @@ public static class BenchmarkReportFacts
             var row = sheet.Rows.FirstOrDefault(r => string.Equals(r.Id, id?.Trim(), StringComparison.Ordinal));
             if (row == null) continue;
 
-            int strength = Array.IndexOf(SupportStrength, row.SupportLabel);
+            int strength = Array.IndexOf(SupportStrength, RowSupportLabelFor(row, questions, sheet));
             if (strength >= 0 && strength < best) best = strength;
         }
 
         return best == int.MaxValue ? SupportComputed : SupportStrength[best];
+    }
+
+    /// <summary>
+    /// The questions an item cites: its own question list and its <c>Q&lt;n&gt;</c> evidence ids,
+    /// distinct and sorted.
+    /// </summary>
+    public static IReadOnlyList<int> CitedQuestionsOf(IReadOnlyList<int>? questions, IReadOnlyList<string>? evidence)
+    {
+        var numbers = new List<int>(questions ?? Array.Empty<int>());
+        foreach (var id in evidence ?? Array.Empty<string>())
+        {
+            string text = id?.Trim() ?? string.Empty;
+            if (text.Length > 1 && text[0] == 'Q'
+                && int.TryParse(text.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out int n))
+            {
+                numbers.Add(n);
+            }
+        }
+        return numbers.Distinct().OrderBy(n => n).ToList();
+    }
+
+    /// <summary>
+    /// A row's support label for an item citing <paramref name="questions"/>, or the row's own
+    /// questions when it cites none. A Convergent row with questions reads <c>Both graders</c> only
+    /// when they meet its <see cref="BenchmarkReportFindingRow.SharedQuestions"/>; otherwise it reads
+    /// as a single-member row of the member (or members) whose questions they meet, both when they
+    /// meet neither's. Every other row, a run-wide Convergent row and a row stored without its members'
+    /// questions keep their stored label.
+    /// </summary>
+    public static string RowSupportLabelFor(BenchmarkReportFindingRow row, IReadOnlyList<int>? questions, BenchmarkReportFactSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(sheet);
+
+        if (!string.Equals(row.Status, nameof(BenchmarkConvergenceStatus.Convergent), StringComparison.Ordinal)
+            || row.Questions.Count == 0
+            || row.SharedQuestions == null)
+        {
+            return row.SupportLabel;
+        }
+
+        IReadOnlyList<int> cited = questions is { Count: > 0 } ? questions : row.Questions;
+        if (cited.Intersect(row.SharedQuestions).Any()) return SupportBothGraders;
+
+        bool memberA = row.QuestionsA?.Intersect(cited).Any() == true;
+        bool memberB = row.QuestionsB?.Intersect(cited).Any() == true;
+        if (!memberA && !memberB)
+        {
+            memberA = true;
+            memberB = true;
+        }
+
+        var labels = new List<string>();
+        if (memberA) labels.Add(OneGraderLabel(sheet, PanelMemberARole));
+        if (memberB) labels.Add(OneGraderLabel(sheet, PanelMemberBRole));
+        return labels.OrderBy(l => Array.IndexOf(SupportStrength, l)).First();
+    }
+
+    /// <summary>
+    /// A single panel member's label from its provider relation to the subject: same provider when
+    /// every grader of that role on the sheet shares the subject's provider, different otherwise.
+    /// </summary>
+    private static string OneGraderLabel(BenchmarkReportFactSheet sheet, string role)
+    {
+        var graders = sheet.Graders.Where(g => string.Equals(g.Role, role, StringComparison.Ordinal)).ToList();
+        return graders.Count > 0 && graders.All(g => g.SameFamilyAsSubject)
+            ? SupportOneGraderSameProvider
+            : SupportOneGraderDifferentProvider;
     }
 
     /// <summary>
@@ -684,6 +765,9 @@ public static class BenchmarkReportFacts
             }
 
             AddPeerComparison(facts, key, score, peerMean);
+
+            int authored = subject.AuthoredItemCountIn(band);
+            facts.Add("bands.authored." + name, authored, Inv(authored));
         }
     }
 
@@ -731,7 +815,7 @@ public static class BenchmarkReportFacts
     private static void AddSpeedFacts(
         FactList facts, BenchmarkModelComparisonEntryDto subject, IReadOnlyList<BenchmarkModelComparisonEntryDto> eligible)
     {
-        string[] keys = { "speed.modelTimeP50", "speed.modelTimeP90", "speed.ttftP50", "speed.rank" };
+        string[] keys = { "speed.modelTimeP50", "speed.modelTimeMean", "speed.modelTimeP90", "speed.ttftP50", "speed.rank" };
         if (subject.SpeedDegraded)
         {
             foreach (var key in keys) facts.Unavailable(key, subject.Explanation);
@@ -740,6 +824,7 @@ public static class BenchmarkReportFacts
 
         var speed = subject.Speed;
         AddSeconds(facts, "speed.modelTimeP50", speed?.ModelTimeP50Ms);
+        AddSeconds(facts, "speed.modelTimeMean", speed?.ModelTimeMeanMs);
         AddSeconds(facts, "speed.modelTimeP90", speed?.ModelTimeP90Ms);
         AddSeconds(facts, "speed.ttftP50", speed?.TtftP50Ms);
 
@@ -852,6 +937,7 @@ public static class BenchmarkReportFacts
 
     private static void AddErrorAndClaimFacts(FactList facts, EntryStats subject)
     {
+        facts.Add("answers.scored", subject.Counting.Count, Inv(subject.Counting.Count));
         facts.Add("errors.critical", subject.CriticalCount,
             Inv(subject.CriticalCount) + " of " + Inv(subject.Counting.Count) + " answers");
 
@@ -1414,6 +1500,7 @@ public static class BenchmarkReportFacts
                 ItemRevisionUsed = slot.ItemRevisionUsed,
                 OrderIndex = slot.OrderIndex,
                 Band = answers.Count > 0 ? BandNameOf(answers[0]) : string.Empty,
+                AuthoredBand = answers.Select(a => a.Difficulty).Where(d => Enum.IsDefined(d)).Select(d => d.ToString()).FirstOrDefault(),
                 Score = score,
                 PeerMean = peerMean,
                 Difference = score.HasValue && peerMean.HasValue ? score.Value - peerMean.Value : null,
@@ -1469,7 +1556,8 @@ public static class BenchmarkReportFacts
     /// <summary>
     /// The finding rows: per run, the convergence of both members' findings in a panel run, the
     /// assessor's findings otherwise, their question numbers mapped to the report's numbering; then
-    /// merged across runs on kind, category, status and questions, in order of first appearance.
+    /// merged across runs on kind, category, status and questions, in order of first appearance, with
+    /// the union of each member's questions.
     /// </summary>
     private static List<BenchmarkReportFindingRow> BuildRows(
         IReadOnlyList<BenchmarkRun> subjectRuns, IReadOnlyDictionary<string, int> numberByItem, string subjectProvider)
@@ -1489,6 +1577,9 @@ public static class BenchmarkReportFacts
                 if (existing >= 0)
                 {
                     rows[existing].Recurrence++;
+                    rows[existing].QuestionsA = Union(rows[existing].QuestionsA, row.QuestionsA);
+                    rows[existing].QuestionsB = Union(rows[existing].QuestionsB, row.QuestionsB);
+                    rows[existing].SharedQuestions = Union(rows[existing].SharedQuestions, row.SharedQuestions);
                     continue;
                 }
 
@@ -1504,6 +1595,12 @@ public static class BenchmarkReportFacts
 
         return rows;
     }
+
+    /// <summary>Both question lists merged, sorted; null only when both are null.</summary>
+    private static List<int>? Union(List<int>? a, List<int>? b)
+        => a == null && b == null
+            ? null
+            : (a ?? new List<int>()).Union(b ?? new List<int>()).OrderBy(n => n).ToList();
 
     private static IEnumerable<BenchmarkReportFindingRow> RowsOf(
         BenchmarkRun run, IReadOnlyDictionary<string, int> numberByItem, string subjectProvider)
@@ -1556,6 +1653,9 @@ public static class BenchmarkReportFacts
                 Kind = row.Kind,
                 Category = row.Category,
                 Questions = Map(row.Questions),
+                QuestionsA = Map(row.QuestionsA),
+                QuestionsB = Map(row.QuestionsB),
+                SharedQuestions = Map(row.SharedQuestions),
                 Status = row.Status.ToString(),
                 SupportLabel = label,
                 MemberAText = row.MemberAText,
@@ -1990,6 +2090,10 @@ public static class BenchmarkReportFacts
 
         public int ItemCountIn(BenchmarkDifficulty band)
             => All.Where(a => BandOf(a) == band).Select(ItemKeyOf).Distinct(StringComparer.Ordinal).Count();
+
+        /// <summary>The items whose answers were authored in <paramref name="band"/>.</summary>
+        public int AuthoredItemCountIn(BenchmarkDifficulty band)
+            => All.Where(a => a.Difficulty == band).Select(ItemKeyOf).Distinct(StringComparer.Ordinal).Count();
 
         public double? BandMean(BenchmarkDifficulty band)
         {

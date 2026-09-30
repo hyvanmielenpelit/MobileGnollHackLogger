@@ -219,9 +219,9 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFortyThree()
+    public void HarnessVersion_IsFortyFour()
     {
-        Assert.Equal("43", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("44", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -860,16 +860,17 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs43_ScoringMethodIs12()
+    public void Versions_HarnessIs44_ScoringMethodIs12()
     {
-        Assert.Equal("43", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("44", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 43 keeps scoring method 12: nothing in it moves a score. 43: verifier context
-        // line and instruction 3m, manifest containment merge, panel synthesis totals; around them,
-        // the fabrication detector skips claim-verification sentences, the knowledge-base guard
-        // reads question text only, "other" findings never converge, and the reference reader gains
-        // an offset-adjusted disagreement count. No answer flag is added; the chat prompt does not
-        // move, and the get_item_stats tool guide moves ToolGuidesSha256.
+        // Harness 44 keeps scoring method 12: nothing in it moves a score. 44: per-role raisers
+        // (accusedBy, suspectedBy) in the panel claim manifest, convergence rows split by the
+        // questions each member and both named, the Panel Agreement member spread, mean model time
+        // per question beside the median, and the recorded source-code-references prompt option,
+        // disallowed unless requested. No answer flag is added; a default run's chat prompt, with
+        // source code references disallowed, moves CandidateSystemPromptSha256. The stats tools and
+        // get_knowledge_article trim their name and topic arguments, with no tool guide change.
         Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

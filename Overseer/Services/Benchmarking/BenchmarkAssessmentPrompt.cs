@@ -673,8 +673,20 @@ public static class BenchmarkAssessmentPrompt
     ///     percentiles are interpolated. Chat and benchmark alike: get_item_stats resolves a missed
     ///     name to the one item named "… of <name>", and its tool guide moves ToolGuidesSha256.
     ///     ScoringMethodVersion stays 12; CandidateSystemPromptSha256 does not move.
+    /// v44: a panel verification item records in accusedBy and suspectedBy which members charged it
+    ///     as an accused sentence and which recorded it "Suspected false:", beside raisedBy; contested
+    ///     accuracy deductions, the report's accused and suspected counts and the diagnostics'
+    ///     accusation audit read the role's own set, falling back to raisedBy on an older record (H1).
+    ///     A convergence row carries each member's questions and the questions both named, and the
+    ///     report prints them (H3). Panel Agreement prints each member's score range, standard
+    ///     deviation and most frequent levels, with an advisory when both ranges are narrow (H4). The
+    ///     report prints mean model time per question beside the median (H5). The launcher records
+    ///     whether the candidate prompt allows source code references, disallowed unless requested,
+    ///     as a user's default is, so a default run's CandidateSystemPromptSha256 moves (H2). The
+    ///     stats tools trim name and object_class and get_knowledge_article trims topic (T1); no tool
+    ///     guide changes, so ToolGuidesSha256 does not move. ScoringMethodVersion stays 12.
     /// </summary>
-    public const string HarnessVersion = "43";
+    public const string HarnessVersion = "44";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

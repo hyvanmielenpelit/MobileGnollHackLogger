@@ -51,7 +51,7 @@ namespace Overseer.Services.Tools
             }
 
             string? name = arguments.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String
-                ? nameElement.GetString()
+                ? nameElement.GetString()?.Trim()
                 : null;
 
             if (string.IsNullOrWhiteSpace(name))
@@ -60,7 +60,7 @@ namespace Overseer.Services.Tools
             }
 
             string? objectClass = arguments.TryGetProperty("object_class", out var objectClassElem)
-                ? objectClassElem.GetString()
+                ? objectClassElem.GetString()?.Trim()
                 : null;
 
             var result = _sourceCodeService.GetItemStats(name, objectClass);

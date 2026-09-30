@@ -565,6 +565,158 @@ public class BenchmarkPanelDiagnosticsTests
     }
 
     [Fact]
+    public void AccusationAudit_CountsAChargeForTheMembersThatMadeIt_NotForAMemberThatOnlyListedTheSentence()
+    {
+        var items = new List<BenchmarkClaimVerification>
+        {
+            // Member A accused the sentence; member B listed it as a plain unverified claim.
+            new(0, "Accused by A.", BenchmarkClaimVerdict.Supported, "src/a.c:1", null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim, BenchmarkClaimRoles.AccusedQuote },
+                RaisedBy = new[] { "A", "B" },
+                AccusedBy = ByA
+            },
+            // Member B recorded the sentence as suspected false; member A listed it plainly.
+            new(1, "Suspected by B.", BenchmarkClaimVerdict.Refuted, "src/b.c:2", null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim },
+                RaisedBy = new[] { "A", "B" },
+                SuspectedFalse = true,
+                SuspectedBy = ByB
+            }
+        };
+        var run = PanelRun(1, OpenAI, Uniform(70, 70, reference: 70));
+        run.Answers.First().ClaimVerificationJson = JsonSerializer.Serialize(items);
+
+        var result = BenchmarkPanelDiagnostics.Compute(new List<(string, string, IReadOnlyList<BenchmarkRun>)>
+        {
+            ("openai", "OpenAI candidate", new[] { run })
+        });
+
+        var a = Cell(result, BenchmarkPanelDiagnostics.MemberA, OpenAI);
+        Assert.Equal((1, 1, 0, 0), (a.Charges, a.Overturned, a.Upheld, a.Indeterminate));
+        var b = Cell(result, BenchmarkPanelDiagnostics.MemberB, OpenAI);
+        Assert.Equal((1, 0, 1, 0), (b.Charges, b.Overturned, b.Upheld, b.Indeterminate));
+    }
+
+    [Fact]
+    public void AccusationAudit_AnItemAccusedAndSuspectedByOneMember_IsOneChargeForThatMember()
+    {
+        var items = new List<BenchmarkClaimVerification>
+        {
+            new(0, "Charged twice by A.", BenchmarkClaimVerdict.Supported, "src/a.c:1", null)
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim, BenchmarkClaimRoles.AccusedQuote },
+                RaisedBy = new[] { "A", "B" },
+                AccusedBy = ByA,
+                SuspectedFalse = true,
+                SuspectedBy = ByA
+            }
+        };
+        var run = PanelRun(1, OpenAI, Uniform(70, 70, reference: 70));
+        run.Answers.First().ClaimVerificationJson = JsonSerializer.Serialize(items);
+
+        var result = BenchmarkPanelDiagnostics.Compute(new List<(string, string, IReadOnlyList<BenchmarkRun>)>
+        {
+            ("openai", "OpenAI candidate", new[] { run })
+        });
+
+        Assert.Equal(1, Cell(result, BenchmarkPanelDiagnostics.MemberA, OpenAI).Charges);
+        Assert.Equal(0, Cell(result, BenchmarkPanelDiagnostics.MemberB, OpenAI).Charges);
+    }
+
+    // --- Member spread ------------------------------------------------------------------------------
+
+    private static BenchmarkRunAnswer SpreadAnswer(int order, int scoreA, int[] levelsA, int scoreB, int[] levelsB)
+        => new()
+        {
+            OrderIndex = order,
+            Status = BenchmarkAnswerStatus.Ok,
+            AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            QualityScore = scoreA,
+            AccuracyLevel = levelsA[0],
+            CompletenessLevel = levelsA[1],
+            ConcisenessLevel = levelsA[2],
+            ReadabilityLevel = levelsA[3],
+            CoAssessmentStatus = BenchmarkAssessmentStatus.Scored,
+            CoAssessmentQualityScore = scoreB,
+            CoAssessmentJson = new BenchmarkCoAssessmentRecord
+            {
+                AccuracyLevel = levelsB[0],
+                CompletenessLevel = levelsB[1],
+                ConcisenessLevel = levelsB[2],
+                ReadabilityLevel = levelsB[3],
+                QualityScore = scoreB
+            }.Serialize()
+        };
+
+    [Fact]
+    public void MemberSpread_ReadsEachMembersRange_SampleDeviation_AndMostFrequentLevels()
+    {
+        int[] l6365 = { 6, 3, 6, 5 };
+        int[] l6355 = { 6, 3, 5, 5 };
+        int[] l5555 = { 5, 5, 5, 5 };
+        var answers = new[]
+        {
+            SpreadAnswer(1, 70, l5555, 60, l6355),
+            SpreadAnswer(2, 80, l6365, 90, l5555),
+            SpreadAnswer(3, 90, l6365, 90, l6355),
+            SpreadAnswer(4, 80, l5555, 80, l5555)
+        };
+
+        var a = BenchmarkPanelDiagnostics.MemberSpread(answers, BenchmarkPanelMember.A);
+        var b = BenchmarkPanelDiagnostics.MemberSpread(answers, BenchmarkPanelMember.B);
+
+        // A 70 80 90 80: mean 80, sample SD √(200 / 3). The tuples tie two against two; the first reached wins.
+        Assert.Equal("A", a.Member);
+        Assert.Equal(4, a.AnswerCount);
+        Assert.Equal(70, a.MinQualityScore);
+        Assert.Equal(90, a.MaxQualityScore);
+        Assert.Equal(Math.Sqrt(200.0 / 3.0), a.StandardDeviation!.Value, 9);
+        Assert.Equal(l5555, a.ModalLevels);
+        Assert.Equal(2, a.ModalLevelsCount);
+
+        Assert.Equal("B", b.Member);
+        Assert.Equal(60, b.MinQualityScore);
+        Assert.Equal(90, b.MaxQualityScore);
+        Assert.Equal(l6355, b.ModalLevels);
+        Assert.Equal(2, b.ModalLevelsCount);
+        Assert.False(BenchmarkPanelDiagnostics.IsNarrowSpread(a, b));
+    }
+
+    [Fact]
+    public void MemberSpread_IsNarrow_OnlyWhenBothDeviationsAreBelowEightPoints()
+    {
+        int[] levels = { 5, 5, 5, 5 };
+        var narrow = new[]
+        {
+            SpreadAnswer(1, 80, levels, 70, levels),
+            SpreadAnswer(2, 82, levels, 74, levels),
+            SpreadAnswer(3, 84, levels, 78, levels)
+        };
+        var wideB = new[]
+        {
+            SpreadAnswer(1, 80, levels, 50, levels),
+            SpreadAnswer(2, 82, levels, 70, levels),
+            SpreadAnswer(3, 84, levels, 90, levels)
+        };
+
+        Assert.Equal(8.0, BenchmarkPanelDiagnostics.NarrowSpreadStandardDeviation);
+        Assert.True(BenchmarkPanelDiagnostics.IsNarrowSpread(
+            BenchmarkPanelDiagnostics.MemberSpread(narrow, BenchmarkPanelMember.A),
+            BenchmarkPanelDiagnostics.MemberSpread(narrow, BenchmarkPanelMember.B)));
+        Assert.False(BenchmarkPanelDiagnostics.IsNarrowSpread(
+            BenchmarkPanelDiagnostics.MemberSpread(wideB, BenchmarkPanelMember.A),
+            BenchmarkPanelDiagnostics.MemberSpread(wideB, BenchmarkPanelMember.B)));
+
+        // One scored answer has no deviation, so it is never narrow.
+        var single = new[] { SpreadAnswer(1, 80, levels, 80, levels) };
+        var one = BenchmarkPanelDiagnostics.MemberSpread(single, BenchmarkPanelMember.A);
+        Assert.Null(one.StandardDeviation);
+        Assert.False(BenchmarkPanelDiagnostics.IsNarrowSpread(one, one));
+    }
+
+    [Fact]
     public void AccusationAudit_WithNoCharges_ReportsEmptyCells_AndNoRate()
     {
         var result = BenchmarkPanelDiagnostics.Compute(FamilyModel(gammaA: 6, gammaB: 6));

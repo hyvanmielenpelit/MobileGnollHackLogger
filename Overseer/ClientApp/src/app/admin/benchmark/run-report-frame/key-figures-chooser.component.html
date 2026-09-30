@@ -1,0 +1,69 @@
+<!--
+  KEY FIGURES IN THE IMAGE
+
+  Nested in the run report dialog, so its own close, cancel and click events stop here. Copy Image
+  and Download PNG are aria-disabled, never disabled, while nothing is selected, and say why.
+-->
+<dialog #chooserDialog class="gh-dialog kfch-dialog" aria-labelledby="kfchTitle" closedby="any"
+        (click)="onDialogClick($event)" (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 #chooserTitle id="kfchTitle" tabindex="-1">Key Figures in the Image</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <div class="kfch-group" role="group" aria-labelledby="kfchCaption">
+        <div class="kfch-group-head">
+          <p class="kfch-caption" id="kfchCaption">Figures</p>
+          <span class="kfch-bulk">
+            <button type="button" class="btn-link kfch-all" (click)="selectAll()">All<span class="visually-hidden"> key figures</span></button>
+            <button type="button" class="btn-link kfch-none" (click)="selectNone()">None<span class="visually-hidden"> of the key figures</span></button>
+          </span>
+        </div>
+        <ul class="kfch-list" role="list">
+          @for (figure of figures; track figure.key) {
+            <li class="kfch-item" [attr.data-figure]="figure.key">
+              <label class="checkbox-label align-start kfch-row">
+                <input type="checkbox" [id]="'kfch-' + figure.key"
+                       [checked]="isChecked(figure.key)"
+                       (change)="onToggle(figure.key, $event)">
+                <span class="kfch-text">
+                  <span class="kfch-label">{{ figure.label }}</span>
+                  @if (figure.value) {
+                    <span class="kfch-value"> — {{ figure.value }}</span>
+                  }
+                </span>
+              </label>
+            </li>
+          }
+        </ul>
+      </div>
+      <p class="kfch-count" role="status">{{ countText }}</p>
+      <p class="kfch-hint">Remembered for every run report. A figure a run does not have is left out.</p>
+    </div>
+    <div class="dialog-footer">
+      @if (nothingSelected) {
+        <p class="gh-field-error kfch-reason" id="kfchReason">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          Select at least one figure.
+        </p>
+      }
+      <button type="button" class="btn-gh btn-gh-cancel kfch-cancel" (click)="cancel()">Cancel</button>
+      <button type="button" class="btn-gh kfch-copy"
+              [attr.aria-disabled]="nothingSelected ? 'true' : null"
+              [attr.aria-describedby]="nothingSelected ? 'kfchReason' : null"
+              (click)="commit('copy')">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        Copy Image
+      </button>
+      <button type="button" class="btn-gh kfch-download"
+              [attr.aria-disabled]="nothingSelected ? 'true' : null"
+              [attr.aria-describedby]="nothingSelected ? 'kfchReason' : null"
+              (click)="commit('download')">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        Download PNG
+      </button>
+    </div>
+  </div>
+</dialog>

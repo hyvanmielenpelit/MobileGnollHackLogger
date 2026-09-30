@@ -388,6 +388,7 @@ to stop if the projection is more than about twice the estimate.
 | Benchmark Suite | <name as listed> (<n> questions) | same |
 | Scoring Profile | <name> | same |
 | Response Style | Concise (production default) | same |
+| Source Code References | Allowed / Disallowed — production default | same |
 | Assessor | ... | same |
 | Co-Assessor (optional) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |
 | Second Reader (optional) | ... or "None — no second reader" | same |
@@ -509,6 +510,7 @@ Labels drift; these are the files to grep, with the state verified on 2026-09-19
 |---|---|
 | Admin tabs; benchmark sub-tabs `Run Benchmark`, `Run History`, `Multi-Run Analysis`, `Manage Suites`, `Scoring Profiles`, `Model Comparison` | `Overseer/ClientApp/src/app/admin/admin.component.ts`, `admin/benchmark/benchmark.component.html` |
 | Launcher fields and the `Start Benchmark` button; `Series Projection`; the `Co-Assessor` field and its panel warnings (field order verified on 2026-09-27: Model Under Test first, above the three fieldsets) | `admin/benchmark/benchmark.component.html` |
+| The `Source Code References` field and its two option labels (from 2026-09-30, harness 44; a run before it always used *Allowed*, so a card repeating an earlier run's configuration sets *Allowed* explicitly) | `admin/benchmark/benchmark.component.html` |
 | Coverage option labels | `Overseer/ClientApp/src/app/services/admin-benchmark.service.ts` |
 | Launcher refusals and their messages | `Overseer/Services/Benchmarking/BenchmarkRunLauncher.cs` |
 | Delivery-check failure messages | `Overseer/Services/Benchmarking/BenchmarkCandidateRequestProbe.cs`, `BenchmarkGradingRequestProbe.cs` |

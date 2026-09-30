@@ -1221,4 +1221,130 @@ public class BenchmarkReportFactsTests
         Assert.Equal((DateTime?)groupFirst.StartedAtUtc, group.FirstRunUtc);
         Assert.Equal(groupSecond.CompletedAtUtc, group.LastRunUtc);
     }
+
+    // --- Format version 9 --------------------------------------------------------------------------
+
+    [Fact]
+    public void TheSheet_StatesTheScoredAnswers_TheMeanAnswerTime_AndTheAuthoredBands()
+    {
+        // Assessed 20, 20 and 90: two simple questions and one advanced; authored one simple and two advanced.
+        var subject = Run(1, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 80, 20), new AnswerSpec(12, 2, 1, 60, 20), new AnswerSpec(13, 3, 1, 40, 90));
+        subject.Answers.Single(a => a.OrderIndex == 1).Difficulty = BenchmarkDifficulty.Simple;
+        subject.Answers.Single(a => a.OrderIndex == 2).Difficulty = BenchmarkDifficulty.Advanced;
+        subject.Answers.Single(a => a.OrderIndex == 3).Difficulty = BenchmarkDifficulty.Advanced;
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 60, modelTimeP50Ms: 14700));
+        comparison.Entries[0].Speed!.ModelTimeMeanMs = 17240;
+
+        var sheet = BuildSheet(Input(comparison, "run:1", subject));
+
+        Assert.Equal("3", FactOf(sheet, "answers.scored").Display);
+        Assert.Equal(3, FactOf(sheet, "answers.scored").Value!.GetValue<int>());
+        Assert.Equal("0 of 3 answers", FactOf(sheet, "errors.critical").Display);
+        Assert.Equal("14.7 s", FactOf(sheet, "speed.modelTimeP50").Display);
+        Assert.Equal("17.2 s", FactOf(sheet, "speed.modelTimeMean").Display);
+
+        Assert.Equal("2", FactOf(sheet, "band.simple.questions").Display);
+        Assert.Equal("1", FactOf(sheet, "bands.authored.simple").Display);
+        Assert.Equal("0", FactOf(sheet, "bands.authored.intermediate").Display);
+        Assert.Equal("2", FactOf(sheet, "bands.authored.advanced").Display);
+        Assert.False(BenchmarkReportFacts.IsPeerFact("bands.authored.simple"));
+        Assert.Equal(new[] { "Simple", "Simple", "Advanced" }, sheet.Questions.Select(q => q.Band));
+        Assert.Equal(new[] { "Simple", "Advanced", "Advanced" }, sheet.Questions.Select(q => q.AuthoredBand));
+    }
+
+    [Fact]
+    public void TheMeanAnswerTime_IsUnavailable_OnADegradedSpeedAxis_OrWhenNotRecorded()
+    {
+        const string explanation = "Degraded: speed was measured with parallel execution disabled.";
+        var degraded = BuildSheet(Input(
+            Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, state: "Degraded", speedDegraded: true, explanation: explanation)),
+            "run:1", SimpleRun(1, "OpenAI")));
+        var mean = FactOf(degraded, "speed.modelTimeMean");
+        Assert.False(mean.Available);
+        Assert.Equal(explanation, mean.UnavailableReason);
+
+        var unrecorded = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+        Assert.False(FactOf(unrecorded, "speed.modelTimeMean").Available);
+        Assert.True(FactOf(unrecorded, "speed.modelTimeP50").Available);
+    }
+
+    [Fact]
+    public void AConvergentPanelRow_RecordsEachMembersQuestions_AndIsBothGradersOnlyOnTheSharedOnes()
+    {
+        var run = Run(1, "Google", "subject", new AnswerSpec(11, 1, 1, 80), new AnswerSpec(12, 2, 1, 40), new AnswerSpec(13, 3, 1, 60));
+        run.CoAssessorModelConfigurationId = 2;
+        run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-haiku-5");
+        // Member A, Google, shares the subject's provider; member B does not.
+        run.AssessmentJson = Synthesis(
+            ("weakness", "accuracy", new[] { 1, 2 }, "A: wrong on Q1 and Q2."),
+            ("weakness", "tool_use", Array.Empty<int>(), "A: few tool calls."));
+        run.CoAssessorSynthesisJson = Synthesis(
+            ("weakness", "accuracy", new[] { 1 }, "B: wrong on Q1."),
+            ("weakness", "tool_use", Array.Empty<int>(), "B: too few lookups."));
+
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "Google", 60)), "run:1", run));
+
+        var accuracy = sheet.Rows.Single(r => r.Category == "accuracy");
+        Assert.Equal("Convergent", accuracy.Status);
+        Assert.Equal(BenchmarkReportFacts.SupportBothGraders, accuracy.SupportLabel);
+        Assert.Equal(new[] { 1, 2 }, accuracy.Questions);
+        Assert.Equal(new[] { 1, 2 }, accuracy.QuestionsA);
+        Assert.Equal(new[] { 1 }, accuracy.QuestionsB);
+        Assert.Equal(new[] { 1 }, accuracy.SharedQuestions);
+
+        BenchmarkReportWriterItem Item(string row, params int[] questions)
+            => new() { Text = "An item.", Questions = questions.ToList(), Evidence = new List<string> { row } };
+
+        // Q1 is shared; only member A named Q2, and member A shares the subject's provider.
+        Assert.Equal(BenchmarkReportFacts.SupportBothGraders, BenchmarkReportFacts.SupportLabelFor(Item(accuracy.Id, 1), sheet));
+        Assert.Equal(BenchmarkReportFacts.SupportBothGraders, BenchmarkReportFacts.SupportLabelFor(Item(accuracy.Id, 1, 2), sheet));
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderSameProvider, BenchmarkReportFacts.SupportLabelFor(Item(accuracy.Id, 2), sheet));
+        // A question cited as evidence counts as one the item is about.
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderSameProvider,
+            BenchmarkReportFacts.SupportLabelFor(new[] { accuracy.Id, "Q2" }, sheet));
+        // An item citing no question is about the row's own questions.
+        Assert.Equal(BenchmarkReportFacts.SupportBothGraders, BenchmarkReportFacts.SupportLabelFor(Item(accuracy.Id), sheet));
+
+        // A run-wide convergent row is both graders' for any item.
+        var toolUse = sheet.Rows.Single(r => r.Category == "tool_use");
+        Assert.Empty(toolUse.Questions);
+        Assert.Equal(BenchmarkReportFacts.SupportBothGraders, BenchmarkReportFacts.SupportLabelFor(Item(toolUse.Id, 2), sheet));
+    }
+
+    [Fact]
+    public void RowSupportLabelFor_NamesTheMemberWhoseQuestionsTheItemMeets()
+    {
+        var row = new BenchmarkReportFindingRow
+        {
+            Id = "R1", Kind = "weakness", Category = "accuracy", Questions = new List<int> { 1, 2, 3 },
+            Status = "Convergent", SupportLabel = BenchmarkReportFacts.SupportBothGraders,
+            QuestionsA = new List<int> { 1 }, QuestionsB = new List<int> { 1, 3 }, SharedQuestions = new List<int> { 1 }
+        };
+        var sheet = new BenchmarkReportFactSheet
+        {
+            Graders = new List<BenchmarkReportGrader>
+            {
+                new() { Role = BenchmarkReportFacts.PanelMemberARole, SameFamilyAsSubject = false },
+                new() { Role = BenchmarkReportFacts.PanelMemberBRole, SameFamilyAsSubject = true }
+            },
+            Rows = new List<BenchmarkReportFindingRow> { row }
+        };
+
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderSameProvider, BenchmarkReportFacts.RowSupportLabelFor(row, new[] { 3 }, sheet));
+        Assert.Equal(BenchmarkReportFacts.SupportBothGraders, BenchmarkReportFacts.RowSupportLabelFor(row, new[] { 1, 3 }, sheet));
+        // Neither member named Q2 alone: the stronger of the two members' single-grader labels.
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderDifferentProvider, BenchmarkReportFacts.RowSupportLabelFor(row, new[] { 2 }, sheet));
+
+        // A row stored without its members' questions keeps its label.
+        row.SharedQuestions = null;
+        Assert.Equal(BenchmarkReportFacts.SupportBothGraders, BenchmarkReportFacts.RowSupportLabelFor(row, new[] { 3 }, sheet));
+
+        // A row of another status keeps its label whatever the item cites.
+        var single = new BenchmarkReportFindingRow
+        {
+            Id = "R2", Questions = new List<int> { 2 }, Status = "MemberAOnly", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentProvider,
+            QuestionsA = new List<int> { 2 }, QuestionsB = new List<int>(), SharedQuestions = new List<int>()
+        };
+        Assert.Equal(BenchmarkReportFacts.SupportOneGraderDifferentProvider, BenchmarkReportFacts.RowSupportLabelFor(single, new[] { 1 }, sheet));
+    }
 }

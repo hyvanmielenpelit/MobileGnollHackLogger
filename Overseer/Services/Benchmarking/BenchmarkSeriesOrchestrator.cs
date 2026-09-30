@@ -209,6 +209,9 @@ public class BenchmarkSeriesOrchestrator
             };
         }
 
+        // Stored resolved, so a stored request without the member is one from before the field existed.
+        request.AllowSourceCodeReferences ??= false;
+
         var series = new BenchmarkRunSeries
         {
             BenchmarkSuiteId = suite.Id,
@@ -419,7 +422,8 @@ public class BenchmarkSeriesOrchestrator
 
         var benchmarkService = services.GetRequiredService<BenchmarkService>();
         var current = await benchmarkService.ComputeCurrentInstrumentFingerprintAsync(
-            db, request.SuiteId, request.TestedModelConfigurationId, request.VerboseMode ?? false, ct);
+            db, request.SuiteId, request.TestedModelConfigurationId, request.VerboseMode ?? false,
+            request.AllowSourceCodeReferences ?? false, ct);
 
         if (current == null) return Array.Empty<string>();
 
@@ -980,7 +984,14 @@ public class BenchmarkSeriesOrchestrator
     {
         try
         {
-            return JsonSerializer.Deserialize<StartBenchmarkRunRequest>(series.StartRequestJson);
+            var request = JsonSerializer.Deserialize<StartBenchmarkRunRequest>(series.StartRequestJson);
+            // A series stored without the member ran its first members with source code references
+            // allowed, the only option then; its remaining members must match them.
+            if (request != null)
+            {
+                request.AllowSourceCodeReferences ??= true;
+            }
+            return request;
         }
         catch (JsonException)
         {

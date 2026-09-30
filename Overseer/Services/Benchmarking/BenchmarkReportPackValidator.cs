@@ -26,7 +26,7 @@ public sealed class BenchmarkReportCleanResult
 /// <summary>
 /// The report-pack document rules (D7), checked against the fact sheet and the content snapshot.
 ///
-/// <para>Rules 2, 3, 8, 9, 10, 11, 12, 16 and 17 apply to every prose string: the headline, each
+/// <para>Rules 2, 3, 8, 9, 10, 11, 12, 16, 17 and 19 apply to every prose string: the headline, each
 /// paragraph of each section, and the text of every item, topic and note. A section's paragraphs are
 /// checked one by one, so <see cref="DropInvalid"/> can remove only the offending ones.</para>
 ///
@@ -66,7 +66,11 @@ public sealed class BenchmarkReportCleanResult
 /// <item>No word of <see cref="HypeWords"/>, whole words ignoring case. A warning.</item>
 /// <item>A <c>model_developers</c> recommendation names nothing a model developer cannot change
 /// (<see cref="OverseerOnlyTerms"/>): the Overseer's rubrics, retrieval, index, corpus, regression
-/// tests, system prompt or tool guides. A warning.</item>
+/// tests, system prompt, the assistant's prompt or tool guides, prompting the model, or GnollHack
+/// itself. A warning.</item>
+/// <item>No negation (<see cref="NegationWords"/>) within <see cref="NegationWindowWords"/> words before a
+/// fact token, in the same sentence, whose display starts with <c>0</c>: "no critical errors across
+/// {{errors.critical}}" reads "no critical errors across 0 of 18 answers". A warning.</item>
 /// </list>
 /// </summary>
 public static class BenchmarkReportPackValidator
@@ -148,19 +152,33 @@ public static class BenchmarkReportPackValidator
     /// </summary>
     public const int ModelDeveloperScopeRule = 18;
 
+    /// <summary>
+    /// The rule number of the check that a negation does not precede a token whose value starts with
+    /// zero; its notes never drop text.
+    /// </summary>
+    public const int ZeroTokenNegationRule = 19;
+
+    /// <summary>Rule 19 looks this many words back from a token for a negation.</summary>
+    public const int NegationWindowWords = 4;
+
     /// <summary>Whether a rule's notes are warnings: they ask for the repair turn but never drop text.</summary>
     public static bool IsWarningRule(int rule)
         => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or MissingQuestionNoteRule or OverlapHedgeRule
-            or HypeWordRule or ModelDeveloperScopeRule;
+            or HypeWordRule or ModelDeveloperScopeRule or ZeroTokenNegationRule;
 
     /// <summary>
     /// Terms rule 18 flags in a <c>model_developers</c> recommendation, matched as whole words ignoring
-    /// case, with their plural and inflected forms: parts of the Overseer, which a model developer cannot change.
+    /// case, with their plural and inflected forms: parts of the Overseer, and the game itself, which a
+    /// model developer cannot change.
     /// </summary>
     public static readonly IReadOnlyList<string> OverseerOnlyTerms = new[]
     {
-        "rubric", "retrieval", "index", "corpus", "regression test", "system prompt", "tool guide"
+        "rubric", "retrieval", "index", "corpus", "regression test", "system prompt", "tool guide",
+        "prompt the model", "the assistant's prompt", "GnollHack"
     };
+
+    /// <summary>Words rule 19 reads as a negation, matched as whole words, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> NegationWords = new[] { "no", "none", "never", "without", "zero" };
 
     /// <summary>Words rule 16 reads as ranking one model over another, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> ComparativeWords = new[]
@@ -253,8 +271,16 @@ public static class BenchmarkReportPackValidator
 
     /// <summary>Rule 18's pattern over <see cref="OverseerOnlyTerms"/> and their inflected forms.</summary>
     private static readonly Regex OverseerOnlyTermRegex = new(
-        @"(?<![\p{L}\p{N}])(?:rubrics?|retrieval|index(?:es|ed|ing)?|indices|corpus|corpora|regression[\s-]+tests?|system[\s-]+prompts?|tool[\s-]+guides?)(?![\p{L}\p{N}])",
+        @"(?<![\p{L}\p{N}])(?:rubrics?|retrieval|index(?:es|ed|ing)?|indices|corpus|corpora|regression[\s-]+tests?|system[\s-]+prompts?|tool[\s-]+guides?"
+        + @"|prompt(?:s|ed|ing)?\s+the\s+model|the\s+assistant['’]s\s+prompts?|gnollhack)(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 19's pattern over <see cref="NegationWords"/>.</summary>
+    private static readonly Regex NegationRegex = new(
+        @"^(?:no|none|never|without|zero)$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 19's words: a token placeholder, or a run of letters, digits and apostrophes.</summary>
+    private static readonly Regex NegationWordRegex = new(@"\u0001\d+\u0002|[\p{L}\p{N}'’]+", RegexOptions.Compiled);
 
     // A hyphenated hype word matches only as a whole: "cutting-edge", never "edge".
     private static readonly Regex HypeWordRegex = new(
@@ -419,7 +445,7 @@ public static class BenchmarkReportPackValidator
     /// Removes every item and section paragraph with an issue from a copy of the output. The headline
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty. Missing
     /// question topics and notes are recorded but not fatal, and so are the warnings of rules 12 to
-    /// 18: their text is kept.
+    /// 19: their text is kept.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -730,6 +756,55 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, HypeWordRule, location, $"Uses the hype word{Plural(hype.Count)} \"{string.Join("\", \"", hype)}\": state what the figures and findings show in plain words instead.");
         }
+
+        // Rule 19: a negation before a token whose value starts with zero.
+        var negated = NegatedZeroTokens(ctx, text);
+        if (negated.Count > 0)
+        {
+            string found = string.Join("; ", negated.Select(n => $"\"{n.Negation}\" before {{{{{n.Key}}}}}, which reads \"{n.Display}\""));
+            Issue(notes, ZeroTokenNegationRule, location, $"Puts {found}: a token whose value reads 'N of M' is a noun phrase, so a negation before it says none twice. Write '{{{{errors.critical}}}} had a critical error', and to say none occurred, 'no critical errors across all {{{{answers.scored}}}} answers'.");
+        }
+    }
+
+    /// <summary>
+    /// Rule 19: each negation of <see cref="NegationWords"/> that stands within
+    /// <see cref="NegationWindowWords"/> words before a fact token, in the same sentence, whose
+    /// available display starts with <c>0</c>, with the token's key and display. Tokens are set aside
+    /// before the text is split into sentences, so the dots of a fact key never end one.
+    /// </summary>
+    private static List<(string Negation, string Key, string Display)> NegatedZeroTokens(Context ctx, string text)
+    {
+        var tokens = new List<string>();
+        string masked = TokenRegex.Replace(text ?? string.Empty, m =>
+        {
+            tokens.Add(m.Groups[1].Value);
+            return "\u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002";
+        });
+
+        var found = new List<(string Negation, string Key, string Display)>();
+        if (tokens.Count == 0) return found;
+
+        foreach (string sentence in SentenceSplitRegex.Split(masked))
+        {
+            var words = NegationWordRegex.Matches(sentence).Select(m => m.Value).ToList();
+            for (int i = 0; i < words.Count; i++)
+            {
+                var placeholder = TokenPlaceholderRegex.Match(words[i]);
+                if (!placeholder.Success) continue;
+
+                string key = tokens[int.Parse(placeholder.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture)];
+                if (ctx.ZeroDisplay(key) is not string display) continue;
+
+                for (int j = i - 1; j >= Math.Max(0, i - NegationWindowWords); j--)
+                {
+                    if (!NegationRegex.IsMatch(words[j])) continue;
+                    found.Add((words[j].ToLowerInvariant(), key, display));
+                    break;
+                }
+            }
+        }
+
+        return found.Distinct().ToList();
     }
 
     /// <summary>
@@ -906,12 +981,13 @@ public static class BenchmarkReportPackValidator
             if (string.Equals(target, BenchmarkReportSlots.TargetModelDevelopers, StringComparison.Ordinal))
             {
                 var terms = OverseerOnlyTermRegex.Matches(TokenRegex.Replace(text, " "))
-                    .Select(m => Regex.Replace(m.Value.ToLowerInvariant(), @"[\s-]+", " "))
+                    .Select(m => Regex.Replace(m.Value.ToLowerInvariant(), @"[\s-]+", " ").Replace('’', '\''))
+                    .Select(t => t == "gnollhack" ? "GnollHack" : t)
                     .Distinct(StringComparer.Ordinal)
                     .ToList();
                 if (terms.Count > 0)
                 {
-                    Issue(notes, ModelDeveloperScopeRule, location, $"A recommendation for model developers mentions \"{string.Join("\", \"", terms)}\", which belong{(terms.Count == 1 ? "s" : string.Empty)} to the Overseer, not to the model: recommend only what a model developer can change in the model (knowledge, calibration, instruction following, verbosity, tool-use habits), and put anything about the Overseer's prompts, tools, retrieval, corpus, rubrics or tests under \"{BenchmarkReportSlots.TargetOverseerChat}\" or \"{BenchmarkReportSlots.TargetBenchmark}\" where the document has them, or leave it out.");
+                    Issue(notes, ModelDeveloperScopeRule, location, $"A recommendation for model developers mentions \"{string.Join("\", \"", terms)}\", which belong{(terms.Count == 1 ? "s" : string.Empty)} to the Overseer or the game, not to the model: name a general capability a model developer can train or tune (for example stating the decisive mechanic behind a verdict, or committing to a conclusion the inputs already settle), never a GnollHack fact, a change to the assistant's prompt or tools, or a rubric point. Put anything about the Overseer's prompts, tools, retrieval, corpus, rubrics or tests under \"{BenchmarkReportSlots.TargetOverseerChat}\" or \"{BenchmarkReportSlots.TargetBenchmark}\" where the document has them, a game-specific gap under a \"corpus\" or \"chat\" lead where it has leads, or leave it out.");
                 }
             }
         }
@@ -1105,7 +1181,7 @@ public static class BenchmarkReportPackValidator
     private static string LowerFirst(string text)
         => text.Length > 0 && char.IsUpper(text[0]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 
-    /// <summary>Every rule but the warning rules 12 to 18 removes the offending item or paragraph.</summary>
+    /// <summary>Every rule but the warning rules 12 to 19 removes the offending item or paragraph.</summary>
     private static bool Blocks(BenchmarkReportValidationNote note) => !IsWarningRule(note.Rule);
 
     /// <summary>A section's text split on blank lines, each paragraph trimmed, empty ones left out.</summary>
@@ -1177,6 +1253,11 @@ public static class BenchmarkReportPackValidator
             Spec = BenchmarkReportSlots.For(audience);
             RequiredSlots = Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
+            _zeroDisplays = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var fact in sheet.Facts.Where(f => f.Available && (f.Display ?? string.Empty).TrimStart().StartsWith('0')))
+            {
+                _zeroDisplays.TryAdd(fact.Key, fact.Display.Trim());
+            }
             PeerLetters = new HashSet<string>(sheet.Peers.Select(p => p.Letter), StringComparer.Ordinal);
             OrderedQuestions = sheet.Questions.Select(q => q.Number).Distinct().OrderBy(n => n).ToList();
             Questions = new HashSet<int>(OrderedQuestions);
@@ -1257,8 +1338,12 @@ public static class BenchmarkReportPackValidator
         private readonly Dictionary<string, string> _shingles;
         private readonly HashSet<string> _overlappingPeers;
         private readonly HashSet<string> _pairedExcludesZeroPeers;
+        private readonly Dictionary<string, string> _zeroDisplays;
 
         public BenchmarkReportAudienceSpec Spec { get; }
+
+        /// <summary>The display of an available fact whose display starts with <c>0</c>; null for any other key.</summary>
+        public string? ZeroDisplay(string key) => _zeroDisplays.TryGetValue(key, out string? display) ? display : null;
 
         /// <summary>The audience's slots this sheet requires: the peer-only slots only when it has peers.</summary>
         public IReadOnlyList<string> RequiredSlots { get; }

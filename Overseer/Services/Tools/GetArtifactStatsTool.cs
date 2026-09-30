@@ -47,7 +47,7 @@ namespace Overseer.Services.Tools
             }
 
             string? name = arguments.TryGetProperty("name", out var nameElement) && nameElement.ValueKind == JsonValueKind.String
-                ? nameElement.GetString()
+                ? nameElement.GetString()?.Trim()
                 : null;
 
             if (string.IsNullOrWhiteSpace(name))

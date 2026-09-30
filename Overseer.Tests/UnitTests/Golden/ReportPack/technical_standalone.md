@@ -46,13 +46,13 @@ GPT-5.6 Luna scored 80 / 100 on 4 questions, with one critical error on Q3.
 | Conciseness | 88 |
 | Readability | 90 |
 
-### Difficulty bands
+### Difficulty bands (assessed)
 
-| Difficulty band | Questions | GPT-5.6 Luna |
-|---|---|---|
-| Simple | 1 | 90 |
-| Intermediate | 2 | 49 |
-| Advanced | 1 | 87 |
+| Difficulty band | Questions | Authored questions | GPT-5.6 Luna |
+|---|---|---|---|
+| Simple | 1 | — | 90 |
+| Intermediate | 2 | — | 49 |
+| Advanced | 1 | — | 87 |
 
 ## Speed and cost
 
@@ -94,118 +94,16 @@ Short, accurate answers on simple questions (R2).
 
 ## Per-question results
 
-| Q | Topic | Band | Score | Critical error | Refuted answer sentences | Tool calls | Model time |
-|---|---|---|---|---|---|---|---|
-| Q1 | Throwing gems at unicorns | Simple | 90 | no | 0 | 2 | 8.1 s |
-| Q2 | Prayer timeout | Intermediate | 72 | no | 0 | 3 | 11.0 s |
-| Q3 | Breaking a thrown gem | Intermediate | 25 | yes | 1 | 5 | 15.2 s |
-| Q4 | Wand of wishing charges | Advanced | 87 | no | 0 | 4 | 13.4 s |
+| Q | Topic | Assessed band | Authored | Score | Critical error | Refuted answer sentences | Tool calls | Model time |
+|---|---|---|---|---|---|---|---|---|
+| Q1 | Throwing gems at unicorns | Simple | — | 90 | no | 0 | 2 | 8.1 s |
+| Q2 | Prayer timeout | Intermediate | — | 72 | no | 0 | 3 | 11.0 s |
+| Q3 | Breaking a thrown gem | Intermediate | — | 25 | yes | 1 | 5 | 15.2 s |
+| Q4 | Wand of wishing charges | Advanced | — | 87 | no | 0 | 4 | 13.4 s |
 
 ### Questions scoring below 50 or with a critical error
 
 **Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters; the rubric says it can survive.
-
-### Question details
-
-#### Q1: Throwing gems at unicorns
-
-**Question:**
-
-> What happens if I throw a gem at a co-aligned unicorn?
-
-**Rubric:**
-
-> - The unicorn catches the gem.
-> - A valuable gem raises Luck; worthless glass does not.
-
-**Answer:**
-
-> The unicorn catches it. A real gem of your alignment raises your Luck; glass does nothing.
-
-**Graders:**
-
-- **Panel member A (Gemini 3.8 Flash):** score 92. Accurate and brief.
-  - Accuracy: Matches rubric.
-- **Panel member B (Claude Haiku 5):** score 88. Correct.
-
-**Claim verifier:**
-
-- **Grader's statement — refuted (the verifier sided with the answer):** "Worthless glass angers the unicorn." — Glass is caught and returned without anger (dothrow.c).
-
-#### Q2: Prayer timeout
-
-**Question:**
-
-> How long is the prayer timeout after a successful prayer?
-
-**Rubric:**
-
-> - The timeout is reset to a random value around 350.
-
-**Answer:**
-
-> About 50 to 1000 turns, typically near 350.
-
-**Graders:**
-
-- **Panel member A (Gemini 3.8 Flash):** score 75. Terse.
-  - Completeness: Omits the Luck adjustment.
-- **Panel member B (Claude Haiku 5):** score 69.
-
-**Claim verifier:**
-
-- **Answer sentence — supported:** "The timeout is typically near 350." — Matches the prayer code (pray.c).
-
-#### Q3: Breaking a thrown gem
-
-**Question:**
-
-> Will my gem break if I throw it at a unicorn?
-
-**Rubric:**
-
-*Rubric not recorded for this answer.*
-
-**Answer:**
-
-> Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for selling or for wishing instead.
->
-> If you must throw something, throw worthless glass.
-
-**Graders:**
-
-- **Panel member A (Gemini 3.8 Flash):** score 25. Critical error.
-  - Accuracy: The gem does not always shatter.
-  - Critical error: "A thrown gem always shatters on impact"
-- **Panel member B (Claude Haiku 5):** score 25. Fabricated breakage.
-
-**Claim verifier:**
-
-- **Answer sentence accused by a grader — refuted (the verifier sided with the grader):** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
-
-#### Q4: Wand of wishing charges
-
-**Question:**
-
-> How many wishes can I get from a wand of wishing?
-
-**Rubric:**
-
-> - 1 to 3 charges.
-> - Wresting gives one more.
-
-**Answer:**
-
-> A new wand has 1 to 3 charges, and you can wrest one more.
-
-**Graders:**
-
-- **Panel member A (Gemini 3.8 Flash):** score 88. Good.
-- **Panel member B (Claude Haiku 5):** score 86.
-
-**Claim verifier:**
-
-- No claims were checked.
 
 ## Tool-use behavior
 
@@ -264,6 +162,108 @@ The result rests on a single run, so its interval covers question sampling alone
 - **Tool guides SHA-256 prefix:** `f59d8b30a1c7`
 - **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 
+## Question details
+
+### Q1: Throwing gems at unicorns
+
+**Question:**
+
+> What happens if I throw a gem at a co-aligned unicorn?
+
+**Rubric:**
+
+> - The unicorn catches the gem.
+> - A valuable gem raises Luck; worthless glass does not.
+
+**Answer:**
+
+> The unicorn catches it. A real gem of your alignment raises your Luck; glass does nothing.
+
+**Graders:**
+
+- **Panel member A (Gemini 3.8 Flash):** score 92. Accurate and brief.
+  - Accuracy: Matches rubric.
+- **Panel member B (Claude Haiku 5):** score 88. Correct.
+
+**Claim verifier:**
+
+- **Grader's statement — refuted (the verifier sided with the answer):** "Worthless glass angers the unicorn." — Glass is caught and returned without anger (dothrow.c).
+
+### Q2: Prayer timeout
+
+**Question:**
+
+> How long is the prayer timeout after a successful prayer?
+
+**Rubric:**
+
+> - The timeout is reset to a random value around 350.
+
+**Answer:**
+
+> About 50 to 1000 turns, typically near 350.
+
+**Graders:**
+
+- **Panel member A (Gemini 3.8 Flash):** score 75. Terse.
+  - Completeness: Omits the Luck adjustment.
+- **Panel member B (Claude Haiku 5):** score 69.
+
+**Claim verifier:**
+
+- **Answer sentence — supported:** "The timeout is typically near 350." — Matches the prayer code (pray.c).
+
+### Q3: Breaking a thrown gem
+
+**Question:**
+
+> Will my gem break if I throw it at a unicorn?
+
+**Rubric:**
+
+*Rubric not recorded for this answer.*
+
+**Answer:**
+
+> Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for selling or for wishing instead.
+>
+> If you must throw something, throw worthless glass.
+
+**Graders:**
+
+- **Panel member A (Gemini 3.8 Flash):** score 25. Critical error.
+  - Accuracy: The gem does not always shatter.
+  - Critical error: "A thrown gem always shatters on impact"
+- **Panel member B (Claude Haiku 5):** score 25. Fabricated breakage.
+
+**Claim verifier:**
+
+- **Answer sentence accused by a grader — refuted (the verifier sided with the grader):** "A thrown gem always shatters on impact." — Gems are caught, not broken (dothrow.c).
+
+### Q4: Wand of wishing charges
+
+**Question:**
+
+> How many wishes can I get from a wand of wishing?
+
+**Rubric:**
+
+> - 1 to 3 charges.
+> - Wresting gives one more.
+
+**Answer:**
+
+> A new wand has 1 to 3 charges, and you can wrest one more.
+
+**Graders:**
+
+- **Panel member A (Gemini 3.8 Flash):** score 88. Good.
+- **Panel member B (Claude Haiku 5):** score 86.
+
+**Claim verifier:**
+
+- No claims were checked.
+
 ## Evaluation terms
 
 - **Purpose statement:** Internal evaluation of candidate AI models for the Overseer assistant within GnollHack.
@@ -272,6 +272,6 @@ The result rests on a single run, so its interval covers question sampling alone
 
 ---
 
-*Document ID 101 · format version 8 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 9 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

@@ -369,6 +369,15 @@ already means as* close*. (Removing an attached file keeps* trash*, since that d
 **Show N more** and **Show all** are text-only, and **Update charts…** moved from the toolbar to the
 selection bar, still text-only.*
 
+*Changed 2026-09-30 (run-75 round, key-figures chooser): the run report's *Key figures* head gains a
+third button, **Choose figures**, a text-only `.btn-ghost` (*(9 of 12)* appended while a subset is
+selected); the icon-only **Copy** and **Download** keep* copy *and* download *and export the saved
+selection in one click. The chooser it opens is a nested `.gh-dialog` (§4b nested-dialog rule, light
+dismiss): **Cancel** is `btn-gh btn-gh-cancel`, and **Copy Image** and **Download PNG** are `btn-gh`
+with* copy *and* download*, both `aria-disabled` with the visible reason *"Select at least one figure."*
+while nothing is selected. It is a dialog, not an action popover (§4f): a multi-select checklist with a
+commit.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |

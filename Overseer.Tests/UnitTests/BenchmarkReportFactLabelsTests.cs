@@ -46,6 +46,9 @@ public class BenchmarkReportFactLabelsTests
         Assert.Contains("comparison.pricingBasisKind", keys);
         Assert.Contains("tokens.inputPerQuestion", keys);
         Assert.Contains("band.intermediate.difference", keys);
+        Assert.Contains("answers.scored", keys);
+        Assert.Contains("speed.modelTimeMean", keys);
+        Assert.Contains("bands.authored.advanced", keys);
 
         var unlabeled = keys.Where(k => !BenchmarkReportFactLabels.TryLabel(k, out _)).ToList();
 
@@ -74,6 +77,11 @@ public class BenchmarkReportFactLabelsTests
     [InlineData("band.advanced.questions", "Advanced band questions")]
     [InlineData("band.simple.peerMean", "Simple band peer mean")]
     [InlineData("errors.critical", "Critical errors")]
+    [InlineData("answers.scored", "Scored answers")]
+    [InlineData("speed.modelTimeMean", "Mean answer time")]
+    [InlineData("bands.authored.simple", "Questions authored as Simple")]
+    [InlineData("bands.authored.intermediate", "Questions authored as Intermediate")]
+    [InlineData("bands.authored.advanced", "Questions authored as Advanced")]
     [InlineData("claims.supported", "Claims the verifier supported")]
     [InlineData("style.responseStyleConflict", "Response-style conflict")]
     [InlineData("tools.callsPerQuestion", "Tool calls per question")]
@@ -117,6 +125,7 @@ public class BenchmarkReportFactLabelsTests
     [InlineData("speed.p50Ms", "Speed p50 ms")]
     [InlineData("dimension.charm", "Dimension charm")]
     [InlineData("band.expert.score", "Band expert score")]
+    [InlineData("bands.authored.expert", "Bands authored expert")]
     public void AnUnknownKey_ReadsAsWords(string key, string expected)
     {
         Assert.False(BenchmarkReportFactLabels.TryLabel(key, out _));

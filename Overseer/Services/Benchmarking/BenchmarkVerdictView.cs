@@ -39,7 +39,10 @@ public sealed record BenchmarkVerdictView(
     bool OutOfRubricAccuracy,
     bool ContestedVerdict)
 {
-    /// <summary>The label <see cref="BenchmarkClaimVerification.RaisedBy"/> records for this member: <c>"A"</c> or <c>"B"</c>.</summary>
+    /// <summary>
+    /// The label <see cref="BenchmarkClaimVerification.RaisedBy"/>, <see cref="BenchmarkClaimVerification.AccusedBy"/>
+    /// and <see cref="BenchmarkClaimVerification.SuspectedBy"/> record for this member: <c>"A"</c> or <c>"B"</c>.
+    /// </summary>
     [JsonIgnore]
     public string MemberLabel => LabelOf(Member);
 

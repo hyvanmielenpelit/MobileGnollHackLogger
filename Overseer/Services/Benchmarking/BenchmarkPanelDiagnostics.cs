@@ -101,6 +101,22 @@ public sealed record BenchmarkPanelAuditCell(
 public sealed record BenchmarkPanelMemberAuditSummary(string Member, string MemberProvider, double? FamilyOverturnGap);
 
 /// <summary>
+/// One panel member's spread over the answers both members scored in one run: the range and sample
+/// standard deviation of its quality scores, and its most frequent tuple of criterion levels
+/// (accuracy, completeness, conciseness, readability) with the number of answers that had it.
+/// <see cref="AnswerCount"/> is the number of answers both members scored. The range is null without
+/// a score, the deviation below two scores, and the modal levels when no answer records all four.
+/// </summary>
+public sealed record BenchmarkPanelMemberSpread(
+    string Member,
+    int AnswerCount,
+    int? MinQualityScore,
+    int? MaxQualityScore,
+    double? StandardDeviation,
+    IReadOnlyList<int>? ModalLevels,
+    int ModalLevelsCount);
+
+/// <summary>
 /// Computes <see cref="BenchmarkPanelDiagnosticsResult"/> over the entries of a model comparison.
 /// Pure: no I/O, no model call, and no score is changed. "Family" means provider, compared trimmed
 /// and case-insensitively as <see cref="BenchmarkComplianceGuard.IsSameProvider(string?, string?)"/>
@@ -140,6 +156,52 @@ public static class BenchmarkPanelDiagnostics
     };
 
     private static readonly JsonSerializerOptions ClaimVerificationJsonOptions = new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>Below this sample standard deviation of quality scores, in points, a member's range is narrow.</summary>
+    public const double NarrowSpreadStandardDeviation = 8.0;
+
+    // --- Member spread --------------------------------------------------------------------------
+
+    /// <summary>
+    /// <paramref name="member"/>'s <see cref="BenchmarkPanelMemberSpread"/> over
+    /// <paramref name="bothScored"/>, the answers of one run both members scored, in question order.
+    /// Member A's scores and levels are the answer's own columns, member B's its co-assessment. The
+    /// deviation is the sample one (<see cref="BenchmarkGroupStatistics.SampleStandardDeviation"/>).
+    /// Of several equally frequent level tuples the one first reached in question order is modal.
+    /// </summary>
+    public static BenchmarkPanelMemberSpread MemberSpread(IReadOnlyList<BenchmarkRunAnswer> bothScored, BenchmarkPanelMember member)
+    {
+        var answers = bothScored ?? Array.Empty<BenchmarkRunAnswer>();
+        var scores = answers
+            .Select(a => member == BenchmarkPanelMember.B ? a.CoAssessmentQualityScore : a.QualityScore)
+            .Where(s => s.HasValue)
+            .Select(s => s!.Value)
+            .ToList();
+
+        var modal = answers
+            .Select(a => BenchmarkVerdictView.For(a, member))
+            .Where(v => v != null)
+            .Select(v => (Accuracy: v!.AccuracyLevel, Completeness: v.CompletenessLevel, Conciseness: v.ConcisenessLevel, Readability: v.ReadabilityLevel))
+            .GroupBy(t => t)
+            .OrderByDescending(g => g.Count())
+            .FirstOrDefault();
+
+        return new BenchmarkPanelMemberSpread(
+            Member: BenchmarkVerdictView.LabelOf(member),
+            AnswerCount: answers.Count,
+            MinQualityScore: scores.Count > 0 ? scores.Min() : null,
+            MaxQualityScore: scores.Count > 0 ? scores.Max() : null,
+            StandardDeviation: BenchmarkGroupStatistics.SampleStandardDeviation(scores.Select(s => (double)s).ToList()),
+            ModalLevels: modal == null
+                ? null
+                : new[] { modal.Key.Accuracy, modal.Key.Completeness, modal.Key.Conciseness, modal.Key.Readability },
+            ModalLevelsCount: modal?.Count() ?? 0);
+    }
+
+    /// <summary>True when both members' standard deviations are recorded and below <see cref="NarrowSpreadStandardDeviation"/>.</summary>
+    public static bool IsNarrowSpread(BenchmarkPanelMemberSpread memberA, BenchmarkPanelMemberSpread memberB)
+        => memberA.StandardDeviation < NarrowSpreadStandardDeviation
+           && memberB.StandardDeviation < NarrowSpreadStandardDeviation;
 
     public static BenchmarkPanelDiagnosticsResult Compute(
         IReadOnlyList<(string EntryKey, string EntryLabel, IReadOnlyList<BenchmarkRun> Runs)> entries)
@@ -554,7 +616,7 @@ public static class BenchmarkPanelDiagnostics
     /// quote, an accused sentence or a suspected-false claim) or states the basis of an out-of-rubric
     /// Accuracy deduction. An accusation is overturned when the verifier supports the accused
     /// sentence; a basis is overturned when the verifier refutes it, because the basis is the
-    /// member's own statement.
+    /// member's own statement. A charge counts for the members <see cref="ChargingMembers"/> names.
     /// </summary>
     private static (List<BenchmarkPanelAuditCell> Cells, List<BenchmarkPanelMemberAuditSummary> Summaries) BuildAccusationAudit(
         IReadOnlyList<BenchmarkRun> runs,
@@ -595,7 +657,7 @@ public static class BenchmarkPanelDiagnostics
                     var overturning = accusesAnswer ? BenchmarkClaimVerdict.Supported : BenchmarkClaimVerdict.Refuted;
                     var upholding = accusesAnswer ? BenchmarkClaimVerdict.Refuted : BenchmarkClaimVerdict.Supported;
 
-                    var members = item.RaisedBy
+                    var members = ChargingMembers(item)
                         .Select(m => m?.Trim().ToUpperInvariant())
                         .Where(m => m == MemberA || m == MemberB)
                         .Distinct();
@@ -657,6 +719,32 @@ public static class BenchmarkPanelDiagnostics
         }
 
         return (cells, summaries);
+    }
+
+    /// <summary>
+    /// The members a charge on <paramref name="item"/> is attributed to. A critical-error quote or an
+    /// out-of-rubric basis is its raising members'; otherwise an accused sentence is its accusing
+    /// members' and a suspected-false claim its suspecting members', each falling back to the raising
+    /// members on a record without the role's own set.
+    /// </summary>
+    private static IEnumerable<string> ChargingMembers(BenchmarkClaimVerification item)
+    {
+        if (BenchmarkClaimRoles.HasRole(item, BenchmarkClaimRoles.CriticalErrorQuote)
+            || BenchmarkClaimRoles.HasRole(item, BenchmarkClaimRoles.OutOfRubricBasis))
+        {
+            return item.RaisedBy ?? (IEnumerable<string>)Array.Empty<string>();
+        }
+
+        var members = new List<string>();
+        if (BenchmarkClaimRoles.HasRole(item, BenchmarkClaimRoles.AccusedQuote))
+        {
+            members.AddRange(item.AccusingMembers ?? Array.Empty<string>());
+        }
+        if (item.SuspectedFalse == true)
+        {
+            members.AddRange(item.SuspectingMembers ?? Array.Empty<string>());
+        }
+        return members;
     }
 
     private static double? Rate(int overturned, int upheld)

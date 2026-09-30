@@ -200,8 +200,8 @@ public class BenchmarkReportPackRendererTests
     {
         string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
 
-        Assert.Contains("### Questions and answers\n", text);
-        Assert.DoesNotContain("### Question details", text);
+        Assert.Contains("\n## Questions and answers\n", text);
+        Assert.DoesNotContain("Question details", text);
         foreach (var question in Content().Runs.SelectMany(r => r.Questions))
         {
             Assert.Single(AllIndexesOf(text, "> " + question.QuestionText + "\n"));
@@ -231,8 +231,8 @@ public class BenchmarkReportPackRendererTests
     {
         string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Contains("### Question details\n", text);
-        Assert.DoesNotContain("### Questions and answers", text);
+        Assert.Contains("\n## Question details\n", text);
+        Assert.DoesNotContain("Questions and answers", text);
         foreach (var question in Content().Runs.SelectMany(r => r.Questions))
         {
             Assert.Single(AllIndexesOf(text, question.QuestionText));
@@ -827,8 +827,9 @@ public class BenchmarkReportPackRendererTests
     {
         string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
 
-        Assert.Contains("| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |", text);
-        Assert.Contains("| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |", text);
+        Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |", text);
+        // The fixture's sheet records no authored band.
+        Assert.Contains("| Q3 | Breaking a thrown gem | Intermediate | — | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |", text);
         Assert.DoesNotContain("| Refuted claims |", text);
     }
 
@@ -972,7 +973,7 @@ public class BenchmarkReportPackRendererTests
         {
             string technical = BenchmarkReportPackRenderer.Render(StandaloneDocument(audience), new BenchmarkReportRenderOptions());
             Assert.Contains("## Results\n", technical);
-            Assert.Contains("| Q | Topic | Band | Score | Critical error | Refuted answer sentences | Tool calls | Model time |", technical);
+            Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Critical error | Refuted answer sentences | Tool calls | Model time |", technical);
             Assert.Contains("### Questions scoring below 50 or with a critical error", technical);
             Assert.Contains("**Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters", technical);
             Assert.Contains("describes the model on its own", technical);
@@ -1197,9 +1198,9 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void TheFormatVersion_IsEight()
+    public void TheFormatVersion_IsNine()
     {
-        Assert.Equal(8, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(9, BenchmarkReportPackRenderer.ReportFormatVersion);
     }
 
     [Fact]
@@ -1730,8 +1731,8 @@ public class BenchmarkReportPackRendererTests
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
 
         // 91 - 85 and 80 - 82, not the rounded +5.1 and -1.2.
-        Assert.Contains("| Q1 | Throwing gems at unicorns | Simple | 91 | 85 | +6 | no |", text);
-        Assert.Contains("| Q2 | Prayer timeout | Intermediate | 80 | 82 | -2 | no |", text);
+        Assert.Contains("| Q1 | Throwing gems at unicorns | Simple | — | 91 | 85 | +6 | no |", text);
+        Assert.Contains("| Q2 | Prayer timeout | Intermediate | — | 80 | 82 | -2 | no |", text);
     }
 
     [Theory]
@@ -2076,5 +2077,174 @@ public class BenchmarkReportPackRendererTests
         Assert.False(BenchmarkReportChartPlacement.TryParseMarker("[[figure:p9-other]]", out _));
         Assert.False(BenchmarkReportChartPlacement.TryParseMarker("See [[figure:p2-profile]]", out _));
         Assert.False(BenchmarkReportChartPlacement.TryParseMarker(null, out _));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Format version 9: assessed and authored bands, question details last, mean answer time,
+    // support labels by the questions an item cites
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary><paramref name="sheet"/> with the facts and fields format version 9 adds.</summary>
+    private static BenchmarkReportFactSheet WithVersion9Facts(BenchmarkReportFactSheet sheet)
+    {
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "answers.scored", Display = "4", Value = JsonValue.Create(4) });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "bands.authored.advanced", Display = "1", Value = JsonValue.Create(1) });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "bands.authored.intermediate", Display = "1", Value = JsonValue.Create(1) });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "bands.authored.simple", Display = "2", Value = JsonValue.Create(2) });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "speed.modelTimeMean", Display = "14.0 s", Value = JsonValue.Create(14000.0) });
+        sheet.Facts = sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
+
+        string[] authored = { "Simple", "Simple", "Intermediate", "Advanced" };
+        foreach (var q in sheet.Questions)
+        {
+            q.AuthoredBand = authored[q.Number - 1];
+        }
+        return sheet;
+    }
+
+    private static BenchmarkReportDocument Version9Document(BenchmarkReportAudience audience)
+    {
+        var document = Document(audience);
+        document.FactsJson = BenchmarkReportJson.Serialize(WithVersion9Facts(Sheet()));
+        return document;
+    }
+
+    [Fact]
+    public void TheDifficultyBands_AreTheAssessedOnes_WithTheAuthoredCountBeside()
+    {
+        string text = BenchmarkReportPackRenderer.Render(Version9Document(BenchmarkReportAudience.TechnicalReport),
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
+
+        Assert.Contains("### Difficulty bands (assessed)\n\n"
+            + "| Difficulty band | Questions | Authored questions | GPT-5.6 Luna | Peer mean | Difference |\n"
+            + "|---|---|---|---|---|---|\n"
+            + "| Simple | 1 | 2 | 90 | 85 | +5 |\n"
+            + "| Intermediate | 2 | 1 | 49 | 69 | -21 |\n"
+            + "| Advanced | 1 | 1 | 87 | 91 | -4 |\n\n", text);
+        Assert.DoesNotContain("### Difficulty bands\n", text);
+
+        // The per-question table names both bands.
+        Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Peer mean | Difference |", text);
+        Assert.Contains("| Q2 | Prayer timeout | Intermediate | Simple | 72 | 70 | +2 | no | 0 | 3 | 11.0 s |\n", text);
+
+        var standalone = StandaloneDocument(BenchmarkReportAudience.TechnicalReport);
+        standalone.FactsJson = BenchmarkReportJson.Serialize(WithVersion9Facts(StandaloneSheet()));
+        string alone = BenchmarkReportPackRenderer.Render(standalone, new BenchmarkReportRenderOptions());
+        Assert.Contains("### Difficulty bands (assessed)\n\n"
+            + "| Difficulty band | Questions | Authored questions | GPT-5.6 Luna |\n"
+            + "|---|---|---|---|\n"
+            + "| Simple | 1 | 2 | 90 |\n", alone);
+        Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Critical error |", alone);
+    }
+
+    [Fact]
+    public void KeyFigures_AndSpeedAndCost_StateTheMeanAnswerTime()
+    {
+        string executive = BenchmarkReportPackRenderer.Render(Version9Document(BenchmarkReportAudience.ExecutiveSummary),
+            new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
+        Assert.Contains("- **Speed:** median answer time 12.3 s, mean 14.0 s, 2nd of 2.\n", executive);
+
+        string researcher = BenchmarkReportPackRenderer.Render(Version9Document(BenchmarkReportAudience.TechnicalReport),
+            new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
+        Assert.Contains("- **Speed:** median answer time 12.3 s, mean 14.0 s, 2nd of 2.\n", researcher);
+        Assert.Contains("| Median answer time | 12.3 s |\n| Mean answer time | 14.0 s |\n| 90th-percentile answer time | 15.0 s |\n", researcher);
+    }
+
+    [Theory]
+    [MemberData(nameof(Combinations))]
+    public void ASheetWithoutTheFormatVersion9Facts_StillRenders_LeavingThemOut(
+        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming, string file)
+    {
+        // The fixture's sheet carries none of them, as a document stored under format version 8 does.
+        var document = Document(audience);
+        document.ReportFormatVersion = 8;
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
+
+        Assert.Contains("- **Speed:** median answer time 12.3 s, 2nd of 2.\n", text);
+        Assert.DoesNotContain("Mean answer time", text);
+        Assert.DoesNotContain("{{", text);
+        if (audience != BenchmarkReportAudience.ExecutiveSummary)
+        {
+            Assert.Contains("| Q3 | Breaking a thrown gem | Intermediate | — | 25 |", text);
+        }
+        if (audience == BenchmarkReportAudience.TechnicalReport)
+        {
+            Assert.Contains("| Simple | 1 | — | 90 | 85 | +5 |\n", text);
+        }
+        Assert.NotEmpty(file);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportDisclosure.Detailed, "Questions and answers")]
+    [InlineData(BenchmarkReportDisclosure.Full, "Question details")]
+    public void TheResearcherReport_PutsItsQuestionDetails_AfterTheReproducibilityAppendix(BenchmarkReportDisclosure disclosure, string details)
+    {
+        string text = Render(BenchmarkReportAudience.TechnicalReport, disclosure, BenchmarkReportPeerNaming.Named);
+
+        int Pos(string part) => text.IndexOf(part, StringComparison.Ordinal);
+        AssertInOrder(
+            Pos("## Per-question results\n"), Pos("### Questions more than 15 points below the peer mean"),
+            Pos("## Tool-use behavior\n"), Pos("## Grader reliability\n"), Pos("## Threats to validity\n"),
+            Pos("## Reproducibility appendix\n"), Pos("\n## " + details + "\n"), Pos("\n### Q1: Throwing gems at unicorns\n"),
+            Pos("\n### Q4: Wand of wishing charges\n"), Pos("## Removed content\n"), Pos("## Evaluation terms\n"));
+        Assert.DoesNotContain("#### Q1", text);
+
+        // The table of contents lists the sections in the same order.
+        var contents = Overseer.Services.Benchmarking.Pdf.BenchmarkPdfMarkdownComposer.Prepare(text, string.Empty)
+            .Contents.Select(c => c.Text).ToList();
+        int appendix = contents.IndexOf("Reproducibility appendix");
+        Assert.True(appendix > contents.IndexOf("Per-question results"));
+        Assert.Equal(new[] { "Reproducibility appendix", details, "Removed content", "Evaluation terms" }, contents.Skip(appendix));
+    }
+
+    [Fact]
+    public void AtSummary_TheResearcherReportHasNoQuestionDetails_AndTheInternalBriefKeepsThemUnderPerQuestionResults()
+    {
+        string summary = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        Assert.DoesNotContain("Question details", summary);
+        Assert.DoesNotContain("Questions and answers", summary);
+
+        string brief = Render(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        int Pos(string part) => brief.IndexOf(part, StringComparison.Ordinal);
+        AssertInOrder(Pos("## 5. Per-question results\n"), Pos("\n### Question details\n"), Pos("\n#### Q1: Throwing gems at unicorns\n"), Pos("## 6. Fact sheet\n"));
+    }
+
+    [Fact]
+    public void AnItemCitingAConvergentRow_IsBothGraders_OnlyOnTheRowsSharedQuestions()
+    {
+        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var sheet = Sheet();
+        var row = sheet.Rows.Single(r => r.Id == "R1");
+        row.Questions = new List<int> { 3, 4 };
+        row.QuestionsA = new List<int> { 3, 4 };
+        row.QuestionsB = new List<int> { 3 };
+        row.SharedQuestions = new List<int> { 3 };
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+        var writer = Writer();
+        writer.Weaknesses.Add(new BenchmarkReportWriterItem { Text = "Overstated the wand's charges.", Questions = new List<int> { 4 }, Evidence = new List<string> { "R1" } });
+        writer.Weaknesses.Add(new BenchmarkReportWriterItem { Text = "Made destruction claims the graders flagged.", Evidence = new List<string> { "R1" } });
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Named });
+
+        // Q3 is shared: both graders.
+        Assert.Contains("- Asserted a false outcome on Q3, where Grok 5 scored well. *(Both graders)*\n"
+            + "  - *Evidence:* Both graders — critical error · Q3 (25 / 100)", text);
+        // Only member A named Q4: one grader, of another provider than the model.
+        Assert.Contains("- Overstated the wand's charges. *(One grader — different provider)*\n"
+            + "  - *Evidence:* One grader — different provider — critical error · Q4 (87 / 100)\n", text);
+        // Citing no question, the item is about the row's questions, which include the shared one.
+        Assert.Contains("- Made destruction claims the graders flagged. *(Both graders)*\n", text);
+        // The findings table keeps the row's own label.
+        Assert.Contains("| R1 | weakness · critical error: States that a thrown gem always shatters. | Q3, Q4 | Both graders |\n", text);
+
+        var executive = Document(BenchmarkReportAudience.ExecutiveSummary);
+        executive.FactsJson = document.FactsJson;
+        executive.WriterOutputJson = document.WriterOutputJson;
+        string plain = BenchmarkReportPackRenderer.Render(executive, new BenchmarkReportRenderOptions());
+        Assert.Contains("- Overstated the wand's charges. *(raised by one grader)*\n", plain);
+        Assert.Contains("- Asserted a false outcome on Q3, where Model A scored well.\n", plain);
     }
 }

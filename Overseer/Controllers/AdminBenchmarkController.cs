@@ -5059,7 +5059,8 @@ public class AdminBenchmarkController : ControllerBase
         if (request != null)
         {
             var current = await _benchmarkService.ComputeCurrentInstrumentFingerprintAsync(
-                _dbContext, request.SuiteId, request.TestedModelConfigurationId, request.VerboseMode ?? false);
+                _dbContext, request.SuiteId, request.TestedModelConfigurationId, request.VerboseMode ?? false,
+                request.AllowSourceCodeReferences ?? false);
 
             if (current != null)
             {

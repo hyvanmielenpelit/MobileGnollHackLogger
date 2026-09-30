@@ -9,7 +9,7 @@ using System.Text;
 /// <summary>
 /// The human label of every fact key <see cref="BenchmarkReportFacts"/> defines, so a rendered
 /// document never prints a raw key and one figure never has two names. Explicit entries cover the
-/// fixed keys; rules cover the patterned dimension, band and peer keys. A key neither covers gets a
+/// fixed keys; rules cover the patterned dimension, band, authored-band and peer keys. A key neither covers gets a
 /// readable fallback: its dotted parts split at camel case and joined as words.
 /// </summary>
 public static class BenchmarkReportFactLabels
@@ -48,6 +48,7 @@ public static class BenchmarkReportFactLabels
 
         // Speed
         ["speed.modelTimeP50"] = "Median answer time",
+        ["speed.modelTimeMean"] = "Mean answer time",
         ["speed.modelTimeP90"] = "90th-percentile answer time",
         ["speed.ttftP50"] = "Median time to first token",
         ["speed.rank"] = "Speed rank",
@@ -63,6 +64,7 @@ public static class BenchmarkReportFactLabels
         ["tokens.outputPerQuestion"] = "Output tokens per question",
 
         // Errors and claims
+        ["answers.scored"] = "Scored answers",
         ["errors.critical"] = "Critical errors",
         ["claims.supported"] = "Claims the verifier supported",
         ["claims.refuted"] = "Claims the verifier refuted",
@@ -186,6 +188,13 @@ public static class BenchmarkReportFactLabels
             };
             if (suffix == null) return false;
             label = band + suffix;
+            return true;
+        }
+
+        // bands.authored.<b>
+        if (parts[0] == "bands" && parts.Length == 3 && parts[1] == "authored" && BandNames.TryGetValue(parts[2], out var authoredBand))
+        {
+            label = "Questions authored as " + authoredBand;
             return true;
         }
 

@@ -93,13 +93,13 @@ Not ranked on speed:
 | Conciseness | 88 | 85 | +3 |
 | Readability | 90 | 89 | +1 |
 
-### Difficulty bands
+### Difficulty bands (assessed)
 
-| Difficulty band | Questions | GPT-5.6 Luna | Peer mean | Difference |
-|---|---|---|---|---|
-| Simple | 1 | 90 | 85 | +5 |
-| Intermediate | 2 | 49 | 69 | -21 |
-| Advanced | 1 | 87 | 91 | -4 |
+| Difficulty band | Questions | Authored questions | GPT-5.6 Luna | Peer mean | Difference |
+|---|---|---|---|---|---|
+| Simple | 1 | — | 90 | 85 | +5 |
+| Intermediate | 2 | — | 49 | 69 | -21 |
+| Advanced | 1 | — | 87 | 91 | -4 |
 
 ### Judge-dependent pairs
 
@@ -145,58 +145,16 @@ Short, accurate answers on simple questions (R2).
 
 ## Per-question results
 
-| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |
-|---|---|---|---|---|---|---|---|---|---|
-| Q1 | Throwing gems at unicorns | Simple | 90 | 85 | +5 | no | 0 | 2 | 8.1 s |
-| Q2 | Prayer timeout | Intermediate | 72 | 70 | +2 | no | 0 | 3 | 11.0 s |
-| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |
-| Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4 | 13.4 s |
+| Q | Topic | Assessed band | Authored | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Q1 | Throwing gems at unicorns | Simple | — | 90 | 85 | +5 | no | 0 | 2 | 8.1 s |
+| Q2 | Prayer timeout | Intermediate | — | 72 | 70 | +2 | no | 0 | 3 | 11.0 s |
+| Q3 | Breaking a thrown gem | Intermediate | — | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |
+| Q4 | Wand of wishing charges | Advanced | — | 87 | 91 | -4 | no | 0 | 4 | 13.4 s |
 
 ### Questions more than 15 points below the peer mean, or with a critical error
 
 **Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters; the rubric says it can survive.
-
-### Questions and answers
-
-#### Q1: Throwing gems at unicorns
-
-**Question:**
-
-> What happens if I throw a gem at a co-aligned unicorn?
-
-**Answer excerpt:**
-
-> The unicorn catches it. A real gem of your alignment raises your Luck; glass does nothing.
-
-#### Q2: Prayer timeout
-
-**Question:**
-
-> How long is the prayer timeout after a successful prayer?
-
-**Answer excerpt:**
-
-> About 50 to 1000 turns, typically near 350.
-
-#### Q3: Breaking a thrown gem
-
-**Question:**
-
-> Will my gem break if I throw it at a unicorn?
-
-**Answer excerpt:**
-
-> Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for…
-
-#### Q4: Wand of wishing charges
-
-**Question:**
-
-> How many wishes can I get from a wand of wishing?
-
-**Answer excerpt:**
-
-> A new wand has 1 to 3 charges, and you can wrest one more.
 
 ## Tool-use behavior
 
@@ -249,6 +207,48 @@ Model B is degraded on speed, and every model rests on a single run, so no inter
 - **Tool guides SHA-256 prefix:** `f59d8b30a1c7`
 - **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 
+## Questions and answers
+
+### Q1: Throwing gems at unicorns
+
+**Question:**
+
+> What happens if I throw a gem at a co-aligned unicorn?
+
+**Answer excerpt:**
+
+> The unicorn catches it. A real gem of your alignment raises your Luck; glass does nothing.
+
+### Q2: Prayer timeout
+
+**Question:**
+
+> How long is the prayer timeout after a successful prayer?
+
+**Answer excerpt:**
+
+> About 50 to 1000 turns, typically near 350.
+
+### Q3: Breaking a thrown gem
+
+**Question:**
+
+> Will my gem break if I throw it at a unicorn?
+
+**Answer excerpt:**
+
+> Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; keep them for…
+
+### Q4: Wand of wishing charges
+
+**Question:**
+
+> How many wishes can I get from a wand of wishing?
+
+**Answer excerpt:**
+
+> A new wand has 1 to 3 charges, and you can wrest one more.
+
 ## Removed content
 
 Automatic validation removed these items from the writer's output before it was stored:
@@ -263,6 +263,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 8 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Detailed · peers anonymized*
+*Document ID 101 · format version 9 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Detailed · peers anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

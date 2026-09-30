@@ -28,8 +28,24 @@ import { safeFileName } from '../../../utils/download.util';
 /** The `badge-score-*` class on a card's value, or `na` for a muted value with none. */
 export type KeyFigureTone = 'high' | 'mid' | 'low' | 'na';
 
+/**
+ * Every card's stable key, in display order, from its `data-figure` attribute. A key never changes
+ * with a label variant (Speed Index / Median Model Time; Assessor / Reference Reader Agreement).
+ */
+export const KEY_FIGURE_KEYS = [
+  'intelligence', 'raw-quality', 'unweighted-mean', 'speed', 'mean-time', 'panel', 'agreement',
+  'holistic', 'answer-duration', 'wall-time', 'model-cost', 'estimated-cost'
+] as const;
+
+export type KeyFigureKey = typeof KEY_FIGURE_KEYS[number];
+
+/** Whether a card, by its key, goes into the whole-strip image. */
+export type KeyFigureFilter = (key: string) => boolean;
+
 /** One key-figure card, as the dialog renders it. */
 export interface KeyFigureCell {
+  /** The card's `data-figure`, or its label's slug where it has none. */
+  readonly key: string;
   readonly label: string;
   /** The value text, whitespace collapsed, with one `*` per advisory marker. */
   readonly value: string;
@@ -74,8 +90,8 @@ export type TextWrapper = (text: string, maxWidth: number, sizePx: number, weigh
 
 export type KeyFiguresAction = 'copy' | 'download';
 
-/** A clipboard outcome, a completed download, or a composition that failed. */
-export type KeyFiguresOutcome = ClipboardImageOutcome | 'downloaded' | 'failed';
+/** A clipboard outcome, a completed download, a strip with no figure selected, or a composition that failed. */
+export type KeyFiguresOutcome = ClipboardImageOutcome | 'downloaded' | 'empty' | 'failed';
 
 /** One encoded image and the name it is saved under. */
 export interface KeyFiguresImage {
@@ -156,12 +172,67 @@ export function readKeyFigureCell(card: HTMLElement): KeyFigureCell {
     }
   }
 
-  return { label, value, notes, main: card.classList.contains('main-score'), tone, footnotes };
+  const key = collapseWhitespace(card.getAttribute('data-figure')) || keyFigureSlug(label);
+  return { key, label, value, notes, main: card.classList.contains('main-score'), tone, footnotes };
 }
 
 /** One cell per `.score-card` under `root`, in document order. */
 export function readKeyFigureCells(root: ParentNode): KeyFigureCell[] {
   return Array.from(root.querySelectorAll<HTMLElement>('.score-card')).map(readKeyFigureCell);
+}
+
+/** The cells `include` accepts, in order; every cell without a filter. */
+export function filterKeyFigureCells(cells: readonly KeyFigureCell[], include?: KeyFigureFilter): KeyFigureCell[] {
+  return include ? cells.filter(cell => include(cell.key)) : [...cells];
+}
+
+// -----------------------------------------------------------------------------------------------
+// The remembered selection
+// -----------------------------------------------------------------------------------------------
+
+export const KEY_FIGURES_STORAGE_KEY = 'overseer.benchmark.runReport.keyFigures';
+const KEY_FIGURES_STORAGE_VERSION = 1;
+
+/**
+ * The keys left out of the whole-strip image, from `{ version: 1, excluded: [...] }` in
+ * localStorage; none when absent or unreadable. Storing the exclusions keeps a card added later in.
+ */
+export function readStoredKeyFigureExclusions(): string[] {
+  try {
+    const raw = localStorage.getItem(KEY_FIGURES_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw) as { version?: unknown; excluded?: unknown } | null;
+    if (!parsed || parsed.version !== KEY_FIGURES_STORAGE_VERSION || !Array.isArray(parsed.excluded)) {
+      return [];
+    }
+    return normalizeKeyFigureExclusions(parsed.excluded.filter((key): key is string => typeof key === 'string'));
+  } catch {
+    return [];
+  }
+}
+
+export function storeKeyFigureExclusions(excluded: readonly string[]): void {
+  try {
+    localStorage.setItem(KEY_FIGURES_STORAGE_KEY, JSON.stringify({
+      version: KEY_FIGURES_STORAGE_VERSION,
+      excluded: normalizeKeyFigureExclusions(excluded)
+    }));
+  } catch {
+    // Storage unavailable: the selection is simply not remembered.
+  }
+}
+
+/** Trimmed, non-empty and distinct, in their first order. */
+function normalizeKeyFigureExclusions(keys: readonly string[]): string[] {
+  const result: string[] = [];
+  for (const key of keys.map(entry => entry.trim())) {
+    if (key !== '' && !result.includes(key)) {
+      result.push(key);
+    }
+  }
+  return result;
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -212,6 +283,8 @@ export function keyFiguresStatusMessage(outcome: KeyFiguresOutcome, subject: str
       return 'Could not copy the image.';
     case 'downloaded':
       return 'Image downloaded.';
+    case 'empty':
+      return 'None of this run\'s key figures is selected; use Choose figures.';
     default:
       return 'Could not create the image.';
   }
@@ -355,7 +428,7 @@ interface StripCandidate {
  * Within {@link STRIP_SQUARE_TOLERANCE} the height is padded to the width, the extra space split
  * above and below the grid. Where no candidate is landscape, a single row widens its cards until it
  * is, and past {@link STRIP_FALLBACK_MAX_CARD_WIDTH} the width is padded to the height, so the result
- * is never portrait.
+ * is never portrait. `cells` may be any selection of the cards, with or without the main card.
  */
 export function chooseStripLayout(
   cells: readonly KeyFigureCell[],
@@ -801,7 +874,7 @@ function measuringContext(): CanvasRenderingContext2D | null {
 }
 
 /** Distinct footnotes of every cell, in order. */
-function stripFootnotes(cells: readonly KeyFigureCell[]): string[] {
+export function stripFootnotes(cells: readonly KeyFigureCell[]): string[] {
   const footnotes: string[] = [];
   for (const footnote of cells.flatMap(cell => cell.footnotes)) {
     if (!footnotes.includes(footnote)) {
@@ -952,9 +1025,13 @@ export async function loadKeyFigureLogos(): Promise<KeyFigureLogos> {
   return { wide, emblem };
 }
 
-/** The strip under `root`, encoded as PNG. */
-export async function renderKeyFiguresStripImage(root: ParentNode, context: ImageContext): Promise<KeyFiguresImage> {
-  const cells = readKeyFigureCells(root);
+/** The strip under `root`, limited to the cells `include` accepts, encoded as PNG. */
+export async function renderKeyFiguresStripImage(
+  root: ParentNode,
+  context: ImageContext,
+  include?: KeyFigureFilter
+): Promise<KeyFiguresImage> {
+  const cells = filterKeyFigureCells(readKeyFigureCells(root), include);
   const now = keyFiguresImageIo.now();
   const canvas = await composeStripImage(cells, context, await loadKeyFigureLogos(), now);
   const { blob } = await encodeFigureImage(canvas, 'png');
@@ -971,19 +1048,26 @@ export async function renderKeyFigureCardImage(card: HTMLElement, context: Image
 }
 
 /**
- * Composes the strip (`card` null, read under `root`) or one card, then copies or saves it, and
- * returns the status line to announce. Never throws.
+ * Composes the strip (`card` null, read under `root` and limited to the cells `include` accepts) or
+ * one card, then copies or saves it, and returns the status line to announce. A strip with no cell
+ * left is not composed. Never throws.
  */
 export async function exportKeyFiguresImage(
   action: KeyFiguresAction,
   root: ParentNode,
   card: HTMLElement | null,
-  context: ImageContext
+  context: ImageContext,
+  include?: KeyFigureFilter
 ): Promise<string> {
   const subject = card ? (readKeyFigureCell(card).label || 'Key figure') : 'Key figures';
+  if (!card && filterKeyFigureCells(readKeyFigureCells(root), include).length === 0) {
+    return keyFiguresStatusMessage('empty', subject);
+  }
   let outcome: KeyFiguresOutcome;
   try {
-    const image = card ? await renderKeyFigureCardImage(card, context) : await renderKeyFiguresStripImage(root, context);
+    const image = card
+      ? await renderKeyFigureCardImage(card, context)
+      : await renderKeyFiguresStripImage(root, context, include);
     if (action === 'download') {
       keyFiguresImageIo.save(image.blob, image.fileName);
       outcome = 'downloaded';

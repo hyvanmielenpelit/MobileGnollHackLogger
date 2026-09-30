@@ -50,7 +50,7 @@ namespace Overseer.Services.Tools
                 });
             }
 
-            string topic = topicElement.GetString()!;
+            string topic = topicElement.GetString()!.Trim();
             var articleContent = _knowledgeBaseService.GetArticle(topic);
 
             if (articleContent != null)

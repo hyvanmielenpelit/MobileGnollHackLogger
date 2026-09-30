@@ -1683,14 +1683,114 @@ public class BenchmarkReportPackValidatorTests
         Assert.Empty(Validate(Tr, output));
     }
 
-    [Fact]
-    public void TheWarningRules_AreTwelveToEighteen()
+    [Theory]
+    [InlineData("Prompt the model to name conduct-safe fallbacks such as prayer.", "prompt the model")]
+    [InlineData("Strengthen knowledge of which NPC provides which service in GnollHack towns.", "GnollHack")]
+    [InlineData("Add a rule to the assistant's prompt about shop prices.", "the assistant's prompt")]
+    [InlineData("Add a rule to the assistant’s prompt about shop prices.", "the assistant's prompt")]
+    [InlineData("Cover every rubric point before answering.", "rubric")]
+    [InlineData("Read the system prompt more closely.", "system prompt")]
+    public void Rule18_AGameFactOrAPromptChange_ForModelDevelopers_AsksForRepair(string text, string term)
     {
-        for (int rule = 1; rule <= 18; rule++)
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Recommendations[0].Text = text;
+
+        var note = Assert.Single(Validate(Tr, output));
+
+        Assert.Equal(BenchmarkReportPackValidator.ModelDeveloperScopeRule, note.Rule);
+        Assert.Contains("\"" + term + "\"", note.Message);
+        Assert.Contains("general capability a model developer can train or tune", note.Message);
+    }
+
+    [Theory]
+    [InlineData("State the decisive mechanic behind a verdict before the verdict itself.")]
+    [InlineData("Commit to a conclusion the inputs already settle instead of hedging.")]
+    public void Rule18_AGeneralCapability_Passes(string text)
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Recommendations[0].Text = text;
+
+        Assert.Empty(Validate(Tr, output));
+    }
+
+    // Rule 19 -----------------------------------------------------------------------------------
+
+    /// <summary>The writer test sheet with a critical-error count of zero and a scored-answer count.</summary>
+    private static BenchmarkReportFactSheet ZeroCountSheet(string criticalDisplay = "0 of 18 answers")
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "answers.scored", Value = JsonValue.Create(18), Display = "18" });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "errors.critical", Value = JsonValue.Create(0), Display = criticalDisplay });
+        sheet.Facts = sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
+        return sheet;
+    }
+
+    [Theory]
+    [InlineData("It made no critical errors across {{errors.critical}}.", "no")]
+    [InlineData("No critical errors across {{errors.critical}}.", "no")]
+    [InlineData("It never erred in {{errors.critical}}.", "never")]
+    [InlineData("It answered without critical errors, {{errors.critical}}.", "without")]
+    [InlineData("There were zero critical errors in {{errors.critical}}.", "zero")]
+    [InlineData("None of the answers, {{errors.critical}}, erred.", "none")]
+    public void Rule19_ANegationBeforeATokenReadingZero_AsksForRepair(string text, string negation)
+    {
+        var note = Assert.Single(ValidateMeaning(text, ZeroCountSheet()));
+
+        Assert.Equal(BenchmarkReportPackValidator.ZeroTokenNegationRule, note.Rule);
+        Assert.Equal(19, note.Rule);
+        Assert.Equal(MeaningP1, note.Location);
+        Assert.Contains("\"" + negation + "\" before {{errors.critical}}, which reads \"0 of 18 answers\"", note.Message);
+        Assert.Contains("no critical errors across all {{answers.scored}} answers", note.Message);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(19));
+    }
+
+    [Theory]
+    // Five words between the negation and the token.
+    [InlineData("No answer from the model in {{errors.critical}} was flagged.")]
+    // The recommended wording.
+    [InlineData("It made no critical errors across all {{answers.scored}} answers.")]
+    [InlineData("{{errors.critical}} had a critical error.")]
+    // The negation ends an earlier sentence.
+    [InlineData("It made no mistakes. {{errors.critical}} had a critical error.")]
+    public void Rule19_PassesAFarNegation_TheRecommendedWording_AndAnotherSentence(string text)
+    {
+        Assert.Empty(ValidateMeaning(text, ZeroCountSheet()));
+    }
+
+    [Fact]
+    public void Rule19_IgnoresATokenWhoseValueDoesNotStartWithZero()
+    {
+        Assert.Empty(ValidateMeaning("It made no critical errors beyond {{errors.critical}}.", ZeroCountSheet("1 of 18 answers")));
+        Assert.Empty(ValidateMeaning("It made no critical errors across {{answers.scored}} answers.", ZeroCountSheet()));
+    }
+
+    [Fact]
+    public void Rule19_KeepsTheText_AndTriggersTheRepairTurn()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.Meaning] = "It made no critical errors across {{errors.critical}}.";
+
+        var result = BenchmarkReportPackValidator.DropInvalid(Es, output, ZeroCountSheet(), ReportPackWriterTestData.Content());
+
+        Assert.False(result.Fatal);
+        Assert.Equal("It made no critical errors across {{errors.critical}}.", result.Output.Sections[BenchmarkReportSlots.Meaning]);
+        var note = Assert.Single(result.Notes);
+        Assert.Equal(19, note.Rule);
+        Assert.False(note.Dropped);
+
+        // Any note asks for the repair turn; the repair message carries it.
+        string repair = BenchmarkReportPackPrompt.BuildRepairMessage(Validate(Es, output, ZeroCountSheet()));
+        Assert.Contains("- rule 19 at sections.meaning[p1]: Puts \"no\" before {{errors.critical}}", repair);
+    }
+
+    [Fact]
+    public void TheWarningRules_AreTwelveToNineteen()
+    {
+        for (int rule = 1; rule <= 19; rule++)
         {
             Assert.Equal(rule >= 12, BenchmarkReportPackValidator.IsWarningRule(rule));
         }
-        Assert.False(BenchmarkReportPackValidator.IsWarningRule(19));
+        Assert.False(BenchmarkReportPackValidator.IsWarningRule(20));
     }
 }
 

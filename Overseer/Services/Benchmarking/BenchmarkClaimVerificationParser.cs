@@ -42,6 +42,32 @@ public record BenchmarkClaimVerification(
     public IReadOnlyList<string>? RaisedBy { get; init; }
 
     /// <summary>
+    /// The panel members that charged this item as an accused sentence, <c>"A"</c> and/or <c>"B"</c>;
+    /// a subset of <see cref="RaisedBy"/>. Null in a single-assessor run, on an item no member
+    /// accused, and on a record stored before harness 44.
+    /// </summary>
+    [JsonPropertyName("accusedBy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? AccusedBy { get; init; }
+
+    /// <summary>
+    /// The panel members that recorded this item as <c>Suspected false:</c>, <c>"A"</c> and/or
+    /// <c>"B"</c>; a subset of <see cref="RaisedBy"/>. Null in a single-assessor run, on an item no
+    /// member suspected, and on a record stored before harness 44.
+    /// </summary>
+    [JsonPropertyName("suspectedBy")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? SuspectedBy { get; init; }
+
+    /// <summary>The members an accusation on this item is attributed to: <see cref="AccusedBy"/>, else <see cref="RaisedBy"/>.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string>? AccusingMembers => AccusedBy ?? RaisedBy;
+
+    /// <summary>The members a suspected-false record on this item is attributed to: <see cref="SuspectedBy"/>, else <see cref="RaisedBy"/>.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string>? SuspectingMembers => SuspectedBy ?? RaisedBy;
+
+    /// <summary>
     /// Set by <see cref="BenchmarkCitationLivenessCheck"/> when the cited source function has no live
     /// call site, and by <see cref="BenchmarkClaimVerificationParser"/> when a charged part was not
     /// judged separately. The stored <see cref="Verdict"/> is left as the verifier gave it; every flag

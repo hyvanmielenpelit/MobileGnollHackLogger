@@ -498,7 +498,7 @@ public class BenchmarkRunLauncher
         // Sentry's scope stack is async-local, so without this the run reports under the launch
         // request's context and collects a tag from every log scope opened beneath it while it runs.
         long runId = run.Id;
-        bool verboseMode = request.VerboseMode ?? false;
+        var (verboseMode, allowSourceCodeReferences) = ResolvePromptSwitches(request);
         // async, not a Task-returning lambda: the scope must be disposed when the run finishes, and
         // a non-async lambda would dispose it the moment RunAsync hit its first await.
         _ = Task.Run(async () =>
@@ -510,11 +510,19 @@ public class BenchmarkRunLauncher
                 scope.SetTag("RunId", runId.ToString(CultureInfo.InvariantCulture));
             });
 
-            await _benchmarkService.RunAsync(runId, cts.Token, verboseMode);
+            await _benchmarkService.RunAsync(runId, cts.Token, verboseMode, allowSourceCodeReferences);
         });
 
         return BenchmarkRunLaunchResult.Ok(run.Id);
     }
+
+    /// <summary>
+    /// The request's two candidate prompt switches as a run records them: a null
+    /// <see cref="StartBenchmarkRunRequest.VerboseMode"/> is the concise style, and a null
+    /// <see cref="StartBenchmarkRunRequest.AllowSourceCodeReferences"/> is disallowed, a user's default.
+    /// </summary>
+    internal static (bool VerboseMode, bool AllowSourceCodeReferences) ResolvePromptSwitches(StartBenchmarkRunRequest request)
+        => (request.VerboseMode ?? false, request.AllowSourceCodeReferences ?? false);
 
     /// <summary>
     /// The rates written here are the <i>resolved</i> card — a scheduled change has already been folded

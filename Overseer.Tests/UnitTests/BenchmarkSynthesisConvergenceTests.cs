@@ -276,4 +276,68 @@ public class BenchmarkSynthesisConvergenceTests
     {
         Assert.Empty(BenchmarkSynthesisConvergence.Compute(None(), None()));
     }
+
+    [Fact]
+    public void AConvergentRow_CarriesEachMembersQuestions_AndTheQuestionsBothNamed_Sorted()
+    {
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[] { Finding("weakness", "accuracy", "A.", 15, 3, 13, 1, 11) },
+            new[] { Finding("weakness", "accuracy", "B.", 18, 13, 9, 16, 15) });
+
+        var row = Assert.Single(rows);
+        Assert.Equal(BenchmarkConvergenceStatus.Convergent, row.Status);
+        Assert.Equal(new[] { 1, 3, 9, 11, 13, 15, 16, 18 }, row.Questions);
+        Assert.Equal(new[] { 1, 3, 11, 13, 15 }, row.QuestionsA);
+        Assert.Equal(new[] { 9, 13, 15, 16, 18 }, row.QuestionsB);
+        Assert.Equal(new[] { 13, 15 }, row.SharedQuestions);
+    }
+
+    [Fact]
+    public void AComponentOfSeveralFindings_UnitesEachMembersQuestionsBeforeIntersecting()
+    {
+        // A's two findings each meet B's one on a different question.
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[] { Finding("weakness", "accuracy", "A1.", 2, 4), Finding("weakness", "accuracy", "A2.", 6) },
+            new[] { Finding("weakness", "accuracy", "B.", 4, 6, 8) });
+
+        var row = Assert.Single(rows);
+        Assert.Equal(new[] { 2, 4, 6 }, row.QuestionsA);
+        Assert.Equal(new[] { 4, 6, 8 }, row.QuestionsB);
+        Assert.Equal(new[] { 4, 6 }, row.SharedQuestions);
+    }
+
+    [Fact]
+    public void OneMemberAndRunWideRows_HaveNoSharedQuestions_AndTheStatusesAreUnchanged()
+    {
+        var rows = BenchmarkSynthesisConvergence.Compute(
+            new[]
+            {
+                Finding("strength", "tool_use", "A run-wide."),
+                Finding("weakness", "completeness", "A alone.", 5),
+                Finding("strength", "accuracy", "A strength.", 7, 8)
+            },
+            new[]
+            {
+                Finding("strength", "tool_use", "B run-wide."),
+                Finding("weakness", "accuracy", "B weakness.", 8, 9)
+            });
+
+        var runWide = rows.Single(r => r.Questions.Count == 0);
+        Assert.Equal(BenchmarkConvergenceStatus.Convergent, runWide.Status);
+        Assert.Empty(runWide.QuestionsA);
+        Assert.Empty(runWide.QuestionsB);
+        Assert.Empty(runWide.SharedQuestions);
+
+        var alone = rows.Single(r => r.Questions.Contains(5));
+        Assert.Equal(BenchmarkConvergenceStatus.MemberAOnly, alone.Status);
+        Assert.Equal(new[] { 5 }, alone.QuestionsA);
+        Assert.Empty(alone.QuestionsB);
+        Assert.Empty(alone.SharedQuestions);
+
+        var conflicting = rows.Single(r => r.Questions.Contains(7));
+        Assert.Equal(BenchmarkConvergenceStatus.Conflicting, conflicting.Status);
+        Assert.Equal(new[] { 7, 8 }, conflicting.QuestionsA);
+        Assert.Equal(new[] { 8, 9 }, conflicting.QuestionsB);
+        Assert.Equal(new[] { 8 }, conflicting.SharedQuestions);
+    }
 }

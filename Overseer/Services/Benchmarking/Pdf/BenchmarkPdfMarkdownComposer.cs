@@ -120,8 +120,11 @@ internal static class BenchmarkPdfMarkdownComposer
     /// <summary>A chart drawn at a figure marker, numbered from 1 in order of appearance.</summary>
     internal sealed record Figure(int Number, BenchmarkReportRenderChart Chart);
 
-    /// <summary>The room a figure's image may take, in points: the text column's width and the height cap.</summary>
-    internal readonly record struct FigureFrame(float Width, float MaxHeight);
+    /// <summary>
+    /// The room a figure's image may take, in points: the text column's width and the height cap; and
+    /// the page's height between its margins, 0 when unknown.
+    /// </summary>
+    internal readonly record struct FigureFrame(float Width, float MaxHeight, float PageHeight = 0);
 
     /// <summary><paramref name="CamelCaseBreaks"/>: a table header, whose identifiers may wrap between words.</summary>
     private sealed record Context(Prepared Document, CancellationToken Token, FigureFrame Frame, bool CamelCaseBreaks = false);
@@ -253,18 +256,95 @@ internal static class BenchmarkPdfMarkdownComposer
     }
 
     /// <summary>
-    /// The body, its figures sized within <paramref name="frame"/>. The token is checked between blocks,
-    /// so a canceled request stops composing.
+    /// The body, its figures sized within <paramref name="frame"/>. The last <c>##</c> section is kept on
+    /// one page where <see cref="KeptTogetherSectionStart"/> finds it fits; otherwise it flows as the
+    /// rest of the body does. The token is checked between blocks, so a canceled request stops composing.
     /// </summary>
     public static void ComposeBody(IContainer container, Prepared document, CancellationToken cancellationToken, FigureFrame frame)
     {
         var ctx = new Context(document, cancellationToken, frame);
+        int? keptStart = KeptTogetherSectionStart(document, frame);
         container.Column(col =>
         {
             col.Spacing(BenchmarkPdfStyle.BlockSpacing);
-            Blocks(col, document.Blocks, ctx, 0);
+            if (keptStart is not int start)
+            {
+                Blocks(col, document.Blocks, ctx, 0);
+                return;
+            }
+
+            Blocks(col, document.Blocks.Take(start).ToList(), ctx, 0);
+            col.Item().PreventPageBreak().Column(section =>
+            {
+                section.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                Blocks(section, document.Blocks.Skip(start).ToList(), ctx, 0);
+            });
         });
     }
+
+    /// <summary>
+    /// Room the running header and the footer take from a page's height between its margins, in points,
+    /// with a margin for error.
+    /// </summary>
+    internal const float PageFrameAllowance = 72f;
+
+    /// <summary>
+    /// The index in <see cref="Prepared.Blocks"/> of the last top-level <c>##</c> heading, whose section
+    /// runs to the end of the body, when that section is kept on one page: the body has at least two
+    /// <c>##</c> sections, and the section's <see cref="EstimatedHeight"/> fits in the page's height
+    /// less <see cref="PageFrameAllowance"/>. Null otherwise, and when the page height is unknown.
+    /// </summary>
+    internal static int? KeptTogetherSectionStart(Prepared document, FigureFrame frame)
+    {
+        if (frame.PageHeight <= 0 || document.Contents.Count < 2) return null;
+
+        int start = -1;
+        for (int i = 0; i < document.Blocks.Count; i++)
+        {
+            if (document.Blocks[i] is HeadingBlock { Level: 2 }) start = i;
+        }
+        if (start < 0) return null;
+
+        float height = 0;
+        for (int i = start; i < document.Blocks.Count; i++)
+        {
+            height += EstimatedHeight(document.Blocks[i], document, frame) + BenchmarkPdfStyle.BlockSpacing;
+        }
+        return height <= frame.PageHeight - PageFrameAllowance ? start : null;
+    }
+
+    /// <summary>
+    /// A generous estimate of a top-level block's height, in points: a heading at its own height, a
+    /// drawn figure at its image's height cap and a caption, a table at two lines of cell text per
+    /// source line, and any other block at one line of body text per <see cref="EstimatedLineCharacters"/>
+    /// characters of each source line. It errs high, so a section it keeps together fits.
+    /// </summary>
+    internal static float EstimatedHeight(Block block, Prepared document, FigureFrame frame)
+    {
+        switch (block)
+        {
+            case HeadingBlock heading:
+                return HeadingHeight(heading.Level);
+            case ParagraphBlock paragraph when document.Figures.ContainsKey(paragraph):
+                return frame.MaxHeight + 3 * BenchmarkPdfStyle.BaseSize * BenchmarkPdfStyle.LineHeight;
+            case ParagraphBlock paragraph when IsUndrawnMarker(paragraph, document):
+                return 0;
+        }
+
+        float lineHeight = block is MdTable
+            ? 2 * BenchmarkPdfStyle.TableCellSize * BenchmarkPdfStyle.LineHeight
+            : BenchmarkPdfStyle.BaseSize * BenchmarkPdfStyle.LineHeight;
+
+        int lines = 0;
+        foreach (string line in SourceOf(block, document.Source).Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            lines += Math.Max(1, (int)Math.Ceiling(line.Length / (double)EstimatedLineCharacters));
+        }
+        return lines * lineHeight;
+    }
+
+    /// <summary>Characters of body text <see cref="EstimatedHeight"/> counts to a line: fewer than the text width holds.</summary>
+    internal const int EstimatedLineCharacters = 80;
 
     // ---------------------------------------------------------------------------------------------
     // Blocks

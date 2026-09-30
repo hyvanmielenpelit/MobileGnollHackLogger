@@ -1,0 +1,73 @@
+@use '../benchmark-dialog-frame' as frame;
+
+.gh-dialog.kfch-dialog {
+  @include frame.frame($width: 32rem);
+
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+
+  h3:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  // Cancel on the left, the two exports on the right; the reason takes a line of its own above them.
+  .kfch-cancel {
+    margin-inline-end: auto;
+  }
+
+  .kfch-reason {
+    flex-basis: 100%;
+  }
+}
+
+.kfch-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.kfch-caption {
+  margin: 0;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: #ccc;
+}
+
+.kfch-bulk {
+  display: inline-flex;
+  gap: 12px;
+
+  .btn-link {
+    font-size: var(--text-secondary);
+  }
+}
+
+.kfch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kfch-value {
+  color: #999;
+  font-variant-numeric: tabular-nums;
+}
+
+.kfch-count {
+  margin: 14px 0 4px;
+  font-size: var(--text-secondary);
+  color: #ccc;
+}
+
+.kfch-hint {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #999;
+}

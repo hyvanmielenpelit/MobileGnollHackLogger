@@ -752,6 +752,11 @@ export interface StartBenchmarkRunRequest {
   acknowledgeSameProviderReportWriter?: boolean;
   verboseMode?: boolean;
   /**
+   * Whether the candidate may cite source files and lines. False, the production default, matches a
+   * regular user who has not turned on Show source code references; omitted is the server's default.
+   */
+  allowSourceCodeReferences?: boolean | null;
+  /**
    * How many times to execute this identical request, strictly one at a time. 1 (the default)
    * is the single-run path exactly as before multi-run existed: no series row, no auto-created
    * group. Bounded by the live configured MaxRunsPerDay, which the server re-checks; the field's

@@ -16,7 +16,7 @@ import { BenchmarkBackgroundActivityService } from '../../services/benchmark-bac
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.component';
-import { keyFiguresImageIo } from './run-report-frame/key-figures-image';
+import { KEY_FIGURES_STORAGE_KEY, keyFiguresImageIo } from './run-report-frame/key-figures-image';
 import { PDFJS_LOADER } from '../../shared/pdf-viewer/pdfjs-loader';
 import { ReportDocumentsLauncherComponent } from './report-pack/report-documents-launcher.component';
 
@@ -43,6 +43,7 @@ describe('AdminBenchmarkComponent', () => {
       localStorage.removeItem(COMPARISON_SELECTION_KEY);
       localStorage.removeItem(COMPARISON_LAUNCHER_KEY);
       localStorage.removeItem(RUN_REPORT_TAB_STORAGE_KEY);
+      localStorage.removeItem(KEY_FIGURES_STORAGE_KEY);
     } catch { /* private-browsing modes throw */ }
   }
 
@@ -4671,10 +4672,11 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const labels = groupLabels('test');
-      expect(labels.length).toBe(3);
+      expect(labels.length).toBe(4);
       expect(labels[0]).toMatch(/^Benchmark Suite/);
       expect(labels[1]).toMatch(/^Scoring Profile/);
       expect(labels[2]).toMatch(/^Response Style/);
+      expect(labels[3]).toMatch(/^Source Code References/);
     });
 
     it('should lift the Model Under Test into a primary field above the setup groups', () => {
@@ -5059,6 +5061,27 @@ describe('AdminBenchmarkComponent', () => {
       expect(card().querySelector('#candidateResponseStyleNote')?.textContent).toContain('Only Accuracy stays comparable');
       expect(card().querySelector('#candidateResponseStyle')!.getAttribute('aria-describedby'))
         .toBe('candidateResponseStyleHint candidateResponseStyleNote');
+    });
+
+    it('should offer Source Code References beside Response Style, Disallowed first and by default', () => {
+      fixture.detectChanges();
+
+      const select = card().querySelector('#candidateSourceCodeReferences') as HTMLSelectElement;
+      expect(select).toBeTruthy();
+      expect(select.closest('fieldset')).toBe(card().querySelector('#candidateResponseStyle')!.closest('fieldset'));
+      expect((card().querySelector('label[for="candidateSourceCodeReferences"]')?.textContent || '').trim())
+        .toBe('Source Code References');
+      expect(Array.from(select.options).map(o => o.textContent?.trim())).toEqual([
+        'Disallowed — production default',
+        'Allowed — answers cite source files and lines'
+      ]);
+      expect(component.candidateAllowSourceCodeReferences).toBeFalse();
+      expect(select.getAttribute('aria-describedby')).toBe('candidateSourceCodeReferencesHint');
+
+      const hint = card().querySelector('#candidateSourceCodeReferencesHint') as HTMLElement;
+      expect(hint.closest('.gh-info-popup')?.getAttribute('popover')).toBe('auto');
+      expect(hint.textContent).toContain('Show source code references');
+      expect(select.parentElement!.classList).toContain('gh-field-row');
     });
 
     it('should show the Second Opinion Mode reason while the mode is disabled', () => {
@@ -5832,6 +5855,20 @@ describe('AdminBenchmarkComponent', () => {
       // Without raisedBy, a single-assessor run's labels are unchanged.
       expect(component.claimRoleLabels(['criticalErrorQuote', 'outOfRubricBasis', 'accusedQuote']))
         .toEqual(['critical-error quote', 'out-of-rubric basis', 'sentence the assessor charged as false']);
+    });
+
+    it('should name only the accusing member of a sentence both members raised', () => {
+      const box = renderClaimVerifications(JSON.stringify([
+        { claimIndex: 0, claim: 'Charged by A', verdict: 'Supported', citation: 'src/a.c', basis: 'True.', roles: ['unverifiedClaim', 'accusedQuote'], raisedBy: ['A', 'B'], accusedBy: ['A'] },
+        { claimIndex: 1, claim: 'Legacy record', verdict: 'Supported', citation: 'src/b.c', basis: 'True.', roles: ['accusedQuote'], raisedBy: ['A', 'B'] }
+      ]));
+
+      const items: HTMLElement[] = Array.from(box.querySelectorAll('.claim-verification-item'));
+      const labelsOf = (item: HTMLElement) =>
+        Array.from(item.querySelectorAll('.claim-role-label')).map(l => (l.textContent || '').trim());
+      expect(labelsOf(items[0])).toEqual(['(sentence member A charged as false)']);
+      // A record stored before harness 44 has no accusedBy and falls back to raisedBy.
+      expect(labelsOf(items[1])).toEqual(['(sentence both members charged as false)']);
     });
 
     it('should render a legacy verification record without roles and without labels', () => {
@@ -7170,6 +7207,20 @@ describe('AdminBenchmarkComponent', () => {
       }));
     });
 
+    it('should send allowSourceCodeReferences, false by default', () => {
+      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 101 } as any));
+      component.selectedSuiteId = 1;
+      component.testedConfigId = 10;
+      component.assessorConfigId = 20;
+
+      component.startBenchmark();
+      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].allowSourceCodeReferences).toBeFalse();
+
+      component.candidateAllowSourceCodeReferences = true;
+      component.startBenchmark();
+      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].allowSourceCodeReferences).toBeTrue();
+    });
+
     it('should identify failed claim verifications and trigger retry', () => {
       component.selectedRunDetail = {
         id: 55,
@@ -7579,8 +7630,25 @@ describe('AdminBenchmarkComponent', () => {
       expect(stored.claimVerifierConfigId).toBe(1);
       expect(stored.scoringProfileId).toBe(1);
       expect(stored.verboseMode).toBeTrue();
+      expect(stored.allowSourceCodeReferences).toBeFalse();
       expect(stored.runCount).toBe(1);
       component.ngOnDestroy();
+    });
+
+    it('should remember Source Code References, and start a stored setup without it at Disallowed', () => {
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, allowSourceCodeReferences: true }));
+      const allowed = TestBed.createComponent(AdminBenchmarkComponent);
+      allowed.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      allowed.detectChanges();
+      expect(allowed.componentInstance.candidateAllowSourceCodeReferences).toBeTrue();
+      allowed.componentInstance.ngOnDestroy();
+
+      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, verboseMode: true }));
+      const older = TestBed.createComponent(AdminBenchmarkComponent);
+      older.componentInstance.systemConfigs = [component.systemConfigs[0]];
+      older.detectChanges();
+      expect(older.componentInstance.candidateAllowSourceCodeReferences).toBeFalse();
+      older.componentInstance.ngOnDestroy();
     });
 
     it('should restore every remembered selection on the next construction', () => {
@@ -11666,7 +11734,16 @@ describe('AdminBenchmarkComponent', () => {
 
         const group = panel.querySelector('.rr-figures-head > [role="group"][aria-label="Key figures actions"]') as HTMLElement;
         const names = Array.from(group.querySelectorAll('button')).map(b => b.getAttribute('aria-label'));
-        expect(names).toEqual(['Copy key figures of run 55 as an image', 'Download key figures of run 55 as a PNG image']);
+        expect(names).toEqual([
+          'Copy key figures of run 55 as an image',
+          'Download key figures of run 55 as a PNG image',
+          'Choose key figures for the image of run 55'
+        ]);
+        const choose = group.querySelector('#rr-figures-choose-btn') as HTMLButtonElement;
+        expect(choose.classList).toContain('btn-ghost');
+        expect(choose.textContent?.replace(/\s+/g, ' ').trim()).toBe('Choose figures');
+        expect(choose.querySelector('svg')).toBeNull();
+        expect(choose.getAttribute('aria-haspopup')).toBe('dialog');
         for (const button of Array.from(group.querySelectorAll('button'))) {
           const tip = group.querySelector('#' + button.getAttribute('interestfor')) as HTMLElement;
           expect(tip.getAttribute('popover')).toBe('hint');
@@ -11769,6 +11846,169 @@ describe('AdminBenchmarkComponent', () => {
         cardCopy.click();
         expect(copy).not.toHaveBeenCalled();
         component.keyFiguresExporting = false;
+      });
+
+      function meanTimeCard(): HTMLElement {
+        return dialog().querySelector('.score-card[data-figure="mean-time"]') as HTMLElement;
+      }
+
+      function textOf(element: Element | null | undefined): string {
+        return (element?.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+
+      it('should show Mean Time per Question right after the speed card, with the median in its note', () => {
+        component.selectedRunDetail = reportRun();
+        fixture.detectChanges();
+
+        const card = meanTimeCard();
+        expect(card).toBeTruthy();
+        expect(card.previousElementSibling?.getAttribute('data-figure')).toBe('speed');
+        expect(textOf(card.querySelector('.score-label'))).toBe('Mean Time per Question');
+        expect(textOf(card.querySelector('.score-subvalue'))).toBe('1.0 s');
+        expect(textOf(card.querySelector('.score-note'))).toBe('model time, tools excluded · median 1.0 s');
+        expect(card.querySelector('app-key-figure-card-actions button')?.getAttribute('aria-label'))
+          .toBe('Copy Mean Time per Question of run 55 as an image');
+      });
+
+      it('should write the mean in tenths of a second under a minute', () => {
+        component.selectedRunDetail = reportRun({
+          answers: [1, 2, 3].map(i => reportAnswer(i, { modelTimeMs: [15000, 14700, 21900][i - 1] }))
+        });
+        fixture.detectChanges();
+        expect(component.meanModelTimeMs).toBe(17200);
+        expect(textOf(meanTimeCard().querySelector('.score-subvalue'))).toBe('17.2 s');
+        expect(textOf(meanTimeCard().querySelector('.score-note'))).toBe('model time, tools excluded · median 15.0 s');
+      });
+
+      it('should write the mean in minutes and seconds from one minute', () => {
+        component.selectedRunDetail = reportRun({
+          answers: [1, 2, 3].map(i => reportAnswer(i, { modelTimeMs: [60000, 90000, 66000][i - 1] }))
+        });
+        fixture.detectChanges();
+        expect(component.meanModelTimeMs).toBe(72000);
+        expect(textOf(meanTimeCard().querySelector('.score-subvalue'))).toBe('1m 12s');
+        expect(textOf(meanTimeCard().querySelector('.score-note'))).toBe('model time, tools excluded · median 1m 6s');
+
+        expect(component.formatModelTime(59940)).toBe('59.9 s');
+        expect(component.formatModelTime(59960)).toBe('1m 0s');
+      });
+
+      it('should keep the card with a dash when no question was answered', () => {
+        component.selectedRunDetail = reportRun({
+          answers: [1, 2].map(i => reportAnswer(i, { status: 'Failed', qualityScore: null }))
+        });
+        fixture.detectChanges();
+
+        expect(component.meanModelTimeMs).toBeNull();
+        const value = meanTimeCard().querySelector('.score-subvalue') as HTMLElement;
+        expect(textOf(value)).toBe('—');
+        expect(value.classList).toContain('text-muted');
+        expect(textOf(meanTimeCard().querySelector('.score-note'))).toBe('no answered question');
+      });
+
+      it('should give every card a stable data-figure key, in display order', () => {
+        component.selectedRunDetail = reportRun({
+          isPanelRun: true, coAssessorModelDisplayNameUsed: 'Second Assessor',
+          secondOpinionGradedAnswerCount: 3, estimatedCandidateCost: 1, rawQualityIndex: 50, qualityIndex: 73
+        });
+        fixture.detectChanges();
+
+        const keys = Array.from(dialog().querySelectorAll('.rr-figures > .score-card'))
+          .map(card => card.getAttribute('data-figure'));
+        expect(keys).toEqual(component.shownKeyFigureKeys);
+        expect(keys).toEqual([
+          'intelligence', 'raw-quality', 'speed', 'mean-time', 'panel', 'agreement', 'holistic',
+          'answer-duration', 'wall-time', 'model-cost', 'estimated-cost'
+        ]);
+      });
+
+      it('should choose figures in a nested dialog, remember them, and export only those', async () => {
+        openReport(reportRun());
+        const choose = dialog().querySelector('#rr-figures-choose-btn') as HTMLButtonElement;
+        choose.click();
+        fixture.detectChanges();
+
+        const chooser = dialog().querySelector('app-key-figures-chooser dialog') as HTMLDialogElement;
+        expect(chooser.open).toBeTrue();
+        expect(chooser.matches(':modal')).toBeTrue();
+        const rows = Array.from(chooser.querySelectorAll('li')).map(li => li.getAttribute('data-figure'));
+        expect(rows).toEqual(['intelligence', 'speed', 'mean-time', 'holistic', 'answer-duration', 'wall-time', 'estimated-cost']);
+        expect(textOf(chooser.querySelector('li[data-figure="mean-time"] label'))).toBe('Mean Time per Question — 1.0 s');
+        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('7 of 7 selected');
+
+        (chooser.querySelector('#kfch-speed') as HTMLInputElement).click();
+        (chooser.querySelector('#kfch-estimated-cost') as HTMLInputElement).click();
+        fixture.detectChanges();
+        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('5 of 7 selected');
+
+        const save = spyOn(keyFiguresImageIo, 'save');
+        const handler = spyOn(component, 'onKeyFiguresChosen').and.callThrough();
+        const closed = nextEvent(chooser, 'close');
+        (chooser.querySelector('.kfch-download') as HTMLButtonElement).click();
+        await handler.calls.mostRecent().returnValue;
+        await closed;
+        fixture.detectChanges();
+
+        expect(JSON.parse(localStorage.getItem(KEY_FIGURES_STORAGE_KEY)!))
+          .toEqual({ version: 1, excluded: ['speed', 'estimated-cost'] });
+        expect(component.keyFigureExclusions).toEqual(['speed', 'estimated-cost']);
+        expect(save).toHaveBeenCalledTimes(1);
+        expect(status()).toBe('Image downloaded.');
+        expect(chooser.open).toBeFalse();
+        expect(reportDialog().open).toBeTrue();
+        expect(document.activeElement).toBe(choose);
+
+        expect(textOf(choose)).toBe('Choose figures (5 of 7)');
+        expect(choose.getAttribute('aria-label')).toBe('Choose key figures for the image of run 55, 5 of 7 selected');
+        expect(dialog().querySelector('#rr-figures-copy-btn')?.getAttribute('aria-label'))
+          .toBe('Copy key figures of run 55 as an image, 5 of 7 key figures');
+        expect(dialog().querySelector('#rr-figures-download-btn')?.getAttribute('aria-label'))
+          .toBe('Download key figures of run 55 as a PNG image, 5 of 7 key figures');
+      });
+
+      it('should discard the chooser draft on Cancel', async () => {
+        openReport(reportRun());
+        (dialog().querySelector('#rr-figures-choose-btn') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        const chooser = dialog().querySelector('app-key-figures-chooser dialog') as HTMLDialogElement;
+        (chooser.querySelector('.kfch-none') as HTMLButtonElement).click();
+        fixture.detectChanges();
+
+        const closed = nextEvent(chooser, 'close');
+        (chooser.querySelector('.kfch-cancel') as HTMLButtonElement).click();
+        await closed;
+        fixture.detectChanges();
+
+        expect(component.keyFigureExclusions).toEqual([]);
+        expect(localStorage.getItem(KEY_FIGURES_STORAGE_KEY)).toBeNull();
+        expect(reportDialog().open).toBeTrue();
+      });
+
+      it('should export the remembered selection from the one-click Copy, and nothing when none of it is shown', async () => {
+        component.selectedRunDetail = reportRun();
+        component.keyFigureExclusions = [...component.shownKeyFigureKeys];
+        fixture.detectChanges();
+        const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
+        const handler = spyOn(component, 'copyKeyFigures').and.callThrough();
+
+        await clickAndSettle(dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement, handler);
+        expect(copy).not.toHaveBeenCalled();
+        expect(status()).toBe('None of this run\'s key figures is selected; use Choose figures.');
+
+        component.keyFigureExclusions = ['panel', 'holistic'];
+        fixture.detectChanges();
+        expect(component.keyFiguresSelectionLabel).toBe('6 of 7');
+        await clickAndSettle(dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement, handler);
+        expect(copy).toHaveBeenCalledTimes(1);
+        expect(status()).toBe('Key figures copied as an image.');
+        component.keyFigureExclusions = [];
+      });
+
+      it('should read the remembered selection when constructed', () => {
+        localStorage.setItem(KEY_FIGURES_STORAGE_KEY, JSON.stringify({ version: 1, excluded: ['holistic'] }));
+        const restored = TestBed.createComponent(AdminBenchmarkComponent);
+        expect(restored.componentInstance.keyFigureExclusions).toEqual(['holistic']);
+        restored.destroy();
       });
 
       it('should describe the run in the image context as the dialog header does', () => {

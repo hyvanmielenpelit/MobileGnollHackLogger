@@ -854,8 +854,11 @@ experience`, `triple-headed flail`); a unique *"… of <name>"* match is resolve
 an optional **`object_class`** (`WAND_CLASS`, `SCROLL_CLASS`, …) which selects among the object
 classes that hold an entry of that name; the other two take `name` only.
 All three guard on `SourceCodeService.IsIndexingComplete`
-(`ToolGuardMessages.SourceCodeIndexingInProgress`). A missing, non-string or blank `name` returns
-`Success = false` with `"Missing name parameter"`. All three serialize a
+(`ToolGuardMessages.SourceCodeIndexingInProgress`). From harness 44 all three trim `name`, and
+`get_item_stats` trims `object_class`, before the blank check and the lookup, so `"grail of healing "`
+resolves like `"grail of healing"`; a run stamped 43 or earlier misses on a padded name (run 75 Q11),
+which is a harness defect, not a model one. A missing, non-string or blank `name` — whitespace only
+counts as blank — returns `Success = false` with `"Missing name parameter"`. All three serialize a
 `StatsResponse<T>` (`Overseer/Services/SourceCodeModels.cs`):
 
 ```
@@ -1047,7 +1050,8 @@ exists for all three tools, by two different mechanisms:**
 
 **`get_knowledge_article`** — `topic` (required, string). `KnowledgeBaseService.GetArticle` is an
 **exact, case-insensitive dictionary key lookup** (`Dictionary<string, KnowledgeArticle>(
-StringComparer.OrdinalIgnoreCase)`) — not prefix, not fuzzy. A miss is a genuine tool failure:
+StringComparer.OrdinalIgnoreCase)`) — not prefix, not fuzzy. From harness 44 the handler trims
+`topic` before the lookup, so surrounding whitespace no longer misses. A miss is a genuine tool failure:
 `Success = false` with `ErrorMessage` listing every available topic key (`GetAvailableTopics()`),
 unlike the stats tools' in-payload `error` pattern in §6. Guards on
 `ToolGuardMessages.KnowledgeBaseIndexingInProgress` while the KB git repo is still loading.

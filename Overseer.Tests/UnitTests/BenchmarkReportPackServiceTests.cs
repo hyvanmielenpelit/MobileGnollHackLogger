@@ -115,7 +115,7 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(longAnswer, question.AnswerText);
         Assert.DoesNotContain("FINAL-SENTENCE", question.AnswerExcerpt);
         Assert.Contains("\"answerText\":", document.ContentJson);
-        Assert.Equal(8, document.ReportFormatVersion);
+        Assert.Equal(BenchmarkReportPackRenderer.ReportFormatVersion, document.ReportFormatVersion);
     }
 
     [Fact]

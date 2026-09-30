@@ -234,8 +234,14 @@ public sealed class BenchmarkReportQuestion
     public int? ItemRevisionUsed { get; set; }
     public int OrderIndex { get; set; }
 
-    /// <summary>The difficulty band's name.</summary>
+    /// <summary>The assessed difficulty band's name.</summary>
     public string Band { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The difficulty band the question was authored with; null when no answer recorded one, and on a
+    /// document stored before format version 9.
+    /// </summary>
+    public string? AuthoredBand { get; set; }
 
     /// <summary>The subject's published quality on this item; a mean over runs for a group.</summary>
     public double? Score { get; set; }
@@ -297,6 +303,21 @@ public sealed class BenchmarkReportFindingRow
 
     /// <summary>The computed support label, e.g. <c>Both graders</c>.</summary>
     public string SupportLabel { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The questions panel member A's findings in this row name, sorted; null for a single-assessor
+    /// row and on a document stored before format version 9.
+    /// </summary>
+    public List<int>? QuestionsA { get; set; }
+
+    /// <summary>The questions panel member B's findings in this row name, sorted; null as for <see cref="QuestionsA"/>.</summary>
+    public List<int>? QuestionsB { get; set; }
+
+    /// <summary>
+    /// The questions both members' findings in this row name, sorted; null as for <see cref="QuestionsA"/>.
+    /// A Convergent row's <c>Both graders</c> label holds for an item only on these questions.
+    /// </summary>
+    public List<int>? SharedQuestions { get; set; }
 
     public string? MemberAText { get; set; }
     public string? MemberBText { get; set; }
@@ -610,7 +631,7 @@ public sealed class BenchmarkReportQuestionNote
 /// <summary>One validation problem, and whether the offending item was dropped (stored as ValidationNotesJson).</summary>
 public sealed class BenchmarkReportValidationNote
 {
-    /// <summary>The D7 rule number, 1–18.</summary>
+    /// <summary>The D7 rule number, 1–19.</summary>
     public int Rule { get; set; }
 
     /// <summary>Where: <c>headline</c>, <c>sections.abstract</c>, <c>weaknesses[1]</c>, ….</summary>

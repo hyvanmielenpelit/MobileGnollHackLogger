@@ -763,15 +763,82 @@ public class BenchmarkReportPackPromptTests
     {
         string system = Build(audience).SystemPrompt;
 
-        Assert.Contains("- A \"model_developers\" recommendation is something a model developer can change in the model itself: its knowledge, "
-            + "calibration, instruction following, verbosity or tool-use habits. It never concerns the Overseer's prompts, tools, retrieval, "
-            + "corpus, rubrics or tests, which the model's developers cannot change. The model never sees a rubric, so never recommend that it follow or check one.", system);
+        Assert.Contains("- A recommendation for model developers names a general capability a model developer can train or tune — for example "
+            + "stating the decisive mechanic behind a verdict, or committing to a conclusion the inputs already settle. Never a GnollHack fact, "
+            + "a change to the assistant's prompt or tools, or a rubric point; game-specific gaps are leads of the Internal Brief (`corpus` or `chat`).\n", system);
+        Assert.DoesNotContain("its knowledge, calibration", system);
     }
 
     [Fact]
     public void ExecutiveSummary_HasNoRecommendationRule()
     {
-        Assert.DoesNotContain("recommendation is something a model developer can change", Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt);
+        Assert.DoesNotContain("A recommendation for model developers names a general capability", Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_TreatsAnNOfMToken_AsANounPhrase(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("- A token whose value reads 'N of M' is a noun phrase: '{{errors.critical}} had a critical error'. Never put it after 'no' "
+            + "or make it the object of 'made'; to say none occurred, write 'no critical errors across all {{answers.scored}} answers'.\n", system);
+    }
+
+    [Fact]
+    public void RepairMessage_RemindsOfTheNounPhraseAndGameFactRules()
+    {
+        string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>());
+
+        Assert.Contains("never a GnollHack fact or the Overseer's prompts", message);
+        Assert.Contains("A token whose value reads 'N of M' is a noun phrase; never put it after 'no' or make it the object of 'made'.", message);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void UserMessage_SaysTheBandsAreAssessed_AndWhereTheAuthoredOnesAre(BenchmarkReportAudience audience)
+    {
+        string message = Build(audience).UserMessage;
+
+        Assert.Contains("FACTS (write {{key}} to place a figure; key = value as printed)\n"
+            + "Difficulty bands are assessed difficulty; the authored bands are bands.authored.*.\n", message);
+    }
+
+    [Fact]
+    public void FindingRows_ListTheSharedAndEachMembersOwnQuestions()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Rows.Add(new BenchmarkReportFindingRow
+        {
+            Id = "R5", Kind = "weakness", Category = "tool_use", Questions = new List<int> { 1, 2, 3 },
+            Status = "Convergent", SupportLabel = BenchmarkReportFacts.SupportBothGraders,
+            QuestionsA = new List<int> { 1, 2 }, QuestionsB = new List<int> { 1, 3 }, SharedQuestions = new List<int> { 1 },
+            MemberAText = "Few lookups.", MemberBText = "Too few lookups."
+        });
+        sheet.Rows.Add(new BenchmarkReportFindingRow
+        {
+            Id = "R6", Kind = "weakness", Category = "calibration", Questions = new List<int>(),
+            Status = "Convergent", SupportLabel = BenchmarkReportFacts.SupportBothGraders,
+            QuestionsA = new List<int>(), QuestionsB = new List<int>(), SharedQuestions = new List<int>()
+        });
+
+        string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
+
+        Assert.Contains("R5 | kind: weakness | category: tool_use | questions: Q1, Q2, Q3 | status: Convergent | support: Both graders | in 1 of 1 runs\n"
+            + "  shared: Q1 | A only: Q2 | B only: Q3\n", message);
+        // A run-wide row and a row stored without its members' questions list none.
+        Assert.Contains("R6 | kind: weakness | category: calibration | questions: run-wide | status: Convergent | support: Both graders | in 1 of 1 runs\n\n", message);
+        Assert.Contains("R1 | kind: strength | category: accuracy | questions: Q1 | status: Convergent | support: Both graders | in 1 of 1 runs\n"
+            + "  panel member A: Correct item lore.", message);
+        Assert.Null(BenchmarkReportPackPrompt.MemberQuestions(sheet.Rows[0]));
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_SaysAConvergentRowIsBothGradersOnlyOnItsSharedQuestions(BenchmarkReportAudience audience)
+    {
+        Assert.Contains("Both members raised a Convergent row only on its shared questions. An item resting only on its A only or B only "
+            + "questions was raised by one grader, and its support label says so.", Build(audience).SystemPrompt);
     }
 
     [Theory]

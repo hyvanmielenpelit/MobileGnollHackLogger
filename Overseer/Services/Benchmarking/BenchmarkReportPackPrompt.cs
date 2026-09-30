@@ -73,7 +73,8 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
         Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say only whether intervals overlap, or whether a paired interval excludes zero.");
         Line(sb, "- A sentence ranking {{subject}} against a peer whose interval overlaps it says that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, it says instead that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero. No hype or filler words.");
-        Line(sb, "- A recommendation for model_developers concerns only what a model developer can change in the model, never the Overseer's prompts, tools, retrieval, corpus, rubrics or tests.");
+        Line(sb, "- A recommendation for model_developers concerns only what a model developer can change in the model, never a GnollHack fact or the Overseer's prompts, tools, retrieval, corpus, rubrics or tests.");
+        Line(sb, "- A token whose value reads 'N of M' is a noun phrase; never put it after 'no' or make it the object of 'made'.");
         Line(sb, "- Every question under QUESTIONS NEEDING A NOTE gets a note where the document has notes.");
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
         return sb.ToString();
@@ -245,7 +246,7 @@ public static class BenchmarkReportPackPrompt
                 Line(sb, $"- recommendations: at most {Words(BenchmarkReportPackValidator.MaxRecommendations(spec.Audience))} concrete next steps. \"for\" is one of: \"{BenchmarkReportSlots.TargetOverseerChat}\" (the chat system prompt, tools or knowledge base), \"{BenchmarkReportSlots.TargetBenchmark}\" (the benchmarking system: harness, graders, questions or rubrics), \"{BenchmarkReportSlots.TargetModelDevelopers}\" (the model's developers).");
             }
 
-            Line(sb, $"- A \"{BenchmarkReportSlots.TargetModelDevelopers}\" recommendation is something a model developer can change in the model itself: its knowledge, calibration, instruction following, verbosity or tool-use habits. It never concerns the Overseer's prompts, tools, retrieval, corpus, rubrics or tests, which the model's developers cannot change. The model never sees a rubric, so never recommend that it follow or check one.");
+            Line(sb, "- A recommendation for model developers names a general capability a model developer can train or tune — for example stating the decisive mechanic behind a verdict, or committing to a conclusion the inputs already settle. Never a GnollHack fact, a change to the assistant's prompt or tools, or a rubric point; game-specific gaps are leads of the Internal Brief (`corpus` or `chat`).");
         }
 
         Line(sb, spec.RequiresQuestionTopics
@@ -272,6 +273,7 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- Refer to the model under evaluation as {{subject}}. Refer to another model only as {{peer:X}}, where X is its letter from PEERS, for example {{peer:A}}.");
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
+        Line(sb, "- A token whose value reads 'N of M' is a noun phrase: '{{errors.critical}} had a critical error'. Never put it after 'no' or make it the object of 'made'; to say none occurred, write 'no critical errors across all {{answers.scored}} answers'.");
         Line(sb, "- Refer to a question as Q followed by its number from the QUESTIONS block, for example Q7. This is the only form in which a digit may appear.");
         Line(sb, "- Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.");
         Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.");
@@ -304,6 +306,7 @@ public static class BenchmarkReportPackPrompt
     {
         Line(sb, "WEIGHING THE EVIDENCE:");
         Line(sb, "- A Convergent row, raised independently by both members of the grading panel, outweighs a row raised by a single member (MemberAOnly, MemberBOnly or Single).");
+        Line(sb, "- Both members raised a Convergent row only on its shared questions. An item resting only on its A only or B only questions was raised by one grader, and its support label says so.");
         Line(sb, "- A strength raised by a single member that shares the subject's provider is the weakest evidence there is. Never put it in the headline; if you mention it at all, say that only one grader raised it.");
         Line(sb, "- A Conflicting row means the graders disagree. Report it as disagreement, never as a finding in either direction.");
         Line(sb, "- A Conflicting row whose two member texts are about different things is not a disagreement about one finding; leave it out.");
@@ -478,6 +481,7 @@ public static class BenchmarkReportPackPrompt
         }
 
         Line(sb, "FACTS (write {{key}} to place a figure; key = value as printed)");
+        Line(sb, "Difficulty bands are assessed difficulty; the authored bands are bands.authored.*.");
         var facts = sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
         if (facts.Count == 0)
         {
@@ -545,6 +549,10 @@ public static class BenchmarkReportPackPrompt
                 ? "run-wide"
                 : string.Join(", ", row.Questions.Distinct().OrderBy(n => n).Select(Q));
             Line(sb, $"{row.Id} | kind: {OneLine(row.Kind)} | category: {OneLine(row.Category)} | questions: {questions} | status: {OneLine(row.Status)} | support: {OneLine(row.SupportLabel)} | in {row.Recurrence.ToString(CultureInfo.InvariantCulture)} of {runCount.ToString(CultureInfo.InvariantCulture)} runs");
+            if (MemberQuestions(row) is string members)
+            {
+                Line(sb, "  " + members);
+            }
 
             BenchmarkReportGrader? single = row.Status.Equals("MemberAOnly", StringComparison.OrdinalIgnoreCase) ? memberA
                 : row.Status.Equals("MemberBOnly", StringComparison.OrdinalIgnoreCase) ? memberB
@@ -566,6 +574,24 @@ public static class BenchmarkReportPackPrompt
             }
         }
         Line(sb);
+    }
+
+    /// <summary>
+    /// "shared: Q3 | A only: Q5 | B only: none" for a panel row with questions; null for a run-wide
+    /// row, a single-assessor row and a row stored without its members' questions.
+    /// </summary>
+    internal static string? MemberQuestions(BenchmarkReportFindingRow row)
+    {
+        if (row.Questions.Count == 0 || row.SharedQuestions == null || row.QuestionsA == null || row.QuestionsB == null) return null;
+
+        var shared = row.SharedQuestions.Distinct().OrderBy(n => n).ToList();
+        string Numbers(IEnumerable<int> numbers)
+        {
+            var sorted = numbers.Distinct().OrderBy(n => n).ToList();
+            return sorted.Count == 0 ? "none" : string.Join(", ", sorted.Select(Q));
+        }
+
+        return $"shared: {Numbers(shared)} | A only: {Numbers(row.QuestionsA.Except(shared))} | B only: {Numbers(row.QuestionsB.Except(shared))}";
     }
 
     private static void AppendQuestions(StringBuilder sb, BenchmarkReportFactSheet sheet, BenchmarkReportContentSnapshot content)

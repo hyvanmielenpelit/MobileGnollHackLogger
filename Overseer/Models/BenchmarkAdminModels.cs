@@ -328,6 +328,14 @@ public class StartBenchmarkRunRequest
     public bool? VerboseMode { get; set; }
 
     /// <summary>
+    /// Optional. Selects whether the production chat system prompt the candidate answers under allows
+    /// source code references (the chat's Show source code references setting). Null and false both
+    /// mean disallowed, which is a user's default; true grades the prompt a user who turned the
+    /// setting on receives. Snapshotted onto the run with the other prompt options.
+    /// </summary>
+    public bool? AllowSourceCodeReferences { get; set; }
+
+    /// <summary>
     /// How many times to execute this identical request, strictly one at a time. <c>1</c> — the
     /// default — is the single-run path exactly as it behaved before multi-run existed: no series
     /// row and no auto-created group.

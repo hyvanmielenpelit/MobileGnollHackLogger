@@ -5315,6 +5315,116 @@ rendering and prompt changes of this round) is in [`ai-benchmark-report-pack.md`
 **Comparability.** `HarnessVersion` and `ToolGuidesSha256` both move, so a run after this round is two
 Instrument keys from a harness-42 run and is NotComparable with it.
 
+### Harness Version 44 Updates
+
+The run-75 round (2026-09-30). Four panel-bookkeeping and report defects are fixed, one tool correction
+reaches the production chat, and the launcher records a prompt option every earlier run fixed silently.
+`HarnessVersion` moves to **"44"**. `ScoringMethodVersion` stays **12**: no anchor, weight or level mapping
+changes, and no answer flag is added. `ToolGuidesSha256` does not move (`917e30fe…`): no tool guide
+changes. No EF Core migration: the new fields live inside `ClaimVerificationJson` and
+`CandidatePromptOptionsJson`, which already carried `allowSourceCodeReferences`.
+
+**Grading and the panel.**
+
+- **H1 — per-role raisers.** A panel run's union claim manifest (`BenchmarkService.BuildUnionClaimManifest`)
+  records, beside `raisedBy`, which members raised an item **in which role**: `accusedBy`, the members
+  who quoted it as an accused sentence, and `suspectedBy`, the members who listed it *Suspected false:*.
+  A plain unverified claim adds its member to `raisedBy` only. `MergeContainedItems` unites each set
+  separately, and the stored verification record (`BenchmarkClaimVerification`) keeps both, omitted when
+  null. `ContestedFindingsFor` reads accusations through `AccusedByMembers` and
+  `SupportedDockedSuspicions` through `SuspectedByMembers`; the report's per-member accused and suspected
+  counts, *Contested Accuracy Deductions*, the synthesis verdict summary and the diagnostics' accusation
+  audit read the role's own set. A record stored before harness 44 has neither field and falls back to
+  `raisedBy` (`AccusingMembers`, `SuspectingMembers`), so its report is unchanged — including run 75's,
+  where member A's plain claim on Q15 and member B's accusation of the same sentence gave member A a
+  *Contested accuracy deduction* at Accuracy 6. Re-assessing such a run under 44 rewrites its record. A
+  single-assessor run is unchanged. The run report dialog names only the accusing member in *sentence
+  … charged as false*.
+- **H3 — convergence by shared questions.** `BenchmarkSynthesisConvergenceRow` carries `QuestionsA`,
+  `QuestionsB` and `SharedQuestions`, sorted. Matching is unchanged (kind, category, intersecting
+  questions), so no row changes status. The report's § 6.3 *Questions* cell of a row with both members
+  reads `both Q13, Q15 · A only Q1, Q3, Q11 · B only Q9, Q16, Q18`, empty groups left out; a run-wide
+  row keeps `—`. *At a Glance* shows a convergent row's shared questions only. The report pack's support
+  label follows (format 9, [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 7).
+- **H4 — member spread.** *Panel Agreement* prints, after ICC, `- **Member spread:** A 70–95 (SD 5.6),
+  most frequent levels 6/3/6/5 on 8 of 18; B …` — each member's quality range, sample standard
+  deviation and most frequent Accuracy/Completeness/Conciseness/Readability level vector with its count,
+  over the panel-graded answers (`BenchmarkPanelDiagnostics.MemberSpread`; a tie goes to the vector met
+  first in question order). When both standard deviations are below 8 quality points
+  (`NarrowSpreadStandardDeviation`) it adds *"Both members used a narrow range, so ICC measures agreement
+  on a few points' difference and says little; read the mean |B − A| and the disagreements instead."*
+  Advisory; no score moves.
+
+**Report (all runs).**
+
+- **H5 — time per question.** The *At a Glance* Speed row reads `Speed Index: 73 / 100 · mean 17.2 s,
+  median 14.7 s model time per question`; when the Speed Index is demoted the row leads with the median
+  as before and adds the mean. *Results Summary* adds `- **Model Time Mean:** 17,204 ms per answered
+  question` after the percentiles — the mean of `ModelTimeMs` over the Ok answers, the population of the
+  median and of Model Comparison's `ModelTimeMeanMs`.
+- **H2 — the source-reference branch is recorded.** See the launcher below. *Chat Prompt Under Test*
+  opens with *"… the prompt real users receive with these settings."*, and a run that allowed source
+  references adds under the Tools line *"Source code references: allowed — a user's default is
+  disallowed (the Show source code references setting), so these answers may cite files and lines a
+  default user's would not."*
+
+**Launcher.**
+
+- **Source Code References** — a select in the candidate fieldset beside **Response Style**, *Disallowed
+  — production default* (the default) or *Allowed — answers cite source files and lines*, sent as
+  `allowSourceCodeReferences` (`StartBenchmarkRunRequest.AllowSourceCodeReferences`, `bool?`; null
+  resolves to disallowed, decided by the user on 2026-09-30) and remembered with the other launcher
+  settings. The value reaches `BenchmarkCandidatePromptOptions.AllowSourceCodeReferences`, the estimate's
+  instrument fingerprint and each series member. A series stores the resolved value; a series stored
+  before the field existed resumes *Allowed*, as its first members ran. `ChatService` gives the two values
+  opposite instructions (cite file and line / never cite them), and a user's
+  `ShowSourceCodeReferences` defaults to off, so **every run up to harness 43 graded the non-default
+  branch**. A run launched with the default therefore has another `CandidateSystemPromptSha256`
+  (`1b512e27…` is the *Allowed* prompt of runs 64–75) and is not comparable with them; set *Allowed*
+  explicitly to stay comparable. Recorded options stored without the member still read as allowed.
+
+**Chat and benchmark alike (the production tools).**
+
+- **T1 — trimmed arguments.** `get_item_stats`, `get_monster_stats` and `get_artifact_stats` trim `name`,
+  and `get_item_stats` its `object_class`, before the blank check and the lookup; `get_knowledge_article`
+  trims `topic`. A whitespace-only name still returns *Missing name parameter*. Run 75's Q11 missed on
+  `"grail of healing "` and had to retry. Handler behavior only; no guide text changes.
+
+**Run report dialog.** The key figures gain a *Mean Time per Question* card and a figure chooser; see
+*Key Figures: Mean Time and the Figure Chooser* below.
+
+The report pack's format version 9 and PDF layout 4 are in
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 7.
+
+**Comparability.** Only the Instrument key `HarnessVersion` moves (43 → 44) for a run that sets *Allowed*,
+so such a run on run 75's configuration is **Tier C** against run 75. A run with the default *Disallowed*
+also moves `CandidateSystemPromptSha256` and is NotComparable with every earlier run.
+
+### Key Figures: Mean Time and the Figure Chooser (2026-09-30)
+
+*Part of the harness-44 round; nothing here grades anything.*
+
+**Mean Time per Question.** A card right after the Speed Index card, always shown: the mean model time
+over the answered questions (tool time excluded), `17.2 s` under a minute and `1m 12s` from one, with the
+note *model time, tools excluded · median 14.7 s*; with no answered question it reads `—`, *no answered
+question*. It has its own **Copy** and **Download** like every card.
+
+**Choose figures.** Every `.score-card` carries a stable `data-figure` key (`intelligence`, `raw-quality`,
+`unweighted-mean`, `speed`, `mean-time`, `panel`, `agreement`, `holistic`, `answer-duration`,
+`wall-time`, `model-cost`, `estimated-cost`), unchanged by a label variant. Beside the *Key figures*
+heading's **Copy** and **Download** sits a text-only **Choose figures**, showing *(9 of 12)* while a
+subset is selected. It opens a nested dialog, *Key Figures in the Image*: one checkbox per card the run
+shows with its current value, *All* / *None*, a live *N of M selected* count, and **Cancel**, **Copy
+Image** and **Download PNG** — either export stores the choice and exports it at once; with nothing
+selected both are disabled with the reason *Select at least one figure.* The choice is stored as the
+**excluded** keys in `localStorage['overseer.benchmark.runReport.keyFigures']` (`{ "version": 1,
+"excluded": [...] }`), so a card added later is included, and it applies to every run report; the
+header's one-click **Copy** and **Download** export the saved selection, and their names add *", 9 of
+12 key figures"*. The whole-strip image lays out any subset square or landscape, never portrait, with
+footnotes from the included cards only; when a saved selection leaves none of a run's cards, the export
+says *None of this run's key figures is selected; use Choose figures.* instead of making an image.
+Per-card exports are unaffected.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

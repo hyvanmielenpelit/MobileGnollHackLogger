@@ -113,7 +113,11 @@ import {
 import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload-dialog.component';
 import { RunReportFrameComponent } from './run-report-frame/run-report-frame.component';
 import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from './run-report-frame/key-figure-card-actions.component';
-import { ImageContext, KeyFiguresAction, exportKeyFiguresImage } from './run-report-frame/key-figures-image';
+import {
+  ImageContext, KeyFigureKey, KeyFiguresAction, exportKeyFiguresImage, readKeyFigureCells,
+  readStoredKeyFigureExclusions, storeKeyFigureExclusions
+} from './run-report-frame/key-figures-image';
+import { KeyFiguresChooserComponent, KeyFiguresChooserExport } from './run-report-frame/key-figures-chooser.component';
 import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
 import { audienceLabel } from './report-pack/report-document-format';
 import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/run-ai-reports.component';
@@ -323,6 +327,8 @@ interface BenchmarkRunSettings {
   secondOpinionMode: number | null;
   scoringProfileId: number | null;
   verboseMode: boolean | null;
+  /** Whether the candidate may cite source files and lines. Defaults to false when absent. */
+  allowSourceCodeReferences: boolean | null;
   runCount: number | null;
   /** Whether a run or series completion plays the chime. Defaults to true when absent. */
   completionSound: boolean | null;
@@ -342,8 +348,8 @@ interface BenchmarkRunSettings {
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
-    RunReportFrameComponent, KeyFigureCardActionsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent,
-    ReportDocumentsLauncherComponent
+    RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, BenchmarkDownloadCenterComponent,
+    RunAiReportsComponent, ReportDocumentsLauncherComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -572,6 +578,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * detailed.
    */
   candidateVerboseMode = false;
+
+  /**
+   * Whether the candidate may cite source files and lines: false (the production default, which
+   * regular users see only with *Show source code references* on) or true.
+   */
+  candidateAllowSourceCodeReferences = false;
 
   get candidateResponseStyleHint(): string {
     return this.candidateVerboseMode
@@ -928,6 +940,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private runReportCopyTimer: ReturnType<typeof setTimeout> | null = null;
   /** A key-figures image is being composed; another export is refused until it finishes. */
   keyFiguresExporting = false;
+  /** The key figures left out of the whole-strip image, remembered for every run report. */
+  keyFigureExclusions: string[] = readStoredKeyFigureExclusions();
+  @ViewChild(KeyFiguresChooserComponent) keyFiguresChooser?: KeyFiguresChooserComponent;
   expandedQuestions = new Set<number>();
   expandedThoughts = new Set<number>();
   expandedArtifacts = new Set<number>();
@@ -3415,6 +3430,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         secondOpinionMode: this.secondOpinionModeOverride,
         scoringProfileId: this.selectedScoringProfileId,
         verboseMode: this.candidateVerboseMode,
+        allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
         runCount: this.effectiveRunCount,
         completionSound: this.completionSound,
         completionNotification: this.completionNotification
@@ -3454,6 +3470,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       secondOpinionMode: num(raw.secondOpinionMode),
       scoringProfileId: num(raw.scoringProfileId),
       verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null,
+      allowSourceCodeReferences: typeof raw.allowSourceCodeReferences === 'boolean' ? raw.allowSourceCodeReferences : null,
       runCount: num(raw.runCount),
       completionSound: typeof raw.completionSound === 'boolean' ? raw.completionSound : null,
       completionNotification: typeof raw.completionNotification === 'boolean' ? raw.completionNotification : null
@@ -3462,6 +3479,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     // These need no list to validate against, so they restore immediately.
     if (this.pendingRunSettings.verboseMode !== null) {
       this.candidateVerboseMode = this.pendingRunSettings.verboseMode;
+    }
+    // Absent (a blob predating this field) leaves the Disallowed default standing.
+    if (this.pendingRunSettings.allowSourceCodeReferences !== null) {
+      this.candidateAllowSourceCodeReferences = this.pendingRunSettings.allowSourceCodeReferences;
     }
     // Absent (a blob predating this field, or storage that threw) leaves the true default standing.
     if (this.pendingRunSettings.completionSound !== null) {
@@ -3608,6 +3629,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       claimVerifierModelConfigurationId: this.claimVerifierConfigId,
       reportWriterModelConfigurationId: this.reportWriterConfigId,
       verboseMode: this.candidateVerboseMode,
+      allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
       scoringProfileId: this.selectedScoringProfileId,
       acknowledgeSameProvider: this.launchAcknowledgments.assessor,
       // Only once acknowledged, so every other request carries the body it always has.
@@ -6665,9 +6687,60 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.exportKeyFigures(request.action, request.card);
   }
 
+  /** Whether the Raw Quality Index card shows: recorded, and different from the headline index. */
+  get showRawQualityTile(): boolean {
+    const run = this.selectedRunDetail;
+    return run?.rawQualityIndex != null && run.rawQualityIndex !== (run.qualityIndex ?? run.finalScore);
+  }
+
+  /** The keys of the key-figure cards the viewed run shows, in display order; the template's conditions. */
+  get shownKeyFigureKeys(): KeyFigureKey[] {
+    const run = this.selectedRunDetail;
+    if (!run) {
+      return [];
+    }
+    const keys: KeyFigureKey[] = ['intelligence'];
+    if (this.showRawQualityTile) keys.push('raw-quality');
+    if (this.showUnweightedQualityTile) keys.push('unweighted-mean');
+    keys.push('speed', 'mean-time');
+    if (run.isPanelRun) keys.push('panel');
+    if (this.showAgreementTile) keys.push('agreement');
+    keys.push('holistic', 'answer-duration', 'wall-time');
+    if (run.estimatedCandidateCost != null) keys.push('model-cost');
+    keys.push('estimated-cost');
+    return keys;
+  }
+
+  /** How many of the shown key figures the whole-strip image includes. */
+  get selectedKeyFigureCount(): number {
+    return this.shownKeyFigureKeys.filter(key => !this.keyFigureExclusions.includes(key)).length;
+  }
+
+  /** `9 of 12` while the image leaves out a figure the run shows, else null. */
+  get keyFiguresSelectionLabel(): string | null {
+    const total = this.shownKeyFigureKeys.length;
+    const selected = this.selectedKeyFigureCount;
+    return selected < total ? `${selected} of ${total}` : null;
+  }
+
+  /** Opens the chooser on the cards the Summary panel shows, with their current values. */
+  openKeyFiguresChooser(opener?: HTMLElement): void {
+    const root = this.runDetailDialog?.nativeElement.querySelector('.rr-figures');
+    if (!this.selectedRunDetail || !root || !this.keyFiguresChooser) return;
+    const figures = readKeyFigureCells(root).map(cell => ({ key: cell.key, label: cell.label, value: cell.value }));
+    this.keyFiguresChooser.open(figures, this.keyFigureExclusions, opener ?? null);
+  }
+
+  /** The chooser's Copy Image or Download PNG: remembers the choice, then exports it within the same click. */
+  onKeyFiguresChosen(choice: KeyFiguresChooserExport): Promise<void> {
+    this.keyFigureExclusions = [...choice.excluded];
+    storeKeyFigureExclusions(this.keyFigureExclusions);
+    return this.exportKeyFigures(choice.action, null);
+  }
+
   /**
-   * Composes the key figures (`card` null) or one card, copies or saves it, and announces the
-   * outcome. The cards are read from the Summary panel whichever tab is shown.
+   * Composes the key figures (`card` null, the remembered selection) or one card, copies or saves
+   * it, and announces the outcome. The cards are read from the Summary panel whichever tab is shown.
    */
   private async exportKeyFigures(action: KeyFiguresAction, card: HTMLElement | null): Promise<void> {
     const run = this.selectedRunDetail;
@@ -6679,7 +6752,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       if (this.overseerBuildVersion === null) {
         this.overseerBuildVersion = await firstValueFrom(this.systemService.getVersion()).catch(() => 'unknown');
       }
-      const message = await exportKeyFiguresImage(action, root, card, this.keyFiguresContext(run));
+      const excluded = new Set(this.keyFigureExclusions);
+      const message = await exportKeyFiguresImage(action, root, card, this.keyFiguresContext(run), key => !excluded.has(key));
       if (this.runReportCopyTimer) clearTimeout(this.runReportCopyTimer);
       this.runReportCopyStatus = message;
       this.runReportCopyTimer = setTimeout(() => {
@@ -8205,6 +8279,37 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return times.length % 2 === 1 ? times[mid] : Math.round((times[mid - 1] + times[mid]) / 2);
   }
 
+  /** Mean model time over the answered questions, in whole ms; null when no answer is Ok. */
+  get meanModelTimeMs(): number | null {
+    const times = this.answeredRunAnswers.map(a => this.modelTimeOf(a));
+    if (times.length === 0) return null;
+    return Math.round(times.reduce((sum, time) => sum + time, 0) / times.length);
+  }
+
+  /** The Mean Time per Question card's value: `17.2 s` under a minute, `1m 12s` from one; `—` with no answer. */
+  get meanModelTimeLabel(): string {
+    const mean = this.meanModelTimeMs;
+    return mean == null ? '—' : this.formatModelTime(mean);
+  }
+
+  /** The Mean Time per Question card's note, with the median beside the mean. */
+  get meanModelTimeNote(): string {
+    const median = this.medianModelTimeMs;
+    return median == null
+      ? 'no answered question'
+      : `model time, tools excluded · median ${this.formatModelTime(median)}`;
+  }
+
+  /** One decimal of seconds under a minute (`17.2 s`), whole minutes and seconds from one (`1m 12s`). */
+  formatModelTime(ms: number): string {
+    const tenths = Math.round(Math.max(0, ms) / 100);
+    if (tenths < 600) {
+      return `${(tenths / 10).toFixed(1)} s`;
+    }
+    const totalSecs = Math.round(ms / 1000);
+    return `${Math.floor(totalSecs / 60)}m ${totalSecs % 60}s`;
+  }
+
   /**
    * H9. Where the index cannot discriminate — saturated, or a deliberating candidate on an
    * interactive-latency profile — the card leads with median model time and demotes the index to its
@@ -8637,7 +8742,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * The per-claim verifications for this answer. Empty on a malformed or absent blob. `roles` is
    * set by the harness from harness 31 and absent on an older record.
    */
-  claimVerificationsOf(answer: BenchmarkRunAnswerDto): { claimIndex?: number; claim: string; verdict: string; citation?: string | null; basis?: string | null; roles?: string[]; raisedBy?: string[] | null }[] {
+  claimVerificationsOf(answer: BenchmarkRunAnswerDto): { claimIndex?: number; claim: string; verdict: string; citation?: string | null; basis?: string | null; roles?: string[]; raisedBy?: string[] | null; accusedBy?: string[] | null; suspectedBy?: string[] | null }[] {
     if (!answer.claimVerificationJson) return [];
     try {
       const parsed = JSON.parse(answer.claimVerificationJson);
@@ -8650,15 +8755,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /**
    * One label per advisory role an entry was submitted for: the assessor's critical-error quote,
    * its out-of-rubric basis, or a sentence it charged as false. None for an ordinary claim or a
-   * record without roles. In a panel run `raisedBy` names the member who submitted it.
+   * record without roles. In a panel run `raisedBy` names the member who submitted it, and
+   * `accusedBy` the members who charged it as false (absent before harness 44: `raisedBy`).
    */
-  claimRoleLabels(roles: string[] | null | undefined, raisedBy?: string[] | null): string[] {
+  claimRoleLabels(roles: string[] | null | undefined, raisedBy?: string[] | null, accusedBy?: string[] | null): string[] {
     if (!Array.isArray(roles)) return [];
     const member = this.claimMemberPhrase(raisedBy);
+    const accuser = Array.isArray(accusedBy) ? this.claimMemberPhrase(accusedBy) : member;
     const labels: string[] = [];
     if (roles.includes('criticalErrorQuote')) labels.push(member ? `critical-error quote from ${member}` : 'critical-error quote');
     if (roles.includes('outOfRubricBasis')) labels.push(member ? `out-of-rubric basis from ${member}` : 'out-of-rubric basis');
-    if (roles.includes('accusedQuote')) labels.push(`sentence ${member ?? 'the assessor'} charged as false`);
+    if (roles.includes('accusedQuote')) labels.push(`sentence ${accuser ?? 'the assessor'} charged as false`);
     return labels;
   }
 

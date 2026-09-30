@@ -93,13 +93,13 @@ Not ranked on speed:
 | Conciseness | 88 | 85 | +3 |
 | Readability | 90 | 89 | +1 |
 
-### Difficulty bands
+### Difficulty bands (assessed)
 
-| Difficulty band | Questions | GPT-5.6 Luna | Peer mean | Difference |
-|---|---|---|---|---|
-| Simple | 1 | 90 | 85 | +5 |
-| Intermediate | 2 | 49 | 69 | -21 |
-| Advanced | 1 | 87 | 91 | -4 |
+| Difficulty band | Questions | Authored questions | GPT-5.6 Luna | Peer mean | Difference |
+|---|---|---|---|---|---|
+| Simple | 1 | — | 90 | 85 | +5 |
+| Intermediate | 2 | — | 49 | 69 | -21 |
+| Advanced | 1 | — | 87 | 91 | -4 |
 
 ### Judge-dependent pairs
 
@@ -141,12 +141,12 @@ Short, accurate answers on simple questions (R2).
 
 ## Per-question results
 
-| Q | Topic | Band | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |
-|---|---|---|---|---|---|---|---|---|---|
-| Q1 | Throwing gems at unicorns | Simple | 90 | 85 | +5 | no | 0 | 2 | 8.1 s |
-| Q2 | Prayer timeout | Intermediate | 72 | 70 | +2 | no | 0 | 3 | 11.0 s |
-| Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |
-| Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4 | 13.4 s |
+| Q | Topic | Assessed band | Authored | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Q1 | Throwing gems at unicorns | Simple | — | 90 | 85 | +5 | no | 0 | 2 | 8.1 s |
+| Q2 | Prayer timeout | Intermediate | — | 72 | 70 | +2 | no | 0 | 3 | 11.0 s |
+| Q3 | Breaking a thrown gem | Intermediate | — | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |
+| Q4 | Wand of wishing charges | Advanced | — | 87 | 91 | -4 | no | 0 | 4 | 13.4 s |
 
 ### Questions more than 15 points below the peer mean, or with a critical error
 
@@ -213,6 +213,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 8 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers named*
+*Document ID 101 · format version 9 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

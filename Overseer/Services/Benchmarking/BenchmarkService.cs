@@ -389,7 +389,7 @@ public class BenchmarkService
         run.BoardSnapshot = await BenchmarkRunBoardSnapshotStore.GetOrCreateAsync(db, board, ct);
     }
 
-    public async Task RunAsync(long runId, CancellationToken cancellationToken, bool verboseMode = false)
+    public async Task RunAsync(long runId, CancellationToken cancellationToken, bool verboseMode = false, bool allowSourceCodeReferences = false)
     {
         var runStopwatch = Stopwatch.StartNew();
         try
@@ -545,11 +545,7 @@ public class BenchmarkService
             await db.SaveChangesAsync(cancellationToken);
 
             bool suiteHasBoard = run.BenchmarkSuite?.GameSnapshot != null;
-            var promptOptions = new BenchmarkCandidatePromptOptions
-            {
-                VerboseMode = verboseMode,
-                HasGameSnapshot = suiteHasBoard
-            };
+            var promptOptions = CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences, suiteHasBoard);
             run.CandidatePromptOptionsJson = promptOptions.ToCanonicalJson();
             run.CandidatePromptSourceUsed = "ChatService.BuildSystemPrompt";
 
@@ -3897,7 +3893,9 @@ public class BenchmarkService
     /// One member's two contested findings, read over the items that member raised: its
     /// critical-error quote was supported; or its out-of-rubric basis or one of its own statements was
     /// refuted, or a sentence it charged, or a "Suspected false:" sentence it docked, was supported
-    /// with a citation. Both false without a verdict.
+    /// with a citation. A charged sentence is read over the items that member accused, and a docked
+    /// one over the items it suspected (<see cref="AccusedByMembers"/>, <see cref="SuspectedByMembers"/>).
+    /// Both false without a verdict.
     /// </summary>
     internal static (bool ContestedCriticalError, bool ContestedAccuracyDeduction) ContestedFindingsFor(
         BenchmarkVerdictView? view,
@@ -3910,7 +3908,7 @@ public class BenchmarkService
             && !string.IsNullOrWhiteSpace(view.CriticalErrorQuote)
             && CriticalErrorQuoteWasSupported(verifications, view, view.Member);
         bool accuracy = (OutOfRubricBasisOf(view) != null && OutOfRubricBasisWasRefuted(verifications, view, view.Member))
-            || SupportedAccusations(raised).Count > 0
+            || SupportedAccusations(AccusedByMembers(verifications, view.Member)).Count > 0
             || RefutedAssessorStatements(raised).Count > 0
             || SupportedDockedSuspicions(view, verifications, view.Member).Count > 0;
         return (critical, accuracy);
@@ -3923,10 +3921,36 @@ public class BenchmarkService
     internal static List<BenchmarkClaimVerification> RaisedByMembers(
         IReadOnlyList<BenchmarkClaimVerification>? verifications,
         BenchmarkPanelMember members)
+        => ByMembers(verifications, members, v => v.RaisedBy);
+
+    /// <summary>
+    /// The verifications whose accusation is attributed to any of <paramref name="members"/>
+    /// (<see cref="BenchmarkClaimVerification.AccusingMembers"/>): <see cref="BenchmarkClaimVerification.AccusedBy"/>,
+    /// or <see cref="BenchmarkClaimVerification.RaisedBy"/> on a record without it. A record with neither counts for every member.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> AccusedByMembers(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkPanelMember members)
+        => ByMembers(verifications, members, v => v.AccusingMembers);
+
+    /// <summary>
+    /// The verifications whose suspected-false record is attributed to any of <paramref name="members"/>
+    /// (<see cref="BenchmarkClaimVerification.SuspectingMembers"/>): <see cref="BenchmarkClaimVerification.SuspectedBy"/>,
+    /// or <see cref="BenchmarkClaimVerification.RaisedBy"/> on a record without it. A record with neither counts for every member.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> SuspectedByMembers(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkPanelMember members)
+        => ByMembers(verifications, members, v => v.SuspectingMembers);
+
+    private static List<BenchmarkClaimVerification> ByMembers(
+        IReadOnlyList<BenchmarkClaimVerification>? verifications,
+        BenchmarkPanelMember members,
+        Func<BenchmarkClaimVerification, IReadOnlyList<string>?> labelsOf)
         => (verifications ?? Array.Empty<BenchmarkClaimVerification>())
-            .Where(v => v.RaisedBy == null
-                || (members.HasFlag(BenchmarkPanelMember.A) && v.RaisedBy.Contains("A"))
-                || (members.HasFlag(BenchmarkPanelMember.B) && v.RaisedBy.Contains("B")))
+            .Where(v => labelsOf(v) is not { } labels
+                || (members.HasFlag(BenchmarkPanelMember.A) && labels.Contains("A"))
+                || (members.HasFlag(BenchmarkPanelMember.B) && labels.Contains("B")))
             .ToList();
 
     /// <summary>
@@ -6333,6 +6357,11 @@ public class BenchmarkService
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (verifications != null)
                 {
+                    // A member's charges and suspicions are read over the items it accused or
+                    // suspected; everything else over the items it raised.
+                    var allVerifications = verifications;
+                    var accused = isPanelRun ? AccusedByMembers(allVerifications, member) : allVerifications;
+                    var suspected = isPanelRun ? SuspectedByMembers(allVerifications, member) : allVerifications;
                     if (isPanelRun)
                     {
                         verifications = RaisedByMembers(verifications, member);
@@ -6347,9 +6376,9 @@ public class BenchmarkService
                     // A docked "Suspected false:" sentence the verifier supported is, to the
                     // synthesis, a sentence the assessor charged as false and the source bore out.
                     var dockedSuspicions = isMemberB
-                        ? (viewB != null ? SupportedDockedSuspicions(viewB, verifications, member) : new List<BenchmarkClaimVerification>())
-                        : SupportedDockedSuspicions(a, verifications);
-                    supportedAccusations.AddRange(SupportedAccusations(verifications)
+                        ? (viewB != null ? SupportedDockedSuspicions(viewB, allVerifications, member) : new List<BenchmarkClaimVerification>())
+                        : SupportedDockedSuspicions(a, suspected);
+                    supportedAccusations.AddRange(SupportedAccusations(accused)
                         .Concat(dockedSuspicions)
                         .Select(v => (Claim: v.Claim.Trim(), v.Citation))
                         .DistinctBy(x => x.Claim, StringComparer.Ordinal));
@@ -7945,6 +7974,22 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// The candidate prompt options a newly launched run records: the requested response style and
+    /// source-code-reference setting, and whether the suite carries a board; every other option at
+    /// its default.
+    /// </summary>
+    internal static BenchmarkCandidatePromptOptions CandidatePromptOptionsFor(
+        bool verboseMode,
+        bool allowSourceCodeReferences,
+        bool hasGameSnapshot)
+        => new()
+        {
+            VerboseMode = verboseMode,
+            AllowSourceCodeReferences = allowSourceCodeReferences,
+            HasGameSnapshot = hasGameSnapshot
+        };
+
+    /// <summary>
     /// The five instrument hashes as they would be stamped on a run launched <b>right now</b> from
     /// this request, without launching one.
     ///
@@ -7960,11 +8005,13 @@ public class BenchmarkService
     /// were never the same measurement.</para>
     /// </summary>
     /// <returns>Null when the suite or the tested configuration no longer exists.</returns>
+    /// <remarks>The prompt options are built as a launch builds them (<see cref="CandidatePromptOptionsFor"/>).</remarks>
     internal async Task<BenchmarkInstrumentFingerprint?> ComputeCurrentInstrumentFingerprintAsync(
         ApplicationDbContext db,
         long suiteId,
         long testedModelConfigurationId,
         bool verboseMode,
+        bool allowSourceCodeReferences,
         CancellationToken ct = default)
     {
         var suite = await db.BenchmarkSuites
@@ -7976,11 +8023,7 @@ public class BenchmarkService
             .FirstOrDefaultAsync(c => c.Id == testedModelConfigurationId, ct);
         if (testedConfig == null) return null;
 
-        var promptOptions = new BenchmarkCandidatePromptOptions
-        {
-            VerboseMode = verboseMode,
-            HasGameSnapshot = suite.GameSnapshot != null
-        };
+        var promptOptions = CandidatePromptOptionsFor(verboseMode, allowSourceCodeReferences, suite.GameSnapshot != null);
 
         string systemPrompt = promptOptions.BuildSystemPrompt(_chatService, testedConfig.ParallelExecutionMode);
 
@@ -8399,6 +8442,14 @@ public class BenchmarkService
         /// <summary>The panel members that raised the item, <c>"A"</c> before <c>"B"</c>; null in a single-assessor run.</summary>
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<string>? RaisedBy { get; init; }
+
+        /// <summary>The panel members that charged the item as an accused sentence, <c>"A"</c> before <c>"B"</c>; null when none did or in a single-assessor run.</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? AccusedBy { get; init; }
+
+        /// <summary>The panel members that recorded the item as <c>Suspected false:</c>, <c>"A"</c> before <c>"B"</c>; null when none did or in a single-assessor run.</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? SuspectedBy { get; init; }
     }
 
     /// <summary>
@@ -8710,7 +8761,8 @@ public class BenchmarkService
 
     /// <summary>
     /// <see cref="SupportedDockedSuspicions(BenchmarkRunAnswer, IReadOnlyList{BenchmarkClaimVerification})"/>
-    /// for <paramref name="view"/>'s Accuracy level and evidence, over the items <paramref name="members"/> raised.
+    /// for <paramref name="view"/>'s Accuracy level and evidence, over the items <paramref name="members"/>
+    /// recorded as suspected false (<see cref="SuspectedByMembers"/>).
     /// </summary>
     internal static List<BenchmarkClaimVerification> SupportedDockedSuspicions(
         BenchmarkVerdictView view,
@@ -8725,7 +8777,7 @@ public class BenchmarkService
         var spans = DockedQuotedSpans(view.AccuracyEvidence);
         if (spans.Count == 0) return new List<BenchmarkClaimVerification>();
 
-        return RaisedByMembers(verifications, members)
+        return SuspectedByMembers(verifications, members)
             .Where(v => v.SuspectedFalse == true
                 && v.EffectiveVerdict == BenchmarkClaimVerdict.Supported
                 && !string.IsNullOrWhiteSpace(v.Citation)
@@ -9396,7 +9448,9 @@ public class BenchmarkService
 
     /// <summary>
     /// A panel run's submission manifest: every scored member's items once, each recording in
-    /// <see cref="ClaimSubmission.RaisedBy"/> which members raised it.
+    /// <see cref="ClaimSubmission.RaisedBy"/> which members raised it, in
+    /// <see cref="ClaimSubmission.AccusedBy"/> which charged it as an accused sentence, and in
+    /// <see cref="ClaimSubmission.SuspectedBy"/> which recorded it <c>Suspected false:</c>.
     ///
     /// Unverified claims come first, member A's then member B's new ones, a claim both raised listed
     /// once (the same <see cref="ItemKey"/>) and suspected-false when either member recorded it so.
@@ -9426,6 +9480,7 @@ public class BenchmarkService
             members.Add(BenchmarkVerdictView.LabelOf(member));
         }
 
+        var suspectedBy = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
         var suspected = new Dictionary<string, (string Entry, string? Reason)>(StringComparer.Ordinal);
         var texts = new List<string>();
         var textByKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -9455,6 +9510,11 @@ public class BenchmarkService
                 if (isSuspected)
                 {
                     suspected.TryAdd(text, (entry, reason));
+                    if (!suspectedBy.TryGetValue(key, out var suspecting))
+                    {
+                        suspectedBy[key] = suspecting = new SortedSet<string>(StringComparer.Ordinal);
+                    }
+                    suspecting.Add(BenchmarkVerdictView.LabelOf(contribution.Member));
                 }
                 Raise(text, contribution.Member);
             }
@@ -9528,7 +9588,14 @@ public class BenchmarkService
                 itemRoles.Add(BenchmarkClaimRoles.UnverifiedClaim);
                 if (suspected.TryGetValue(text, out var recorded))
                 {
-                    item = item with { SuspectedFalse = true, Suspicion = recorded.Reason, RecordedClaim = recorded.Entry };
+                    IReadOnlyList<string>? suspecting = suspectedBy.TryGetValue(ItemKey(text), out var members) ? members.ToList() : null;
+                    item = item with
+                    {
+                        SuspectedFalse = true,
+                        Suspicion = recorded.Reason,
+                        RecordedClaim = recorded.Entry,
+                        SuspectedBy = suspecting
+                    };
                 }
             }
             items.Add(item);
@@ -9584,7 +9651,7 @@ public class BenchmarkService
                     }
 
                     bool chargedByOther = item.Roles.Contains(BenchmarkClaimRoles.AccusedQuote)
-                        && !(item.RaisedBy ?? Array.Empty<string>()).Contains(BenchmarkVerdictView.LabelOf(contribution.Member));
+                        && !(item.AccusedBy ?? Array.Empty<string>()).Contains(BenchmarkVerdictView.LabelOf(contribution.Member));
                     var roles = item.Roles.ToList();
                     if (!roles.Contains(BenchmarkClaimRoles.AccusedQuote))
                     {
@@ -9612,7 +9679,8 @@ public class BenchmarkService
                         Context = item.Context ?? accused.Context,
                         QuotedFragments = fragments,
                         Charge = charge,
-                        RaisedBy = WithMember(item.RaisedBy, contribution.Member)
+                        RaisedBy = WithMember(item.RaisedBy, contribution.Member),
+                        AccusedBy = WithMember(item.AccusedBy, contribution.Member)
                     };
                     continue;
                 }
@@ -9621,7 +9689,8 @@ public class BenchmarkService
                 {
                     QuotedFragments = accused.QuotedFragments,
                     Charge = accused.Charge,
-                    RaisedBy = WithMember(null, contribution.Member)
+                    RaisedBy = WithMember(null, contribution.Member),
+                    AccusedBy = WithMember(null, contribution.Member)
                 });
             }
         }
@@ -9634,7 +9703,8 @@ public class BenchmarkService
     /// inside the longer key of another item of the same kind: both only unverified claims, or both
     /// only accused sentences. A critical-error quote, an out-of-rubric basis, an assessor statement
     /// or an item with more than one role is never merged. The containing item keeps its text and
-    /// place and takes the contained item's raising members; an unverified claim also takes its
+    /// place and takes the contained item's raising, accusing and suspecting members, each set
+    /// united separately; an unverified claim also takes its
     /// suspected-false record when it has none, and an accused sentence its quoted fragments and
     /// charge. Shorter items are merged first, each into the first containing item in manifest
     /// order, so a chain of contained items ends in its longest one.
@@ -9647,14 +9717,21 @@ public class BenchmarkService
                 ? item.Roles[0]
                 : null;
 
-        static ClaimSubmission Absorb(ClaimSubmission container, ClaimSubmission contained)
-        {
-            IReadOnlyList<string>? raisedBy = container.RaisedBy == null && contained.RaisedBy == null
+        static IReadOnlyList<string>? Union(IReadOnlyList<string>? first, IReadOnlyList<string>? second)
+            => first == null && second == null
                 ? null
                 : new SortedSet<string>(
-                    (container.RaisedBy ?? Array.Empty<string>()).Concat(contained.RaisedBy ?? Array.Empty<string>()),
+                    (first ?? Array.Empty<string>()).Concat(second ?? Array.Empty<string>()),
                     StringComparer.Ordinal).ToList();
-            var merged = container with { RaisedBy = raisedBy };
+
+        static ClaimSubmission Absorb(ClaimSubmission container, ClaimSubmission contained)
+        {
+            var merged = container with
+            {
+                RaisedBy = Union(container.RaisedBy, contained.RaisedBy),
+                AccusedBy = Union(container.AccusedBy, contained.AccusedBy),
+                SuspectedBy = Union(container.SuspectedBy, contained.SuspectedBy)
+            };
 
             if (!merged.SuspectedFalse && contained.SuspectedFalse)
             {
@@ -9713,7 +9790,8 @@ public class BenchmarkService
 
     /// <summary>
     /// Each verification stamped with the manifest item at its claim index: its roles, and the
-    /// fragments, charge, suspected-false record and raising members that item carries.
+    /// fragments, charge, suspected-false record and raising, accusing and suspecting members that
+    /// item carries.
     /// </summary>
     internal static List<BenchmarkClaimVerification> StampRoles(
         IReadOnlyList<BenchmarkClaimVerification> verifications,
@@ -9735,7 +9813,9 @@ public class BenchmarkService
                     SuspectedFalse = item.SuspectedFalse ? true : null,
                     Suspicion = item.Suspicion,
                     RecordedClaim = item.RecordedClaim,
-                    RaisedBy = item.RaisedBy?.ToList()
+                    RaisedBy = item.RaisedBy?.ToList(),
+                    AccusedBy = item.AccusedBy?.ToList(),
+                    SuspectedBy = item.SuspectedBy?.ToList()
                 };
             })
             .ToList();

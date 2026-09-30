@@ -2780,7 +2780,12 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .rr-figures {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 10px; margin-bottom: 20px;
 }
-.rr-figure-actions { display: flex; align-items: center; gap: 4px; .action-btn { margin: 0; } }
+.rr-figure-actions {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px;
+  .action-btn { margin: 0; }
+  .btn-ghost { margin-inline-start: 4px; }
+}
+.rr-figures-choose-count { font-variant-numeric: tabular-nums; color: #bbb; }
 // Each card's Copy and Download show while it is hovered or holds focus, always without hover.
 .score-card { position: relative; }
 .score-card:is(:hover, :focus-within) app-key-figure-card-actions { opacity: 1; }
