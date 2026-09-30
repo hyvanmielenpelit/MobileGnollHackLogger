@@ -515,6 +515,68 @@ describe('MultiRunProgressDialogComponent', () => {
       'Paired items: 15, unpaired and excluded: 1, rubric revision mismatched and excluded: 2');
   });
 
+  // --- Model roster ---------------------------------------------------------------------------
+
+  it('should give every roster badge a spoken prefix and no title attribute', () => {
+    serviceMock.getRun.and.returnValue(of({
+      id: 41,
+      answers: [],
+      testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+      testedModelIdUsed: 'gemini-3.7-flash',
+      testedModelProviderUsed: 'Google',
+      testedModelThinkingLevelUsed: 'high',
+      testedModelReasoningModeUsed: 'pro',
+      testedModelServiceTierUsed: 'flex',
+      testedModelParallelExecutionModeUsed: 1,
+      assessorModelDisplayNameUsed: 'GPT-5 Mini',
+      assessorModelIdUsed: 'gpt-5-mini',
+      assessorModelProviderUsed: 'OpenAI',
+      secondOpinionAssessorModelDisplayNameUsed: 'Claude Opus 5',
+      secondOpinionAssessorModelIdUsed: 'claude-opus-5',
+      secondOpinionAssessorModelProviderUsed: 'Anthropic',
+      secondOpinionModeUsed: 1
+    } as any));
+    open(buildSeries());
+
+    const strip = fixture.nativeElement.querySelector('.run-model-strip') as HTMLElement;
+    const badgeText = (el: Element | null | undefined) => el?.textContent?.trim();
+    expect(strip).toBeTruthy();
+    expect(strip.querySelectorAll('[title]').length).toBe(0);
+    expect(badgeText(strip.querySelector('.thinking-badge'))).toBe('thinking level High');
+    expect(badgeText(strip.querySelector('.reasoning-badge'))).toBe('reasoning mode pro');
+    expect(Array.from(strip.querySelectorAll('.config-badge')).map(badgeText))
+      .toEqual(['requested service tier Flex', 'coverage Only flagged answers']);
+    expect(badgeText(strip.querySelector('.parallel-badge'))).toBe('parallel execution On request for this key');
+    expect(strip.querySelector('app-info-tip .gh-info-btn')?.getAttribute('aria-label')).toBe('About Second reader coverage');
+    expect(fixture.nativeElement.querySelector('#multiRunCoverageTip')?.textContent).toContain('raised a flag');
+  });
+
+  it("should give a panel series' reference reader its own coverage", () => {
+    serviceMock.getRun.and.returnValue(of({
+      id: 41,
+      answers: [],
+      isPanelRun: true,
+      testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+      testedModelIdUsed: 'gemini-3.7-flash',
+      assessorModelDisplayNameUsed: 'GPT-5 Mini',
+      assessorModelIdUsed: 'gpt-5-mini',
+      secondOpinionAssessorModelDisplayNameUsed: 'Gemini 3.7 Pro',
+      secondOpinionAssessorModelIdUsed: 'gemini-3.7-pro',
+      secondOpinionModeUsed: 3
+    } as any));
+    open(buildSeries());
+
+    const strip = fixture.nativeElement.querySelector('.run-model-strip') as HTMLElement;
+    const rows = Array.from(strip.querySelectorAll('.run-model-row')) as HTMLElement[];
+    const readerRow = rows.find(row => row.querySelector('dt')?.textContent?.trim() === 'Reference reader');
+    expect(readerRow).toBeTruthy();
+    expect(readerRow!.querySelector('.config-badge')?.textContent?.trim())
+      .toBe('coverage Every answer, blind (reference reading)');
+    expect(readerRow!.querySelector('app-info-tip .gh-info-btn')?.getAttribute('aria-label'))
+      .toBe('About Reference reader coverage');
+    expect(fixture.nativeElement.querySelector('#multiRunCoverageTip')?.textContent).toContain('never scores');
+  });
+
   // --- Clipboard ------------------------------------------------------------------------------
 
   it('should surface a clipboard rejection rather than throwing it away', async () => {

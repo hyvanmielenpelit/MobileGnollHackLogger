@@ -29,6 +29,7 @@ import {
   BenchmarkLastAssessorDto,
   BenchmarkSecondOpinionMode,
   BENCHMARK_SECOND_OPINION_MODES,
+  BENCHMARK_REFERENCE_READER_COVERAGE,
   BenchmarkGameSnapshotDto,
   BenchmarkRunLimitsDto,
   BenchmarkRunSeriesDto,
@@ -2389,13 +2390,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /** The run manifest's coverage badge. A panel run's reference reader always reads every answer, blind. */
   runSecondOpinionModeLabel(run: BenchmarkRunDetailDto): string {
     return run.isPanelRun
-      ? 'Every answer, blind (reference reading)'
+      ? BENCHMARK_REFERENCE_READER_COVERAGE.label
       : this.formatSecondOpinionMode(run.secondOpinionModeUsed);
   }
 
-  runSecondOpinionModeTitle(run: BenchmarkRunDetailDto): string {
+  runSecondOpinionModeHint(run: BenchmarkRunDetailDto): string {
     return run.isPanelRun
-      ? 'A panel run\'s reference reader reads every answer, blind, as a third reading. It never scores.'
+      ? BENCHMARK_REFERENCE_READER_COVERAGE.hint
       : this.secondOpinionModeHintOf(run.secondOpinionModeUsed);
   }
 

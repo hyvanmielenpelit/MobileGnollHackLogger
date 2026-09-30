@@ -42,22 +42,22 @@
             <dd>
               <span class="model-name">{{ run.testedModelDisplayNameUsed || run.testedModelIdUsed }}</span>
               @if (run.testedModelThinkingLevelUsed) {
-                <span class="thinking-badge">{{ formatThinkingLevel(run.testedModelThinkingLevelUsed) }}</span>
+                <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(run.testedModelThinkingLevelUsed) }}</span>
               }
               @if (showReasoningBadge(run.testedModelReasoningModeUsed)) {
-                <span class="reasoning-badge">{{ run.testedModelReasoningModeUsed }}</span>
+                <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ run.testedModelReasoningModeUsed }}</span>
               }
               @if (run.testedModelProviderUsed) {
                 <app-provider-badge [provider]="run.testedModelProviderUsed"></app-provider-badge>
               }
               @if (run.testedModelServiceTierUsed) {
-                <span class="tier-badge">{{ formatServiceTier(run.testedModelServiceTierUsed) }}</span>
+                <span class="config-badge"><span class="visually-hidden">requested service tier </span>{{ formatServiceTier(run.testedModelServiceTierUsed) }}</span>
               }
               @if (run.testedModelParallelExecutionModeUsed === 0) {
-                <span class="parallel-badge badge-sequential">Sequential</span>
+                <span class="parallel-badge badge-sequential"><span class="visually-hidden">parallel execution </span>Sequential<span class="visually-hidden">, disabled for this key</span></span>
               }
               @if (run.testedModelParallelExecutionModeUsed === 1) {
-                <span class="parallel-badge badge-on-request">On request</span>
+                <span class="parallel-badge badge-on-request"><span class="visually-hidden">parallel execution </span>On request<span class="visually-hidden"> for this key</span></span>
               }
             </dd>
           </div>
@@ -66,10 +66,10 @@
             <dd>
               <span class="model-name">{{ run.assessorModelDisplayNameUsed || run.assessorModelIdUsed }}</span>
               @if (run.assessorModelThinkingLevelUsed) {
-                <span class="thinking-badge">{{ formatThinkingLevel(run.assessorModelThinkingLevelUsed) }}</span>
+                <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(run.assessorModelThinkingLevelUsed) }}</span>
               }
               @if (showReasoningBadge(run.assessorModelReasoningModeUsed)) {
-                <span class="reasoning-badge">{{ run.assessorModelReasoningModeUsed }}</span>
+                <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ run.assessorModelReasoningModeUsed }}</span>
               }
               @if (run.assessorModelProviderUsed) {
                 <app-provider-badge [provider]="run.assessorModelProviderUsed"></app-provider-badge>
@@ -82,14 +82,15 @@
               <dd>
                 <span class="model-name">{{ run.secondOpinionAssessorModelDisplayNameUsed || run.secondOpinionAssessorModelIdUsed }}</span>
                 @if (run.secondOpinionAssessorModelThinkingLevelUsed) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(run.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
+                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(run.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
                 }
                 @if (run.secondOpinionAssessorModelProviderUsed) {
                   <app-provider-badge [provider]="run.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
                 }
                 @if (formatSecondOpinionMode(run.secondOpinionModeUsed)) {
-                  <span class="second-opinion-mode-badge"
-                        [title]="secondOpinionModeHintOf(run.secondOpinionModeUsed)">{{ formatSecondOpinionMode(run.secondOpinionModeUsed) }}</span>
+                  <span class="config-badge"><span class="visually-hidden">coverage </span>{{ runSecondOpinionModeLabel(run) }}</span>
+                  <app-info-tip tipId="multiRunCoverageTip"
+                                [subject]="run.isPanelRun ? 'Reference reader coverage' : 'Second reader coverage'">{{ runSecondOpinionModeHint(run) }}</app-info-tip>
                 }
               </dd>
             </div>
@@ -100,7 +101,7 @@
               <dd>
                 <span class="model-name">{{ run.claimVerifierDisplayNameUsed || run.claimVerifierModelIdUsed }}</span>
                 @if (run.claimVerifierThinkingLevelUsed) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(run.claimVerifierThinkingLevelUsed) }}</span>
+                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(run.claimVerifierThinkingLevelUsed) }}</span>
                 }
                 @if (run.claimVerifierProviderUsed) {
                   <app-provider-badge [provider]="run.claimVerifierProviderUsed"></app-provider-badge>

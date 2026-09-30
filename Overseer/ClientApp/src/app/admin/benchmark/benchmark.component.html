@@ -4303,22 +4303,22 @@
               <dd>
                 <span class="model-name">{{ activeRunDetail.testedModelDisplayNameUsed || activeRunDetail.testedModelIdUsed }}</span>
                 @if (activeRunDetail.testedModelThinkingLevelUsed) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.testedModelThinkingLevelUsed) }}</span>
+                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(activeRunDetail.testedModelThinkingLevelUsed) }}</span>
                 }
                 @if (showReasoningBadge(activeRunDetail.testedModelReasoningModeUsed)) {
-                  <span class="reasoning-badge">{{ activeRunDetail.testedModelReasoningModeUsed }}</span>
+                  <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ activeRunDetail.testedModelReasoningModeUsed }}</span>
                 }
                 @if (activeRunDetail.testedModelProviderUsed) {
                   <app-provider-badge [provider]="activeRunDetail.testedModelProviderUsed"></app-provider-badge>
                 }
                 @if (activeRunDetail.testedModelServiceTierUsed) {
-                  <span class="tier-badge" title="Requested service tier">{{ formatServiceTier(activeRunDetail.testedModelServiceTierUsed) }}</span>
+                  <span class="config-badge"><span class="visually-hidden">requested service tier </span>{{ formatServiceTier(activeRunDetail.testedModelServiceTierUsed) }}</span>
                 }
                 @if (activeRunDetail.testedModelParallelExecutionModeUsed === 0) {
-                  <span class="parallel-badge badge-sequential" title="Parallel tool calls are disabled for this key">Sequential</span>
+                  <span class="parallel-badge badge-sequential"><span class="visually-hidden">parallel execution </span>Sequential<span class="visually-hidden">, disabled for this key</span></span>
                 }
                 @if (activeRunDetail.testedModelParallelExecutionModeUsed === 1) {
-                  <span class="parallel-badge badge-on-request" title="Parallel tool calls are on request for this key">On request</span>
+                  <span class="parallel-badge badge-on-request"><span class="visually-hidden">parallel execution </span>On request<span class="visually-hidden"> for this key</span></span>
                 }
               </dd>
             </div>
@@ -4335,10 +4335,10 @@
               <dd>
                 <span class="model-name">{{ activeRunDetail.assessorModelDisplayNameUsed || activeRunDetail.assessorModelIdUsed }}</span>
                 @if (activeRunDetail.assessorModelThinkingLevelUsed) {
-                  <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.assessorModelThinkingLevelUsed) }}</span>
+                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(activeRunDetail.assessorModelThinkingLevelUsed) }}</span>
                 }
                 @if (showReasoningBadge(activeRunDetail.assessorModelReasoningModeUsed)) {
-                  <span class="reasoning-badge">{{ activeRunDetail.assessorModelReasoningModeUsed }}</span>
+                  <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ activeRunDetail.assessorModelReasoningModeUsed }}</span>
                 }
                 @if (activeRunDetail.assessorModelProviderUsed) {
                   <app-provider-badge [provider]="activeRunDetail.assessorModelProviderUsed"></app-provider-badge>
@@ -4354,10 +4354,10 @@
                 <dd>
                   <span class="model-name">{{ activeRunDetail.coAssessorModelDisplayNameUsed || activeRunDetail.coAssessorModelIdUsed }}</span>
                   @if (activeRunDetail.coAssessorModelThinkingLevelUsed) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.coAssessorModelThinkingLevelUsed) }}</span>
+                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(activeRunDetail.coAssessorModelThinkingLevelUsed) }}</span>
                   }
                   @if (showReasoningBadge(activeRunDetail.coAssessorModelReasoningModeUsed)) {
-                    <span class="reasoning-badge">{{ activeRunDetail.coAssessorModelReasoningModeUsed }}</span>
+                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ activeRunDetail.coAssessorModelReasoningModeUsed }}</span>
                   }
                   @if (activeRunDetail.coAssessorModelProviderUsed) {
                     <app-provider-badge [provider]="activeRunDetail.coAssessorModelProviderUsed"></app-provider-badge>
@@ -4374,10 +4374,10 @@
                 <dd>
                   <span class="model-name">{{ activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || activeRunDetail.secondOpinionAssessorModelIdUsed }}</span>
                   @if (activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
+                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
                   }
                   @if (showReasoningBadge(activeRunDetail.secondOpinionAssessorModelReasoningModeUsed)) {
-                    <span class="reasoning-badge">{{ activeRunDetail.secondOpinionAssessorModelReasoningModeUsed }}</span>
+                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ activeRunDetail.secondOpinionAssessorModelReasoningModeUsed }}</span>
                   }
                   @if (activeRunDetail.secondOpinionAssessorModelProviderUsed) {
                     <app-provider-badge [provider]="activeRunDetail.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
@@ -4386,7 +4386,9 @@
                     <span class="model-name">Endpoint: {{ activeRunDetail.secondOpinionAssessorModelEndpoint }}</span>
                   }
                   @if (formatSecondOpinionMode(activeRunDetail.secondOpinionModeUsed)) {
-                    <span class="second-opinion-mode-badge" [title]="runSecondOpinionModeTitle(activeRunDetail)">{{ runSecondOpinionModeLabel(activeRunDetail) }}</span>
+                    <span class="config-badge"><span class="visually-hidden">coverage </span>{{ runSecondOpinionModeLabel(activeRunDetail) }}</span>
+                    <app-info-tip tipId="runProgressCoverageTip"
+                                  [subject]="activeRunDetail.isPanelRun ? 'Reference reader coverage' : 'Second reader coverage'">{{ runSecondOpinionModeHint(activeRunDetail) }}</app-info-tip>
                   }
                 </dd>
               </div>
@@ -4397,10 +4399,10 @@
                 <dd>
                   <span class="model-name">{{ activeRunDetail.claimVerifierDisplayNameUsed || activeRunDetail.claimVerifierModelIdUsed }}</span>
                   @if (activeRunDetail.claimVerifierThinkingLevelUsed) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.claimVerifierThinkingLevelUsed) }}</span>
+                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(activeRunDetail.claimVerifierThinkingLevelUsed) }}</span>
                   }
                   @if (showReasoningBadge(activeRunDetail.claimVerifierReasoningModeUsed)) {
-                    <span class="reasoning-badge">{{ activeRunDetail.claimVerifierReasoningModeUsed }}</span>
+                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ activeRunDetail.claimVerifierReasoningModeUsed }}</span>
                   }
                   @if (activeRunDetail.claimVerifierProviderUsed) {
                     <app-provider-badge [provider]="activeRunDetail.claimVerifierProviderUsed"></app-provider-badge>
@@ -4417,7 +4419,7 @@
                 <dd>
                   <span class="model-name">{{ activeRunDetail.reportWriterDisplayName || activeRunDetail.reportWriterModelId || 'Deleted configuration' }}</span>
                   @if (activeRunDetail.reportWriterThinkingLevel) {
-                    <span class="thinking-badge">{{ formatThinkingLevel(activeRunDetail.reportWriterThinkingLevel) }}</span>
+                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(activeRunDetail.reportWriterThinkingLevel) }}</span>
                   }
                   @if (activeRunDetail.reportWriterProvider) {
                     <app-provider-badge [provider]="activeRunDetail.reportWriterProvider"></app-provider-badge>

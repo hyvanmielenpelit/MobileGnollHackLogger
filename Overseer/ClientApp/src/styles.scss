@@ -1403,7 +1403,7 @@ dialog:not([open]),
   white-space: nowrap;
 }
 
-/* Neutral configuration badge (service tier, custom endpoint, prompt options): a setting, not a capability claim, so it does not compete with the thinking and reasoning badges. */
+/* Neutral configuration badge (service tier, reader coverage, custom endpoint, prompt options): a setting, not a capability claim, so it does not compete with the thinking and reasoning badges. */
 .config-badge {
   font-size: 11px;
   color: #aaa;

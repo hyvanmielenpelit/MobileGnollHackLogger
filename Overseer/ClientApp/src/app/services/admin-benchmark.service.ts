@@ -84,6 +84,12 @@ export const BENCHMARK_SECOND_OPINION_MODES: readonly BenchmarkSecondOpinionMode
   }
 ];
 
+/** Coverage of a panel run's reference reader, which reads every answer whatever mode the run records. */
+export const BENCHMARK_REFERENCE_READER_COVERAGE = {
+  label: 'Every answer, blind (reference reading)',
+  hint: "A panel run's reference reader reads every answer, blind, as a third reading. It never scores."
+} as const;
+
 export interface ModelPricingDto {
   inputPerMillion: number;
   outputPerMillion: number;

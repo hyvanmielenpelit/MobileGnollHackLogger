@@ -599,6 +599,9 @@ that the paragraphs would bury the controls.
   not one added to the tooltip, so §4.2's second rule is not broken.
 - **Short text only.** One or two sentences. Content longer than a multiline tooltip holds, or
   content with interactive steps, belongs in a dialog.
+- **A tip may explain static text.** After a badge or a read-out that is not a control (the
+  coverage badge of the run and multi-run progress rosters), nothing carries `aria-describedby`;
+  the (i) button is the way in, and its name says what it explains.
 
 **Click mode: `trigger="click"`.** The default, `trigger="hover"`, is the tooltip above. Choose
 click mode for an explanation the operator asks for, in a form where hovering is not the norm — a
@@ -1418,7 +1421,8 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] A hint moved out of a paragraph is an `app-info-tip` (§4b) named *About {subject}*, with a
       document-unique `tipId`.
 - [ ] The control the hint describes keeps `aria-describedby` pointing at that `tipId` — except in
-      dialog mode (`trigger="dialog"`), where nothing points at it.
+      dialog mode (`trigger="dialog"`), where nothing points at it, and where the tip explains static
+      text rather than a control.
 - [ ] A click-mode tip (`trigger="click"`) follows its control in a `.gh-field-row`; its popup has
       no `role`, no `interestfor` and no close button, and the button's `aria-expanded` follows it.
 - [ ] Warnings, advisories and the reason a control is disabled stay visible, never in a popup.

@@ -3659,9 +3659,9 @@ describe('AdminBenchmarkComponent', () => {
       expect(strip).toBeTruthy();
       expect(strip.textContent).toContain('Test Model');
       expect(strip.textContent).toContain('Test Assessor');
-      expect(strip.querySelector('.thinking-badge')?.textContent?.trim()).toBe('Max');
+      expect(strip.querySelector('.thinking-badge')?.textContent?.trim()).toBe('thinking level Max');
       expect(strip.querySelector('.provider-badge')).toBeTruthy();
-      expect(strip.querySelector('.tier-badge')).toBeTruthy();
+      expect(strip.querySelector('.config-badge')?.textContent?.trim()).toBe('requested service tier Flex');
 
       const subtitle = fixture.nativeElement
         .querySelector('.benchmark-run-progress-dialog .dialog-subtitle') as HTMLElement;
@@ -4832,6 +4832,54 @@ describe('AdminBenchmarkComponent', () => {
       expect(dds[endpointIndex].textContent).toContain('custom (contoso.example; fingerprint ab12cd34)');
     });
 
+    it('should give every roster badge a spoken prefix and no title attribute', () => {
+      component.activeRunDetail = {
+        id: 42,
+        status: 'Running',
+        suiteName: 'Default Suite',
+        testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
+        testedModelProviderUsed: 'Google',
+        testedModelIdUsed: 'gemini-3.7-flash',
+        testedModelReasoningModeUsed: 'pro',
+        testedModelServiceTierUsed: 'flex',
+        testedModelParallelExecutionModeUsed: 0,
+        assessorModelDisplayNameUsed: 'GPT-5 Mini',
+        assessorModelProviderUsed: 'OpenAI',
+        assessorModelIdUsed: 'gpt-5-mini',
+        isPanelRun: true,
+        coAssessorModelDisplayNameUsed: 'Claude Opus 4',
+        coAssessorModelProviderUsed: 'Anthropic',
+        coAssessorModelIdUsed: 'claude-opus-4',
+        secondOpinionAssessorModelDisplayNameUsed: 'Gemini 3.7 Pro',
+        secondOpinionAssessorModelProviderUsed: 'Google',
+        secondOpinionAssessorModelIdUsed: 'gemini-3.7-pro',
+        secondOpinionModeUsed: 3,
+        claimVerifierDisplayNameUsed: 'GPT-5 Nano',
+        claimVerifierProviderUsed: 'OpenAI',
+        claimVerifierModelIdUsed: 'gpt-5-nano',
+        totalQuestionCount: 10,
+        answers: []
+      } as any;
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const strip = fixture.nativeElement.querySelector('.run-model-strip') as HTMLElement;
+      const text = (el: Element | null | undefined) => el?.textContent?.trim();
+      expect(strip.querySelectorAll('[title]').length).toBe(0);
+      expect(strip.querySelector('.tier-badge')).toBeNull();
+      expect(strip.querySelector('.second-opinion-mode-badge')).toBeNull();
+      expect(text(strip.querySelector('.parallel-badge'))).toBe('parallel execution Sequential, disabled for this key');
+      expect(text(strip.querySelector('.reasoning-badge'))).toBe('reasoning mode pro');
+
+      const dts = Array.from(strip.querySelectorAll('dt')) as HTMLElement[];
+      const readerIndex = dts.findIndex(dt => dt.textContent?.trim() === 'Reference reader');
+      expect(readerIndex).toBeGreaterThan(-1);
+      const readerRow = strip.querySelectorAll('dd')[readerIndex];
+      expect(text(readerRow.querySelector('.config-badge'))).toBe('coverage Every answer, blind (reference reading)');
+      expect(readerRow.querySelector('app-info-tip .gh-info-btn')?.getAttribute('aria-label')).toBe('About Reference reader coverage');
+      expect(fixture.nativeElement.querySelector('#runProgressCoverageTip')?.textContent).toContain('never scores');
+    });
+
     it('should render second opinion assessor row under Assessor with selected mode when configured', () => {
       component.activeRunDetail = {
         id: 42,
@@ -4870,12 +4918,14 @@ describe('AdminBenchmarkComponent', () => {
       expect(dts[2].textContent?.trim()).toBe('Second reader');
 
       expect(dds[2].textContent).toContain('Claude Opus 5');
-      expect(dds[2].querySelector('.thinking-badge')?.textContent?.trim()).toBe('High');
+      expect(dds[2].querySelector('.thinking-badge')?.textContent?.trim()).toBe('thinking level High');
       expect(dds[2].querySelector('.provider-badge')?.textContent?.trim()).toBe('Anthropic');
-      const modeBadge = dds[2].querySelector('.second-opinion-mode-badge');
+      const modeBadge = dds[2].querySelector('.config-badge');
       expect(modeBadge).toBeTruthy();
-      expect(modeBadge?.textContent?.trim()).toBe('Only flagged answers');
-      expect(modeBadge?.getAttribute('title')).toContain('raised a flag');
+      expect(modeBadge?.textContent?.trim()).toBe('coverage Only flagged answers');
+      expect(modeBadge?.hasAttribute('title')).toBeFalse();
+      expect(dds[2].querySelector('app-info-tip .gh-info-btn')?.getAttribute('aria-label')).toBe('About Second reader coverage');
+      expect(fixture.nativeElement.querySelector('#runProgressCoverageTip')?.textContent).toContain('raised a flag');
     });
 
     it('should not render second opinion row if mode is Off (0)', () => {
@@ -4938,7 +4988,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const dds = strip.querySelectorAll('dd');
       expect(dds[2].textContent).toContain('Claude Opus 4');
-      expect(dds[2].querySelector('.thinking-badge')?.textContent?.trim()).toBe('High');
+      expect(dds[2].querySelector('.thinking-badge')?.textContent?.trim()).toBe('thinking level High');
       expect(dds[2].querySelector('.provider-badge')?.textContent?.trim()).toBe('Anthropic');
     });
 
@@ -10567,11 +10617,11 @@ describe('AdminBenchmarkComponent', () => {
     it('should label the coverage badge by run type', () => {
       const panel = buildPanelRun();
       expect(component.runSecondOpinionModeLabel(panel)).toBe('Every answer, blind (reference reading)');
-      expect(component.runSecondOpinionModeTitle(panel)).toContain('never scores');
+      expect(component.runSecondOpinionModeHint(panel)).toContain('never scores');
 
       const single = buildPanelRun({ isPanelRun: false, secondOpinionModeUsed: 1 });
       expect(component.runSecondOpinionModeLabel(single)).toBe('Only flagged answers');
-      expect(component.runSecondOpinionModeTitle(single)).toContain('raised a flag');
+      expect(component.runSecondOpinionModeHint(single)).toContain('raised a flag');
     });
 
     it('should show both syntheses as tabs, from one cached list per run object', () => {

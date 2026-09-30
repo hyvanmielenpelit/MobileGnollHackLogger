@@ -7,10 +7,9 @@
  * while every other view stayed correct.
  *
  * .progress-heading, .job-progress-block, .run-stat-strip, .job-status-chip, .job-diagnostics,
- * .model-name, .thinking-badge, .reasoning-badge and .parallel-badge also live in styles.scss,
- * shared with the run, difficulty and question-generation dialogs. .tier-badge and
- * .second-opinion-mode-badge stay local: no sibling reuses them yet. .provider-badge is defined
- * once, globally, in styles.scss.
+ * .model-name, .thinking-badge, .reasoning-badge, .parallel-badge and .config-badge also live in
+ * styles.scss, shared with the run, difficulty and question-generation dialogs. .provider-badge is
+ * defined once, globally, in styles.scss.
  */
 
 .gh-dialog.multi-run-progress-dialog {
@@ -152,20 +151,7 @@
   }
 }
 
-/* .model-name, .thinking-badge, .reasoning-badge and .parallel-badge live in styles.scss. */
-
-/* Configuration, not a capability claim: neutral like .provider-badge so these do not compete
-   with the thinking and reasoning badges. */
-.tier-badge,
-.second-opinion-mode-badge {
-  font-size: 11px;
-  color: #aaa;
-  background: #252525;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid #383838;
-  white-space: nowrap;
-}
+/* .model-name, .thinking-badge, .reasoning-badge, .parallel-badge and .config-badge live in styles.scss. */
 
 /* --- Stage rail -------------------------------------------------------------------------- */
 

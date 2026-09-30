@@ -84,9 +84,12 @@ Harness-neutral, and the floor for any Overseer frontend work.
   plus a visually hidden state word) and the **`.dc-ring`** ring spinner (`.dc-ring-track`,
   `.dc-ring-arc`; the Download Center and the PDF viewer), which stands still under reduced motion.
 - **`.config-badge`** is the neutral configuration badge (service tier, custom endpoint, prompt
-  options) beside `.thinking-badge`, `.reasoning-badge` and `.provider-badge`. The key-figures images
-  draw all four with the same colors (`BADGE_PALETTE` in `run-report-frame/key-figures-image.ts`);
-  change both together.
+  options) beside `.thinking-badge`, `.reasoning-badge` and `.provider-badge`: a configuration fact,
+  not a capability claim. It badges the requested service tier and the reader coverage in the run and
+  multi-run progress rosters, and the run report's facts strip. It is global and is not copied into a
+  component; the settings page's `.tier-badge` (the Tier 1–4 permission chips) is a different,
+  component-local class. The key-figures images draw all four with the same colors (`BADGE_PALETTE`
+  in `run-report-frame/key-figures-image.ts`); change both together.
 - **`.settings-dialog.model-form-dialog`** is the near-full-screen frame of every dialog hosting
   `app-ai-model-form` (Admin config, My Models add and edit): `min(96rem, 100dvw - 32px)` by
   `100dvh - 32px`, 8 px inset on a phone, a flex column in which only the form body scrolls. It
@@ -322,7 +325,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     `badge-score-mid` (≥ 50) or `badge-score-low`, colored from the `--score-*` tokens on `:root` —
     named by a visually hidden *Score* word, not `aria-label`; the color repeats the number, never
     replaces it. The roster and banner say **Assessor** (never *Evaluator*); a panel run's banner says
-    *Assessors*. **When the run names a report writer**, the model strip gains a *Report writer* row,
+    *Assessors*. The roster's badges carry the model picker's visually hidden prefixes and no `title`,
+    and the coverage badge is followed by a hover `app-info-tip` (`runProgressCoverageTip`) holding
+    the coverage hint. **When the run names a report writer**, the model strip gains a *Report writer* row,
     the rail a fourth stage *Writing reports* (stage labels read *of 4*; a run without a writer keeps
     *of 3*), the stat strip a *Reports* cell, and the cost panel a *Report writer* row and *Run total
     with reports*. The dialog keeps polling after *Completed* while the documents are *Pending* or

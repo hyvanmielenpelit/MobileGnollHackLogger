@@ -2222,8 +2222,8 @@
 }
 
 /* The models under one panel, above the stage rail. Layout only: the badges reuse
-   .thinking-badge, .reasoning-badge, .provider-badge, .tier-badge, .parallel-badge and
-   .second-opinion-mode-badge unchanged, so the dialog and the tab's model selectors
+   .thinking-badge, .reasoning-badge, .provider-badge, .parallel-badge and .config-badge
+   unchanged, so the dialog and the tab's model selectors
    describe a configuration the same way. */
 .run-model-strip {
   margin: 0 0 16px 0;
@@ -2277,20 +2277,6 @@
       gap: 4px;
     }
   }
-}
-
-/* Requested service tier and second-opinion mode. Neutral like .provider-badge: they are
-   configuration, not capability claims, and must not compete with the thinking and
-   reasoning badges. */
-.tier-badge,
-.second-opinion-mode-badge {
-  font-size: 11px;
-  color: #aaa;
-  background: #252525;
-  padding: 2px 6px;
-  border-radius: 4px;
-  border: 1px solid #383838;
-  white-space: nowrap;
 }
 
 /* The run's three stages, and a fourth when it names a report writer (.run-stage-rail, in

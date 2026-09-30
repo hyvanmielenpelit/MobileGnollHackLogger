@@ -17,6 +17,7 @@ import { CommonModule } from '@angular/common';
 import {
   AdminBenchmarkService,
   BENCHMARK_SECOND_OPINION_MODES,
+  BENCHMARK_REFERENCE_READER_COVERAGE,
   BenchmarkComparabilityResultDto,
   BenchmarkGroupAnalysisDto,
   BenchmarkInstrumentChangedDto,
@@ -32,6 +33,7 @@ import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 
 /**
  * The stages of a multi-run operation. `waitingForCap` and `stopped` are stages in their own
@@ -147,7 +149,7 @@ interface GroupComparisonShape {
 @Component({
   selector: 'app-multi-run-progress-dialog',
   standalone: true,
-  imports: [CommonModule, ProviderBadgeComponent],
+  imports: [CommonModule, ProviderBadgeComponent, InfoTipComponent],
   templateUrl: './multi-run-progress-dialog.component.html',
   styleUrls: ['./multi-run-progress-dialog.component.scss']
 })
@@ -796,6 +798,19 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
 
   secondOpinionModeHintOf(mode: number | null | undefined): string {
     return this.secondOpinionModeOptions.find(o => o.value === mode)?.hint ?? '';
+  }
+
+  /** The roster's coverage badge. A panel run's reference reader always reads every answer, blind. */
+  runSecondOpinionModeLabel(run: BenchmarkRunDetailDto): string {
+    return run.isPanelRun
+      ? BENCHMARK_REFERENCE_READER_COVERAGE.label
+      : this.formatSecondOpinionMode(run.secondOpinionModeUsed);
+  }
+
+  runSecondOpinionModeHint(run: BenchmarkRunDetailDto): string {
+    return run.isPanelRun
+      ? BENCHMARK_REFERENCE_READER_COVERAGE.hint
+      : this.secondOpinionModeHintOf(run.secondOpinionModeUsed);
   }
 
   formatDuration(ms: number | null | undefined): string {
