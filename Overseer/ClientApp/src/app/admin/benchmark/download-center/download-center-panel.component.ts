@@ -33,9 +33,8 @@ import {
 import { downloadTextFile, safeFileName } from '../../../utils/download.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
-import { TableState, exactFilter } from '../../../shared/data-table/table-state';
-import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
-import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
+import { SortDirection, TableState, anyOfFilter, customFilter, exactFilter } from '../../../shared/data-table/table-state';
+import { FilterFacetComponent, FilterFacetOption } from '../../../shared/data-table/filter-facet.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { exportTimestamp, saveFigureBlob } from '../model-comparison/figure-export';
 import {
@@ -155,7 +154,7 @@ export type DownloadRowCategory =
   | 'toolCallLog'
   | 'diagnostics';
 
-/** One available document: a row of the Documents table. */
+/** One available document: a card of the Documents list. */
 export interface DownloadRow {
   key: string;
   kind: DownloadRowKind;
@@ -175,11 +174,11 @@ export interface DownloadRow {
   formats: readonly DownloadFormat[];
   /** Why the row is internal only whatever is chosen, or null for a shareable pack document. */
   internalReason: string | null;
-  /** The model or group the row is about, for the Subject column and its filter. */
+  /** The model or group the row is about, for the card's meta line and the Subject facet. */
   subject: string;
-  /** The suite, for the Subject column and the Suite filter; empty when unknown. */
+  /** The suite, for the card's meta line and the Suite facet; empty when unknown. */
   suite: string;
-  /** `Executive Summary`, `Run report`…: the Document filter's value. */
+  /** `Executive Summary`, `Run report`…: the Document facet's value. */
   documentType: string;
   /** When the document was written or the run finished; null when unknown. */
   createdAtUtc: string | null;
@@ -343,13 +342,106 @@ export function reportJobPhaseText(phase: BenchmarkRunReportJobPhase): string {
   }
 }
 
-/** The document types in the order the Document filter lists them. */
+/** The document types in the order the Document facet lists them and the type sort ranks them. */
 const DOCUMENT_TYPE_ORDER: readonly string[] = [
   ...REPORT_PACK_AUDIENCES.map(option => option.label),
   'Run report',
   'Tool-call log',
   'Run diagnostics'
 ];
+
+/** How many cards the list shows at first, and how many more each Show more adds. */
+export const DOWNLOAD_CENTER_CARD_BATCH = 10;
+
+/** The list's view settings (the sort), apart from the download settings and their migration. */
+export const DOWNLOAD_CENTER_VIEW_STORAGE_KEY = 'overseer.benchmark.downloadCenter.view';
+
+/** The wait after the last keystroke before the search filters the list and the status line changes. */
+export const DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS = 200;
+
+export type DownloadSortId =
+  | 'created-desc' | 'created-asc' | 'type' | 'title' | 'subject' | 'suite' | 'writer' | 'cost-desc' | 'changed-first';
+
+/** The orders Sort by offers, first the default. Ties keep source order; missing keys sort last. */
+export const DOWNLOAD_SORTS: readonly { id: DownloadSortId; label: string; column: string; direction: SortDirection }[] = [
+  { id: 'created-desc', label: 'Newest first', column: 'created', direction: 'desc' },
+  { id: 'created-asc', label: 'Oldest first', column: 'created', direction: 'asc' },
+  { id: 'type', label: 'Document type', column: 'type', direction: 'asc' },
+  { id: 'title', label: 'Title (A–Z)', column: 'title', direction: 'asc' },
+  { id: 'subject', label: 'Subject (A–Z)', column: 'subject', direction: 'asc' },
+  { id: 'suite', label: 'Suite (A–Z)', column: 'suite', direction: 'asc' },
+  { id: 'writer', label: 'Writer (A–Z)', column: 'writer', direction: 'asc' },
+  { id: 'cost-desc', label: 'Writing cost, highest first', column: 'cost', direction: 'desc' },
+  { id: 'changed-first', label: 'Changed since written first', column: 'changed', direction: 'desc' }
+];
+
+const DEFAULT_SORT: DownloadSortId = 'created-desc';
+
+/** A term and its explanation in the About document options dialog. */
+export interface DownloadHelpTerm {
+  term: string;
+  text: string;
+}
+
+/** The About document options dialog's text, besides the disclosure guides. */
+export const DOWNLOAD_OPTIONS_HELP = {
+  sharing: 'Shareable documents may go to a model’s provider; internal-only ones never leave the Overseer team.',
+  peerNames: [
+    { term: 'Named', text: 'Peer models appear under their own names and providers.' },
+    { term: 'Anonymized', text: 'Peers appear as Model A, Model B… without providers; the subject is always named.' }
+  ],
+  formats: [
+    { term: 'PDF', text: 'For reading and sending: accessible (PDF/UA) and archival (PDF/A).' },
+    { term: 'Word', text: 'For editing: a standard Word document with real headings, lists and tables.' },
+    { term: 'Markdown', text: 'For tools and AI agents.' },
+    { term: 'HTML', text: 'For reading in a browser.' },
+    { term: 'Text', text: 'The run diagnostics, as captured.' }
+  ],
+  charts: [
+    { term: 'None', text: 'The PDF and Word copies have no charts.' },
+    { term: 'current', text: 'The charts were drawn with the settings step 2 shows now.' },
+    { term: 'differs from step 2', text: 'The charts were drawn with other settings; Update charts redraws them.' }
+  ]
+} as const satisfies { sharing: string; peerNames: readonly DownloadHelpTerm[]; formats: readonly DownloadHelpTerm[]; charts: readonly DownloadHelpTerm[] };
+
+/** A facet of the filter bar, as `app-filter-facet` renders it. */
+export interface DownloadFacet {
+  column: string;
+  facetId: string;
+  label: string;
+  mode: 'multiple' | 'single';
+  options: FilterFacetOption[];
+  selected: readonly string[];
+  anyLabel: string;
+}
+
+/** One removable chip of the active filters: a facet value, or the search. */
+export interface DownloadFilterChip {
+  key: string;
+  column: string;
+  value: string;
+  facetLabel: string;
+  valueLabel: string;
+}
+
+/** The creation-time ranges of the Created facet, in hours. */
+const CREATED_RANGES: readonly { value: string; label: string; hours: number }[] = [
+  { value: '24h', label: 'Last 24 hours', hours: 24 },
+  { value: '7d', label: 'Last 7 days', hours: 24 * 7 },
+  { value: '30d', label: 'Last 30 days', hours: 24 * 30 }
+];
+
+const WRITER_NONE = 'none';
+const CHANGE_LABELS: Record<string, string> = {
+  run: 'Run changed since written',
+  comparison: 'Comparison changed since written',
+  none: 'Unchanged'
+};
+const CHART_STATE_LABELS: Record<string, string> = {
+  none: 'None',
+  current: 'Current',
+  differs: 'Differs from step 2'
+};
 
 /** A pricing basis as a sentence names it. */
 function pricingBasisText(basis: string): string {
@@ -363,14 +455,14 @@ let nextInstanceId = 0;
 /**
  * The Download Center's body and footer: packages report documents and run files for download, as
  * one file or as a ZIP with `MANIFEST.md`. Three packages set the choices (Internal, External,
- * Custom); a paged, sortable and filterable table lists every available document with its options,
- * a View and, for a Report Pack document, a Delete.
+ * Custom); a sortable, filterable list of document cards, shown ten at a time with Load more, holds
+ * every available document with its options, a View and, for a Report Pack document, a Delete.
  *
  * Hosted by the Download Center dialog (`app-benchmark-download-center`), which calls `load()` on
  * every opening, and by the Model Comparison wizard's step 4, which binds `context` and lends
- * `chartActions`: a Charts column, **Update charts…** and per-row **Remove charts**.
+ * `chartActions`: a Charts option and facet, **Update charts…** and per-card **Remove charts**.
  *
- * It makes no request but the document list or detail that fills the table, the render endpoints
+ * It makes no request but the document list or detail that fills the list, the render endpoints
  * (Markdown, PDF and Word), the run report and tool-call log endpoints with their PDFs and Word
  * documents, the diagnostics PDF and Word endpoints, which render the captured text and store
  * nothing, a document's delete and its charts' delete: nothing here can start generation. Chart
@@ -382,7 +474,7 @@ let nextInstanceId = 0;
 @Component({
   selector: 'app-download-center-panel',
   standalone: true,
-  imports: [InfoTipComponent, SortHeaderComponent, TablePagerComponent, PdfViewerDialogComponent, ReportChartPickerComponent],
+  imports: [InfoTipComponent, FilterFacetComponent, PdfViewerDialogComponent, ReportChartPickerComponent],
   templateUrl: './download-center-panel.component.html',
   styleUrls: ['./download-center-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -417,15 +509,18 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   readonly disclosureGuides = REPORT_DISCLOSURE_GUIDES;
   readonly disclosureTitle = DOWNLOAD_CENTER_DISCLOSURE_TITLE;
   readonly disclosureNotes = [REPORT_DISCLOSURE_NOTE_SHARED, REPORT_DISCLOSURE_FORMATS_NOTE];
+  readonly optionsHelp = DOWNLOAD_OPTIONS_HELP;
+  readonly sorts = DOWNLOAD_SORTS;
+  readonly cardBatch = DOWNLOAD_CENTER_CARD_BATCH;
   readonly formatUtc = formatUtc;
 
   packageId: DownloadPackageId = 'internal';
   /** The paper every PDF and Word document of a download is laid out on. */
   paper: BenchmarkPdfPaper = 'a4';
-  /** Every row, in source order; the table renders `view`. */
+  /** Every row, in source order; the list renders `view`. */
   rows: DownloadRow[] = [];
   loadingDocuments = false;
-  /** Notices above the table: runs that no longer exist, documents that could not be loaded. */
+  /** Notices above the list: runs that no longer exist, documents that could not be loaded. */
   notices: string[] = [];
   preparing = false;
   /** The download or chart update in preparation, shown over the body; null while none is. */
@@ -437,21 +532,39 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   reportJobPhase: BenchmarkRunReportJobPhase | null = null;
 
   /**
-   * Sort, filter and page state. The source list stays in load order: the download plan, the
-   * manifest and the remembered choices read `rows`, never the view.
+   * Sort and filter state. The source list stays in load order: the download plan, the manifest
+   * and the remembered choices read `rows`, never the view.
    */
   readonly table = new TableState<DownloadRow>('created', 'desc').registerAccessors(
     {
       created: row => utcDate(row.createdAtUtc)?.getTime() ?? null,
-      document: row => row.label
+      type: row => DOCUMENT_TYPE_ORDER.indexOf(row.documentType),
+      title: row => row.label,
+      subject: row => row.subject,
+      suite: row => row.suite || null,
+      writer: row => row.doc?.writerDisplayName || null,
+      cost: row => row.doc?.costUsd ?? null,
+      changed: row => (row.runChanged || !!row.doc?.peersChangedSinceGeneration ? 1 : 0)
     },
     {
-      subject: row => row.subject,
-      document: exactFilter(row => row.documentType),
-      suite: exactFilter(row => row.suite),
+      search: customFilter((row, value) => rowSearchText(row).includes(value.toLowerCase())),
+      document: anyOfFilter(row => row.documentType),
+      subject: anyOfFilter(row => row.subject || null),
+      suite: anyOfFilter(row => row.suite || null),
+      writer: anyOfFilter(row => writerValue(row)),
+      changes: anyOfFilter(row => changeValues(row)),
+      charts: anyOfFilter(row => this.chartValue(row)),
+      created: customFilter((row, value) => this.createdWithin(row, value)),
       selected: exactFilter(row => (this.isIncluded(row) ? 'yes' : 'no'))
     }
   );
+
+  /** The chosen order of Sort by. */
+  sortId: DownloadSortId = DEFAULT_SORT;
+  /** The search field's text; it filters the list once typing pauses. */
+  searchText = '';
+  /** How many of the matching cards the list shows. */
+  visibleCount = DOWNLOAD_CENTER_CARD_BATCH;
 
   // --- Delete ---
   deleteTarget: DownloadRow | null = null;
@@ -486,12 +599,31 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   private returnFocus: HTMLElement | null = null;
   /** After a delete: the key of the row to focus, or null for the Documents heading. */
   private focusAfterDelete: string | null | undefined = undefined;
+  /** The pending search, applied once typing pauses. */
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Bumped on every change to the rows, a row's selection, a filter or the package: the facets' memo key. */
+  private revision = 0;
+  private facetMemo: {
+    revision: number;
+    rows: DownloadRow[];
+    actions: DownloadCenterChartActions | null;
+    hash: string | null;
+    facets: DownloadFacet[];
+    chips: DownloadFilterChip[];
+  } | null = null;
+
+  constructor() {
+    this.applySort(readStoredSort());
+  }
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
   }
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['chartActions']) {
+      this.invalidate();
+    }
     if (changes['context'] && this.context !== this.loaded) {
       if (this.context) {
         this.load(this.context);
@@ -508,6 +640,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
   ngOnDestroy(): void {
     this.generation++;
+    this.cancelSearchTimer();
     this.stopReportJobPoll();
     this.listSub?.unsubscribe();
     this.deleteSub?.unsubscribe();
@@ -534,8 +667,13 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     this.chartFailures = [];
     this.stopReportJobPoll();
     this.listSub?.unsubscribe();
+    this.cancelSearchTimer();
+    this.searchText = '';
     this.table.clearFilters();
     this.table.page = 1;
+    this.applySort(readStoredSort());
+    this.visibleCount = DOWNLOAD_CENTER_CARD_BATCH;
+    this.invalidate();
     const stored = readStoredSettings();
     this.packageId = stored?.package ?? 'internal';
     this.paper = stored?.paper ?? 'a4';
@@ -575,7 +713,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     this.cdr.markForCheck();
   }
 
-  /** The notice above the table while the run's AI-written reports are being written, or null. */
+  /** The notice above the list while the run's AI-written reports are being written, or null. */
   get reportJobNotice(): string | null {
     const phase = this.reportJobPhase;
     return phase === null
@@ -599,6 +737,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     }
     this.failures = [];
     this.statusMessage = '';
+    this.invalidate();
     this.cdr.markForCheck();
   }
 
@@ -684,6 +823,32 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     return created ? `${row.label}, ${created}` : row.label;
   }
 
+  /**
+   * The card's meta line, in order: when it was written, and then for a report document its
+   * subject, suite and writer; for a run file its detail (suite and model, or the subject run).
+   */
+  cardMeta(row: DownloadRow): { kind: string; cssClass: string; text: string }[] {
+    const parts: { kind: string; cssClass: string; text: string }[] = [];
+    const created = formatUtc(row.createdAtUtc);
+    if (created) {
+      parts.push({ kind: 'time', cssClass: 'dc-card-time', text: created });
+    }
+    if (row.kind === 'pack') {
+      if (row.subject) {
+        parts.push({ kind: 'subject', cssClass: 'dc-subject', text: row.subject });
+      }
+      if (row.suite) {
+        parts.push({ kind: 'suite', cssClass: 'dc-suite', text: row.suite });
+      }
+      if (row.doc?.writerDisplayName) {
+        parts.push({ kind: 'writer', cssClass: 'dc-card-writer', text: `by ${row.doc.writerDisplayName}` });
+      }
+    } else if (row.detail) {
+      parts.push({ kind: 'detail', cssClass: 'dc-doc-detail', text: row.detail });
+    }
+    return parts;
+  }
+
   /** The row checkbox's description: why it cannot be chosen, and the row's note. */
   rowDescribedBy(row: DownloadRow): string | null {
     const rid = this.rowId(row);
@@ -702,6 +867,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
       return;
     }
     this.stateOf(row).selected = (event.target as HTMLInputElement).checked;
+    this.invalidate();
     this.cdr.markForCheck();
   }
 
@@ -747,14 +913,46 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   }
 
   // -------------------------------------------------------------------------------------------
-  // The table: sorting, filtering, paging and the selection line
+  // The list: sorting, searching, facets, Load more and the selection line
   // -------------------------------------------------------------------------------------------
 
-  get view(): DownloadRow[] {
-    return this.table.view(this.rows);
+  /** Every row the filters let through, in the chosen order. */
+  get matching(): DownloadRow[] {
+    return this.table.viewAll(this.rows);
   }
 
-  /** What the table says with no row at all, as against no row the filters let through. */
+  /** The cards on screen: the first `visibleCount` matching rows. */
+  get view(): DownloadRow[] {
+    return this.matching.slice(0, this.visibleCount);
+  }
+
+  /** Matching rows not yet shown. */
+  get remainingCount(): number {
+    return Math.max(0, this.matching.length - this.visibleCount);
+  }
+
+  /** How many cards Show more adds. */
+  get nextBatchCount(): number {
+    return Math.min(DOWNLOAD_CENTER_CARD_BATCH, this.remainingCount);
+  }
+
+  /** `Showing 10 of 23 documents`, and `· filtered from 40` while a filter is active. */
+  get listStatus(): string {
+    const total = this.rows.length;
+    if (total === 0) {
+      return '';
+    }
+    const matching = this.matching.length;
+    const shown = Math.min(this.visibleCount, matching);
+    const text = matching === 0
+      ? 'No documents shown'
+      : matching === 1
+        ? 'One document'
+        : `Showing ${shown} of ${matching} documents`;
+    return this.table.hasActiveFilters ? `${text} · filtered from ${total}` : text;
+  }
+
+  /** What the list says with no row at all, as against no row the filters let through. */
   get emptyText(): string {
     const context = this.loaded;
     if (context?.kind === 'library') {
@@ -765,58 +963,299 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     return 'Nothing is available to download.';
   }
 
-  /** The Document filter's options: the document types present. */
-  get documentTypeOptions(): string[] {
-    const present = new Set(this.rows.map(row => row.documentType));
-    return DOCUMENT_TYPE_ORDER.filter(type => present.has(type));
+  /** Shows the next batch of cards and focuses the first new card's title. */
+  showMore(): void {
+    this.revealTo(this.visibleCount + DOWNLOAD_CENTER_CARD_BATCH);
   }
 
-  /** The Suite filter's options: the suites present. */
-  get suiteOptions(): string[] {
-    return [...new Set(this.rows.map(row => row.suite).filter(suite => !!suite))].sort((a, b) => a.localeCompare(b));
+  /** Shows every matching card and focuses the first new card's title. */
+  showAll(): void {
+    this.revealTo(this.matching.length);
   }
 
-  filterValue(column: string): string {
-    return this.table.filters[column] ?? '';
+  private revealTo(count: number): void {
+    const before = this.view.length;
+    this.visibleCount = Math.max(count, DOWNLOAD_CENTER_CARD_BATCH);
+    this.cdr.detectChanges();
+    const first = this.view[before];
+    if (first) {
+      this.findById(`${this.rowId(first)}-title`)?.focus();
+    }
   }
 
-  setFilter(column: string, event: Event): void {
-    this.table.setFilter(column, (event.target as HTMLInputElement | HTMLSelectElement).value);
+  // --- Sort by ---
+
+  onSortChange(event: Event): void {
+    const id = (event.target as HTMLSelectElement).value as DownloadSortId;
+    if (!DOWNLOAD_SORTS.some(sort => sort.id === id)) {
+      return;
+    }
+    this.applySort(id);
+    this.visibleCount = DOWNLOAD_CENTER_CARD_BATCH;
+    writeStoredSort(id);
     this.cdr.markForCheck();
   }
 
+  private applySort(id: DownloadSortId): void {
+    const sort = DOWNLOAD_SORTS.find(s => s.id === id) ?? DOWNLOAD_SORTS[0];
+    this.sortId = sort.id;
+    this.table.setSort(sort.column, sort.direction);
+  }
+
+  // --- Search ---
+
+  /** Filters the list once typing pauses, so the status line is not announced per keystroke. */
+  onSearchInput(event: Event): void {
+    this.searchText = (event.target as HTMLInputElement).value;
+    this.cancelSearchTimer();
+    this.searchTimer = setTimeout(() => {
+      this.searchTimer = null;
+      this.applySearch();
+    }, DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS);
+  }
+
+  /** Escape with text clears it at once; with none it is left to the dialog around the panel. */
+  onSearchKeydown(event: KeyboardEvent): void {
+    const input = event.target as HTMLInputElement;
+    if (event.key !== 'Escape' || input.value === '') {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    input.value = '';
+    this.searchText = '';
+    this.cancelSearchTimer();
+    this.applySearch();
+  }
+
+  private applySearch(): void {
+    this.table.setFilter('search', this.searchText);
+    this.visibleCount = DOWNLOAD_CENTER_CARD_BATCH;
+    this.invalidate();
+    this.cdr.markForCheck();
+  }
+
+  private cancelSearchTimer(): void {
+    if (this.searchTimer !== null) {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = null;
+    }
+  }
+
+  // --- Facets and chips ---
+
+  /**
+   * The facets, in order: Document, Subject, Suite, Written by, Changes, Charts (with chart actions)
+   * and Created. A facet is listed while its rows hold two values or more, or while it has a
+   * selection. Each option counts the rows every other active filter lets through. Memoized, so
+   * the facet components get the same arrays until something they show changes.
+   */
+  get facets(): DownloadFacet[] {
+    return this.facetState().facets;
+  }
+
+  /** One chip per selected facet value, then one for the search. */
+  get activeChips(): DownloadFilterChip[] {
+    return this.facetState().chips;
+  }
+
+  onFacetChange(column: string, values: string[]): void {
+    if (column === 'created') {
+      this.table.setFilter('created', values[0] ?? '');
+    } else {
+      this.table.setFilterValues(column, values);
+    }
+    this.visibleCount = DOWNLOAD_CENTER_CARD_BATCH;
+    this.invalidate();
+    this.cdr.markForCheck();
+  }
+
+  /** Removes one chip's filter, then focuses the next chip, else the previous, else the search field. */
+  removeChip(chip: DownloadFilterChip): void {
+    const index = this.activeChips.findIndex(c => c.key === chip.key);
+    if (chip.column === 'search') {
+      this.searchText = '';
+      this.cancelSearchTimer();
+      this.table.setFilter('search', '');
+    } else if (chip.column === 'created') {
+      this.table.setFilter('created', '');
+    } else {
+      this.table.setFilterValues(chip.column, this.table.filterValues(chip.column).filter(value => value !== chip.value));
+    }
+    this.visibleCount = DOWNLOAD_CENTER_CARD_BATCH;
+    this.invalidate();
+    this.cdr.detectChanges();
+    const chips = Array.from(this.host.nativeElement.querySelectorAll<HTMLElement>('.dc-filter-chips .gh-filter-chip'));
+    (chips[index] ?? chips[index - 1] ?? this.findById(`${this.idPrefix}-search`))?.focus();
+  }
+
+  /** Clears the search and every filter but *Show selected only*, then focuses the search field. */
   clearFilters(): void {
     const selectedOnly = this.showSelectedOnly;
+    this.cancelSearchTimer();
+    this.searchText = '';
     this.table.clearFilters();
     if (selectedOnly) {
       this.table.setFilter('selected', 'yes');
     }
-    this.cdr.markForCheck();
+    this.visibleCount = DOWNLOAD_CENTER_CARD_BATCH;
+    this.invalidate();
+    this.cdr.detectChanges();
+    this.findById(`${this.idPrefix}-search`)?.focus();
   }
 
-  /** The column filters, *Show selected only* aside, which has its own control. */
-  get hasColumnFilters(): boolean {
-    return Object.entries(this.table.filters).some(([column, value]) => column !== 'selected' && (value ?? '').trim() !== '');
+  private facetState(): { facets: DownloadFacet[]; chips: DownloadFilterChip[] } {
+    const hash = this.chartActions?.currentSettingsHash ?? null;
+    const memo = this.facetMemo;
+    if (memo && memo.revision === this.revision && memo.rows === this.rows
+      && memo.actions === this.chartActions && memo.hash === hash) {
+      return memo;
+    }
+    const facets = this.buildFacets();
+    const chips = this.buildChips(facets);
+    this.facetMemo = { revision: this.revision, rows: this.rows, actions: this.chartActions, hash, facets, chips };
+    return this.facetMemo;
   }
 
-  onTableChanged(): void {
-    this.cdr.markForCheck();
+  private buildFacets(): DownloadFacet[] {
+    const rows = this.rows;
+    const facets: DownloadFacet[] = [];
+    const add = (column: string, label: string, values: (row: DownloadRow) => readonly string[],
+                 order: (present: Set<string>) => string[], labelOf: (value: string) => string): void => {
+      const present = new Set(rows.flatMap(values));
+      const selected = this.table.filterValues(column);
+      if (present.size < 2 && selected.length === 0) {
+        return;
+      }
+      const counted = this.table.filterRowsExcept(rows, column).map(values);
+      const ordered = order(present);
+      for (const value of selected) {
+        if (!ordered.includes(value)) {
+          ordered.push(value);
+        }
+      }
+      facets.push({
+        column,
+        facetId: `${this.idPrefix}-facet-${column}`,
+        label,
+        mode: 'multiple',
+        options: ordered.map(value => ({ value, label: labelOf(value), count: counted.filter(v => v.includes(value)).length })),
+        selected,
+        anyLabel: 'Any'
+      });
+    };
+    const alphabetical = (present: Set<string>): string[] =>
+      [...present].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const inOrder = (order: readonly string[]) => (present: Set<string>): string[] => order.filter(value => present.has(value));
+    const same = (value: string): string => value;
+    const one = (value: string | null | undefined): string[] => (value ? [value] : []);
+
+    add('document', 'Document', row => one(row.documentType), inOrder(DOCUMENT_TYPE_ORDER), same);
+    add('subject', 'Subject', row => one(row.subject), alphabetical, same);
+    add('suite', 'Suite', row => one(row.suite), alphabetical, same);
+    add('writer', 'Written by', row => [writerValue(row)], present => {
+      const names = alphabetical(present).filter(value => value !== WRITER_NONE);
+      return present.has(WRITER_NONE) ? [...names, WRITER_NONE] : names;
+    }, value => (value === WRITER_NONE ? 'No writer — run files' : value));
+    add('changes', 'Changes', changeValues, inOrder(Object.keys(CHANGE_LABELS)), value => CHANGE_LABELS[value] ?? value);
+    if (this.chartActions) {
+      add('charts', 'Charts', row => one(this.chartValue(row)), inOrder(Object.keys(CHART_STATE_LABELS)),
+        value => CHART_STATE_LABELS[value] ?? value);
+    }
+
+    const created = this.table.filters['created'] ?? '';
+    const dated = rows.filter(row => utcDate(row.createdAtUtc) !== null).length;
+    if (dated >= 2 || created !== '') {
+      const counted = this.table.filterRowsExcept(rows, 'created');
+      facets.push({
+        column: 'created',
+        facetId: `${this.idPrefix}-facet-created`,
+        label: 'Created',
+        mode: 'single',
+        options: CREATED_RANGES.map(range => ({
+          value: range.value,
+          label: range.label,
+          count: counted.filter(row => this.createdWithin(row, range.value)).length
+        })),
+        selected: created ? [created] : [],
+        anyLabel: 'Any time'
+      });
+    }
+    return facets;
   }
 
-  /** Rows chosen for download, on any page. */
+  private buildChips(facets: readonly DownloadFacet[]): DownloadFilterChip[] {
+    const chips: DownloadFilterChip[] = [];
+    for (const facet of facets) {
+      for (const value of facet.selected) {
+        chips.push({
+          key: `${facet.column}:${value}`,
+          column: facet.column,
+          value,
+          facetLabel: facet.label,
+          valueLabel: facet.options.find(option => option.value === value)?.label ?? value
+        });
+      }
+    }
+    const search = (this.table.filters['search'] ?? '').trim();
+    if (search) {
+      chips.push({ key: 'search', column: 'search', value: search, facetLabel: 'Search', valueLabel: `“${search}”` });
+    }
+    return chips;
+  }
+
+  /** A pack document's chart state for the Charts facet: `none`, `current` or `differs`; null for run files. */
+  private chartValue(row: DownloadRow): string | null {
+    if (!this.chartActions || row.kind !== 'pack') {
+      return null;
+    }
+    if (this.chartFigureCount(row) === 0) {
+      return 'none';
+    }
+    return this.chartsCurrent(row) ? 'current' : 'differs';
+  }
+
+  /** Whether the row was created within a Created range of now. A row with no time is in none. */
+  private createdWithin(row: DownloadRow, range: string): boolean {
+    const hours = CREATED_RANGES.find(r => r.value === range)?.hours;
+    const created = utcDate(row.createdAtUtc);
+    if (hours === undefined || !created) {
+      return false;
+    }
+    return downloadCenterIo.now().getTime() - created.getTime() <= hours * 3600_000;
+  }
+
+  /** Marks the facets' counts stale. */
+  private invalidate(): void {
+    this.revision++;
+  }
+
+  private findById(id: string): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>(`[id="${id}"]`);
+  }
+
+  // --- The selection line ---
+
+  /** Rows chosen for download, shown or not. */
   get selectedCount(): number {
     return this.rows.filter(row => this.isIncluded(row)).length;
   }
 
-  /** Chosen rows the current page does not show. */
-  get offPageSelectedCount(): number {
-    const onPage = new Set(this.view.map(row => row.key));
-    return this.rows.filter(row => this.isIncluded(row) && !onPage.has(row.key)).length;
+  /** Chosen rows the list does not show: filtered out, or not yet shown. */
+  get hiddenSelectedCount(): number {
+    const shown = new Set(this.view.map(row => row.key));
+    return this.rows.filter(row => this.isIncluded(row) && !shown.has(row.key)).length;
   }
 
-  /** Rows the filters show, on any page, that can be chosen. */
+  /** Rows the filters let through, shown or not, that can be chosen. */
   get shownSelectableRows(): DownloadRow[] {
-    return this.table.viewAll(this.rows).filter(row => this.isSelectable(row));
+    return this.matching.filter(row => this.isSelectable(row));
+  }
+
+  /** `Select all 13`, or `Select all 12 matching` while a filter is active. */
+  get selectShownLabel(): string {
+    const count = this.shownSelectableRows.length;
+    return this.table.hasActiveFilters ? `Select all ${count} matching` : `Select all ${count}`;
   }
 
   get showSelectedOnly(): boolean {
@@ -825,6 +1264,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 
   toggleShowSelectedOnly(): void {
     this.table.setFilter('selected', this.showSelectedOnly ? '' : 'yes');
+    this.visibleCount = DOWNLOAD_CENTER_CARD_BATCH;
+    this.invalidate();
     this.cdr.markForCheck();
   }
 
@@ -838,10 +1279,11 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     if (this.showSelectedOnly) {
       this.table.setFilter('selected', '');
     }
+    this.invalidate();
     this.cdr.markForCheck();
   }
 
-  /** Chooses every row the filters show, on every page. */
+  /** Chooses every row the filters let through, on screen or not. */
   selectShown(): void {
     if (this.preparing) {
       return;
@@ -849,6 +1291,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     for (const row of this.shownSelectableRows) {
       this.stateOf(row).selected = true;
     }
+    this.invalidate();
     this.cdr.markForCheck();
   }
 
@@ -2100,6 +2543,54 @@ function documentViewerSubtitle(doc: BenchmarkReportDocumentListItemDto): string
   }
   parts.push(`by ${doc.writerDisplayName || 'the report writer'} on ${formatUtc(doc.createdAtUtc) || 'an unknown date'}`);
   return parts.join(' · ');
+}
+
+// ---------------------------------------------------------------------------------------------
+// Search, facet values and the remembered sort
+// ---------------------------------------------------------------------------------------------
+
+/** What the search matches against, lower-cased: the title, the detail, the subject, the suite and the writer. */
+function rowSearchText(row: DownloadRow): string {
+  return [row.label, row.detail, row.subject, row.suite, row.doc?.writerDisplayName ?? '']
+    .join('\n')
+    .toLowerCase();
+}
+
+/** The Written by facet's value: the writer's name, or `none` for a file no model wrote. */
+function writerValue(row: DownloadRow): string {
+  return row.doc?.writerDisplayName || WRITER_NONE;
+}
+
+/** The Changes facet's values: `run`, `comparison`, both, or `none`. */
+function changeValues(row: DownloadRow): string[] {
+  const values: string[] = [];
+  if (row.runChanged) {
+    values.push('run');
+  }
+  if (row.doc?.peersChangedSinceGeneration) {
+    values.push('comparison');
+  }
+  return values.length > 0 ? values : ['none'];
+}
+
+/** The remembered Sort by order; the default when none is stored, or the stored one is unknown. */
+function readStoredSort(): DownloadSortId {
+  try {
+    const raw = localStorage.getItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) as { version?: unknown; sort?: unknown } | null : null;
+    const sort = parsed && typeof parsed === 'object' && parsed.version === 1 ? parsed.sort : null;
+    return DOWNLOAD_SORTS.find(option => option.id === sort)?.id ?? DEFAULT_SORT;
+  } catch {
+    return DEFAULT_SORT;
+  }
+}
+
+function writeStoredSort(sort: DownloadSortId): void {
+  try {
+    localStorage.setItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY, JSON.stringify({ version: 1, sort }));
+  } catch {
+    // Storage full or unavailable: the order is simply not remembered.
+  }
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -19,10 +19,14 @@ import { REPORT_CHART_STORAGE_KEY, ReportChartPublishResult, ReportChartSelectio
 import { ReportChartPickerComponent } from '../report-pack/report-chart-picker.component';
 import {
   CHART_SKIP_REASONS,
+  DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS,
   DOWNLOAD_CENTER_STORAGE_KEY,
+  DOWNLOAD_CENTER_VIEW_STORAGE_KEY,
+  DOWNLOAD_SORTS,
   DownloadCenterChartActions,
   DownloadCenterContext,
   DownloadCenterPanelComponent,
+  downloadCenterIo,
   reportDocumentFileStem
 } from './download-center-panel.component';
 
@@ -127,6 +131,7 @@ describe('DownloadCenterPanelComponent', () => {
 
   beforeEach(async () => {
     localStorage.removeItem(DOWNLOAD_CENTER_STORAGE_KEY);
+    localStorage.removeItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY);
     localStorage.removeItem(REPORT_CHART_STORAGE_KEY);
     await TestBed.configureTestingModule({
       imports: [PanelHostComponent],
@@ -144,17 +149,53 @@ describe('DownloadCenterPanelComponent', () => {
         dialog.close();
       }
     });
+    el.querySelectorAll<HTMLElement>('[popover]').forEach(popover => {
+      if (popover.matches(':popover-open')) {
+        popover.hidePopover();
+      }
+    });
     fixture.destroy();
     localStorage.removeItem(DOWNLOAD_CENTER_STORAGE_KEY);
+    localStorage.removeItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY);
     localStorage.removeItem(REPORT_CHART_STORAGE_KEY);
   });
 
   const panel = (): DownloadCenterPanelComponent => hostComponent.panel;
   const q = <T extends HTMLElement = HTMLElement>(selector: string): T | null => el.querySelector<T>(selector);
-  const text = (selector: string): string => (q(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim();
-  const rowKeys = (): string[] => Array.from(el.querySelectorAll('tr.dc-row')).map(row => row.getAttribute('data-row-key')!);
-  const rowEl = (key: string): HTMLElement => q(`tr.dc-row[data-row-key="${key}"]`)!;
+  const flat = (node: Element | null): string => (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  const text = (selector: string): string => flat(q(selector));
+  const rowKeys = (): string[] => Array.from(el.querySelectorAll('article.dc-card')).map(card => card.getAttribute('data-row-key')!);
+  const rowEl = (key: string): HTMLElement => q(`article.dc-card[data-row-key="${key}"]`)!;
   const byId = <T extends HTMLElement = HTMLElement>(id: string): T | null => el.querySelector<T>(`[id="${id}"]`);
+  const facetLabels = (): string[] => Array.from(el.querySelectorAll('.dc-facet-row .gh-facet-label')).map(flat);
+  const chips = (): HTMLButtonElement[] => Array.from(el.querySelectorAll<HTMLButtonElement>('.dc-filter-chips .gh-filter-chip'));
+  const chipNames = (): string[] => chips().map(chip => chip.getAttribute('aria-label')!);
+
+  /** A facet's options as rendered in its popover, which need not be open to be read or clicked. */
+  function facetOptions(column: string): { label: string; input: HTMLInputElement }[] {
+    return Array.from(byId(`mc-dc-facet-${column}-popover`)!.querySelectorAll('.gh-facet-option'))
+      .map(option => ({ label: flat(option), input: option.querySelector('input')! }));
+  }
+
+  /** Clicks the facet option whose label reads `label`. */
+  function pickFacet(column: string, label: string): void {
+    const option = Array.from(byId(`mc-dc-facet-${column}-popover`)!.querySelectorAll('.gh-facet-option'))
+      .find(node => flat(node.querySelector('.gh-facet-option-label')) === label)!;
+    option.querySelector('input')!.click();
+    fixture.detectChanges();
+  }
+
+  function typeInto(input: HTMLInputElement, value: string): void {
+    input.value = value;
+    input.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+  }
+
+  /** Waits out the search debounce, then renders. */
+  async function pauseTyping(): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS + 20));
+    fixture.detectChanges();
+  }
 
   function library(preselect: 'all' | 'none' = 'all', scope: 'comparison' | 'all' = 'comparison'): DownloadCenterContext {
     return {
@@ -249,83 +290,278 @@ describe('DownloadCenterPanelComponent', () => {
       render([]);
 
       expect(text('.dc-empty')).toBe('No reports have been written for this comparison yet.');
-      expect(q('table.dc-table')).toBeNull();
+      expect(q('.dc-card-list')).toBeNull();
+      expect(q('.dc-filter-bar')).toBeNull();
     });
   });
 
   // -------------------------------------------------------------------------------------------
-  // The table
+  // The list
   // -------------------------------------------------------------------------------------------
 
-  describe('the table', () => {
-    it('sorts by Created, newest first, and by Document', () => {
-      render([doc(11, TechnicalReport), doc(13, ExecutiveSummary), doc(12, InternalBrief)]);
+  describe('the list', () => {
+    /** Three report documents over two subjects and two suites, with their two runs' reports. */
+    function twoSuites(): BenchmarkReportDocumentListItemDto[] {
+      const harbor = { subjectLabel: 'Claude Harbor', subjectKey: 'run:2', subjectRunIds: [2], suiteName: 'Wiki Suite' };
+      return [
+        doc(11, ExecutiveSummary),
+        doc(12, TechnicalReport, { ...harbor, writerDisplayName: 'Gemini writer' }),
+        doc(13, ExecutiveSummary, harbor)
+      ];
+    }
 
-      const sortable = Array.from(el.querySelectorAll<HTMLElement>('thead th.gh-th-sortable'))
-        .map(th => th.querySelector('.gh-th-label')!.textContent!.trim());
-      expect(sortable).toEqual(['Created (UTC)', 'Document']);
-      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11', 'report:1']);
-      expect(q('thead th[aria-sort]')!.textContent).toContain('Created (UTC)');
+    it('renders one card per row in a list, each titled by the label of its checkbox', () => {
+      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport)]);
 
-      Array.from(el.querySelectorAll<HTMLButtonElement>('thead .gh-th-sort'))
-        .find(button => button.textContent!.includes('Document'))!.click();
+      const list = q('ul.dc-card-list')!;
+      expect(list.getAttribute('role')).toBe('list');
+      expect(list.getAttribute('aria-labelledby')).toBe('mc-dc-documents-title');
+      const items = Array.from(list.children);
+      expect(items.length).toBe(3);
+      expect(items.every(item => item.tagName === 'LI' && item.firstElementChild!.matches('article.dc-card'))).toBeTrue();
+
+      const card = rowEl('doc:11');
+      const title = card.querySelector<HTMLElement>('h5.dc-card-title')!;
+      expect(title.id).toBe('mc-dc-doc-11-title');
+      expect(card.getAttribute('aria-labelledby')).toBe(title.id);
+      expect(card.querySelector('.dc-card-type')!.textContent!.trim()).toBe('Executive Summary');
+      expect(text('article[data-row-key="doc:11"] .dc-card-meta')).toBe('2026-09-21 16:00 UTC·, Gemini Flash·, Board Suite·, by Claude Opus writer');
+
+      const check = card.querySelector<HTMLInputElement>('.dc-card-check')!;
+      expect(check.getAttribute('aria-label')).toBe('Include Executive Summary: Gemini Flash');
+      const label = title.querySelector<HTMLLabelElement>('label.dc-doc-label')!;
+      expect(label.htmlFor).toBe(check.id);
+      expect(check.checked).toBeTrue();
+      label.click();
       fixture.detectChanges();
-      // Descending by name: Run report, Internal…, Gemini Flash —…, Executive….
-      expect(rowKeys()).toEqual(['report:1', 'doc:12', 'doc:11', 'doc:13']);
+      expect(check.checked).toBeFalse();
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:11')!)).toBeFalse();
+
+      const actions = card.querySelector('.dc-card-actions')!;
+      expect(actions.getAttribute('role')).toBe('group');
+      expect(actions.getAttribute('aria-label')).toBe('Actions for Executive Summary: Gemini Flash, 2026-09-21 16:00 UTC');
+      expect(actions.querySelector('.dc-view-btn')).not.toBeNull();
+
+      const options = card.querySelector('.dc-card-options')!;
+      expect(options.getAttribute('role')).toBe('group');
+      expect(Array.from(options.querySelectorAll('.dc-option-label')).map(node => node.textContent!.trim()))
+        .toEqual(['Disclosure', 'Peer names', 'Formats']);
+      expect(options.querySelector('fieldset.dc-formats > legend')!.textContent!.trim()).toBe('Formats');
     });
 
-    it('filters by subject, document and suite, each with a visually hidden label, and clears them', () => {
-      render([
-        doc(11, ExecutiveSummary),
-        doc(12, TechnicalReport, { subjectLabel: 'Claude Harbor', subjectKey: 'run:2', subjectRunIds: [2], suiteName: 'Wiki Suite' })
+    it('sorts with Sort by, remembering the order for the next panel', () => {
+      render([doc(11, TechnicalReport), doc(13, ExecutiveSummary), doc(12, InternalBrief, { runChangedSinceGeneration: true })]);
+
+      const select = byId<HTMLSelectElement>('mc-dc-sort')!;
+      const label = q(`label[for="mc-dc-sort"]`)!;
+      expect(label.textContent!.trim()).toBe('Sort by');
+      expect(label.classList).not.toContain('visually-hidden');
+      expect(Array.from(select.options).map(option => option.textContent!.trim())).toEqual(DOWNLOAD_SORTS.map(sort => sort.label));
+      expect(select.value).toBe('created-desc');
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11', 'report:1']);
+
+      setFilter('mc-dc-sort', 'title');
+      expect(rowKeys()).toEqual(['doc:13', 'doc:11', 'doc:12', 'report:1']);
+
+      setFilter('mc-dc-sort', 'changed-first');
+      expect(rowKeys()).toEqual(['doc:12', 'doc:13', 'doc:11', 'report:1']);
+      expect(JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY)!)).toEqual({ version: 1, sort: 'changed-first' });
+
+      const second = TestBed.createComponent(PanelHostComponent);
+      second.componentInstance.context = library();
+      second.detectChanges();
+      expectList().flush([doc(11, TechnicalReport), doc(13, ExecutiveSummary), doc(12, InternalBrief, { runChangedSinceGeneration: true })]);
+      second.detectChanges();
+      const secondEl = second.nativeElement as HTMLElement;
+      expect(secondEl.querySelector<HTMLSelectElement>('[id="mc-dc-sort"]')!.value).toBe('changed-first');
+      expect(Array.from(secondEl.querySelectorAll('article.dc-card')).map(card => card.getAttribute('data-row-key')))
+        .toEqual(['doc:12', 'doc:13', 'doc:11', 'report:1']);
+      second.destroy();
+
+      localStorage.setItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY, JSON.stringify({ version: 1, sort: 'no-such-order' }));
+      const third = TestBed.createComponent(PanelHostComponent);
+      third.componentInstance.context = library();
+      third.detectChanges();
+      expectList().flush([doc(11, TechnicalReport)]);
+      third.detectChanges();
+      expect((third.nativeElement as HTMLElement).querySelector<HTMLSelectElement>('[id="mc-dc-sort"]')!.value).toBe('created-desc');
+      third.destroy();
+    });
+
+    it('searches title, subject, suite and writer once typing pauses, and clears on Escape without closing a dialog', async () => {
+      render(twoSuites());
+      const label = q(`label[for="mc-dc-search"]`)!;
+      expect(label.classList).toContain('visually-hidden');
+      expect(label.textContent!.trim()).toBe('Search documents');
+      const input = byId<HTMLInputElement>('mc-dc-search')!;
+      expect(input.type).toBe('search');
+
+      typeInto(input, 'harbor');
+      expect(rowKeys().length).toBe(5);
+      await pauseTyping();
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'report:2']);
+
+      typeInto(input, 'wiki suite');
+      await pauseTyping();
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'report:2']);
+
+      typeInto(input, 'gemini writer');
+      await pauseTyping();
+      expect(rowKeys()).toEqual(['doc:12']);
+
+      typeInto(input, 'executive');
+      await pauseTyping();
+      expect(rowKeys()).toEqual(['doc:13', 'doc:11']);
+
+      const heard: string[] = [];
+      el.addEventListener('keydown', event => heard.push(event.key));
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      input.dispatchEvent(escape);
+      fixture.detectChanges();
+      expect(escape.defaultPrevented).toBeTrue();
+      expect(heard).toEqual([]);
+      expect(input.value).toBe('');
+      expect(rowKeys().length).toBe(5);
+
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      expect(heard).toEqual(['Escape']);
+    });
+
+    it('filters by facets: values of one facet OR together, facets AND, and each count reflects the other filters', () => {
+      render(twoSuites());
+
+      expect(facetLabels()).toEqual(['Document', 'Subject', 'Suite', 'Written by', 'Created']);
+      // Every row is unchanged, so Changes has one value and is not offered.
+      expect(byId('mc-dc-facet-changes-trigger')).toBeNull();
+      expect(facetOptions('document').map(option => option.label))
+        .toEqual(['Executive Summary, 2 documents', 'Report for AI Researchers and Developers, 1 document', 'Run report, 2 documents']);
+      expect(facetOptions('writer').map(option => option.label))
+        .toEqual(['Claude Opus writer, 2 documents', 'Gemini writer, 1 document', 'No writer — run files, 2 documents']);
+
+      const facetsBefore = panel().facets;
+      fixture.detectChanges();
+      expect(panel().facets).toBe(facetsBefore);
+
+      pickFacet('document', 'Executive Summary');
+      pickFacet('document', 'Run report');
+      expect(rowKeys()).toEqual(['doc:13', 'doc:11', 'report:1', 'report:2']);
+      expect(text('#mc-dc-facet-document-trigger')).toBe('Document 2 selected');
+      expect(panel().facets).not.toBe(facetsBefore);
+
+      pickFacet('suite', 'Wiki Suite');
+      expect(rowKeys()).toEqual(['doc:13', 'report:2']);
+      expect(facetOptions('document').map(option => option.label))
+        .toEqual(['Executive Summary, 1 document', 'Report for AI Researchers and Developers, 1 document', 'Run report, 1 document']);
+      expect(facetOptions('suite').map(option => option.label)).toEqual(['Board Suite, 2 documents', 'Wiki Suite, 2 documents']);
+      expect(text('#mc-dc-list-status')).toBe('Showing 2 of 2 documents · filtered from 5');
+    });
+
+    it('filters by creation time in single mode, against the Download Center clock', () => {
+      spyOn(downloadCenterIo, 'now').and.returnValue(new Date('2026-09-24T00:00:00Z'));
+      render([doc(11, ExecutiveSummary, { createdAtUtc: '2026-09-01T16:00:00Z' }), doc(12, TechnicalReport), doc(13, InternalBrief)]);
+
+      const created = facetOptions('created');
+      expect(created.map(option => option.input.type)).toEqual(['radio', 'radio', 'radio', 'radio']);
+      expect(created.map(option => option.label))
+        .toEqual(['Any time', 'Last 24 hours, 1 document', 'Last 7 days, 2 documents', 'Last 30 days, 3 documents']);
+
+      pickFacet('created', 'Last 7 days');
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12']);
+
+      pickFacet('created', 'Any time');
+      expect(rowKeys()).toEqual(['doc:13', 'doc:12', 'doc:11', 'report:1']);
+    });
+
+    it('shows the active filters as removable chips, and Clear all keeps Show selected only', async () => {
+      render(twoSuites());
+      pickFacet('document', 'Executive Summary');
+      pickFacet('document', 'Run report');
+      pickFacet('suite', 'Wiki Suite');
+      typeInto(byId<HTMLInputElement>('mc-dc-search')!, 'harbor');
+      await pauseTyping();
+
+      const chipList = q('ul.dc-filter-chips')!;
+      expect(chipList.getAttribute('role')).toBe('list');
+      expect(chipList.getAttribute('aria-label')).toBe('Active filters');
+      expect(chipNames()).toEqual([
+        'Remove filter Document: Executive Summary',
+        'Remove filter Document: Run report',
+        'Remove filter Suite: Wiki Suite',
+        'Remove filter Search: “harbor”'
       ]);
 
-      for (const name of ['subject', 'document', 'suite']) {
-        const label = q(`label[for="mc-dc-f-${name}"]`)!;
-        expect(label).withContext(name).not.toBeNull();
-        expect(label.classList).toContain('visually-hidden');
-      }
-      const documents = Array.from(byId<HTMLSelectElement>('mc-dc-f-document')!.options).map(o => o.textContent!.trim());
-      expect(documents).toEqual(['All documents', 'Executive Summary', 'Report for AI Researchers and Developers', 'Run report']);
-
-      setFilter('mc-dc-f-suite', 'Wiki Suite');
-      expect(rowKeys()).toEqual(['doc:12', 'report:2']);
-      setFilter('mc-dc-f-document', 'Run report');
+      chips()[0].click();
+      fixture.detectChanges();
+      expect(chipNames()[0]).toBe('Remove filter Document: Run report');
+      expect(document.activeElement).toBe(chips()[0]);
       expect(rowKeys()).toEqual(['report:2']);
 
-      q<HTMLButtonElement>('.dc-clear-filters')!.click();
+      q<HTMLButtonElement>('.dc-show-selected')!.click();
       fixture.detectChanges();
-      expect(rowKeys().length).toBe(4);
+      const clearAll = q<HTMLButtonElement>('.dc-clear-filters')!;
+      expect(clearAll.textContent!.trim()).toBe('Clear all');
+      clearAll.click();
+      fixture.detectChanges();
 
-      setFilter('mc-dc-f-subject', 'nothing like this');
+      expect(q('ul.dc-filter-chips')).toBeNull();
+      expect(panel().showSelectedOnly).toBeTrue();
+      expect(byId<HTMLInputElement>('mc-dc-search')!.value).toBe('');
+      expect(document.activeElement).toBe(byId('mc-dc-search'));
+      expect(rowKeys().length).toBe(5);
+
+      typeInto(byId<HTMLInputElement>('mc-dc-search')!, 'nothing like this');
+      await pauseTyping();
       expect(rowKeys()).toEqual([]);
       expect(text('.dc-no-matches')).toContain('No documents match these filters.');
+      expect(q('.dc-no-matches button')!.textContent!.trim()).toBe('Clear all filters');
     });
 
-    it('pages at 10 rows with a pager above and below the scrolling table, the second silent', () => {
+    it('shows ten cards, then more on request, focusing the first new card', () => {
       const many = Array.from({ length: 12 }, (_, i) => doc(100 + i, ExecutiveSummary, { createdAtUtc: `2026-09-${10 + i}T16:00:00Z` }));
       render(many);
 
       expect(rowKeys().length).toBe(10);
-      const pagers = Array.from(el.querySelectorAll('app-table-pager'));
-      const scroll = q('.gh-datatable-scroll')!;
-      expect(pagers.length).toBe(2);
-      expect(pagers.every(pager => !scroll.contains(pager))).toBeTrue();
-      expect(pagers[1].querySelector('[role="status"]')).toBeNull();
+      const status = byId('mc-dc-list-status')!;
+      expect(status.getAttribute('role')).toBe('status');
+      expect(status.textContent!.trim()).toBe('Showing 10 of 13 documents');
+      expect(q('.dc-show-more')!.textContent!.trim()).toBe('Show 3 more');
+      expect(q('.dc-show-all')).toBeNull();
+
+      q<HTMLButtonElement>('.dc-show-more')!.click();
+      fixture.detectChanges();
+      expect(rowKeys().length).toBe(13);
+      expect(document.activeElement).toBe(byId('mc-dc-doc-101-title'));
+      expect(text('#mc-dc-list-status')).toBe('Showing 13 of 13 documents');
+      expect(q('.dc-show-more')).toBeNull();
+
+      pickFacet('document', 'Executive Summary');
+      expect(rowKeys().length).toBe(10);
+      expect(text('#mc-dc-list-status')).toBe('Showing 10 of 12 documents · filtered from 13');
+
+      const more = Array.from({ length: 24 }, (_, i) => doc(200 + i, ExecutiveSummary, { createdAtUtc: `2026-09-10T${String(i).padStart(2, '0')}:00:00Z` }));
+      render(more);
+      expect(rowKeys().length).toBe(10);
+      const showAll = q<HTMLButtonElement>('.dc-show-all')!;
+      expect(showAll.textContent!.trim()).toBe('Show all 25');
+      showAll.click();
+      fixture.detectChanges();
+      expect(rowKeys().length).toBe(25);
+      expect(document.activeElement).toBe(byId(`mc-dc-${rowKeys()[10].replace(':', '-')}-title`));
     });
 
-    it('says what is selected off the page, shows only the selection, selects what is shown, and has no select-all', () => {
+    it('counts the selection the list does not show, selects what matches, and has no select-all checkbox', () => {
       const many = Array.from({ length: 12 }, (_, i) => doc(100 + i, ExecutiveSummary, { createdAtUtc: `2026-09-${10 + i}T16:00:00Z` }));
       render(many, library('none'));
-      expect(q('thead input[type="checkbox"]')).toBeNull();
+      const stray = Array.from(el.querySelectorAll('.dc-documents input[type="checkbox"]'))
+        .filter(input => !input.closest('.dc-card') && !input.closest('app-filter-facet'));
+      expect(stray).toEqual([]);
 
-      const shown = q<HTMLButtonElement>('.dc-select-shown')!;
-      expect(shown.textContent!.trim()).toBe('Select the 13 shown');
-      setFilter('mc-dc-f-document', 'Executive Summary');
-      expect(q('.dc-select-shown')!.textContent!.trim()).toBe('Select the 12 shown');
+      expect(q('.dc-select-shown')!.textContent!.trim()).toBe('Select all 13');
+      pickFacet('document', 'Executive Summary');
+      expect(q('.dc-select-shown')!.textContent!.trim()).toBe('Select all 12 matching');
       q<HTMLButtonElement>('.dc-select-shown')!.click();
       fixture.detectChanges();
-      expect(text('.dc-selection-count')).toBe('12 selected — 2 not on this page');
+      expect(text('.dc-selection-count')).toBe('12 selected — 2 not shown');
 
       q<HTMLButtonElement>('.dc-show-selected')!.click();
       fixture.detectChanges();
@@ -337,14 +573,39 @@ describe('DownloadCenterPanelComponent', () => {
       expect(panel().showSelectedOnly).toBeFalse();
     });
 
-    it('turns rows into cards below 64rem of its own width, and stacks the package column below 48rem', () => {
+    it('keeps the filter bar flush with the top of the scroller from 36rem, and lets it scroll away below', async () => {
+      const many = Array.from({ length: 12 }, (_, i) => doc(100 + i, ExecutiveSummary, { createdAtUtc: `2026-09-${10 + i}T16:00:00Z` }));
+      render(many);
+      const shell = q('.shell')!;
+      shell.style.display = 'flex';
+      shell.style.flexDirection = 'column';
+      shell.style.height = '500px';
+      fixture.detectChanges();
+
+      const body = q('.dc-body')!;
+      const bar = q('.dc-filter-bar')!;
+      expect(getComputedStyle(bar).position).toBe('sticky');
+      body.scrollTop = 800;
+      await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+      expect(body.scrollTop).toBeGreaterThan(0);
+      expect(Math.round(bar.getBoundingClientRect().top - body.getBoundingClientRect().top)).toBe(0);
+
+      hostComponent.width = 400;
+      fixture.detectChanges();
+      expect(getComputedStyle(bar).position).toBe('static');
+    });
+
+    it('lays the cards out by the list\'s own width, and stacks the package column below 48rem', () => {
       render([doc(11, ExecutiveSummary)]);
-      expect(getComputedStyle(rowEl('doc:11')).display).toBe('table-row');
+      const areaRows = (): string[][] => (getComputedStyle(rowEl('doc:11')).gridTemplateAreas.match(/"[^"]*"/g) ?? [])
+        .map(row => row.replace(/"/g, '').trim().split(/\s+/));
+      expect(areaRows()[0].length).toBe(3);
       expect(getComputedStyle(q('.dc-layout')!).gridTemplateColumns.split(' ').length).toBe(2);
 
-      hostComponent.width = 700;
+      hostComponent.width = 400;
       fixture.detectChanges();
-      expect(getComputedStyle(rowEl('doc:11')).display).toBe('grid');
+      expect(areaRows().map(row => row.length)).toEqual([2, 2, 2]);
+      expect(getComputedStyle(rowEl('doc:11').querySelector('.dc-card-options')!).flexDirection).toBe('column');
       expect(getComputedStyle(q('.dc-layout')!).gridTemplateColumns.split(' ').length).toBe(1);
     });
   });
@@ -490,16 +751,18 @@ describe('DownloadCenterPanelComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   describe('charts', () => {
-    it('shows no chart column or action without chart actions', () => {
-      render([doc(11, ExecutiveSummary)]);
+    it('shows no chart option, facet or action without chart actions', () => {
+      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport, { chartCount: 2, chartFigureKeys: ['p1a-quality'], chartSettingsHash: HASH })]);
 
-      expect(q('.dc-col-charts')).toBeNull();
+      expect(q('.dc-option-charts')).toBeNull();
+      expect(byId('mc-dc-facet-charts-trigger')).toBeNull();
+      expect(Array.from(el.querySelectorAll('.dc-help-section > h4')).map(flat)).toEqual(['Sharing', 'Disclosure', 'Peer names', 'Formats']);
       expect(q('.dc-update-charts')).toBeNull();
       expect(q('.dc-more-btn')).toBeNull();
       expect(q('dialog.dc-charts-dialog')).toBeNull();
     });
 
-    it('says None, current or differs from step 2 in the Charts column', () => {
+    it('says None, current or differs from step 2 in the Charts option, and filters by it', () => {
       render([
         doc(11, ExecutiveSummary),
         doc(12, TechnicalReport, { chartCount: 6, chartFigureKeys: ['p1a-quality', 'p1b-speed', 'p1c-cost'], chartSettingsHash: HASH }),
@@ -512,12 +775,23 @@ describe('DownloadCenterPanelComponent', () => {
       expect(state('doc:12').classList).not.toContain('gh-tag-changed');
       expect(state('doc:13').textContent!.trim()).toBe('3 · differs from step 2');
       expect(state('doc:13').classList).toContain('gh-tag-changed');
+      expect(flat(state('doc:11').closest('.dc-option-charts')!.querySelector('.dc-option-label'))).toBe('Charts');
+      expect(rowEl('report:1').querySelector('.dc-option-charts')).toBeNull();
+      const help = Array.from(el.querySelectorAll('.dc-help-section'));
+      expect(help.map(section => flat(section.querySelector('h4')))).toEqual(['Sharing', 'Disclosure', 'Peer names', 'Formats', 'Charts']);
+      expect(Array.from(help[4].querySelectorAll('dt .gh-info-term')).map(flat)).toEqual(['None', 'current', 'differs from step 2']);
+
+      expect(facetOptions('charts').map(option => option.label))
+        .toEqual(['None, 1 document', 'Current, 1 document', 'Differs from step 2, 1 document']);
+      pickFacet('charts', 'Differs from step 2');
+      expect(rowKeys()).toEqual(['doc:13']);
     });
 
     it('keeps Update charts… aria-disabled with its reason until documents are chosen', () => {
       render([doc(11, ExecutiveSummary)], library('none'), chartActions());
       const button = q<HTMLButtonElement>('.dc-update-charts')!;
 
+      expect(button.closest('.dc-selection')).not.toBeNull();
       expect(button.classList).toContain('btn-ghost');
       expect(button.getAttribute('aria-disabled')).toBe('true');
       expect(byId(button.getAttribute('aria-describedby')!)!.textContent!.trim()).toBe('Choose one or more report documents first.');

@@ -869,10 +869,14 @@ a:hover {
   .selector-trigger,
   .selector-trigger .chevron,
   .model-option,
-  .gh-action-popover-item {
+  .gh-action-popover-item,
+  .gh-facet-btn,
+  .gh-facet-chevron,
+  .gh-filter-chip {
     transition: none;
   }
-  .gh-action-popover:is(:popover-open, .\:popover-open) {
+  .gh-action-popover:is(:popover-open, .\:popover-open),
+  .gh-facet-popover:is(:popover-open, .\:popover-open) {
     animation: none;
   }
   .gh-datatable thead > tr:first-child > th::after {
@@ -2564,6 +2568,328 @@ label.checkbox-label,
     outline: 2px solid var(--primary-color);
     outline-offset: 2px;
   }
+}
+
+/* Faceted filter bar over a card list: a search field, a row of facet triggers
+   (app-filter-facet), removable active-filter chips and a status line; Load more under the list.
+   Global for the same encapsulation reason as .gh-datatable, and scoped to .gh- classes. */
+.gh-filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  container: gh-facets / inline-size;
+}
+
+.gh-filter-bar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+/* A search input with a leading 16 px Feather search glyph (aria-hidden) inside its padding. */
+.gh-search-field {
+  position: relative;
+  inline-size: min(100%, 28rem);
+
+  > svg {
+    position: absolute;
+    inset-inline-start: 10px;
+    inset-block-start: 50%;
+    translate: 0 -50%;
+    color: #a1a1aa;
+    pointer-events: none;
+  }
+
+  > .gh-input {
+    inline-size: 100%;
+    min-block-size: 32px;
+    padding-block: 5px;
+    padding-inline-start: 34px;
+    font-size: var(--text-body);
+  }
+}
+
+/* The facet triggers wrap; below 36rem of the bar they become one row that scrolls sideways. */
+.gh-facet-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+@container gh-facets (inline-size < 36rem) {
+  .gh-facet-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    /* Room for the triggers' focus rings inside the scroll box. */
+    margin: -4px;
+    padding: 4px;
+
+    > * {
+      flex: none;
+      scroll-snap-align: start;
+    }
+  }
+}
+
+/* The facet trigger: a 32 px outlined pill of the .btn-ghost family, rendered only by
+   app-filter-facet. Gold while a value is selected or its popover is open; the count badge and
+   its hidden text carry the selected state as well. */
+.gh-facet-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 32px;
+  padding: 4px 10px 4px 12px;
+  background: transparent;
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  color: var(--nav-color);
+  font: inherit;
+  font-size: var(--text-secondary);
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 60%, transparent);
+    color: #fff;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  &.is-active,
+  &[aria-expanded="true"] {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+  }
+
+  &.is-active {
+    background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  }
+}
+
+.gh-facet-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-inline-size: 1.25rem;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--primary-color);
+  color: #121212;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A state indicator: it points up while the popover is open. */
+.gh-facet-chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.gh-facet-btn[aria-expanded="true"] .gh-facet-chevron {
+  transform: rotate(180deg);
+}
+
+/* The facet's options, in the .gh-action-popover look: popover="auto", anchored under its trigger
+   by explicit names on both ends, flipping where there is no room. */
+.gh-facet-popover {
+  inset: auto;
+  top: calc(anchor(bottom) + 6px);
+  left: anchor(left);
+  #{'position-try-fallbacks'}: flip-block, flip-inline;
+  #{'position-try'}: flip-block, flip-inline;
+  margin: 0;
+  min-inline-size: 15rem;
+  max-inline-size: min(22rem, calc(100vw - 32px));
+  max-block-size: min(24rem, calc(100dvh - 32px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(20, 20, 20, 0.97);
+  color: #e4e4e7;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  font-family: "Lato", sans-serif;
+  font-size: var(--text-body);
+  line-height: 1.4;
+  text-align: start;
+
+  &:is(:popover-open, .\:popover-open) {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    animation: gh-action-popover-in 0.14s ease-out;
+  }
+}
+
+.gh-facet-search {
+  inline-size: 100%;
+  min-block-size: 32px;
+  padding-block: 5px;
+  font-size: var(--text-secondary);
+}
+
+.gh-facet-group {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.gh-facet-legend {
+  padding: 2px 8px 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+
+/* One option per 36 px row, its count right-aligned. A count of 0 is dimmed but stays operable,
+   so a selected option that now matches nothing can still be cleared. */
+.gh-facet-option {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 36px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: var(--text-body);
+  color: #e4e4e7;
+  cursor: pointer;
+
+  &:hover {
+    background: color-mix(in srgb, var(--primary-color) 12%, transparent);
+  }
+
+  input:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  &.is-empty .gh-facet-option-label,
+  &.is-empty .gh-facet-option-count {
+    color: #8f8f96;
+  }
+}
+
+.gh-facet-option-label {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.gh-facet-option-count {
+  margin-inline-start: auto;
+  padding-inline-start: 12px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.gh-facet-none {
+  margin: 4px 8px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.gh-facet-clear {
+  align-self: flex-start;
+  margin: 2px 8px 4px;
+}
+
+/* The active filters as removable pills: the facet name, the value and a 14 px Feather x. */
+.gh-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gh-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-block-size: 28px;
+  max-inline-size: 100%;
+  padding: 2px 8px 2px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  color: var(--nav-color);
+  font: inherit;
+  font-size: var(--text-secondary);
+  line-height: 1.2;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  svg {
+    flex-shrink: 0;
+    color: #a1a1aa;
+  }
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--primary-color);
+
+    svg {
+      color: var(--primary-color);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.gh-filter-chip-facet {
+  color: #a1a1aa;
+}
+
+.gh-filter-chip-value {
+  min-inline-size: 0;
+  color: var(--nav-color);
+  overflow-wrap: anywhere;
+}
+
+/* "Showing 10 of 23 documents": the list's one polite live region. */
+.gh-list-status {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Show N more and Show all, centered under the list. */
+.gh-load-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 16px;
+  padding-block: 4px;
 }
 
 /* The pager's own width decides its density, not the viewport's: it sits in dialogs and

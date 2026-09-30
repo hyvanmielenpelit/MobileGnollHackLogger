@@ -9,9 +9,11 @@ description: >-
   when a control is a tab rather than a button. Also covers the shared data-table
   layer (TableState, app-sort-header, app-table-pager, .gh-datatable) that gives a
   table paging, column sorting and column filtering, and the rules that keep a
-  paged table honest about selection, and the shared model picker (app-model-picker)
-  with its collapsible-listbox keyboard and ARIA contract. Read before adding or
-  restyling any button, icon button, toolbar, tab row, model picker, or data table.
+  paged table honest about selection; card lists with a faceted filter bar
+  (app-filter-facet, search, chips, Sort by, Load more) for rows that are small
+  forms; and the shared model picker (app-model-picker) with its
+  collapsible-listbox keyboard and ARIA contract. Read before adding or restyling
+  any button, icon button, toolbar, tab row, model picker, data table, or card list.
 ---
 
 # Frontend UI Controls: Buttons, Icon Buttons, Tabs, and Data Tables
@@ -215,6 +217,8 @@ you already read the label, it is noise; drop it.
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
 | chevron | Show / Hide Model Reasoning | A **state** indicator: which way it points says whether the section is open |
+| search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*) | Decorative, `aria-hidden`, never a button: the field's label names it, and the glyph says only "type to find" |
+| x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}* |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
 importing brings suites from the server's catalog into the application, which is the same
@@ -356,6 +360,14 @@ with the chart picker. The launcher's *Comparison reports* (`app-report-document
 and one `.btn-ghost` **Open Download Center** (*file-with-arrow*), `aria-disabled` while there is
 nothing to open, with the summary line as its reason. The Database tab's **Clear Chart Files** is a
 text-only `btn-gh btn-danger`, `aria-disabled` with a tooltip reason.*
+
+*Changed 2026-09-30 (Download Center cards): the Download Center's documents table became a card list
+(§8h). Its `app-filter-facet` triggers end in the* chevron *state glyph, pointing up while open; the
+search field leads with a decorative* search *glyph; each active-filter chip ends in an* x*, accepted
+here because removing a filter chip deletes nothing — it dismisses a view setting, which is what ✕
+already means as* close*. (Removing an attached file keeps* trash*, since that does delete something.)
+**Show N more** and **Show all** are text-only, and **Update charts…** moved from the toolbar to the
+selection bar, still text-only.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1047,12 +1059,16 @@ three-button action groups; funnelling all of that through a column-definition D
 produce worse markup than hand-written rows. What the tables genuinely share is the *state
 arithmetic*, the *pager markup* and the *styling*.
 
+The same `TableState` also drives **card lists** (§8h): a list whose rows are small forms rather than
+values to compare, filtered by a faceted filter bar and shown in batches with Load more.
+
 | Piece | File |
 |---|---|
-| `TableState<T>`, `exactFilter()`, `PAGE_SIZES` | `shared/data-table/table-state.ts` |
+| `TableState<T>`, `exactFilter()`, `anyOfFilter()`, `customFilter()`, `PAGE_SIZES` | `shared/data-table/table-state.ts` |
 | `<th app-sort-header>` | `shared/data-table/sort-header.component.ts` |
 | `<app-table-pager>` | `shared/data-table/table-pager.component.ts` |
-| `.gh-datatable` and the `.gh-pager` / `.gh-filter-*` families | `styles.scss` |
+| `<app-filter-facet>` | `shared/data-table/filter-facet.component.ts` |
+| `.gh-datatable` and the `.gh-pager` / `.gh-filter-*` families; the filter bar's `.gh-search-field`, `.gh-facet-*`, `.gh-list-status` and `.gh-load-more` | `styles.scss` |
 
 ### 8a. When a list becomes a table
 
@@ -1065,6 +1081,9 @@ uses `<caption>` in place of the `<legend>` — `<caption>` is a table's native 
 mechanism — the `<fieldset>` is dropped, and each checkbox carries its own `aria-label`
 naming its subject (*"Include run 21 in this group"*), exactly as §4 requires of any control
 whose visible text is not its name.
+
+A list whose every row is a **small form** — selects, several checkboxes, a few actions — is not a
+table at all but a card list; §8h says when and how.
 
 ### 8b. The `TableState<T>` contract
 
@@ -1234,6 +1253,117 @@ never receive it.
   restyle the users, groups and analytics tables without any of their specs noticing.
 - `@media (prefers-reduced-motion: reduce)` disables the caret and row-hover transitions.
 
+### 8h. Card lists
+
+The Download Center's documents (`app-download-center-panel`) are the first card list. Use one
+**when every row is a small form** — two selects, a group of checkboxes, several actions — rather
+than values to compare down a column. A table fights such rows at every width: it overflows sideways,
+wraps a title over ten lines, and below some breakpoint has to fake cards anyway. A list of values to
+scan and compare stays a §8 table.
+
+**Markup.**
+
+- A `<ul role="list">` (the explicit role, because Safari drops list semantics under `display: grid`
+  or `list-style: none`), labelled by the section heading, then one `<li>` per row holding an
+  `<article aria-labelledby="{rowId}-title">`. The title is a heading one level under the section's
+  (`<h5>` under an `<h4>`), so screen-reader users hear the count up front and jump card to card by
+  heading.
+- **Selection is a real checkbox, top left**, keeping the row's `aria-label` (*Include …*). The title
+  is a `<label for>` that checkbox, so a click on it selects the card. A selected card is shown by the
+  tick, a gold border and a tint together (`:has(input:checked)`), never by color alone. **Never make
+  the whole card a label or a click target**: it holds selects and buttons, and interactive content
+  inside a label is invalid.
+- Actions top right in a `role="group"` named *Actions for {row}* — never `role="toolbar"` without
+  arrow-key roving (§4f) — holding the same §4 icon-only buttons a table row would.
+- Options under a hairline, **each with a visible label** above its control; a checkbox group is a
+  `<fieldset>` with a `<legend>`. Keep the per-row `aria-label`s (*Disclosure of …*): they contain the
+  visible label (WCAG 2.5.3) and keep names distinct across cards (§4.1).
+- A meta line under the title separates its parts with an `aria-hidden` dot and a visually hidden
+  comma, so assistive technology does not read the parts run together.
+- Layout by **the list's own width**: the list is an inline-size container, and the card's grid
+  switches from *select · head · actions / options* to one column of head, actions and options below
+  about 30rem. No viewport media queries.
+
+**The filter bar**, above the list, in this order:
+
+1. A **search** field: `<input type="search">` with a real visually hidden `<label for>`, a
+   decorative leading glyph (`.gh-search-field`), debounced (~200 ms) so the status line is not
+   announced per keystroke. **Escape with text clears it at once** and calls `preventDefault()` and
+   `stopPropagation()`, so the `<dialog>` around it stays open; with no text, Escape is left alone.
+   Pair it with **Sort by**: one native `<select>` of named orders (*Newest first*, *Title (A–Z)*…)
+   with a visible `<label>`, rather than a column and a direction toggle; remember the choice in
+   `localStorage` behind `try/catch`.
+2. The **facets**: one `app-filter-facet` per filterable field (below), each applied live — no Apply
+   button — and listed only while its rows hold two values or more, or while it has a selection.
+3. **Chips**: a `<ul role="list" aria-label="Active filters">` of `.gh-filter-chip` buttons, one per
+   selected value and one for the search, each named *Remove filter {facet}: {value}* and ending in an
+   `aria-hidden` *x* (§3a). Removing one moves focus to the next chip, else the previous, else the
+   search field. **Clear all** (`.gh-filter-clear`) clears every filter except *Show selected only*,
+   which has its own control, and focuses the search field.
+4. The **selection bar** (§8f, adapted): *N selected — M not shown*, **Show selected only**, **Clear
+   selection**, **Select all N** (**Select all N matching** while a filter is active), and any action
+   that applies to the selection.
+
+The bar may be **sticky** at the top of the list's scroller where the width allows (the Download
+Center: from 36rem of the panel); below that a phone cannot spare the height. A sticky box stops at its
+scroller's padding edge: offset it by the negative padding, with matching padding of its own, and pin
+the flush position in a spec.
+
+**`TableState` for card lists.** `anyOfFilter(row => value | values)` declares a multi-select column
+whose selection lives in `valueFilters` (`setFilterValues`, `filterValues`); it matches a row when any
+of the row's values is selected, case-insensitively, and never a row with none. `customFilter((row,
+value) => boolean)` is for a search over several fields or a derived condition (a date range); it is
+active while its string is non-blank. `setSort(column, direction)` serves a Sort by select.
+`filterRowsExcept(rows, column)` applies every active filter but one column's — what a facet counts its
+options against. `hasActiveFilters` and `clearFilters()` cover both kinds.
+
+**`app-filter-facet`** (`shared/data-table/filter-facet.component.ts`), standalone and `OnPush`:
+
+| Input / output | Meaning |
+|---|---|
+| `facetId` | Unique in the document; the trigger (`{facetId}-trigger`), popover (`-popover`), options (`-opt-{n}`, `-opt-any`), option search (`-search`) and the anchor name derive from it |
+| `label` | The facet's name: the trigger reads *{label}*, then a count badge with hidden *selected* (*Document 1 selected*) |
+| `options` | `{ value, label, count }[]`, from a memoized getter (§4e's rule) |
+| `selected` | The host's selection, fed back; the facet emits and never owns it |
+| `mode` | `multiple` (checkboxes) or `single` (radios, `anyLabel` first, which emits `[]`) |
+| `noun` | The hidden text after each count (*Executive Summary, 4 documents*) |
+| `selectedChange` | Emitted on every change; the popover stays open |
+
+- The trigger is a `.gh-facet-btn` pill with `popovertarget` and `aria-expanded` bound from the
+  popover's `toggle` event, ending in a *chevron* state glyph; gold while a value is selected
+  (`.is-active`, since no ARIA state fits a filter button, and the badge text carries it too) or
+  while open.
+- The panel is a `popover="auto"` `.gh-facet-popover` holding a `<fieldset>` whose `<legend>` reads
+  *Filter by {label}*. Each option shows its count right-aligned; a count of 0 is dimmed but stays
+  operable, so a selected option that now matches nothing can still be cleared. **Clear {label}
+  filter** appears while anything is selected. Above 10 options a visually labelled *Filter options*
+  search narrows the options shown; options it hides keep their selection.
+- Focus goes to the option search, else the first option, on open, and back to the trigger on close.
+  **Escape** closes the popover only (`preventDefault()` and `stopPropagation()`), as §4f requires.
+- Explicit anchor names on both ends by `[attr.style]`, a `flip-block` fallback, a capped scrolling
+  height, `ensureOverlayPolyfills()` and `refreshAnchorPositioning()` on open — the §4.2 and §4f rules.
+- **Counts are memoized** on a revision the host bumps whenever the rows, a row's selection, a filter
+  or the package changes; a fresh array per change-detection pass would re-render every facet.
+
+**Load more**, not numbered pages, for card lists: cards differ in height, so a page of ten is not a
+stable screen, and a selection spread over pages is what §8f has to warn about. Show a batch (10),
+then **Show N more** (`.btn-ghost`) and, while more than one batch remains, **Show all M**
+(`.gh-filter-clear`), both text-only in a centered `.gh-load-more`. After either, **focus the first
+new card's title** (an `<h5 tabindex="-1">` with a `:focus-visible` ring), so a keyboard user carries
+on where the new content starts. Return to one batch when a filter, the search or the sort changes;
+keep the count on a reload of the same list and after a delete. Infinite scroll is not used: an
+explicit button is predictable for keyboard and screen-reader users. The list's **one polite live
+region** is the status line in its header (`.gh-list-status`, *Showing 10 of 23 documents*, *·
+filtered from 40* while a filter is active).
+
+**Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
+`.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with
+scroll snapping), `.gh-facet-btn` / `.gh-facet-count` / `.gh-facet-chevron`, `.gh-facet-popover` /
+`.gh-facet-group` / `.gh-facet-legend` / `.gh-facet-option` / `.gh-facet-option-label` /
+`.gh-facet-option-count` / `.gh-facet-search` / `.gh-facet-clear`, `.gh-filter-chips` /
+`.gh-filter-chip` / `.gh-filter-chip-facet` / `.gh-filter-chip-value`, `.gh-list-status` and
+`.gh-load-more`. The card itself is component-local.
+
 ---
 
 ## 9. Checklist
@@ -1328,6 +1458,17 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Selection is held by id; the off-page selection count and **Show selected only** are
       present; there is no header "select all"; every lookup searches the source list.
 - [ ] New styles are scoped under `.gh-datatable` or a `.gh-`-prefixed class in `styles.scss`.
+
+**Card lists**
+- [ ] Rows that are small forms are a card list (§8h): `ul[role="list"]`, one `article[aria-labelledby]`
+      per row, its title a heading one level under the section's.
+- [ ] Selection is a real checkbox with the title as its `<label>`; the whole card is not a label.
+- [ ] Facets are `app-filter-facet`, counted against the other filters, from a memoized getter.
+- [ ] Escape in the search clears its text without closing the dialog around it, and passes through
+      when the field is empty.
+- [ ] Load more focuses the first new card's title, and returns to one batch on a filter, search or
+      sort change.
+- [ ] Exactly one polite live region: the list's status line.
 
 **All controls**
 - [ ] Visible `:focus-visible` ring; no unreplaced `outline: none`.

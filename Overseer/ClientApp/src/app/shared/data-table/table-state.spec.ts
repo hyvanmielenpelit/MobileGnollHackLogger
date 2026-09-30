@@ -1,4 +1,4 @@
-import { exactFilter, MAX_PAGE_SLOTS, PAGE_ELLIPSIS, PAGE_SIZES, TableState } from './table-state';
+import { anyOfFilter, customFilter, exactFilter, MAX_PAGE_SLOTS, PAGE_ELLIPSIS, PAGE_SIZES, TableState } from './table-state';
 
 interface Row {
   id: string;
@@ -494,6 +494,128 @@ describe('TableState', () => {
 
       expect(state.pageSizes).toEqual([25, 250]);
       expect(state.pageSize).toBe(25);
+    });
+  });
+
+  describe('anyOf and custom filters', () => {
+    interface Doc {
+      id: string;
+      type: string | null;
+      tags: string[];
+      title: string;
+    }
+
+    const docs: Doc[] = [
+      { id: 'a', type: 'Summary', tags: ['run', 'comparison'], title: 'Alpha report' },
+      { id: 'b', type: 'Brief', tags: [], title: 'Beta brief' },
+      { id: 'c', type: 'summary ', tags: ['run'], title: 'Gamma summary' },
+      { id: 'd', type: null, tags: ['comparison'], title: 'Delta log' }
+    ];
+
+    function docState(): TableState<Doc> {
+      return new TableState<Doc>('title', 'asc').registerAccessors(
+        { title: d => d.title },
+        {
+          type: anyOfFilter(d => d.type),
+          tags: anyOfFilter(d => d.tags),
+          search: customFilter((d, value) => d.title.toLowerCase().includes(value.toLowerCase()))
+        }
+      );
+    }
+
+    it('matches a single-value column case-insensitively after trimming', () => {
+      const state = docState();
+      state.setFilterValues('type', ['SUMMARY']);
+
+      expect(state.viewAll(docs).map(d => d.id)).toEqual(['a', 'c']);
+      expect(state.hasActiveFilters).toBeTrue();
+    });
+
+    it('ORs the selected values of one column and ANDs the columns', () => {
+      const state = docState();
+      state.setFilterValues('type', ['Summary', 'Brief']);
+      expect(state.viewAll(docs).map(d => d.id)).toEqual(['a', 'b', 'c']);
+
+      state.setFilterValues('tags', ['comparison']);
+      expect(state.viewAll(docs).map(d => d.id)).toEqual(['a']);
+    });
+
+    it('matches an array accessor when any of its values is selected, and never a row with no values', () => {
+      const state = docState();
+      state.setFilterValues('tags', ['run']);
+      expect(state.viewAll(docs).map(d => d.id)).toEqual(['a', 'c']);
+
+      state.setFilterValues('type', ['Summary', 'Brief', 'Log']);
+      state.setFilterValues('tags', []);
+      expect(state.viewAll(docs).map(d => d.id)).not.toContain('d');
+    });
+
+    it('stores a de-duplicated copy, clears the column on an empty list and returns to page 1', () => {
+      const state = docState();
+      const values = ['Summary', 'Summary', 'Brief'];
+      state.page = 3;
+      state.setFilterValues('type', values);
+
+      expect(state.filterValues('type')).toEqual(['Summary', 'Brief']);
+      expect(state.page).toBe(1);
+      values.push('Other');
+      expect(state.filterValues('type')).toEqual(['Summary', 'Brief']);
+
+      state.setFilterValues('type', []);
+      expect(state.filterValues('type')).toEqual([]);
+      expect('type' in state.valueFilters).toBeFalse();
+      expect(state.hasActiveFilters).toBeFalse();
+    });
+
+    it('leaves a custom column inactive while its value is blank, and passes it the trimmed value', () => {
+      const state = docState();
+      state.setFilter('search', '   ');
+      expect(state.hasActiveFilters).toBeFalse();
+      expect(state.viewAll(docs).length).toBe(4);
+
+      state.setFilter('search', '  BRIEF ');
+      expect(state.hasActiveFilters).toBeTrue();
+      expect(state.viewAll(docs).map(d => d.id)).toEqual(['b']);
+    });
+
+    it('clears both the text and the value filters', () => {
+      const state = docState();
+      state.setFilter('search', 'a');
+      state.setFilterValues('type', ['Summary']);
+
+      state.clearFilters();
+
+      expect(state.hasActiveFilters).toBeFalse();
+      expect(state.filters).toEqual({});
+      expect(state.valueFilters).toEqual({});
+      expect(state.viewAll(docs).length).toBe(4);
+    });
+
+    it('applies every active filter but one column\'s in filterRowsExcept, without sorting or touching the input', () => {
+      const state = docState();
+      const input = docs.slice();
+      state.setFilterValues('type', ['Summary']);
+      state.setFilterValues('tags', ['comparison']);
+      state.setFilter('search', 'a');
+
+      expect(state.filterRowsExcept(input, 'type').map(d => d.id)).toEqual(['a', 'd']);
+      expect(state.filterRowsExcept(input, 'tags').map(d => d.id)).toEqual(['a', 'c']);
+      expect(state.filterRowsExcept(input, 'search').map(d => d.id)).toEqual(['a']);
+      expect(input).toEqual(docs);
+    });
+  });
+
+  describe('setSort', () => {
+    it('sets the column and direction at once and returns to page 1', () => {
+      const state = stateFor('score', 'desc');
+      state.page = 2;
+
+      state.setSort('name', 'asc');
+
+      expect(state.sortColumn).toBe('name');
+      expect(state.sortDirection).toBe('asc');
+      expect(state.page).toBe(1);
+      expect(state.ariaSort('name')).toBe('ascending');
     });
   });
 

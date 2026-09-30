@@ -1,0 +1,55 @@
+<button type="button" class="gh-facet-btn" [class.is-active]="selected.length > 0"
+        [id]="facetId + '-trigger'"
+        [attr.popovertarget]="popoverId"
+        [attr.aria-expanded]="open"
+        [attr.style]="'anchor-name: --' + facetId">
+  <!-- The trailing space separates the label from the count in the accessible name; the flex item drops it visually. -->
+  <span class="gh-facet-label">{{ label }} </span>
+  @if (selected.length > 0) {
+    <span class="gh-facet-count">{{ selected.length }}<span class="visually-hidden"> selected</span></span>
+  }
+  <svg class="gh-facet-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+</button>
+<div popover="auto" class="gh-facet-popover" [id]="popoverId"
+     [attr.style]="'position-anchor: --' + facetId"
+     (toggle)="onToggle($event)" (keydown)="onKeydown($event)">
+  @if (hasOptionSearch) {
+    <label class="visually-hidden" [for]="facetId + '-search'">Filter options</label>
+    <input type="search" class="gh-input gh-facet-search" [id]="facetId + '-search'"
+           placeholder="Filter options" autocomplete="off"
+           [value]="optionQuery" (input)="onQuery($event)">
+  }
+  <fieldset class="gh-facet-group">
+    <legend class="gh-facet-legend">Filter by {{ label }}</legend>
+    @if (mode === 'single') {
+      <label class="gh-radio gh-facet-option">
+        <input type="radio" [name]="facetId" [id]="facetId + '-opt-any'" value=""
+               [checked]="selected.length === 0" (change)="choose(null)">
+        <span class="gh-facet-option-label">{{ anyLabel }}</span>
+      </label>
+      @for (entry of shownOptions; track entry.option.value) {
+        <label class="gh-radio gh-facet-option" [class.is-empty]="entry.option.count === 0">
+          <input type="radio" [name]="facetId" [id]="facetId + '-opt-' + entry.index" [value]="entry.option.value"
+                 [checked]="isSelected(entry.option.value)" (change)="choose(entry.option.value)">
+          <span class="gh-facet-option-label">{{ entry.option.label }}</span>
+          <span class="gh-facet-option-count"><span class="visually-hidden">, </span>{{ entry.option.count }}<span class="visually-hidden"> {{ countNoun(entry.option.count) }}</span></span>
+        </label>
+      }
+    } @else {
+      @for (entry of shownOptions; track entry.option.value) {
+        <label class="checkbox-label gh-facet-option" [class.is-empty]="entry.option.count === 0">
+          <input type="checkbox" [id]="facetId + '-opt-' + entry.index" [value]="entry.option.value"
+                 [checked]="isSelected(entry.option.value)" (change)="toggleValue(entry.option.value, $event)">
+          <span class="gh-facet-option-label">{{ entry.option.label }}</span>
+          <span class="gh-facet-option-count"><span class="visually-hidden">, </span>{{ entry.option.count }}<span class="visually-hidden"> {{ countNoun(entry.option.count) }}</span></span>
+        </label>
+      }
+    }
+    @if (shownOptions.length === 0) {
+      <p class="gh-facet-none">No option matches.</p>
+    }
+  </fieldset>
+  @if (selected.length > 0) {
+    <button type="button" class="gh-filter-clear gh-facet-clear" (click)="clear()">Clear {{ label }} filter</button>
+  }
+</div>

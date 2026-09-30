@@ -789,15 +789,40 @@ The launcher opens it on `all` with nothing preselected and the title *Compariso
 step 4 shows `comparison` with every row preselected and the title *Documents of this comparison*.
 Packages, disclosure levels, naming, formats and the ZIP are the same in every context.
 
-**The documents table** uses the shared data-table layer (`TableState`, `app-sort-header`,
-`app-table-pager`; the `frontend_ui_controls` skill § 8). Its columns are *Include*, *Created (UTC)*,
-*Subject* (with the suite on a second line), *Document* (with the *Run changed since this document was
-written* and *Comparison changed* tags in words), *Sharing*, *Disclosure*, *Names*, *Formats*, *Charts*
-(in the wizard only, § 13) and *Actions*. *Created* and *Document* sort; a filter row filters *Subject*
-by text and *Document* and, when there are several, *Suite* by value, with *Clear filters*. Pagers sit
-above and below the table, 10 rows to a page. Selection is by row and survives paging: a selection line
-reads *N selected — M not on this page*, with **Show selected only**, **Clear selection** and **Select the
-N shown**; there is no select-all in the header. Row actions are icon-only:
+**The documents list** shows each document as a full-width card (the `frontend_ui_controls` skill
+§ 8h). The list's header holds the *Documents* heading, an (i) button **About document options** that
+opens one dialog explaining *Sharing*, *Disclosure* (what each level contains, per document type),
+*Peer names*, *Formats* and, in the wizard, *Charts*, and a status line such as *Showing 10 of 23
+documents* (*· filtered from 40* while a filter is active), which screen readers announce.
+
+Above the cards, a filter bar:
+
+- **Search** matches the title, the subject, the suite and the writer once typing pauses. Escape clears
+  the text without closing the dialog; with the field empty, Escape closes it as usual.
+- **Sort by** offers *Newest first* (the default), *Oldest first*, *Document type*, *Title*, *Subject*,
+  *Suite*, *Writer*, *Writing cost, highest first* and *Changed since written first*. The choice is
+  remembered in the browser, separately from the download settings.
+- **Filters** — *Document*, *Subject*, *Suite*, *Written by*, *Changes*, *Charts* (in the wizard only,
+  § 13) and *Created* (the last 24 hours, 7 days or 30 days) — each open a list of options with the
+  number of documents each would leave, counted with the other filters applied. Several options of one
+  filter widen the list; several filters narrow it. A filter is offered only while its documents differ
+  in it. There is no Sharing filter: a document's sharing follows the disclosure chosen on its own card.
+- **Chips** show each active filter and the search; each removes itself, and **Clear all** removes them
+  all but *Show selected only*.
+- **The selection line** reads *N selected — M not shown*, with **Show selected only**, **Clear
+  selection** and **Select all N** (*Select all N matching* while a filter is active), and, in the
+  wizard, **Update charts…** (§ 13). There is no select-all checkbox.
+
+The bar stays at the top of the panel while the list scrolls, where the panel is wide enough.
+
+Each card has the *Include* checkbox top left (a click on the title selects the card too, and a selected
+card turns gold), a line with the document type, the *Shareable* or *Internal only* tag and the *Run
+changed since this document was written* and *Comparison changed* tags in words, the title, a line with
+the date, the subject, the suite and the writer (a run file's suite and model), the actions top right,
+and under a rule the options, each labeled: *Disclosure*, *Peer names*, *Formats* and, in the wizard,
+*Charts*. An internal-only card in the External package is dimmed, with its checkbox disabled and no
+options. The list shows 10 cards, then **Show N more** and **Show all M**; after either, focus moves to
+the first new card. A new filter, search or sort shows the first 10 again. Card actions are icon-only:
 
 - **View** opens the in-app PDF viewer: a Report Pack or run-completion document at the highest
   disclosure it allows, the others offered as disclosure tabs with the per-document disclosure guide,
@@ -807,16 +832,19 @@ N shown**; there is no select-all in the header. Row actions are icon-only:
   nested confirmation, then moves focus to the next row, else the previous, else the *Documents* heading.
 - **More actions**, in the wizard only, holds *Update charts* and *Remove charts* (§ 13).
 
-The panel is an inline-size container: the package column sits beside the table from 48rem of its own
-width, and below 64rem each row becomes a card of labeled cells.
+The panel is an inline-size container: the package column sits beside the list from 48rem of its own
+width, and the filter bar sticks from 36rem. The card list lays itself out by its own width: below 30rem a
+card puts its actions on their own line and its options one per line, and the filters scroll sideways in
+one row.
 
 Each row offers its formats PDF first, then Word: pack documents and the run report PDF, Word, Markdown
 and HTML; the tool-call log PDF, Word and Markdown; diagnostics PDF, Word and Text. The choices are
 remembered per browser in settings **version 3**. A stored version 2 is migrated: the package, the paper
 and every remembered choice are kept except the Internal package's remembered formats, which are dropped
 so every admin meets the Internal package's Word default once. Any older version is ignored. The
-dialog's explanations — each package's description, the column meanings, the paper size, a row's note
-and the full reason a row is internal-only — sit behind click-mode info buttons; the red *Internal only*
+dialog's explanations — each package's description, the paper size, a row's note and the full reason a
+row is internal-only — sit behind click-mode info buttons, and the option meanings in the one *About
+document options* dialog; the red *Internal only*
 tag, the *Peers are named* warning and the failure list stay on screen.
 
 **Paper size.** *A4* by default, *US Letter* as an option, remembered with the other settings and sent
@@ -1328,8 +1356,8 @@ context of this comparison's Report Pack documents (`comparison=<entry keys>&ori
 titled *Documents of this comparison*, with **every document preselected**. Run-completion documents stay
 in their run's report. A document belongs to a comparison when the comparison has the same set of
 entries (§ 5), so changing *Prices* keeps the list, and adding or removing a model empties it. The wizard
-lends the panel its chart actions (§ 13): the *Charts* column, **Update charts…** and each row's **More
-actions**. The list reloads when a job finishes and when a document is charted.
+lends the panel its chart actions (§ 13): the *Charts* option and filter, **Update charts…** and each
+card's **More actions**. The list reloads when a job finishes and when a document is charted.
 
 **The Model Comparison launcher** (Admin → AI Benchmark → Model Comparison) leads with the action: a hero
 card with *Cross-model comparison*, its lead and **Open Comparison Wizard** (the page's only `.btn-gh`,
@@ -1455,15 +1483,16 @@ The wizard owns one publisher and queues step 3's and step 4's work through it.
 
 In the wizard only, the Download Center panel gains:
 
-- a **Charts** column: *None*, *3 · current* (drawn with the settings step 2 shows now, by
-  `chartSettingsHash`), or *3 · differs from step 2*, tagged `.gh-tag-changed`;
-- a toolbar **Update charts…** for the selected Report Pack documents, which opens a nested dialog with
-  the picker limited to their document types and prefilled from the figures they already have (else from
+- a **Charts** option on each Report Pack card: *None*, *3 · current* (drawn with the settings step 2
+  shows now, by `chartSettingsHash`), or *3 · differs from step 2*, tagged `.gh-tag-changed`; and a
+  **Charts** filter with the same three states;
+- **Update charts…** in the selection line, for the selected Report Pack documents, which opens a
+  nested dialog with the picker limited to their document types and prefilled from the figures they already have (else from
   the remembered selection), the print advisory, and **Update** / **Cancel**. Progress shows in the
   preparing overlay. A document without peers, written on another pricing basis than step 2 shows, or
   written for another comparison is skipped and listed under *Not charted* with its reason. When chart
   storage is not configured the overlay closes and a visible warning says so;
-- a per-row **More actions** popover (`.gh-action-popover`) with *Update charts* for that document and
+- a per-card **More actions** popover (`.gh-action-popover`) with *Update charts* for that document and
   *Remove charts*, each unavailable with its reason on a second line.
 
 Step 4 is opened from the wizard with all of the comparison's documents preselected, so **Update

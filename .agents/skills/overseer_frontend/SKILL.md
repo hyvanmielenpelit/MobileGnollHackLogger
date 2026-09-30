@@ -448,21 +448,40 @@ To find specific popups, look in the corresponding component's `.html` template:
     launcher's **Open Download Center**; the panel is also placed directly as the Model Comparison
     wizard's step 4 (below). Contexts: `run`, `documents` (chosen ids) and `library` (`scope` —
     `{ kind: 'comparison', entryKeys }` or `{ kind: 'all' }` — and `preselect: 'all' | 'none'`, listed
-    with one request, `origin=reportPack`). **The documents table** is the §8 data-table layer of
-    `frontend_ui_controls`: columns *Include*, *Created (UTC)*, *Subject* (with the suite), *Document*
-    (with *Run changed…* / *Comparison changed* tags), *Sharing*, *Disclosure*, *Names*, *Formats*,
-    *Charts* (only with chart actions) and *Actions*; *Created* and *Document* sort; the filter row
-    filters *Subject* by text, *Document* and *Suite* (when there are several) by value, with *Clear
-    filters*; `app-table-pager` above and below at 10 rows; a selection line (*N selected — M not on
-    this page*, **Show selected only**, **Clear selection**, **Select the N shown**) and no header
-    select-all. Row actions are icon-only: **View** (*eye*; a pack document in `app-pdf-viewer-dialog`
+    with one request, `origin=reportPack`). **The documents list** is a card list (`frontend_ui_controls`
+    §8h). Its header is the *Documents* heading, a dialog-mode `app-info-tip` **About document options**
+    (sections *Sharing*, *Disclosure* — the guides per document type and their notes — *Peer names*,
+    *Formats* and, with chart actions, *Charts*; text in `DOWNLOAD_OPTIONS_HELP`) and the polite status
+    line *Showing 10 of 23 documents* (*· filtered from N* while a filter is active). The filter bar
+    holds a search (title, detail, subject, suite and writer, debounced 200 ms; Escape with text clears
+    it without closing the dialog around it), **Sort by** (a native select of named orders:
+    *Newest first*, *Oldest first*, *Document type*, *Title*, *Subject*, *Suite*, *Writer*, *Writing
+    cost, highest first*, *Changed since written first*; remembered per browser under
+    `overseer.benchmark.downloadCenter.view`, apart from the download settings), the `app-filter-facet`
+    facets *Document*, *Subject*, *Suite*, *Written by*, *Changes*, *Charts* (only with chart actions)
+    and *Created* (single mode: last 24 hours, 7 days, 30 days) — each listed only while its rows hold
+    two values or it has a selection, each option counting the rows the other filters leave — the
+    removable active-filter chips with **Clear all** (which keeps *Show selected only*), and the
+    selection bar (*N selected — M not shown*, **Show selected only**, **Clear selection**, **Select
+    all N** / **Select all N matching**, and, with chart actions, **Update charts…**). There is no
+    Sharing facet, and no select-all checkbox. Each card is an `<article>` in a `ul[role=list]`: the
+    *Include …* checkbox top left, a kicker (document type, *Shareable* / *Internal only* with its
+    reason tip, *Run changed…* / *Comparison changed* tags), the `<h5>` title as the checkbox's
+    `<label>`, a meta line (date, then subject, suite and writer, or a run file's suite and model), the
+    icon-only actions top right in a `role="group"`, and under a hairline the options with visible
+    labels (*Disclosure*, *Peer names*, the *Formats* fieldset, *Charts*); a chosen card takes the
+    package cards' gold border and tint. The list shows 10 cards and **Show N more** / **Show all M**
+    (focus moves to the first new card's title); the count returns to 10 when a filter, the search or
+    the sort changes. Card actions are icon-only: **View** (*eye*; a pack document in `app-pdf-viewer-dialog`
     at its highest allowed disclosure with a *Peer names* second row when it has peers, or the run
     report's PDF) and **Delete** (*trash*, Report Pack documents only, a nested confirmation, focus to
-    the next row after it). The panel is an inline-size container (`dc-panel`): the package column
-    sits beside the table from 48rem, and below 64rem each row becomes a card of labeled cells. **Chart
-    actions** (`DownloadCenterChartActions`, lent only by the wizard): the *Charts* column (*None*, *3 ·
-    current*, *3 · differs from step 2* in `.gh-tag-changed`), a toolbar `.btn-ghost` **Update
-    charts…** on the selected documents, and a per-row **More actions** `.gh-action-popover`
+    the next card after it). The panel is an inline-size container (`dc-panel`): the package column
+    sits beside the list from 48rem and the filter bar sticks to the top of the body from 36rem; the
+    card list is its own container (`dc-cards`), and below 30rem a card puts its actions on their own
+    line and its options one per line. **Chart
+    actions** (`DownloadCenterChartActions`, lent only by the wizard): the *Charts* option (*None*, *3 ·
+    current*, *3 · differs from step 2* in `.gh-tag-changed`) and facet, the selection bar's `.btn-ghost`
+    **Update charts…** on the selected documents, and a per-card **More actions** `.gh-action-popover`
     (`frontend_ui_controls` §4f) with *Update charts* and *Remove charts*. **Update charts** opens a
     nested dialog with `app-report-chart-picker` limited to the chosen documents' types and prefilled
     from their current figures, the print advisory, and Update / Cancel; progress uses the preparing
@@ -638,7 +657,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     `library` context of this comparison's documents (`preselect: 'all'`, title *Documents of this
     comparison*), a `reloadToken` bumped when a job finishes or a document is charted, and the
     wizard's `DownloadCenterChartActions` (see the Download Center entry above), which add the
-    *Charts* column, **Update charts…** and the per-row **More actions**.
+    *Charts* option and facet, **Update charts…** and the per-card **More actions**.
   - **Recompute** is icon-only: a `.action-btn` with the rotate glyph,
     `aria-label="Recompute the comparison"` and the tooltip *Recompute this comparison*. A refetch
     whose payload carries the same entry keys (from changing Prices or from Recompute) keeps the

@@ -30,14 +30,21 @@ export type FilterAccessor<T> = (row: T) => string | null | undefined;
  * `substring` is case-insensitive containment, for a free-text input. `exact` is
  * case-insensitive equality, for a `<select>` whose option values are the whole legal set —
  * a "Failed" option must not also match "FailedValidation".
+ *
+ * `anyOf` matches a row whose values include any of the selected ones, for a multi-select facet;
+ * its selection lives in `valueFilters`, not `filters`. `custom` hands the filter string to a
+ * predicate, for a search over several fields or a derived condition such as a date range.
  */
-export type FilterMode = 'substring' | 'exact';
+export type FilterMode = 'substring' | 'exact' | 'anyOf' | 'custom';
+
+/** Reads the values an `anyOf` column matches against off a row. */
+export type FilterValuesAccessor<T> = (row: T) => string | readonly string[] | null | undefined;
 
 /** A filter column declared with an explicit mode. */
-export interface FilterDefinition<T> {
-  readonly accessor: FilterAccessor<T>;
-  readonly mode: FilterMode;
-}
+export type FilterDefinition<T> =
+  | { readonly mode: 'substring' | 'exact'; readonly accessor: FilterAccessor<T> }
+  | { readonly mode: 'anyOf'; readonly values: FilterValuesAccessor<T> }
+  | { readonly mode: 'custom'; readonly test: (row: T, value: string) => boolean };
 
 /** Either form a consumer may register a filter column in: a bare accessor means `substring`. */
 export type FilterRegistration<T> = FilterAccessor<T> | FilterDefinition<T>;
@@ -48,6 +55,22 @@ export type FilterRegistration<T> = FilterAccessor<T> | FilterDefinition<T>;
  */
 export function exactFilter<T>(accessor: FilterAccessor<T>): FilterDefinition<T> {
   return { accessor, mode: 'exact' };
+}
+
+/**
+ * Declares a multi-select column: a row matches when any of its values is selected, compared
+ * case-insensitively after trimming. Set the selection with `setFilterValues`.
+ */
+export function anyOfFilter<T>(values: FilterValuesAccessor<T>): FilterDefinition<T> {
+  return { values, mode: 'anyOf' };
+}
+
+/**
+ * Declares a column matched by a predicate over the trimmed filter string. The column is active
+ * while that string is non-blank.
+ */
+export function customFilter<T>(test: (row: T, value: string) => boolean): FilterDefinition<T> {
+  return { test, mode: 'custom' };
 }
 
 /** The page sizes every table offers. */
@@ -71,6 +94,8 @@ export class TableState<T> {
   sortColumn: string;
   sortDirection: SortDirection;
   readonly filters: Record<string, string> = {};
+  /** The selections of `anyOf` columns; a column with no entry is inactive. */
+  readonly valueFilters: Record<string, readonly string[]> = {};
   readonly pageSizes: readonly number[];
 
   /**
@@ -155,6 +180,17 @@ export class TableState<T> {
   }
 
   /**
+   * The rows every active filter but `column`'s lets through, unsorted and unpaged: what a facet
+   * counts its options against, so each count says what choosing that option would leave.
+   */
+  filterRowsExcept(rows: readonly T[], column: string): T[] {
+    if (this.remoteTotal !== null) {
+      return rows.slice();
+    }
+    return this.applyFilters(rows, column);
+  }
+
+  /**
    * True when rows exist but the filters hide all of them. This is a different empty state
    * from `rows.length === 0`, which means nothing has been recorded yet, and the two want
    * different messages.
@@ -228,6 +264,13 @@ export class TableState<T> {
     this.page = 1;
   }
 
+  /** Sets the column and direction at once, for a sort control that is not a column header. Page 1. */
+  setSort(column: string, direction: SortDirection): void {
+    this.sortColumn = column;
+    this.sortDirection = direction;
+    this.page = 1;
+  }
+
   /** Keeps the row that was at the top of the page in view, so the page never lands past the end. */
   setPageSize(size: number): void {
     const next = Math.max(1, Math.trunc(size));
@@ -255,9 +298,28 @@ export class TableState<T> {
     this.page = 1;
   }
 
+  /** An `anyOf` column's selection, de-duplicated; an empty list clears it. Any change returns to page 1. */
+  setFilterValues(column: string, values: readonly string[]): void {
+    const unique = [...new Set(values ?? [])];
+    if (unique.length === 0) {
+      delete this.valueFilters[column];
+    } else {
+      this.valueFilters[column] = unique;
+    }
+    this.page = 1;
+  }
+
+  /** An `anyOf` column's selection, or an empty list. */
+  filterValues(column: string): readonly string[] {
+    return this.valueFilters[column] ?? [];
+  }
+
   clearFilters(): void {
     for (const column of Object.keys(this.filters)) {
       delete this.filters[column];
+    }
+    for (const column of Object.keys(this.valueFilters)) {
+      delete this.valueFilters[column];
     }
     this.page = 1;
   }
@@ -298,11 +360,14 @@ export class TableState<T> {
   }
 
   private activeFilterColumns(): string[] {
-    return Object.keys(this.filters).filter(column => (this.filters[column] ?? '').trim() !== '');
+    const text = Object.keys(this.filters).filter(column => (this.filters[column] ?? '').trim() !== '');
+    const values = Object.keys(this.valueFilters)
+      .filter(column => this.valueFilters[column].length > 0 && !text.includes(column));
+    return [...text, ...values];
   }
 
-  private applyFilters(rows: readonly T[]): T[] {
-    const columns = this.activeFilterColumns();
+  private applyFilters(rows: readonly T[], except: string | null = null): T[] {
+    const columns = this.activeFilterColumns().filter(column => column !== except);
     if (columns.length === 0) {
       return rows.slice();
     }
@@ -314,13 +379,30 @@ export class TableState<T> {
     if (!definition) {
       return true;
     }
-    const needle = (this.filters[column] ?? '').trim().toLowerCase();
+    if (definition.mode === 'anyOf') {
+      const selected = this.filterValues(column).map(TableState.normalize);
+      if (selected.length === 0) {
+        return true;
+      }
+      const raw = definition.values(row);
+      const values = raw === null || raw === undefined ? [] : typeof raw === 'string' ? [raw] : raw;
+      return values.some(value => selected.includes(TableState.normalize(value)));
+    }
+    const value = (this.filters[column] ?? '').trim();
+    if (definition.mode === 'custom') {
+      return value === '' || definition.test(row, value);
+    }
+    const needle = value.toLowerCase();
     const cell = definition.accessor(row);
     if (cell === null || cell === undefined) {
       return false;
     }
     const haystack = String(cell).trim().toLowerCase();
     return definition.mode === 'exact' ? haystack === needle : haystack.includes(needle);
+  }
+
+  private static normalize(value: string): string {
+    return String(value).trim().toLowerCase();
   }
 
   private applySort(rows: readonly T[]): T[] {

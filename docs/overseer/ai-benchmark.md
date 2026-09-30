@@ -3459,6 +3459,17 @@ to keep model-developer recommendations to the model (validator rule 18, a warni
 result where one excludes zero, to mention unavailable figures only where leaving them out would mislead,
 and to state a value shared by several peers once.
 
+### Download Center: Document Cards, Filters and Sorting (2026-09-30) — No Harness Version Bump
+
+The Download Center's documents table became a list of full-width document cards, in the Download Center
+dialog and on the Model Comparison wizard's step 4 alike: each card shows its type, sharing and change
+tags, title, date, subject, suite and writer, its View, Delete and More actions, and its download options
+with visible labels. A filter bar adds a search, filters with live counts (*Document*, *Subject*,
+*Suite*, *Written by*, *Changes*, *Charts* in the wizard, *Created*), removable chips and a remembered
+**Sort by**, and the list shows 10 cards at a time with **Show N more** and **Show all** in place of
+page numbers. No download, disclosure, naming, chart or grading behavior changed. The full description is
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 8.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that

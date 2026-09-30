@@ -1,7 +1,7 @@
 @use '../benchmark-dialog-frame' as frame;
 
-/* Wide and tall: at 1366 px of viewport and above the table fits without scrolling sideways. The
-   height leaves the viewport's 16 px inset, 8 px on a phone, as the full-height frame does. */
+/* Wide and tall: the document cards use the width. The height leaves the viewport's 16 px inset,
+   8 px on a phone, as the full-height frame does. */
 .gh-dialog.benchmark-download-center-dialog {
   @include frame.frame($width: 92rem);
   height: min(60rem, calc(100dvh - 16px));

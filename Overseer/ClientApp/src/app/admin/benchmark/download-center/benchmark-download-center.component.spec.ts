@@ -213,8 +213,8 @@ describe('BenchmarkDownloadCenterComponent', () => {
     return component.rows.find(r => r.key === key)!;
   }
 
-  function rowElement(key: string): HTMLTableRowElement {
-    return host().querySelector<HTMLTableRowElement>(`tr[data-row-key="${key}"]`)!;
+  function rowElement(key: string): HTMLElement {
+    return host().querySelector<HTMLElement>(`article[data-row-key="${key}"]`)!;
   }
 
   function byId(id: string): HTMLElement | null {
@@ -659,31 +659,50 @@ describe('BenchmarkDownloadCenterComponent', () => {
       }
     });
 
-    it('explains the columns with info buttons and definition lists', () => {
+    it('explains the options in one dialog beside the Documents heading, one section per option', async () => {
       openRun();
       const p = component.idPrefix;
 
-      const header = host().querySelector('thead')!;
-      for (const name of ['sharing', 'names', 'formats']) {
-        expect(header.querySelector(`[id="${p}-${name}-tip"]`)).withContext(name).not.toBeNull();
+      expect(host().querySelector('thead')).toBeNull();
+      for (const name of ['sharing', 'disclosure', 'names', 'formats']) {
+        expect(byId(`${p}-${name}-tip`)).withContext(name).toBeNull();
       }
-      expect(header.querySelector('button.gh-info-btn[aria-label="About Disclosure"]')).not.toBeNull();
-      expect(byId(`${p}-sharing-tip`)!.textContent).toContain('internal-only ones never leave the Overseer team');
-      const terms = (name: string): string[] =>
-        Array.from(byId(`${p}-${name}-tip`)!.querySelectorAll('dl > div > dt .gh-info-term')).map(term => term.textContent!.trim());
-      expect(terms('names')).toEqual(['Named', 'Anonymized']);
-      expect(terms('formats')).toEqual(['PDF', 'Word', 'Markdown', 'HTML', 'Text']);
-      const word = byId(`${p}-formats-tip`)!.querySelectorAll('dl > div')[1];
+      const button = host().querySelector<HTMLButtonElement>('.dc-list-head button.gh-info-btn')!;
+      expect(button.getAttribute('aria-label')).toBe('About Document options');
+      expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+      expect(button.closest('.dc-list-head')!.querySelector('h4')!.textContent!.trim()).toBe('Documents');
+
+      button.click();
+      render();
+
+      const infoDialog = button.closest('app-info-tip')!.querySelector<HTMLDialogElement>('dialog')!;
+      expect(infoDialog.open).toBeTrue();
+      expect(byId(`${p}-options-tip-title`)!.textContent!.trim()).toBe('About document options');
+      const sections = Array.from(infoDialog.querySelectorAll('section.dc-help-section'));
+      expect(sections.map(section => section.querySelector('h4')!.textContent!.trim()))
+        .toEqual(['Sharing', 'Disclosure', 'Peer names', 'Formats']);
+      expect(sections[0].textContent).toContain('internal-only ones never leave the Overseer team');
+      const terms = (section: Element): string[] =>
+        Array.from(section.querySelectorAll(':scope > dl > div > dt .gh-info-term')).map(term => term.textContent!.trim());
+      expect(terms(sections[2])).toEqual(['Named', 'Anonymized']);
+      expect(terms(sections[3])).toEqual(['PDF', 'Word', 'Markdown', 'HTML', 'Text']);
+      const word = sections[3].querySelectorAll(':scope > dl > div')[1];
       expect(word.querySelector('dd')!.textContent!.trim())
         .toBe('For editing: a standard Word document with real headings, lists and tables.');
       expect(host().querySelector('.dc-reason')).toBeNull();
+
+      const closeEvent = new Promise<void>(resolve => infoDialog.addEventListener('close', () => resolve(), { once: true }));
+      infoDialog.close();
+      await closeEvent;
+      await settle();
+      expect(wrapper.dialog!.nativeElement.open).toBeTrue();
     });
 
-    it('explains the disclosure levels in a dialog, one section per document type, then the notes', async () => {
+    it('explains the disclosure levels in the options dialog, one section per document type, then the notes', async () => {
       openRun();
       const p = component.idPrefix;
 
-      const button = host().querySelector<HTMLButtonElement>('thead button.gh-info-btn[aria-label="About Disclosure"]')!;
+      const button = host().querySelector<HTMLButtonElement>('.dc-list-head button.gh-info-btn[aria-label="About Document options"]')!;
       const tip = button.closest('app-info-tip')!;
       expect(tip.querySelector('.gh-info-popup')).toBeNull();
       expect(button.hasAttribute('popovertarget')).toBeFalse();
@@ -694,10 +713,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const infoDialog = tip.querySelector<HTMLDialogElement>('dialog')!;
       expect(infoDialog.open).toBeTrue();
       expect(infoDialog.classList).toContain('gh-info-dialog');
-      expect(infoDialog.textContent).toContain('What each disclosure level contains');
+      const disclosure = Array.from(infoDialog.querySelectorAll('section.dc-help-section'))
+        .find(section => section.querySelector('h4')!.textContent!.trim() === 'Disclosure')!;
+      expect(disclosure.textContent).toContain('What each disclosure level contains');
 
-      const sections = Array.from(infoDialog.querySelectorAll('section.dc-disclosure-guide-section'));
-      expect(sections.map(section => section.querySelector('h4')!.textContent!.trim()))
+      const sections = Array.from(disclosure.querySelectorAll('section.dc-disclosure-guide-section'));
+      expect(sections.map(section => section.querySelector('.dc-disclosure-guide-heading')!.textContent!.trim()))
         .toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
       expect(sections.map(section => Array.from(section.querySelectorAll('dl > div > dt .gh-info-term'))
         .map(term => term.textContent!.trim())))
@@ -719,12 +740,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
         })));
       });
 
-      const notes = Array.from(infoDialog.querySelectorAll('p.dc-disclosure-guide-note')).map(note => note.textContent!.trim());
+      const notes = Array.from(disclosure.querySelectorAll('p.dc-disclosure-guide-note')).map(note => note.textContent!.trim());
       expect(notes).toEqual([REPORT_DISCLOSURE_NOTE_SHARED, REPORT_DISCLOSURE_FORMATS_NOTE]);
 
       // In dialog mode no control is described by the tip.
       const describedByTip = Array.from(host().querySelectorAll('[aria-describedby]'))
-        .filter(element => element.getAttribute('aria-describedby')!.split(' ').includes(`${p}-disclosure-tip`));
+        .filter(element => element.getAttribute('aria-describedby')!.split(' ').includes(`${p}-options-tip`));
       expect(describedByTip).toEqual([]);
 
       const closeEvent = new Promise<void>(resolve => infoDialog.addEventListener('close', () => resolve(), { once: true }));
@@ -797,9 +818,9 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
       expect(new Set(ids).size).toBe(ids.length);
-      // The pagers and the PDF viewer are shared components that number their own ids.
+      // The PDF viewer is a shared component that numbers its own ids.
       const own = Array.from(host().querySelectorAll('[id]'))
-        .filter(element => !element.closest('app-table-pager, app-pdf-viewer-dialog'))
+        .filter(element => !element.closest('app-pdf-viewer-dialog'))
         .map(element => element.id);
       expect(own.length).toBeGreaterThan(0);
       for (const id of own) {
@@ -1679,7 +1700,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     expect(outer.open).toBeTrue();
     // The wrapper lends no chart actions.
     expect(host().querySelector('.dc-update-charts')).toBeNull();
-    expect(host().querySelector('.dc-col-charts')).toBeNull();
+    expect(host().querySelector('.dc-option-charts')).toBeNull();
 
     host().querySelector<HTMLButtonElement>('.dc-footer .dc-cancel')!.click();
     expect(outer.open).toBeFalse();

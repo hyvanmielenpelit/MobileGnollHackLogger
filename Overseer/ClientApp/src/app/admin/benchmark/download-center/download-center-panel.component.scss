@@ -3,10 +3,10 @@
 /* The Download Center panel: the body, the overlay over it and the footer, as a column that fills its
  * host — the Download Center dialog or the Model Comparison wizard's step 4. The host is an
  * inline-size container, so the layout follows the panel's own width: the package column sits beside
- * the table from 48rem, and the table's rows become cards below 64rem.
+ * the documents from 48rem, and the cards lay themselves out by the list's own width.
  *
- * Layout and component-local presentation only. .gh-table, .gh-datatable, .gh-datatable-scroll,
- * .gh-datatable-toolbar, .gh-filter-*, .gh-tag, .btn-ghost, .action-btn, .gh-action-popover,
+ * Layout and component-local presentation only. .gh-filter-*, .gh-search-field, .gh-facet-*,
+ * .gh-list-status, .gh-load-more, .gh-tag, .btn-ghost, .action-btn, .gh-action-popover,
  * .gh-tooltip, .gh-field-error, .dc-ring and .gh-dialog come from styles.scss and are never
  * redefined here.
  */
@@ -331,13 +331,6 @@
   line-height: 1.45;
 }
 
-.dc-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
-}
-
 .dc-toolbar-reason,
 .dc-loading,
 .dc-empty,
@@ -348,69 +341,57 @@
   color: #a1a1aa;
 }
 
-/* Bounded, so the header row sticks while a long page of rows scrolls under it. */
-.dc-table-scroll {
-  max-block-size: min(70dvh, 48rem);
-  overflow-x: auto;
-  overscroll-behavior: contain;
-}
+/* The Documents heading, the About document options button and, at the end of the row, the status
+   line, which wraps under the heading where the row is narrow. */
+.dc-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  border-bottom: 1px solid var(--border-glass);
 
-/* Fixed widths for the option columns; the document column takes the rest. */
-.dc-table {
-  inline-size: 100%;
-
-  th,
-  td {
-    vertical-align: top;
-    line-height: 1.4;
+  .dc-documents-title {
+    padding-block-end: 6px;
+    border-bottom: 0;
   }
 
-  .dc-col-check {
-    width: 2.5rem;
-  }
-
-  .dc-col-created {
-    width: 8.5rem;
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .dc-col-subject {
-    min-width: 9rem;
-  }
-
-  .dc-col-sharing {
-    width: 8.5rem;
-  }
-
-  .dc-col-disclosure,
-  .dc-col-names {
-    width: 9.5rem;
-  }
-
-  .dc-col-formats {
-    width: 8.5rem;
-  }
-
-  .dc-col-charts {
-    width: 9rem;
-  }
-
-  .dc-col-actions {
-    width: 7.5rem;
+  app-info-tip {
+    align-self: center;
+    margin-block-end: 6px;
   }
 }
 
-/* A column header and its info button. */
-.dc-th {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  white-space: nowrap;
+.dc-list-status {
+  margin-inline-start: auto;
+  padding-block-end: 6px;
 }
 
-/* The Disclosure explanation, in its info button's dialog. The dialog sits inside the column header,
-   whose weight, color and no-wrap it would otherwise inherit. */
+/* The About document options dialog: one section per option, the disclosure guides inside theirs. */
+.dc-help-section + .dc-help-section {
+  margin-block-start: 18px;
+}
+
+.dc-help-heading {
+  margin: 0 0 8px;
+  white-space: normal;
+}
+
+.dc-help-text,
+.dc-help-lead {
+  margin: 0;
+}
+
+.dc-help-lead {
+  margin-block-end: 10px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.dc-help-terms {
+  margin: 0;
+}
+
+/* The disclosure guides, in the About document options dialog. */
 .dc-disclosure-guide,
 .dc-disclosure-guide-note {
   font-size: var(--text-body);
@@ -444,6 +425,10 @@
 }
 
 .dc-disclosure-guide-heading {
+  margin: 0 0 8px;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: #ececec;
   white-space: normal;
 }
 
@@ -451,99 +436,57 @@
   margin-block-start: 16px;
 }
 
-/* The filter row's second control (Suite) under the first. */
-.dc-filter-suite {
-  margin-top: 4px;
+/* Search, Sort by, the facets, the active filters and the selection line. From 36rem of the panel
+   it sticks to the top of the body's scroller, so they stay in reach while a long list scrolls;
+   below that a phone cannot spare the height, and it scrolls away. A sticky box stops at the
+   scroller's padding, so the negative offset and the larger top padding close the body's 20 px
+   padding above it; the negative margin takes back the column gap it would add at rest. */
+.dc-filter-bar {
+  padding-block: 4px 10px;
 }
 
-.dc-row.is-unselectable {
-  .dc-doc-label {
-    color: #a1a1aa;
+@container dc-panel (inline-size >= 36rem) {
+  .dc-filter-bar {
+    position: sticky;
+    inset-block-start: -20px;
+    z-index: 1;
+    margin-block-start: -10px;
+    padding-block-start: 24px;
+    border-bottom: 1px solid var(--border-glass);
+    background: rgba(16, 16, 16, 0.98);
   }
 }
 
-.dc-check {
-  margin: 0;
+.dc-search {
+  flex: 1 1 16rem;
 }
 
-.dc-subject,
-.dc-suite {
-  display: block;
-  overflow-wrap: anywhere;
-}
-
-.dc-suite {
-  font-size: 12px;
-  color: #a1a1aa;
-}
-
-.dc-doc-label-row {
+/* Sort by, pushed to the end of the search row. */
+.dc-sort {
   display: flex;
-  align-items: flex-start;
-  gap: 2px;
-}
-
-.dc-doc-label {
-  display: block;
-  min-width: 0;
-  font-weight: 600;
-  color: #ececec;
-  overflow-wrap: anywhere;
-}
-
-.dc-doc-detail {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  color: #a1a1aa;
-  overflow-wrap: anywhere;
-}
-
-.dc-sharing {
-  display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
+  margin-inline-start: auto;
 }
 
-.dc-format-none {
-  display: block;
-  margin-top: 4px;
-  font-size: 12px;
-  color: #d4b87a;
-}
-
-.dc-select {
-  width: 100%;
-  min-width: 7rem;
-  padding: 4px 6px;
-  font-size: 13px;
-}
-
-/* One format per line, PDF first. */
-.dc-formats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.dc-format {
-  font-size: 13px;
+.dc-sort-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
   white-space: nowrap;
 }
 
-.dc-format-fixed,
-.dc-none,
-.dc-charts-state {
-  font-size: 13px;
-  color: #a1a1aa;
+.dc-sort-select {
+  min-block-size: 32px;
+  padding-block: 4px;
+  font-size: var(--text-secondary);
 }
 
-.dc-row-actions {
-  display: inline-flex;
-  gap: 4px;
+.dc-clear-filters {
+  margin-inline-start: 4px;
 }
 
-/* The line under the table: what is chosen, and the ways to change that at once. */
+/* The line under the filters: what is chosen, the ways to change that at once, and Update charts…,
+   which acts on the chosen documents, at its end. */
 .dc-selection {
   display: flex;
   flex-wrap: wrap;
@@ -555,78 +498,286 @@
   color: #d4d4d8;
 }
 
-/* Below 64rem of the panel, each row is a card: the checkbox beside a stack of labeled cells. The
-   sortable headers stay as a row of sort buttons, and the filters wrap above the cards. */
-@container dc-panel (inline-size < 64rem) {
-  .dc-table,
-  .dc-table thead,
-  .dc-table tbody {
-    display: block;
+.dc-chart-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin-inline-start: auto;
+}
+
+/* The cards: one per document, laid out by the list's own width. */
+.dc-card-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: dc-cards / inline-size;
+}
+
+.dc-card-item {
+  min-inline-size: 0;
+}
+
+/* The checkbox, the header and the actions on one row; the options under them, behind a hairline.
+   A chosen card takes the package cards' gold border and tint, with its tick. */
+.dc-card {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  grid-template-areas:
+    "select head actions"
+    ". options options";
+  gap: 8px 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
   }
 
-  .dc-table thead tr:first-child {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 16px;
-
-    th {
-      display: none;
-    }
-
-    th.gh-th-sortable {
-      display: block;
-    }
+  &:has(.dc-card-check:checked) {
+    border-color: var(--primary-color);
+    background: color-mix(in srgb, var(--primary-color) 9%, transparent);
   }
 
-  .dc-table .gh-filter-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-block-end: 10px;
+  &.is-unselectable {
+    color: #a1a1aa;
 
-    td {
-      display: block;
-      width: auto;
-      border: 0;
+    &:hover {
+      border-color: var(--border-glass);
     }
 
-    td:empty {
-      display: none;
-    }
-  }
-
-  .dc-row {
-    display: grid;
-    grid-template-columns: 2.5rem minmax(0, 1fr);
-    gap: 6px 12px;
-    margin-block-end: 10px;
-    padding: 12px;
-    border: 1px solid var(--border-glass);
-    border-radius: 8px;
-
-    > td {
-      display: block;
-      grid-column: 2;
-      width: auto;
-      padding: 0;
-      border: 0;
-    }
-
-    > td.dc-col-check {
-      grid-column: 1;
-      grid-row: 1 / span 12;
-    }
-
-    > td[data-label]::before {
-      content: attr(data-label);
-      display: block;
-      font-size: 12px;
+    .dc-card-title {
       color: #a1a1aa;
     }
   }
+}
+
+.dc-card-select {
+  grid-area: select;
+  padding-block-start: 2px;
+}
+
+.dc-card-check {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.dc-card-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+/* The document type, then the sharing and change tags. */
+.dc-card-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  .gh-tag-changed {
+    margin-top: 0;
+  }
+}
+
+.dc-card-type {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary-color);
+}
+
+.dc-sharing {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The title is the checkbox's label, so a click on it chooses the card. It is focused after Load
+   more, so it carries a ring for that focus alone. */
+.dc-card-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.4;
+  color: #ececec;
+  overflow-wrap: anywhere;
+
+  label {
+    min-inline-size: 0;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  &:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.is-unselectable .dc-card-title label {
+  cursor: default;
+}
+
+.dc-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  line-height: 1.4;
+  color: #a1a1aa;
+
+  > span {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.dc-card-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dc-meta-sep {
+  color: #71717a;
+}
+
+.dc-card-actions {
+  grid-area: actions;
+  display: inline-flex;
+  align-self: start;
+  gap: 4px;
+}
+
+/* The options, each a label above its control, in a wrapping row. */
+.dc-card-options {
+  grid-area: options;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 24px;
+  padding-block-start: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.dc-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.dc-option-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.dc-select {
+  min-inline-size: 9rem;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+/* The Formats fieldset, reset to a plain column: its legend is the label, its checkboxes a row. */
+.dc-formats {
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  > legend {
+    float: left;
+    inline-size: 100%;
+    margin-block-end: 4px;
+    padding: 0;
+  }
+}
+
+.dc-format-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  clear: both;
+  min-block-size: 30px;
+  align-items: center;
+}
+
+.dc-format {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dc-format-none {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #d4b87a;
+}
+
+.dc-format-fixed,
+.dc-charts-state {
+  font-size: 13px;
+  color: #a1a1aa;
+}
+
+.dc-option-charts {
+  justify-content: flex-start;
+
+  .gh-tag-changed {
+    margin-top: 0;
+  }
+}
+
+/* A narrow list: the checkbox beside the header, the actions on their own line under it, and one
+   option per line with its select at full width. */
+@container dc-cards (inline-size < 30rem) {
+  .dc-card {
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+    grid-template-areas:
+      "select head"
+      ". actions"
+      ". options";
+  }
+
+  .dc-card-options {
+    flex-direction: column;
+    align-items: stretch;
+  }
 
   .dc-select {
-    width: auto;
+    inline-size: 100%;
   }
 }
 
@@ -702,7 +853,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dc-package-card,
-  .dc-paper-option {
+  .dc-paper-option,
+  .dc-card {
     transition: none;
   }
 

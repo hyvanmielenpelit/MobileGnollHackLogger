@@ -1,0 +1,5 @@
+/* The facet's look is global (.gh-facet-* in styles.scss), beside the data-table layer it belongs to. */
+:host {
+  display: inline-flex;
+  flex: none;
+}

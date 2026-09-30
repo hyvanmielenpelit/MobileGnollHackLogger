@@ -1,8 +1,8 @@
 <!--
   THE DOWNLOAD CENTER PANEL
 
-  The package column beside a paged, sortable and filterable documents table, the preparing overlay
-  over both, and the footer. Its nested dialogs (the PDF viewer, the delete confirmation and Update
+  The package column beside a filterable, sortable list of document cards shown ten at a time, the
+  preparing overlay over both, and the footer. Its nested dialogs (the PDF viewer, the delete confirmation and Update
   charts) stop their own close and cancel events here.
 -->
 <!-- Holds the body and, while a download or a chart update is prepared, the overlay above it; the footer stays usable. -->
@@ -68,10 +68,84 @@
         }
       </section>
 
-      <!-- Right: every available document, with its options. -->
+      <!-- Right: every available document, as a filterable list of cards with their options. -->
       <section class="dc-documents" [attr.aria-labelledby]="idPrefix + '-documents-title'">
-        <!-- Focused after a delete that leaves no row to focus. -->
-        <h4 class="gh-section-title dc-documents-title" [id]="idPrefix + '-documents-title'" tabindex="-1">Documents</h4>
+        <div class="dc-list-head">
+          <!-- Focused after a delete that leaves no card to focus. -->
+          <h4 class="gh-section-title dc-documents-title" [id]="idPrefix + '-documents-title'" tabindex="-1">Documents</h4>
+          <app-info-tip trigger="dialog" [tipId]="idPrefix + '-options-tip'" subject="Document options" dialogTitle="About document options">
+            <section class="dc-help-section">
+              <h4 class="gh-section-title dc-help-heading">Sharing</h4>
+              <p class="dc-help-text">{{ optionsHelp.sharing }}</p>
+            </section>
+            <section class="dc-help-section">
+              <h4 class="gh-section-title dc-help-heading">Disclosure</h4>
+              <p class="dc-help-lead">{{ disclosureTitle }}</p>
+              @for (guide of disclosureGuides; track guide.audience) {
+                <section class="dc-disclosure-guide-section">
+                  <h5 class="dc-disclosure-guide-heading">{{ guide.heading }}</h5>
+                  <dl class="dc-disclosure-guide">
+                    @for (item of guide.items; track item.term) {
+                      <div>
+                        <dt><span class="gh-info-term">{{ item.term }}</span></dt>
+                        <dd>
+                          {{ item.text }}
+                          @if (item.points?.length) {
+                            <ul>
+                              @for (point of item.points; track $index) {
+                                <li>{{ point }}</li>
+                              }
+                            </ul>
+                          }
+                        </dd>
+                      </div>
+                    }
+                  </dl>
+                </section>
+              }
+              @for (note of disclosureNotes; track $index) {
+                <p class="dc-disclosure-guide-note">{{ note }}</p>
+              }
+            </section>
+            <section class="dc-help-section">
+              <h4 class="gh-section-title dc-help-heading">Peer names</h4>
+              <dl class="dc-help-terms">
+                @for (item of optionsHelp.peerNames; track item.term) {
+                  <div>
+                    <dt><span class="gh-info-term">{{ item.term }}</span></dt>
+                    <dd>{{ item.text }}</dd>
+                  </div>
+                }
+              </dl>
+            </section>
+            <section class="dc-help-section">
+              <h4 class="gh-section-title dc-help-heading">Formats</h4>
+              <dl class="dc-help-terms">
+                @for (item of optionsHelp.formats; track item.term) {
+                  <div>
+                    <dt><span class="gh-info-term">{{ item.term }}</span></dt>
+                    <dd>{{ item.text }}</dd>
+                  </div>
+                }
+              </dl>
+            </section>
+            @if (chartActions) {
+              <section class="dc-help-section">
+                <h4 class="gh-section-title dc-help-heading">Charts</h4>
+                <dl class="dc-help-terms">
+                  @for (item of optionsHelp.charts; track item.term) {
+                    <div>
+                      <dt><span class="gh-info-term">{{ item.term }}</span></dt>
+                      <dd>{{ item.text }}</dd>
+                    </div>
+                  }
+                </dl>
+              </section>
+            }
+          </app-info-tip>
+          <!-- The list's one polite live region. -->
+          <p class="gh-list-status dc-list-status" [id]="idPrefix + '-list-status'" role="status">{{ listStatus }}</p>
+        </div>
 
         @for (notice of notices; track $index) {
           <p class="dc-notice">{{ notice }}</p>
@@ -135,21 +209,6 @@
               </div>
             </div>
           }
-
-          <div class="gh-datatable-toolbar dc-toolbar">
-            <button #chartsButton type="button" class="btn-ghost dc-update-charts" [id]="idPrefix + '-update-charts'"
-                    [attr.aria-disabled]="updateChartsBlockedReason ? 'true' : null"
-                    [attr.aria-describedby]="updateChartsBlockedReason ? idPrefix + '-update-charts-reason' : idPrefix + '-charts-tip'"
-                    (click)="openChartsDialog(chartsButton)">Update charts&hellip;</button>
-            @if (updateChartsBlockedReason; as reason) {
-              <span class="dc-toolbar-reason" [id]="idPrefix + '-update-charts-reason'">{{ reason }}</span>
-            }
-            <app-info-tip trigger="click" [tipId]="idPrefix + '-charts-tip'" subject="Charts">
-              Update charts draws the chosen documents' charts from step 2's settings and puts them in their PDF and
-              Word copies: a named copy gets the named charts, an anonymized copy charts with the peers as Model A,
-              Model B&hellip; A document written on other prices, or for another comparison, is left out.
-            </app-info-tip>
-          </div>
         }
 
         @if (loadingDocuments) {
@@ -161,217 +220,117 @@
             <p class="dc-empty">{{ emptyText }}</p>
           }
         } @else {
-          <app-table-pager [state]="table" [rows]="rows" noun="documents" (changed)="onTableChanged()"></app-table-pager>
+          <!-- Sticky inside the body's scroller where the panel is wide enough to spare the height. -->
+          <div class="gh-filter-bar dc-filter-bar">
+            <div class="gh-filter-bar-row dc-filter-bar-top">
+              <div class="gh-search-field dc-search">
+                <label class="visually-hidden" [for]="idPrefix + '-search'">Search documents</label>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="search" class="gh-input" [id]="idPrefix + '-search'" autocomplete="off"
+                       placeholder="Search title, subject, suite or writer"
+                       [value]="searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+              </div>
+              <div class="dc-sort">
+                <label class="dc-sort-label" [for]="idPrefix + '-sort'">Sort by</label>
+                <select class="gh-input dc-sort-select" [id]="idPrefix + '-sort'" (change)="onSortChange($event)">
+                  @for (sort of sorts; track sort.id) {
+                    <option [value]="sort.id" [selected]="sortId === sort.id">{{ sort.label }}</option>
+                  }
+                </select>
+              </div>
+            </div>
 
-          <!-- Wide rows scroll sideways rather than widening the panel; below 64rem of the panel they become cards. -->
-          <div class="gh-datatable-scroll dc-table-scroll">
-            <table class="gh-table gh-datatable dc-table" [class.dc-with-charts]="!!chartActions"
-                   [attr.aria-busy]="loadingDocuments ? 'true' : null">
-              <caption class="visually-hidden">Documents available to download</caption>
-              <thead>
-                <tr>
-                  <th scope="col" class="dc-col-check"><span class="visually-hidden">Include</span></th>
-                  <th app-sort-header class="dc-col-created" [state]="table" column="created" label="Created (UTC)"
-                      (changed)="onTableChanged()"></th>
-                  <th scope="col" class="dc-col-subject">Subject</th>
-                  <th app-sort-header class="dc-col-document" [state]="table" column="document" label="Document"
-                      (changed)="onTableChanged()"></th>
-                  <th scope="col" class="dc-col-sharing">
-                    <span class="dc-th">
-                      Sharing
-                      <app-info-tip trigger="click" [tipId]="idPrefix + '-sharing-tip'" subject="Sharing">Shareable documents may go to a model&rsquo;s provider; internal-only ones never leave the Overseer team.</app-info-tip>
-                    </span>
-                  </th>
-                  <th scope="col" class="dc-col-disclosure">
-                    <span class="dc-th">
-                      Disclosure
-                      <app-info-tip trigger="dialog" [tipId]="idPrefix + '-disclosure-tip'" subject="Disclosure" [dialogTitle]="disclosureTitle">
-                        @for (guide of disclosureGuides; track guide.audience) {
-                          <section class="dc-disclosure-guide-section">
-                            <h4 class="gh-section-title dc-disclosure-guide-heading">{{ guide.heading }}</h4>
-                            <dl class="dc-disclosure-guide">
-                              @for (item of guide.items; track item.term) {
-                                <div>
-                                  <dt><span class="gh-info-term">{{ item.term }}</span></dt>
-                                  <dd>
-                                    {{ item.text }}
-                                    @if (item.points?.length) {
-                                      <ul>
-                                        @for (point of item.points; track $index) {
-                                          <li>{{ point }}</li>
-                                        }
-                                      </ul>
-                                    }
-                                  </dd>
-                                </div>
-                              }
-                            </dl>
-                          </section>
-                        }
-                        @for (note of disclosureNotes; track $index) {
-                          <p class="dc-disclosure-guide-note">{{ note }}</p>
-                        }
-                      </app-info-tip>
-                    </span>
-                  </th>
-                  <th scope="col" class="dc-col-names">
-                    <span class="dc-th">
-                      Names
-                      <app-info-tip trigger="click" [tipId]="idPrefix + '-names-tip'" subject="Names">
-                        <dl>
-                          <div>
-                            <dt><span class="gh-info-term">Named</span></dt>
-                            <dd>Peer models appear under their own names and providers.</dd>
-                          </div>
-                          <div>
-                            <dt><span class="gh-info-term">Anonymized</span></dt>
-                            <dd>Peers appear as Model A, Model B&hellip; without providers; the subject is always named.</dd>
-                          </div>
-                        </dl>
-                      </app-info-tip>
-                    </span>
-                  </th>
-                  <th scope="col" class="dc-col-formats">
-                    <span class="dc-th">
-                      Formats
-                      <app-info-tip trigger="click" [tipId]="idPrefix + '-formats-tip'" subject="Formats">
-                        <dl>
-                          <div>
-                            <dt><span class="gh-info-term">PDF</span></dt>
-                            <dd>For reading and sending: accessible (PDF/UA) and archival (PDF/A).</dd>
-                          </div>
-                          <div>
-                            <dt><span class="gh-info-term">Word</span></dt>
-                            <dd>For editing: a standard Word document with real headings, lists and tables.</dd>
-                          </div>
-                          <div>
-                            <dt><span class="gh-info-term">Markdown</span></dt>
-                            <dd>For tools and AI agents.</dd>
-                          </div>
-                          <div>
-                            <dt><span class="gh-info-term">HTML</span></dt>
-                            <dd>For reading in a browser.</dd>
-                          </div>
-                          <div>
-                            <dt><span class="gh-info-term">Text</span></dt>
-                            <dd>The run diagnostics, as captured.</dd>
-                          </div>
-                        </dl>
-                      </app-info-tip>
-                    </span>
-                  </th>
-                  @if (chartActions) {
-                    <th scope="col" class="dc-col-charts">
-                      <span class="dc-th">
-                        Charts
-                        <app-info-tip trigger="click" [tipId]="idPrefix + '-charts-col-tip'" subject="Charts column">
-                          <dl>
-                            <div>
-                              <dt><span class="gh-info-term">None</span></dt>
-                              <dd>The PDF and Word copies have no charts.</dd>
-                            </div>
-                            <div>
-                              <dt><span class="gh-info-term">current</span></dt>
-                              <dd>The charts were drawn with the settings step 2 shows now.</dd>
-                            </div>
-                            <div>
-                              <dt><span class="gh-info-term">differs from step 2</span></dt>
-                              <dd>The charts were drawn with other settings; Update charts redraws them.</dd>
-                            </div>
-                          </dl>
-                        </app-info-tip>
-                      </span>
-                    </th>
+            @if (facets.length > 0) {
+              <div class="gh-facet-row dc-facet-row">
+                @for (facet of facets; track facet.column) {
+                  <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" [options]="facet.options"
+                                    [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel"
+                                    (selectedChange)="onFacetChange(facet.column, $event)"></app-filter-facet>
+                }
+              </div>
+            }
+
+            @if (activeChips.length > 0) {
+              <div class="gh-filter-bar-row dc-chips-row">
+                <ul class="gh-filter-chips dc-filter-chips" role="list" aria-label="Active filters">
+                  @for (chip of activeChips; track chip.key) {
+                    <li>
+                      <button type="button" class="gh-filter-chip"
+                              [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                              (click)="removeChip(chip)">
+                        <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                        <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      </button>
+                    </li>
                   }
-                  <th scope="col" class="dc-col-actions">Actions</th>
-                </tr>
-                <tr class="gh-filter-row">
-                  <td class="dc-col-check">
-                    @if (hasColumnFilters) {
-                      <button type="button" class="gh-filter-clear dc-clear-filters" (click)="clearFilters()">Clear filters</button>
-                    }
-                  </td>
-                  <td class="dc-col-created"></td>
-                  <td class="dc-col-subject">
-                    <label class="visually-hidden" [for]="idPrefix + '-f-subject'">Filter by subject</label>
-                    <input type="text" class="gh-input gh-filter-input" [id]="idPrefix + '-f-subject'" placeholder="Subject"
-                           [value]="filterValue('subject')" (input)="setFilter('subject', $event)">
-                    @if (suiteOptions.length > 1) {
-                      <label class="visually-hidden" [for]="idPrefix + '-f-suite'">Filter by suite</label>
-                      <select class="gh-input gh-filter-select dc-filter-suite" [id]="idPrefix + '-f-suite'" (change)="setFilter('suite', $event)">
-                        <option value="" [selected]="filterValue('suite') === ''">All suites</option>
-                        @for (option of suiteOptions; track $index) {
-                          <option [value]="option" [selected]="filterValue('suite') === option">{{ option }}</option>
-                        }
-                      </select>
-                    }
-                  </td>
-                  <td class="dc-col-document">
-                    <label class="visually-hidden" [for]="idPrefix + '-f-document'">Filter by document</label>
-                    <select class="gh-input gh-filter-select" [id]="idPrefix + '-f-document'" (change)="setFilter('document', $event)">
-                      <option value="" [selected]="filterValue('document') === ''">All documents</option>
-                      @for (option of documentTypeOptions; track $index) {
-                        <option [value]="option" [selected]="filterValue('document') === option">{{ option }}</option>
-                      }
-                    </select>
-                  </td>
-                  <td class="dc-col-sharing"></td>
-                  <td class="dc-col-disclosure"></td>
-                  <td class="dc-col-names"></td>
-                  <td class="dc-col-formats"></td>
-                  @if (chartActions) {
-                    <td class="dc-col-charts"></td>
+                </ul>
+                <button type="button" class="gh-filter-clear dc-clear-filters" (click)="clearFilters()">Clear all</button>
+              </div>
+            }
+
+            <!-- What is chosen, shown or not; no select-all checkbox. -->
+            <div class="dc-selection">
+              @let chosen = selectedCount;
+              <p class="dc-selection-count">
+                @if (chosen > 0) {
+                  {{ chosen }} selected@if (hiddenSelectedCount > 0) {<span> — {{ hiddenSelectedCount }} not shown</span>}
+                } @else {
+                  Nothing selected
+                }
+              </p>
+              @if (chosen > 0 || showSelectedOnly) {
+                <button type="button" class="gh-filter-toggle dc-show-selected"
+                        [attr.aria-pressed]="showSelectedOnly" (click)="toggleShowSelectedOnly()">Show selected only</button>
+              }
+              @if (chosen > 0) {
+                <button type="button" class="gh-filter-clear dc-clear-selection" [disabled]="preparing" (click)="clearSelection()">Clear selection</button>
+              }
+              @if (shownSelectableRows.length > 0) {
+                <button type="button" class="gh-filter-clear dc-select-shown" [disabled]="preparing" (click)="selectShown()">{{ selectShownLabel }}</button>
+              }
+              @if (chartActions) {
+                <div class="dc-chart-action">
+                  <button #chartsButton type="button" class="btn-ghost dc-update-charts" [id]="idPrefix + '-update-charts'"
+                          [attr.aria-disabled]="updateChartsBlockedReason ? 'true' : null"
+                          [attr.aria-describedby]="updateChartsBlockedReason ? idPrefix + '-update-charts-reason' : idPrefix + '-charts-tip'"
+                          (click)="openChartsDialog(chartsButton)">Update charts&hellip;</button>
+                  @if (updateChartsBlockedReason; as reason) {
+                    <span class="dc-toolbar-reason" [id]="idPrefix + '-update-charts-reason'">{{ reason }}</span>
                   }
-                  <td class="dc-col-actions"></td>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of view; track row.key) {
-                  @let rid = rowId(row);
-                  @let state = stateOf(row);
-                  @let selectable = isSelectable(row);
-                  <tr class="dc-row" [class.is-unselectable]="!selectable" [attr.data-row-key]="row.key">
-                    <td class="dc-col-check">
-                      <label class="checkbox-label dc-check">
-                        <input type="checkbox" [id]="rid + '-check'"
-                               [checked]="selectable && state.selected"
-                               [disabled]="!selectable || preparing"
-                               [attr.aria-label]="'Include ' + row.label"
-                               [attr.aria-describedby]="rowDescribedBy(row)"
-                               (change)="toggleRow(row, $event)">
-                      </label>
-                    </td>
-                    <td class="dc-col-created" data-label="Created">
-                      @if (row.createdAtUtc) {
-                        {{ formatUtc(row.createdAtUtc) }}
-                      } @else {
-                        <span class="dc-none" aria-hidden="true">&mdash;</span>
-                      }
-                    </td>
-                    <td class="dc-col-subject" data-label="Subject">
-                      <span class="dc-subject">{{ row.subject }}</span>
-                      @if (row.suite) {
-                        <span class="dc-suite">{{ row.suite }}</span>
-                      }
-                    </td>
-                    <td class="dc-col-document">
-                      <span class="dc-doc-label-row">
-                        <span class="dc-doc-label">{{ row.label }}</span>
-                        @if (row.note) {
-                          <app-info-tip trigger="click" [tipId]="rid + '-note'" [subject]="row.label">{{ row.note }}</app-info-tip>
-                        }
-                      </span>
-                      <span class="dc-doc-detail">{{ row.detail }}</span>
-                      @if (row.runChanged) {
-                        <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
-                      }
-                      @if (row.doc?.peersChangedSinceGeneration) {
-                        <span class="gh-tag gh-tag-changed dc-tag-comparison-changed">Comparison changed<span class="visually-hidden">: a peer’s run changed since this document was written</span></span>
-                      }
-                    </td>
-                    <td class="dc-col-sharing" data-label="Sharing">
+                  <app-info-tip trigger="click" [tipId]="idPrefix + '-charts-tip'" subject="Charts">
+                    Update charts draws the chosen documents' charts from step 2's settings and puts them in their PDF and
+                    Word copies: a named copy gets the named charts, an anonymized copy charts with the peers as Model A,
+                    Model B&hellip; A document written on other prices, or for another comparison, is left out.
+                  </app-info-tip>
+                </div>
+              }
+            </div>
+          </div>
+
+          <ul class="dc-card-list" role="list" [attr.aria-labelledby]="idPrefix + '-documents-title'"
+              [attr.aria-busy]="loadingDocuments ? 'true' : null">
+            @for (row of view; track row.key) {
+              @let rid = rowId(row);
+              @let state = stateOf(row);
+              @let selectable = isSelectable(row);
+              <li class="dc-card-item">
+                <article class="dc-card" [class.is-unselectable]="!selectable" [attr.data-row-key]="row.key"
+                         [attr.aria-labelledby]="rid + '-title'">
+                  <div class="dc-card-select">
+                    <input type="checkbox" class="dc-card-check" [id]="rid + '-check'"
+                           [checked]="selectable && state.selected"
+                           [disabled]="!selectable || preparing"
+                           [attr.aria-label]="'Include ' + row.label"
+                           [attr.aria-describedby]="rowDescribedBy(row)"
+                           (change)="toggleRow(row, $event)">
+                  </div>
+
+                  <header class="dc-card-head">
+                    <p class="dc-card-kicker">
+                      <span class="dc-card-type">{{ row.documentType }}</span>
                       @if (isInternalOnly(row)) {
-                        <!-- The tag stays on screen: it is the short form of why the row may be unselectable. -->
+                        <!-- The tag stays on screen: it is the short form of why the card may be unselectable. -->
                         <span class="dc-sharing">
                           <span class="gh-tag gh-tag-internal">Internal only</span>
                           <app-info-tip trigger="click" [tipId]="rid + '-reason'" [subject]="'Internal only: ' + row.label">{{ internalReasonOf(row) }}</app-info-tip>
@@ -379,172 +338,176 @@
                       } @else {
                         <span class="gh-tag gh-tag-shareable">Shareable</span>
                       }
-                    </td>
-                    <td class="dc-col-disclosure" data-label="Disclosure">
-                      @if (row.kind === 'pack' && selectable) {
-                        <select class="gh-input dc-select" [id]="rid + '-disclosure'"
-                                [attr.aria-label]="'Disclosure of ' + row.label"
-                                [disabled]="optionsLocked || preparing"
-                                (change)="setDisclosure(row, $event)">
-                          @for (option of disclosureOptions(row); track $index) {
-                            <option [value]="option" [selected]="state.disclosure === option">{{ disclosureLabel(option) }}</option>
-                          }
-                        </select>
-                      } @else {
-                        <span class="dc-none" aria-hidden="true">&mdash;</span>
+                      @if (row.runChanged) {
+                        <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
                       }
-                    </td>
-                    <td class="dc-col-names" data-label="Names">
-                      @if (row.kind === 'pack' && selectable) {
-                        <select class="gh-input dc-select" [id]="rid + '-names'"
-                                [attr.aria-label]="'Peer names in ' + row.label"
-                                [disabled]="optionsLocked || preparing"
-                                (change)="setNaming(row, $event)">
-                          @for (option of namingOptions(); track $index) {
-                            <option [value]="option" [selected]="state.naming === option">{{ namingLabel(option) }}</option>
-                          }
-                        </select>
-                      } @else {
-                        <span class="dc-none" aria-hidden="true">&mdash;</span>
+                      @if (row.doc?.peersChangedSinceGeneration) {
+                        <span class="gh-tag gh-tag-changed dc-tag-comparison-changed">Comparison changed<span class="visually-hidden">: a peer’s run changed since this document was written</span></span>
                       }
-                    </td>
-                    <td class="dc-col-formats" data-label="Formats">
-                      @if (!selectable) {
-                        <span class="dc-none" aria-hidden="true">&mdash;</span>
-                      } @else if (row.formats.length > 1) {
-                        <span class="dc-formats">
-                          @for (format of row.formats; track format) {
-                            <label class="checkbox-label dc-format">
-                              <input type="checkbox" [id]="rid + '-format-' + format"
-                                     [checked]="hasFormat(row, format)"
-                                     [disabled]="preparing"
-                                     [attr.aria-label]="formatLabel(format) + ' copy of ' + row.label"
-                                     (change)="toggleFormat(row, format, $event)">
-                              {{ formatLabel(format) }}
-                            </label>
-                          }
-                        </span>
-                        @if (state.formats.length === 0) {
-                          <span class="dc-format-none">No format chosen</span>
+                    </p>
+                    <h5 class="dc-card-title" [id]="rid + '-title'" tabindex="-1">
+                      <label class="dc-doc-label" [for]="rid + '-check'">{{ row.label }}</label>
+                      @if (row.note) {
+                        <app-info-tip trigger="click" [tipId]="rid + '-note'" [subject]="row.label">{{ row.note }}</app-info-tip>
+                      }
+                    </h5>
+                    <p class="dc-card-meta">
+                      @for (part of cardMeta(row); track part.kind; let first = $first) {
+                        @if (!first) {
+                          <!-- A dot on screen, a comma for assistive technology. -->
+                          <span class="dc-meta-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                         }
-                      } @else {
-                        <span class="dc-format-fixed">{{ formatLabel(row.formats[0]) }} only</span>
+                        @if (part.kind === 'time') {
+                          <time class="dc-card-time" [attr.datetime]="row.createdAtUtc">{{ part.text }}</time>
+                        } @else {
+                          <span [class]="part.cssClass">{{ part.text }}</span>
+                        }
                       }
-                    </td>
-                    @if (chartActions) {
-                      <td class="dc-col-charts" data-label="Charts">
-                        @if (row.kind === 'pack') {
+                    </p>
+                  </header>
+
+                  <div class="dc-card-actions" role="group" [attr.aria-label]="'Actions for ' + rowName(row)">
+                    @if (canView(row)) {
+                      <button #viewButton type="button" class="action-btn dc-view-btn" [id]="rid + '-view'"
+                              [attr.aria-label]="'View ' + rowName(row)"
+                              [attr.interestfor]="rid + '-view-tip'"
+                              [attr.style]="'anchor-name: --' + rid + '-view-tip'"
+                              (click)="viewRow(row, viewButton)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="rid + '-view-tip'"
+                           [attr.style]="'position-anchor: --' + rid + '-view-tip'">View</div>
+                    }
+                    @if (canDelete(row)) {
+                      <button #deleteButton type="button" class="action-btn action-btn-danger dc-delete-btn" [id]="rid + '-delete'"
+                              [attr.aria-label]="'Delete ' + rowName(row)"
+                              [attr.aria-disabled]="preparing ? 'true' : null"
+                              [attr.interestfor]="rid + '-delete-tip'"
+                              [attr.style]="'anchor-name: --' + rid + '-delete-tip'"
+                              (click)="requestDelete(row, deleteButton)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="rid + '-delete-tip'"
+                           [attr.style]="'position-anchor: --' + rid + '-delete-tip'">Delete</div>
+                    }
+                    @if (chartActions && row.kind === 'pack') {
+                      @let mid = moreId(row);
+                      <!-- One anchor for the trigger's tooltip and its popover. -->
+                      <button type="button" class="action-btn dc-more-btn" [id]="mid + '-trigger'"
+                              [attr.popovertarget]="mid"
+                              [attr.aria-expanded]="moreOpenKey === row.key"
+                              [attr.aria-label]="'More actions for ' + rowName(row)"
+                              [attr.interestfor]="mid + '-tip'"
+                              [attr.style]="'anchor-name: --' + mid">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
+                      </button>
+                      <div popover="hint" class="gh-tooltip" [id]="mid + '-tip'"
+                           [attr.style]="'position-anchor: --' + mid">More actions</div>
+                      <div popover="auto" class="gh-action-popover dc-more-popover" [id]="mid"
+                           role="group" [attr.aria-label]="'Chart actions for ' + rowName(row)"
+                           [attr.style]="'position-anchor: --' + mid"
+                           (toggle)="onMoreToggle(row, $event)" (keydown)="onMoreKeydown(row, $event)">
+                        @let updateReason = rowUpdateBlockedReason(row);
+                        <button type="button" class="gh-action-popover-item dc-more-update"
+                                [attr.aria-disabled]="updateReason ? 'true' : null"
+                                (click)="openRowChartsDialog(row)">
+                          <span>Update charts</span>
+                          @if (updateReason) {
+                            <span class="gh-action-popover-item-reason">{{ updateReason }}</span>
+                          }
+                        </button>
+                        @let removeReason = rowRemoveBlockedReason(row);
+                        <button type="button" class="gh-action-popover-item dc-more-remove"
+                                [attr.aria-disabled]="removeReason ? 'true' : null"
+                                (click)="removeCharts(row)">
+                          <span>Remove charts</span>
+                          @if (removeReason) {
+                            <span class="gh-action-popover-item-reason">{{ removeReason }}</span>
+                          }
+                        </button>
+                      </div>
+                    }
+                  </div>
+
+                  @if (selectable) {
+                    <div class="dc-card-options" role="group" [attr.aria-label]="'Download options for ' + row.label">
+                      @if (row.kind === 'pack') {
+                        <div class="dc-option dc-option-disclosure">
+                          <label class="dc-option-label" [for]="rid + '-disclosure'">Disclosure</label>
+                          <select class="gh-input dc-select" [id]="rid + '-disclosure'"
+                                  [attr.aria-label]="'Disclosure of ' + row.label"
+                                  [disabled]="optionsLocked || preparing"
+                                  (change)="setDisclosure(row, $event)">
+                            @for (option of disclosureOptions(row); track $index) {
+                              <option [value]="option" [selected]="state.disclosure === option">{{ disclosureLabel(option) }}</option>
+                            }
+                          </select>
+                        </div>
+                        <div class="dc-option dc-option-names">
+                          <label class="dc-option-label" [for]="rid + '-names'">Peer names</label>
+                          <select class="gh-input dc-select" [id]="rid + '-names'"
+                                  [attr.aria-label]="'Peer names in ' + row.label"
+                                  [disabled]="optionsLocked || preparing"
+                                  (change)="setNaming(row, $event)">
+                            @for (option of namingOptions(); track $index) {
+                              <option [value]="option" [selected]="state.naming === option">{{ namingLabel(option) }}</option>
+                            }
+                          </select>
+                        </div>
+                      }
+                      <fieldset class="dc-option dc-formats">
+                        <legend class="dc-option-label">Formats</legend>
+                        @if (row.formats.length > 1) {
+                          <span class="dc-format-list">
+                            @for (format of row.formats; track format) {
+                              <label class="checkbox-label dc-format">
+                                <input type="checkbox" [id]="rid + '-format-' + format"
+                                       [checked]="hasFormat(row, format)"
+                                       [disabled]="preparing"
+                                       [attr.aria-label]="formatLabel(format) + ' copy of ' + row.label"
+                                       (change)="toggleFormat(row, format, $event)">
+                                {{ formatLabel(format) }}
+                              </label>
+                            }
+                          </span>
+                          @if (state.formats.length === 0) {
+                            <span class="dc-format-none">No format chosen</span>
+                          }
+                        } @else {
+                          <span class="dc-format-fixed">{{ formatLabel(row.formats[0]) }} only</span>
+                        }
+                      </fieldset>
+                      @if (chartActions && row.kind === 'pack') {
+                        <div class="dc-option dc-option-charts">
+                          <span class="dc-option-label">Charts</span>
                           @if (chartFigureCount(row) > 0 && !chartsCurrent(row)) {
                             <span class="gh-tag gh-tag-changed dc-charts-state">{{ chartStateText(row) }}</span>
                           } @else {
                             <span class="dc-charts-state">{{ chartStateText(row) }}</span>
                           }
-                        } @else {
-                          <span class="dc-none" aria-hidden="true">&mdash;</span>
-                        }
-                      </td>
-                    }
-                    <td class="dc-col-actions">
-                      <span class="dc-row-actions">
-                        @if (canView(row)) {
-                          <button #viewButton type="button" class="action-btn dc-view-btn" [id]="rid + '-view'"
-                                  [attr.aria-label]="'View ' + rowName(row)"
-                                  [attr.interestfor]="rid + '-view-tip'"
-                                  [attr.style]="'anchor-name: --' + rid + '-view-tip'"
-                                  (click)="viewRow(row, viewButton)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                          </button>
-                          <div popover="hint" class="gh-tooltip" [id]="rid + '-view-tip'"
-                               [attr.style]="'position-anchor: --' + rid + '-view-tip'">View</div>
-                        }
-                        @if (canDelete(row)) {
-                          <button #deleteButton type="button" class="action-btn action-btn-danger dc-delete-btn" [id]="rid + '-delete'"
-                                  [attr.aria-label]="'Delete ' + rowName(row)"
-                                  [attr.aria-disabled]="preparing ? 'true' : null"
-                                  [attr.interestfor]="rid + '-delete-tip'"
-                                  [attr.style]="'anchor-name: --' + rid + '-delete-tip'"
-                                  (click)="requestDelete(row, deleteButton)">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                          </button>
-                          <div popover="hint" class="gh-tooltip" [id]="rid + '-delete-tip'"
-                               [attr.style]="'position-anchor: --' + rid + '-delete-tip'">Delete</div>
-                        }
-                        @if (chartActions && row.kind === 'pack') {
-                          @let mid = moreId(row);
-                          <!-- One anchor for the trigger's tooltip and its popover. -->
-                          <button type="button" class="action-btn dc-more-btn" [id]="mid + '-trigger'"
-                                  [attr.popovertarget]="mid"
-                                  [attr.aria-expanded]="moreOpenKey === row.key"
-                                  [attr.aria-label]="'More actions for ' + rowName(row)"
-                                  [attr.interestfor]="mid + '-tip'"
-                                  [attr.style]="'anchor-name: --' + mid">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
-                          </button>
-                          <div popover="hint" class="gh-tooltip" [id]="mid + '-tip'"
-                               [attr.style]="'position-anchor: --' + mid">More actions</div>
-                          <div popover="auto" class="gh-action-popover dc-more-popover" [id]="mid"
-                               role="group" [attr.aria-label]="'Chart actions for ' + rowName(row)"
-                               [attr.style]="'position-anchor: --' + mid"
-                               (toggle)="onMoreToggle(row, $event)" (keydown)="onMoreKeydown(row, $event)">
-                            @let updateReason = rowUpdateBlockedReason(row);
-                            <button type="button" class="gh-action-popover-item dc-more-update"
-                                    [attr.aria-disabled]="updateReason ? 'true' : null"
-                                    (click)="openRowChartsDialog(row)">
-                              <span>Update charts</span>
-                              @if (updateReason) {
-                                <span class="gh-action-popover-item-reason">{{ updateReason }}</span>
-                              }
-                            </button>
-                            @let removeReason = rowRemoveBlockedReason(row);
-                            <button type="button" class="gh-action-popover-item dc-more-remove"
-                                    [attr.aria-disabled]="removeReason ? 'true' : null"
-                                    (click)="removeCharts(row)">
-                              <span>Remove charts</span>
-                              @if (removeReason) {
-                                <span class="gh-action-popover-item-reason">{{ removeReason }}</span>
-                              }
-                            </button>
-                          </div>
-                        }
-                      </span>
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                </article>
+              </li>
+            }
+          </ul>
 
           @if (table.noMatches(rows)) {
             <p class="dc-no-matches">No documents match these filters.
-              <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear filters</button>
+              <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear all filters</button>
             </p>
           }
 
-          <app-table-pager [state]="table" [rows]="rows" noun="documents" [announce]="false"
-                           (changed)="onTableChanged()"></app-table-pager>
-
-          <!-- What is chosen, on any page; no header select-all. -->
-          <div class="dc-selection">
-            @let chosen = selectedCount;
-            <p class="dc-selection-count">
-              @if (chosen > 0) {
-                {{ chosen }} selected@if (offPageSelectedCount > 0) {<span> — {{ offPageSelectedCount }} not on this page</span>}
-              } @else {
-                Nothing selected
+          @if (remainingCount > 0) {
+            <div class="gh-load-more dc-load-more">
+              <button type="button" class="btn-ghost dc-show-more" (click)="showMore()">Show {{ nextBatchCount }} more</button>
+              @if (remainingCount > cardBatch) {
+                <button type="button" class="gh-filter-clear dc-show-all" (click)="showAll()">Show all {{ matching.length }}</button>
               }
-            </p>
-            @if (chosen > 0 || showSelectedOnly) {
-              <button type="button" class="gh-filter-toggle dc-show-selected"
-                      [attr.aria-pressed]="showSelectedOnly" (click)="toggleShowSelectedOnly()">Show selected only</button>
-            }
-            @if (chosen > 0) {
-              <button type="button" class="gh-filter-clear dc-clear-selection" [disabled]="preparing" (click)="clearSelection()">Clear selection</button>
-            }
-            @let shown = shownSelectableRows.length;
-            @if (shown > 0) {
-              <button type="button" class="gh-filter-clear dc-select-shown" [disabled]="preparing" (click)="selectShown()">Select the {{ shown }} shown</button>
-            }
-          </div>
+            </div>
+          }
         }
       </section>
     </div>
