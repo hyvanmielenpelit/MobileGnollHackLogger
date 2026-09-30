@@ -261,6 +261,31 @@
       },
       "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
     }
+  },
+  {
+    "prefixes": ["gpt-6.1-sol"],
+    "displayName": "GPT-6.1 Sol",
+    "releaseDate": "2026-09-29",
+    "thinkingLevels": ["low", "medium", "high", "xhigh", "max"],
+    "reasoningModes": ["standard", "pro"],
+    "reasoningSummaries": ["auto", "concise", "detailed"],
+    "contextWindowSize": 1050000,
+    "maxOutputTokens": 128000,
+    "pricing": {
+      "inputPerMillion": 2.00,
+      "outputPerMillion": 10.00,
+      "cachedInputPerMillion": 0.10,
+      "cacheWritePerMillion": 2.50,
+      "asOf": "2026-09-30",
+      "longContext": {
+        "thresholdInputTokens": 272000,
+        "inputPerMillion": 4.00,
+        "outputPerMillion": 15.00,
+        "cachedInputPerMillion": 0.20,
+        "cacheWritePerMillion": 5.00
+      },
+      "serviceTierMultipliers": { "batch": 0.5, "flex": 0.5, "priority": 2.0, "fast": 2.0 }
+    }
   }
 ]
 
