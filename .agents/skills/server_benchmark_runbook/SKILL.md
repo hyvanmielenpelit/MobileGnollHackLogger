@@ -387,7 +387,7 @@ to stop if the projection is more than about twice the estimate.
 | Model Under Test | <entry as the dropdown prints it, with its thinking-level badge> | same / CHANGED |
 | Benchmark Suite | <name as listed> (<n> questions) | same |
 | Scoring Profile | <name> | same |
-| Response Style | Concise (production default) | same |
+| Response Style | Concise — production default | same |
 | Source Code References | Allowed / Disallowed — production default | same |
 | Assessor | ... | same |
 | Co-Assessor (optional) | <entry as the dropdown prints it> or "None - single assessor" | same / CHANGED |

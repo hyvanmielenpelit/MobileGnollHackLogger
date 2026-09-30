@@ -309,8 +309,8 @@
                   <select id="candidateResponseStyle" class="gh-input"
                           [(ngModel)]="candidateVerboseMode"
                           [attr.aria-describedby]="candidateVerboseMode ? 'candidateResponseStyleHint candidateResponseStyleNote' : 'candidateResponseStyleHint'">
-                    <option [ngValue]="false">Concise (production default)</option>
-                    <option [ngValue]="true">Detailed (diagnostic)</option>
+                    <option [ngValue]="false">Concise — production default</option>
+                    <option [ngValue]="true">Detailed — diagnostic</option>
                   </select>
                   <app-info-tip trigger="click" tipId="candidateResponseStyleHint" subject="Response Style">
                     Concise matches the production chat and stays comparable with earlier runs. Detailed is
