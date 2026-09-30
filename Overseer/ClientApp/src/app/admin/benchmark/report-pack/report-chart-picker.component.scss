@@ -1,47 +1,79 @@
-/* The chart picker. .gh-table, .checkbox-label, .btn-link and .visually-hidden come from styles.scss. */
+/* The chart picker. .gh-tabs, .gh-tabs-segmented, .gh-tab, .checkbox-label, .btn-link and .visually-hidden come from styles.scss. */
 
 :host {
   display: block;
   min-inline-size: 0;
+  container: rcp / inline-size;
 }
 
-/* Four columns in a narrow sidebar: the table scrolls sideways rather than squeezing its labels. */
-.rcp-wrap {
-  overflow-x: auto;
-}
-
-.rcp-table {
-  inline-size: 100%;
+.rcp {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   font-size: var(--text-secondary);
+}
 
-  caption {
-    caption-side: top;
-    text-align: start;
-    padding: 0 0 6px;
-    font-weight: 600;
-    color: #e4e4e7;
-  }
+.rcp-caption {
+  margin: 0;
+  font-weight: 600;
+  color: #e4e4e7;
+}
 
-  th,
-  td {
-    vertical-align: top;
-  }
+.rcp-doc-tabs .gh-tab {
+  gap: 6px;
+}
 
-  th[scope="row"] {
-    min-inline-size: 7rem;
-    font-weight: 500;
-    text-align: start;
-    color: #e4e4e7;
+.rcp-tab-count {
+  min-inline-size: 1.5em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  text-align: center;
+}
+
+.rcp-doc-tab.is-unchecked:not([aria-selected="true"]) .rcp-tab-name {
+  color: #71717a;
+}
+
+/* The narrowest sidebar: the label stacks above its count and wraps rather than ellipsizing. */
+@container rcp (inline-size < 22rem) {
+  .rcp-doc-tabs .gh-tab {
+    flex-direction: column;
+    white-space: normal;
+    line-height: 1.2;
+    padding-inline: 6px;
   }
 }
 
-.rcp-doc-col {
-  min-inline-size: 8rem;
-  text-align: start;
+.rcp-doc-panel {
+  border-radius: 6px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
 }
 
-.rcp-col-name {
-  display: block;
+.rcp-panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+
+  .rcp-reason {
+    flex-basis: 100%;
+    margin: 0;
+  }
+}
+
+.rcp-panel-title {
+  margin: 0;
+  font-weight: 600;
+  color: #e4e4e7;
 }
 
 .rcp-col-actions {
@@ -70,6 +102,15 @@
   color: #a1a1aa;
 }
 
+.rcp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .rcp-cell {
   gap: 8px;
 
@@ -79,11 +120,22 @@
   }
 }
 
+.rcp-cell-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rcp-figure-title {
+  color: #e4e4e7;
+  font-weight: 500;
+}
+
 .rcp-placement {
   color: #a1a1aa;
 }
 
-td.is-disabled .rcp-placement,
+.rcp-row.is-disabled .rcp-placement,
 .rcp-row.is-unavailable .rcp-figure-title {
   color: #71717a;
 }

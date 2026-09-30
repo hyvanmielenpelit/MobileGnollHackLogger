@@ -600,13 +600,17 @@ To find specific popups, look in the corresponding component's `.html` template:
     `ReportPackContext.entryKeys` is every entry key of the comparison, Excluded ones included, since
     the server keys a document by the request's run and group ids. See
     `docs/overseer/ai-benchmark-report-pack.md` § 12.
-  - **`app-report-chart-picker`** (`report-pack/report-chart-picker.component.*`): a table captioned
-    *Charts in PDF and Word* — rows the seven figures, columns *Executive Summary* / *Report for AI
-    Researchers and Developers* / *Internal Improvement Brief* — with one checkbox per cell named
-    *Include <figure> in the <document>* and the target section under it, and per-column **All** /
-    **None**. Only the columns of the document types checked under *Documents* are enabled; a figure
-    the comparison cannot draw stays listed with `aria-disabled` checkboxes and its reason (*needs
-    three or more models*). It never touches storage: the wizard remembers the selection in
+  - **`app-report-chart-picker`** (`report-pack/report-chart-picker.component.*`): a group captioned
+    *Charts in PDF and Word* holding a `.gh-tabs-segmented` tab row (`frontend_ui_controls` §5) of the
+    document types — short labels *Executive* / *Researchers* / *Internal*, each with a count badge of
+    the charts selected, or `—` when not checked under *Documents* — over the selected document's
+    panel: its full name, **All** / **None**, and one checkbox per figure named *Include <figure> in
+    the <document>* with the target section under it. Only the selected document's checkboxes are in
+    the DOM; the active segment is component state, never stored. One document type renders no tab
+    row, only its panel as a `role="group"`. A `:host` inline-size container stacks each segment's
+    label above its badge below 22 rem. A document type not checked under *Documents* stays
+    selectable with `aria-disabled` checkboxes and its reason; a figure the comparison cannot draw
+    stays listed the same way (*needs three or more models*). It never touches storage: the wizard remembers the selection in
     `localStorage['overseer.benchmark.reportCharts']` (version 1), defaulting to Intelligence and
     Intelligence against cost for the Executive Summary, all seven for the researcher report, and
     Intelligence, Speed and Cost for the Internal Improvement Brief.

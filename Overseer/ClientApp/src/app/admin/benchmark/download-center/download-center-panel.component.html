@@ -73,7 +73,7 @@
         <!-- Focused after a delete that leaves no row to focus. -->
         <h4 class="gh-section-title dc-documents-title" [id]="idPrefix + '-documents-title'" tabindex="-1">Documents</h4>
 
-        @for (notice of notices; track notice) {
+        @for (notice of notices; track $index) {
           <p class="dc-notice">{{ notice }}</p>
         }
 
@@ -300,7 +300,7 @@
                       <label class="visually-hidden" [for]="idPrefix + '-f-suite'">Filter by suite</label>
                       <select class="gh-input gh-filter-select dc-filter-suite" [id]="idPrefix + '-f-suite'" (change)="setFilter('suite', $event)">
                         <option value="" [selected]="filterValue('suite') === ''">All suites</option>
-                        @for (option of suiteOptions; track option) {
+                        @for (option of suiteOptions; track $index) {
                           <option [value]="option" [selected]="filterValue('suite') === option">{{ option }}</option>
                         }
                       </select>
@@ -310,7 +310,7 @@
                     <label class="visually-hidden" [for]="idPrefix + '-f-document'">Filter by document</label>
                     <select class="gh-input gh-filter-select" [id]="idPrefix + '-f-document'" (change)="setFilter('document', $event)">
                       <option value="" [selected]="filterValue('document') === ''">All documents</option>
-                      @for (option of documentTypeOptions; track option) {
+                      @for (option of documentTypeOptions; track $index) {
                         <option [value]="option" [selected]="filterValue('document') === option">{{ option }}</option>
                       }
                     </select>
@@ -386,7 +386,7 @@
                                 [attr.aria-label]="'Disclosure of ' + row.label"
                                 [disabled]="optionsLocked || preparing"
                                 (change)="setDisclosure(row, $event)">
-                          @for (option of disclosureOptions(row); track option) {
+                          @for (option of disclosureOptions(row); track $index) {
                             <option [value]="option" [selected]="state.disclosure === option">{{ disclosureLabel(option) }}</option>
                           }
                         </select>
@@ -400,7 +400,7 @@
                                 [attr.aria-label]="'Peer names in ' + row.label"
                                 [disabled]="optionsLocked || preparing"
                                 (change)="setNaming(row, $event)">
-                          @for (option of namingOptions(); track option) {
+                          @for (option of namingOptions(); track $index) {
                             <option [value]="option" [selected]="state.naming === option">{{ namingLabel(option) }}</option>
                           }
                         </select>

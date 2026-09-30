@@ -1,61 +1,73 @@
 <!--
   THE CHART PICKER
 
-  One row per figure, one column per document type. A disabled cell is aria-disabled, never
-  disabled, so it stays in the tab order and its reason is read with it.
+  One segment per document type over the selected document's figures. A disabled checkbox is
+  aria-disabled, never disabled, so it stays in the tab order and its reason is read with it.
 -->
-<div class="rcp-wrap">
-  <table class="gh-table rcp-table">
-    <caption [class.visually-hidden]="!captionVisible">{{ caption }}</caption>
-    <thead>
-      <tr>
-        <th scope="col" class="rcp-chart-col">Chart</th>
-        @for (column of columns; track column.audience) {
-          <th scope="col" class="rcp-doc-col" [id]="columnId(column)" [attr.data-audience]="column.audience"
-              [class.is-disabled]="!column.enabled">
-            <span class="rcp-col-name">{{ column.label }}</span>
-            <span class="rcp-col-actions">
-              <button type="button" class="btn-link rcp-all" [attr.data-audience]="column.audience"
-                      [attr.aria-disabled]="column.enabled ? null : 'true'"
-                      [attr.aria-describedby]="column.enabled ? null : columnReasonId(column)"
-                      (click)="selectAll(column)">All<span class="visually-hidden"> charts in the {{ column.label }}</span></button>
-              <button type="button" class="btn-link rcp-none" [attr.data-audience]="column.audience"
-                      [attr.aria-disabled]="column.enabled ? null : 'true'"
-                      [attr.aria-describedby]="column.enabled ? null : columnReasonId(column)"
-                      (click)="selectNone(column)">None<span class="visually-hidden"> of the charts in the {{ column.label }}</span></button>
-            </span>
-            @if (!column.enabled) {
-              <span class="rcp-reason" [id]="columnReasonId(column)">{{ columnDisabledReason }}</span>
-            }
-          </th>
-        }
-      </tr>
-    </thead>
-    <tbody>
-      @for (row of rows; track row.key) {
-        <tr class="rcp-row" [attr.data-figure]="row.key" [class.is-unavailable]="row.unavailableReason !== null">
-          <th scope="row">
-            <span class="rcp-figure-title">{{ row.title }}</span>
-            @if (row.unavailableReason !== null) {
-              <span class="rcp-reason" [id]="rowReasonId(row)">{{ row.unavailableReason }}</span>
-            }
-          </th>
-          @for (column of columns; track column.audience) {
-            <td [class.is-disabled]="isCellDisabled(column, row)">
-              <label class="checkbox-label align-start rcp-cell">
-                <input type="checkbox" [id]="cellId(column, row)"
-                       [checked]="isChecked(column.audience, row)"
-                       [attr.aria-label]="checkboxName(column, row)"
-                       [attr.aria-describedby]="cellDescribedBy(column, row)"
-                       [attr.aria-disabled]="isCellDisabled(column, row) ? 'true' : null"
-                       (click)="onCellClick($event, column, row)"
-                       (change)="onCellChange($event, column, row)">
-                <span class="rcp-placement" [id]="cellId(column, row) + '-placement'">{{ placement(column.audience, row.key) }}</span>
-              </label>
-            </td>
-          }
-        </tr>
+<div class="rcp" role="group" [attr.aria-labelledby]="idPrefix + '-caption'">
+  <p class="rcp-caption" [id]="idPrefix + '-caption'" [class.visually-hidden]="!captionVisible">{{ caption }}</p>
+  @if (tabbed) {
+    <div class="gh-tabs gh-tabs-segmented rcp-doc-tabs" role="tablist" aria-label="Document">
+      @for (column of columns; track column.audience; let i = $index) {
+        <button type="button" role="tab" class="gh-tab rcp-doc-tab"
+                [id]="tabId(column)" [attr.data-audience]="column.audience"
+                [attr.aria-controls]="panelId(column)"
+                [attr.aria-selected]="activeColumn?.audience === column.audience"
+                [attr.tabindex]="activeColumn?.audience === column.audience ? 0 : -1"
+                [class.is-unchecked]="!column.enabled"
+                (keydown)="onTabKeydown($event, i)" (click)="selectAudience(column.audience)">
+          <span class="rcp-tab-name">{{ column.shortLabel }}</span>
+          <span class="rcp-tab-count" aria-hidden="true">{{ column.enabled ? selectedCount(column) : '—' }}</span>
+          <span class="visually-hidden">{{ tabStatus(column) }}</span>
+        </button>
       }
-    </tbody>
-  </table>
+    </div>
+  }
+  @if (activeColumn; as column) {
+    <div class="rcp-doc-panel" [id]="panelId(column)"
+         [attr.role]="tabbed ? 'tabpanel' : 'group'"
+         [attr.tabindex]="tabbed ? 0 : null"
+         [attr.aria-labelledby]="tabbed ? tabId(column) : panelTitleId(column)">
+      <div class="rcp-panel-head">
+        <p class="rcp-panel-title" [id]="panelTitleId(column)">{{ column.label }}</p>
+        <span class="rcp-col-actions">
+          <button type="button" class="btn-link rcp-all" [attr.data-audience]="column.audience"
+                  [attr.aria-disabled]="column.enabled ? null : 'true'"
+                  [attr.aria-describedby]="column.enabled ? null : columnReasonId(column)"
+                  (click)="selectAll(column)">All<span class="visually-hidden"> charts in the {{ column.label }}</span></button>
+          <button type="button" class="btn-link rcp-none" [attr.data-audience]="column.audience"
+                  [attr.aria-disabled]="column.enabled ? null : 'true'"
+                  [attr.aria-describedby]="column.enabled ? null : columnReasonId(column)"
+                  (click)="selectNone(column)">None<span class="visually-hidden"> of the charts in the {{ column.label }}</span></button>
+        </span>
+        @if (!column.enabled) {
+          <p class="rcp-reason" [id]="columnReasonId(column)">{{ columnDisabledReason }}</p>
+        }
+      </div>
+      <ul class="rcp-list" role="list" [attr.aria-labelledby]="panelTitleId(column)">
+        @for (row of rows; track row.key) {
+          <li class="rcp-row" [attr.data-figure]="row.key"
+              [class.is-unavailable]="row.unavailableReason !== null"
+              [class.is-disabled]="isCellDisabled(column, row)">
+            <label class="checkbox-label align-start rcp-cell">
+              <input type="checkbox" [id]="cellId(column, row)"
+                     [checked]="isChecked(column.audience, row)"
+                     [attr.aria-label]="checkboxName(column, row)"
+                     [attr.aria-describedby]="cellDescribedBy(column, row)"
+                     [attr.aria-disabled]="isCellDisabled(column, row) ? 'true' : null"
+                     (click)="onCellClick($event, column, row)"
+                     (change)="onCellChange($event, column, row)">
+              <span class="rcp-cell-text">
+                <span class="rcp-figure-title">{{ row.title }}</span>
+                <span class="rcp-placement" [id]="cellId(column, row) + '-placement'">{{ placement(column.audience, row.key) }}</span>
+                @if (row.unavailableReason !== null) {
+                  <span class="rcp-reason" [id]="rowReasonId(row)">{{ row.unavailableReason }}</span>
+                }
+              </span>
+            </label>
+          </li>
+        }
+      </ul>
+    </div>
+  }
 </div>

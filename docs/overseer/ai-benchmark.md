@@ -3384,11 +3384,12 @@ with the cost and the estimate after the job finishes; a summary with **See the 
 and **Dismiss**; and *Log and diagnostics*, with icon-only **Copy diagnostics** and **Download
 diagnostics** (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`).
 
-**The chart picker and its defaults (D9).** A table of the seven figures — Intelligence, Speed, Cost,
-Model profiles, Intelligence against speed, Intelligence against cost, Speed against cost — against the
-three document types, one checkbox per cell with the section the chart lands in, and **All** / **None**
-per column. Only the columns of the document types being written are enabled; a figure the comparison
-cannot draw is listed but unavailable, with its reason. The defaults are Intelligence and Intelligence
+**The chart picker and its defaults (D9).** A segmented tab row of the three document types, each
+showing how many charts it carries, over the selected document's seven figures — Intelligence, Speed,
+Cost, Model profiles, Intelligence against speed, Intelligence against cost, Speed against cost — one
+checkbox each with the section the chart lands in, and **All** / **None**. A document type not being
+written stays selectable but inert; a figure the comparison cannot draw is listed but unavailable, with
+its reason. The defaults are Intelligence and Intelligence
 against cost for the Executive Summary, all seven for the Report for AI Researchers and Developers, and
 Intelligence, Speed and Cost for the Internal Improvement Brief; the last selection is remembered per
 browser.

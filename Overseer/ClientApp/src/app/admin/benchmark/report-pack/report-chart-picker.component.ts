@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output, inject } from '@angular/core';
 
 import { BenchmarkReportAudience } from '../../../services/admin-benchmark.service';
-import { REPORT_PACK_AUDIENCES, audienceLabel } from './report-document-format';
+import { REPORT_PACK_AUDIENCES, audienceLabel, audienceShortLabel } from './report-document-format';
 import {
   REPORT_CHART_FIGURES,
   ReportChartFigureKey,
@@ -10,10 +10,11 @@ import {
   reportChartPlacementLabel
 } from './report-charts';
 
-/** One column of the picker: a document type. */
+/** One segment of the picker: a document type. */
 export interface ReportChartPickerColumn {
   readonly audience: BenchmarkReportAudience;
   readonly label: string;
+  readonly shortLabel: string;
   readonly enabled: boolean;
 }
 
@@ -33,11 +34,11 @@ export function defaultChartUnavailableReason(key: string): string {
 }
 
 /**
- * Which charts each document type carries into its PDF and Word copies: one row per figure, one
- * column per document type, one checkbox per cell with the section the figure lands in beneath it.
- * A column whose document type is not being written, and a row the comparison cannot draw, stay
- * listed with their checkboxes `aria-disabled` and the reason shown. The host owns the selection
- * and its storage.
+ * Which charts each document type carries into its PDF and Word copies: a segmented tab row of the
+ * document types, each with its count, over the selected document's figures, one checkbox each with
+ * the section it lands in. One document type shows its figures alone. A document type not being
+ * written, and a figure the comparison cannot draw, stay listed with their checkboxes
+ * `aria-disabled` and the reason shown. The host owns the selection and its storage.
  */
 @Component({
   selector: 'app-report-chart-picker',
@@ -47,6 +48,8 @@ export function defaultChartUnavailableReason(key: string): string {
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ReportChartPickerComponent {
+  private readonly cdr = inject(ChangeDetectorRef);
+
   /** The selection shown; the picker keeps its own copy until the host sets a new one. */
   @Input()
   set selection(value: ReportChartSelection) {
@@ -56,10 +59,10 @@ export class ReportChartPickerComponent {
     return this.current;
   }
 
-  /** The columns shown, in this order. */
+  /** The document types shown, in this order. */
   @Input() audiences: readonly BenchmarkReportAudience[] = REPORT_PACK_AUDIENCES.map(option => option.audience);
 
-  /** The columns enabled: the document types checked. */
+  /** The document types enabled: those checked. */
   @Input() enabledAudiences: readonly BenchmarkReportAudience[] = REPORT_PACK_AUDIENCES.map(option => option.audience);
 
   /** The figure keys the comparison can draw. */
@@ -82,10 +85,14 @@ export class ReportChartPickerComponent {
 
   private current: ReportChartSelection = {};
 
+  /** The segment chosen; component state only, never stored. */
+  private activeAudience: BenchmarkReportAudience | null = null;
+
   get columns(): ReportChartPickerColumn[] {
     return this.audiences.map(audience => ({
       audience,
       label: audienceLabel(audience),
+      shortLabel: audienceShortLabel(audience),
       enabled: this.enabledAudiences.includes(audience)
     }));
   }
@@ -98,6 +105,72 @@ export class ReportChartPickerComponent {
         ? null
         : (this.unavailableReasons[figure.key] || defaultChartUnavailableReason(figure.key))
     }));
+  }
+
+  /** The chosen document when still shown, else the first one being written, else the first. */
+  get activeColumn(): ReportChartPickerColumn | null {
+    const columns = this.columns;
+    return columns.find(column => column.audience === this.activeAudience)
+      ?? columns.find(column => column.enabled)
+      ?? columns[0]
+      ?? null;
+  }
+
+  /** One document type needs no tab row. */
+  get tabbed(): boolean {
+    return this.audiences.length > 1;
+  }
+
+  selectAudience(audience: BenchmarkReportAudience): void {
+    this.activeAudience = audience;
+  }
+
+  /** Arrow keys wrap, Home and End jump; focus follows the selection. */
+  onTabKeydown(event: KeyboardEvent, index: number): void {
+    const columns = this.columns;
+    const count = columns.length;
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: count - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined || count === 0) {
+      return;
+    }
+    event.preventDefault();
+    const column = columns[(requested + count) % count];
+    this.selectAudience(column.audience);
+    this.cdr.detectChanges();
+    document.getElementById(this.tabId(column))?.focus();
+  }
+
+  tabId(column: ReportChartPickerColumn): string {
+    return `${this.idPrefix}-tab-${column.audience}`;
+  }
+
+  panelId(column: ReportChartPickerColumn): string {
+    return `${this.idPrefix}-panel-${column.audience}`;
+  }
+
+  panelTitleId(column: ReportChartPickerColumn): string {
+    return `${this.idPrefix}-panel-${column.audience}-title`;
+  }
+
+  selectedCount(column: ReportChartPickerColumn): number {
+    return this.rows.filter(row => this.isChecked(column.audience, row)).length;
+  }
+
+  drawableCount(): number {
+    return this.rows.filter(row => row.unavailableReason === null).length;
+  }
+
+  /** The segment's status for assistive technology: `, 2 of 7 charts`. */
+  tabStatus(column: ReportChartPickerColumn): string {
+    return column.enabled
+      ? `, ${this.selectedCount(column)} of ${this.drawableCount()} charts`
+      : ', not checked under Documents';
   }
 
   placement(audience: BenchmarkReportAudience, key: ReportChartFigureKey): string {
@@ -116,10 +189,6 @@ export class ReportChartPickerComponent {
   /** `Include Intelligence in the Executive Summary`. */
   checkboxName(column: ReportChartPickerColumn, row: ReportChartPickerRow): string {
     return `Include ${row.title} in the ${column.label}`;
-  }
-
-  columnId(column: ReportChartPickerColumn): string {
-    return `${this.idPrefix}-col-${column.audience}`;
   }
 
   columnReasonId(column: ReportChartPickerColumn): string {

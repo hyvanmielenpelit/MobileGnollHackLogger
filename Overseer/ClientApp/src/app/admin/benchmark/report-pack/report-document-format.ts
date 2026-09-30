@@ -12,6 +12,8 @@ export const REPORT_LIBRARY_ALL_TAKE = 500;
 export interface ReportPackAudienceOption {
   readonly audience: BenchmarkReportAudience;
   readonly label: string;
+  /** The label of a segment where the full label does not fit; a word of `label`. */
+  readonly shortLabel: string;
   readonly description: string;
   readonly checkedByDefault: boolean;
 }
@@ -20,18 +22,21 @@ export const REPORT_PACK_AUDIENCES: readonly ReportPackAudienceOption[] = [
   {
     audience: BenchmarkReportAudience.ExecutiveSummary,
     label: 'Executive Summary',
+    shortLabel: 'Executive',
     description: 'For a non-specialist at the model’s provider, or a manager: plain language, short.',
     checkedByDefault: true
   },
   {
     audience: BenchmarkReportAudience.TechnicalReport,
     label: 'Report for AI Researchers and Developers',
+    shortLabel: 'Researchers',
     description: 'For AI researchers and model developers: figures against the peers, strengths, weaknesses and recommendations.',
     checkedByDefault: true
   },
   {
     audience: BenchmarkReportAudience.InternalBrief,
     label: 'Internal Improvement Brief',
+    shortLabel: 'Internal',
     description: 'For the Overseer team: what to improve in the chat, the benchmark and the model. Internal only, at Full disclosure.',
     checkedByDefault: false
   }
@@ -39,6 +44,10 @@ export const REPORT_PACK_AUDIENCES: readonly ReportPackAudienceOption[] = [
 
 export function audienceLabel(audience: BenchmarkReportAudience): string {
   return REPORT_PACK_AUDIENCES.find(option => option.audience === audience)?.label ?? 'Report document';
+}
+
+export function audienceShortLabel(audience: BenchmarkReportAudience): string {
+  return REPORT_PACK_AUDIENCES.find(option => option.audience === audience)?.shortLabel ?? 'Document';
 }
 
 export function disclosureLabel(disclosure: BenchmarkReportDisclosure): string {

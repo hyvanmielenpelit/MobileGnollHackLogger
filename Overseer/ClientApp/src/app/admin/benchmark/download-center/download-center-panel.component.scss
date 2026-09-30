@@ -691,7 +691,7 @@
 }
 
 .gh-dialog.dc-charts-dialog {
-  @include frame.frame($width: 60rem, $max-height: 92dvh);
+  @include frame.frame($width: 40rem, $max-height: 92dvh);
 }
 
 .dc-charts-body {

@@ -1043,7 +1043,7 @@ describe('ReportPackPanelComponent', () => {
   // Charts in PDF and Word
   // -------------------------------------------------------------------------------------------
 
-  it('holds the chart picker between Documents and Report writer, its columns following the documents checked', () => {
+  it('holds the chart picker between Documents and Report writer, its segments following the documents checked', () => {
     openPanel();
     const selections: ReportChartSelection[] = [];
     component.chartSelectionChange.subscribe(selection => selections.push(selection));
@@ -1054,6 +1054,8 @@ describe('ReportPackPanelComponent', () => {
     expect(picker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
     expect(picker.available).toEqual(REPORT_CHART_FIGURES.map(figure => figure.key));
     expect(picker.idPrefix).toBe('rp-charts');
+    q<HTMLButtonElement>(`#rp-charts-tab-${InternalBrief}`)!.click();
+    fixture.detectChanges();
     expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.getAttribute('aria-disabled')).toBe('true');
 
     q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.click();
@@ -1061,6 +1063,8 @@ describe('ReportPackPanelComponent', () => {
     expect(picker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
     expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.hasAttribute('aria-disabled')).toBeFalse();
 
+    q<HTMLButtonElement>(`#rp-charts-tab-${ExecutiveSummary}`)!.click();
+    fixture.detectChanges();
     q<HTMLInputElement>(`#rp-charts-${ExecutiveSummary}-p1b-speed`)!.click();
     expect(selections.length).toBe(1);
     expect(selections[0][ExecutiveSummary]).toEqual(['p1a-quality', 'p1b-speed', 's2-quality-cost']);
@@ -1086,6 +1090,8 @@ describe('ReportPackPanelComponent', () => {
   it('lists a figure the comparison cannot draw with the reason', () => {
     fixture.componentRef.setInput('chartsAvailable', REPORT_CHART_FIGURES.map(figure => figure.key).filter(key => key !== 'p2-profile'));
     openPanel();
+    q<HTMLButtonElement>(`#rp-charts-tab-${TechnicalReport}`)!.click();
+    fixture.detectChanges();
 
     expect(q(`#rp-charts-${TechnicalReport}-p2-profile`)!.getAttribute('aria-disabled')).toBe('true');
     expect(text('#rp-charts-row-p2-profile-reason')).toBe('needs three or more models');

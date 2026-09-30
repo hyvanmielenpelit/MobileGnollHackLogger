@@ -1395,12 +1395,15 @@ and **Word layout 2**.
 
 ### Choosing charts: the picker and its defaults
 
-`app-report-chart-picker` is a table captioned *Charts in PDF and Word*: one row per figure, one column
-per document type (*Executive Summary*, *Report for AI Researchers and Developers*, *Internal Improvement
-Brief*), one checkbox per cell named *"Include Intelligence in the Executive Summary"* with the target
-section under it, and **All** / **None** per column. Only the columns of the document types checked under
-*Documents* are enabled. A figure the comparison cannot draw stays listed with `aria-disabled`
-checkboxes and its reason (*needs three or more models*).
+`app-report-chart-picker` is a group captioned *Charts in PDF and Word*: a segmented tab row of the
+document types (*Executive*, *Researchers*, *Internal*), each with the number of charts selected for it,
+or `—` for a document type not checked under *Documents*; beneath it the selected document's full name
+(*Executive Summary*, *Report for AI Researchers and Developers*, *Internal Improvement Brief*),
+**All** / **None**, and one checkbox per figure named *"Include Intelligence in the Executive Summary"*
+with its target section. With one document type (the Download Center's *Update charts* dialog on
+documents of one type) there is no tab row, only that document's list. A document type not being
+written, and a figure the comparison cannot draw, stay listed with `aria-disabled` checkboxes and their
+reason (*Not checked under Documents*, *needs three or more models*).
 
 The defaults are the Executive Summary's Intelligence and Intelligence against cost; all seven for the
 Report for AI Researchers and Developers; and Intelligence, Speed and Cost for the Internal Improvement

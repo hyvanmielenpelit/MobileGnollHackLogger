@@ -2,6 +2,7 @@ import { BenchmarkReportAudience, BenchmarkReportDisclosure } from '../../../ser
 import {
   REPORT_PACK_AUDIENCES,
   audienceLabel,
+  audienceShortLabel,
   disclosureLabel,
   documentChipClass,
   documentStatusLabel,
@@ -27,6 +28,15 @@ describe('report-document-format', () => {
       BenchmarkReportAudience.InternalBrief
     ]);
     expect(REPORT_PACK_AUDIENCES.map(option => option.checkedByDefault)).toEqual([true, true, false]);
+  });
+
+  it('gives each document a short label that is a word of its full label', () => {
+    expect(REPORT_PACK_AUDIENCES.map(option => option.shortLabel)).toEqual(['Executive', 'Researchers', 'Internal']);
+    for (const option of REPORT_PACK_AUDIENCES) {
+      expect(option.label).toContain(option.shortLabel);
+    }
+    expect(audienceShortLabel(BenchmarkReportAudience.TechnicalReport)).toBe('Researchers');
+    expect(audienceShortLabel(99 as BenchmarkReportAudience)).toBe('Document');
   });
 
   it('names each disclosure level', () => {
