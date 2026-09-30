@@ -2141,7 +2141,7 @@
                     @if (criticalErrorAnswerCount > 0) {
                       <div>
                         <strong>{{ criticalErrorAnswerCount }} answer(s) flagged with a critical error</strong>
-                        (question(s) {{ criticalErrorQuestionNumbers }})@if (criticalErrorCapBindingCount !== criticalErrorAnswerCount) {<span>, of which {{ criticalErrorCapBindingCount }} had their score lowered by the cap</span>}. The Intelligence Index weights by
+                        (question(s) {{ criticalErrorQuestionNumbers }}@if (selectedRunDetail.isPanelRun) {<span>; member A flagged {{ criticalErrorMemberACount }}, member B {{ criticalErrorMemberBCount }}</span>})@if (criticalErrorCapBindingCount !== criticalErrorAnswerCount) {<span>, of which {{ criticalErrorCapBindingCount }} had their {{ selectedRunDetail.isPanelRun ? 'panel score' : 'score' }} lowered by the cap</span>}. The Intelligence Index weights by
                         difficulty, so a critical error on an easy question barely moves it &mdash; read this
                         count, not the index, for this failure mode.
                       </div>

@@ -5796,11 +5796,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         }
         // Computed from `run`, not from the run-detail getters: this capture describes the
         // *active* run, and those getters read whichever run the detail dialog has open.
-        const criticalHere = run.answers.filter(a => a.criticalError).map(a => a.orderIndex);
+        const criticalAnswersHere = this.criticalErrorAnswersOf(run);
+        const criticalHere = criticalAnswersHere.map(a => a.orderIndex);
+        const criticalSplitHere = run.isPanelRun
+          ? `; member A ${criticalAnswersHere.filter(a => a.criticalError).length}, member B ${criticalAnswersHere.filter(a => a.coAssessmentCriticalError === true).length}`
+          : '';
         const unverifiedHere = run.isPanelRun
           ? this.panelUnverifiedClaimsLabel(run)
           : `${run.answers.reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0)}`;
-        lines.push(`critical errors: ${criticalHere.length}${criticalHere.length > 0 ? ` (${criticalHere.map(i => 'Q' + i).join(', ')})` : ''}, unverified claims: ${unverifiedHere}`);
+        lines.push(`critical errors: ${criticalHere.length}${criticalHere.length > 0 ? ` (${criticalHere.map(i => 'Q' + i).join(', ')}${criticalSplitHere})` : ''}, unverified claims: ${unverifiedHere}`);
         const signedDeltaStr = run.secondOpinionMeanSignedDelta != null
           ? `, ${run.secondOpinionMeanSignedDelta > 0 ? '+' : run.secondOpinionMeanSignedDelta < 0 ? '−' : ''}${Math.abs(run.secondOpinionMeanSignedDelta).toFixed(1)} mean signed delta`
           : '';
@@ -7187,7 +7191,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /** Below 70 reads the published score: the panel score in a panel run, else the quality score. */
   matchesQuestionFilter(run: BenchmarkRunDetailDto, ans: BenchmarkRunAnswerDto, filter: RunReportQuestionFilter): boolean {
     switch (filter) {
-      case 'critical': return !!ans.criticalError;
+      case 'critical': return this.isCriticalErrorApplied(run, ans);
       case 'disputed': return !!ans.secondOpinionDisagreed;
       case 'disagree': return !!ans.panelDisagreed;
       case 'below70': {
@@ -8182,7 +8186,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   // diagnostics capture and the plain-text clauses use, and one of the two shapes had to remain.
 
   get criticalErrorQuestionIndexes(): number[] {
-    return (this.selectedRunDetail?.answers ?? []).filter(a => a.criticalError).map(a => a.orderIndex);
+    return this.keyFigureCriticalErrorAnswers.map(a => a.orderIndex);
   }
 
   get advisoryFlagQuestionIndexes(): number[] {
@@ -8256,9 +8260,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * profile's critical error ceiling. This is the failure mode the report tells readers to look
    * for, and it is deliberately reported as a count rather than left to the Intelligence Index:
    * the index weights by difficulty, so a critical error on an easy question barely moves it.
+   * In a panel run a flag from either member counts, as in the report.
    */
   get criticalErrorAnswerCount(): number {
-    return (this.selectedRunDetail?.answers ?? []).filter(a => a.criticalError).length;
+    return this.keyFigureCriticalErrorAnswers.length;
+  }
+
+  /** Of the critical-error answers, how many member A flagged. */
+  get criticalErrorMemberACount(): number {
+    return this.keyFigureCriticalErrorAnswers.filter(a => a.criticalError).length;
+  }
+
+  /** Of the critical-error answers, how many member B flagged; 0 outside a panel run. */
+  get criticalErrorMemberBCount(): number {
+    return this.keyFigureCriticalErrorAnswers.filter(a => a.coAssessmentCriticalError === true).length;
   }
 
   /** Whether the Critical Errors card shows: the run has answer rows to count over. */
@@ -8271,10 +8286,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * either member's, since a cap from either lowers the panel score. In question order.
    */
   get keyFigureCriticalErrorAnswers(): BenchmarkRunAnswerDto[] {
-    const run = this.selectedRunDetail;
-    return (run?.answers ?? [])
-      .filter(a => a.criticalError || (!!run?.isPanelRun && a.coAssessmentCriticalError === true))
+    return this.criticalErrorAnswersOf(this.selectedRunDetail);
+  }
+
+  /**
+   * The answers a critical-error cap applied to, by the report's rule: member A's flag, or in a
+   * panel run either member's, since a cap from either lowers the panel score. In question order.
+   */
+  private criticalErrorAnswersOf(run: BenchmarkRunDetailDto | null | undefined): BenchmarkRunAnswerDto[] {
+    if (!run) return [];
+    return (run.answers ?? [])
+      .filter(a => this.isCriticalErrorApplied(run, a))
       .sort((x, y) => x.orderIndex - y.orderIndex);
+  }
+
+  private isCriticalErrorApplied(run: BenchmarkRunDetailDto, a: BenchmarkRunAnswerDto): boolean {
+    return !!a.criticalError || (!!run.isPanelRun && a.coAssessmentCriticalError === true);
   }
 
   /** The Critical Errors card's notes: the question numbers, then how many the second reader disputed. */
@@ -8325,19 +8352,26 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * Of the flagged answers above, the ones whose raw score the cap actually lowered. A flagged
    * answer already at or below the ceiling before the cap applied is not counted here, so this
    * figure can be smaller than criticalErrorAnswerCount — it is the one "capped by" describes.
+   * In a panel run it compares the panel raw score (the mean of both members' raw scores) with the
+   * panel score, as the report's cappedCount does.
    */
   get criticalErrorCapBindingCount(): number {
-    return (this.selectedRunDetail?.answers ?? [])
-      .filter(a => a.rawQualityScore != null && a.qualityScore != null && a.rawQualityScore > a.qualityScore)
-      .length;
+    const run = this.selectedRunDetail;
+    if (!run) return 0;
+    return (run.answers ?? []).filter(a => {
+      if (!run.isPanelRun) {
+        return a.rawQualityScore != null && a.qualityScore != null && a.rawQualityScore > a.qualityScore;
+      }
+      const rawA = a.rawQualityScore ?? a.qualityScore;
+      const rawB = a.coAssessmentRawQualityScore ?? a.coAssessmentQualityScore;
+      return a.panelQualityScore != null && rawA != null && rawB != null
+        && (rawA + rawB) / 2 > a.panelQualityScore;
+    }).length;
   }
 
   /** The question numbers of the critical-error answers, comma separated, for the integrity notice. */
   get criticalErrorQuestionNumbers(): string {
-    return (this.selectedRunDetail?.answers ?? [])
-      .filter(a => a.criticalError)
-      .map(a => a.orderIndex)
-      .join(', ');
+    return this.keyFigureCriticalErrorAnswers.map(a => a.orderIndex).join(', ');
   }
 
   /**

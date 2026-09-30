@@ -3476,6 +3476,89 @@ describe('AdminBenchmarkComponent', () => {
       expect(integrityNoticeText()).toBe('');
     });
 
+    it('should count member B\'s critical errors on a panel run, as the report and the key figure do', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        isPanelRun: true,
+        answers: [
+          buildScoredAnswer(1, { qualityScore: 25, rawQualityScore: 60, criticalError: true, coAssessmentQualityScore: 80, panelQualityScore: 52.5 }),
+          buildScoredAnswer(2, { qualityScore: 80, coAssessmentQualityScore: 25, coAssessmentRawQualityScore: 70, coAssessmentCriticalError: true, panelQualityScore: 52.5 }),
+          buildScoredAnswer(3, { qualityScore: 80, coAssessmentQualityScore: 82, panelQualityScore: 81 })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(component.criticalErrorAnswerCount).toBe(2);
+      expect(component.criticalErrorAnswerCount).toBe(component.keyFigureCriticalErrorAnswers.length);
+      expect(component.criticalErrorQuestionNumbers).toBe('1, 2');
+      expect(component.criticalErrorQuestionIndexes).toEqual([1, 2]);
+      expect(component.criticalErrorMemberACount).toBe(1);
+      expect(component.criticalErrorMemberBCount).toBe(1);
+      expect(component.criticalErrorCapBindingCount).toBe(2);
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('2 answer(s) flagged with a critical error (question(s) 1, 2; member A flagged 1, member B 1).');
+    });
+
+    it('should raise the integrity notice on a panel run whose only critical error is member B\'s', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        isPanelRun: true,
+        answers: [
+          buildScoredAnswer(1, { qualityScore: 80, coAssessmentQualityScore: 25, coAssessmentRawQualityScore: 60, coAssessmentCriticalError: true, panelQualityScore: 52.5 }),
+          buildScoredAnswer(2, { qualityScore: 80, coAssessmentQualityScore: 82, panelQualityScore: 81 })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(component.hasRunIntegrityNotice).toBeTrue();
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('1 answer(s) flagged with a critical error (question(s) 1; member A flagged 0, member B 1).');
+    });
+
+    it('should ignore member B\'s critical error outside a panel run', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [buildScoredAnswer(1, { qualityScore: 80, coAssessmentCriticalError: true })]
+      });
+      fixture.detectChanges();
+
+      expect(component.criticalErrorAnswerCount).toBe(0);
+      expect(component.hasRunIntegrityNotice).toBeFalse();
+      expect(integrityNoticeText()).toBe('');
+    });
+
+    it('should count the cap as binding on a panel run by the panel scores', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        isPanelRun: true,
+        answers: [
+          // Member B alone capped a 60 to 25: the panel raw score 70 exceeds the panel score 52.5.
+          buildScoredAnswer(1, { qualityScore: 80, coAssessmentQualityScore: 25, coAssessmentRawQualityScore: 60, coAssessmentCriticalError: true, panelQualityScore: 52.5 }),
+          // Member A flagged an answer already at the ceiling: raw and published panel scores agree.
+          buildScoredAnswer(2, { qualityScore: 25, rawQualityScore: 25, criticalError: true, coAssessmentQualityScore: 30, panelQualityScore: 27.5 })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(component.criticalErrorAnswerCount).toBe(2);
+      expect(component.criticalErrorCapBindingCount).toBe(1);
+
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('2 answer(s) flagged with a critical error (question(s) 1, 2; member A flagged 1, member B 1), of which 1 had their panel score lowered by the cap.');
+    });
+
+    it('should count an answer both panel members flagged once, and in both member counts', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        isPanelRun: true,
+        answers: [
+          buildScoredAnswer(1, { qualityScore: 25, rawQualityScore: 60, criticalError: true, coAssessmentQualityScore: 25, coAssessmentRawQualityScore: 70, coAssessmentCriticalError: true, panelQualityScore: 25 })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(component.criticalErrorAnswerCount).toBe(1);
+      expect(component.criticalErrorCapBindingCount).toBe(1);
+      const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
+      expect(text).toContain('1 answer(s) flagged with a critical error (question(s) 1; member A flagged 1, member B 1).');
+    });
+
     it('should format CompletedWithLimits from both the numeric and the string status', () => {
       expect(component.formatStatus(6)).toBe('CompletedWithLimits');
       expect(component.formatStatus('CompletedWithLimits')).toBe('CompletedWithLimits');
@@ -6777,6 +6860,22 @@ describe('AdminBenchmarkComponent', () => {
       expect(single).not.toContain('member B flags');
       expect(single).not.toContain('panel=');
       expect(single).toContain('unverified claims: 2');
+    });
+
+    it('should count either member\'s critical error on a panel run, with the member split', () => {
+      const run = buildDiagnosticsRun({ isPanelRun: true });
+      run.answers[0] = { ...run.answers[0], criticalError: true, coAssessmentCriticalError: true };
+      run.answers[1] = { ...run.answers[1], criticalError: false, coAssessmentCriticalError: true };
+      component.activeRunDetail = run;
+
+      expect(component.runDiagnosticsText).toContain('critical errors: 2 (Q1, Q2; member A 1, member B 2), unverified claims:');
+
+      // Outside a panel run member B's flag does not count and no split is printed.
+      const single = buildDiagnosticsRun();
+      single.answers[0] = { ...single.answers[0], criticalError: true };
+      single.answers[1] = { ...single.answers[1], coAssessmentCriticalError: true };
+      component.activeRunDetail = single;
+      expect(component.runDiagnosticsText).toContain('critical errors: 1 (Q1), unverified claims:');
     });
 
     it('should append the re-verified stamp when the candidate delivery probe was re-checked before the re-run', () => {
@@ -11940,6 +12039,40 @@ describe('AdminBenchmarkComponent', () => {
       toggle('disagree').click();
       fixture.detectChanges();
       expect(shown()).toEqual(['Q1']);
+    });
+
+    it('should count member B\'s critical errors in the Critical errors filter on a panel run', () => {
+      const toggle = (key: string) => (Array.from(fixture.nativeElement.querySelectorAll('.questions-detail-section .gh-filter-toggle')) as HTMLButtonElement[])
+        .find(t => t.getAttribute('data-filter') === key)!;
+      const shown = () => Array.from(fixture.nativeElement.querySelectorAll('.question-detail-card .q-number'))
+        .map((e: any) => e.textContent.trim());
+
+      component.selectedRunDetail = reportRun({
+        isPanelRun: true,
+        answers: [
+          reportAnswer(1, { criticalError: true, qualityScore: 25 }),
+          reportAnswer(2, { coAssessmentCriticalError: true, qualityScore: 80 }),
+          reportAnswer(3)
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(toggle('critical').textContent?.trim()).toBe('Critical errors (2)');
+      toggle('critical').click();
+      fixture.detectChanges();
+      expect(shown()).toEqual(['Q1', 'Q2']);
+    });
+
+    it('should ignore member B\'s critical error in the filter outside a panel run', () => {
+      const toggle = (key: string) => (Array.from(fixture.nativeElement.querySelectorAll('.questions-detail-section .gh-filter-toggle')) as HTMLButtonElement[])
+        .find(t => t.getAttribute('data-filter') === key)!;
+
+      component.selectedRunDetail = reportRun({
+        answers: [reportAnswer(1), reportAnswer(2, { coAssessmentCriticalError: true })]
+      });
+      fixture.detectChanges();
+
+      expect(toggle('critical').textContent?.trim()).toBe('Critical errors (0)');
     });
 
     it('should expand and collapse every shown question from real header buttons', () => {
