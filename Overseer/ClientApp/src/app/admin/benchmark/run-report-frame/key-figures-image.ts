@@ -2,8 +2,10 @@
  * The run report's key figures as a PNG image: the whole strip, or one card.
  *
  * No Angular. The cells are read from the rendered `.score-card`s, so the image says what the dialog
- * says, and composed on a canvas in the dialog's dark theme. The layout decisions are pure functions
- * over a {@link TextWrapper}, so they unit-test without a canvas.
+ * says, and composed on a canvas in the dialog's dark theme. The run's settings above the figures are
+ * the header's run facts (`run-facts.ts`), converted by {@link toImageFactRows}. The layout decisions
+ * are pure functions over a {@link TextWrapper} and a {@link TextMeasurer}, so they unit-test without
+ * a canvas.
  *
  * Both compositions are square first: the strip picks the column count and card width whose image is
  * closest to square without being taller than wide, and pads it to an exact square when it is within
@@ -24,6 +26,7 @@ import {
 } from '../model-comparison/figure-export';
 import type { ClipboardImageOutcome } from '../model-comparison/figure-export';
 import { safeFileName } from '../../../utils/download.util';
+import { RunFactRow, runFactBadges } from './run-facts';
 
 /** The `badge-score-*` class on a card's value, or `na` for a muted value with none. */
 export type KeyFigureTone = 'high' | 'mid' | 'low' | 'na';
@@ -57,12 +60,44 @@ export interface KeyFigureCell {
   readonly footnotes: readonly string[];
 }
 
+/** A badge's colors, by what it marks. */
+export type ImageBadgeTone = 'thinking' | 'reasoning' | 'openai' | 'anthropic' | 'google' | 'provider'
+  | 'config' | 'role' | 'success' | 'warning' | 'danger' | 'info' | 'running';
+
+/** One piece of a fact row's value: text, or an atomic badge. */
+export type ImageFactRun =
+  | {
+    readonly kind: 'text';
+    readonly text: string;
+    readonly strong?: boolean;
+    readonly warning?: boolean;
+    readonly muted?: boolean;
+    /** Starts a new line. */
+    readonly lineBreak?: boolean;
+    /** The gap before this run on its line, instead of the default. */
+    readonly gapBefore?: number;
+  }
+  | {
+    readonly kind: 'badge';
+    readonly text: string;
+    readonly tone: ImageBadgeTone;
+    readonly gapBefore?: number;
+  };
+
+/** One run setting above the figures: `MODEL  GPT-6.1 Sol [HIGH] [OpenAI]`. */
+export interface ImageFactRow {
+  readonly label: string;
+  readonly runs: readonly ImageFactRun[];
+  /** Drawn in the card image too. */
+  readonly primary: boolean;
+}
+
 /** What the image says about the run besides its figures. */
 export interface ImageContext {
   /** `Run #72 · Snapshot: Tommi2 2026-09-17`. */
   readonly title: string;
-  /** Up to three context lines under the title; the card image shows the first. */
-  readonly lines: readonly string[];
+  /** The chosen run settings under the title; the card image shows the primary ones. */
+  readonly facts: readonly ImageFactRow[];
   readonly runId: number;
   /** The footer's Overseer build; null reads as `unknown`. */
   readonly overseerVersion: string | null;
@@ -87,6 +122,12 @@ export interface KeyFigureLogos {
 
 /** Greedy word wrap of `text` into lines at most `maxWidth` wide, in the figure font. */
 export type TextWrapper = (text: string, maxWidth: number, sizePx: number, weight: string) => string[];
+
+/** The width of `text` in the figure font. */
+export type TextMeasurer = (text: string, sizePx: number, weight: string) => number;
+
+/** A measurer for when there is no canvas: every character a little over half the font size wide. */
+export const estimateTextWidth: TextMeasurer = (text, sizePx) => text.length * sizePx * 0.55;
 
 export type KeyFiguresAction = 'copy' | 'download';
 
@@ -127,6 +168,44 @@ const TONE_COLORS: Record<KeyFigureTone, string> = {
   low: '#e57373',
   na: '#888'
 };
+const WARNING_COLOR = '#fcd34d';
+
+/** `color-mix(in srgb, a t, b)` for two `#rrggbb` colors. */
+export function mixHex(a: string, b: string, t: number): string {
+  const channel = (hex: string, index: number): number => Number.parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16);
+  return '#' + [0, 1, 2]
+    .map(index => Math.round(channel(a, index) * t + channel(b, index) * (1 - t)).toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function providerTone(base: string, ink: string): { ink: string; fill: string; border: string } {
+  return { ink, fill: mixHex(base, '#1b1b1b', 0.22), border: mixHex(base, '#383838', 0.6) };
+}
+
+/**
+ * The badge colors of `styles.scss` (`.thinking-badge`, `.reasoning-badge`, `.provider-badge` and its
+ * `--provider-*` tokens, `.config-badge`, `.model-option-tag`) and of the run status badges in
+ * `benchmark.component.scss`, drawn over {@link FIGURE_BACKGROUND}; change both together.
+ */
+export const BADGE_PALETTE: Record<ImageBadgeTone, { readonly ink: string; readonly fill: string; readonly border: string }> = {
+  thinking: { ink: '#7dd3fc', fill: 'rgba(125, 211, 252, 0.08)', border: 'rgba(125, 211, 252, 0.4)' },
+  reasoning: { ink: '#c084fc', fill: 'rgba(192, 132, 252, 0.08)', border: 'rgba(192, 132, 252, 0.4)' },
+  openai: providerTone('#10a37f', '#7fe8d2'),
+  anthropic: providerTone('#d97757', '#f7b39b'),
+  google: providerTone('#4285f4', '#a8c7fa'),
+  provider: { ink: '#c8c8c8', fill: '#1b1b1b', border: '#4a4a4a' },
+  config: { ink: '#aaa', fill: '#252525', border: '#383838' },
+  role: { ink: '#e0ba6d', fill: 'transparent', border: 'rgba(212, 160, 23, 0.25)' },
+  success: { ink: '#81c784', fill: 'rgba(76, 175, 80, 0.2)', border: '#4caf50' },
+  warning: { ink: '#ffb74d', fill: 'rgba(255, 152, 0, 0.2)', border: '#ff9800' },
+  danger: { ink: '#e57373', fill: 'rgba(244, 67, 54, 0.2)', border: '#f44336' },
+  info: { ink: '#64b5f6', fill: 'rgba(33, 150, 243, 0.2)', border: '#2196f3' },
+  running: { ink: '#e0ba6d', fill: 'rgba(212, 160, 23, 0.2)', border: '#e0ba6d' }
+};
+
+/** Tones whose text is drawn upper-case, as the CSS transforms it. */
+const UPPER_CASE_TONES: ReadonlySet<ImageBadgeTone> = new Set<ImageBadgeTone>(
+  ['thinking', 'reasoning', 'config', 'success', 'warning', 'danger', 'info', 'running']);
 
 // -----------------------------------------------------------------------------------------------
 // Reading the rendered cards
@@ -235,6 +314,308 @@ function normalizeKeyFigureExclusions(keys: readonly string[]): string[] {
   return result;
 }
 
+export const IMAGE_DETAILS_STORAGE_KEY = 'overseer.benchmark.runReport.imageDetails';
+const IMAGE_DETAILS_STORAGE_VERSION = 1;
+
+/** The run-fact rows the images leave out while nothing is stored: the board, which is grading diagnostics. */
+export const DEFAULT_IMAGE_DETAIL_EXCLUSIONS: readonly string[] = ['board'];
+
+/**
+ * The run-fact keys the images leave out, from `{ version: 1, excluded: [...] }` in localStorage; an
+ * empty list is a choice of every row. {@link DEFAULT_IMAGE_DETAIL_EXCLUSIONS} when absent or unreadable.
+ */
+export function readStoredImageDetailExclusions(): string[] {
+  try {
+    const raw = localStorage.getItem(IMAGE_DETAILS_STORAGE_KEY);
+    if (!raw) {
+      return [...DEFAULT_IMAGE_DETAIL_EXCLUSIONS];
+    }
+    const parsed = JSON.parse(raw) as { version?: unknown; excluded?: unknown } | null;
+    if (!parsed || parsed.version !== IMAGE_DETAILS_STORAGE_VERSION || !Array.isArray(parsed.excluded)) {
+      return [...DEFAULT_IMAGE_DETAIL_EXCLUSIONS];
+    }
+    return normalizeKeyFigureExclusions(parsed.excluded.filter((key): key is string => typeof key === 'string'));
+  } catch {
+    return [...DEFAULT_IMAGE_DETAIL_EXCLUSIONS];
+  }
+}
+
+export function storeImageDetailExclusions(excluded: readonly string[]): void {
+  try {
+    localStorage.setItem(IMAGE_DETAILS_STORAGE_KEY, JSON.stringify({
+      version: IMAGE_DETAILS_STORAGE_VERSION,
+      excluded: normalizeKeyFigureExclusions(excluded)
+    }));
+  } catch {
+    // Storage unavailable: the selection is simply not remembered.
+  }
+}
+
+// -----------------------------------------------------------------------------------------------
+// Run facts
+// -----------------------------------------------------------------------------------------------
+
+/** The gap between two models in one row. */
+const FACT_MODEL_GAP = 10;
+
+/** The image tone of a run status badge, from its `badge-status-*` class or bare status key. */
+export function statusImageTone(statusBadgeClass: string): ImageBadgeTone {
+  switch (statusBadgeClass.toLowerCase().replace(/^badge-status-/, '')) {
+    case 'completed':
+    case 'scored':
+      return 'success';
+    case 'completedwitherrors':
+      return 'warning';
+    case 'failed':
+      return 'danger';
+    case 'completedwithlimits':
+      return 'info';
+    case 'running':
+      return 'running';
+    default:
+      return 'config';
+  }
+}
+
+function providerImageTone(provider: string | undefined): ImageBadgeTone {
+  const key = (provider ?? '').trim().toLowerCase();
+  return key === 'openai' || key === 'anthropic' || key === 'google' ? key : 'provider';
+}
+
+/**
+ * The header's run facts as the images draw them. Every row given is drawn; the caller passes the
+ * chosen ones. The run status follows the start time as a badge; Model and Assessor(s) are primary.
+ */
+export function toImageFactRows(rows: readonly RunFactRow[], status: { text: string; tone: ImageBadgeTone }): ImageFactRow[] {
+  return rows.map(row => {
+    const item = row.item;
+    const runs: ImageFactRun[] = [];
+    switch (item.kind) {
+      case 'models':
+        item.models.forEach((model, index) => {
+          const gapBefore = index > 0 ? FACT_MODEL_GAP : undefined;
+          if (model.role) {
+            runs.push({ kind: 'badge', text: model.role, tone: 'role', gapBefore });
+          }
+          runs.push({ kind: 'text', text: model.name, strong: true, gapBefore: model.role ? undefined : gapBefore });
+          for (const badge of runFactBadges(model)) {
+            const tone: ImageBadgeTone = badge.kind === 'thinking' ? 'thinking'
+              : badge.kind === 'reasoning' ? 'reasoning'
+                : badge.kind === 'provider' ? providerImageTone(badge.provider)
+                  : 'config';
+            runs.push({ kind: 'badge', text: badge.text, tone });
+          }
+        });
+        break;
+      case 'prompt':
+        runs.push({ kind: 'text', text: item.name });
+        for (const tag of item.tags) {
+          runs.push({ kind: 'badge', text: tag, tone: 'config' });
+        }
+        break;
+      case 'text':
+        runs.push({ kind: 'text', text: item.text });
+        break;
+      case 'time':
+        runs.push({ kind: 'text', text: item.text });
+        runs.push({ kind: 'badge', text: status.text, tone: status.tone });
+        break;
+      case 'board':
+        if (item.figures.length > 0) {
+          runs.push({ kind: 'text', text: item.figures.map(f => `${f.role} ${f.delivered}/${f.total}`).join(' · ') });
+        }
+        runs.push({ kind: 'text', text: `· ${item.note}`, muted: true });
+        for (const gap of item.gaps) {
+          runs.push({ kind: 'text', text: `Graded without the board — ${gap}`, warning: true, strong: true, lineBreak: true });
+        }
+        break;
+    }
+    return { label: row.label, runs, primary: row.key === 'model' || row.key === 'assessor' };
+  });
+}
+
+/** The sizes a fact block is laid out at. */
+export interface FactLayoutSizes {
+  /** The label's size; drawn upper-case at weight 600. */
+  readonly labelPx: number;
+  /** The value text's size; badge text is 2 px smaller. */
+  readonly textPx: number;
+}
+
+/** One placed piece of a value: a text run (or a part of one), or a badge. `x` is from the value column. */
+export interface FactLayoutItem {
+  readonly run: ImageFactRun;
+  /** What is drawn: the words on this line, or the badge's display text. */
+  readonly text: string;
+  readonly x: number;
+  readonly width: number;
+}
+
+export interface FactLayoutRow {
+  /** Upper-cased. */
+  readonly label: string;
+  /** From the block's top. */
+  readonly y: number;
+  readonly lines: readonly (readonly FactLayoutItem[])[];
+  readonly lineHeights: readonly number[];
+  readonly height: number;
+}
+
+/** A block of fact rows laid out to a width, in logical pixels. */
+export interface FactLayout {
+  /** The widest label, upper-cased, at the label size. */
+  readonly labelWidth: number;
+  /** Labels above their values, for a width that leaves the value column under 60 %. */
+  readonly stacked: boolean;
+  /** Where the values start. */
+  readonly valueX: number;
+  readonly sizes: FactLayoutSizes;
+  readonly rows: readonly FactLayoutRow[];
+  readonly height: number;
+}
+
+const FACT_LABEL_GUTTER = 12;
+const FACT_STACK_RATIO = 0.6;
+const FACT_ROW_GAP = 4;
+const FACT_BADGE_GAP = 6;
+const FACT_BADGE_PAD_X = 6;
+const FACT_BADGE_PAD_Y = 2;
+const FACT_BADGE_BORDER = 1;
+const FACT_BADGE_RADIUS = 4;
+const FACT_BADGE_WEIGHT = '700';
+const FACT_LABEL_WEIGHT = '600';
+const ELLIPSIS = '…';
+
+function factBadgePx(sizes: FactLayoutSizes): number {
+  return sizes.textPx - 2;
+}
+
+/** A badge's box height: its text, padding and border. */
+export function factBadgeHeight(sizes: FactLayoutSizes): number {
+  return Math.round(factBadgePx(sizes) * 1.2) + FACT_BADGE_PAD_Y * 2 + FACT_BADGE_BORDER * 2;
+}
+
+function factTextWeight(run: ImageFactRun): string {
+  return run.kind === 'text' && run.strong ? '600' : '400';
+}
+
+function badgeDisplayText(run: ImageFactRun & { kind: 'badge' }): string {
+  return UPPER_CASE_TONES.has(run.tone) ? run.text.toUpperCase() : run.text;
+}
+
+/** `text` cut with an ellipsis to at most `maxWidth`. */
+function fitText(text: string, maxWidth: number, measure: TextMeasurer, sizePx: number, weight: string): string {
+  if (measure(text, sizePx, weight) <= maxWidth) {
+    return text;
+  }
+  let cut = text;
+  while (cut.length > 0 && measure(cut + ELLIPSIS, sizePx, weight) > maxWidth) {
+    cut = cut.slice(0, -1);
+  }
+  return cut.trimEnd() + ELLIPSIS;
+}
+
+/**
+ * Lays out fact rows in two columns, label and value, at `width`: values flow left to right, text
+ * breaking at spaces and a badge never splitting; a word or badge wider than the value column is cut
+ * with an ellipsis on a line of its own. Where the value column would be under 60 % of `width`, labels
+ * go above their values. No rows is a block of height 0.
+ */
+export function layoutFactRows(
+  rows: readonly ImageFactRow[],
+  width: number,
+  measure: TextMeasurer,
+  sizes: FactLayoutSizes
+): FactLayout {
+  if (rows.length === 0) {
+    return { labelWidth: 0, stacked: false, valueX: 0, sizes, rows: [], height: 0 };
+  }
+  const labelWidth = Math.max(...rows.map(row => measure(row.label.toUpperCase(), sizes.labelPx, FACT_LABEL_WEIGHT)));
+  const stacked = width - labelWidth - FACT_LABEL_GUTTER < width * FACT_STACK_RATIO;
+  const valueX = stacked ? 0 : labelWidth + FACT_LABEL_GUTTER;
+  const valueWidth = Math.max(1, width - valueX);
+  const badgePx = factBadgePx(sizes);
+  const badgeHeight = factBadgeHeight(sizes);
+  const textLineHeight = Math.max(lineHeight(sizes.textPx), lineHeight(sizes.labelPx));
+  const spaceWidth = measure(' ', sizes.textPx, '400');
+  const badgeChrome = FACT_BADGE_PAD_X * 2 + FACT_BADGE_BORDER * 2;
+
+  interface Token { run: ImageFactRun; text: string; width: number; gap: number; joins: boolean; lineBreak: boolean }
+
+  const laidOut: FactLayoutRow[] = [];
+  let y = 0;
+  rows.forEach((row, rowIndex) => {
+    const tokens: Token[] = [];
+    for (const run of row.runs) {
+      const previous = tokens[tokens.length - 1];
+      const leadGap = run.gapBefore
+        ?? (!previous ? 0 : run.kind === 'badge' || previous.run.kind === 'badge' ? FACT_BADGE_GAP : spaceWidth);
+      if (run.kind === 'badge') {
+        const text = badgeDisplayText(run);
+        tokens.push({ run, text, width: measure(text, badgePx, FACT_BADGE_WEIGHT) + badgeChrome, gap: leadGap, joins: false, lineBreak: false });
+        continue;
+      }
+      const weight = factTextWeight(run);
+      run.text.split(/\s+/).filter(word => word !== '').forEach((word, index) => {
+        tokens.push({
+          run,
+          text: word,
+          width: measure(word, sizes.textPx, weight),
+          gap: index === 0 ? leadGap : spaceWidth,
+          joins: index > 0,
+          lineBreak: index === 0 && !!run.lineBreak
+        });
+      });
+    }
+
+    const lines: { run: ImageFactRun; text: string; x: number; width: number }[][] = [[]];
+    let x = 0;
+    let forceBreak = false;
+    const newLine = (): void => {
+      lines.push([]);
+      x = 0;
+      forceBreak = false;
+    };
+    for (const token of tokens) {
+      let line = lines[lines.length - 1];
+      if (line.length > 0 && (forceBreak || token.lineBreak || x + token.gap + token.width > valueWidth)) {
+        newLine();
+        line = lines[lines.length - 1];
+      }
+      if (token.width > valueWidth) {
+        const text = token.run.kind === 'badge'
+          ? fitText(token.text, valueWidth - badgeChrome, measure, badgePx, FACT_BADGE_WEIGHT)
+          : fitText(token.text, valueWidth, measure, sizes.textPx, factTextWeight(token.run));
+        const fitted = token.run.kind === 'badge'
+          ? measure(text, badgePx, FACT_BADGE_WEIGHT) + badgeChrome
+          : measure(text, sizes.textPx, factTextWeight(token.run));
+        line.push({ run: token.run, text, x: 0, width: Math.min(valueWidth, fitted) });
+        x = valueWidth;
+        forceBreak = true;
+        continue;
+      }
+      const gap = line.length > 0 ? token.gap : 0;
+      const last = line[line.length - 1];
+      if (token.joins && last && last.run === token.run) {
+        last.text = `${last.text} ${token.text}`;
+        last.width = x + gap + token.width - last.x;
+      } else {
+        line.push({ run: token.run, text: token.text, x: x + gap, width: token.width });
+      }
+      x += gap + token.width;
+    }
+
+    const lineHeights = lines.map(line => (line.some(item => item.run.kind === 'badge')
+      ? Math.max(textLineHeight, badgeHeight)
+      : textLineHeight));
+    const height = (stacked ? lineHeight(sizes.labelPx) : 0) + lineHeights.reduce((sum, h) => sum + h, 0);
+    laidOut.push({ label: row.label.toUpperCase(), y, lines, lineHeights, height });
+    y += height + (rowIndex < rows.length - 1 ? FACT_ROW_GAP : 0);
+  });
+
+  return { labelWidth, stacked, valueX, sizes, rows: laidOut, height: y };
+}
+
 // -----------------------------------------------------------------------------------------------
 // Text, names and footer
 // -----------------------------------------------------------------------------------------------
@@ -319,11 +700,12 @@ export const STRIP_CARD_WIDTH_STEP = 10;
 export const STRIP_SQUARE_TOLERANCE = 1.1;
 /** The widest card a single row widens to when no layout in the range is landscape. */
 const STRIP_FALLBACK_MAX_CARD_WIDTH = 1200;
+const STRIP_FACT_SIZES: FactLayoutSizes = { labelPx: STRIP_LABEL_PX, textPx: STRIP_LINE_PX };
 
 /** The texts the strip image carries besides its cards. */
 export interface StripText {
   readonly title: string;
-  readonly lines: readonly string[];
+  readonly facts: readonly ImageFactRow[];
   readonly footnotes: readonly string[];
   readonly footer: string;
 }
@@ -363,7 +745,7 @@ export interface StripLayout {
   readonly square: boolean;
   readonly logoHeight: number;
   readonly titleLines: readonly string[];
-  readonly contextLines: readonly (readonly string[])[];
+  readonly facts: FactLayout;
   readonly footnoteLines: readonly (readonly string[])[];
   readonly footerLines: readonly string[];
   readonly gridTop: number;
@@ -411,7 +793,7 @@ interface StripCandidate {
   readonly width: number;
   readonly naturalHeight: number;
   readonly titleLines: readonly string[];
-  readonly contextLines: readonly (readonly string[])[];
+  readonly facts: FactLayout;
   readonly footnoteLines: readonly (readonly string[])[];
   readonly footerLines: readonly string[];
   readonly headerHeight: number;
@@ -428,14 +810,25 @@ interface StripCandidate {
  * Within {@link STRIP_SQUARE_TOLERANCE} the height is padded to the width, the extra space split
  * above and below the grid. Where no candidate is landscape, a single row widens its cards until it
  * is, and past {@link STRIP_FALLBACK_MAX_CARD_WIDTH} the width is padded to the height, so the result
- * is never portrait. `cells` may be any selection of the cards, with or without the main card.
+ * is never portrait. `cells` may be any selection of the cards, with or without the main card. The
+ * run facts under the title are laid out at the grid's width by {@link layoutFactRows}.
  */
 export function chooseStripLayout(
   cells: readonly KeyFigureCell[],
   text: StripText,
   wrap: TextWrapper,
-  logoHeight: number = STRIP_LOGO_HEIGHT
+  logoHeight: number = STRIP_LOGO_HEIGHT,
+  measure: TextMeasurer = estimateTextWidth
 ): StripLayout {
+  const factCache = new Map<number, FactLayout>();
+  const factsAt = (gridWidth: number): FactLayout => {
+    let facts = factCache.get(gridWidth);
+    if (!facts) {
+      facts = layoutFactRows(text.facts, gridWidth, measure, STRIP_FACT_SIZES);
+      factCache.set(gridWidth, facts);
+    }
+    return facts;
+  };
   const cache = new Map<string, MeasuredKeyFigureCard>();
   const measureCard = (index: number, width: number): MeasuredKeyFigureCard => {
     const key = `${index}:${width}`;
@@ -490,10 +883,10 @@ export function chooseStripLayout(
     const gridHeight = y;
 
     const titleLines = wrap(text.title, gridWidth, STRIP_TITLE_PX, '700');
-    const contextLines = text.lines.slice(0, 3).map(line => wrap(line, gridWidth, STRIP_LINE_PX, '400'));
+    const facts = factsAt(gridWidth);
     const headerHeight = (logoHeight > 0 ? logoHeight + STRIP_LOGO_GAP : 0)
       + blockHeight(titleLines, STRIP_TITLE_PX)
-      + contextLines.reduce((sum, lines) => sum + (lines.length > 0 ? STRIP_LINE_GAP + blockHeight(lines, STRIP_LINE_PX) : 0), 0);
+      + (facts.height > 0 ? STRIP_LINE_GAP + facts.height : 0);
     const footnoteLines = text.footnotes.map(footnote => wrap(footnote, gridWidth, STRIP_FOOTNOTE_PX, '400'));
     const footnotesHeight = footnoteLines.length > 0
       ? STRIP_FOOTNOTE_GAP + stackHeight(footnoteLines.map(lines => blockHeight(lines, STRIP_FOOTNOTE_PX)), 2)
@@ -509,7 +902,7 @@ export function chooseStripLayout(
       naturalHeight: STRIP_PAD * 2 + headerHeight + (cells.length > 0 ? STRIP_HEADER_GAP + gridHeight : 0)
         + footnotesHeight + footerHeight,
       titleLines,
-      contextLines,
+      facts,
       footnoteLines,
       footerLines,
       headerHeight,
@@ -561,7 +954,7 @@ export function chooseStripLayout(
     square: imageWidth === height,
     logoHeight,
     titleLines: chosen.titleLines,
-    contextLines: chosen.contextLines,
+    facts: chosen.facts,
     footnoteLines: chosen.footnoteLines,
     footerLines: chosen.footerLines,
     gridTop,
@@ -615,11 +1008,13 @@ const CARD_IMAGE_FOOTNOTE_PX = 14;
 const CARD_IMAGE_FOOTNOTE_GAP = 16;
 const CARD_IMAGE_FOOTER_PX = 14;
 const CARD_IMAGE_RULE_GAP = 16;
+const CARD_IMAGE_FACT_SIZES: FactLayoutSizes = { labelPx: 12, textPx: CARD_IMAGE_LINE_PX };
 
 /** The texts the card image carries besides its card. */
 export interface CardImageText {
   readonly title: string;
-  readonly line: string;
+  /** Only the primary rows are drawn. */
+  readonly facts: readonly ImageFactRow[];
   readonly footnotes: readonly string[];
   readonly footer: string;
 }
@@ -633,7 +1028,7 @@ export interface CardImageLayout {
   readonly fits: boolean;
   readonly headerTextX: number;
   readonly titleLines: readonly string[];
-  readonly lineLines: readonly string[];
+  readonly facts: FactLayout;
   readonly headerHeight: number;
   readonly cardWidth: number;
   readonly card: MeasuredKeyFigureCard;
@@ -666,17 +1061,18 @@ function cardImageLayoutAt(
   wrap: TextWrapper,
   width: number,
   notePx: number,
-  hasEmblem: boolean
+  hasEmblem: boolean,
+  measure: TextMeasurer
 ): CardImageLayout {
   const height = CARD_IMAGE_SIZE;
   const contentWidth = width - CARD_IMAGE_PAD * 2;
   const headerTextX = CARD_IMAGE_PAD + (hasEmblem ? CARD_IMAGE_EMBLEM + CARD_IMAGE_EMBLEM_GAP : 0);
   const headerTextWidth = width - CARD_IMAGE_PAD - headerTextX;
   const titleLines = wrap(text.title, headerTextWidth, CARD_IMAGE_TITLE_PX, '700');
-  const lineLines = wrap(text.line, headerTextWidth, CARD_IMAGE_LINE_PX, '400');
+  const facts = layoutFactRows(text.facts.filter(row => row.primary), headerTextWidth, measure, CARD_IMAGE_FACT_SIZES);
   const headerHeight = Math.max(
     hasEmblem ? CARD_IMAGE_EMBLEM : 0,
-    stackHeight([blockHeight(titleLines, CARD_IMAGE_TITLE_PX), blockHeight(lineLines, CARD_IMAGE_LINE_PX)], 4)
+    stackHeight([blockHeight(titleLines, CARD_IMAGE_TITLE_PX), facts.height], 4)
   );
   const card = measureImageCard(cell, contentWidth, notePx, wrap);
   const footnoteLines = text.footnotes.map(footnote => wrap(footnote, contentWidth, CARD_IMAGE_FOOTNOTE_PX, '400'));
@@ -694,7 +1090,7 @@ function cardImageLayoutAt(
     fits: needed <= height,
     headerTextX,
     titleLines,
-    lineLines,
+    facts,
     headerHeight,
     cardWidth: contentWidth,
     card,
@@ -709,12 +1105,14 @@ function cardImageLayoutAt(
  * {@link CARD_IMAGE_WIDTH_STEP} steps, the text column widening with it, up to
  * {@link CARD_IMAGE_MAX_WIDTH} (4 : 3); a card that still does not fit is laid out at 4 : 3 with its
  * notes at {@link CARD_IMAGE_SMALL_NOTE_PX}. The height never changes, so the image is never portrait.
+ * The header carries the primary run facts, laid out beside the emblem.
  */
 export function chooseCardImageLayout(
   cell: KeyFigureCell,
   text: CardImageText,
   wrap: TextWrapper,
-  hasEmblem = true
+  hasEmblem = true,
+  measure: TextMeasurer = estimateTextWidth
 ): CardImageLayout {
   const widths: number[] = [];
   for (let width = CARD_IMAGE_SIZE; width < CARD_IMAGE_MAX_WIDTH; width += CARD_IMAGE_WIDTH_STEP) {
@@ -722,12 +1120,12 @@ export function chooseCardImageLayout(
   }
   widths.push(CARD_IMAGE_MAX_WIDTH);
   for (const width of widths) {
-    const layout = cardImageLayoutAt(cell, text, wrap, width, CARD_IMAGE_NOTE_PX, hasEmblem);
+    const layout = cardImageLayoutAt(cell, text, wrap, width, CARD_IMAGE_NOTE_PX, hasEmblem, measure);
     if (layout.fits) {
       return layout;
     }
   }
-  return cardImageLayoutAt(cell, text, wrap, CARD_IMAGE_MAX_WIDTH, CARD_IMAGE_SMALL_NOTE_PX, hasEmblem);
+  return cardImageLayoutAt(cell, text, wrap, CARD_IMAGE_MAX_WIDTH, CARD_IMAGE_SMALL_NOTE_PX, hasEmblem, measure);
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -741,6 +1139,14 @@ function fontOf(size: number, weight: string): string {
 /** A {@link TextWrapper} measuring in `context`, through the figure composer's own `wrapText`. */
 export function canvasTextWrapper(context: CanvasRenderingContext2D): TextWrapper {
   return (text, maxWidth, sizePx, weight) => wrapText(context, text, maxWidth, sizePx, weight, FIGURE_FONT_STACK);
+}
+
+/** A {@link TextMeasurer} measuring in `context`. */
+export function canvasTextMeasurer(context: CanvasRenderingContext2D): TextMeasurer {
+  return (text, sizePx, weight) => {
+    context.font = fontOf(sizePx, weight);
+    return context.measureText(text).width;
+  };
 }
 
 /** Waits for the figure font in every weight the images use; a font that cannot load is skipped. */
@@ -836,6 +1242,48 @@ function drawCardText(
   });
 }
 
+/** Draws a block of fact rows laid out by {@link layoutFactRows} with its top left corner at `x`, `y`. */
+function drawFactRows(context: CanvasRenderingContext2D, layout: FactLayout, x: number, y: number): void {
+  const { labelPx, textPx } = layout.sizes;
+  const badgePx = factBadgePx(layout.sizes);
+  const badgeHeight = factBadgeHeight(layout.sizes);
+  const labelLineHeight = lineHeight(labelPx);
+  for (const row of layout.rows) {
+    const rowTop = y + row.y;
+    const firstLine = layout.stacked ? labelLineHeight : (row.lineHeights[0] ?? labelLineHeight);
+    context.font = fontOf(labelPx, FACT_LABEL_WEIGHT);
+    context.fillStyle = LABEL_COLOR;
+    context.fillText(row.label, x, rowTop + (firstLine - labelPx) / 2);
+
+    let lineTop = rowTop + (layout.stacked ? labelLineHeight : 0);
+    row.lines.forEach((line, index) => {
+      const height = row.lineHeights[index];
+      for (const item of line) {
+        const left = x + layout.valueX + item.x;
+        if (item.run.kind === 'badge') {
+          const palette = BADGE_PALETTE[item.run.tone];
+          const top = lineTop + (height - badgeHeight) / 2;
+          pathRoundedRect(context, left + 0.5, top + 0.5, item.width - 1, badgeHeight - 1, FACT_BADGE_RADIUS);
+          context.fillStyle = palette.fill;
+          context.fill();
+          context.strokeStyle = palette.border;
+          context.lineWidth = 1;
+          context.stroke();
+          context.font = fontOf(badgePx, FACT_BADGE_WEIGHT);
+          context.fillStyle = palette.ink;
+          context.fillText(item.text, left + FACT_BADGE_PAD_X + FACT_BADGE_BORDER, top + (badgeHeight - badgePx) / 2);
+        } else {
+          const run = item.run;
+          context.font = fontOf(textPx, factTextWeight(run));
+          context.fillStyle = run.warning ? WARNING_COLOR : run.muted ? NOTE_COLOR : run.strong ? VALUE_COLOR : FIGURE_MUTED_COLOR;
+          context.fillText(item.text, left, lineTop + (height - textPx) / 2);
+        }
+      }
+      lineTop += height;
+    });
+  }
+}
+
 function drawLogo(context: CanvasRenderingContext2D, logo: KeyFigureLogo, x: number, y: number, height: number): void {
   const width = logo.width * height / logo.height;
   context.drawImage(logo.image, x, y, width, height);
@@ -896,10 +1344,10 @@ export async function composeStripImage(
   const wrap: TextWrapper = measure ? canvasTextWrapper(measure) : text => (text.trim() ? [text] : []);
   const layout = chooseStripLayout(cells, {
     title: context.title,
-    lines: context.lines,
+    facts: context.facts,
     footnotes: stripFootnotes(cells),
     footer: keyFiguresFooterText(context.overseerVersion, now)
-  }, wrap, logos.wide ? STRIP_LOGO_HEIGHT : 0);
+  }, wrap, logos.wide ? STRIP_LOGO_HEIGHT : 0, measure ? canvasTextMeasurer(measure) : estimateTextWidth);
 
   const { canvas, context: draw } = newCanvas(layout.width, layout.height);
   if (!draw) {
@@ -913,10 +1361,8 @@ export async function composeStripImage(
     y += layout.logoHeight + STRIP_LOGO_GAP;
   }
   y = drawLines(draw, layout.titleLines, left, y, STRIP_TITLE_PX, '700', FIGURE_TITLE_COLOR);
-  for (const lines of layout.contextLines) {
-    if (lines.length > 0) {
-      y = drawLines(draw, lines, left, y + STRIP_LINE_GAP, STRIP_LINE_PX, '400', FIGURE_MUTED_COLOR);
-    }
+  if (layout.facts.height > 0) {
+    drawFactRows(draw, layout.facts, left, y + STRIP_LINE_GAP);
   }
 
   for (const placement of layout.placements) {
@@ -950,10 +1396,10 @@ export async function composeCardImage(
   const wrap: TextWrapper = measure ? canvasTextWrapper(measure) : text => (text.trim() ? [text] : []);
   const layout = chooseCardImageLayout(cell, {
     title: context.title,
-    line: context.lines[0] ?? '',
+    facts: context.facts,
     footnotes: cell.footnotes,
     footer: keyFiguresFooterText(context.overseerVersion, now)
-  }, wrap, logos.emblem !== null);
+  }, wrap, logos.emblem !== null, measure ? canvasTextMeasurer(measure) : estimateTextWidth);
 
   const { canvas, context: draw } = newCanvas(layout.width, layout.height);
   if (!draw) {
@@ -964,12 +1410,11 @@ export async function composeCardImage(
   if (logos.emblem) {
     drawLogo(draw, logos.emblem, CARD_IMAGE_PAD, top, CARD_IMAGE_EMBLEM);
   }
-  const textHeight = stackHeight(
-    [blockHeight(layout.titleLines, CARD_IMAGE_TITLE_PX), blockHeight(layout.lineLines, CARD_IMAGE_LINE_PX)], 4);
+  const textHeight = stackHeight([blockHeight(layout.titleLines, CARD_IMAGE_TITLE_PX), layout.facts.height], 4);
   let y = top + Math.max(0, (layout.headerHeight - textHeight) / 2);
   y = drawLines(draw, layout.titleLines, layout.headerTextX, y, CARD_IMAGE_TITLE_PX, '700', FIGURE_TITLE_COLOR);
-  if (layout.lineLines.length > 0) {
-    drawLines(draw, layout.lineLines, layout.headerTextX, y + 4, CARD_IMAGE_LINE_PX, '400', FIGURE_MUTED_COLOR);
+  if (layout.facts.height > 0) {
+    drawFactRows(draw, layout.facts, layout.headerTextX, y + 4);
   }
 
   // The card is centered in the space between the header and the footnotes and footer.

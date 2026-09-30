@@ -19,13 +19,20 @@ export interface KeyFigureChoice {
   readonly value: string;
 }
 
+/** The run settings the images may carry: one choice per run-fact row, and the remembered exclusions. */
+export interface ImageDetailChoices {
+  readonly rows: readonly KeyFigureChoice[];
+  readonly excluded: readonly string[];
+}
+
 /**
- * Which key figures the run report shows and exports: one checkbox per card the run shows. Every
- * change applies at once through `selectionChange`; Done, the close button, Escape and light dismiss
- * only close.
+ * Which key figures the run report shows and exports: one checkbox per card the run shows, and,
+ * when the host passes them, one per run setting the images carry (Image details). Every change
+ * applies at once through `selectionChange` or `detailSelectionChange`; Done, the close button,
+ * Escape and light dismiss only close.
  *
  * Never touches storage: the host passes the remembered exclusions to `open()` and stores the ones
- * `selectionChange` carries. Exclusions of figures this run does not show are kept.
+ * the two outputs carry. Exclusions of figures or rows this run does not have are kept.
  *
  * Nested in the run report dialog, so its own close, cancel and click events stop here.
  */
@@ -42,6 +49,9 @@ export class KeyFiguresChooserComponent implements OnInit {
   /** Emitted on every change of the selection, with the exclusions to remember. */
   @Output() readonly selectionChange = new EventEmitter<string[]>();
 
+  /** Emitted on every change of the image details, with the exclusions to remember. */
+  @Output() readonly detailSelectionChange = new EventEmitter<string[]>();
+
   @ViewChild('chooserDialog') chooserDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('chooserTitle') chooserTitle?: ElementRef<HTMLElement>;
 
@@ -54,6 +64,15 @@ export class KeyFiguresChooserComponent implements OnInit {
   /** The remembered exclusions `open()` received. */
   private storedExcluded: string[] = [];
 
+  /** The run settings the images may carry, in display order; none hides the group. */
+  detailRows: KeyFigureChoice[] = [];
+
+  /** The keys of the checked run settings. */
+  private checkedDetails = new Set<string>();
+
+  /** The remembered image-detail exclusions `open()` received. */
+  private storedDetailExcluded: string[] = [];
+
   /** Where focus returns on close. */
   private opener: HTMLElement | null = null;
 
@@ -61,8 +80,16 @@ export class KeyFiguresChooserComponent implements OnInit {
     ensureOverlayPolyfills();
   }
 
-  /** Shows the dialog with every figure checked that `excluded` does not name, and focuses its title. */
-  open(figures: readonly KeyFigureChoice[], excluded: readonly string[], opener?: HTMLElement | null): void {
+  /**
+   * Shows the dialog with every figure checked that `excluded` does not name, and every image detail
+   * checked that `details.excluded` does not name, and focuses its title.
+   */
+  open(
+    figures: readonly KeyFigureChoice[],
+    excluded: readonly string[],
+    opener?: HTMLElement | null,
+    details?: ImageDetailChoices
+  ): void {
     const dialog = this.chooserDialog?.nativeElement;
     if (!dialog) {
       return;
@@ -70,6 +97,9 @@ export class KeyFiguresChooserComponent implements OnInit {
     this.figures = [...figures];
     this.storedExcluded = [...excluded];
     this.checked = new Set(this.figures.map(figure => figure.key).filter(key => !excluded.includes(key)));
+    this.detailRows = [...(details?.rows ?? [])];
+    this.storedDetailExcluded = [...(details?.excluded ?? [])];
+    this.checkedDetails = new Set(this.detailRows.map(row => row.key).filter(key => !this.storedDetailExcluded.includes(key)));
     this.opener = opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     this.cdr.detectChanges();
     if (!dialog.open) {
@@ -122,6 +152,47 @@ export class KeyFiguresChooserComponent implements OnInit {
     ];
   }
 
+  isDetailChecked(key: string): boolean {
+    return this.checkedDetails.has(key);
+  }
+
+  toggleDetail(key: string, event: Event): void {
+    if ((event.target as HTMLInputElement).checked) {
+      this.checkedDetails.add(key);
+    } else {
+      this.checkedDetails.delete(key);
+    }
+    this.emitDetailSelection();
+  }
+
+  selectAllDetails(): void {
+    this.checkedDetails = new Set(this.detailRows.map(row => row.key));
+    this.emitDetailSelection();
+  }
+
+  selectNoDetails(): void {
+    this.checkedDetails = new Set();
+    this.emitDetailSelection();
+  }
+
+  /** `5 of 6 selected`. */
+  get detailCountText(): string {
+    const selected = this.detailRows.filter(row => this.checkedDetails.has(row.key)).length;
+    return `${selected} of ${this.detailRows.length} selected`;
+  }
+
+  /**
+   * The image-detail exclusions to remember: the unchecked rows of this run, and the stored ones of
+   * rows this run does not have.
+   */
+  get detailsExcluded(): string[] {
+    const shown = new Set(this.detailRows.map(row => row.key));
+    return [
+      ...this.storedDetailExcluded.filter(key => !shown.has(key)),
+      ...this.detailRows.map(row => row.key).filter(key => !this.checkedDetails.has(key))
+    ];
+  }
+
   /** Done and the close button. */
   done(): void {
     this.chooserDialog?.nativeElement.close();
@@ -129,6 +200,11 @@ export class KeyFiguresChooserComponent implements OnInit {
 
   private emitSelection(): void {
     this.selectionChange.emit(this.excluded);
+    this.cdr.markForCheck();
+  }
+
+  private emitDetailSelection(): void {
+    this.detailSelectionChange.emit(this.detailsExcluded);
     this.cdr.markForCheck();
   }
 

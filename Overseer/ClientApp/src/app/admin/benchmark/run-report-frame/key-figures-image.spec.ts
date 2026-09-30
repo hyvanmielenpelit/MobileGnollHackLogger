@@ -1,15 +1,21 @@
 import {
+  BADGE_PALETTE,
   CARD_IMAGE_MAX_WIDTH,
   CARD_IMAGE_SIZE,
   CardImageText,
+  FactLayoutSizes,
+  IMAGE_DETAILS_STORAGE_KEY,
   ImageContext,
+  ImageFactRow,
   KeyFigureCell,
   StripText,
+  TextMeasurer,
   TextWrapper,
   chooseCardImageLayout,
   chooseStripLayout,
   composeCardImage,
   composeStripImage,
+  factBadgeHeight,
   KEY_FIGURES_STORAGE_KEY,
   exportKeyFiguresImage,
   filterKeyFigureCells,
@@ -19,13 +25,20 @@ import {
   keyFiguresFooterText,
   keyFiguresImageIo,
   keyFiguresStatusMessage,
+  layoutFactRows,
   loadKeyFigureLogos,
+  mixHex,
   readKeyFigureCell,
   readKeyFigureCells,
+  readStoredImageDetailExclusions,
   readStoredKeyFigureExclusions,
+  statusImageTone,
+  storeImageDetailExclusions,
   storeKeyFigureExclusions,
-  stripFootnotes
+  stripFootnotes,
+  toImageFactRows
 } from './key-figures-image';
+import { RunFactRow } from './run-facts';
 
 /** Every card kind the run report renders, each with a card-actions element that must be ignored. */
 const STRIP_FIXTURE = `
@@ -142,23 +155,47 @@ function plainCellsOf(count: number): KeyFigureCell[] {
   return Array.from({ length: count }, (_, i) => cell(`Card ${i + 1}`));
 }
 
+function textRow(label: string, text: string, primary = false): ImageFactRow {
+  return { label, runs: [{ kind: 'text', text }], primary };
+}
+
+/**
+ * Two one-line text rows: 18 px each (the 13 px value line) with 4 px between, under a 4 px gap, so the
+ * header is 48 (logo and gap) + 25 (title) + 4 + 18 + 4 + 18 = 117 px at every grid width the search tries.
+ */
 const STRIP_TEXT: StripText = {
   title: 'Run #72 · Default Suite',
-  lines: ['Model: M', 'Started'],
+  facts: [textRow('Model', 'M', true), textRow('Started', 'x')],
   footnotes: [],
   footer: 'GnollBench'
 };
 
+/**
+ * One primary text row, 20 px (the 14 px value line): the header is 25 (title) + 4 + 20 = 49 px, taller
+ * than the 40 px emblem. The Started row is not primary, so the card image leaves it out.
+ */
 const CARD_TEXT: CardImageText = {
   title: 'Run #72 · Default Suite',
-  line: 'Model: M',
+  facts: [textRow('Model', 'M', true), textRow('Started', 'x')],
   footnotes: [],
   footer: 'GnollBench'
 };
 
 const CONTEXT: ImageContext = {
   title: 'Run #72 · Snapshot: Tommi2 2026-09-17',
-  lines: ['Model: GPT 5.5 (high) · Assessor: Gemini', 'Started 2026-09-17 10:00:00 UTC · Completed'],
+  facts: [
+    {
+      label: 'Model',
+      runs: [
+        { kind: 'text', text: 'GPT 5.5', strong: true },
+        { kind: 'badge', text: 'High', tone: 'thinking' },
+        { kind: 'badge', text: 'OpenAI', tone: 'openai' }
+      ],
+      primary: true
+    },
+    { label: 'Assessor', runs: [{ kind: 'text', text: 'Gemini', strong: true }], primary: true },
+    { label: 'Started', runs: [{ kind: 'text', text: '2026-09-17 10:00:00 UTC' }, { kind: 'badge', text: 'Completed', tone: 'success' }], primary: false }
+  ],
   runId: 72,
   overseerVersion: '1.0.29',
   suiteName: 'Snapshot: Tommi2 2026-09-17',
@@ -406,6 +443,13 @@ describe('key figures image', () => {
       expect(layout.afterGridTop).toBe(unpaddedGridTop + layout.gridHeight + 1);
     });
 
+    it('lays out the run facts at the grid width under the title', () => {
+      const layout = chooseStripLayout(cellsOf(7), STRIP_TEXT, noWrap);
+      expect(layout.facts.rows.map(row => row.label)).toEqual(['MODEL', 'STARTED']);
+      expect(layout.facts.height).toBe(18 + 4 + 18);
+      expect(layout.facts.stacked).toBeFalse();
+    });
+
     it('wraps the footnotes into the layout', () => {
       const plain = chooseStripLayout(cellsOf(7), STRIP_TEXT, noWrap);
       const noted = chooseStripLayout(cellsOf(7), { ...STRIP_TEXT, footnotes: ['* One', '* Two'] }, noWrap);
@@ -432,6 +476,215 @@ describe('key figures image', () => {
       expect(CARD_IMAGE_MAX_WIDTH).toBe(853);
       expect([layout.width, layout.height, layout.notePx, layout.fits]).toEqual([853, 640, 15, false]);
       expect(layout.width / layout.height).toBeLessThanOrEqual(4 / 3 + 0.001);
+    });
+
+    it('carries only the primary run facts in its header', () => {
+      const layout = chooseCardImageLayout(cell('Speed Index'), CARD_TEXT, noWrap);
+      expect(layout.facts.rows.map(row => row.label)).toEqual(['MODEL']);
+      expect(layout.headerHeight).toBe(49);
+
+      const none = chooseCardImageLayout(cell('Speed Index'), { ...CARD_TEXT, facts: [textRow('Started', 'x')] }, noWrap);
+      expect(none.facts.height).toBe(0);
+      expect(none.headerHeight).toBe(40);
+    });
+  });
+
+  describe('run facts', () => {
+    /** Every character half the font size wide, whatever the weight. */
+    const halfWidth: TextMeasurer = (text, sizePx) => text.length * sizePx * 0.5;
+    const SIZES: FactLayoutSizes = { labelPx: 12, textPx: 13 };
+
+    function badgeRow(label: string, count: number): ImageFactRow {
+      return {
+        label,
+        runs: [
+          { kind: 'text', text: 'Name', strong: true },
+          ...Array.from({ length: count }, () => ({ kind: 'badge' as const, text: 'High', tone: 'thinking' as const }))
+        ],
+        primary: true
+      };
+    }
+
+    it('aligns every value on the widest label, upper-cased', () => {
+      const layout = layoutFactRows([textRow('Model', 'M'), textRow('Scoring profile', 'Default')], 300, halfWidth, SIZES);
+      expect(layout.labelWidth).toBe('SCORING PROFILE'.length * 12 * 0.5);
+      expect(layout.valueX).toBe(90 + 12);
+      expect(layout.rows.map(row => row.label)).toEqual(['MODEL', 'SCORING PROFILE']);
+      expect(layout.height).toBe(18 + 4 + 18);
+      expect(layout.rows[1].y).toBe(22);
+    });
+
+    it('never splits a badge across lines, and draws its text upper-case', () => {
+      const layout = layoutFactRows([badgeRow('Model', 8)], 300, halfWidth, SIZES);
+      const valueWidth = 300 - layout.valueX;
+      expect(layout.rows[0].lines.length).toBeGreaterThan(1);
+      const items = layout.rows[0].lines.flat();
+      expect(items.filter(item => item.run.kind === 'badge').map(item => item.text)).toEqual(Array(8).fill('HIGH'));
+      for (const line of layout.rows[0].lines) {
+        for (const item of line) {
+          expect(item.x + item.width).toBeLessThanOrEqual(valueWidth + 0.001);
+        }
+      }
+    });
+
+    it('wraps a long value at spaces onto more lines, keeping every word', () => {
+      const text = words(20);
+      const layout = layoutFactRows([textRow('Prompt', text)], 300, halfWidth, SIZES);
+      const lines = layout.rows[0].lines;
+      expect(lines.length).toBeGreaterThan(1);
+      expect(lines.map(line => line.map(item => item.text).join(' ')).join(' ')).toBe(text);
+      expect(layout.rows[0].height).toBe(lines.length * 18);
+    });
+
+    it('cuts a word wider than the value column with an ellipsis, alone on its line', () => {
+      const layout = layoutFactRows([textRow('Model', `${'x'.repeat(80)} tail`)], 300, halfWidth, SIZES);
+      const [first, second] = layout.rows[0].lines;
+      expect(first.length).toBe(1);
+      expect(first[0].text.endsWith('…')).toBeTrue();
+      expect(first[0].width).toBeLessThanOrEqual(300 - layout.valueX);
+      expect(second.map(item => item.text)).toEqual(['tail']);
+    });
+
+    it('stacks labels above values when the value column would be under 60 % of the width', () => {
+      const wide = layoutFactRows([textRow('Scoring profile', 'Default')], 300, halfWidth, SIZES);
+      expect(wide.stacked).toBeFalse();
+
+      const narrow = layoutFactRows([textRow('Scoring profile', 'Default')], 200, halfWidth, SIZES);
+      expect(narrow.stacked).toBeTrue();
+      expect(narrow.valueX).toBe(0);
+      expect(narrow.rows[0].height).toBe(17 + 18);
+    });
+
+    it('makes a line holding a badge as tall as the badge box', () => {
+      expect(factBadgeHeight(SIZES)).toBe(19);
+      const layout = layoutFactRows([badgeRow('Model', 1), textRow('Started', 'x')], 300, halfWidth, SIZES);
+      expect(layout.rows[0].lineHeights).toEqual([19]);
+      expect(layout.rows[1].lineHeights).toEqual([18]);
+      expect(layout.height).toBe(19 + 4 + 18);
+    });
+
+    it('gives no rows a height of 0', () => {
+      const layout = layoutFactRows([], 300, halfWidth, SIZES);
+      expect([layout.height, layout.rows.length, layout.labelWidth]).toEqual([0, 0, 0]);
+    });
+
+    it('starts a warning on its own line', () => {
+      const layout = layoutFactRows([{
+        label: 'Board',
+        runs: [{ kind: 'text', text: 'Assessor 18/18' }, { kind: 'text', text: 'Gap', warning: true, lineBreak: true }],
+        primary: false
+      }], 600, halfWidth, SIZES);
+      expect(layout.rows[0].lines.map(line => line.map(item => item.text))).toEqual([['Assessor 18/18'], ['Gap']]);
+    });
+
+    it('converts the header rows, with the badges, the status and the primary rows', () => {
+      const rows: RunFactRow[] = [
+        {
+          key: 'model', label: 'Model', item: {
+            kind: 'models', models: [{
+              name: 'GPT-6.1 Sol', provider: 'OpenAI', thinkingLevel: 'high', reasoningMode: 'standard',
+              serviceTier: 'flex', customEndpoint: true
+            }]
+          }
+        },
+        {
+          key: 'assessor', label: 'Assessors', item: {
+            kind: 'models', models: [
+              { role: 'A', name: 'Claude 5 Opus', provider: 'Anthropic', thinkingLevel: null, reasoningMode: 'max', serviceTier: null, customEndpoint: false },
+              { role: 'B', name: 'Other', provider: 'Acme', thinkingLevel: null, reasoningMode: null, serviceTier: null, customEndpoint: false }
+            ]
+          }
+        },
+        { key: 'prompt', label: 'Prompt', item: { kind: 'prompt', name: 'Gameplay Help', tags: ['concise', 'tools on'], summary: 'Gameplay Help · concise (tools on)' } },
+        { key: 'started', label: 'Started', item: { kind: 'time', iso: '2026-09-30T13:35:24Z', text: '2026-09-30 13:35:24 UTC' } },
+        {
+          key: 'board', label: 'Board', item: {
+            kind: 'board', figures: [{ role: 'Assessor', delivered: 18, total: 18 }, { role: 'Claim verifier', delivered: 16, total: 16 }],
+            note: 'Synthesis: yes', gaps: ['assessor: Q3']
+          }
+        }
+      ];
+      const facts = toImageFactRows(rows, { text: 'Completed', tone: 'success' });
+
+      expect(facts.map(row => row.label)).toEqual(['Model', 'Assessors', 'Prompt', 'Started', 'Board']);
+      expect(facts.map(row => row.primary)).toEqual([true, true, false, false, false]);
+      expect(facts[0].runs).toEqual([
+        { kind: 'text', text: 'GPT-6.1 Sol', strong: true, gapBefore: undefined },
+        { kind: 'badge', text: 'High', tone: 'thinking' },
+        { kind: 'badge', text: 'OpenAI', tone: 'openai' },
+        { kind: 'badge', text: 'Flex', tone: 'config' },
+        { kind: 'badge', text: 'Custom endpoint', tone: 'config' }
+      ]);
+      expect(facts[1].runs).toEqual([
+        { kind: 'badge', text: 'A', tone: 'role', gapBefore: undefined },
+        { kind: 'text', text: 'Claude 5 Opus', strong: true, gapBefore: undefined },
+        { kind: 'badge', text: 'max', tone: 'reasoning' },
+        { kind: 'badge', text: 'Anthropic', tone: 'anthropic' },
+        { kind: 'badge', text: 'B', tone: 'role', gapBefore: 10 },
+        { kind: 'text', text: 'Other', strong: true, gapBefore: undefined },
+        { kind: 'badge', text: 'Acme', tone: 'provider' }
+      ]);
+      expect(facts[2].runs).toEqual([
+        { kind: 'text', text: 'Gameplay Help' },
+        { kind: 'badge', text: 'concise', tone: 'config' },
+        { kind: 'badge', text: 'tools on', tone: 'config' }
+      ]);
+      expect(facts[3].runs).toEqual([
+        { kind: 'text', text: '2026-09-30 13:35:24 UTC' },
+        { kind: 'badge', text: 'Completed', tone: 'success' }
+      ]);
+      expect(facts[4].runs).toEqual([
+        { kind: 'text', text: 'Assessor 18/18 · Claim verifier 16/16' },
+        { kind: 'text', text: '· Synthesis: yes', muted: true },
+        { kind: 'text', text: 'Graded without the board — assessor: Q3', warning: true, strong: true, lineBreak: true }
+      ]);
+    });
+
+    it('maps each run status class to a badge tone', () => {
+      const tones = ['completed', 'scored', 'completedwitherrors', 'failed', 'completedwithlimits', 'running', 'canceled', 'pending']
+        .map(status => statusImageTone(`badge-status-${status}`));
+      expect(tones).toEqual(['success', 'success', 'warning', 'danger', 'info', 'running', 'config', 'config']);
+    });
+
+    it('mixes the provider badge colors as color-mix does', () => {
+      expect(mixHex('#ffffff', '#000000', 0.5)).toBe('#808080');
+      expect(mixHex('#10a37f', '#1b1b1b', 1)).toBe('#10a37f');
+      expect(BADGE_PALETTE.openai.fill).toBe(mixHex('#10a37f', '#1b1b1b', 0.22));
+      expect(BADGE_PALETTE.anthropic.border).toBe(mixHex('#d97757', '#383838', 0.6));
+    });
+  });
+
+  describe('remembering the image details', () => {
+    beforeEach(() => localStorage.removeItem(IMAGE_DETAILS_STORAGE_KEY));
+    afterEach(() => localStorage.removeItem(IMAGE_DETAILS_STORAGE_KEY));
+
+    it('leaves out the board while nothing is stored', () => {
+      expect(readStoredImageDetailExclusions()).toEqual(['board']);
+    });
+
+    it('reads a stored empty list as every row', () => {
+      storeImageDetailExclusions([]);
+      expect(JSON.parse(localStorage.getItem(IMAGE_DETAILS_STORAGE_KEY)!)).toEqual({ version: 1, excluded: [] });
+      expect(readStoredImageDetailExclusions()).toEqual([]);
+    });
+
+    it('round-trips a selection, normalized', () => {
+      storeImageDetailExclusions(['prompt', ' started ', 'prompt', '']);
+      expect(readStoredImageDetailExclusions()).toEqual(['prompt', 'started']);
+    });
+
+    it('falls back to the default for another version or unreadable JSON', () => {
+      localStorage.setItem(IMAGE_DETAILS_STORAGE_KEY, JSON.stringify({ version: 2, excluded: [] }));
+      expect(readStoredImageDetailExclusions()).toEqual(['board']);
+      localStorage.setItem(IMAGE_DETAILS_STORAGE_KEY, '{not json');
+      expect(readStoredImageDetailExclusions()).toEqual(['board']);
+    });
+
+    it('survives storage that throws', () => {
+      spyOn(localStorage, 'getItem').and.throwError('denied');
+      spyOn(localStorage, 'setItem').and.throwError('denied');
+      expect(readStoredImageDetailExclusions()).toEqual(['board']);
+      expect(() => storeImageDetailExclusions(['prompt'])).not.toThrow();
     });
   });
 

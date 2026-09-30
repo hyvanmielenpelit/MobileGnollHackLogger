@@ -16,7 +16,7 @@ import { BenchmarkBackgroundActivityService } from '../../services/benchmark-bac
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.component';
-import { KEY_FIGURES_STORAGE_KEY, keyFiguresImageIo } from './run-report-frame/key-figures-image';
+import { IMAGE_DETAILS_STORAGE_KEY, KEY_FIGURES_STORAGE_KEY, keyFiguresImageIo } from './run-report-frame/key-figures-image';
 import { PDFJS_LOADER } from '../../shared/pdf-viewer/pdfjs-loader';
 import { ReportDocumentsLauncherComponent } from './report-pack/report-documents-launcher.component';
 
@@ -44,6 +44,7 @@ describe('AdminBenchmarkComponent', () => {
       localStorage.removeItem(COMPARISON_LAUNCHER_KEY);
       localStorage.removeItem(RUN_REPORT_TAB_STORAGE_KEY);
       localStorage.removeItem(KEY_FIGURES_STORAGE_KEY);
+      localStorage.removeItem(IMAGE_DETAILS_STORAGE_KEY);
     } catch { /* private-browsing modes throw */ }
   }
 
@@ -10480,13 +10481,17 @@ describe('AdminBenchmarkComponent', () => {
       return fixture.nativeElement.querySelector('.question-detail-card') as HTMLElement;
     }
 
-    it('should read "Assessor: A + B" in the subtitle', () => {
+    it('should list both panel assessors with their badges in the header', () => {
       component.selectedRunDetail = buildPanelRun();
       fixture.detectChanges();
 
-      const subtitle = (fixture.nativeElement.querySelector('.benchmark-run-detail-dialog .dialog-subtitle') as HTMLElement)
-        .textContent!.replace(/\s+/g, ' ');
-      expect(subtitle).toContain('Assessor: GPT-5 Mini + Claude Opus 4');
+      const assessors = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog app-run-facts [data-fact="assessor"]') as HTMLElement;
+      expect(assessors.querySelector('dt')!.textContent!.trim()).toBe('Assessors');
+      const models = Array.from(assessors.querySelectorAll('.rr-fact-model'));
+      const text = (element: Element | null) => (element?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      expect(models.map(model => text(model.querySelector('.rr-fact-model-name')))).toEqual(['GPT-5 Mini', 'Claude Opus 4']);
+      expect(models.map(model => text(model.querySelector('.model-option-tag')))).toEqual(['Member A', 'Member B']);
+      expect(models.map(model => text(model.querySelector('app-provider-badge')))).toEqual(['OpenAI', 'Anthropic']);
     });
 
     it('should show the Panel tile and relabel the agreement tile for the reference reader', () => {
@@ -11948,7 +11953,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(chooser.open).toBeTrue();
         expect(chooser.matches(':modal')).toBeTrue();
         const allKeys = ['intelligence', 'speed', 'mean-time', 'holistic', 'answer-duration', 'wall-time', 'estimated-cost'];
-        const rows = Array.from(chooser.querySelectorAll('li')).map(li => li.getAttribute('data-figure'));
+        const rows = Array.from(chooser.querySelectorAll('li[data-figure]')).map(li => li.getAttribute('data-figure'));
         expect(rows).toEqual(allKeys);
         expect(textOf(chooser.querySelector('li[data-figure="mean-time"] label'))).toBe('Mean Time per Question — 1.0 s');
         expect(textOf(chooser.querySelector('[role="status"]'))).toBe('7 of 7 selected');
@@ -11991,8 +11996,8 @@ describe('AdminBenchmarkComponent', () => {
 
         choose.click();
         fixture.detectChanges();
-        expect(Array.from(chooser.querySelectorAll('li')).map(li => li.getAttribute('data-figure'))).toEqual(allKeys);
-        const unchecked = Array.from(chooser.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+        expect(Array.from(chooser.querySelectorAll('li[data-figure]')).map(li => li.getAttribute('data-figure'))).toEqual(allKeys);
+        const unchecked = Array.from(chooser.querySelectorAll<HTMLInputElement>('li[data-figure] input[type="checkbox"]'))
           .filter(box => !box.checked).map(box => box.id);
         expect(unchecked).toEqual(['kfch-speed', 'kfch-estimated-cost']);
       });
@@ -12063,13 +12068,90 @@ describe('AdminBenchmarkComponent', () => {
         restored.destroy();
       });
 
-      it('should describe the run in the image context as the dialog header does', () => {
-        const run = reportRun({ isPanelRun: true, coAssessorModelDisplayNameUsed: 'Second Assessor' });
+      const PROMPT_OPTIONS = JSON.stringify({ verboseMode: false, enableToolUse: true, hasGameSnapshot: true });
+      const BOARD_DELIVERY = [
+        { role: 'assessor', delivered: 18, total: 18, missingQuestions: [] },
+        { role: 'second reader', delivered: 13, total: 14, missingQuestions: [2] }
+      ];
+
+      it('should describe the run in the image context with the header facts, the board left out by default', () => {
+        const run = reportRun({
+          isPanelRun: true, coAssessorModelDisplayNameUsed: 'Second Assessor', coAssessorModelProviderUsed: 'Anthropic',
+          testedModelThinkingLevelUsed: 'high', candidatePromptOptionsJson: PROMPT_OPTIONS, boardDelivery: BOARD_DELIVERY
+        });
+        expect(component.imageDetailExclusions).toEqual(['board']);
         const context = component.keyFiguresContext(run);
         expect(context.title).toBe('Run #55 · Default Suite');
-        expect(context.lines[0]).toBe('Model: Test Model · Assessor: Test Assessor + Second Assessor');
-        expect(context.lines[1]).toMatch(/^Started \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC · Completed$/);
+        expect(context.facts.map(row => row.label)).toEqual(['Model', 'Assessors', 'Prompt', 'Scoring profile', 'Started']);
+        expect(context.facts.map(row => row.primary)).toEqual([true, true, false, false, false]);
+        expect(context.facts[0].runs.map(run => [run.kind, run.text])).toEqual([
+          ['text', 'Test Model'], ['badge', 'High'], ['badge', 'OpenAI']
+        ]);
+        const started = context.facts[4].runs;
+        expect(started[0].text).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC$/);
+        expect(started[1]).toEqual({ kind: 'badge', text: 'Completed', tone: 'success' });
         expect([context.runId, context.suiteName, context.modelName]).toEqual([55, 'Default Suite', 'Test Model']);
+      });
+
+      it('should leave out of the image the rows the image details exclude, while the header lists them all', () => {
+        const run = reportRun({ candidatePromptOptionsJson: PROMPT_OPTIONS, boardDelivery: BOARD_DELIVERY });
+        component.selectedRunDetail = run;
+        fixture.detectChanges();
+
+        component.imageDetailExclusions = ['prompt'];
+        const withoutPrompt = component.keyFiguresContext(run).facts.map(row => row.label);
+        expect(withoutPrompt).toEqual(['Model', 'Assessor', 'Scoring profile', 'Started', 'Board']);
+        const header = Array.from(dialog().querySelectorAll('app-run-facts [data-fact]')).map(fact => fact.getAttribute('data-fact'));
+        expect(header).toEqual(['model', 'assessor', 'prompt', 'profile', 'started', 'board']);
+
+        component.imageDetailExclusions = [];
+        const board = component.keyFiguresContext(run).facts.find(row => row.label === 'Board')!;
+        expect(board.runs.map(run => run.text)).toEqual([
+          'Assessor 18/18 · Second reader 13/14',
+          '· Synthesis: yes · Difficulty assessment: digest (no map)',
+          'Graded without the board — second reader: Q2'
+        ]);
+        expect(component.keyFiguresContext(run).facts.map(row => row.label))
+          .toEqual(['Model', 'Assessor', 'Prompt', 'Scoring profile', 'Started', 'Board']);
+      });
+
+      it('should build the header facts once per run object', () => {
+        component.selectedRunDetail = reportRun();
+        const first = component.selectedRunFacts;
+        expect(component.selectedRunFacts).toBe(first);
+        component.selectedRunDetail = reportRun();
+        expect(component.selectedRunFacts).not.toBe(first);
+      });
+
+      it('should offer the run settings as image details in the chooser, and remember a change at once', () => {
+        openReport(reportRun());
+        const choose = dialog().querySelector('#rr-figures-choose-btn') as HTMLButtonElement;
+        choose.click();
+        fixture.detectChanges();
+
+        const chooser = dialog().querySelector('app-key-figures-chooser dialog') as HTMLDialogElement;
+        const details = Array.from(chooser.querySelectorAll('li[data-detail]'));
+        expect(details.map(li => li.getAttribute('data-detail'))).toEqual(['model', 'assessor', 'profile', 'started']);
+        expect(textOf(chooser.querySelector('li[data-detail="assessor"] label'))).toBe('Assessor — Test Assessor');
+        expect(textOf(chooser.querySelector('.kfch-detail-count'))).toBe('4 of 4 selected');
+
+        (chooser.querySelector('#kfch-detail-profile') as HTMLInputElement).click();
+        fixture.detectChanges();
+        expect(component.imageDetailExclusions).toEqual(['board', 'profile']);
+        expect(JSON.parse(localStorage.getItem(IMAGE_DETAILS_STORAGE_KEY)!)).toEqual({ version: 1, excluded: ['board', 'profile'] });
+        expect(component.keyFigureExclusions).toEqual([]);
+        expect(component.keyFiguresContext(component.selectedRunDetail!).facts.map(row => row.label))
+          .toEqual(['Model', 'Assessor', 'Started']);
+      });
+
+      it('should store the image details the chooser reports', () => {
+        component.onImageDetailSelectionChange(['prompt', 'started']);
+        expect(component.imageDetailExclusions).toEqual(['prompt', 'started']);
+        expect(JSON.parse(localStorage.getItem(IMAGE_DETAILS_STORAGE_KEY)!)).toEqual({ version: 1, excluded: ['prompt', 'started'] });
+
+        const restored = TestBed.createComponent(AdminBenchmarkComponent);
+        expect(restored.componentInstance.imageDetailExclusions).toEqual(['prompt', 'started']);
+        restored.destroy();
       });
     });
   });

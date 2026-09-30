@@ -13,6 +13,13 @@
   }
 }
 
+// The hint paragraph sits between the two groups, so the second is marked by a class.
+.kfch-group-details {
+  margin-block-start: 16px;
+  padding-block-start: 16px;
+  border-block-start: 1px solid var(--border-glass);
+}
+
 .kfch-group-head {
   display: flex;
   align-items: baseline;

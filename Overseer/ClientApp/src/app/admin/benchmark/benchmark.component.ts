@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, OnChanges, AfterViewInit, SimpleChanges, Input, Output, EventEmitter, ChangeDetectorRef, ViewChild, ElementRef, inject } from '@angular/core';
-import { CommonModule, DecimalPipe, formatDate } from '@angular/common';
+import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
   AdminBenchmarkService,
@@ -115,9 +115,14 @@ import { RunReportFrameComponent } from './run-report-frame/run-report-frame.com
 import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from './run-report-frame/key-figure-card-actions.component';
 import {
   ImageContext, KeyFigureKey, KeyFiguresAction, exportKeyFiguresImage, readKeyFigureCells,
-  readStoredKeyFigureExclusions, storeKeyFigureExclusions
+  readStoredImageDetailExclusions, readStoredKeyFigureExclusions, statusImageTone, storeImageDetailExclusions,
+  storeKeyFigureExclusions, toImageFactRows
 } from './run-report-frame/key-figures-image';
 import { KeyFiguresChooserComponent } from './run-report-frame/key-figures-chooser.component';
+import { RunFactsComponent } from './run-report-frame/run-facts.component';
+import {
+  RunFactRow, buildRunFacts, candidatePromptParts, formatCandidatePrompt, runFactPlainText
+} from './run-report-frame/run-facts';
 import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
 import { audienceLabel } from './report-pack/report-document-format';
 import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/run-ai-reports.component';
@@ -348,7 +353,7 @@ interface BenchmarkRunSettings {
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
-    RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, BenchmarkDownloadCenterComponent,
+    RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent,
     RunAiReportsComponent, ReportDocumentsLauncherComponent
   ],
   templateUrl: './benchmark.component.html',
@@ -942,7 +947,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   keyFiguresExporting = false;
   /** The key figures the Summary panel and the whole-strip image leave out, remembered for every run report. */
   keyFigureExclusions: string[] = readStoredKeyFigureExclusions();
+  /** The run-fact rows the key-figures images leave out, remembered for every run report. */
+  imageDetailExclusions: string[] = readStoredImageDetailExclusions();
   @ViewChild(KeyFiguresChooserComponent) keyFiguresChooser?: KeyFiguresChooserComponent;
+  /** The run whose facts `selectedRunFacts` last built, and the rows it built. */
+  private runFactsSource: BenchmarkRunDetailDto | null = null;
+  private runFactsRows: RunFactRow[] = [];
   expandedQuestions = new Set<number>();
   expandedThoughts = new Set<number>();
   expandedArtifacts = new Set<number>();
@@ -6656,18 +6666,33 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   // --- Run report: key-figures images ---
 
-  /** What the images say about the run, from the fields the dialog header shows. */
+  /**
+   * The viewed run's settings as the dialog header lists them, rebuilt only when the run object is
+   * replaced so the OnPush header keeps the same rows between change-detection passes.
+   */
+  get selectedRunFacts(): RunFactRow[] {
+    const run = this.selectedRunDetail;
+    if (!run) {
+      return [];
+    }
+    if (run !== this.runFactsSource) {
+      this.runFactsSource = run;
+      this.runFactsRows = buildRunFacts(run, { gaps: this.boardDeliveryGaps(run) });
+    }
+    return this.runFactsRows;
+  }
+
+  /** What the images say about the run: the header's run facts, limited to the chosen image details. */
   keyFiguresContext(detail: BenchmarkRunDetailDto): ImageContext {
-    const assessor = detail.isPanelRun
-      ? `${detail.assessorModelDisplayNameUsed} + ${detail.coAssessorModelDisplayNameUsed}`
-      : detail.assessorModelDisplayNameUsed;
-    const prompt = this.candidatePromptSummaryOf(detail);
+    const rows = detail === this.selectedRunDetail
+      ? this.selectedRunFacts
+      : buildRunFacts(detail, { gaps: this.boardDeliveryGaps(detail) });
     return {
       title: `Run #${detail.id} · ${detail.suiteName}`,
-      lines: [
-        [`Model: ${detail.testedModelDisplayNameUsed}`, `Assessor: ${assessor}`, ...(prompt ? [`Prompt: ${prompt}`] : [])].join(' · '),
-        `Started ${formatDate(detail.startedAtUtc, 'yyyy-MM-dd HH:mm:ss', 'en-US')} UTC · ${this.formatStatusLabel(detail.status)}`
-      ],
+      facts: toImageFactRows(
+        rows.filter(row => !this.imageDetailExclusions.includes(row.key)),
+        { text: this.formatStatusLabel(detail.status), tone: statusImageTone(this.statusBadgeClass(detail.status)) }
+      ),
       runId: detail.id,
       overseerVersion: this.overseerBuildVersion,
       suiteName: detail.suiteName,
@@ -6733,13 +6758,24 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const root = this.runDetailDialog?.nativeElement.querySelector('.rr-figures');
     if (!this.selectedRunDetail || !root || !this.keyFiguresChooser) return;
     const figures = readKeyFigureCells(root).map(cell => ({ key: cell.key, label: cell.label, value: cell.value }));
-    this.keyFiguresChooser.open(figures, this.keyFigureExclusions, opener ?? null);
+    const details = {
+      rows: this.selectedRunFacts.map(row => ({ key: row.key, label: row.label, value: runFactPlainText(row) })),
+      excluded: this.imageDetailExclusions
+    };
+    this.keyFiguresChooser.open(figures, this.keyFigureExclusions, opener ?? null, details);
   }
 
   /** The chooser's live selection: filters the Summary cards and is remembered at once. */
   onKeyFigureSelectionChange(excluded: string[]): void {
     this.keyFigureExclusions = [...excluded];
     storeKeyFigureExclusions(this.keyFigureExclusions);
+    this.cdr.markForCheck();
+  }
+
+  /** The chooser's image details: the run settings the next export carries, remembered at once. */
+  onImageDetailSelectionChange(excluded: string[]): void {
+    this.imageDetailExclusions = [...excluded];
+    storeImageDetailExclusions(this.imageDetailExclusions);
     this.cdr.markForCheck();
   }
 
@@ -8676,16 +8712,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   candidatePromptSummaryOf(run?: BenchmarkRunDetailDto | BenchmarkRunSummaryDto | null): string | null {
-    if (!run?.candidatePromptOptionsJson) return null;
-    try {
-      const opts = JSON.parse(run.candidatePromptOptionsJson);
-      const style = opts.verboseMode ? 'detailed' : 'concise';
-      const tools = opts.enableToolUse !== false ? 'tools on' : 'tools off';
-      const snapshot = opts.hasGameSnapshot ? ' · snapshot' : '';
-      return `Gameplay Help · ${style} (${tools})${snapshot}`;
-    } catch {
-      return run.candidatePromptSourceUsed || 'ChatService.BuildSystemPrompt';
-    }
+    return formatCandidatePrompt(candidatePromptParts(run));
   }
 
   get candidatePromptSummary(): string | null {

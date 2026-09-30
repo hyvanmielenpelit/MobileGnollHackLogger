@@ -83,6 +83,10 @@ Harness-neutral, and the floor for any Overseer frontend work.
   stage list of the run, multi-run and AI report writing progress dialogs; `.is-done` / `.is-current`
   plus a visually hidden state word) and the **`.dc-ring`** ring spinner (`.dc-ring-track`,
   `.dc-ring-arc`; the Download Center and the PDF viewer), which stands still under reduced motion.
+- **`.config-badge`** is the neutral configuration badge (service tier, custom endpoint, prompt
+  options) beside `.thinking-badge`, `.reasoning-badge` and `.provider-badge`. The key-figures images
+  draw all four with the same colors (`BADGE_PALETTE` in `run-report-frame/key-figures-image.ts`);
+  change both together.
 - **`.settings-dialog.model-form-dialog`** is the near-full-screen frame of every dialog hosting
   `app-ai-model-form` (Admin config, My Models add and edit): `min(96rem, 100dvw - 32px)` by
   `100dvh - 32px`, 8 px inset on a phone, a flex column in which only the form body scrolls. It
@@ -331,7 +335,14 @@ To find specific popups, look in the corresponding component's `.html` template:
     §4f: *Re-score run*, *Re-run final synthesis*, *Retry failed assessments*, *Retry claim
     verification*, *Re-run failed questions*, a disabled one showing its reason), the icon-only **View
     game snapshot** and **Copy diagnostics**, and **Close**; the decorative GnollBench emblem
-    (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. `app-run-report-frame layout="single"`
+    (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. Under the title the header lists the
+    run's settings as `app-run-facts` (`run-report-frame/run-facts.*`, OnPush, fed the memoized
+    `selectedRunFacts` built by `buildRunFacts` in `run-facts.ts`): a `dl` of *Model*, *Assessor(s)*
+    (panel members tagged `A` / `B`), *Prompt*, *Scoring profile*, *Started* (`<time datetime>`) and
+    *Board*, every model badged by `runFactBadges` with the model pickers' rules (plus service tier and
+    *Custom endpoint* on the model under test, as `.config-badge`), two pairs per line from 64 rem of
+    container width, one below, stacked labels below 36 rem; no `title` attributes. The header always
+    lists every row. `app-run-report-frame layout="single"`
     keeps the header and a tab row (`[runReportTabs]`) in place and scrolls one body (`[runReportBody]`;
     `scrollBodyToTop()` on a tab change). The row is `.gh-tabs .gh-tabs-secondary`, *Run report
     sections*, ten tabs without icons from `runReportTabs` (`rr-tab-<key>` controlling
@@ -353,7 +364,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     question). **Choose figures** opens `app-key-figures-chooser` (`run-report-frame/`), a nested
     `<dialog class="gh-dialog">` *Choose key figures* with light dismiss: a checklist, *All* / *None*
     and a status count, a header close `.btn-icon-action` with an `interestfor` *Close* tooltip, and a
-    single footer **Done**. The selection is a live filter on both the Summary cards and the image:
+    single footer **Done**; below it a second checklist, *Image details*, one box per run-fact row with
+    its own *All* / *None* and count, emitting `detailSelectionChange` and stored as excluded row keys in
+    `localStorage['overseer.benchmark.runReport.imageDetails']` (`["board"]` while nothing is stored).
+    The selection is a live filter on both the Summary cards and the image:
     every change emits `selectionChange` at once, and Done, the close button, Escape and light dismiss
     only close. An unselected card, and the whole `.rr-figures` grid when nothing is selected, gets the
     `hidden` attribute — **never an `@if`**, because the chooser builds its list from, and the export
@@ -364,7 +378,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     card added later is included, and the header's one-click Copy and Download export the selection. The PNGs come from `run-report-frame/key-figures-image.ts`, which reads the rendered
     cards, filters them by the selection (footnotes from the included cells only) and composes them
     **square, or landscape as near square as possible, never portrait**, for any subset; the spec pins
-    the layouts. While loading or after a failed load there is no tab row.
+    the layouts. Above the cards the images draw the chosen run-fact rows through `toImageFactRows`
+    (badges atomic, colors from `BADGE_PALETTE`, the run status after *Started*); the card image draws
+    only the chosen *Model* and *Assessor(s)* rows. While loading or after a failed load there is no tab row.
     **No footer.** Escape and the header Close both close it, and closing always stops detail polling.
     Question cards have real `<button>` headers, filter toggles (*Critical errors*, *Disputed*,
     *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*. The **AI Reports**

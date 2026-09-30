@@ -1,0 +1,61 @@
+<!-- Every badge carries a visually hidden prefix, as in the model pickers: a bare HIGH means nothing read aloud. -->
+<dl class="rr-facts">
+  @for (row of rows; track row.key) {
+    <div class="rr-fact" [attr.data-fact]="row.key">
+      <dt>{{ row.label }}</dt>
+      <dd>
+        @switch (row.item.kind) {
+          @case ('models') {
+            @for (model of row.item.models; track $index) {
+              <span class="rr-fact-model">
+                @if (model.role) {
+                  <span class="model-option-tag"><span class="visually-hidden">Member </span>{{ model.role }}</span>
+                }
+                <span class="rr-fact-model-name">{{ model.name }}</span>
+                @for (badge of badgesOf(model); track badge.kind) {
+                  @switch (badge.kind) {
+                    @case ('provider') {
+                      <app-provider-badge [provider]="badge.provider" />
+                    }
+                    @case ('thinking') {
+                      <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                    }
+                    @case ('reasoning') {
+                      <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                    }
+                    @default {
+                      <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                    }
+                  }
+                }
+              </span>
+            }
+          }
+          @case ('prompt') {
+            <span class="rr-fact-prompt-name">{{ row.item.name }}</span>
+            @for (tag of row.item.tags; track tag) {
+              <span class="config-badge"><span class="visually-hidden">prompt option </span>{{ tag }}</span>
+            }
+          }
+          @case ('text') {
+            <span>{{ row.item.text }}</span>
+          }
+          @case ('time') {
+            <time [attr.datetime]="row.item.iso">{{ row.item.text }}</time>
+          }
+          @case ('board') {
+            <ul class="rr-fact-inline-list">
+              @for (figure of row.item.figures; track figure.role) {
+                <li>{{ figure.role }} {{ figure.delivered }}<span class="visually-hidden"> of </span><span aria-hidden="true">/</span>{{ figure.total }}</li>
+              }
+              <li class="text-muted">{{ row.item.note }}</li>
+            </ul>
+            @for (gap of row.item.gaps; track gap) {
+              <span class="rr-fact-warning"><strong>Graded without the board — {{ gap }}</strong></span>
+            }
+          }
+        }
+      </dd>
+    </div>
+  }
+</dl>

@@ -49,6 +49,36 @@
       </div>
       <p class="kfch-count" role="status">{{ countText }}</p>
       <p class="kfch-hint">Shown in the Summary and in the copied or downloaded image. Remembered for every run report; a figure a run does not have is left out.</p>
+      @if (detailRows.length > 0) {
+        <div class="kfch-group kfch-group-details" role="group" aria-labelledby="kfchDetailsCaption">
+          <div class="kfch-group-head">
+            <p class="kfch-caption" id="kfchDetailsCaption">Image details</p>
+            <span class="kfch-bulk">
+              <button type="button" class="btn-link kfch-details-all" (click)="selectAllDetails()">All<span class="visually-hidden"> image details</span></button>
+              <button type="button" class="btn-link kfch-details-none" (click)="selectNoDetails()">None<span class="visually-hidden"> of the image details</span></button>
+            </span>
+          </div>
+          <ul class="kfch-list" role="list">
+            @for (row of detailRows; track row.key) {
+              <li class="kfch-item" [attr.data-detail]="row.key">
+                <label class="checkbox-label align-start kfch-row">
+                  <input type="checkbox" [id]="'kfch-detail-' + row.key"
+                         [checked]="isDetailChecked(row.key)"
+                         (change)="toggleDetail(row.key, $event)">
+                  <span class="kfch-text">
+                    <span class="kfch-label">{{ row.label }}</span>
+                    @if (row.value) {
+                      <span class="kfch-value"> — {{ row.value }}</span>
+                    }
+                  </span>
+                </label>
+              </li>
+            }
+          </ul>
+        </div>
+        <p class="kfch-count kfch-detail-count" role="status">{{ detailCountText }}</p>
+        <p class="kfch-hint kfch-detail-hint">The run's settings above the figures in the copied or downloaded image. The dialog header always lists them all. Remembered for every run report.</p>
+      }
     </div>
     <div class="dialog-footer">
       <button type="button" class="btn-gh btn-gh-cancel kfch-done" (click)="done()">Done</button>

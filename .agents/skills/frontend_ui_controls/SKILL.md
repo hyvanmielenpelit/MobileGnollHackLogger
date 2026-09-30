@@ -383,6 +383,12 @@ cards as well as the image and applies each change at once; its footer is a sing
 (`btn-gh btn-gh-cancel`) and its header a close `.btn-icon-action` with a* Close *tooltip (§4.2). Copy
 Image, Download PNG and Cancel are gone; the head's icon-only Copy and Download export the selection.*
 
+*Changed 2026-09-30 (run report header settings): *Choose key figures* gains a second checklist,
+*Image details*, choosing the run settings the images carry. Its **All** / **None** are the same
+text-only `.btn-link`s as the figures group's, with visually hidden completions naming their group
+(*image details* / *of the image details*) so the two pairs have distinct names (§4.1). No new button
+class or glyph.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |

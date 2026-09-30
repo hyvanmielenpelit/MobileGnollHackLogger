@@ -5429,6 +5429,48 @@ footnotes from the included cards only; when the selection leaves none of a run'
 says *None of this run's key figures is selected; use Choose figures.* instead of making an image.
 Per-card exports are unaffected.
 
+### Run Report Header and Key-Figures Images: Run Settings (2026-09-30)
+
+*Presentation only: nothing is graded differently, and neither the harness version nor the scoring
+method version changes.*
+
+**The header.** Under the run report's title, the run's settings are a labeled definition list
+(`app-run-facts`, `run-report-frame/run-facts.*`), not a line of text. Its rows, in order: **Model**;
+**Assessor**, or **Assessors** on a panel run with member **A** and member **B** tagged as the
+Calibration tab's picker tags them; **Prompt**, only when the run recorded prompt options, as
+*Gameplay Help* with *concise* / *detailed*, *tools on* / *tools off* and *snapshot* as neutral badges;
+**Scoring profile** (*Default* when none is recorded); **Started**, a `<time>` in UTC; and **Board**,
+only for a run from harness 30 on that recorded board delivery. The reference reader, the claim
+verifier and the report writer stay in the **Configuration** tab.
+
+**Badges.** Every model carries the model pickers' badges by the pickers' rules (`runFactBadges`): the
+thinking level only when one is configured, the reasoning mode only when it is not `default` or
+`standard`, and the provider always. The model under test also shows its requested service tier when
+one was set and *Custom endpoint* when the run did not use the official endpoint, both as the neutral
+global `.config-badge`. Each badge has a visually hidden lead-in (*thinking level*, *reasoning mode*,
+*service tier*), and nothing in the list carries a `title` tooltip.
+
+**Widths.** The list lays out by its container's width: two label/value pairs per line from 64 rem,
+labels aligned per column through subgrid; one pair per line between 36 and 64 rem; below 36 rem each
+label stacks above its value.
+
+**Board.** The *Board delivered — …* sentence is now the *Board* row: one figure per recorded role
+(*Assessor 18/18 · Co-assessor 18/18 · Reference reader 18/18 · Claim verifier 16/16*, read aloud as
+*18 of 18*), the synthesis and difficulty-assessment note, and each *Graded without the board — …*
+warning in amber on its own line. The figures are unchanged, and so is the *Board delivered* line of
+the diagnostics text, which `BenchmarkReportBuilder.cs` shares.
+
+**The images.** The whole-strip image draws the same rows under its title, with the same badges in the
+same colors (`BADGE_PALETTE` in `key-figures-image.ts` mirrors `styles.scss`), and the run status as a
+badge after the start time. Which rows it carries is chosen in *Choose key figures* under a second
+checklist, **Image details**, with its own *All* / *None* and count; the default is every row but
+*Board*, which is grading diagnostics while the images are made to be shared. The dialog header always
+lists every row. The choice is stored as the **excluded** row keys (`model`, `assessor`, `prompt`,
+`profile`, `started`, `board`) in `localStorage['overseer.benchmark.runReport.imageDetails']`
+(`{ "version": 1, "excluded": [...] }`); while nothing is stored the exclusions are `["board"]`, and a
+stored empty list means every row. A card's own image carries only the chosen *Model* and
+*Assessor(s)* rows beside its emblem, widening toward 4 : 3 as before when they do not fit.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.

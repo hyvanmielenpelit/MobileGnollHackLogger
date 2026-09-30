@@ -1369,6 +1369,7 @@ dialog:not([open]),
 /* Model badges, shared by every view that names a model: the Run Benchmark selectors, the
    cross-model comparison table, the chat and models pickers and the admin configuration list.
    One definition is what keeps a provider or a thinking level looking the same across them. */
+/* The key-figures images draw these badges with the same colors (BADGE_PALETTE in admin/benchmark/run-report-frame/key-figures-image.ts); change both together. */
 .provider-badge {
   display: inline-block;
   font-size: 11px;
@@ -1399,6 +1400,17 @@ dialog:not([open]),
   padding: 1px 5px;
   border-radius: 4px;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Neutral configuration badge (service tier, custom endpoint, prompt options): a setting, not a capability claim, so it does not compete with the thinking and reasoning badges. */
+.config-badge {
+  font-size: 11px;
+  color: #aaa;
+  background: #252525;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #383838;
   white-space: nowrap;
 }
 

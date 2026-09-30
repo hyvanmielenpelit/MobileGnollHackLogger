@@ -1602,24 +1602,7 @@
             }
           </div>
           @if (selectedRunDetail) {
-            <p class="dialog-subtitle">
-              Model: <strong>{{ selectedRunDetail.testedModelDisplayNameUsed }}</strong> |
-              @if (selectedRunDetail.isPanelRun) {
-                Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }} + {{ selectedRunDetail.coAssessorModelDisplayNameUsed }}</strong> |
-              } @else {
-                Assessor: <strong>{{ selectedRunDetail.assessorModelDisplayNameUsed }}</strong> |
-              }
-              @if (candidatePromptSummaryOf(selectedRunDetail); as promptSummary) {
-                Prompt: <strong>{{ promptSummary }}</strong> |
-              }
-              Started: {{ selectedRunDetail.startedAtUtc | date:'yyyy-MM-dd HH:mm:ss' }} UTC
-            </p>
-            @if (boardDeliveryLine(selectedRunDetail); as boardDelivery) {
-              <p class="dialog-subtitle board-delivery-line">{{ boardDelivery }}</p>
-              @for (gap of boardDeliveryGaps(selectedRunDetail); track gap) {
-                <p class="dialog-subtitle"><strong>Graded without the board — {{ gap }}</strong></p>
-              }
-            }
+            <app-run-facts class="rr-run-facts" [rows]="selectedRunFacts" />
           }
         </div>
       </div>
@@ -3149,7 +3132,7 @@
     </app-run-report-frame>
   }
   <!-- Choose key figures: nested in the run report, opened by Choose figures. -->
-  <app-key-figures-chooser (selectionChange)="onKeyFigureSelectionChange($event)"></app-key-figures-chooser>
+  <app-key-figures-chooser (selectionChange)="onKeyFigureSelectionChange($event)" (detailSelectionChange)="onImageDetailSelectionChange($event)"></app-key-figures-chooser>
 </dialog>
 
 <!-- The Download Center of the run report's Downloads. -->
