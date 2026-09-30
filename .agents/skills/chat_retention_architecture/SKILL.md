@@ -228,6 +228,7 @@ Administrators can inspect live database storage metrics and trigger granular or
 | `POST` | `/api/admin/maintenance/prune-audit-log` | Deletes access journal rows older than `AuditLogRetentionDays` (or the request's value); `<= 0` returns 400. |
 | `POST` | `/api/admin/maintenance/prune-ai-error-log` | Deletes AI error rows dismissed more than the window ago; `<= 0` returns 400. Undismissed rows are never touched. |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Scans and deletes unreferenced disk folders in `ConversationsDataLocation`. |
+| `POST` | `/api/admin/maintenance/clear-report-charts` | Deletes every report chart image under `Benchmark:ReportPack:ChartsDataLocation` (numeric document folders and `.staging`; anything else is left alone and listed), trigger `Manual:ClearReportCharts`; the documents are kept. 400 when chart storage is not configured. Not part of the full pass. |
 | `GET` | `/api/admin/maintenance/history?take=20` | Recent `MaintenanceRunLog` rows, newest first; `take` clamped to 1..100. |
 | `POST` | `/api/admin/maintenance/send-report-email` | Sends an on-demand HTML diagnostic storage email to `ReportEmailAddress`. |
 

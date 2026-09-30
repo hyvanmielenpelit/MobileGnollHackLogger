@@ -2,6 +2,7 @@ namespace Overseer.Services.Benchmarking;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,19 +12,26 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 
 /// <summary>
-/// Lists, renders and deletes stored report-pack documents. Rendering is plain code over the stored
-/// row: this service holds no provider, key or agent loop, so no download can reach a model.
+/// Lists, renders and deletes stored report-pack documents, and stores their chart images through
+/// <see cref="BenchmarkReportChartStore"/>. Rendering is plain code over the stored row and files:
+/// this service holds no provider, key or agent loop, so no download can reach a model.
 /// </summary>
 public class BenchmarkReportRenderService
 {
     public const int MaxListSize = 500;
 
+    public const string StandaloneChartsRefusal =
+        "This document has no peers; charts are drawn only for documents that compare models.";
+
     private readonly ApplicationDbContext _db;
+    private readonly BenchmarkReportChartStore _charts;
     private readonly ILogger<BenchmarkReportRenderService> _logger;
 
-    public BenchmarkReportRenderService(ApplicationDbContext db, ILogger<BenchmarkReportRenderService> logger)
+    public BenchmarkReportRenderService(
+        ApplicationDbContext db, BenchmarkReportChartStore charts, ILogger<BenchmarkReportRenderService> logger)
     {
         _db = db;
+        _charts = charts;
         _logger = logger;
     }
 
@@ -119,6 +127,7 @@ public class BenchmarkReportRenderService
             item.PeersChangedSinceGeneration = AnyChanged(stored.Where(r => r.IsPeer), current);
             item.MissingRunIds = missing;
             FillComparison(item, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
+            FillCharts(item);
             return item;
         }).ToList();
     }
@@ -150,31 +159,70 @@ public class BenchmarkReportRenderService
             item.PricingBasis = request.PricingBasis.ToString();
         }
 
-        item.PeerCount = PeerCountOf(factsJson);
+        var (peerCount, peerLetters) = PeersOf(factsJson);
+        item.PeerCount = peerCount;
+        item.PeerLetters = peerLetters;
     }
 
-    /// <summary>The length of the stored fact sheet's <c>peers</c> array; 0 when absent or unreadable.</summary>
-    private static int PeerCountOf(string? factsJson)
+    /// <summary>The chart set's figures and settings hash, from its manifest alone; none when it has no charts.</summary>
+    private void FillCharts(BenchmarkReportDocumentListItemDto item)
     {
-        if (string.IsNullOrWhiteSpace(factsJson)) return 0;
+        var summary = _charts.ReadSummary(item.Id);
+        item.ChartCount = summary?.ChartCount ?? 0;
+        item.ChartFigureKeys = summary?.FigureKeys ?? new List<string>();
+        item.ChartSettingsHash = summary == null || string.IsNullOrEmpty(summary.SettingsHash) ? null : summary.SettingsHash;
+    }
+
+    /// <summary>
+    /// The length of the stored fact sheet's <c>peers</c> array, and each peer's entry key mapped to its
+    /// letter; 0 and empty when absent or unreadable.
+    /// </summary>
+    private static (int Count, Dictionary<string, string> Letters) PeersOf(string? factsJson)
+    {
+        var letters = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(factsJson)) return (0, letters);
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(factsJson);
-            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return 0;
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object) return (0, letters);
             foreach (var property in doc.RootElement.EnumerateObject())
             {
                 if (string.Equals(property.Name, "peers", StringComparison.OrdinalIgnoreCase)
                     && property.Value.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
-                    return property.Value.GetArrayLength();
+                    foreach (var peer in property.Value.EnumerateArray())
+                    {
+                        string? entryKey = StringProperty(peer, "entryKey");
+                        string? letter = StringProperty(peer, "letter");
+                        if (!string.IsNullOrEmpty(entryKey) && !string.IsNullOrEmpty(letter))
+                        {
+                            letters.TryAdd(entryKey, letter);
+                        }
+                    }
+                    return (property.Value.GetArrayLength(), letters);
                 }
             }
-            return 0;
+            return (0, letters);
         }
         catch (System.Text.Json.JsonException)
         {
-            return 0;
+            return (0, new Dictionary<string, string>(StringComparer.Ordinal));
         }
+    }
+
+    /// <summary>A string property of a JSON object, its name matched ignoring case; null when absent or not a string.</summary>
+    private static string? StringProperty(System.Text.Json.JsonElement element, string name)
+    {
+        if (element.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)
+                && property.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                return property.Value.GetString();
+            }
+        }
+        return null;
     }
 
     public async Task<BenchmarkReportDocumentDetailDto?> GetAsync(long id, CancellationToken ct)
@@ -208,6 +256,7 @@ public class BenchmarkReportRenderService
             d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
             d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd);
         FillComparison(dto, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
+        FillCharts(dto);
         return dto;
     }
 
@@ -244,7 +293,82 @@ public class BenchmarkReportRenderService
         return (BenchmarkReportPackRenderer.Render(d, options), d, false, null);
     }
 
-    public Task<bool> DeleteAsync(long id, CancellationToken ct) => DeleteDocumentAsync(_db, id, ct);
+    /// <summary>
+    /// Removes a stored document as <see cref="DeleteDocumentAsync"/> does, then its chart folder. A
+    /// folder that cannot be removed is logged and left for the chart storage maintenance to clear.
+    /// </summary>
+    public async Task<bool> DeleteAsync(long id, CancellationToken ct)
+    {
+        if (!await DeleteDocumentAsync(_db, id, ct)) return false;
+
+        if (_charts.IsConfigured)
+        {
+            try
+            {
+                await _charts.DeleteChartsAsync(id, ct);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ChartStoreException)
+            {
+                _logger.LogWarning(ex, "The charts of deleted report document {DocumentId} could not be removed.", id);
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Replaces a document's whole chart set. NotFound for an unknown id; a refusal for a stand-alone
+    /// document, for chart storage that is not configured and for any upload
+    /// <see cref="BenchmarkReportChartStore.ValidateCharts"/> refuses. Every chart is checked before
+    /// anything is written.
+    /// </summary>
+    public async Task<(ReportDocumentChartsSummaryDto? Summary, bool NotFound, string? Refusal)> SetChartsAsync(
+        long documentId, PutReportDocumentChartsRequest? request, CancellationToken ct)
+    {
+        var d = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(x => x.Id == documentId)
+            .Select(x => new { x.FactsJson })
+            .FirstOrDefaultAsync(ct);
+        if (d == null) return (null, true, null);
+
+        if (PeersOf(d.FactsJson).Count == 0) return (null, false, StandaloneChartsRefusal);
+        if (!_charts.IsConfigured) return (null, false, BenchmarkReportChartStore.NotConfiguredMessage);
+
+        try
+        {
+            var validated = BenchmarkReportChartStore.ValidateCharts(request?.Charts);
+            return (await _charts.SetChartsAsync(documentId, validated, ct), false, null);
+        }
+        catch (ChartStoreException ex)
+        {
+            return (null, false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Deletes a document's charts; false for an unknown id. With chart storage not configured there is
+    /// nothing to delete.
+    /// </summary>
+    public async Task<bool> DeleteChartsAsync(long documentId, CancellationToken ct)
+    {
+        bool exists = await _db.BenchmarkReportDocuments.AsNoTracking().IgnoreAutoIncludes().AnyAsync(x => x.Id == documentId, ct);
+        if (!exists) return false;
+
+        if (_charts.IsConfigured)
+        {
+            await _charts.DeleteChartsAsync(documentId, ct);
+        }
+        return true;
+    }
+
+    /// <summary>A document's stored charts in one peer naming, for a PDF or Word render; empty when it has none.</summary>
+    public Task<IReadOnlyList<BenchmarkReportRenderChart>> LoadRenderChartsAsync(
+        long documentId, BenchmarkReportPeerNaming naming, CancellationToken ct)
+        => _charts.LoadAsync(
+            documentId,
+            naming == BenchmarkReportPeerNaming.Anonymized ? BenchmarkReportChartStore.Anonymized : BenchmarkReportChartStore.Named,
+            ct);
 
     /// <summary>
     /// Removes a stored document; false for an unknown id. Deleting a run's own run-completion

@@ -29,6 +29,7 @@ namespace Overseer.Tests.Helpers
                     // Shared secret SessionController.Create requires of the game client.
                     { "AntiForgeryToken", "test-antiforgery-secret" },
                     { "ConversationsDataLocation", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OverseerFactoryConversations") },
+                    { "Benchmark:ReportPack:ChartsDataLocation", System.IO.Path.Combine(System.IO.Path.GetTempPath(), "OverseerFactoryCharts_" + System.Guid.NewGuid()) },
                     // The test host never reports to Sentry; an empty DSN disables the SDK.
                     { "SentryDSN", "" }
                 });

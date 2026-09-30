@@ -21,9 +21,10 @@
       </p>
     </div>
     <!-- Disabled mid-export: tearing the DOM out from under a running export would leave a
-         detached chart and a half-written batch. The reason is in the export toast. -->
+         detached chart and a half-written batch. The reason is in the export toast. Disabled too
+         while charts are drawn and uploaded for the documents. -->
     <button type="button" class="btn-icon-action" aria-label="Close cross-model comparison"
-            [disabled]="exporting" (click)="closeRequested.emit()">
+            [disabled]="closeBlocked" (click)="closeRequested.emit()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 20px; height: 20px;">
         <line x1="18" y1="6" x2="6" y2="18"></line>
         <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -44,13 +45,13 @@
          aria-label="Model comparison steps">
       @for (wizardStep of steps; track wizardStep; let i = $index) {
         <!-- aria-disabled, never disabled: a disabled tab leaves the focus order and hides the fact
-             that the step exists at all. The reason it cannot be opened is the footer's text. -->
+             that the step exists at all. The reason it cannot be opened is its description. -->
         <button type="button" role="tab" class="gh-tab"
                 [id]="'mc-step-tab-' + wizardStep"
                 [attr.aria-controls]="'mc-step-panel-' + wizardStep"
                 [attr.aria-selected]="step === wizardStep"
                 [attr.aria-disabled]="!isStepReachable(wizardStep)"
-                [attr.aria-describedby]="isStepReachable(wizardStep) ? null : 'mc-next-blocked'"
+                [attr.aria-describedby]="isStepReachable(wizardStep) ? null : 'mc-step-blocked-' + wizardStep"
                 [attr.tabindex]="step === wizardStep ? 0 : -1"
                 (keydown)="onStepKeydown($event, i)"
                 (click)="goToStep(wizardStep)">
@@ -58,8 +59,13 @@
         </button>
       }
     </div>
+    @for (wizardStep of steps; track wizardStep) {
+      @if (stepBlockedReason(wizardStep); as reason) {
+        <span class="visually-hidden" [id]="'mc-step-blocked-' + wizardStep">{{ reason }}</span>
+      }
+    }
 
-    <!-- About, Reports and Recompute, on step 2 only: they concern the computed comparison, not the sources. -->
+    <!-- About and Recompute, on step 2 only: they concern the computed comparison's charts and table. -->
     @if (step === 2 && comparison) {
       <div class="mc-wizard-meta">
         <!-- The badge counts the caveats inside, so they are never silently hidden behind the button. -->
@@ -75,14 +81,6 @@
           @if (aboutNoteCount > 0) {
             <span class="mc-badge mc-about-count">{{ aboutNoteCount }}<span class="visually-hidden"> {{ aboutNoteCount === 1 ? 'note' : 'notes' }}</span></span>
           }
-        </button>
-        <button type="button" class="btn-ghost mc-reports-trigger" id="mc-reports-trigger" (click)="openReports()">
-          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-          </svg>
-          Reports<span class="visually-hidden"> on this comparison</span>
         </button>
         <button type="button" class="action-btn mc-recompute" (click)="onRefresh()"
                 aria-label="Recompute the comparison"
@@ -1600,6 +1598,41 @@
 
       </div>
     }
+
+    <!--
+      STEPS 3 AND 4 ARE CREATED ON THE FIRST VISIT AND THEN HIDDEN, NEVER DESTROYED.
+
+      Their panels hold what a step change must not lose: step 3's form and its running job's card
+      and polling, step 4's table page, filters and selection. The wizard is mount-once, so they
+      live until the page does.
+    -->
+    @if (visited3) {
+      <div class="mc-step mc-step--reports" role="tabpanel" tabindex="0"
+           id="mc-step-panel-3" aria-labelledby="mc-step-tab-3" [hidden]="step !== 3">
+        <app-report-pack-panel [context]="reportPackContext"
+                               [chartSelection]="chartSelection"
+                               [chartsAvailable]="chartsAvailable"
+                               [chartAdvisory]="chartAdvisory"
+                               [chartStorageMissing]="chartStorageMissing"
+                               [chartStatus]="chartStatus"
+                               (graderGuideRequested)="onReportsGraderGuideRequested()"
+                               (documentWritten)="onReportDocumentWritten($event)"
+                               (jobFinished)="onReportJobFinished()"
+                               (documentsRequested)="onReportDocumentsRequested()"
+                               (chartSelectionChange)="onChartSelectionChange($event)"
+                               (chartRetryRequested)="onChartRetryRequested($event)"></app-report-pack-panel>
+      </div>
+    }
+
+    @if (visited4) {
+      <div class="mc-step mc-step--documents" role="tabpanel" tabindex="0"
+           id="mc-step-panel-4" aria-labelledby="mc-step-tab-4" [hidden]="step !== 4">
+        <app-download-center-panel idPrefix="mc-dc"
+                                   [context]="documentsContext"
+                                   [reloadToken]="documentsReloadToken"
+                                   [chartActions]="documentChartActions"></app-download-center-panel>
+      </div>
+    }
   </div>
 
   <!--
@@ -1727,7 +1760,8 @@
     <!-- aria-disabled rather than disabled, so the reason stays reachable: a disabled button
          cannot be focused, and the reader would be left guessing why Next does nothing.
          Genuinely disabled while an export is running: step 2 is the only one that can start
-         one, and leaving it mid-write is what the guard is for.
+         one, and leaving it mid-write is what the guard is for. On step 4, where it is Close, also
+         while charts are drawn and uploaded.
          While the comparison is being computed it carries the spinner and aria-busy, and stays
          aria-disabled for the same reason it is at every other blocked moment. -->
     <div class="mc-wizard-nav-actions">
@@ -1738,7 +1772,7 @@
       <button #nextButton type="button" class="btn-gh mc-wizard-next"
               [attr.aria-disabled]="!canGoNext"
               [attr.aria-busy]="comparing ? 'true' : null"
-              [disabled]="exporting"
+              [disabled]="exporting || (step === 4 && chartsPublishing)"
               aria-describedby="mc-next-blocked"
               (click)="nextStep()">
         @if (comparing) {
@@ -1867,13 +1901,6 @@
       <button type="button" class="btn-gh btn-gh-cancel" (click)="aboutDialog.close()">Close</button>
     </div>
   </dialog>
-
-  <!-- REPORT PACKS: created on opening and destroyed on closing, outside every step panel. -->
-  @if (reportsOpen) {
-    <app-benchmark-report-pack-dialog #reportPack
-                                      (closed)="onReportsClosed()"
-                                      (graderGuideRequested)="onReportsGraderGuideRequested()" />
-  }
 
   <!-- The export outcome, as a toast. Always in the DOM, so its live region exists before it first speaks. -->
   <app-toast [notice]="exportNotice" (dismissed)="clearExportNotice()"></app-toast>

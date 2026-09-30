@@ -711,6 +711,25 @@
   container: mc-fig / inline-size;
 }
 
+/* Step 3: the Report Pack panel fills the step, which scrolls whatever the panel does not. */
+.mc-step--reports > app-report-pack-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Step 4: the Download Center panel fills the step edge to edge; it scrolls its own body and pins
+   its footer. */
+.mc-step--documents {
+  overflow: hidden;
+  padding: 0;
+  gap: 0;
+
+  > app-download-center-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+
 /* The step-1 notices, in their own labelled strip between the step panel and the navigation.
    Not sticky: as a flex item of the wizard column it is already pinned, and the step panel
    above it shrinks by exactly its height, which is what keeps it from covering a row.

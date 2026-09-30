@@ -993,6 +993,208 @@ public class BenchmarkReportFactsTests
         Assert.True(lower < mean && mean < upper);
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Printed differences, per-question spread, the paired result and the peers' runs
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void DimensionAndBandDifferences_PrintTheDifferenceOfThePrintedWholeNumbers_AndKeepTheUnroundedValue()
+    {
+        // The subject averages 67.67 (printed 68), the peer 57.33 (printed 57): the printed difference is +11, not +10.
+        var subject = Run(1, "OpenAI", "subject",
+            new AnswerSpec(1, 1, 1, 68, 60), new AnswerSpec(2, 2, 1, 68, 60), new AnswerSpec(3, 3, 1, 67, 60));
+        var peer = Run(2, "Google", "peer",
+            new AnswerSpec(1, 1, 1, 57, 60), new AnswerSpec(2, 2, 1, 57, 60), new AnswerSpec(3, 3, 1, 58, 60));
+        var comparison = Comparison(
+            Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 68),
+            Entry("run:2", new long[] { 2 }, "Peer", "Google", 57));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", subject, peer));
+
+        Assert.Equal("68", FactOf(sheet, "dimension.accuracy").Display);
+        Assert.Equal("57", FactOf(sheet, "dimension.accuracy.peerMean").Display);
+        var difference = FactOf(sheet, "dimension.accuracy.difference");
+        Assert.Equal("+11", difference.Display);
+        Assert.Equal(203.0 / 3.0 - 172.0 / 3.0, difference.Value!.GetValue<double>(), 9);
+
+        Assert.Equal("68", FactOf(sheet, "band.intermediate.score").Display);
+        Assert.Equal("57", FactOf(sheet, "band.intermediate.peerMean").Display);
+        Assert.Equal("+11", FactOf(sheet, "band.intermediate.difference").Display);
+    }
+
+    [Theory]
+    [InlineData(67.67, 57.33, "+11")]
+    [InlineData(80.0, 81.4, "-1")]
+    [InlineData(57.5, 57.4, "+1")]
+    [InlineData(-0.4, 0.4, "0")]
+    [InlineData(50.0, 50.0, "0")]
+    public void WholeDifference_IsTheDifferenceOfTheWholeNumbers(double value, double reference, string expected)
+    {
+        Assert.Equal(expected, BenchmarkReportFormat.WholeDifference(value, reference));
+    }
+
+    [Fact]
+    public void PerQuestionFigures_CarryThePeersSpread_AndHowManyPeersScoredClearlyHigher()
+    {
+        var subject = RunScoring(1, "OpenAI", 50, 90, 70, 40);
+        var peerA = RunScoring(2, "Google", 80, 85, 70);
+        var peerB = RunScoring(3, "Anthropic", 56, 95, 76);
+        var peerC = RunScoring(4, "xAI", 55, 60, 90);
+        var comparison = Comparison(
+            Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 62),
+            Entry("run:2", new long[] { 2 }, "Peer A", "Google", 78),
+            Entry("run:3", new long[] { 3 }, "Peer B", "Anthropic", 76),
+            Entry("run:4", new long[] { 4 }, "Peer C", "xAI", 68));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", subject, peerA, peerB, peerC));
+
+        // More than five points above the subject counts; exactly five does not.
+        var q1 = sheet.Questions[0];
+        Assert.Equal(55, q1.PeerMin);
+        Assert.Equal(80, q1.PeerMax);
+        Assert.Equal(2, q1.PeersAbove);
+        Assert.Equal(3, q1.PeerCount);
+
+        var q2 = sheet.Questions[1];
+        Assert.Equal(60, q2.PeerMin);
+        Assert.Equal(95, q2.PeerMax);
+        Assert.Equal(0, q2.PeersAbove);
+
+        var q3 = sheet.Questions[2];
+        Assert.Equal(70, q3.PeerMin);
+        Assert.Equal(90, q3.PeerMax);
+        Assert.Equal(2, q3.PeersAbove);
+
+        // No peer answered question 4.
+        var q4 = sheet.Questions[3];
+        Assert.Null(q4.PeerMin);
+        Assert.Null(q4.PeerMax);
+        Assert.Equal(0, q4.PeersAbove);
+        Assert.Equal(0, q4.PeerCount);
+
+        Assert.Equal(5.0, BenchmarkReportFacts.PeerAboveMarginPoints);
+        Assert.Equal("peers: min 55, max 80, 2 of 3 scored clearly higher", BenchmarkReportPackPrompt.PeerSpread(q1));
+    }
+
+    [Fact]
+    public void ThePairedExcludesZeroFact_IsTrue_WhenThePrintedPairedIntervalLiesOnOneSideOfZero()
+    {
+        var subject = RunScoring(1, "OpenAI", 60, 70, 80, 90, 55);
+        var peer = RunScoring(2, "Google", 65, 75, 85, 95, 60);
+        var comparison = Comparison(
+            Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 70),
+            Entry("run:2", new long[] { 2 }, "Peer", "Google", 75));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", subject, peer));
+
+        var fact = FactOf(sheet, "peer.A.pairedExcludesZero");
+        Assert.True(fact.Available);
+        Assert.True(fact.Value!.GetValue<bool>());
+        Assert.Equal(BenchmarkReportFacts.PairedExcludesZeroDisplay, fact.Display);
+        Assert.Equal("the paired interval excludes zero", fact.Display);
+        Assert.True(BenchmarkReportPackPrompt.IsTrue(fact));
+        Assert.True(BenchmarkReportFacts.IsPeerFact(fact.Key));
+    }
+
+    [Fact]
+    public void ThePairedExcludesZeroFact_IsFalse_WhenThePairedIntervalIncludesZero()
+    {
+        // Differences 10, 0, 10, 10, -10 and 0: about one resample mean in eleven is negative.
+        var subject = RunScoring(1, "OpenAI", 80, 70, 60, 90, 50, 40);
+        var peer = RunScoring(2, "Google", 70, 70, 50, 80, 60, 40);
+        var comparison = Comparison(
+            Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 65, 60, 70),
+            Entry("run:2", new long[] { 2 }, "Peer", "Google", 62, 57, 67));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", subject, peer));
+
+        var paired = Assert.Single(sheet.PairedDifferences);
+        Assert.True(paired.Lower < 0 && paired.Upper > 0);
+        var fact = FactOf(sheet, "peer.A.pairedExcludesZero");
+        Assert.True(fact.Available);
+        Assert.False(fact.Value!.GetValue<bool>());
+        Assert.Equal("the paired interval includes zero", fact.Display);
+        Assert.False(BenchmarkReportPackPrompt.IsTrue(fact));
+    }
+
+    [Fact]
+    public void ThePairedExcludesZeroFact_IsUnavailable_WithThePairedDifference()
+    {
+        var subject = RunScoring(1, "OpenAI", 80, 70, 60, 90);
+        var peer = RunScoring(2, "Google", 70, 70, 50, 80);
+        var comparison = Comparison(
+            Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 75),
+            Entry("run:2", new long[] { 2 }, "Peer", "Google", 68));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", subject, peer));
+
+        var fact = FactOf(sheet, "peer.A.pairedExcludesZero");
+        Assert.False(fact.Available);
+        Assert.Equal(BenchmarkReportFacts.NotAvailable, fact.Display);
+        Assert.Equal(FactOf(sheet, "peer.A.pairedDifference").UnavailableReason, fact.UnavailableReason);
+    }
+
+    [Theory]
+    [InlineData(0.06, 3.0, true)]
+    [InlineData(-3.0, -0.06, true)]
+    [InlineData(-1.0, 2.0, false)]
+    [InlineData(-0.04, 4.0, false)]
+    [InlineData(-4.0, -0.04, false)]
+    [InlineData(0.0, 0.0, false)]
+    public void PairedIntervalExcludesZero_ReadsThePrintedBounds(double lower, double upper, bool expected)
+    {
+        Assert.Equal(expected, BenchmarkReportFacts.PairedIntervalExcludesZero(lower, upper));
+    }
+
+    [Fact]
+    public void ThePeersRuns_AreOneClause_WhetherTheyAgreeOrDiffer()
+    {
+        var comparison = Comparison(
+            Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 77, 83),
+            Entry("run:2", new long[] { 2 }, "Above", "Google", 86, 82, 90),
+            Entry("group:7", new long[] { 4, 5, 6 }, "Group", "xAI", 40));
+
+        var mixed = BuildSheet(Input(comparison, "run:1",
+            SimpleRun(1, "OpenAI"), SimpleRun(2, "Google"), SimpleRun(4, "xAI"), SimpleRun(5, "xAI"), SimpleRun(6, "xAI")));
+
+        var fact = FactOf(mixed, "comparison.peerRuns");
+        Assert.Equal("peers have 1 to 3 runs", fact.Display);
+        Assert.Equal(3, fact.Value!.GetValue<int>());
+        Assert.True(BenchmarkReportFacts.IsPeerFact("comparison.peerRuns"));
+
+        var same = BuildSheet(Input(
+            Comparison(
+                Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80),
+                Entry("run:2", new long[] { 2 }, "One", "Google", 70),
+                Entry("run:3", new long[] { 3 }, "Two", "Anthropic", 60)),
+            "run:1", SimpleRun(1, "OpenAI"), SimpleRun(2, "Google"), SimpleRun(3, "Anthropic")));
+        Assert.Equal("every peer has 1 run", FactOf(same, "comparison.peerRuns").Display);
+
+        Assert.Equal("every peer has 2 runs", BenchmarkReportFacts.PeerRunsSentence(new[] { 2, 2 }));
+        Assert.Equal("peers have 2 to 5 runs", BenchmarkReportFacts.PeerRunsSentence(new[] { 5, 2, 3 }));
+    }
+
+    [Fact]
+    public void ThePeersRuns_AreWithheldOnAStandaloneSheet()
+    {
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+
+        var fact = FactOf(sheet, "comparison.peerRuns");
+        Assert.False(fact.Available);
+        Assert.Equal(BenchmarkReportFacts.StandaloneReason, fact.UnavailableReason);
+        Assert.Equal(BenchmarkReportFacts.NotAvailable, fact.Display);
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.EndsWith(".pairedExcludesZero", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheNewFacts_HaveLabels()
+    {
+        Assert.Equal("Runs per peer", BenchmarkReportFactLabels.Label("comparison.peerRuns"));
+        Assert.Equal("Paired interval against Model A relative to zero", BenchmarkReportFactLabels.Label("peer.A.pairedExcludesZero"));
+        Assert.True(BenchmarkReportFactLabels.TryLabel("comparison.peerRuns", out _));
+        Assert.True(BenchmarkReportFactLabels.TryLabel("peer.B.pairedExcludesZero", out _));
+    }
+
     [Fact]
     public void EachEntry_RecordsItsHarnessVersionAndRunDates()
     {

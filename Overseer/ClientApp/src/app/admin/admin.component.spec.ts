@@ -627,6 +627,135 @@ describe('AdminComponent', () => {
       expect(purgeSpy).toHaveBeenCalledWith(jasmine.objectContaining({ dryRun: true }));
       expect(component.lastMaintenanceResult?.isDryRun).toBeTrue();
     });
+
+    describe('report chart files', () => {
+      const chartMetrics = (overrides: Partial<DatabaseStorageMetrics> = {}): DatabaseStorageMetrics => ({
+        ...metrics(),
+        reportChartsConfigured: true, reportChartFolderCount: 3, reportChartFileCount: 12,
+        reportChartSizeBytes: 4718592, reportChartSizeMb: 4.5,
+        ...overrides
+      });
+
+      const openDatabaseTab = async (m: DatabaseStorageMetrics) => {
+        (adminService.getStorageMetrics as jasmine.Spy).and.returnValue(of(m));
+        component.selectTab('database');
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+      };
+
+      const chartStat = (): HTMLElement | null => fixture.nativeElement.querySelector('.report-charts-stat');
+
+      const clearButton = (): HTMLButtonElement =>
+        (Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
+          .find(b => (b.textContent ?? '').trim() === 'Clear Chart Files')!;
+
+      const tooltipText = (button: HTMLButtonElement): string | null => {
+        const id = button.getAttribute('interestfor');
+        const tip: HTMLElement | null = id ? fixture.nativeElement.querySelector('#' + id) : null;
+        return tip ? (tip.textContent ?? '').trim() : null;
+      };
+
+      it('shows the document, file and size counts when the folder is configured', async () => {
+        await openDatabaseTab(chartMetrics());
+
+        const text = (chartStat()!.textContent ?? '').replace(/\s+/g, ' ');
+        expect(text).toContain('Report Chart Files');
+        expect(text).toContain('3 documents · 12 files · 4.5 MB');
+      });
+
+      it('says the folder is not configured and names the setting', async () => {
+        await openDatabaseTab(chartMetrics({ reportChartsConfigured: false, reportChartFolderCount: 0, reportChartFileCount: 0, reportChartSizeMb: 0 }));
+
+        const text = (chartStat()!.textContent ?? '').replace(/\s+/g, ' ');
+        expect(text).toContain('Not configured (Benchmark:ReportPack:ChartsDataLocation)');
+      });
+
+      it('omits the line for a server that does not report chart storage', async () => {
+        await openDatabaseTab(metrics());
+
+        expect(chartStat()).toBeNull();
+      });
+
+      it('enables Clear Chart Files only when the folder is configured, has files and nothing is running', async () => {
+        await openDatabaseTab(chartMetrics());
+
+        let button = clearButton();
+        expect(button.matches('button.btn-gh.btn-danger[type="button"]')).toBeTrue();
+        expect(button.hasAttribute('title')).toBeFalse();
+        expect(button.hasAttribute('aria-disabled')).toBeFalse();
+        expect(button.hasAttribute('interestfor')).toBeFalse();
+
+        component.maintenanceLoading = true;
+        fixture.detectChanges();
+        button = clearButton();
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(tooltipText(button)).toBe('A maintenance task is running.');
+        component.maintenanceLoading = false;
+
+        component.storageMetrics = chartMetrics({ reportChartFileCount: 0, reportChartFolderCount: 0, reportChartSizeMb: 0 });
+        fixture.detectChanges();
+        button = clearButton();
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(tooltipText(button)).toBe('There are no chart files to clear.');
+
+        component.storageMetrics = chartMetrics({ reportChartsConfigured: false });
+        fixture.detectChanges();
+        button = clearButton();
+        expect(button.getAttribute('aria-disabled')).toBe('true');
+        expect(tooltipText(button)).toContain('Benchmark:ReportPack:ChartsDataLocation');
+      });
+
+      it('does nothing when the aria-disabled button is clicked', async () => {
+        const clearSpy = spyOn(adminService, 'clearReportCharts');
+        const confirmSpy = spyOn(component, 'openConfirmationModal');
+        await openDatabaseTab(chartMetrics({ reportChartFileCount: 0 }));
+
+        clearButton().click();
+
+        expect(clearSpy).not.toHaveBeenCalled();
+        expect(confirmSpy).not.toHaveBeenCalled();
+      });
+
+      it('runs a dry run without confirmation and reloads the metrics', () => {
+        const clearSpy = spyOn(adminService, 'clearReportCharts').and.returnValue(of(result(true)));
+        const confirmSpy = spyOn(component, 'openConfirmationModal');
+        const metricsSpy = adminService.getStorageMetrics as jasmine.Spy;
+        component.storageMetrics = chartMetrics();
+        metricsSpy.calls.reset();
+
+        component.maintenanceDryRun = true;
+        component.clearReportChartsNow();
+
+        expect(confirmSpy).not.toHaveBeenCalled();
+        expect(clearSpy).toHaveBeenCalledOnceWith({ dryRun: true });
+        expect(component.lastMaintenanceResult?.isDryRun).toBeTrue();
+        expect(metricsSpy).toHaveBeenCalledTimes(1);
+        component.closeMaintenanceRunDialog();
+      });
+
+      it('confirms a live run with the counts and sends dryRun false', () => {
+        const clearSpy = spyOn(adminService, 'clearReportCharts').and.returnValue(of(result(false)));
+        const confirmSpy = spyOn(component, 'openConfirmationModal')
+          .and.callFake((_title: string, _message: string, action: () => void) => action());
+        const metricsSpy = adminService.getStorageMetrics as jasmine.Spy;
+        component.storageMetrics = chartMetrics();
+        metricsSpy.calls.reset();
+
+        component.maintenanceDryRun = false;
+        component.clearReportChartsNow();
+
+        const [title, message, , button, buttonClass] = confirmSpy.calls.mostRecent().args;
+        expect(title).toBe('Clear Report Chart Files');
+        expect(message).toBe('Delete 12 chart files (4.5 MB) for 3 documents? This cannot be undone. ' +
+          'The documents stay; their charts can be added again from the Comparison Wizard.');
+        expect(button).toBe('Clear Chart Files');
+        expect(buttonClass).toBe('btn-gh btn-gh-delete');
+        expect(clearSpy).toHaveBeenCalledOnceWith({ dryRun: false });
+        expect(metricsSpy).toHaveBeenCalledTimes(1);
+        component.closeMaintenanceRunDialog();
+      });
+    });
   });
 
   describe('AI telemetry tab', () => {

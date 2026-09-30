@@ -389,6 +389,13 @@ export interface DatabaseStorageMetrics {
   diskAttachmentsSizeMb: number;
   diskAttachmentsFolderCount: number;
   diskAttachmentsFileCount: number;
+  /** Benchmark:ReportPack:ChartsDataLocation is set to an absolute folder. */
+  reportChartsConfigured?: boolean;
+  /** Report chart folders: one per document, plus the staging folder when present. */
+  reportChartFolderCount?: number;
+  reportChartFileCount?: number;
+  reportChartSizeBytes?: number;
+  reportChartSizeMb?: number;
   estimatedReclaimableMb: number;
   lastMaintenanceRunUtc?: string;
   statusLevel: 'Normal' | 'Warning' | 'Critical';
@@ -714,6 +721,11 @@ export class AdminService {
 
   sweepOrphans(request?: MaintenanceRequest): Observable<MaintenanceResult> {
     return this.http.post<MaintenanceResult>('/api/admin/maintenance/sweep-orphans', request || {});
+  }
+
+  /** Deletes every report chart image; the documents themselves stay. */
+  clearReportCharts(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/clear-report-charts', request || {});
   }
 
   /** Newest first; the server clamps page to at least 1 and pageSize to 1..1000. */

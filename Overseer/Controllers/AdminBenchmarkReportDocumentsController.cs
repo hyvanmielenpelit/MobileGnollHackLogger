@@ -1,6 +1,7 @@
 namespace Overseer.Controllers;
 
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -12,9 +13,9 @@ using Overseer.Services.Benchmarking.Pdf;
 using Overseer.Services.Benchmarking.Word;
 
 /// <summary>
-/// Stored report-pack documents: list, detail, render (Markdown, PDF or Word) and delete. Its only dependency is
-/// <see cref="BenchmarkReportRenderService"/>, which holds no provider, key or agent loop, so no
-/// action here can make a model call; a test pins the constructor.
+/// Stored report-pack documents: list, detail, render (Markdown, PDF or Word), delete, and their chart
+/// images. Its only dependency is <see cref="BenchmarkReportRenderService"/>, which holds no provider,
+/// key or agent loop, so no action here can make a model call; a test pins the constructor.
 /// </summary>
 [Route("api/admin/benchmark")]
 [Authorize(Policy = "AdminOnly")]
@@ -114,7 +115,8 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!), ct);
+        var charts = await _renderService.LoadRenderChartsAsync(id, options!.PeerNaming, ct);
+        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!, charts), ct);
         if (notFound) return NotFound();
         if (refusal != null) return BadRequest(new { error = refusal });
 
@@ -124,7 +126,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         }
 
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, pdfPaper);
-        byte[] pdf = await Task.Run(() => BenchmarkPdfRenderer.RenderMarkdown(markdown!, info, ct), ct);
+        byte[] pdf = await Task.Run(() => BenchmarkPdfRenderer.RenderMarkdown(markdown!, info, ct, charts), ct);
         string name = BenchmarkPdfFileNames.ForReportDocument(document!, options!);
 
         if (inline)
@@ -152,7 +154,8 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
             return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         }
 
-        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!), ct);
+        var charts = await _renderService.LoadRenderChartsAsync(id, options!.PeerNaming, ct);
+        var (markdown, document, notFound, refusal) = await _renderService.RenderWithDocumentAsync(id, ForNativeDocument(options!, charts), ct);
         if (notFound) return NotFound();
         if (refusal != null) return BadRequest(new { error = refusal });
 
@@ -162,7 +165,7 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         }
 
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document!, options!, wordPaper);
-        byte[] docx = await Task.Run(() => BenchmarkWordRenderer.RenderMarkdown(markdown!, info, ct), ct);
+        byte[] docx = await Task.Run(() => BenchmarkWordRenderer.RenderMarkdown(markdown!, info, ct, charts), ct);
 
         return File(docx, BenchmarkWordRenderer.ContentType, BenchmarkPdfFileNames.ForReportDocument(document!, options!, "docx"));
     }
@@ -170,6 +173,26 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
     [HttpDelete("report-documents/{id:long}")]
     public async Task<IActionResult> Delete(long id, CancellationToken ct)
         => await _renderService.DeleteAsync(id, ct) ? NoContent() : NotFound();
+
+    /// <summary>
+    /// Replaces the document's whole chart set with the uploaded PNGs, named and anonymized variants of
+    /// each figure. 200 with the stored set's summary; 400 for a document without peers, for chart
+    /// storage that is not configured and for any chart refused; 404 for an unknown document.
+    /// </summary>
+    [HttpPut("report-documents/{id:long}/charts")]
+    [RequestSizeLimit(40_000_000)]
+    public async Task<IActionResult> PutCharts(long id, [FromBody] PutReportDocumentChartsRequest? request, CancellationToken ct)
+    {
+        var (summary, notFound, refusal) = await _renderService.SetChartsAsync(id, request, ct);
+        if (notFound) return NotFound(new { error = "Report document not found." });
+        if (refusal != null) return BadRequest(new { error = refusal });
+        return Ok(summary);
+    }
+
+    /// <summary>Deletes the document's charts: 204, or 404 for an unknown document.</summary>
+    [HttpDelete("report-documents/{id:long}/charts")]
+    public async Task<IActionResult> DeleteCharts(long id, CancellationToken ct)
+        => await _renderService.DeleteChartsAsync(id, ct) ? NoContent() : NotFound();
 
     /// <summary>
     /// The disclosure (<c>summary</c>, <c>detailed</c>, <c>full</c>) and peer naming (<c>named</c>,
@@ -193,13 +216,17 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
 
     /// <summary>
     /// The options for a PDF or Word download, whose cover prints the stamp, the facts the front
-    /// matter lists and the document ID, version, writer and provenance the footer states.
+    /// matter lists and the document ID, version, writer and provenance the footer states. It leaves
+    /// out the fact sheet, and places a figure marker for each of <paramref name="charts"/>.
     /// </summary>
-    private static BenchmarkReportRenderOptions ForNativeDocument(BenchmarkReportRenderOptions options) => new()
+    private static BenchmarkReportRenderOptions ForNativeDocument(
+        BenchmarkReportRenderOptions options, IReadOnlyList<BenchmarkReportRenderChart> charts) => new()
     {
         Disclosure = options.Disclosure,
         PeerNaming = options.PeerNaming,
         IncludeFrontMatter = false,
-        IncludeDocumentFooter = false
+        IncludeDocumentFooter = false,
+        IncludeFactSheet = false,
+        Charts = charts
     };
 }

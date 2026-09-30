@@ -98,7 +98,11 @@ public sealed record BenchmarkPdfDocumentInfo
     // Builders, one per downloadable document
     // ---------------------------------------------------------------------------------------------
 
-    /// <summary>A stored report-pack document rendered at the given disclosure and peer naming.</summary>
+    /// <summary>
+    /// A stored report-pack document rendered at the given disclosure and peer naming. A document with
+    /// peers says so in its subject line, and its facts table names them under Compared with, as the
+    /// naming allows, and states the pricing basis.
+    /// </summary>
     public static BenchmarkPdfDocumentInfo ForReportDocument(
         BenchmarkReportDocument document, BenchmarkReportRenderOptions options, BenchmarkPdfPaper paper)
     {
@@ -109,12 +113,24 @@ public sealed record BenchmarkPdfDocumentInfo
         bool full = options.Disclosure == BenchmarkReportDisclosure.Full;
         var runIds = ParseRunIds(document.SubjectRunIdsJson);
         var sheet = ParseSheet(document.FactsJson);
+        bool compared = sheet != null && sheet.Peers.Count > 0;
 
         var facts = new List<BenchmarkPdfFact>
         {
             new("Document ID", Inv(document.Id)),
             new("Disclosure", options.Disclosure.ToString()),
-            new("Peers", PeersText(sheet, options.PeerNaming)),
+        };
+        if (compared)
+        {
+            facts.Add(new("Compared with", ComparedWithText(sheet!, options.PeerNaming)));
+            facts.Add(new("Pricing basis", BenchmarkReportPackRenderer.PricingBasisSummary(sheet!)));
+        }
+        else
+        {
+            facts.Add(new("Peers", PeersText(sheet, options.PeerNaming)));
+        }
+        facts.AddRange(new BenchmarkPdfFact[]
+        {
             new("Suite", document.SuiteName ?? string.Empty),
             new("Questions", QuestionsText(sheet)),
             new(runIds.Count == 1 ? "Run" : "Runs", runIds.Count == 0 ? "—" : string.Join(", ", runIds.Select(id => "#" + Inv(id)))),
@@ -122,7 +138,7 @@ public sealed record BenchmarkPdfDocumentInfo
             new("Generated format", "version " + Inv(document.ReportFormatVersion)),
             new("Writer", WriterText(document)),
             new("Provenance", ProvenanceText),
-        };
+        });
 
         return new BenchmarkPdfDocumentInfo
         {
@@ -130,7 +146,9 @@ public sealed record BenchmarkPdfDocumentInfo
             Title = string.IsNullOrWhiteSpace(document.Title)
                 ? audience + ": " + document.SubjectLabel
                 : BenchmarkReportRenderService.CurrentTitle(document.Audience, document.Title),
-            SubjectLine = SubjectLineOf(document.SuiteName, runIds),
+            SubjectLine = compared
+                ? ComparisonSubjectLine(document.SuiteName, document.SubjectKey, runIds, sheet!.Peers.Count)
+                : SubjectLineOf(document.SuiteName, runIds),
             Classification = full ? BenchmarkPdfClassification.Internal : BenchmarkPdfClassification.ProviderConfidential,
             ClassificationText = BenchmarkReportPackRenderer.Stamp(document.Audience, options.Disclosure),
             Facts = facts,
@@ -265,6 +283,49 @@ public sealed record BenchmarkPdfDocumentInfo
         if (sheet.Peers.Count == 0) return "none (stand-alone report)";
         return Inv(sheet.Peers.Count) + ", " + mode;
     }
+
+    /// <summary>
+    /// The peers of a comparison: named, their labels in letter order and the count, <c>Grok 5 and
+    /// Mistral Large 4 (2 models)</c>; anonymized, the count and letters, <c>4 models (A to D),
+    /// identities withheld</c>.
+    /// </summary>
+    private static string ComparedWithText(BenchmarkReportFactSheet sheet, BenchmarkReportPeerNaming naming)
+    {
+        var peers = sheet.Peers.OrderBy(p => p.Letter.Length).ThenBy(p => p.Letter, StringComparer.Ordinal).ToList();
+        string count = ModelCount(peers.Count);
+
+        if (naming == BenchmarkReportPeerNaming.Named)
+        {
+            return BenchmarkReportFormat.LetterList(peers.Select(p => p.Label).ToList()) + " (" + count + ")";
+        }
+
+        string letters = peers.Count switch
+        {
+            1 => peers[0].Letter,
+            2 => peers[0].Letter + " and " + peers[1].Letter,
+            _ => peers[0].Letter + " to " + peers[^1].Letter
+        };
+        return count + " (" + letters + "), " + (peers.Count == 1 ? "identity withheld" : "identities withheld");
+    }
+
+    /// <summary>
+    /// <c>Suite · run #68 · compared with 4 models</c>; <c>group #5</c> in place of the runs for a group
+    /// subject.
+    /// </summary>
+    private static string ComparisonSubjectLine(string? suiteName, string? subjectKey, IReadOnlyCollection<long> runIds, int peerCount)
+    {
+        const string groupPrefix = "group:";
+        string key = subjectKey ?? string.Empty;
+        string subject = key.StartsWith(groupPrefix, StringComparison.Ordinal) && key.Length > groupPrefix.Length
+                         && key[groupPrefix.Length..].All(char.IsAsciiDigit)
+            ? "group #" + key[groupPrefix.Length..]
+            : SubjectLineOf(null, runIds);
+
+        return string.Join(" · ", new[] { suiteName, subject, "compared with " + ModelCount(peerCount) }
+            .Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
+
+    private static string ModelCount(int count) => Inv(count) + (count == 1 ? " model" : " models");
 
     /// <summary>The questions of the subject's exam, from the sheet's <c>suite.questions</c>, else its question count.</summary>
     private static string QuestionsText(BenchmarkReportFactSheet? sheet)

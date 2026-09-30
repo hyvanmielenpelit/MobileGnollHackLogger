@@ -38,14 +38,15 @@ import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { safeFileName } from '../../../utils/download.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { audienceLabel, rememberedPdfPaper } from '../download-center/benchmark-download-center.component';
+import { rememberedPdfPaper } from '../download-center/benchmark-download-center.component';
 import { reportDisclosureInfo } from '../report-disclosure-guide';
 import {
+  audienceLabel,
   disclosureLabel,
   formatCostUsd,
   formatElapsed,
   statusLabel as reportDocumentStatusLabel
-} from '../report-pack/benchmark-report-pack-dialog.component';
+} from '../report-pack/report-document-format';
 import {
   ReportWriterCandidate,
   isSameProvider,

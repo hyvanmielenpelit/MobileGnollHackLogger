@@ -1547,14 +1547,150 @@ public class BenchmarkReportPackValidatorTests
         Assert.DoesNotContain(result.Notes, n => n.Dropped);
     }
 
-    [Fact]
-    public void TheWarningRules_AreTwelveToSeventeen()
+    // Rule 16 with a paired interval that excludes zero ------------------------------------------
+
+    /// <summary><see cref="OverlapSheet"/> with Model A's paired interval excluding zero and Model B's including it.</summary>
+    private static BenchmarkReportFactSheet PairedSheet()
     {
-        for (int rule = 1; rule <= 17; rule++)
+        var sheet = OverlapSheet();
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.A.pairedExcludesZero", Value = JsonValue.Create(true), Display = BenchmarkReportFacts.PairedExcludesZeroDisplay });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.B.pairedExcludesZero", Value = JsonValue.Create(false), Display = BenchmarkReportFacts.PairedIncludesZeroDisplay });
+        return sheet;
+    }
+
+    [Theory]
+    [InlineData("On the same questions {{peer:A}} scored higher than {{subject}} on average, and the paired interval excludes zero.")]
+    [InlineData("{{subject}} scored lower than {{peer:A}}; {{peer.A.pairedExcludesZero}}, not adjusted for comparing several models.")]
+    [InlineData("{{subject}} trails {{peer:A}} on the same questions, a paired interval excluding zero.")]
+    public void Rule16_APairedHedge_PassesForAPeerWhosePairedIntervalExcludesZero(string text)
+    {
+        Assert.Empty(ValidateMeaning(text, PairedSheet()));
+    }
+
+    [Fact]
+    public void Rule16_APairedHedge_DoesNotCoverAPeerWhosePairedIntervalIncludesZero()
+    {
+        var sheet = PairedSheet();
+        sheet.Facts.RemoveAll(f => f.Key == "peer.B.intervalOverlap");
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.B.intervalOverlap", Value = JsonValue.Create(true), Display = "its 95 % interval overlaps the subject's" });
+
+        var note = Assert.Single(ValidateMeaning("{{subject}} scored higher than {{peer:B}}, and the paired interval excludes zero.", sheet));
+
+        Assert.Equal(BenchmarkReportPackValidator.OverlapHedgeRule, note.Rule);
+        Assert.Contains("{{peer:B}}", note.Message);
+        Assert.Contains("order between them is not established", note.Message);
+    }
+
+    [Fact]
+    public void Rule16_AnUnhedgedRankingOfAPairedPeer_AsksForThePairedResult()
+    {
+        var note = Assert.Single(ValidateMeaning("{{subject}} scored lower than {{peer:A}} on item lore.", PairedSheet()));
+
+        Assert.Equal(16, note.Rule);
+        Assert.Contains("{{peer:A}}", note.Message);
+        Assert.Contains("the paired interval excludes zero", note.Message);
+        Assert.DoesNotContain("not established", note.Message);
+    }
+
+    [Fact]
+    public void Rule16_TheOverlapHedgeStillPassesForAPairedPeer()
+    {
+        Assert.Empty(ValidateMeaning("{{subject}} scored lower than {{peer:A}}, and their intervals overlap.", PairedSheet()));
+    }
+
+    // Rule 18 -----------------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("Use a rubric-coverage pass before answering.", "rubric")]
+    [InlineData("Add GnollHack-specific retrieval prioritization.", "retrieval")]
+    [InlineData("Add regression tests for branch layout and temple services.", "regression tests")]
+    [InlineData("Ground answers in the corpus before stating a rule.", "corpus")]
+    [InlineData("Follow the System Prompt more closely.", "system prompt")]
+    [InlineData("Read the tool guides before calling a tool.", "tool guides")]
+    [InlineData("Rebuild the search index for version-specific code.", "index")]
+    public void Rule18_AModelDeveloperRecommendation_AboutTheOverseer_AsksForRepair(string text, string term)
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Recommendations[0].Text = text;
+
+        var note = Assert.Single(Validate(Tr, output));
+
+        Assert.Equal(BenchmarkReportPackValidator.ModelDeveloperScopeRule, note.Rule);
+        Assert.Equal(18, note.Rule);
+        Assert.Equal("recommendations[0]", note.Location);
+        Assert.Contains("\"" + term + "\"", note.Message);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(18));
+    }
+
+    [Fact]
+    public void Rule18_KeepsTheText_AndRecordsItsNote()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Recommendations[0].Text = "Use a rubric-coverage pass before answering.";
+
+        var result = Drop(Tr, output);
+
+        Assert.False(result.Fatal);
+        Assert.Equal("Use a rubric-coverage pass before answering.", Assert.Single(result.Output.Recommendations).Text);
+        var note = Assert.Single(result.Notes);
+        Assert.Equal(18, note.Rule);
+        Assert.False(note.Dropped);
+    }
+
+    [Fact]
+    public void Rule18_DoesNotApplyToOtherTargets()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Ib);
+        output.Recommendations[0].Text = "Add regression tests and a retrieval check to the system prompt's rubric coverage.";
+        output.Recommendations.Add(new BenchmarkReportWriterRecommendation
+        {
+            For = BenchmarkReportSlots.TargetBenchmark,
+            Text = "Review the rubric of Q3.",
+            Evidence = { "R3" }
+        });
+
+        Assert.Equal(BenchmarkReportSlots.TargetOverseerChat, output.Recommendations[0].For);
+        Assert.Empty(Validate(Ib, output));
+    }
+
+    [Fact]
+    public void Rule18_AppliesToModelDevelopersInTheInternalBrief_AndIgnoresTokens()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Ib);
+        output.Recommendations.Add(new BenchmarkReportWriterRecommendation
+        {
+            For = BenchmarkReportSlots.TargetModelDevelopers,
+            Text = "Calibrate confidence on prayer rules; {{quality.index}} reflects the misses.",
+            Evidence = { "quality.index" }
+        });
+        Assert.Empty(Validate(Ib, output));
+
+        output.Recommendations[1].Text = "Calibrate confidence against the rubric.";
+        var note = Assert.Single(Validate(Ib, output));
+        Assert.Equal(18, note.Rule);
+        Assert.Equal("recommendations[1]", note.Location);
+    }
+
+    [Theory]
+    [InlineData("Check the board state before answering questions about item status.")]
+    [InlineData("Keep answers shorter where the question asks for a single fact.")]
+    [InlineData("Call a lookup tool before stating an item's weight.")]
+    public void Rule18_ModelLevelRecommendationsPass(string text)
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        output.Recommendations[0].Text = text;
+
+        Assert.Empty(Validate(Tr, output));
+    }
+
+    [Fact]
+    public void TheWarningRules_AreTwelveToEighteen()
+    {
+        for (int rule = 1; rule <= 18; rule++)
         {
             Assert.Equal(rule >= 12, BenchmarkReportPackValidator.IsWarningRule(rule));
         }
-        Assert.False(BenchmarkReportPackValidator.IsWarningRule(18));
+        Assert.False(BenchmarkReportPackValidator.IsWarningRule(19));
     }
 }
 
@@ -1661,6 +1797,22 @@ public class BenchmarkReportPackParserTests
         Assert.Equal(new[] { 1, 2 }, lead.Questions);
         Assert.Equal(new[] { 4, 0 }, output.QuestionTopics.Select(t => t.Question));
         Assert.Equal(2, Assert.Single(output.QuestionNotes).Question);
+    }
+
+    [Fact]
+    public void Parse_NormalizesEverySlotId_ComparisonAndLimitationsIncluded()
+    {
+        var result = BenchmarkReportPackParser.Parse(
+            "{\"headline\":\"H\",\"sections\":{\"Comparison\":\"c\",\"LIMITATIONS\":\"l\",\"ModelResult\":\"m\"}}");
+
+        Assert.True(result.Success);
+        var sections = result.Output!.Sections;
+        Assert.Equal("c", sections[BenchmarkReportSlots.Comparison]);
+        Assert.Equal("l", sections[BenchmarkReportSlots.Limitations]);
+        Assert.Equal("m", sections[BenchmarkReportSlots.ModelResult]);
+        Assert.Equal(
+            new[] { BenchmarkReportSlots.Comparison, BenchmarkReportSlots.Limitations, BenchmarkReportSlots.ModelResult }.OrderBy(k => k, StringComparer.Ordinal),
+            sections.Keys.OrderBy(k => k, StringComparer.Ordinal));
     }
 
     [Fact]

@@ -24,6 +24,7 @@ using Overseer.Services.Benchmarking;
 using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -77,6 +78,22 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
+    public async Task TheJobDto_CarriesTheServerTime()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        var before = DateTime.UtcNow;
+        var dto = job.ToDto();
+        var after = DateTime.UtcNow;
+
+        Assert.InRange(dto.ServerTimeUtc, before, after);
+        Assert.Equal(DateTimeKind.Utc, dto.ServerTimeUtc.Kind);
+    }
+
+    [Fact]
     public async Task ACutAnswer_IsStoredWhole_InTheContentJson()
     {
         await using var h = await Harness.CreateAsync();
@@ -98,7 +115,7 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(longAnswer, question.AnswerText);
         Assert.DoesNotContain("FINAL-SENTENCE", question.AnswerExcerpt);
         Assert.Contains("\"answerText\":", document.ContentJson);
-        Assert.Equal(7, document.ReportFormatVersion);
+        Assert.Equal(8, document.ReportFormatVersion);
     }
 
     [Fact]
@@ -426,7 +443,7 @@ public class BenchmarkReportPackServiceTests
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         Assert.IsType<NotFoundResult>(await controller.Render(document.Id + 1000, "full", "named", CancellationToken.None));
         Assert.IsType<BadRequestObjectResult>(await controller.Render(document.Id, "summary", "named", CancellationToken.None));
@@ -445,7 +462,7 @@ public class BenchmarkReportPackServiceTests
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         var first = Assert.IsType<ContentResult>(await controller.Render(document.Id, "detailed", "anonymized", CancellationToken.None));
         var second = Assert.IsType<ContentResult>(await controller.Render(document.Id, "Detailed", "Anonymized", CancellationToken.None));
@@ -472,7 +489,7 @@ public class BenchmarkReportPackServiceTests
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         Assert.IsType<NotFoundResult>(await controller.RenderPdf(document.Id + 1000, "full", "named", null, CancellationToken.None));
         Assert.IsType<BadRequestObjectResult>(await controller.RenderPdf(document.Id, "summary", "named", null, CancellationToken.None));
@@ -493,7 +510,7 @@ public class BenchmarkReportPackServiceTests
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         var provider = Assert.IsType<FileContentResult>(
             await controller.RenderPdf(document.Id, "detailed", "anonymized", "letter", CancellationToken.None));
@@ -502,11 +519,11 @@ public class BenchmarkReportPackServiceTests
 
         Assert.Equal("application/pdf", provider.ContentType);
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             provider.FileDownloadName);
         Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(provider.FileContents, 0, 5));
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
             full.FileDownloadName);
     }
 
@@ -521,7 +538,7 @@ public class BenchmarkReportPackServiceTests
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance))
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance))
         {
             ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() }
         };
@@ -533,7 +550,7 @@ public class BenchmarkReportPackServiceTests
         Assert.True(string.IsNullOrEmpty(pdf.FileDownloadName));
         Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(pdf.FileContents, 0, 5));
         Assert.Equal(
-            "inline; filename*=UTF-8''run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "inline; filename*=UTF-8''run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             controller.Response.Headers.ContentDisposition.ToString());
     }
 
@@ -564,7 +581,7 @@ public class BenchmarkReportPackServiceTests
         await h.Db.SaveChangesAsync(ct);
 
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(h.Db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         async Task<BenchmarkRun> RunNowAsync()
         {
@@ -600,7 +617,7 @@ public class BenchmarkReportPackServiceTests
         var prep = await h.PrepareAsync();
         h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
         await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
-        var render = new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance);
+        var render = new BenchmarkReportRenderService(h.Db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance);
         long runId = h.Seeded.RunIds[0];
 
         var fresh = Assert.Single(await render.ListAsync(null, runId, null, CancellationToken.None));
@@ -626,7 +643,7 @@ public class BenchmarkReportPackServiceTests
         var prep = await h.PrepareAsync();
         h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
         await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
-        var render = new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance);
+        var render = new BenchmarkReportRenderService(h.Db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance);
 
         Assert.Single(await render.ListAsync(null, h.Seeded.RunIds[0], null, CancellationToken.None));
         Assert.Empty(await render.ListAsync(null, h.Seeded.RunIds[1], null, CancellationToken.None));
@@ -639,7 +656,7 @@ public class BenchmarkReportPackServiceTests
         var prep = await h.PrepareAsync();
         h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
         await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
-        var render = new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance);
+        var render = new BenchmarkReportRenderService(h.Db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance);
         long subjectRunId = h.Seeded.RunIds[0];
         long peerRunId = h.Seeded.RunIds[1];
 
@@ -684,7 +701,7 @@ public class BenchmarkReportPackServiceTests
         await h.RunCompletionAsync(BenchmarkReportAudience.ExecutiveSummary);
 
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(h.Db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(h.Db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
         async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(string? comparison = null, string? origin = null)
         {
             var ok = Assert.IsType<OkObjectResult>(await controller.List(null, null, null, CancellationToken.None, comparison, origin));
@@ -752,11 +769,11 @@ public class BenchmarkReportPackServiceTests
     // --- The download path cannot reach a model (D13) -------------------------------------------------
 
     [Fact]
-    public void TheRenderService_TakesOnlyTheDbContextAndALogger()
+    public void TheRenderService_TakesOnlyTheDbContextTheChartStoreAndALogger()
     {
         var constructor = Assert.Single(typeof(BenchmarkReportRenderService).GetConstructors());
         Assert.Equal(
-            new[] { typeof(ApplicationDbContext), typeof(ILogger<BenchmarkReportRenderService>) },
+            new[] { typeof(ApplicationDbContext), typeof(BenchmarkReportChartStore), typeof(ILogger<BenchmarkReportRenderService>) },
             constructor.GetParameters().Select(p => p.ParameterType));
     }
 

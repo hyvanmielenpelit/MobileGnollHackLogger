@@ -6,7 +6,8 @@
 - **Suite:** GnollHack Core Suite
 - **Questions:** 4
 - **Runs:** 1 (run 12)
-- **Peers:** Model A = Grok 5 (xAI, grok-5); Model B = Mistral Large 4 (Mistral, mistral-large-4)
+- **Compared with:** Model A = Grok 5 (xAI, grok-5); Model B = Mistral Large 4 (Mistral, mistral-large-4)
+- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 
 ## Abstract
 
@@ -14,7 +15,7 @@ GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking 2nd of 3 against Grok 5 and
 
 ## Key figures
 
-- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps those of Models A and B.
+- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps every peer's.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
@@ -59,9 +60,9 @@ No paired difference:
 
 - Mistral Large 4 (B): Fewer than five questions were scored for both this model and the subject on the same item revision, too few for a paired difference.
 
-*GPT-5.6 Luna: its 95 % interval overlaps those of Models A and B. This describes where the intervals overlap; it is not a significance test.*
+*GPT-5.6 Luna: its 95 % interval overlaps every peer's. This describes where the intervals overlap; it is not a significance test.*
 
-Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none. Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and choose the other under Compare with group.
+No pair of models is tested for significance: with 3 models, testing every pair would flag chance differences.
 
 ### Speed
 
@@ -147,7 +148,7 @@ Short, accurate answers on simple questions (R2).
 | Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |
 | Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4 | 13.4 s |
 
-### Questions below the peer mean or with a critical error
+### Questions more than 15 points below the peer mean, or with a critical error
 
 **Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters; the rubric says it can survive.
 
@@ -181,7 +182,6 @@ Short, accurate answers on simple questions (R2).
 
 - The benchmark asks single-turn questions under one chat configuration. It does not exercise conversation history, pre-injected wiki context, spoiler-free mode, web search or subagents.
 - Interval: Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two.
-- Significance: Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none.
 - The graders are AI models. Each grader's provider relation to the model under test is stated under Setup and method; a grader from the model's own provider may read it more favorably.
 
 Mistral Large 4 is degraded on speed, and every model rests on a single run, so no interval covers run-to-run variation.
@@ -213,6 +213,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 7 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers named*
+*Document ID 101 · format version 8 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

@@ -22,6 +22,7 @@ public class DatabaseStorageMetricsService
     private readonly EmailSender? _emailSender;
     private readonly EphemeralSessionStore? _ephemeralSessionStore;
     private readonly IContentKeyRing? _contentKeyRing;
+    private readonly Benchmarking.BenchmarkReportChartStore? _chartStore;
     private readonly ChatRetentionSettings _settings;
 
     private static DateTime? _lastMaintenanceRunUtc;
@@ -50,6 +51,8 @@ public class DatabaseStorageMetricsService
     private static readonly TimeSpan EditionFailureCacheDuration = TimeSpan.FromMinutes(5);
 
     private const string DiskMetricsCacheKey = "DiskAttachmentsMetrics";
+
+    private const string ChartMetricsCacheKey = "ReportChartDiskMetrics";
 
     /// <summary>The disk walk grows with every attachment, so its result is reused briefly.</summary>
     private static readonly TimeSpan DiskMetricsCacheDuration = TimeSpan.FromMinutes(2);
@@ -113,6 +116,15 @@ public class DatabaseStorageMetricsService
         catch
         {
             _contentKeyRing = null;
+        }
+
+        try
+        {
+            _chartStore = serviceProvider.GetService<Benchmarking.BenchmarkReportChartStore>();
+        }
+        catch
+        {
+            _chartStore = null;
         }
     }
 
@@ -602,6 +614,41 @@ public class DatabaseStorageMetricsService
             }
         }
 
+        // 5. Report chart images, cached like the attachment walk and dropped with it.
+        dto.ReportChartsConfigured = _chartStore?.IsConfigured ?? false;
+        if (_chartStore != null && _chartStore.IsConfigured && Directory.Exists(_chartStore.RootPath))
+        {
+            string chartCacheKey = $"{ChartMetricsCacheKey}_{Volatile.Read(ref _diskMetricsGeneration)}";
+
+            if (!_memoryCache.TryGetValue(chartCacheKey, out DiskMetricsEntry? charts) || charts == null)
+            {
+                charts = null;
+                try
+                {
+                    var (folderCount, fileCount, totalBytes) = _chartStore.GetDiskMetrics();
+                    charts = new DiskMetricsEntry(totalBytes, folderCount, fileCount);
+
+                    var chartCacheOptions = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(DiskMetricsCacheDuration)
+                        .SetSize(1); // CRITICAL: SizeLimit is configured globally in Program.cs
+
+                    _memoryCache.Set(chartCacheKey, charts, chartCacheOptions);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to inspect Benchmark:ReportPack:ChartsDataLocation on disk");
+                }
+            }
+
+            if (charts != null)
+            {
+                dto.ReportChartFolderCount = charts.FolderCount;
+                dto.ReportChartFileCount = charts.FileCount;
+                dto.ReportChartSizeBytes = charts.TotalBytes;
+                dto.ReportChartSizeMb = Math.Round(charts.TotalBytes / (1024.0 * 1024.0), 2);
+            }
+        }
+
         return dto;
     }
 
@@ -694,6 +741,9 @@ public class DatabaseStorageMetricsService
         sb.AppendLine($"<tr><td><strong>Soft-Deleted in Trash</strong></td><td>{metrics.SoftDeletedSessionCount} (est. ~{metrics.EstimatedReclaimableMb:N1} MB)</td></tr>");
         sb.AppendLine($"<tr><td><strong>Access Journal Rows</strong></td><td>{metrics.AuditLogRowCount:N0} ({metrics.AuditLogPrunableCount:N0} past retention)</td></tr>");
         sb.AppendLine($"<tr><td><strong>Disk Attachments</strong></td><td>{metrics.DiskAttachmentsSizeMb:N1} MB ({metrics.DiskAttachmentsFileCount} files)</td></tr>");
+        sb.AppendLine(metrics.ReportChartsConfigured
+            ? $"<tr><td><strong>Report chart files</strong></td><td>{metrics.ReportChartSizeMb:N1} MB ({metrics.ReportChartFileCount} files in {metrics.ReportChartFolderCount} folders)</td></tr>"
+            : "<tr><td><strong>Report chart files</strong></td><td>Not configured</td></tr>");
         sb.AppendLine("</table>");
 
         if (metrics.TableMetrics.Count > 0)

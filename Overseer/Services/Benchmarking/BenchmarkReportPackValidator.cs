@@ -61,8 +61,12 @@ public sealed class BenchmarkReportCleanResult
 /// the audience uses them. A warning with nothing to drop.</item>
 /// <item>A sentence holding <c>{{subject}}</c>, a <c>{{peer:X}}</c> token and a word of
 /// <see cref="ComparativeWords"/>, where <c>peer.X.intervalOverlap</c> is true, also says
-/// <c>overlap</c> or <c>not established</c>. A warning.</item>
+/// <c>overlap</c> or <c>not established</c>; where <c>peer.X.pairedExcludesZero</c> is true, saying
+/// that the paired interval excludes zero (or citing that fact) does as well. A warning.</item>
 /// <item>No word of <see cref="HypeWords"/>, whole words ignoring case. A warning.</item>
+/// <item>A <c>model_developers</c> recommendation names nothing a model developer cannot change
+/// (<see cref="OverseerOnlyTerms"/>): the Overseer's rubrics, retrieval, index, corpus, regression
+/// tests, system prompt or tool guides. A warning.</item>
 /// </list>
 /// </summary>
 public static class BenchmarkReportPackValidator
@@ -138,9 +142,25 @@ public static class BenchmarkReportPackValidator
     /// <summary>The rule number of the hype-word check, whose notes never drop text.</summary>
     public const int HypeWordRule = 17;
 
+    /// <summary>
+    /// The rule number of the check that a <c>model_developers</c> recommendation stays within what a
+    /// model developer can change; its notes never drop text.
+    /// </summary>
+    public const int ModelDeveloperScopeRule = 18;
+
     /// <summary>Whether a rule's notes are warnings: they ask for the repair turn but never drop text.</summary>
     public static bool IsWarningRule(int rule)
-        => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or MissingQuestionNoteRule or OverlapHedgeRule or HypeWordRule;
+        => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or MissingQuestionNoteRule or OverlapHedgeRule
+            or HypeWordRule or ModelDeveloperScopeRule;
+
+    /// <summary>
+    /// Terms rule 18 flags in a <c>model_developers</c> recommendation, matched as whole words ignoring
+    /// case, with their plural and inflected forms: parts of the Overseer, which a model developer cannot change.
+    /// </summary>
+    public static readonly IReadOnlyList<string> OverseerOnlyTerms = new[]
+    {
+        "rubric", "retrieval", "index", "corpus", "regression test", "system prompt", "tool guide"
+    };
 
     /// <summary>Words rule 16 reads as ranking one model over another, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> ComparativeWords = new[]
@@ -217,6 +237,23 @@ public static class BenchmarkReportPackValidator
     /// <summary>What rule 16 accepts as saying that the order is open: "overlap" in any form, or "not established".</summary>
     private static readonly Regex OverlapHedgeRegex = new(
         @"(?<![\p{L}\p{N}])(?:overlap\p{L}*|not\s+established)(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// What rule 16 accepts, for a peer whose <c>peer.X.pairedExcludesZero</c> is true, as stating the
+    /// paired result: "paired" and "excludes zero" (or "exclude", "excluding") in one sentence.
+    /// </summary>
+    private static readonly Regex PairedWordRegex = new(
+        @"(?<![\p{L}\p{N}])paired(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    private static readonly Regex ExcludesZeroRegex = new(
+        @"(?<![\p{L}\p{N}])exclud(?:es|e|ed|ing)\s+zero(?![\p{L}\p{N}])",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 18's pattern over <see cref="OverseerOnlyTerms"/> and their inflected forms.</summary>
+    private static readonly Regex OverseerOnlyTermRegex = new(
+        @"(?<![\p{L}\p{N}])(?:rubrics?|retrieval|index(?:es|ed|ing)?|indices|corpus|corpora|regression[\s-]+tests?|system[\s-]+prompts?|tool[\s-]+guides?)(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     // A hyphenated hype word matches only as a whole: "cutting-edge", never "edge".
@@ -382,7 +419,7 @@ public static class BenchmarkReportPackValidator
     /// Removes every item and section paragraph with an issue from a copy of the output. The headline
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty. Missing
     /// question topics and notes are recorded but not fatal, and so are the warnings of rules 12 to
-    /// 17: their text is kept.
+    /// 18: their text is kept.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -656,7 +693,7 @@ public static class BenchmarkReportPackValidator
             .ToList();
         if (claims.Count > 0)
         {
-            Issue(notes, 11, location, $"Uses \"{string.Join("\", \"", claims)}\": the comparison runs no significance test, so say only whether the intervals overlap.");
+            Issue(notes, 11, location, $"Uses \"{string.Join("\", \"", claims)}\": the comparison runs no significance test, so say only whether the intervals overlap, or whether a paired interval excludes zero.");
         }
 
         // Rule 12: US English.
@@ -671,10 +708,17 @@ public static class BenchmarkReportPackValidator
 
         // Rule 16: an unhedged ranking against a peer whose interval overlaps the subject's.
         var unhedged = UnhedgedOverlappingPeers(ctx, text);
-        if (unhedged.Count > 0)
+        var unpaired = unhedged.Where(l => !ctx.PairedExcludesZero(l)).ToList();
+        var paired = unhedged.Where(ctx.PairedExcludesZero).ToList();
+        if (unpaired.Count > 0)
         {
-            string peers = string.Join(", ", unhedged.Select(l => "{{peer:" + l + "}}"));
+            string peers = string.Join(", ", unpaired.Select(l => "{{peer:" + l + "}}"));
             Issue(notes, OverlapHedgeRule, location, $"Ranks {{{{subject}}}} against {peers}, whose 95 % interval overlaps the subject's, without saying so: in the same sentence, say that the intervals overlap and that the order between them is not established.");
+        }
+        if (paired.Count > 0)
+        {
+            string peers = string.Join(", ", paired.Select(l => "{{peer:" + l + "}}"));
+            Issue(notes, OverlapHedgeRule, location, $"Ranks {{{{subject}}}} against {peers}, whose 95 % interval overlaps the subject's, without the paired result: in the same sentence, say that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero, not adjusted for comparing several models.");
         }
 
         // Rule 17: hype and filler words.
@@ -691,7 +735,9 @@ public static class BenchmarkReportPackValidator
     /// <summary>
     /// Rule 16: the letters of the peers a sentence ranks <c>{{subject}}</c> against with a word of
     /// <see cref="ComparativeWords"/> while <c>peer.X.intervalOverlap</c> is true, and the sentence
-    /// says neither <c>overlap</c> nor <c>not established</c>. Tokens are set aside before the text is
+    /// says neither <c>overlap</c> nor <c>not established</c>. A peer whose
+    /// <c>peer.X.pairedExcludesZero</c> is true is also hedged by a sentence saying that the paired
+    /// interval excludes zero, or citing that fact as a token. Tokens are set aside before the text is
     /// split into sentences, so the dots of a fact key never end one.
     /// </summary>
     private static List<string> UnhedgedOverlappingPeers(Context ctx, string text)
@@ -715,10 +761,13 @@ public static class BenchmarkReportPackValidator
             string plain = TokenPlaceholderRegex.Replace(sentence, " ");
             if (!ComparativeRegex.IsMatch(plain) || OverlapHedgeRegex.IsMatch(plain)) continue;
 
+            bool statesPaired = PairedWordRegex.IsMatch(plain) && ExcludesZeroRegex.IsMatch(plain);
             letters.AddRange(inSentence
                 .Where(t => t.StartsWith("peer:", StringComparison.Ordinal))
                 .Select(t => t["peer:".Length..])
-                .Where(ctx.OverlapsSubject));
+                .Where(ctx.OverlapsSubject)
+                .Where(l => !ctx.PairedExcludesZero(l)
+                            || !(statesPaired || inSentence.Contains(BenchmarkReportFacts.PeerPrefix(l) + "pairedExcludesZero", StringComparer.Ordinal))));
         }
 
         return letters.Distinct(StringComparer.Ordinal).ToList();
@@ -851,6 +900,19 @@ public static class BenchmarkReportPackValidator
             if (!ctx.Spec.RecommendationTargets.Contains(target, StringComparer.Ordinal))
             {
                 Issue(notes, 1, location, $"\"for\" is \"{target}\"; it must be one of: {string.Join(", ", ctx.Spec.RecommendationTargets)}.");
+            }
+
+            // Rule 18: a model developer's recommendation concerns the model, never the Overseer.
+            if (string.Equals(target, BenchmarkReportSlots.TargetModelDevelopers, StringComparison.Ordinal))
+            {
+                var terms = OverseerOnlyTermRegex.Matches(TokenRegex.Replace(text, " "))
+                    .Select(m => Regex.Replace(m.Value.ToLowerInvariant(), @"[\s-]+", " "))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                if (terms.Count > 0)
+                {
+                    Issue(notes, ModelDeveloperScopeRule, location, $"A recommendation for model developers mentions \"{string.Join("\", \"", terms)}\", which belong{(terms.Count == 1 ? "s" : string.Empty)} to the Overseer, not to the model: recommend only what a model developer can change in the model (knowledge, calibration, instruction following, verbosity, tool-use habits), and put anything about the Overseer's prompts, tools, retrieval, corpus, rubrics or tests under \"{BenchmarkReportSlots.TargetOverseerChat}\" or \"{BenchmarkReportSlots.TargetBenchmark}\" where the document has them, or leave it out.");
+                }
             }
         }
         else if (kind == ItemKind.Lead)
@@ -1043,7 +1105,7 @@ public static class BenchmarkReportPackValidator
     private static string LowerFirst(string text)
         => text.Length > 0 && char.IsUpper(text[0]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 
-    /// <summary>Every rule but the warning rules 12 to 17 removes the offending item or paragraph.</summary>
+    /// <summary>Every rule but the warning rules 12 to 18 removes the offending item or paragraph.</summary>
     private static bool Blocks(BenchmarkReportValidationNote note) => !IsWarningRule(note.Rule);
 
     /// <summary>A section's text split on blank lines, each paragraph trimmed, empty ones left out.</summary>
@@ -1125,8 +1187,14 @@ public static class BenchmarkReportPackValidator
                     .Where(letter => sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, BenchmarkReportFacts.PeerPrefix(letter) + "intervalOverlap", StringComparison.Ordinal))
                         is { } fact && BenchmarkReportPackPrompt.IsTrue(fact)),
                 StringComparer.Ordinal);
+            _pairedExcludesZeroPeers = new HashSet<string>(
+                sheet.Peers
+                    .Select(p => p.Letter)
+                    .Where(letter => sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, BenchmarkReportFacts.PeerPrefix(letter) + "pairedExcludesZero", StringComparison.Ordinal))
+                        is { } fact && BenchmarkReportPackPrompt.IsTrue(fact)),
+                StringComparer.Ordinal);
 
-            Rows = new Dictionary<string, BenchmarkReportFindingRow>(StringComparer.Ordinal);
+            Rows =new Dictionary<string, BenchmarkReportFindingRow>(StringComparer.Ordinal);
             foreach (var row in sheet.Rows)
             {
                 Rows.TryAdd(row.Id, row);
@@ -1188,6 +1256,7 @@ public static class BenchmarkReportPackValidator
         private readonly Regex? _peerNames;
         private readonly Dictionary<string, string> _shingles;
         private readonly HashSet<string> _overlappingPeers;
+        private readonly HashSet<string> _pairedExcludesZeroPeers;
 
         public BenchmarkReportAudienceSpec Spec { get; }
 
@@ -1198,6 +1267,9 @@ public static class BenchmarkReportPackValidator
 
         /// <summary>The peer's <c>peer.X.intervalOverlap</c> fact is true.</summary>
         public bool OverlapsSubject(string letter) => _overlappingPeers.Contains(letter);
+
+        /// <summary>The peer's <c>peer.X.pairedExcludesZero</c> fact is true.</summary>
+        public bool PairedExcludesZero(string letter) => _pairedExcludesZeroPeers.Contains(letter);
         public HashSet<string> FactKeys { get; }
         public HashSet<string> PeerLetters { get; }
         public HashSet<int> Questions { get; }

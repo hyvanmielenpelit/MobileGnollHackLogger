@@ -396,6 +396,16 @@
                     <span class="stat-label">Disk Attachments</span>
                     <span class="stat-value">{{ storageMetrics.diskAttachmentsSizeMb | number:'1.1-1' }} MB <span class="stat-sub">({{ storageMetrics.diskAttachmentsFileCount }} files)</span></span>
                   </div>
+                  @if (storageMetrics.reportChartsConfigured != null) {
+                    <div class="stat-box report-charts-stat">
+                      <span class="stat-label">Report Chart Files</span>
+                      @if (storageMetrics.reportChartsConfigured) {
+                        <span class="stat-value">{{ reportChartsSummary(storageMetrics) }}</span>
+                      } @else {
+                        <span class="stat-value">Not configured <span class="stat-sub">(<code>Benchmark:ReportPack:ChartsDataLocation</code>)</span></span>
+                      }
+                    </div>
+                  }
                   <div class="stat-box">
                     <span class="stat-label">Transaction Log</span>
                     <span class="stat-value">{{ storageMetrics.logUsedMb | number:'1.1-1' }} MB <span class="stat-sub">used of {{ storageMetrics.logAllocatedMb | number:'1.1-1' }} MB</span></span>
@@ -732,6 +742,21 @@
                       <button class="btn-gh btn-secondary mt-10" (click)="sweepOrphanFoldersNow()" [disabled]="maintenanceLoading">
                         Sweep Orphan Folders
                       </button>
+                    </div>
+
+                    <div class="granular-card">
+                      <h5>Clear Report Chart Files</h5>
+                      <p class="text-muted">Deletes every chart image in the report chart folder. The report documents and their text are kept; their PDF and Word copies have no charts until <em>Update charts</em> in the Comparison Wizard adds them again.</p>
+                      <button type="button" class="btn-gh btn-danger mt-10" (click)="clearReportChartsNow()"
+                              [attr.aria-disabled]="clearReportChartsBlockedReason ? 'true' : null"
+                              [attr.interestfor]="clearReportChartsBlockedReason ? 'tip-clear-report-charts' : null"
+                              [attr.style]="'anchor-name: --tip-clear-report-charts'">
+                        Clear Chart Files
+                      </button>
+                      @if (clearReportChartsBlockedReason) {
+                        <div popover="hint" class="gh-tooltip" id="tip-clear-report-charts"
+                             [attr.style]="'position-anchor: --tip-clear-report-charts'">{{ clearReportChartsBlockedReason }}</div>
+                      }
                     </div>
 
                     <div class="granular-card">

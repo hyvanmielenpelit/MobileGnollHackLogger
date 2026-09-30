@@ -36,11 +36,13 @@ public static class BenchmarkReportPackParser
 
     private static readonly string[] KnownSlots =
     {
+        BenchmarkReportSlots.Comparison,
         BenchmarkReportSlots.Meaning,
         BenchmarkReportSlots.Confidence,
         BenchmarkReportSlots.Abstract,
         BenchmarkReportSlots.WhyItScored,
         BenchmarkReportSlots.WhatWorked,
+        BenchmarkReportSlots.Limitations,
         BenchmarkReportSlots.OverseerChat,
         BenchmarkReportSlots.BenchmarkSystem,
         BenchmarkReportSlots.ModelResult,

@@ -1844,6 +1844,30 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
     return [...values].sort((a, b) => a - b);
   }
 
+  /** "N documents · M files · X MB" for the report chart folder; one folder per document. */
+  reportChartsSummary(m: DatabaseStorageMetrics): string {
+    const documents = m.reportChartFolderCount ?? 0;
+    const files = m.reportChartFileCount ?? 0;
+    const mb = (m.reportChartSizeMb ?? 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    return `${documents.toLocaleString('en-US')} ${documents === 1 ? 'document' : 'documents'} · ` +
+      `${files.toLocaleString('en-US')} ${files === 1 ? 'file' : 'files'} · ${mb} MB`;
+  }
+
+  /** Why Clear Chart Files is unavailable, shown in its tooltip; null when it can run. */
+  get clearReportChartsBlockedReason(): string | null {
+    const m = this.storageMetrics;
+    if (this.maintenanceLoading) {
+      return 'A maintenance task is running.';
+    }
+    if (!m?.reportChartsConfigured) {
+      return 'The report chart folder is not configured (Benchmark:ReportPack:ChartsDataLocation).';
+    }
+    if ((m.reportChartFileCount ?? 0) === 0) {
+      return 'There are no chart files to clear.';
+    }
+    return null;
+  }
+
   /** Every non-zero count in a result, labelled for the result console. */
   maintenanceResultCounts(r: MaintenanceResult): { label: string; value: string }[] {
     const counts: [string, number][] = [
@@ -2193,6 +2217,28 @@ export class AdminComponent implements OnInit, OnDestroy, AfterViewInit {
       loadingMessage: 'Scanning and removing unreferenced disk folders...',
       errorPrefix: 'Failed to sweep orphan folders',
       call: (dryRun) => this.adminService.sweepOrphans({ dryRun })
+    });
+  }
+
+  /** Refused while clearReportChartsBlockedReason is set (the button is aria-disabled). */
+  clearReportChartsNow() {
+    const m = this.storageMetrics;
+    if (!m || this.clearReportChartsBlockedReason) {
+      return;
+    }
+    const files = m.reportChartFileCount ?? 0;
+    const documents = m.reportChartFolderCount ?? 0;
+    const mb = (m.reportChartSizeMb ?? 0).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    this.runGranularMaintenance({
+      title: 'Clear Report Chart Files',
+      confirmMessage: `Delete ${files.toLocaleString('en-US')} chart ${files === 1 ? 'file' : 'files'} (${mb} MB) ` +
+        `for ${documents.toLocaleString('en-US')} ${documents === 1 ? 'document' : 'documents'}? This cannot be undone. ` +
+        'The documents stay; their charts can be added again from the Comparison Wizard.',
+      confirmButton: 'Clear Chart Files',
+      confirmClass: 'btn-gh btn-gh-delete',
+      loadingMessage: 'Deleting report chart image files...',
+      errorPrefix: 'Failed to clear report chart files',
+      call: (dryRun) => this.adminService.clearReportCharts({ dryRun })
     });
   }
 

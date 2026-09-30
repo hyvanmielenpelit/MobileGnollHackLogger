@@ -14,6 +14,7 @@ using Overseer.Controllers;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.Pdf;
+using Overseer.Tests.Helpers;
 using QuestPDF.Infrastructure;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Tokens;
@@ -182,10 +183,11 @@ public class BenchmarkPdfRendererTests
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, options, BenchmarkPdfPaper.A4);
 
         Assert.Equal(
-            new[] { "Document ID", "Disclosure", "Peers", "Suite", "Questions", "Run", "Created (UTC)", "Generated format", "Writer", "Provenance" },
+            new[] { "Document ID", "Disclosure", "Compared with", "Pricing basis", "Suite", "Questions", "Run", "Created (UTC)", "Generated format", "Writer", "Provenance" },
             info.Facts.Select(f => f.Label));
         Assert.Equal("101", info.Facts.Single(f => f.Label == "Document ID").Value);
-        Assert.Equal("2, anonymized", info.Facts.Single(f => f.Label == "Peers").Value);
+        Assert.Equal("2 models (A and B), identities withheld", info.Facts.Single(f => f.Label == "Compared with").Value);
+        Assert.Equal("Catalog prices on 2026-09-20 (price card dated 2026-09-01)", info.Facts.Single(f => f.Label == "Pricing basis").Value);
         Assert.Equal("4", info.Facts.Single(f => f.Label == "Questions").Value);
         Assert.Equal("version " + BenchmarkReportPackRenderer.ReportFormatVersion, info.Facts.Single(f => f.Label == "Generated format").Value);
         Assert.Equal("Claude Opus 5.5 (Anthropic, claude-opus-5-5; high)", info.Facts.Single(f => f.Label == "Writer").Value);
@@ -233,7 +235,7 @@ public class BenchmarkPdfRendererTests
         // The Markdown footer is left out; the cover states its facts once.
         Assert.DoesNotContain(Squash("Figures and tables were computed by Overseer."), text);
         Assert.DoesNotContain(Squash("rendered with format version"), text);
-        Assert.Contains(Squash("PDF layout 2"), text);
+        Assert.Contains(Squash("PDF layout 3"), text);
         Assert.DoesNotContain(Squash("Audience"), text);
         // The stamp prints once, in the cover banner.
         Assert.Single(AllIndexesOf(text, Squash("INTERNAL — contains benchmark questions and rubrics.")));
@@ -265,6 +267,180 @@ public class BenchmarkPdfRendererTests
         {
             Assert.True(text.Contains(c), $"U+{(int)c:X4} did not survive text extraction.");
         }
+    }
+
+    // --- Figures -----------------------------------------------------------------------------------
+
+    private const string FigureMarkdown =
+        "## Results\n\nIntro text.\n\n[[figure:p1a-quality]]\n\nMiddle text.\n\n[[figure:s1-quality-speed]]\n\n"
+        + "[[figure:p2-profile]]\n\n[[not a figure]] stays.\n\nEnd text.\n";
+
+    [Fact]
+    public void TwoCharts_AreDrawnAsTaggedFigures_WithNumberedCaptions()
+    {
+        var charts = TwoCharts();
+
+        byte[] withCharts = BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, charts);
+        byte[] without = BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken);
+
+        // The frame draws one image per page: the logo on page 1 and the emblem on every later page.
+        var (withImages, withPages) = ImageCount(withCharts);
+        var (withoutImages, withoutPages) = ImageCount(without);
+        Assert.Equal(withoutPages, withoutImages);
+        Assert.Equal(withPages + 2, withImages);
+
+        using var reader = PdfDocument.Open(withCharts);
+        var elements = StructureElements(reader);
+        Assert.Contains(elements, e => e.Type == "Figure" && e.Alt == charts[0].AltText);
+        Assert.Contains(elements, e => e.Type == "Figure" && e.Alt == charts[1].AltText);
+        Assert.Equal(2, elements.Count(e => e.Type == "Caption"));
+
+        string text = AllText(withCharts);
+        Assert.Contains(Squash("Figure 1. Quality index — Higher is better."), text);
+        Assert.Contains(Squash("Figure 2. Quality against speed — Up and left is better."), text);
+        Assert.True(text.IndexOf("Figure1.", StringComparison.Ordinal) < text.IndexOf("Figure2.", StringComparison.Ordinal));
+        // A marker without a chart prints nothing; other double-bracket text prints literally.
+        Assert.DoesNotContain("[[figure:", text);
+        Assert.Contains(Squash("[[not a figure]] stays."), text);
+
+        string plain = AllText(without);
+        Assert.DoesNotContain("Figure1.", plain);
+        Assert.DoesNotContain("[[figure:", plain);
+    }
+
+    [Fact]
+    public void APdfWithFigures_StillDeclaresPdfA3AndPdfUA1()
+    {
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, TwoCharts());
+
+        using var reader = PdfDocument.Open(pdf);
+        Assert.True(reader.TryGetXmpMetadata(out var xmp), "The PDF carries no XMP metadata.");
+        var xml = xmp.GetXDocument();
+        Assert.True(HasXmpValue(xml, "http://www.aiim.org/pdfa/ns/id/", "part", "3"), "pdfaid:part is not 3.");
+        Assert.True(HasXmpValue(xml, "http://www.aiim.org/pdfua/ns/id/", "part", "1"), "pdfuaid:part is not 1.");
+    }
+
+    [Fact]
+    public void TheSourceHash_CoversTheDrawnCharts()
+    {
+        var charts = TwoCharts();
+        var changed = new[] { charts[0], charts[1] with { Png = TestPngs.Make(900, 500, 200) } };
+        changed[1] = changed[1] with { Sha256 = BenchmarkReportChartStore.Sha256Hex(changed[1].Png) };
+
+        string original = BenchmarkPdfRenderer.SourceSha256(FigureMarkdown, charts);
+        string altered = BenchmarkPdfRenderer.SourceSha256(FigureMarkdown, changed);
+        Assert.NotEqual(original, altered);
+        Assert.Equal(BenchmarkPdfRenderer.Sha256(FigureMarkdown), BenchmarkPdfRenderer.SourceSha256(FigureMarkdown, null));
+
+        string first = AllText(BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, charts));
+        string second = AllText(BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, changed));
+        Assert.Contains("Source" + original[..16], first);
+        Assert.Contains("Source" + altered[..16], second);
+        Assert.Contains("PDFlayout3", first);
+
+        // A chart with no marker is not drawn and leaves the hash alone.
+        string unplaced = AllText(BenchmarkPdfRenderer.RenderMarkdown("Only text.\n", Info(), TestContext.Current.CancellationToken, charts));
+        Assert.Contains("Source" + BenchmarkPdfRenderer.Sha256("Only text.\n")[..16], unplaced);
+    }
+
+    [Fact]
+    public void ATallChart_IsCappedAtSixtyPercentOfTheContentHeight()
+    {
+        var frame = BenchmarkPdfRenderer.FigureFrameFor(BenchmarkPdfPaper.A4);
+        var (wideWidth, wideHeight) = BenchmarkPdfMarkdownComposer.FigureSize(1000, 500, frame.Width, frame.MaxHeight);
+        Assert.Equal((double)frame.Width, wideWidth, 0.001);
+        Assert.Equal(frame.Width / 2.0, wideHeight, 0.001);
+
+        var (tallWidth, tallHeight) = BenchmarkPdfMarkdownComposer.FigureSize(400, 2000, frame.Width, frame.MaxHeight);
+        Assert.Equal((double)frame.MaxHeight, tallHeight, 0.001);
+        Assert.Equal(frame.MaxHeight / 5.0, tallWidth, 0.001);
+
+        // 60 % of A4's height between the 18 mm top and bottom margins.
+        Assert.Equal((841.89 - 2 * 18 * 72 / 25.4) * 0.6, frame.MaxHeight, 0.1);
+
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(
+            "[[figure:p2-profile]]\n",
+            Info(),
+            TestContext.Current.CancellationToken,
+            new[] { Chart("p2-profile", 400, 2000, 60, "Tall", "A tall chart.", "Tall chart alt text.") });
+        using var reader = PdfDocument.Open(pdf);
+        Assert.Contains(StructureElements(reader), e => e.Type == "Figure" && e.Alt == "Tall chart alt text.");
+    }
+
+    private static BenchmarkReportRenderChart[] TwoCharts() => new[]
+    {
+        Chart("p1a-quality", 800, 450, 10, "Quality index", "Higher is better.", "Bar chart of the quality index of three models."),
+        Chart("s1-quality-speed", 900, 500, 90, "Quality against speed", "Up and left is better.", "Scatter plot of quality against median answer time.")
+    };
+
+    private static BenchmarkReportRenderChart Chart(string key, int width, int height, byte shade, string title, string caption, string alt)
+    {
+        byte[] png = TestPngs.Make(width, height, shade);
+        return new BenchmarkReportRenderChart
+        {
+            FigureKey = key,
+            Title = title,
+            Caption = caption,
+            AltText = alt,
+            Png = png,
+            WidthPx = width,
+            HeightPx = height,
+            Sha256 = BenchmarkReportChartStore.Sha256Hex(png)
+        };
+    }
+
+    /// <summary>The images drawn on all pages together, and the page count.</summary>
+    private static (int Images, int Pages) ImageCount(byte[] pdf)
+    {
+        using var reader = PdfDocument.Open(pdf);
+        return (reader.GetPages().Sum(p => p.GetImages().Count()), reader.NumberOfPages);
+    }
+
+    /// <summary>Every structure element's type and alternative text, walking the structure tree from its root.</summary>
+    private static List<(string Type, string? Alt)> StructureElements(PdfDocument reader)
+    {
+        var result = new List<(string Type, string? Alt)>();
+        if (!reader.Structure.Catalog.CatalogDictionary.Data.TryGetValue("StructTreeRoot", out var root)) return result;
+
+        var seen = new HashSet<(long, int)>();
+        void Visit(IToken token, int depth)
+        {
+            if (depth > 256) return;
+            if (token is IndirectReferenceToken reference)
+            {
+                if (!seen.Add((reference.Data.ObjectNumber, reference.Data.Generation))) return;
+                token = reader.Structure.GetObject(reference.Data).Data;
+            }
+
+            switch (token)
+            {
+                case ArrayToken array:
+                    foreach (var item in array.Data) Visit(item, depth + 1);
+                    break;
+                case DictionaryToken dictionary:
+                    if (dictionary.Data.TryGetValue("S", out var type) && type is NameToken name)
+                    {
+                        string? alt = dictionary.Data.TryGetValue("Alt", out var altToken) ? TextOf(altToken) : null;
+                        result.Add((name.Data, alt));
+                    }
+                    if (dictionary.Data.TryGetValue("K", out var kids)) Visit(kids, depth + 1);
+                    break;
+            }
+        }
+
+        string? TextOf(IToken token)
+        {
+            if (token is IndirectReferenceToken reference) token = reader.Structure.GetObject(reference.Data).Data;
+            return token switch
+            {
+                StringToken s => s.Data,
+                HexToken h => h.Data,
+                _ => null
+            };
+        }
+
+        Visit(root, 0);
+        return result;
     }
 
     // --- Plain text --------------------------------------------------------------------------------
@@ -358,14 +534,14 @@ public class BenchmarkPdfRendererTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
                 PeerNaming = BenchmarkReportPeerNaming.Anonymized
             }));
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Full,
@@ -398,7 +574,7 @@ public class BenchmarkPdfRendererTests
         document.SubjectKey = subjectKey;
 
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
+            "vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Summary,
@@ -414,7 +590,7 @@ public class BenchmarkPdfRendererTests
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named };
 
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(document, options));
         Assert.Equal(
             "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers",
@@ -423,7 +599,7 @@ public class BenchmarkPdfRendererTests
         // The other audiences keep the title-derived name.
         var executive = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
             BenchmarkPdfFileNames.ForReportDocument(executive, options));
     }
 

@@ -1,35 +1,26 @@
 @use '../benchmark-dialog-frame' as frame;
 
-/* The dialog itself is .gh-dialog-fullscreen (styles.scss); the frame fills it and owns the sidebar,
-   the resizer and the main column. The documents table is the report document library's. */
+/* Step 3 of the Model Comparison wizard. The frame fills the step and owns the sidebar, the
+   resizer and the main column. .run-stage-rail, .run-stat-strip, .job-status-chip, .gh-table,
+   .gh-disclosure, .gh-field-error, .action-btn and .gh-tooltip come from styles.scss. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  block-size: 100%;
+  min-block-size: 0;
+  min-inline-size: 0;
+}
 
 .rp-identity {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-inline-size: 0;
-
-  h3 {
-    margin: 0;
-    font-size: 1.3em;
-    color: var(--title-color);
-
-    &:focus-visible {
-      outline: 2px solid var(--primary-color);
-      outline-offset: 2px;
-      border-radius: 2px;
-    }
-  }
 }
 
-.rp-subtitle {
-  margin: 0;
-  font-size: 0.85em;
-  color: #a1a1aa;
-}
-
-.rp-new-heading,
-.rp-documents-heading {
+.rp-heading {
   margin: 0;
 
   &:focus-visible {
@@ -39,11 +30,26 @@
   }
 }
 
+.rp-subtitle {
+  margin: 0;
+  font-size: 0.85em;
+  color: #a1a1aa;
+}
+
 .rp-subsection-title {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
   color: #ddd;
+}
+
+.rp-new-heading,
+.rp-progress-heading {
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 }
 
 .rp-new,
@@ -64,14 +70,14 @@
   color: #a1a1aa;
 }
 
+.rp-idle-note {
+  margin: 0;
+}
+
 .rp-guide-link,
 .rp-retry-estimate {
   align-self: flex-start;
   font-size: var(--text-secondary);
-}
-
-.rp-scope-line {
-  margin: -4px 0 0;
 }
 
 /* The documents as cards of name and description, one checkbox each. */
@@ -100,6 +106,17 @@
 .rp-audience-desc {
   font-size: var(--text-secondary);
   color: #a1a1aa;
+}
+
+.rp-charts-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
+
+  .alert {
+    margin-bottom: 0;
+  }
 }
 
 .rp-same-provider {
@@ -145,12 +162,25 @@
   }
 }
 
+.rp-job-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: #ddd;
+}
+
 .rp-job-summary-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px 16px;
+}
+
+.rp-job-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .rp-job-summary {
@@ -160,14 +190,75 @@
   font-variant-numeric: tabular-nums;
 }
 
-.rp-job-table {
-  inline-size: 100%;
+/* The document progress list: one grid, the header and every row a subgrid of it, so the columns
+   line up without a table. */
+.rp-doc-progress-grid {
+  display: grid;
+  grid-template-columns: minmax(10rem, 2fr) minmax(8rem, 1.4fr) minmax(4.5rem, auto) minmax(4.5rem, auto) minmax(7rem, 1.2fr);
+  column-gap: 12px;
+  overflow-x: auto;
   font-size: var(--text-secondary);
+}
 
-  th[scope="row"] {
-    font-weight: 500;
-    text-align: start;
+.rp-doc-progress-head,
+.rp-doc-progress,
+.rp-job-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.rp-doc-progress-head {
+  padding: 0 0 6px;
+  border-block-end: 1px solid var(--border-glass);
+  color: #a1a1aa;
+  font-weight: 600;
+}
+
+.rp-doc-progress {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rp-job-row {
+  align-items: start;
+  padding: 8px 0;
+  border-block-end: 1px solid rgba(255, 255, 255, 0.06);
+  color: #d4d4d8;
+}
+
+.rp-doc-name {
+  font-weight: 500;
+  color: #e4e4e7;
+}
+
+.rp-doc-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+
+  /* The chip names the state in words; nothing in the list moves. */
+  .job-status-chip {
+    animation: none;
   }
+}
+
+.rp-doc-duration {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rp-chart-retry {
+  font-size: var(--text-secondary);
+  text-align: start;
 }
 
 .rp-job-row-error {
@@ -176,13 +267,30 @@
   color: var(--color-error-text);
 }
 
-.rp-job-log {
-  margin-top: 10px;
+/* --- Log and diagnostics --- */
+
+.rp-diagnostics-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rp-copy-status {
+  margin: 0;
+  color: var(--primary-color);
+  font-size: var(--text-secondary);
+}
+
+.rp-copy-error {
+  margin-bottom: 8px;
 }
 
 .rp-log-list {
   margin: 0;
   padding-inline-start: 1.2em;
+  max-block-size: 16rem;
+  overflow-y: auto;
   font-size: var(--text-secondary);
   color: #d4d4d8;
 
@@ -203,10 +311,6 @@
 
 .rp-cancel-job {
   align-self: flex-start;
-}
-
-.rp-download-notice {
-  margin-bottom: 0;
 }
 
 /* --- Nested dialogs --- */

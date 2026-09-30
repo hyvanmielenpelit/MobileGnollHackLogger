@@ -1,0 +1,42 @@
+/* The Comparison reports card: a heading with its info tip, the summary line and one button.
+ * .gh-section-title, .gh-tag, .btn-ghost and the Download Center's dialog come from styles.scss and
+ * their own components, and are never redefined here.
+ */
+
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+.rdl-launcher {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.rdl-launcher-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  align-self: stretch;
+}
+
+.rdl-launcher-heading {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.rdl-launcher-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.rdl-launcher-summary {
+  margin: 0;
+  color: var(--nav-color);
+}

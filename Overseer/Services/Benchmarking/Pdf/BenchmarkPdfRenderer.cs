@@ -1,11 +1,14 @@
 namespace Overseer.Services.Benchmarking.Pdf;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+using Overseer.Models;
 using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
@@ -37,8 +40,8 @@ public sealed class BenchmarkPdfSourceTooLargeException : Exception
 /// </summary>
 public static class BenchmarkPdfRenderer
 {
-    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 2".</summary>
-    public const int LayoutVersion = 2;
+    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 3".</summary>
+    public const int LayoutVersion = 3;
 
     /// <summary>The longest source text rendered; a longer one is refused before rendering starts.</summary>
     public const int MaxSourceCharacters = 6_000_000;
@@ -49,6 +52,10 @@ public static class BenchmarkPdfRenderer
 
     /// <summary>Plain-text lines per text element, so a canceled render stops between chunks.</summary>
     private const int PlainTextChunkLines = 80;
+
+    private const float HorizontalMarginMillimeters = 20;
+    private const float VerticalMarginMillimeters = 18;
+    private const float PointsPerMillimeter = 72f / 25.4f;
 
     /// <summary>This build of Overseer, without the source-revision suffix.</summary>
     public static string OverseerVersion { get; } = ReadOverseerVersion();
@@ -63,11 +70,29 @@ public static class BenchmarkPdfRenderer
         => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text ?? string.Empty))).ToLowerInvariant();
 
     /// <summary>
-    /// Markdown rendered as a PDF. Throws <see cref="BenchmarkPdfSourceTooLargeException"/> for a source
-    /// above <see cref="MaxSourceCharacters"/>, and <see cref="OperationCanceledException"/> once the
-    /// token is canceled.
+    /// The source hash of a Markdown render: SHA-256 over the UTF-8 Markdown followed by each drawn
+    /// chart's SHA-256 (lowercase hex, UTF-8) in figure order; <see cref="Sha256"/> of the Markdown when
+    /// no chart is drawn.
     /// </summary>
-    public static byte[] RenderMarkdown(string markdown, BenchmarkPdfDocumentInfo info, CancellationToken cancellationToken = default)
+    public static string SourceSha256(string markdown, IEnumerable<BenchmarkReportRenderChart>? drawnCharts)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        hash.AppendData(Encoding.UTF8.GetBytes(markdown ?? string.Empty));
+        foreach (var chart in drawnCharts ?? Array.Empty<BenchmarkReportRenderChart>())
+        {
+            hash.AppendData(Encoding.UTF8.GetBytes(chart.Sha256 ?? string.Empty));
+        }
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Markdown rendered as a PDF, each figure marker with a chart in <paramref name="charts"/> drawn as a
+    /// figure. Throws <see cref="BenchmarkPdfSourceTooLargeException"/> for a source above
+    /// <see cref="MaxSourceCharacters"/>, and <see cref="OperationCanceledException"/> once the token is canceled.
+    /// </summary>
+    public static byte[] RenderMarkdown(
+        string markdown, BenchmarkPdfDocumentInfo info, CancellationToken cancellationToken = default,
+        IReadOnlyList<BenchmarkReportRenderChart>? charts = null)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         ArgumentNullException.ThrowIfNull(info);
@@ -75,9 +100,10 @@ public static class BenchmarkPdfRenderer
         cancellationToken.ThrowIfCancellationRequested();
         BenchmarkPdfResources.EnsureRegistered();
 
-        var sourced = info with { SourceSha256 = Sha256(markdown) };
-        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, sourced.Title);
+        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, info.Title, charts);
+        var sourced = info with { SourceSha256 = SourceSha256(markdown, prepared.OrderedFigures.Select(f => f.Chart)) };
         bool contents = sourced.AllowTableOfContents && prepared.Contents.Count >= 4;
+        var frame = FigureFrameFor(sourced.Paper);
 
         return Generate(sourced, cancellationToken, body =>
         {
@@ -85,8 +111,21 @@ public static class BenchmarkPdfRenderer
             {
                 body.Item().Element(c => BenchmarkPdfMarkdownComposer.ComposeTableOfContents(c, prepared));
             }
-            body.Item().Element(c => BenchmarkPdfMarkdownComposer.ComposeBody(c, prepared, cancellationToken));
+            body.Item().Element(c => BenchmarkPdfMarkdownComposer.ComposeBody(c, prepared, cancellationToken, frame));
         });
+    }
+
+    /// <summary>
+    /// The room a figure's image takes on the paper: the text column's width, less half a point so
+    /// rounding never overflows it, and <see cref="BenchmarkPdfMarkdownComposer.FigureMaxHeightShare"/>
+    /// of the height between the top and bottom margins.
+    /// </summary>
+    internal static BenchmarkPdfMarkdownComposer.FigureFrame FigureFrameFor(BenchmarkPdfPaper paper)
+    {
+        var size = paper == BenchmarkPdfPaper.Letter ? PageSizes.Letter : PageSizes.A4;
+        float width = size.Width - 2 * HorizontalMarginMillimeters * PointsPerMillimeter - 0.5f;
+        float height = size.Height - 2 * VerticalMarginMillimeters * PointsPerMillimeter;
+        return new BenchmarkPdfMarkdownComposer.FigureFrame(width, (float)(height * BenchmarkPdfMarkdownComposer.FigureMaxHeightShare));
     }
 
     /// <summary>
@@ -128,8 +167,8 @@ public static class BenchmarkPdfRenderer
                 container.Page(page =>
                 {
                     page.Size(info.Paper == BenchmarkPdfPaper.Letter ? PageSizes.Letter : PageSizes.A4);
-                    page.MarginHorizontal(20, Unit.Millimetre);
-                    page.MarginVertical(18, Unit.Millimetre);
+                    page.MarginHorizontal(HorizontalMarginMillimeters, Unit.Millimetre);
+                    page.MarginVertical(VerticalMarginMillimeters, Unit.Millimetre);
                     page.PageColor(Colors.White);
                     page.DefaultTextStyle(BenchmarkPdfStyle.Base());
 

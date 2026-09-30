@@ -1534,6 +1534,38 @@ public class AdminController : ControllerBase
         });
     }
 
+    [HttpPost("maintenance/clear-report-charts")]
+    public async Task<IActionResult> ClearReportCharts(
+        [FromBody] MaintenanceRequestDto? request,
+        [FromServices] ChatRetentionService retentionService,
+        [FromServices] Overseer.Services.Benchmarking.BenchmarkReportChartStore chartStore)
+    {
+        var isDryRun = request?.DryRun ?? false;
+
+        if (!chartStore.IsConfigured)
+            return BadRequest(new { message = Overseer.Services.Benchmarking.BenchmarkReportChartStore.NotConfiguredMessage });
+
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.ClearReportCharts, isDryRun, async result =>
+        {
+            var documentIds = await _dbContext.BenchmarkReportDocuments
+                .Select(d => d.Id)
+                .ToListAsync();
+
+            var cleared = await chartStore.ClearAllAsync(isDryRun, documentIds);
+            result.DeletedDiskFolderCount = cleared.FolderCount;
+            result.DeletedDiskFileCount = cleared.FileCount;
+            result.ReclaimedDiskBytes = cleared.Bytes;
+
+            var megabytes = cleared.Bytes / (1024.0 * 1024.0);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}{(isDryRun ? "Would delete" : "Deleted")} {cleared.FolderCount} chart folders ({cleared.FileCount} files, {megabytes:0.##} MB), {cleared.OrphanFolderCount} of them for documents that no longer exist.");
+            if (cleared.LeftAlone.Count > 0)
+                result.Logs.Add($"Left alone: {string.Join(", ", cleared.LeftAlone)}");
+
+            if (!isDryRun)
+                DatabaseStorageMetricsService.InvalidateDiskMetricsCache();
+        });
+    }
+
     [HttpPost("maintenance/send-report-email")]
     public async Task<IActionResult> SendReportEmail([FromServices] DatabaseStorageMetricsService metricsService)
     {

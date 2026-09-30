@@ -3,6 +3,7 @@ namespace Overseer.Services.Benchmarking.Word;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -13,13 +14,17 @@ using DocumentFormat.OpenXml.Wordprocessing;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
 using Overseer.Services.Benchmarking.Pdf;
+using A = DocumentFormat.OpenXml.Drawing;
 using CellAlign = Overseer.Services.Benchmarking.Pdf.BenchmarkPdfMarkdownComposer.CellAlign;
 using Composer = Overseer.Services.Benchmarking.Pdf.BenchmarkPdfMarkdownComposer;
+using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
+using Figure = Overseer.Services.Benchmarking.Pdf.BenchmarkPdfMarkdownComposer.Figure;
 using InlineStyle = Overseer.Services.Benchmarking.Pdf.BenchmarkPdfMarkdownComposer.InlineStyle;
 using MdTable = Markdig.Extensions.Tables.Table;
 using MdTableCell = Markdig.Extensions.Tables.TableCell;
 using MdTableRow = Markdig.Extensions.Tables.TableRow;
 using Palette = Overseer.Services.Benchmarking.Pdf.BenchmarkDocumentPalette;
+using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using WordStyles = Overseer.Services.Benchmarking.Word.BenchmarkWordStyles;
 
 /// <summary>
@@ -30,23 +35,34 @@ using WordStyles = Overseer.Services.Benchmarking.Word.BenchmarkWordStyles;
 /// marks (bold, italic, strike, underline, mark), and paragraphs only for an indent inside a list item
 /// and a table cell's alignment.
 ///
-/// <para>Raw HTML is never interpreted or imported: a tag prints as the literal text it is. Images
-/// print as their alternative text in brackets, only absolute http, https and mailto links become
-/// hyperlinks, and a block type this class does not know prints its literal source text.</para>
+/// <para>Raw HTML is never interpreted or imported: a tag prints as the literal text it is. Markdown
+/// images print as their alternative text in brackets, only absolute http, https and mailto links
+/// become hyperlinks, and a block type this class does not know prints its literal source text.</para>
+///
+/// <para>The prepared document's figures (<see cref="BenchmarkPdfMarkdownComposer.Prepared.Figures"/>)
+/// become inline pictures with a caption; a figure marker without a chart prints nothing.</para>
 /// </summary>
 internal sealed class BenchmarkWordMarkdownWriter
 {
     /// <summary>Code lines per cancellation check.</summary>
     private const int CodeChunkLines = 80;
 
+    /// <summary>The first drawing id a figure takes: 1 is the title block's logo, 2 the running header's emblem.</summary>
+    public const uint FirstFigureDrawingId = 3;
+
+    /// <summary>English Metric Units per twip.</summary>
+    private const long EmuPerTwip = 635;
+
     private readonly MainDocumentPart _part;
     private readonly BenchmarkPdfMarkdownComposer.Prepared _document;
     private readonly int _textWidth;
+    private readonly int _maxFigureHeight;
     private readonly CancellationToken _token;
     private readonly Dictionary<string, string> _hyperlinks = new(StringComparer.Ordinal);
     private readonly List<BenchmarkWordOrderedList> _orderedLists = new();
     private int _nextNumberingId = WordStyles.FirstOrderedNumberingId;
     private int _nextBookmarkId;
+    private uint _nextDrawingId = FirstFigureDrawingId;
 
     /// <summary>
     /// Where a block sits: the text indent of the list item it belongs to, in twips, whether it is
@@ -60,13 +76,16 @@ internal sealed class BenchmarkWordMarkdownWriter
         public int Offset => Indent + (Quote ? WordStyles.Twips(10) : 0);
     }
 
+    /// <param name="maxFigureHeight">The tallest a figure's picture may be, in twips; 0 for no cap.</param>
     public BenchmarkWordMarkdownWriter(
-        MainDocumentPart part, BenchmarkPdfMarkdownComposer.Prepared document, int textWidth, CancellationToken token)
+        MainDocumentPart part, BenchmarkPdfMarkdownComposer.Prepared document, int textWidth, CancellationToken token,
+        int maxFigureHeight = 0)
     {
         _part = part;
         _document = document;
         _textWidth = textWidth;
         _token = token;
+        _maxFigureHeight = maxFigureHeight;
     }
 
     /// <summary>Every ordered list written so far, each with its own numbering instance.</summary>
@@ -135,6 +154,11 @@ internal sealed class BenchmarkWordMarkdownWriter
                     break;
                 case HeadingBlock heading:
                     target.Append(Heading(heading, scope));
+                    break;
+                case ParagraphBlock paragraph when _document.Figures.TryGetValue(paragraph, out var figure):
+                    WriteFigure(target, figure, scope);
+                    break;
+                case ParagraphBlock paragraph when Composer.IsUndrawnMarker(paragraph, _document):
                     break;
                 case ParagraphBlock paragraph:
                     target.Append(TextParagraph(paragraph.Inline, scope));
@@ -249,6 +273,105 @@ internal sealed class BenchmarkWordMarkdownWriter
             target.Append(paragraph);
         }
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Figures
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A figure: the chart as an inline picture in its own PNG image part, centered, as wide as the text
+    /// column unless its height reaches the cap, kept with the caption paragraph below it,
+    /// "<b>Figure N.</b> <i>Title</i> — caption" in the secondary size.
+    /// </summary>
+    private void WriteFigure(OpenXmlElement target, Figure figure, Scope scope)
+    {
+        var chart = figure.Chart;
+        var image = _part.AddImagePart(ImagePartType.Png);
+        using (var stream = new MemoryStream(chart.Png, writable: false))
+        {
+            image.FeedData(stream);
+        }
+
+        int available = Math.Max(_textWidth / 4, _textWidth - scope.Offset);
+        var (width, height) = Composer.FigureSize(
+            chart.WidthPx, chart.HeightPx, (double)available * EmuPerTwip, (double)_maxFigureHeight * EmuPerTwip);
+
+        uint id = _nextDrawingId++;
+        string name = "Figure " + figure.Number.ToString(CultureInfo.InvariantCulture);
+
+        var pictureProperties = Properties(null, IndentOf(scope), JustificationValues.Center);
+        pictureProperties.KeepNext = new KeepNext();
+        pictureProperties.SpacingBetweenLines = new SpacingBetweenLines
+        {
+            Before = WordStyles.Twips(4).ToString(CultureInfo.InvariantCulture),
+            After = WordStyles.Twips(4).ToString(CultureInfo.InvariantCulture),
+            Line = "240",
+            LineRule = LineSpacingRuleValues.Auto
+        };
+        target.Append(new Paragraph(
+            pictureProperties,
+            new Run(Picture(_part.GetIdOfPart(image), id, name, Composer.AltTextOf(chart), (long)Math.Round(width), (long)Math.Round(height)))));
+
+        var (label, title, caption) = Composer.CaptionParts(figure);
+        var captionProperties = Properties(null, IndentOf(scope), JustificationValues.Center);
+        captionProperties.KeepLines = new KeepLines();
+        var captionParagraph = new Paragraph(captionProperties);
+        captionParagraph.Append(CaptionRun(label, bold: true, italic: false));
+        if (title.Length > 0)
+        {
+            captionParagraph.Append(CaptionRun(" " + title, bold: false, italic: true));
+        }
+        if (caption.Length > 0)
+        {
+            captionParagraph.Append(CaptionRun((title.Length > 0 ? " — " : " ") + caption, bold: false, italic: false));
+        }
+        target.Append(captionParagraph);
+    }
+
+    private static Run CaptionRun(string text, bool bold, bool italic)
+    {
+        var properties = new RunProperties
+        {
+            FontSize = WordStyles.Size(BenchmarkPdfStyle.TableCellSize),
+            FontSizeComplexScript = WordStyles.SizeCs(BenchmarkPdfStyle.TableCellSize)
+        };
+        if (bold) properties.Bold = new Bold();
+        if (italic) properties.Italic = new Italic();
+        return new Run(properties, TextOf(text));
+    }
+
+    /// <summary>
+    /// An inline PNG, <paramref name="description"/> its alternative text (empty for a decorative picture).
+    /// <paramref name="id"/> must be unique among the document's drawings, headers included.
+    /// </summary>
+    internal static Drawing Picture(string relationshipId, uint id, string name, string description, long width, long height)
+        => new(
+            new DW.Inline(
+                new DW.Extent { Cx = width, Cy = height },
+                new DW.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L },
+                new DW.DocProperties { Id = id, Name = name, Description = description },
+                new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
+                new A.Graphic(
+                    new A.GraphicData(
+                        new PIC.Picture(
+                            new PIC.NonVisualPictureProperties(
+                                new PIC.NonVisualDrawingProperties { Id = id, Name = name + ".png", Description = description },
+                                new PIC.NonVisualPictureDrawingProperties()),
+                            new PIC.BlipFill(
+                                new A.Blip { Embed = relationshipId },
+                                new A.Stretch(new A.FillRectangle())),
+                            new PIC.ShapeProperties(
+                                new A.Transform2D(
+                                    new A.Offset { X = 0L, Y = 0L },
+                                    new A.Extents { Cx = width, Cy = height }),
+                                new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle })))
+                    { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" }))
+            {
+                DistanceFromTop = 0U,
+                DistanceFromBottom = 0U,
+                DistanceFromLeft = 0U,
+                DistanceFromRight = 0U
+            });
 
     // ---------------------------------------------------------------------------------------------
     // Lists

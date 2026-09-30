@@ -1,0 +1,33 @@
+<!--
+  COMPARISON REPORTS
+
+  A summary of every report document the model comparisons wrote, and one way into them: the
+  Download Center, with nothing preselected. The Download Center's own dialog is hosted here.
+-->
+<section class="rdl-launcher" [attr.aria-labelledby]="idPrefix + '-heading'" [attr.aria-busy]="loading ? 'true' : null">
+  <div class="rdl-launcher-head">
+    <h4 class="gh-section-title rdl-launcher-heading" [id]="idPrefix + '-heading'">Comparison reports</h4>
+    <app-info-tip trigger="click" [tipId]="idPrefix + '-tip'" subject="Comparison reports">
+      Every report document written from a model comparison, newest first, to view, download or delete in the
+      Download Center. A run's own reports are in its run report.
+    </app-info-tip>
+  </div>
+
+  <div class="rdl-launcher-state">
+    <p class="rdl-launcher-summary" [id]="idPrefix + '-summary'" role="status">{{ summary }}</p>
+    @if (changedCount > 0) {
+      <span class="gh-tag gh-tag-changed rdl-launcher-changed">{{ changedCount }} changed since written<span class="visually-hidden">: a subject's or a peer's run was re-scored, re-run or deleted</span></span>
+    }
+  </div>
+
+  <!-- aria-disabled rather than disabled: the button stays reachable, and the summary says why it does nothing. -->
+  <button #openButton type="button" class="btn-ghost rdl-launcher-open" [id]="idPrefix + '-open'"
+          [attr.aria-disabled]="openBlocked ? 'true' : null"
+          [attr.aria-describedby]="idPrefix + '-summary ' + idPrefix + '-tip'"
+          (click)="openDownloadCenter()">
+    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+    Open Download Center
+  </button>
+</section>
+
+<app-benchmark-download-center (closed)="onClosed()" (documentsChanged)="onDocumentsChanged()"></app-benchmark-download-center>

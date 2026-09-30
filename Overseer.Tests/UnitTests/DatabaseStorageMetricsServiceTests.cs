@@ -4,7 +4,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
+using Overseer.Models;
 using Overseer.Services;
+using Overseer.Services.Benchmarking;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -49,14 +52,94 @@ public class DatabaseStorageMetricsServiceTests
     private static DatabaseStorageMetricsService CreateService(
         ApplicationDbContext db,
         IMemoryCache cache,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        BenchmarkReportChartStore? chartStore = null)
     {
+        var services = new ServiceCollection();
+        if (chartStore != null)
+        {
+            services.AddSingleton(chartStore);
+        }
+
         return new DatabaseStorageMetricsService(
             db,
             configuration ?? CreateConfiguration(),
             cache,
             NullLogger<DatabaseStorageMetricsService>.Instance,
-            new ServiceCollection().BuildServiceProvider());
+            services.BuildServiceProvider());
+    }
+
+    private static async Task SeedChartsAsync(BenchmarkReportChartStore store, long documentId)
+    {
+        var validated = BenchmarkReportChartStore.ValidateCharts(new[]
+        {
+            new ReportDocumentChartUpload
+            {
+                FigureKey = "p1a-quality",
+                Naming = BenchmarkReportChartStore.Named,
+                AltText = "Quality index by model",
+                SettingsHash = new string('d', 64),
+                PngBase64 = TestPngs.MakeBase64(640, 400)
+            },
+            new ReportDocumentChartUpload
+            {
+                FigureKey = "p1a-quality",
+                Naming = BenchmarkReportChartStore.Anonymized,
+                AltText = "Quality index by model",
+                SettingsHash = new string('d', 64),
+                PngBase64 = TestPngs.MakeBase64(640, 400, shade: 5)
+            }
+        });
+
+        await store.SetChartsAsync(documentId, validated, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task GetStorageMetricsAsync_WithoutAChartStore_ReportsChartsUnconfigured()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        using var cache = (MemoryCache)CreateSizeLimitedCache();
+
+        var withoutStore = await CreateService(db, cache).GetStorageMetricsAsync(ct);
+        var unconfigured = await CreateService(db, cache, chartStore: TestChartStores.Unconfigured()).GetStorageMetricsAsync(ct);
+
+        foreach (var metrics in new[] { withoutStore, unconfigured })
+        {
+            Assert.False(metrics.ReportChartsConfigured);
+            Assert.Equal(0, metrics.ReportChartFolderCount);
+            Assert.Equal(0, metrics.ReportChartFileCount);
+            Assert.Equal(0, metrics.ReportChartSizeBytes);
+            Assert.Equal(0, metrics.ReportChartSizeMb);
+        }
+    }
+
+    [Fact]
+    public async Task GetStorageMetricsAsync_ReportsChartFolders_AndRescansAfterInvalidation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        using var cache = (MemoryCache)CreateSizeLimitedCache();
+        using var charts = TestChartStores.InTempFolder();
+        await SeedChartsAsync(charts.Store, 1);
+        var service = CreateService(db, cache, chartStore: charts.Store);
+
+        var first = await service.GetStorageMetricsAsync(ct);
+
+        Assert.True(first.ReportChartsConfigured);
+        Assert.Equal(1, first.ReportChartFolderCount);
+        Assert.Equal(3, first.ReportChartFileCount);
+        long expectedBytes = Directory.GetFiles(Path.Combine(charts.Root, "1")).Sum(f => new FileInfo(f).Length);
+        Assert.Equal(expectedBytes, first.ReportChartSizeBytes);
+        Assert.Equal(Math.Round(expectedBytes / (1024.0 * 1024.0), 2), first.ReportChartSizeMb);
+
+        await SeedChartsAsync(charts.Store, 2);
+        DatabaseStorageMetricsService.InvalidateDiskMetricsCache();
+
+        var second = await service.GetStorageMetricsAsync(ct);
+
+        Assert.Equal(2, second.ReportChartFolderCount);
+        Assert.Equal(6, second.ReportChartFileCount);
     }
 
     /// <summary>

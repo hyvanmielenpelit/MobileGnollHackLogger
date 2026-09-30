@@ -18,6 +18,7 @@ using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Privacy;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -204,7 +205,7 @@ public class BenchmarkRunReportDocumentServiceTests
         int calls = h.Writer.Calls;
 
         await using var db = new ApplicationDbContext(h.Options);
-        var render = new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance);
+        var render = new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance);
         foreach (var document in await h.DocumentsAsync())
         {
             var (markdown, notFound, refusal) = await render.RenderAsync(document.Id, new BenchmarkReportRenderOptions

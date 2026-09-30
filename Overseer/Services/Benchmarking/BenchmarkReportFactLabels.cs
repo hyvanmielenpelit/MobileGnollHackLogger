@@ -27,6 +27,7 @@ public static class BenchmarkReportFactLabels
         ["suite.questions"] = "Questions",
         ["config.chat"] = "Chat configuration under test",
         ["comparison.models"] = "Models compared",
+        ["comparison.peerRuns"] = "Runs per peer",
         ["comparison.pricingBasis"] = "Pricing basis",
         ["comparison.pricingBasisKind"] = "Pricing basis kind",
         ["comparison.pricedOn"] = "Catalog price date",
@@ -119,6 +120,7 @@ public static class BenchmarkReportFactLabels
         ["intervalOverlap"] = "Interval overlap with {0}",
         ["pairedDifference"] = "Paired difference from {0}",
         ["pairedInterval"] = "Paired-bootstrap interval against {0}",
+        ["pairedExcludesZero"] = "Paired interval against {0} relative to zero",
         ["sharedQuestions"] = "Questions shared with {0}",
     };
 

@@ -76,7 +76,7 @@ Completeness was its lowest dimension at 70.
 - Asserted a false outcome on Q3. *(Both graders)*
   - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
 - Scored lowest on intermediate questions (49). *(From per-question results)*
-  - *Evidence:* Intermediate band score: 49 · Q2 (72 / 100), Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3
+  - *Evidence:* Intermediate band score: 49 · Q3 (25 / 100), Q2 (72 / 100) · the claim verifier refuted an answer sentence on Q3
 
 ## What worked well
 
@@ -272,6 +272,6 @@ The result rests on a single run, so its interval covers question sampling alone
 
 ---
 
-*Document ID 101 · format version 7 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 8 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

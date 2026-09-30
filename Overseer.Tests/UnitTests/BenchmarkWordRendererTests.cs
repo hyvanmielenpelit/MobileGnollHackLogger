@@ -20,8 +20,10 @@ using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.Pdf;
 using Overseer.Services.Benchmarking.Word;
+using Overseer.Tests.Helpers;
 using Xunit;
 using Cp = DocumentFormat.OpenXml.CustomProperties;
+using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using V = DocumentFormat.OpenXml.Vml;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 
@@ -328,7 +330,7 @@ public class BenchmarkWordRendererTests
             var instructions = footer.Footer!.Descendants<W.SimpleField>().Select(f => f.Instruction!.Value!.Trim()).ToList();
             Assert.Contains("PAGE", instructions);
             Assert.Contains("NUMPAGES", instructions);
-            Assert.Contains("Word layout 1", TextOf(footer.Footer), StringComparison.Ordinal);
+            Assert.Contains("Word layout 2", TextOf(footer.Footer), StringComparison.Ordinal);
         });
     }
 
@@ -412,6 +414,124 @@ public class BenchmarkWordRendererTests
         Assert.Empty(main.Document.Descendants<W.AltChunk>());
     }
 
+    // --- Figures -----------------------------------------------------------------------------------
+
+    private const string FigureMarkdown =
+        "## Results\n\nIntro text.\n\n[[figure:p1a-quality]]\n\nMiddle text.\n\n[[figure:s1-quality-speed]]\n\n"
+        + "[[figure:p2-profile]]\n\n[[not a figure]] stays.\n\nEnd text.\n";
+
+    [Theory]
+    [InlineData(BenchmarkPdfPaper.A4)]
+    [InlineData(BenchmarkPdfPaper.Letter)]
+    public void TwoCharts_AreInlinePictures_WithAltTextCaptionsAndUniqueIds(BenchmarkPdfPaper paper)
+    {
+        var charts = TwoCharts();
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(FigureMarkdown, Info(paper: paper), TestContext.Current.CancellationToken, charts);
+
+        AssertValid(docx);
+        using var package = Open(docx);
+        var main = package.MainDocumentPart!;
+        var body = main.Document!.Body!;
+
+        // The title block's logo and the two charts; the emblem's part belongs to the running header.
+        Assert.Equal(3, main.ImageParts.Count());
+        var figures = body.Descendants<DW.DocProperties>().Where(p => p.Id!.Value >= BenchmarkWordMarkdownWriter.FirstFigureDrawingId).ToList();
+        Assert.Equal(new[] { charts[0].AltText, charts[1].AltText }, figures.Select(p => p.Description!.Value));
+        Assert.Equal(new[] { "Figure 1", "Figure 2" }, figures.Select(p => p.Name!.Value));
+
+        var ids = main.Document.Descendants<DW.DocProperties>()
+            .Concat(main.HeaderParts.SelectMany(h => h.Header!.Descendants<DW.DocProperties>()))
+            .Select(p => p.Id!.Value)
+            .ToList();
+        Assert.Equal(new uint[] { 1, 2, 3, 4 }, ids.OrderBy(id => id));
+
+        // Each chart's picture is its own image part, holding the PNG as uploaded.
+        var blips = body.Descendants<DocumentFormat.OpenXml.Drawing.Blip>().Select(b => b.Embed!.Value!).ToList();
+        Assert.Equal(3, blips.Distinct().Count());
+        Assert.Equal(charts[0].Png, ReadAll(main.GetPartById(blips[1])));
+        Assert.Equal(charts[1].Png, ReadAll(main.GetPartById(blips[2])));
+
+        var paragraphs = body.Elements<W.Paragraph>().ToList();
+        var first = paragraphs.Single(p => TextOf(p) == "Figure 1. Quality index — Higher is better.");
+        var second = paragraphs.Single(p => TextOf(p) == "Figure 2. Quality against speed — Up and left is better.");
+        Assert.True(paragraphs.IndexOf(first) < paragraphs.IndexOf(second));
+        Assert.NotNull(first.Descendants<W.Run>().First().RunProperties?.Bold);
+        Assert.NotNull(first.Descendants<W.Run>().ElementAt(1).RunProperties?.Italic);
+
+        // The picture keeps with its caption, directly below it.
+        var picture = paragraphs[paragraphs.IndexOf(first) - 1];
+        Assert.Single(picture.Descendants<W.Drawing>());
+        Assert.NotNull(picture.ParagraphProperties?.KeepNext);
+
+        // Width the text column (A4: 11906 − 2 × 1134 twips), height in proportion.
+        int textWidth = (paper == BenchmarkPdfPaper.Letter ? 12240 : 11906) - 2 * 1134;
+        var extent = picture.Descendants<DW.Extent>().Single();
+        Assert.Equal(textWidth * 635L, extent.Cx!.Value);
+        Assert.Equal((long)Math.Round(textWidth * 635.0 * 450 / 800), extent.Cy!.Value);
+
+        string text = TextOf(body);
+        Assert.DoesNotContain("[[figure:", text, StringComparison.Ordinal);
+        Assert.Contains("[[not a figure]] stays.", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATallChart_IsCappedAtSixtyPercentOfTheContentHeight_AndTheSourceHashCoversTheCharts()
+    {
+        var tall = Chart("p2-profile", 400, 2000, 40, "Profile", "", "A tall chart.");
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown("[[figure:p2-profile]]\n", Info(), TestContext.Current.CancellationToken, new[] { tall });
+
+        AssertValid(docx);
+        using var package = Open(docx);
+        var extent = package.MainDocumentPart!.Document!.Body!.Descendants<W.Drawing>()
+            .Select(d => d.Descendants<DW.Extent>().Single())
+            .Last();
+        long maxHeight = (long)Math.Round(Math.Round((16838 - 2 * 1020) * 0.6) * 635);
+        Assert.Equal(maxHeight, extent.Cy!.Value);
+        Assert.Equal((long)Math.Round(maxHeight / 5.0), extent.Cx!.Value);
+        Assert.Contains(package.MainDocumentPart.Document.Body.Elements<W.Paragraph>(), p => TextOf(p) == "Figure 1. Profile");
+
+        var custom = package.CustomFilePropertiesPart!.Properties!.Elements<Cp.CustomDocumentProperty>()
+            .ToDictionary(p => p.Name!.Value!, p => p.VTLPWSTR!.Text);
+        Assert.Equal(BenchmarkPdfRenderer.SourceSha256("[[figure:p2-profile]]\n", new[] { tall }), custom[BenchmarkWordRenderer.SourceHashProperty]);
+        Assert.NotEqual(BenchmarkPdfRenderer.Sha256("[[figure:p2-profile]]\n"), custom[BenchmarkWordRenderer.SourceHashProperty]);
+    }
+
+    [Fact]
+    public void WithoutCharts_AMarkerPrintsNothing_AndNoPictureIsAdded()
+    {
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken);
+
+        AssertValid(docx);
+        using var package = Open(docx);
+        var main = package.MainDocumentPart!;
+        Assert.Single(main.ImageParts);
+        Assert.DoesNotContain(main.Document!.Body!.Descendants<DW.DocProperties>(), p => p.Id!.Value >= BenchmarkWordMarkdownWriter.FirstFigureDrawingId);
+        Assert.DoesNotContain("[[figure:", TextOf(main.Document.Body!), StringComparison.Ordinal);
+        Assert.DoesNotContain("Figure 1.", TextOf(main.Document.Body!), StringComparison.Ordinal);
+    }
+
+    private static BenchmarkReportRenderChart[] TwoCharts() => new[]
+    {
+        Chart("p1a-quality", 800, 450, 10, "Quality index", "Higher is better.", "Bar chart of the quality index of three models."),
+        Chart("s1-quality-speed", 900, 500, 90, "Quality against speed", "Up and left is better.", "Scatter plot of quality against median answer time.")
+    };
+
+    private static BenchmarkReportRenderChart Chart(string key, int width, int height, byte shade, string title, string caption, string alt)
+    {
+        byte[] png = TestPngs.Make(width, height, shade);
+        return new BenchmarkReportRenderChart
+        {
+            FigureKey = key,
+            Title = title,
+            Caption = caption,
+            AltText = alt,
+            Png = png,
+            WidthPx = width,
+            HeightPx = height,
+            Sha256 = BenchmarkReportChartStore.Sha256Hex(png)
+        };
+    }
+
     // --- Guard and cancellation --------------------------------------------------------------------
 
     [Fact]
@@ -492,7 +612,7 @@ public class BenchmarkWordRendererTests
         var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
 
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
@@ -501,7 +621,7 @@ public class BenchmarkWordRendererTests
 
         document.SubjectKey = "group:5";
         Assert.Equal(
-            "gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            "vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
             {
                 Disclosure = BenchmarkReportDisclosure.Detailed,
@@ -625,7 +745,7 @@ public class BenchmarkWordRendererTests
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         Assert.IsType<NotFoundResult>(await controller.RenderDocx(document.Id + 1000, "full", "named", null, CancellationToken.None));
         Assert.IsType<BadRequestObjectResult>(await controller.RenderDocx(document.Id, "summary", "named", null, CancellationToken.None));
@@ -645,7 +765,7 @@ public class BenchmarkWordRendererTests
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         var provider = Assert.IsType<FileContentResult>(
             await controller.RenderDocx(document.Id, "detailed", "anonymized", "letter", CancellationToken.None));
@@ -654,10 +774,10 @@ public class BenchmarkWordRendererTests
 
         Assert.Equal(BenchmarkWordRenderer.ContentType, provider.ContentType);
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
             provider.FileDownloadName);
         Assert.Equal(
-            "run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.docx",
+            "run-12_vs-2-models_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.docx",
             full.FileDownloadName);
         AssertValid(provider.FileContents);
         AssertValid(full.FileContents);
@@ -678,7 +798,7 @@ public class BenchmarkWordRendererTests
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         var controller = new AdminBenchmarkReportDocumentsController(
-            new BenchmarkReportRenderService(db, NullLogger<BenchmarkReportRenderService>.Instance));
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         var full = Assert.IsType<FileContentResult>(await controller.RenderDocx(document.Id, "full", "named", null, CancellationToken.None));
 
@@ -689,10 +809,11 @@ public class BenchmarkWordRendererTests
             .ToDictionary(cells => cells[0], cells => cells[1]);
 
         Assert.Equal(
-            new[] { "Document ID", "Disclosure", "Peers", "Suite", "Questions", "Run", "Created (UTC)", "Generated format", "Writer", "Provenance" },
+            new[] { "Document ID", "Disclosure", "Compared with", "Pricing basis", "Suite", "Questions", "Run", "Created (UTC)", "Generated format", "Writer", "Provenance" },
             facts.Keys);
         Assert.Equal(document.Id.ToString(CultureInfo.InvariantCulture), facts["Document ID"]);
-        Assert.Equal("2, named", facts["Peers"]);
+        Assert.Equal("Grok 5 and Mistral Large 4 (2 models)", facts["Compared with"]);
+        Assert.Equal("Catalog prices on 2026-09-20 (price card dated 2026-09-01)", facts["Pricing basis"]);
         Assert.Equal("4", facts["Questions"]);
         Assert.Equal("Claude Opus 5.5 (Anthropic, claude-opus-5-5; high)", facts["Writer"]);
         Assert.StartsWith("Figures and tables computed by Overseer;", facts["Provenance"], StringComparison.Ordinal);
@@ -703,7 +824,7 @@ public class BenchmarkWordRendererTests
         Assert.DoesNotContain("Document ID " + document.Id.ToString(CultureInfo.InvariantCulture) + " ·", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Audience", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Date: 2026-09-28", text, StringComparison.Ordinal);
-        Assert.DoesNotContain("Peers: Model A = Grok 5", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("Compared with: Model A = Grok 5", text, StringComparison.Ordinal);
         const string stamp = "INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.";
         Assert.Equal(text.IndexOf(stamp, StringComparison.Ordinal), text.LastIndexOf(stamp, StringComparison.Ordinal));
         Assert.Contains(stamp, text, StringComparison.Ordinal);

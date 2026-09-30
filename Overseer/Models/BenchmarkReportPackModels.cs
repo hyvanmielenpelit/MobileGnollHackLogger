@@ -58,6 +58,12 @@ public sealed class BenchmarkReportRenderOptions
     /// leave them out, because their cover prints the same facts.
     /// </summary>
     public bool IncludeDocumentFooter { get; init; } = true;
+
+    /// <summary>The fact sheet section of the Internal Improvement Brief. The PDF and Word downloads leave it out.</summary>
+    public bool IncludeFactSheet { get; init; } = true;
+
+    /// <summary>The chart figures placed in the document; empty for none.</summary>
+    public IReadOnlyList<BenchmarkReportRenderChart> Charts { get; init; } = Array.Empty<BenchmarkReportRenderChart>();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -240,6 +246,18 @@ public sealed class BenchmarkReportQuestion
     public double? Difference { get; set; }
     public int PeerCount { get; set; }
 
+    /// <summary>The lowest peer quality on the same item and revision; null when no peer answered it.</summary>
+    public double? PeerMin { get; set; }
+
+    /// <summary>The highest peer quality on the same item and revision; null when no peer answered it.</summary>
+    public double? PeerMax { get; set; }
+
+    /// <summary>
+    /// Peers scoring more than <see cref="Overseer.Services.Benchmarking.BenchmarkReportFacts.PeerAboveMarginPoints"/>
+    /// points above the subject on the same item and revision; 0 when the subject has no score.
+    /// </summary>
+    public int PeersAbove { get; set; }
+
     public bool CriticalError { get; set; }
 
     /// <summary>The verifier's refuted ordinary claims of the answers (the harness's <c>ClaimsRefutedCount</c>).</summary>
@@ -333,11 +351,15 @@ public sealed class BenchmarkReportFactSheet
     public List<string> KnownNames { get; set; } = new();
 
     /// <summary>
-    /// The comparison's own "no pairwise significance test" statement and where to look instead,
-    /// printed verbatim by the renderer.
+    /// The comparison's own "no pairwise significance test" statement, printed verbatim by the
+    /// renderer and shown to the writer.
     /// </summary>
     public string NoSignificanceSummary { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Where the comparison view tells its operator to look instead. Kept in the stored format; an
+    /// instruction for the Overseer's own view, so neither documents nor the writer see it.
+    /// </summary>
     public string NoSignificanceInstead { get; set; } = string.Empty;
 
     /// <summary>
@@ -588,7 +610,7 @@ public sealed class BenchmarkReportQuestionNote
 /// <summary>One validation problem, and whether the offending item was dropped (stored as ValidationNotesJson).</summary>
 public sealed class BenchmarkReportValidationNote
 {
-    /// <summary>The D7 rule number, 1–17.</summary>
+    /// <summary>The D7 rule number, 1–18.</summary>
     public int Rule { get; set; }
 
     /// <summary>Where: <c>headline</c>, <c>sections.abstract</c>, <c>weaknesses[1]</c>, ….</summary>
@@ -722,6 +744,9 @@ public class BenchmarkReportPackJobDto
     public double? CostUsd { get; set; }
     public List<BenchmarkReportPackDocumentProgressDto> Documents { get; set; } = new();
     public List<BenchmarkReportPackJobLogEntryDto> Log { get; set; } = new();
+
+    /// <summary>The server's clock when the view was built, for elapsed times the client shows.</summary>
+    public DateTime ServerTimeUtc { get; set; }
 }
 
 /// <summary>A stored document in a list; never carries rendered text.</summary>
@@ -779,6 +804,18 @@ public class BenchmarkReportDocumentListItemDto
     /// document stored without peer rows.
     /// </summary>
     public bool PeersChangedSinceGeneration { get; set; }
+
+    /// <summary>The chart figures the document's chart manifest holds.</summary>
+    public int ChartCount { get; set; }
+
+    /// <summary>The figure keys of the document's charts, in manifest order.</summary>
+    public List<string> ChartFigureKeys { get; set; } = new();
+
+    /// <summary>The chart manifest's settings hash; null when the document has no charts.</summary>
+    public string? ChartSettingsHash { get; set; }
+
+    /// <summary>Peer entry key → the peer's letter, from the fact sheet.</summary>
+    public Dictionary<string, string> PeerLetters { get; set; } = new();
 }
 
 /// <summary>What <c>GET report-documents</c> filters on; every field is optional.</summary>

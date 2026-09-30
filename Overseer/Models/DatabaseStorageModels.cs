@@ -148,7 +148,14 @@ public class DatabaseStorageMetricsDto
     public int DiskAttachmentsFolderCount { get; set; }
     public int DiskAttachmentsFileCount { get; set; }
     public double EstimatedReclaimableMb { get; set; }
-    
+
+    // Report chart images under Benchmark:ReportPack:ChartsDataLocation
+    public bool ReportChartsConfigured { get; set; }
+    public int ReportChartFolderCount { get; set; }
+    public int ReportChartFileCount { get; set; }
+    public long ReportChartSizeBytes { get; set; }
+    public double ReportChartSizeMb { get; set; }
+
     public DateTime? LastMaintenanceRunUtc { get; set; }
     public string StatusLevel { get; set; } = "Normal"; // "Normal", "Warning", "Critical"
 
@@ -226,6 +233,7 @@ public static class MaintenanceTriggers
     public const string PruneAuditLog = "Manual:PruneAuditLog";
     public const string PruneAiErrorLog = "Manual:PruneAiErrorLog";
     public const string SweepOrphans = "Manual:SweepOrphans";
+    public const string ClearReportCharts = "Manual:ClearReportCharts";
 }
 
 public class MaintenanceResultDto

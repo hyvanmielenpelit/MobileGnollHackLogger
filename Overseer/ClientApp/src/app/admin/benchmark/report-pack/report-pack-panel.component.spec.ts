@@ -1,29 +1,29 @@
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
 
 import {
   BenchmarkReportAudience,
-  BenchmarkReportDisclosure,
-  BenchmarkReportDocumentListItemDto,
+  BenchmarkReportPackDocumentProgressDto,
   BenchmarkReportPackJobDto,
   BenchmarkReportPackPreviewDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
-import type { PdfViewerRequest } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import type { BenchmarkModelComparisonEntryDto } from '../model-comparison/model-comparison.models';
 import { RunReportFrameComponent } from '../run-report-frame/run-report-frame.component';
+import { ReportChartPickerComponent } from './report-chart-picker.component';
+import { DEFAULT_CHART_SELECTION, REPORT_CHART_FIGURES, ReportChartRowStatus, ReportChartSelection } from './report-charts';
+import { reportPackIo } from './report-pack-diagnostics';
 import {
-  BenchmarkReportPackDialogComponent,
   REPORT_PACK_POLL_MS,
   REPORT_PACK_PREVIEW_DEBOUNCE_MS,
   REPORT_PACK_STORAGE_KEY,
-  ReportPackContext
-} from './benchmark-report-pack-dialog.component';
+  ReportPackContext,
+  ReportPackPanelComponent
+} from './report-pack-panel.component';
 
 const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
-const { Summary, Detailed, Full } = BenchmarkReportDisclosure;
 
 const SYSTEM_CONFIGS_URL = '/api/admin/systemconfigs';
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
@@ -118,7 +118,7 @@ function jobDto(overrides: Partial<BenchmarkReportPackJobDto> = {}): BenchmarkRe
     suiteName: 'Board Suite',
     writerConfigId: 7,
     writerDisplayName: 'Claude Opus writer',
-    startedByUserId: null,
+    startedByUserId: 'user-secret-id',
     startedAtUtc: '2026-09-28T10:00:00Z',
     completedAtUtc: null,
     status: 'Running',
@@ -135,64 +135,28 @@ function jobDto(overrides: Partial<BenchmarkReportPackJobDto> = {}): BenchmarkRe
   };
 }
 
-function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
-  const titles: Record<number, string> = {
-    [ExecutiveSummary]: 'Executive Summary: Gemini Flash',
-    [TechnicalReport]: 'Technical Report: Gemini Flash',
-    [InternalBrief]: 'Internal Improvement Brief: Gemini Flash'
-  };
-  return {
-    id,
-    packId: 'pack-1',
-    audience,
-    title: titles[audience],
-    subjectKey: 'run:1',
-    subjectLabel: 'Gemini Flash',
-    subjectRunIds: [1],
-    suiteId: 5,
-    suiteName: 'Board Suite',
-    writerDisplayName: 'Claude Opus writer',
-    writerProvider: 'Anthropic',
-    writerModelId: 'claude-opus',
-    writerThinkingLevel: 'medium',
-    sameProviderAcknowledged: false,
-    status: 'Completed',
-    reportFormatVersion: 1,
-    createdAtUtc: `2026-09-2${id % 10}T16:00:00Z`,
-    inputTokens: 6000,
-    outputTokens: 1500,
-    durationMs: 30000,
-    costUsd: 0.05,
-    runChangedSinceGeneration: false,
-    missingRunIds: [],
-    allowedDisclosures: audience === InternalBrief ? [Full] : [Summary, Detailed, Full],
-    origin: 1,
-    comparisonKey: 'cmp-1',
-    comparisonEntryCount: 4,
-    peerCount: 2,
-    pricingBasis: 'Current',
-    peersChangedSinceGeneration: false,
-    ...overrides
-  };
+function written(audience: BenchmarkReportAudience, documentId: number, status = 'Completed'): BenchmarkReportPackDocumentProgressDto {
+  return { audience, status, documentId, errorMessage: null, modelCalls: 1 };
 }
 
-describe('BenchmarkReportPackDialogComponent', () => {
-  let fixture: ComponentFixture<BenchmarkReportPackDialogComponent>;
-  let component: BenchmarkReportPackDialogComponent;
+describe('ReportPackPanelComponent', () => {
+  let fixture: ComponentFixture<ReportPackPanelComponent>;
+  let component: ReportPackPanelComponent;
   let http: HttpTestingController;
   let host: HTMLElement;
 
   beforeEach(async () => {
     localStorage.removeItem(REPORT_PACK_STORAGE_KEY);
     await TestBed.configureTestingModule({
-      imports: [BenchmarkReportPackDialogComponent],
+      imports: [ReportPackPanelComponent],
       providers: [provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
-    fixture = TestBed.createComponent(BenchmarkReportPackDialogComponent);
+    fixture = TestBed.createComponent(ReportPackPanelComponent);
     component = fixture.componentInstance;
     http = TestBed.inject(HttpTestingController);
     host = fixture.nativeElement as HTMLElement;
-    fixture.detectChanges();
+    fixture.componentRef.setInput('chartSelection', DEFAULT_CHART_SELECTION);
+    fixture.componentRef.setInput('chartsAvailable', REPORT_CHART_FIGURES.map(figure => figure.key));
   });
 
   afterEach(() => {
@@ -210,26 +174,27 @@ describe('BenchmarkReportPackDialogComponent', () => {
   const text = (selector: string): string => (q(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim();
   const generateButton = (): HTMLButtonElement => q<HTMLButtonElement>('.rp-generate')!;
   const confirmDialog = (): HTMLDialogElement => q<HTMLDialogElement>('dialog.rp-same-provider-dialog')!;
+  const cellText = (audience: BenchmarkReportAudience, selector: string): string =>
+    text(`.rp-job-row[data-audience="${audience}"] ${selector}`);
 
   interface OpenOptions {
     configs?: SystemAiConfigDto[];
-    documents?: BenchmarkReportDocumentListItemDto[];
     activeJob?: BenchmarkReportPackJobDto | null;
+    context?: ReportPackContext;
   }
 
-  /** Opens the dialog and answers its three opening requests: writers, the comparison's documents, the active job. */
-  function openDialog(options: OpenOptions = {}): void {
-    component.open(CONTEXT);
+  /** Gives the panel its comparison and answers its two opening requests: the writers and the active job. */
+  function openPanel(options: OpenOptions = {}): void {
+    fixture.componentRef.setInput('context', options.context ?? CONTEXT);
     fixture.detectChanges();
     http.expectOne(SYSTEM_CONFIGS_URL).flush(options.configs ?? CONFIGS);
-    const list = http.expectOne(r => r.method === 'GET' && r.url === DOCUMENTS_URL);
-    expect(list.request.params.get('comparison')).toBe('run:1,run:2,run:3,group:4');
-    expect(list.request.params.get('origin')).toBe('reportPack');
-    expect(list.request.params.has('suiteId')).toBeFalse();
-    list.flush(options.documents ?? []);
+    answerActiveJob(options.activeJob ?? null);
+  }
+
+  function answerActiveJob(job: BenchmarkReportPackJobDto | null): void {
     const active = http.expectOne(ACTIVE_JOB_URL);
-    if (options.activeJob) {
-      active.flush(options.activeJob);
+    if (job) {
+      active.flush(job);
     } else {
       active.flush(null, { status: 204, statusText: 'No Content' });
     }
@@ -247,12 +212,12 @@ describe('BenchmarkReportPackDialogComponent', () => {
     return request;
   }
 
-  /** The library lists the comparison's documents again once the host's change reaches it. */
-  function expectDocumentsRefresh(documents: BenchmarkReportDocumentListItemDto[] = []): void {
-    fixture.detectChanges();
-    const list = http.expectOne(r => r.method === 'GET' && r.url === DOCUMENTS_URL);
-    expect(list.request.params.get('comparison')).toBe('run:1,run:2,run:3,group:4');
-    list.flush(documents);
+  /** Generates with writer 7 and answers the start and the first reading of the job. */
+  function startJob(job: BenchmarkReportPackJobDto = jobDto()): void {
+    chooseWriter(7);
+    generateButton().click();
+    http.expectOne(START_URL).flush({ jobId: job.id });
+    http.expectOne(jobUrl(job.id)).flush(job);
     fixture.detectChanges();
   }
 
@@ -260,34 +225,51 @@ describe('BenchmarkReportPackDialogComponent', () => {
   // Layout
   // -------------------------------------------------------------------------------------------
 
-  it('lays out the form in the sidebar and the documents in the main area, under its subtitle', () => {
-    openDialog();
+  it('lays out the form in the sidebar and the progress in the main area, under the step heading', () => {
+    openPanel();
 
     const frame = q('app-run-report-frame')!;
     expect(frame.classList).toContain('rrf-layout-sidebar');
     const sidebar = q('aside.rrf-sidebar')!;
     const main = q('section.rrf-main')!;
     expect(sidebar.getAttribute('aria-label')).toBe('New report pack');
-    expect(main.getAttribute('aria-label')).toBe('Documents of this comparison');
+    expect(main.getAttribute('aria-label')).toBe('Report pack progress');
 
-    // Subject, Documents, Report writer, the estimate, Generate: in that order.
-    const order = ['#rp-subject', '.rp-documents-choice', '.rp-writer-selector', '#rp-estimate', '.rp-generate']
+    // Subject, Documents, Charts, Report writer, the estimate, Generate: in that order.
+    const order = ['#rp-subject', '.rp-documents-choice', '.rp-charts-choice', '.rp-writer-selector', '#rp-estimate', '.rp-generate']
       .map(selector => sidebar.querySelector(selector));
     expect(order.every(element => element !== null)).toBeTrue();
     for (let i = 1; i < order.length; i++) {
       expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).withContext(`${i}`).toBeTruthy();
     }
 
-    expect(main.querySelector('h4.gh-section-title#rp-documents-heading')?.textContent?.trim()).toBe('Documents of this comparison');
-    expect(text('.rp-scope-line'))
-      .toBe('Reports whose subject is one of the 4 models of this comparison, written for this same set of models.');
-    expect(main.querySelector('app-report-document-library')).not.toBeNull();
+    const heading = q('h4.gh-section-title#rp-heading')!;
+    expect(heading.textContent!.trim()).toBe('Reports');
+    expect(component.headingId).toBe('rp-heading');
     expect(text('.rp-subtitle')).toBe('Board Suite · 4 models · 3 possible subjects');
+    expect(main.querySelector('#rp-progress-heading')?.textContent?.trim()).toBe('Report pack progress');
+
+    // No dialog shell and no document library: the wizard is the dialog, and step 4 lists the documents.
+    expect(q('dialog.rp-dialog')).toBeNull();
+    expect(q('app-report-document-library')).toBeNull();
+    expect(q('.rp-open-downloads')).toBeNull();
+    http.expectNone(r => r.url === DOCUMENTS_URL);
+  });
+
+  it('derives its ids from idPrefix', () => {
+    fixture.componentRef.setInput('idPrefix', 'mcr');
+    openPanel();
+
+    expect(q('h4#mcr-heading')).not.toBeNull();
+    expect(q('#mcr-subject')).not.toBeNull();
+    expect(q('#mcr-estimate')).not.toBeNull();
+    expect(q('#rp-subject')).toBeNull();
+    expect(generateButton().getAttribute('aria-describedby')).toBe('mcr-estimate mcr-generate-blocked');
   });
 
   it('restores the stored sidebar width and stores a new one beside the writer', fakeAsync(() => {
     localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId: 8, sidebarWidth: 448 }));
-    openDialog();
+    openPanel();
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
     http.expectOne(PREVIEW_URL).flush(previewDto());
     fixture.detectChanges();
@@ -302,7 +284,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
 
   it('falls back to the frame\'s default width when the stored record is unreadable', () => {
     localStorage.setItem(REPORT_PACK_STORAGE_KEY, '{not json');
-    openDialog();
+    openPanel();
 
     const frame = fixture.debugElement.query(By.directive(RunReportFrameComponent)).componentInstance as RunReportFrameComponent;
     expect(frame.sidebarWidth).toBeNull();
@@ -313,10 +295,9 @@ describe('BenchmarkReportPackDialogComponent', () => {
   // Defaults and the self-refusal
   // -------------------------------------------------------------------------------------------
 
-  it('opens as a modal with the first non-Excluded entry, Excluded entries absent and Degraded ones marked', () => {
-    openDialog();
+  it('offers the first non-Excluded entry, Excluded entries absent and Degraded ones marked', () => {
+    openPanel();
 
-    expect(component.dialog!.nativeElement.open).toBeTrue();
     const select = q<HTMLSelectElement>('#rp-subject')!;
     const options = Array.from(select.options).map(option => option.textContent!.trim());
     expect(options).toEqual(['Gemini Flash', 'Claude Opus (speed degraded)', 'GPT Sol group']);
@@ -325,7 +306,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
   });
 
   it('checks the Executive Summary and the Report for AI Researchers and Developers by default, not the Internal Brief', () => {
-    openDialog();
+    openPanel();
 
     const names = Array.from(host.querySelectorAll('.rp-audience-name')).map(name => (name.textContent ?? '').trim());
     expect(names).toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
@@ -337,7 +318,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
   });
 
   it('offers only enabled Benchmark-role configurations with a key as writers, and requires one', () => {
-    openDialog({ configs: [...CONFIGS, config(11, 'Keyless writer', 'OpenAI', { hasApiKey: false })] });
+    openPanel({ configs: [...CONFIGS, config(11, 'Keyless writer', 'OpenAI', { hasApiKey: false })] });
 
     expect(component.writers.map(writer => writer.id)).toEqual([7, 8]);
     expect(component.writerId).toBeNull();
@@ -348,7 +329,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
 
   it('restores the remembered writer while it still qualifies', fakeAsync(() => {
     localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId: 8 }));
-    openDialog();
+    openPanel();
 
     expect(component.writerId).toBe(8);
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
@@ -357,7 +338,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
   }));
 
   it('shows the self-refusal before Generate, and keeps Generate disabled while it stands', fakeAsync(() => {
-    openDialog();
+    openPanel();
     const refusal = 'The model under report cannot write its own report. Choose a writer of another model.';
     chooseWriter(7, previewDto({ refusal, estimates: [], estimatedTotalCostUsd: null }));
 
@@ -376,11 +357,63 @@ describe('BenchmarkReportPackDialogComponent', () => {
   }));
 
   // -------------------------------------------------------------------------------------------
+  // The comparison changes
+  // -------------------------------------------------------------------------------------------
+
+  it('keeps the form when the comparison is recomputed with the same entry keys', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7);
+    const select = q<HTMLSelectElement>('#rp-subject')!;
+    select.value = 'group:4';
+    select.dispatchEvent(new Event('change'));
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectOne(PREVIEW_URL).flush(previewDto({ subjectKey: 'group:4' }));
+
+    fixture.componentRef.setInput('context', { ...CONTEXT, pricingBasis: 'AsRun' });
+    fixture.detectChanges();
+
+    http.expectNone(ACTIVE_JOB_URL);
+    expect(component.subjectKey).toBe('group:4');
+    expect(component.writerId).toBe(7);
+    // The pricing basis changed, so the estimate is asked again, with it.
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    const again = http.expectOne(PREVIEW_URL);
+    expect(again.request.body.pricingBasis).toBe(0);
+    expect(again.request.body.subjectKey).toBe('group:4');
+    again.flush(previewDto());
+    fixture.destroy();
+  }));
+
+  it('resets the form, and looks for a running job again, when the entry keys change', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7);
+    q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.click();
+    fixture.detectChanges();
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectOne(PREVIEW_URL).flush(previewDto());
+
+    fixture.componentRef.setInput('context', {
+      ...CONTEXT,
+      runIds: [2],
+      entries: ENTRIES.slice(1, 2).concat(ENTRIES.slice(3)),
+      entryKeys: ['run:2', 'group:4']
+    });
+    fixture.detectChanges();
+    answerActiveJob(jobDto({ id: 'job-7', subjectKey: 'run:2', subjectLabel: 'Claude Opus' }));
+
+    expect(component.subjectKey).toBe('run:2');
+    expect(component.selectedAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
+    expect(component.activeJobId).toBe('job-7');
+    expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
+    fixture.destroy();
+  }));
+
+  // -------------------------------------------------------------------------------------------
   // The estimate
   // -------------------------------------------------------------------------------------------
 
   it('requests the estimate with the comparison request, the subject, the documents and the writer', fakeAsync(() => {
-    openDialog();
+    openPanel();
     const request = chooseWriter(7);
 
     expect(request.request.method).toBe('POST');
@@ -409,7 +442,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
   }));
 
   it('keeps the estimate panel in place while empty, and busy while estimating', fakeAsync(() => {
-    openDialog();
+    openPanel();
     const panel = q('#rp-estimate')!;
     expect(panel.getAttribute('role')).toBe('status');
     expect(panel.classList).toContain('is-empty');
@@ -430,7 +463,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
   }));
 
   it('debounces the estimate and re-requests it when the documents, the subject or the writer change', fakeAsync(() => {
-    openDialog();
+    openPanel();
     chooseWriter(7);
 
     // Two quick changes make one request, with both applied.
@@ -474,7 +507,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('warns about a same-provider writer, and confirms on every Generate before sending the acknowledgment', fakeAsync(() => {
-    openDialog();
+    openPanel();
     const warning = 'The writer shares Anthropic with the subject; its documents may favor its own family.';
     chooseWriter(7, previewDto({ sameProviderWarning: warning }));
 
@@ -523,7 +556,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
   }));
 
   it('opens the same confirmation when the server answers a start with a same-provider 409', fakeAsync(() => {
-    openDialog();
+    openPanel();
     chooseWriter(7);
     generateButton().click();
     const message = 'The writer and the subject are both from Anthropic. Acknowledge the warning to continue.';
@@ -549,12 +582,32 @@ describe('BenchmarkReportPackDialogComponent', () => {
     fixture.destroy();
   }));
 
+  it('stops the close and cancel events of its nested dialogs', () => {
+    openPanel();
+
+    // The host element stands in for the wizard's dialog around the panel.
+    const heard: string[] = [];
+    host.addEventListener('close', () => heard.push('close'));
+    host.addEventListener('cancel', () => heard.push('cancel'));
+
+    const dialogs = Array.from(host.querySelectorAll('dialog'));
+    expect(dialogs.length).toBeGreaterThanOrEqual(2);
+    for (const dialog of dialogs) {
+      // A real close event does not bubble; a bubbling one proves the handlers stop it.
+      dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+      dialog.dispatchEvent(new Event('close', { bubbles: true }));
+    }
+    expect(heard).toEqual([]);
+  });
+
   // -------------------------------------------------------------------------------------------
   // 409 and 429
   // -------------------------------------------------------------------------------------------
 
   it('shows a 409 running job in an alert and follows that job', fakeAsync(() => {
-    openDialog();
+    openPanel();
+    const finished: BenchmarkReportPackJobDto[] = [];
+    component.jobFinished.subscribe(job => finished.push(job));
     chooseWriter(7);
     generateButton().click();
     const running = jobDto({ id: 'job-9', subjectLabel: 'GPT Sol group' });
@@ -563,17 +616,19 @@ describe('BenchmarkReportPackDialogComponent', () => {
 
     expect(q('.rp-start-error')!.getAttribute('role')).toBe('alert');
     expect(text('.rp-start-error')).toContain('Another report pack is being written, for GPT Sol group');
+    expect(text('.rp-start-error')).toContain('its progress is shown here.');
     expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
     expect(generateButton().disabled).toBeTrue();
 
     tick(REPORT_PACK_POLL_MS);
     http.expectOne(jobUrl('job-9')).flush(jobDto({ id: 'job-9', status: 'Completed', completedAtUtc: '2026-09-28T10:01:00Z' }));
-    expectDocumentsRefresh();
+    fixture.detectChanges();
+    expect(finished.map(job => job.id)).toEqual(['job-9']);
     fixture.destroy();
   }));
 
   it('shows a 429 spend-cap refusal with the server\'s message', fakeAsync(() => {
-    openDialog();
+    openPanel();
     chooseWriter(7);
     generateButton().click();
     const message = 'The benchmark spend cap for today has been reached.';
@@ -592,33 +647,39 @@ describe('BenchmarkReportPackDialogComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('shows no job card until a job exists, with the live line in place', () => {
-    openDialog();
+    openPanel();
 
     expect(q('.rp-job')).toBeNull();
     const line = q('.rp-job-status')!;
     expect(line.getAttribute('role')).toBe('status');
     expect(line.textContent!.trim()).toBe('');
-    // The card is the first thing of the main area after its heading.
-    const main = q('section.rrf-main')!;
-    expect(main.querySelector('.rp-job-status')!.compareDocumentPosition(main.querySelector('app-report-document-library')!)
-      & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(text('.rp-idle-note')).toContain('step 4, Documents');
+    expect(component.jobRunning).toBeFalse();
   });
 
-  it('polls a started job with a stage rail and a stat strip, then collapses it and reloads the documents', fakeAsync(() => {
-    openDialog();
+  it('polls a started job with a stage rail, a stat strip and a row per document, then summarizes it above the strip', fakeAsync(() => {
+    openPanel();
+    const busy: boolean[] = [];
+    const finished: BenchmarkReportPackJobDto[] = [];
+    let documentsRequests = 0;
+    component.busyChange.subscribe(value => busy.push(value));
+    component.jobFinished.subscribe(job => finished.push(job));
+    component.documentsRequested.subscribe(() => documentsRequests++);
     chooseWriter(7);
     generateButton().click();
     http.expectOne(START_URL).flush({ jobId: 'job-1' });
     fixture.detectChanges();
     // Before the first reading, the rail stands at Queued.
     expect(text('.rp-job-rail .run-stage.is-current .run-stage-name')).toBe('Queued');
+    expect(component.jobRunning).toBeTrue();
 
     http.expectOne(jobUrl('job-1')).flush(jobDto());
     fixture.detectChanges();
 
-    const rows = (): string[] => Array.from(host.querySelectorAll('.rp-job-row'))
-      .map(row => (row.textContent ?? '').replace(/\s+/g, ' ').trim());
-    expect(rows()).toEqual(['Executive Summary Writing 1', 'Report for AI Researchers and Developers Pending 0']);
+    expect(cellText(ExecutiveSummary, '.rp-doc-name')).toBe('Executive Summary');
+    expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Writing');
+    expect(cellText(ExecutiveSummary, '.rp-doc-calls')).toBe('Model calls: 1');
+    expect(cellText(TechnicalReport, '.job-status-chip')).toBe('Pending');
     expect(q('.rp-job-status')!.getAttribute('role')).toBe('status');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 0 of 2 finished.');
     expect(q('.rp-job-log')).not.toBeNull();
@@ -650,7 +711,9 @@ describe('BenchmarkReportPackDialogComponent', () => {
       ]
     }));
     fixture.detectChanges();
-    expect(rows()).toEqual(['Executive Summary Completed 1', 'Report for AI Researchers and Developers Repairing 2']);
+    expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Completed');
+    expect(cellText(TechnicalReport, '.job-status-chip')).toBe('Repairing');
+    expect(cellText(TechnicalReport, '.rp-doc-calls')).toBe('Model calls: 2');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 1 of 2 finished.');
     expect(text('.rp-job-rail .run-stage.is-current .run-stage-name')).toBe('Report for AI Researchers and Developers');
 
@@ -664,33 +727,42 @@ describe('BenchmarkReportPackDialogComponent', () => {
         { audience: TechnicalReport, status: 'CompletedWithWarnings', documentId: 22, errorMessage: null, modelCalls: 2 }
       ]
     }));
-    expectDocumentsRefresh([doc(21, ExecutiveSummary), doc(22, TechnicalReport)]);
+    fixture.detectChanges();
 
     expect(text('.rp-job-status')).toBe('Report pack for Gemini Flash: Completed.');
     expect(text('.rp-job-summary')).toBe('Written: 2 documents, 2 min 05 s, $0.13');
     expect(q('.rp-job-rail')).toBeNull();
-    expect(q('.rp-job-stats')).toBeNull();
-    expect(host.querySelectorAll('.rdl-row').length).toBe(2);
+    // The strip stays, with Cost and the estimate, under the summary line and Dismiss.
+    expect(q('.rp-job-stats')).not.toBeNull();
+    expect(text('.rp-job-cost-label')).toBe('Cost');
+    expect(text('.rp-job-cost')).toBe('$0.13');
+    expect(text('.rp-job-estimate')).toBe('about $0.12');
+    expect(q('.rp-job-summary-row')!.compareDocumentPosition(q('.rp-job-stats')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(q('.rp-cancel-job')).toBeNull();
+    expect(finished.map(job => job.id)).toEqual(['job-1']);
+    expect(busy).toEqual([true, false]);
+    expect(component.jobRunning).toBeFalse();
     tick(REPORT_PACK_POLL_MS * 3);
     http.expectNone(jobUrl('job-1'));
+
+    // See the documents: the host shows step 4.
+    const see = q<HTMLButtonElement>('.rp-see-documents')!;
+    expect(see.textContent!.trim()).toBe('See the documents');
+    see.click();
+    expect(documentsRequests).toBe(1);
 
     // Dismiss removes the card; the live line empties with it.
     q<HTMLButtonElement>('.rp-dismiss-job')!.click();
     fixture.detectChanges();
     expect(q('.rp-job')).toBeNull();
     expect(text('.rp-job-status')).toBe('');
-    expect(document.activeElement).toBe(q('#rp-documents-heading'));
+    expect(document.activeElement).toBe(q('#rp-progress-heading'));
     fixture.destroy();
   }));
 
   it('cancels the running job, then reads its final state at once', fakeAsync(() => {
-    openDialog();
-    chooseWriter(7);
-    generateButton().click();
-    http.expectOne(START_URL).flush({ jobId: 'job-1' });
-    http.expectOne(jobUrl('job-1')).flush(jobDto());
-    fixture.detectChanges();
+    openPanel();
+    startJob();
 
     q<HTMLButtonElement>('.rp-cancel-job')!.click();
     fixture.detectChanges();
@@ -698,7 +770,7 @@ describe('BenchmarkReportPackDialogComponent', () => {
     expect(cancel.request.method).toBe('POST');
     cancel.flush({ cancelled: true });
     http.expectOne(jobUrl('job-1')).flush(jobDto({ status: 'Canceled', completedAtUtc: '2026-09-28T10:00:30Z' }));
-    expectDocumentsRefresh();
+    fixture.detectChanges();
 
     expect(text('.rp-job-status')).toBe('Report pack for Gemini Flash: Canceled.');
     expect(text('.rp-job-summary')).toBe('Canceled: 0 of 2 documents written, 30 s, Unknown');
@@ -707,8 +779,8 @@ describe('BenchmarkReportPackDialogComponent', () => {
     fixture.destroy();
   }));
 
-  it('picks up a running job on open and backs off when its progress cannot be read', fakeAsync(() => {
-    openDialog({ activeJob: jobDto({ id: 'job-5' }) });
+  it('picks up a running job on creation and backs off when its progress cannot be read', fakeAsync(() => {
+    openPanel({ activeJob: jobDto({ id: 'job-5' }) });
 
     expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
     expect(text('#rp-generate-blocked')).toBe('A report pack is being written. Wait for it to finish, or cancel it.');
@@ -722,100 +794,309 @@ describe('BenchmarkReportPackDialogComponent', () => {
     http.expectNone(jobUrl('job-5'));
     tick(REPORT_PACK_POLL_MS * 2);
     http.expectOne(jobUrl('job-5')).flush(jobDto({ id: 'job-5', status: 'Failed', completedAtUtc: '2026-09-28T10:00:10Z' }));
-    expectDocumentsRefresh();
+    fixture.detectChanges();
+    expect(text('.rp-job-summary')).toContain('Failed: 0 of 2 documents written');
+    fixture.destroy();
+  }));
+
+  it('announces each written document once, those already written when it reattaches included', fakeAsync(() => {
+    const announced: BenchmarkReportPackDocumentProgressDto[] = [];
+    component.documentWritten.subscribe(doc => announced.push(doc));
+    openPanel({
+      activeJob: jobDto({
+        id: 'job-5',
+        documents: [written(ExecutiveSummary, 31), { audience: TechnicalReport, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1 }]
+      })
+    });
+    expect(announced.map(doc => doc.documentId)).toEqual([31]);
+
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({
+      id: 'job-5',
+      documents: [written(ExecutiveSummary, 31), { audience: TechnicalReport, status: 'Failed', documentId: null, errorMessage: 'Refused.', modelCalls: 2 }]
+    }));
+    expect(announced.map(doc => doc.documentId)).toEqual([31]);
+
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({
+      id: 'job-5',
+      status: 'CompletedWithErrors',
+      completedAtUtc: '2026-09-28T10:03:00Z',
+      documents: [written(ExecutiveSummary, 31), written(TechnicalReport, 32, 'CompletedWithWarnings')]
+    }));
+    expect(announced.map(doc => doc.documentId)).toEqual([31, 32]);
+    expect(announced[1].status).toBe('CompletedWithWarnings');
+
+    // A comparison change that finds the same job again announces nothing twice.
+    fixture.componentRef.setInput('context', { ...CONTEXT, entryKeys: ['run:1', 'run:2'] });
+    fixture.detectChanges();
+    answerActiveJob(jobDto({ id: 'job-5', status: 'CompletedWithErrors', documents: [written(ExecutiveSummary, 31), written(TechnicalReport, 32)] }));
+    expect(announced.map(doc => doc.documentId)).toEqual([31, 32]);
+    fixture.destroy();
+  }));
+
+  it('keeps polling and ticking while hidden, as when another step of the wizard shows', fakeAsync(() => {
+    openPanel({ activeJob: jobDto({ id: 'job-5' }) });
+    host.hidden = true;
+
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({ id: 'job-5' }));
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({ id: 'job-5' }));
+    expect(component['tickSub']).not.toBeNull();
+    fixture.destroy();
+  }));
+
+  it('stops polling and its clock when destroyed', fakeAsync(() => {
+    openPanel({ activeJob: jobDto({ id: 'job-5' }) });
+    expect(component['tickSub']).not.toBeNull();
+
+    fixture.destroy();
+    expect(component['tickSub']).toBeNull();
+    tick(REPORT_PACK_POLL_MS * 10);
+    http.expectNone(jobUrl('job-5'));
+  }));
+
+  // -------------------------------------------------------------------------------------------
+  // The document progress list (v1 Task 1)
+  // -------------------------------------------------------------------------------------------
+
+  it('lists each document with a chip, a live duration and centered model calls, under an aria-hidden header', fakeAsync(() => {
+    openPanel({
+      activeJob: jobDto({
+        id: 'job-5',
+        serverTimeUtc: '2026-09-28T10:01:00Z',
+        documents: [
+          { audience: ExecutiveSummary, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1, startedAtUtc: '2026-09-28T10:00:30Z' },
+          { audience: TechnicalReport, status: 'Failed', documentId: null, errorMessage: 'The writer refused.', modelCalls: 2 }
+        ]
+      })
+    });
+
+    const list = q('ol.rp-doc-progress')!;
+    expect(list.getAttribute('aria-label')).toBe('Progress of each document');
+    const head = q('.rp-doc-progress-head')!;
+    expect(head.getAttribute('aria-hidden')).toBe('true');
+    expect(Array.from(head.children).map(cell => cell.textContent!.trim()))
+      .toEqual(['Document', 'Status', 'Duration', 'Model calls', 'Charts']);
+    expect(list.querySelectorAll('li.rp-job-row').length).toBe(2);
+
+    const chip = q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .job-status-chip`)!;
+    expect(chip.classList).toContain('status-generating');
+    expect(q(`.rp-job-row[data-audience="${TechnicalReport}"] .job-status-chip`)!.classList).toContain('status-failed');
+    expect(cellText(TechnicalReport, '.rp-job-row-error')).toBe('The writer refused.');
+    expect(cellText(ExecutiveSummary, '.rp-doc-status')).toBe('Status: Writing');
+    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-calls`)!.classList).toContain('rp-num');
+
+    // On the server's clock: 30 s at its last reading, one more second later.
+    expect(cellText(ExecutiveSummary, '.rp-doc-duration')).toBe('Duration: 30 s');
+    expect(cellText(TechnicalReport, '.rp-doc-duration')).toBe('Duration: —');
+    tick(1000);
+    fixture.detectChanges();
+    expect(cellText(ExecutiveSummary, '.rp-doc-duration')).toBe('Duration: 31 s');
+    fixture.destroy();
+  }));
+
+  it('shows each written document\'s chart state, with a retry after a failure', fakeAsync(() => {
+    const retries: BenchmarkReportPackDocumentProgressDto[] = [];
+    component.chartRetryRequested.subscribe(doc => retries.push(doc));
+    const statuses: Record<number, ReportChartRowStatus> = {
+      31: { state: 'attaching' },
+      32: { state: 'done', count: 3 },
+      33: { state: 'failed', message: 'Disk full.' }
+    };
+    fixture.componentRef.setInput('chartStatus', statuses);
+    openPanel({
+      activeJob: jobDto({
+        id: 'job-5',
+        documents: [written(ExecutiveSummary, 31), written(TechnicalReport, 32), written(InternalBrief, 33)]
+      })
+    });
+
+    expect(cellText(ExecutiveSummary, '.rp-doc-charts')).toBe('Charts: attaching…');
+    expect(cellText(TechnicalReport, '.rp-doc-charts')).toBe('Charts: 3');
+    const retry = q<HTMLButtonElement>(`.rp-job-row[data-audience="${InternalBrief}"] .rp-chart-retry`)!;
+    expect(retry.textContent!.replace(/\s+/g, ' ').trim()).toBe('Charts failed — retry for the Internal Improvement Brief');
+    retry.click();
+    expect(retries.map(doc => doc.documentId)).toEqual([33]);
+
+    // No chart selected for a document type: none.
+    fixture.componentRef.setInput('chartSelection', { ...DEFAULT_CHART_SELECTION, [TechnicalReport]: [] } as ReportChartSelection);
+    fixture.detectChanges();
+    expect(cellText(TechnicalReport, '.rp-doc-charts')).toBe('Charts: none');
+
+    // No chart storage: none everywhere.
+    fixture.componentRef.setInput('chartStorageMissing', true);
+    fixture.detectChanges();
+    expect(cellText(ExecutiveSummary, '.rp-doc-charts')).toBe('Charts: none');
+    expect(q('.rp-chart-retry')).toBeNull();
     fixture.destroy();
   }));
 
   // -------------------------------------------------------------------------------------------
-  // The documents (the library, idPrefix "rp")
+  // Diagnostics
   // -------------------------------------------------------------------------------------------
 
-  it('lists the comparison\'s documents in the library, with the ids under "rp", and flags one whose run changed', () => {
-    openDialog({ documents: [doc(11, ExecutiveSummary, { runChangedSinceGeneration: true }), doc(12, TechnicalReport)] });
+  it('copies the diagnostics from an icon-only button with a tooltip, and says so', fakeAsync(() => {
+    const copy = spyOn(reportPackIo, 'copy').and.returnValue(Promise.resolve(true));
+    openPanel({ activeJob: jobDto({ id: 'job-5' }) });
 
-    expect(host.querySelectorAll('.rdl-row').length).toBe(2);
-    const changed = q('.rdl-row[data-document-id="11"] .rdl-tag-run-changed');
-    expect(changed?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Run changed since this document was written');
-    expect(q('.rdl-row[data-document-id="12"] .rdl-tag-run-changed')).toBeNull();
+    expect(text('.rp-job-log > summary')).toBe('Log and diagnostics');
+    const button = q<HTMLButtonElement>('.rp-copy-diagnostics')!;
+    expect(button.classList).toContain('action-btn');
+    expect(button.getAttribute('aria-label')).toBe('Copy the report pack diagnostics for Gemini Flash');
+    expect(button.getAttribute('interestfor')).toBe('rp-copy-diagnostics-tip');
+    expect(button.hasAttribute('title')).toBeFalse();
+    expect(text('#rp-copy-diagnostics-tip')).toBe('Copy diagnostics');
+    expect(q('#rp-copy-diagnostics-tip')!.getAttribute('popover')).toBe('hint');
 
-    const view = q('#rp-doc-11-view')!;
-    expect(view.getAttribute('aria-label')).toBe('View Executive Summary: Gemini Flash, 2026-09-21 16:00 UTC');
-    expect(view.getAttribute('interestfor')).toBe('rp-tip-view-11');
-    expect(view.hasAttribute('title')).toBeFalse();
-    expect(q('#rp-doc-11-select')).not.toBeNull();
-    expect(q('#rp-doc-11-download')).not.toBeNull();
-    expect(q('#rp-doc-11-delete')!.classList).toContain('action-btn-danger');
-    // The comparison is the dialog's own, so the library shows no Compared with column.
-    expect(q('.rdl-col-compared')).toBeNull();
-  });
-
-  it('offers the Downloads notice once the comparison has a document, opening the Download Center on every one', () => {
-    openDialog();
-    expect(q('.rp-download-notice')).toBeNull();
-
-    component.open(CONTEXT);
-    fixture.detectChanges();
-    http.expectOne(SYSTEM_CONFIGS_URL).flush(CONFIGS);
-    http.expectOne(ACTIVE_JOB_URL).flush(null, { status: 204, statusText: 'No Content' });
-    http.expectOne(r => r.method === 'GET' && r.url === DOCUMENTS_URL).flush([doc(11, ExecutiveSummary), doc(12, TechnicalReport)]);
-    fixture.detectChanges();
-
-    const notice = q('.rp-download-notice')!;
-    expect(notice.classList).toContain('alert-info');
-    expect(notice.compareDocumentPosition(q('app-report-document-library')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const open = spyOn(component.library!.downloadCenter!, 'open');
-    const button = q<HTMLButtonElement>('.rp-open-downloads')!;
-    expect(button.textContent!.trim()).toBe('Open Download Center');
     button.click();
-    expect(open).toHaveBeenCalledOnceWith({
-      kind: 'documents',
-      documentIds: [11, 12],
-      title: 'Comparison reports',
-      subtitle: '2 documents of the comparison of 4 models'
-    });
+    flushMicrotasks();
+    fixture.detectChanges();
+    expect(copy).toHaveBeenCalledTimes(1);
+    const copied = copy.calls.mostRecent().args[0];
+    expect(copied).toContain('Overseer Report Pack diagnostics');
+    expect(copied).toContain('Job id: job-5');
+    expect(copied).not.toContain('user-secret-id');
+    expect(copied).not.toContain('\r');
+    const status = q('.rp-copy-status')!;
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.textContent!.trim()).toBe('Copied');
+    expect(q('.rp-copy-error')).toBeNull();
+    fixture.destroy();
+  }));
+
+  it('shows an inline error when the clipboard refuses the diagnostics', fakeAsync(() => {
+    spyOn(reportPackIo, 'copy').and.returnValue(Promise.resolve(false));
+    openPanel({ activeJob: jobDto({ id: 'job-5' }) });
+
+    q<HTMLButtonElement>('.rp-copy-diagnostics')!.click();
+    flushMicrotasks();
+    fixture.detectChanges();
+    const error = q('.rp-copy-error')!;
+    expect(error.classList).toContain('gh-field-error');
+    expect(error.textContent).toContain('could not be copied');
+    expect(text('.rp-copy-status')).toBe('');
+    fixture.destroy();
+  }));
+
+  it('downloads the diagnostics as a text file named for the subject', fakeAsync(() => {
+    const download = spyOn(reportPackIo, 'download');
+    openPanel({ activeJob: jobDto({ id: 'job-5' }) });
+
+    const button = q<HTMLButtonElement>('.rp-download-diagnostics')!;
+    expect(button.getAttribute('aria-label')).toBe('Download the report pack diagnostics for Gemini Flash');
+    expect(text('#rp-download-diagnostics-tip')).toBe('Download diagnostics');
+    button.click();
+
+    expect(download).toHaveBeenCalledTimes(1);
+    const [fileName, body] = download.calls.mostRecent().args;
+    expect(fileName).toMatch(/^report-pack_gemini-flash_diagnostics_\d{8}-\d{6}\.txt$/);
+    expect(body).toContain('== Documents ==');
+    expect(body).toContain('Polls: ');
+    fixture.destroy();
+  }));
+
+  // -------------------------------------------------------------------------------------------
+  // The clock (v1 Task 3)
+  // -------------------------------------------------------------------------------------------
+
+  it('measures elapsed time on the server\'s clock, ticks each second while running, and keeps the live line still', fakeAsync(() => {
+    openPanel({ activeJob: jobDto({ id: 'job-5', serverTimeUtc: '2026-09-28T10:01:00Z' }) });
+
+    expect(text('.rp-job-elapsed')).toBe('1 min 00 s');
+    const line = text('.rp-job-status');
+    tick(1000);
+    fixture.detectChanges();
+    expect(text('.rp-job-elapsed')).toBe('1 min 01 s');
+    expect(text('.rp-job-status')).toBe(line);
+
+    // A new reading resets the clock to the server's.
+    tick(REPORT_PACK_POLL_MS - 1000);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({ id: 'job-5', serverTimeUtc: '2026-09-28T10:01:30Z' }));
+    fixture.detectChanges();
+    expect(text('.rp-job-elapsed')).toBe('1 min 30 s');
+
+    // Finished: the clock stops.
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({
+      id: 'job-5', status: 'Completed', completedAtUtc: '2026-09-28T10:02:00Z', serverTimeUtc: '2026-09-28T10:02:01Z'
+    }));
+    fixture.detectChanges();
+    expect(component['tickSub']).toBeNull();
+    expect(text('.rp-job-elapsed')).toBe('2 min 00 s');
+    fixture.destroy();
+  }));
+
+  it('falls back to the client\'s clock when the server sends no time of its own', fakeAsync(() => {
+    const started = new Date(Date.now() - 42000).toISOString();
+    openPanel({ activeJob: jobDto({ id: 'job-5', startedAtUtc: started }) });
+
+    expect(text('.rp-job-elapsed')).toBe('42 s');
+    tick(1000);
+    fixture.detectChanges();
+    expect(text('.rp-job-elapsed')).toBe('43 s');
+    fixture.destroy();
+  }));
+
+  // -------------------------------------------------------------------------------------------
+  // Charts in PDF and Word
+  // -------------------------------------------------------------------------------------------
+
+  it('holds the chart picker between Documents and Report writer, its columns following the documents checked', () => {
+    openPanel();
+    const selections: ReportChartSelection[] = [];
+    component.chartSelectionChange.subscribe(selection => selections.push(selection));
+
+    const fieldset = q('fieldset.rp-charts-choice')!;
+    expect(fieldset.querySelector('legend')!.textContent!.trim()).toBe('Charts in PDF and Word');
+    const picker = fixture.debugElement.query(By.directive(ReportChartPickerComponent)).componentInstance as ReportChartPickerComponent;
+    expect(picker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
+    expect(picker.available).toEqual(REPORT_CHART_FIGURES.map(figure => figure.key));
+    expect(picker.idPrefix).toBe('rp-charts');
+    expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.getAttribute('aria-disabled')).toBe('true');
+
+    q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.click();
+    fixture.detectChanges();
+    expect(picker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
+    expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.hasAttribute('aria-disabled')).toBeFalse();
+
+    q<HTMLInputElement>(`#rp-charts-${ExecutiveSummary}-p1b-speed`)!.click();
+    expect(selections.length).toBe(1);
+    expect(selections[0][ExecutiveSummary]).toEqual(['p1a-quality', 'p1b-speed', 's2-quality-cost']);
+
+    expect(q('.rp-chart-advisory')).toBeNull();
+    expect(q('.rp-chart-storage-missing')).toBeNull();
   });
 
-  it('views a document in the PDF viewer, peer names offered, at its highest disclosure', () => {
-    openDialog({ documents: [doc(11, TechnicalReport, { allowedDisclosures: [Summary, Detailed] })] });
-    const open = spyOn(component.library!.pdfViewer!, 'open');
+  it('shows the chart advisory and the missing chart storage as visible warnings', () => {
+    fixture.componentRef.setInput('chartAdvisory', 'The charts use today\'s prices; the documents were written at run-time prices.');
+    fixture.componentRef.setInput('chartStorageMissing', true);
+    openPanel();
 
-    q<HTMLButtonElement>('#rp-doc-11-view')!.click();
+    const advisory = q('.rp-chart-advisory')!;
+    expect(advisory.classList).toContain('alert-warning');
+    expect(advisory.textContent).toContain('The charts use today\'s prices');
+    const missing = q('.rp-chart-storage-missing')!;
+    expect(missing.classList).toContain('alert-warning');
+    expect(missing.textContent!.trim()).toBe('Chart storage is not configured; documents will be written without charts.');
+    expect(q('fieldset.rp-charts-choice')!.contains(missing)).toBeTrue();
+  });
 
-    expect(open).toHaveBeenCalledTimes(1);
-    const request = open.calls.mostRecent().args[0] as PdfViewerRequest;
-    expect(request.title).toBe('Technical Report: Gemini Flash');
-    expect(request.variants!.map(v => v.key)).toEqual(['summary', 'detailed']);
-    expect(request.initialVariant).toBe('detailed');
-    expect(request.secondaryVariants?.initial).toBe('named');
-    // Viewing renders server-side; no Markdown preview is requested.
-    http.expectNone(r => r.url.endsWith('/render'));
+  it('lists a figure the comparison cannot draw with the reason', () => {
+    fixture.componentRef.setInput('chartsAvailable', REPORT_CHART_FIGURES.map(figure => figure.key).filter(key => key !== 'p2-profile'));
+    openPanel();
+
+    expect(q(`#rp-charts-${TechnicalReport}-p2-profile`)!.getAttribute('aria-disabled')).toBe('true');
+    expect(text('#rp-charts-row-p2-profile-reason')).toBe('needs three or more models');
   });
 
   // -------------------------------------------------------------------------------------------
-  // Nesting and the grader guide
+  // The grader guide
   // -------------------------------------------------------------------------------------------
-
-  it('stops the close and cancel events of itself and every nested dialog', () => {
-    openDialog({ documents: [doc(11, ExecutiveSummary)] });
-
-    // The host element stands in for the wizard's dialog around this one.
-    const heard: string[] = [];
-    host.addEventListener('close', () => heard.push('close'));
-    host.addEventListener('cancel', () => heard.push('cancel'));
-
-    for (const selector of ['dialog.rp-dialog', 'dialog.rp-same-provider-dialog', 'dialog.rdl-delete-dialog',
-      'dialog.benchmark-download-center-dialog', 'dialog.pdfv']) {
-      const dialog = q<HTMLDialogElement>(selector)!;
-      expect(dialog).withContext(selector).not.toBeNull();
-      // A real close event does not bubble; a bubbling one proves the handlers stop it.
-      dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
-      dialog.dispatchEvent(new Event('close', { bubbles: true }));
-    }
-    expect(heard).toEqual([]);
-  });
 
   it('asks for the grader guide from the writer field\'s link, and explains the writer per document in a dialog', () => {
-    openDialog();
+    openPanel();
     const requests: number[] = [];
     component.graderGuideRequested.subscribe(() => requests.push(1));
 
@@ -834,22 +1115,5 @@ describe('BenchmarkReportPackDialogComponent', () => {
     expect(brief).toContain('strongest scoring-tier model');
     expect(brief).toContain('medium effort');
     expect(q('#rp-writer-tip-title')!.textContent!.trim()).toBe('Choosing a report writer');
-  });
-
-  it('emits closed once the dialog has closed', async () => {
-    openDialog();
-    let closed = 0;
-    component.closed.subscribe(() => closed++);
-
-    // The browser fires `close` from its own queued task, which a fixed timer can overtake; the
-    // component's template listener was registered first, so it has run when this one resolves.
-    const dialog = component.dialog!.nativeElement;
-    const dialogClosed = new Promise<void>(resolve =>
-      dialog.addEventListener('close', () => resolve(), { once: true }));
-    component.close();
-    await dialogClosed;
-
-    expect(closed).toBe(1);
-    expect(dialog.open).toBeFalse();
   });
 });

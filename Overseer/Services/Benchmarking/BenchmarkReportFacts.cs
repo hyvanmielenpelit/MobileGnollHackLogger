@@ -25,6 +25,7 @@ using Overseer.Models;
 //   suite.name, suite.questions                        the suite, and the questions its exam asked
 //   config.chat                                        the candidate prompt options of the lowest-id run
 //   comparison.models                                  non-excluded entries, subject included
+//   comparison.peerRuns                                the peers' run counts in one clause: "every peer has 1 run"
 //   comparison.pricingBasis                            the comparison's pricing-basis sentence
 //   comparison.pricingBasisKind                        "catalog" (Current) or "snapshot" (AsRun)
 //   comparison.pricedOn                                the catalog date of a catalog basis
@@ -46,6 +47,8 @@ using Overseer.Models;
 // Dimensions (d = accuracy, completeness, conciseness, readability; the assessor's, or in a panel run
 // the panel row of BenchmarkPanelDimensions, the mean of both members' averages)
 //   dimension.<d>, dimension.<d>.peerMean, dimension.<d>.difference
+//   (a .difference fact of a dimension or band keeps the unrounded value and displays the difference
+//   of the two printed whole numbers)
 //
 // Difficulty bands (b = simple, intermediate, advanced; the answer's assessed difficulty, else its fallback)
 //   band.<b>.questions, band.<b>.score, band.<b>.peerMean, band.<b>.difference
@@ -93,13 +96,15 @@ using Overseer.Models;
 //       the subject's mean per-question difference from the peer over the questions both scored on the
 //       same item revision, and its 95 % paired-bootstrap interval; unavailable below
 //       PairedMinimumQuestions shared questions
+//   peer.X.pairedExcludesZero                                            boolean: the printed paired interval lies on one
+//                                                                        side of zero; unavailable with the paired difference
 //
 // Each entry's Extra facts (BenchmarkReportEntryFigures.Extra) reuse dimension.<d>,
 // tools.callsPerQuestion and errors.critical for that entry alone.
 //
 // A comparison with no peers is a stand-alone report: every fact that compares the subject with
 // peers (the .peerMean and .difference facts, quality.peerMedian, quality.peerBest,
-// quality.intervalOverlap, the three ranks and panel.judgeDependentPairs) keeps its key and is
+// quality.intervalOverlap, the three ranks, panel.judgeDependentPairs and comparison.peerRuns) keeps its key and is
 // unavailable with StandaloneReason; it has no peer.X facts.
 //
 // Question numbering (shared with BenchmarkReportContent): items are keyed by question and item
@@ -188,6 +193,18 @@ public static class BenchmarkReportFacts
 
     /// <summary>The bootstrap seed when no comparison key can be derived from the entry keys.</summary>
     public const int FallbackPairedSeed = 0;
+
+    /// <summary>The display of a true <c>peer.X.pairedExcludesZero</c>.</summary>
+    public const string PairedExcludesZeroDisplay = "the paired interval excludes zero";
+
+    /// <summary>The display of a false <c>peer.X.pairedExcludesZero</c>.</summary>
+    public const string PairedIncludesZeroDisplay = "the paired interval includes zero";
+
+    /// <summary>
+    /// A peer counts toward <see cref="BenchmarkReportQuestion.PeersAbove"/> when its mean on the item
+    /// is more than this many quality points above the subject's.
+    /// </summary>
+    public const double PeerAboveMarginPoints = 5.0;
 
     /// <summary><see cref="BenchmarkReportEntryFigures.HarnessVersion"/> of an entry whose runs differ.</summary>
     public const string MixedHarnessVersion = "mixed";
@@ -685,6 +702,10 @@ public static class BenchmarkReportFacts
         AddPeerComparison(facts, key, value, peerMean);
     }
 
+    /// <summary>
+    /// <c>.peerMean</c> and <c>.difference</c>. The difference's value is unrounded; its display is the
+    /// difference of the two printed whole numbers, so it always matches the figures beside it.
+    /// </summary>
     private static void AddPeerComparison(FactList facts, string key, double? value, double? peerMean)
     {
         if (peerMean.HasValue)
@@ -699,7 +720,7 @@ public static class BenchmarkReportFacts
         if (value.HasValue && peerMean.HasValue)
         {
             double difference = value.Value - peerMean.Value;
-            facts.Add(key + ".difference", difference, BenchmarkReportFormat.Signed(difference));
+            facts.Add(key + ".difference", difference, BenchmarkReportFormat.WholeDifference(value.Value, peerMean.Value));
         }
         else
         {
@@ -1197,6 +1218,36 @@ public static class BenchmarkReportFacts
             int runs = entry.RunIds.Count;
             facts.Add(prefix + "runs", runs, Inv(runs) + (runs == 1 ? " run" : " runs"));
         }
+
+        AddPeerRuns(facts, peers.Select(p => p.Entry.RunIds.Count).ToList());
+    }
+
+    /// <summary>
+    /// <c>comparison.peerRuns</c>: the peers' run counts in one clause, "every peer has 1 run" or
+    /// "peers have 1 to 3 runs"; the value is the largest count. Unavailable without peers.
+    /// </summary>
+    private static void AddPeerRuns(FactList facts, IReadOnlyList<int> runCounts)
+    {
+        if (runCounts.Count == 0)
+        {
+            facts.Unavailable("comparison.peerRuns", StandaloneReason);
+            return;
+        }
+
+        facts.Add("comparison.peerRuns", runCounts.Max(), PeerRunsSentence(runCounts));
+    }
+
+    /// <summary>"every peer has 2 runs" when the counts agree, "peers have 1 to 3 runs" when they differ.</summary>
+    public static string PeerRunsSentence(IReadOnlyList<int> runCounts)
+    {
+        ArgumentNullException.ThrowIfNull(runCounts);
+        if (runCounts.Count == 0) return string.Empty;
+
+        int min = runCounts.Min();
+        int max = runCounts.Max();
+        return min == max
+            ? "every peer has " + Inv(max) + (max == 1 ? " run" : " runs")
+            : "peers have " + Inv(min) + " to " + Inv(max) + " runs";
     }
 
     /// <summary>
@@ -1233,6 +1284,7 @@ public static class BenchmarkReportFacts
                     + "too few for a paired difference.";
                 facts.Unavailable(prefix + "pairedDifference", reason);
                 facts.Unavailable(prefix + "pairedInterval", reason);
+                facts.Unavailable(prefix + "pairedExcludesZero", reason);
                 facts.Unavailable(prefix + "sharedQuestions", reason);
             }
             else
@@ -1245,6 +1297,9 @@ public static class BenchmarkReportFacts
                 facts.Add(prefix + "pairedDifference", mean, BenchmarkReportFormat.SignedOneDecimal(mean) + " points");
                 facts.Text(prefix + "pairedInterval",
                     BenchmarkReportFormat.SignedOneDecimal(lower) + " to " + BenchmarkReportFormat.SignedOneDecimal(upper));
+                bool excludesZero = PairedIntervalExcludesZero(lower, upper);
+                facts.Add(prefix + "pairedExcludesZero", excludesZero,
+                    excludesZero ? PairedExcludesZeroDisplay : PairedIncludesZeroDisplay);
                 facts.Add(prefix + "sharedQuestions", differences.Count, Inv(differences.Count) + " questions");
             }
 
@@ -1252,6 +1307,17 @@ public static class BenchmarkReportFacts
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// A paired interval excludes zero when both bounds as printed (one decimal) lie on the same side
+    /// of zero, so the statement always agrees with the printed interval.
+    /// </summary>
+    public static bool PairedIntervalExcludesZero(double lower, double upper)
+    {
+        double printedLower = Math.Round(lower, 1, MidpointRounding.AwayFromZero);
+        double printedUpper = Math.Round(upper, 1, MidpointRounding.AwayFromZero);
+        return printedLower > 0 || printedUpper < 0;
     }
 
     /// <summary>
@@ -1320,13 +1386,25 @@ public static class BenchmarkReportFacts
             double? score = scored.Count > 0 ? scored.Average(s => s.Quality) : null;
 
             double? peerMean = null;
+            double? peerMin = null;
+            double? peerMax = null;
             int peerCount = 0;
+            int peersAbove = 0;
             if (long.TryParse(slot.QuestionKey, NumberStyles.Integer, CultureInfo.InvariantCulture, out long questionId)
                 && slot.ItemRevisionUsed is int revision)
             {
                 var peerMeans = peers.Select(p => p.ItemMean(questionId, revision)).Where(m => m.HasValue).Select(m => m!.Value).ToList();
                 peerCount = peerMeans.Count;
-                if (peerCount > 0) peerMean = peerMeans.Average();
+                if (peerCount > 0)
+                {
+                    peerMean = peerMeans.Average();
+                    peerMin = peerMeans.Min();
+                    peerMax = peerMeans.Max();
+                    if (score is double subjectScore)
+                    {
+                        peersAbove = peerMeans.Count(m => m - subjectScore > PeerAboveMarginPoints);
+                    }
+                }
             }
 
             questions.Add(new BenchmarkReportQuestion
@@ -1340,6 +1418,9 @@ public static class BenchmarkReportFacts
                 PeerMean = peerMean,
                 Difference = score.HasValue && peerMean.HasValue ? score.Value - peerMean.Value : null,
                 PeerCount = peerCount,
+                PeerMin = peerMin,
+                PeerMax = peerMax,
+                PeersAbove = peersAbove,
                 CriticalError = counting.Any(HasCriticalError),
                 RefutedClaims = answers.Sum(a => a.ClaimsRefutedCount ?? 0),
                 RefutedAnswerSentences = RefutedAnswerSentencesOf(answers),
@@ -1648,7 +1729,7 @@ public static class BenchmarkReportFacts
            || key.EndsWith(".peerMean", StringComparison.Ordinal)
            || key.EndsWith(".difference", StringComparison.Ordinal)
            || key is "quality.peerMedian" or "quality.peerBest" or "quality.intervalOverlap"
-               or "quality.rank" or "speed.rank" or "cost.rank" or "panel.judgeDependentPairs";
+               or "quality.rank" or "speed.rank" or "cost.rank" or "panel.judgeDependentPairs" or "comparison.peerRuns";
 
     private static List<BenchmarkRun> RunsOf(BenchmarkModelComparisonEntryDto entry, IReadOnlyDictionary<long, BenchmarkRun> runsById)
         => entry.RunIds
@@ -1945,6 +2026,13 @@ public static class BenchmarkReportFormat
         string whole = Whole(value);
         return Math.Round(value, 0, MidpointRounding.AwayFromZero) > 0 ? "+" + whole : whole;
     }
+
+    /// <summary>
+    /// <see cref="Signed"/> of <c>Whole(value) − Whole(reference)</c>: the difference of the two printed
+    /// whole numbers, never a separately rounded difference.
+    /// </summary>
+    public static string WholeDifference(double value, double reference)
+        => Signed(Math.Round(value, 0, MidpointRounding.AwayFromZero) - Math.Round(reference, 0, MidpointRounding.AwayFromZero));
 
     public static string OneDecimal(double value)
     {

@@ -18,7 +18,7 @@ import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.component';
 import { keyFiguresImageIo } from './run-report-frame/key-figures-image';
 import { PDFJS_LOADER } from '../../shared/pdf-viewer/pdfjs-loader';
-import { ReportDocumentLibraryComponent } from './report-pack/report-document-library.component';
+import { ReportDocumentsLauncherComponent } from './report-pack/report-documents-launcher.component';
 
 describe('AdminBenchmarkComponent', () => {
   let component: AdminBenchmarkComponent;
@@ -9265,41 +9265,43 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.comparisonHowItWorksOpen).toBeFalse();
     });
 
-    // --- The Comparison reports library ---
+    // --- The Comparison reports card ---
 
-    /** The library's list requests: the report-pack documents, apart from any run's own list. */
+    /** The card's list requests: the report-pack documents, apart from any run's own list. */
     function comparisonReportLoads(): number {
       return benchmarkServiceMock.listReportDocuments.calls.all()
         .filter(call => (call.args[0] as { origin?: string } | undefined)?.origin === 'reportPack')
         .length;
     }
 
-    it('renders the Comparison reports library below the hero card, over every comparison document', () => {
+    it('renders the Comparison reports card below the hero card, over every comparison document', () => {
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();
 
-      const libraryDebug = fixture.debugElement.query(By.directive(ReportDocumentLibraryComponent));
-      expect(libraryDebug).toBeTruthy();
-      const library = libraryDebug.componentInstance as ReportDocumentLibraryComponent;
-      expect(library.scope).toEqual({ kind: 'all' });
-      expect(library.heading).toBe('Comparison reports');
-      expect(library.idPrefix).toBe('mcl');
-      expect(library.showComparisonColumn).toBeTrue();
+      const launcherDebug = fixture.debugElement.query(By.directive(ReportDocumentsLauncherComponent));
+      expect(launcherDebug).toBeTruthy();
+      const launcher = launcherDebug.componentInstance as ReportDocumentsLauncherComponent;
+      expect(launcher.idPrefix).toBe('mcl');
 
-      const host = libraryDebug.nativeElement as HTMLElement;
+      const host = launcherDebug.nativeElement as HTMLElement;
       const hero = fixture.nativeElement.querySelector('.mc-launcher-hero') as HTMLElement;
       expect(hero.contains(host)).toBeFalse();
       expect(hero.compareDocumentPosition(host) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-      expect(fixture.nativeElement.querySelector('.mc-launcher-library-lead')?.textContent)
-        .toContain('Every report document written from a model comparison, newest first.');
+      // The lead paragraph is the card's info tip now.
+      expect(fixture.nativeElement.querySelector('.mc-launcher-library-lead')).toBeNull();
+      expect(host.querySelector('#mcl-tip')?.textContent).toContain('Every report document written from a model comparison, newest first');
+      expect(host.querySelector('#mcl-open')?.textContent?.trim()).toBe('Open Download Center');
+      // No document yet: the button is aria-disabled, and the summary says why.
+      expect(host.querySelector('#mcl-open')?.getAttribute('aria-disabled')).toBe('true');
+      expect(host.querySelector('.rdl-launcher-summary')?.textContent).toContain('No reports yet.');
 
       expect(benchmarkServiceMock.listReportDocuments).toHaveBeenCalledWith(
         jasmine.objectContaining({ origin: 'reportPack', take: 500 }));
     });
 
     it('loads the Comparison reports only once the tab is shown, then on every showing and wizard close', () => {
-      // Page load, on another tab: nothing of the library exists and nothing is fetched for it.
-      expect(fixture.nativeElement.querySelector('app-report-document-library')).toBeNull();
+      // Page load, on another tab: nothing of the card exists and nothing is fetched for it.
+      expect(fixture.nativeElement.querySelector('app-report-documents-launcher')).toBeNull();
       expect(comparisonReportLoads()).toBe(0);
 
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
@@ -9343,13 +9345,14 @@ describe('AdminBenchmarkComponent', () => {
       expect(state.textContent).toContain('2 of 3 entries');
     });
 
-    it('lists the two wizard steps under the titles the wizard itself uses', () => {
+    it('lists the four wizard steps under the titles the wizard itself uses', () => {
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();
 
       const items = Array.from(
         fixture.nativeElement.querySelectorAll('.mc-launcher-hero .mc-launcher-howto ol.mc-launcher-steps > li')) as HTMLElement[];
-      expect(items.length).toBe(2);
+      expect(items.length).toBe(4);
+      expect(COMPARISON_WIZARD_STEPS.map(step => step.title)).toEqual(['Sources', 'Charts & table', 'Reports', 'Documents']);
       expect(items.map(item => item.querySelector('strong')?.textContent?.trim()))
         .toEqual(COMPARISON_WIZARD_STEPS.map(step => step.title));
     });
@@ -9402,6 +9405,24 @@ describe('AdminBenchmarkComponent', () => {
       const blocked = new Event('cancel', { cancelable: true });
       component.onComparisonWizardCancel(blocked);
       expect(blocked.defaultPrevented).toBeTrue();
+    });
+
+    it('refuses Escape while the wizard draws and uploads document charts', () => {
+      component.openComparisonWizard();
+      fixture.detectChanges();
+      const wizard = component.comparisonWizard!;
+      expect(wizard.chartsPublishing).toBeFalse();
+
+      (wizard as unknown as { pendingPublishes: number }).pendingPublishes = 1;
+      expect(wizard.chartsPublishing).toBeTrue();
+      const blocked = new Event('cancel', { cancelable: true });
+      component.onComparisonWizardCancel(blocked);
+      expect(blocked.defaultPrevented).toBeTrue();
+
+      (wizard as unknown as { pendingPublishes: number }).pendingPublishes = 0;
+      const allowed = new Event('cancel', { cancelable: true });
+      component.onComparisonWizardCancel(allowed);
+      expect(allowed.defaultPrevented).toBeFalse();
     });
 
     it('loads the comparability index for the sources on offer, and survives it failing', () => {

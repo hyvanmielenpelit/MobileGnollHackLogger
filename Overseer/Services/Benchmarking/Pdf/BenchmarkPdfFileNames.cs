@@ -1,6 +1,8 @@
 namespace Overseer.Services.Benchmarking.Pdf;
 
 using System;
+using System.Globalization;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
@@ -46,11 +48,14 @@ public static class BenchmarkPdfFileNames
     public const string ResearcherReportLabel = "Researcher_Report";
 
     /// <summary>
-    /// <c>[run-&lt;id&gt;_]&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].&lt;extension&gt;</c>, as the Download
-    /// Center names a pack document: <c>run-&lt;id&gt;_</c> when the subject is the run <c>run:&lt;id&gt;</c>
-    /// (a group subject has no prefix); the title, else "&lt;audience&gt;: &lt;subject&gt;"; <c>_INTERNAL</c> at
-    /// Full disclosure. The extension is <c>pdf</c> or <c>docx</c>, e.g.
-    /// <c>run-73_claude-5.5-opus-on-the-gnollbench-executive-summary_full_named_INTERNAL.pdf</c>.
+    /// <c>[run-&lt;id&gt;_][vs-&lt;N&gt;-models_]&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].&lt;extension&gt;</c>, as
+    /// the Download Center names a pack document: <c>run-&lt;id&gt;_</c> when the subject is the run
+    /// <c>run:&lt;id&gt;</c> (a group subject has no prefix); <c>vs-&lt;N&gt;-models_</c> when the stored fact
+    /// sheet has N &gt; 0 peers, whatever N is; the title, else "&lt;audience&gt;: &lt;subject&gt;";
+    /// <c>_INTERNAL</c> at Full disclosure. The extension is <c>pdf</c> or <c>docx</c>, e.g.
+    /// <c>run-73_claude-5.5-opus-on-the-gnollbench-executive-summary_full_named_INTERNAL.pdf</c> for a
+    /// stand-alone document and <c>run-68_vs-4-models_claude-5.5-opus-…_summary_named.pdf</c> for one
+    /// compared with four peers.
     ///
     /// <para>A Report for AI Researchers and Developers is named
     /// <c>[run-&lt;id&gt;_]&lt;title without its "— &lt;audience name&gt;" ending&gt;_Researcher_Report_…</c>, the
@@ -83,8 +88,37 @@ public static class BenchmarkPdfFileNames
 
         var runSubject = RunSubject.Match(document.SubjectKey ?? string.Empty);
         string runPrefix = runSubject.Success ? "run-" + runSubject.Groups[1].Value + "_" : string.Empty;
+        int peerCount = PeerCountOf(document.FactsJson);
+        string comparisonPrefix = peerCount > 0 ? "vs-" + peerCount.ToString(CultureInfo.InvariantCulture) + "-models_" : string.Empty;
 
-        return runPrefix + SafeFileName(title) + label + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
+        return runPrefix + comparisonPrefix + SafeFileName(title) + label + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
+    }
+
+    /// <summary>
+    /// The length of the stored fact sheet's <c>peers</c> array, as the document list reports it to the
+    /// client; 0 when absent or unreadable.
+    /// </summary>
+    private static int PeerCountOf(string? factsJson)
+    {
+        if (string.IsNullOrWhiteSpace(factsJson)) return 0;
+        try
+        {
+            using var doc = JsonDocument.Parse(factsJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object) return 0;
+            foreach (var property in doc.RootElement.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "peers", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.ValueKind == JsonValueKind.Array)
+                {
+                    return property.Value.GetArrayLength();
+                }
+            }
+            return 0;
+        }
+        catch (JsonException)
+        {
+            return 0;
+        }
     }
 
     /// <summary>The title without a trailing <c> — Report for AI Researchers and Developers</c> or <c> — Technical Report</c>.</summary>

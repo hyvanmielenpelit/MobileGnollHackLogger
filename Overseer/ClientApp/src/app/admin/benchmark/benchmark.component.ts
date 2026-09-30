@@ -114,9 +114,10 @@ import { SnapshotUploadDialogComponent } from './snapshot-upload/snapshot-upload
 import { RunReportFrameComponent } from './run-report-frame/run-report-frame.component';
 import { KeyFigureCardActionsComponent, KeyFigureCardExportRequest } from './run-report-frame/key-figure-card-actions.component';
 import { ImageContext, KeyFiguresAction, exportKeyFiguresImage } from './run-report-frame/key-figures-image';
-import { BenchmarkDownloadCenterComponent, audienceLabel } from './download-center/benchmark-download-center.component';
+import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
+import { audienceLabel } from './report-pack/report-document-format';
 import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/run-ai-reports.component';
-import { ReportDocumentLibraryComponent } from './report-pack/report-document-library.component';
+import { ReportDocumentsLauncherComponent } from './report-pack/report-documents-launcher.component';
 import { reportWriterRefusal, reportWriterWarning } from './run-ai-reports/report-writer-policy';
 import { copyTextFromPromise, copyToClipboard } from '../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../utils/download.util';
@@ -342,7 +343,7 @@ interface BenchmarkRunSettings {
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
     RunReportFrameComponent, KeyFigureCardActionsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent,
-    ReportDocumentLibraryComponent
+    ReportDocumentsLauncherComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss']
@@ -398,14 +399,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   readonly comparisonWizardSteps = COMPARISON_WIZARD_STEPS;
 
   /**
-   * The Comparison reports library's scope: every report document a model comparison wrote. One
-   * stable object, so change detection never reads it as a new scope and reloads the list.
-   */
-  readonly comparisonReportsScope = { kind: 'all' } as const;
-
-  /**
-   * Bumped when the wizard closes, since it may have written report documents. The library lives
-   * inside the tab's @if, so each showing of the tab creates it afresh and it loads on init.
+   * Bumped when the wizard closes, since it may have written report documents. The Comparison
+   * reports card lives inside the tab's @if, so each showing of the tab creates it afresh and it
+   * counts the documents on init.
    */
   comparisonReportsReloadToken = 0;
 
@@ -1479,17 +1475,18 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * Refused while an export is running: it re-renders charts and writes files in sequence, and
    * tearing the DOM out from under it would leave a detached chart and a half-written batch. The
    * wizard's export status line says so, and its own close controls are disabled for the same
-   * duration, so this is not a silent refusal.
+   * duration, so this is not a silent refusal. Refused as well while the wizard draws and uploads
+   * the charts of report documents, which it composes the same way.
    */
   onComparisonWizardCancel(event: Event): void {
-    if (this.comparisonWizard?.exporting) {
+    if (this.comparisonWizard?.exporting || this.comparisonWizard?.chartsPublishing) {
       event.preventDefault();
     }
   }
 
   /**
    * Nothing is torn down here: the mounted content is what reopening is supposed to preserve. The
-   * Comparison reports list reloads, since the wizard's Report Pack may have written documents.
+   * Comparison reports card counts again, since the wizard's Reports step may have written documents.
    */
   onComparisonWizardClose(): void {
     this.comparisonReportsReloadToken++;

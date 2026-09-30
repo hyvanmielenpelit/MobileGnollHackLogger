@@ -194,19 +194,20 @@ you already read the label, it is noise; drop it.
 |------|---------|----------------------------|
 | plus | New Profile, Create Suite, Add Question | "Something new appears" — recognised without reading |
 | play | Start Benchmark, Acknowledge & Start Run | "This begins now", and it reinforces the consequence of a button that starts real work |
-| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, in the Report Pack dialog and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
+| trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions, **Re-run** (the run report's popover trigger, followed by a chevron state indicator) | "This runs again" — the circular-arrow convention is universal |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
-| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog), **Download…** and each row's icon-only **Download** (the documents library, `app-report-document-library`; both open the Download Center) | "A file arrives on your disk" |
+| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Reports step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
-| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header and the report writing progress dialog) | "Copies to the clipboard" — nothing is saved to disk |
-| eye | Open in Single view, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a comparison report (the documents library; opens the PDF viewer) | "Look at it here" — shows content without changing or downloading it |
+| copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Reports step) | "Copies to the clipboard" — nothing is saved to disk |
+| eye | Open in Single view, **View** a run's AI-written report (the AI Reports tab; opens the PDF viewer), **View** a report document or a run report (icon-only, each row of the Download Center; opens the PDF viewer) | "Look at it here" — shows content without changing or downloading it |
+| more (three dots in a row) | **More actions** (icon-only, each Report Pack row of the Download Center in the Model Comparison wizard's Documents step; opens a §4f action popover with *Update charts* and *Remove charts*) | "More actions are behind this" — the row keeps its frequent actions as visible icon buttons and puts the rarer, worded ones in the popover |
 | external-link (a box with an arrow leaving it) | **Open in new tab** (icon-only, the PDF viewer) | "Leaves this page for a browser tab" — the same content, outside the application |
 | map | **View game snapshot** (icon-only, the run report's header) | The game board the suite's questions are asked about |
 | layers | Create Default Suites | A stack: several suites are created at once from the built-in catalog |
 | upload | Import Suite from YAML, Upload Snapshot | A file leaves the user's disk and enters the application; the arrow points out of the tray |
-| zap | Generate Questions, **Reports** (Model Comparison; opens the Report Pack dialog), **Write Report** / **Write Reports** (the run report's AI Reports tab) and its **Write Anyway** confirmation | AI generation: content is produced by a model, not typed in |
+| zap | Generate Questions, **Generate** (the Model Comparison wizard's Reports step) and its **Write Anyway** confirmation, **Write Report** / **Write Reports** (the run report's AI Reports tab) and its **Write Anyway** confirmation | AI generation: content is produced by a model, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
 | compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher) | A guided route through several steps: the wizard finds the way, the admin follows it |
@@ -338,6 +339,23 @@ and the toolbar's **Download…** (*file-with-arrow*) open the Download Center, 
 the AI Reports tab's nested confirmation, **Write Anyway** (*zap*), and **Generate** keeps* zap*. The
 launcher's **Open Comparison Wizard** takes* compass*, like the Snapshot Suite Wizard, and is the page's
 only `.btn-gh`. The estimate panel of both writers is the global `.gh-estimate-panel`.*
+
+*Changed 2026-09-30 (Model Comparison steps 3 and 4, charts in PDF and Word): the Report Pack dialog
+and `app-report-document-library` are gone. The dialog's form became the wizard's step 3, *Reports*
+(`app-report-pack-panel`), where **Generate** and its **Write Anyway** keep* zap*, and the log's
+icon-only **Copy diagnostics** and **Download diagnostics** take* copy *and* file-with-arrow*. Model
+Comparison's step-2 **Reports** button is gone with the dialog. The documents table moved into the
+Download Center itself (`app-download-center-panel`, the §8 data-table layer), which is the wizard's
+step 4, *Documents*, and the body of the Download Center dialog: each row's icon-only **View** (*eye*)
+opens the PDF viewer and **Delete** (*trash*, `.action-btn-danger`, Report Pack documents only) asks its
+confirmation; there is no per-row Download, since selecting the row is how a document is downloaded. In
+the wizard only, each Report Pack row adds an icon-only **More actions** with a new glyph,* more *(three
+dots), opening a §4f action popover of *Update charts* and *Remove charts*, each `aria-disabled` with its
+reason on a second line; the toolbar's text-only `.btn-ghost` **Update charts…** opens a nested dialog
+with the chart picker. The launcher's *Comparison reports* (`app-report-documents-launcher`) is a summary
+and one `.btn-ghost` **Open Download Center** (*file-with-arrow*), `aria-disabled` while there is
+nothing to open, with the summary line as its reason. The Database tab's **Clear Chart Files** is a
+text-only `btn-gh btn-danger`, `aria-disabled` with a tooltip reason.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -742,7 +760,10 @@ selected option, so the handler must be idempotent.
 
 A labelled trigger that reveals a short list of **related actions** — the run report dialog's
 **Re-run** (*Re-score run*, *Re-run final synthesis*, *Retry failed assessments*, *Retry claim
-verification*, *Re-run failed questions*) is the first. It is a **popover-revealed button group,
+verification*, *Re-run failed questions*) is the first. The Download Center's per-row **More actions**
+(*Update charts*, *Remove charts*; Report Pack rows, in the Model Comparison wizard's Documents step
+only) is the second: an icon-only `.action-btn` trigger named *More actions for <document>*, with a
+hint tooltip, whose panel's `aria-label` is *Chart actions for <document>*. It is a **popover-revealed button group,
 not an ARIA menu**: no `role="menu"` / `menuitem`, no arrow-key roving; Tab moves through the items.
 
 **When to use it.** Several actions of one kind that would crowd a header or toolbar, whose names

@@ -11,6 +11,7 @@ using Markdig;
 using Markdig.Extensions.EmphasisExtras;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using Overseer.Models;
 using QuestPDF.Fluent;
 using QuestPDF.Infrastructure;
 using ITableCellContainer = QuestPDF.Elements.Table.ITableCellContainer;
@@ -28,6 +29,10 @@ using MdTableRow = Markdig.Extensions.Tables.TableRow;
 /// text it is. Images print as their alternative text in brackets, only absolute http, https and
 /// mailto links become clickable, and a block type this class does not know prints its literal
 /// source text.</para>
+///
+/// <para>A top-level paragraph whose whole text is a figure marker (<c>[[figure:&lt;key&gt;]]</c>)
+/// is drawn as a numbered figure when a chart for its key is supplied, and prints nothing
+/// otherwise. Any other <c>[[…]]</c> text prints literally.</para>
 /// </summary>
 internal static class BenchmarkPdfMarkdownComposer
 {
@@ -55,6 +60,13 @@ internal static class BenchmarkPdfMarkdownComposer
     };
 
     private static readonly string[] Bullets = { "•", "◦", "▪" };
+
+    /// <summary>A paragraph's whole source text when it is a figure marker; group 1 is the figure key.</summary>
+    private static readonly Regex FigureMarker = new(
+        @"^\[\[figure:([A-Za-z0-9][A-Za-z0-9_.\-]*)\]\]$", RegexOptions.CultureInvariant);
+
+    /// <summary>The largest share of the page's content height a figure's image may take.</summary>
+    internal const double FigureMaxHeightShare = 0.6;
 
     // A lowercase letter or digit followed by an uppercase letter: where a zero-width space lets a
     // header such as ResultLengthChars wrap between its words.
@@ -97,17 +109,33 @@ internal static class BenchmarkPdfMarkdownComposer
 
         /// <summary>The top-level <c>##</c> headings in order, as section name and plain text.</summary>
         public required IReadOnlyList<(string Id, string Text)> Contents { get; init; }
+
+        /// <summary>Each top-level figure marker paragraph that has a chart, with its figure number.</summary>
+        public IReadOnlyDictionary<ParagraphBlock, Figure> Figures { get; init; } = new Dictionary<ParagraphBlock, Figure>();
+
+        /// <summary>The drawn figures in order of appearance.</summary>
+        public IReadOnlyList<Figure> OrderedFigures => Figures.Values.OrderBy(f => f.Number).ToList();
     }
 
+    /// <summary>A chart drawn at a figure marker, numbered from 1 in order of appearance.</summary>
+    internal sealed record Figure(int Number, BenchmarkReportRenderChart Chart);
+
+    /// <summary>The room a figure's image may take, in points: the text column's width and the height cap.</summary>
+    internal readonly record struct FigureFrame(float Width, float MaxHeight);
+
     /// <summary><paramref name="CamelCaseBreaks"/>: a table header, whose identifiers may wrap between words.</summary>
-    private sealed record Context(Prepared Document, CancellationToken Token, bool CamelCaseBreaks = false);
+    private sealed record Context(Prepared Document, CancellationToken Token, FigureFrame Frame, bool CamelCaseBreaks = false);
 
     public static MarkdownDocument Parse(string markdown) => Markdown.Parse(markdown ?? string.Empty, Pipeline);
 
-    /// <summary>Parses <paramref name="markdown"/> and drops its first <c>#</c> heading when it repeats <paramref name="title"/>.</summary>
-    public static Prepared Prepare(string markdown, string title)
+    /// <summary>
+    /// Parses <paramref name="markdown"/> and drops its first <c>#</c> heading when it repeats <paramref name="title"/>.
+    /// Each top-level figure marker whose key has a chart in <paramref name="charts"/> becomes a figure.
+    /// </summary>
+    public static Prepared Prepare(string markdown, string title, IReadOnlyList<BenchmarkReportRenderChart>? charts = null)
     {
-        var document = Parse(markdown);
+        string source = markdown ?? string.Empty;
+        var document = Parse(source);
         var blocks = document.ToList();
 
         var firstHeading = blocks.OfType<HeadingBlock>().FirstOrDefault(h => h.Level == 1);
@@ -126,14 +154,76 @@ internal static class BenchmarkPdfMarkdownComposer
             contents.Add((id, PlainText(heading.Inline)));
         }
 
+        var figures = new Dictionary<ParagraphBlock, Figure>();
+        if (charts is { Count: > 0 })
+        {
+            var byKey = new Dictionary<string, BenchmarkReportRenderChart>(StringComparer.Ordinal);
+            foreach (var chart in charts)
+            {
+                if (chart != null && chart.Png.Length > 0 && chart.WidthPx > 0 && chart.HeightPx > 0)
+                {
+                    byKey.TryAdd(chart.FigureKey, chart);
+                }
+            }
+
+            foreach (var paragraph in blocks.OfType<ParagraphBlock>())
+            {
+                if (FigureKeyOf(paragraph, source) is string key && byKey.TryGetValue(key, out var chart))
+                {
+                    figures[paragraph] = new Figure(figures.Count + 1, chart);
+                }
+            }
+        }
+
         return new Prepared
         {
-            Source = markdown ?? string.Empty,
+            Source = source,
             Blocks = blocks,
             SectionIds = sectionIds,
-            Contents = contents
+            Contents = contents,
+            Figures = figures
         };
     }
+
+    /// <summary>The figure key when the paragraph's whole text is a figure marker; null otherwise.</summary>
+    internal static string? FigureKeyOf(ParagraphBlock paragraph, string source)
+    {
+        var match = FigureMarker.Match(SourceOf(paragraph, source).Trim());
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    /// <summary>A figure marker with no chart to draw, which prints nothing.</summary>
+    internal static bool IsUndrawnMarker(ParagraphBlock paragraph, Prepared document)
+        => !document.Figures.ContainsKey(paragraph) && FigureKeyOf(paragraph, document.Source) != null;
+
+    /// <summary>
+    /// An image of <paramref name="widthPx"/> by <paramref name="heightPx"/> scaled to <paramref name="maxWidth"/>,
+    /// then scaled down proportionally when its height passes <paramref name="maxHeight"/> (no cap when 0 or less).
+    /// </summary>
+    internal static (double Width, double Height) FigureSize(int widthPx, int heightPx, double maxWidth, double maxHeight)
+    {
+        double ratio = widthPx > 0 && heightPx > 0 ? (double)heightPx / widthPx : 1.0;
+        double width = maxWidth;
+        double height = width * ratio;
+        if (maxHeight > 0 && height > maxHeight)
+        {
+            height = maxHeight;
+            width = height / ratio;
+        }
+        return (width, height);
+    }
+
+    /// <summary>The caption's parts: "Figure N.", the title, and the caption text, each trimmed.</summary>
+    internal static (string Label, string Title, string Caption) CaptionParts(Figure figure)
+        => ("Figure " + figure.Number.ToString(CultureInfo.InvariantCulture) + ".",
+            (figure.Chart.Title ?? string.Empty).Trim(),
+            (figure.Chart.Caption ?? string.Empty).Trim());
+
+    /// <summary>The chart's alternative text, falling back to its title and then to "Chart".</summary>
+    internal static string AltTextOf(BenchmarkReportRenderChart chart)
+        => !string.IsNullOrWhiteSpace(chart.AltText) ? chart.AltText.Trim()
+            : !string.IsNullOrWhiteSpace(chart.Title) ? chart.Title.Trim()
+            : "Chart";
 
     /// <summary>The <c>##</c> sections with their page numbers, each a link to its section.</summary>
     public static void ComposeTableOfContents(IContainer container, Prepared document)
@@ -162,10 +252,13 @@ internal static class BenchmarkPdfMarkdownComposer
         });
     }
 
-    /// <summary>The body. The token is checked between blocks, so a canceled request stops composing.</summary>
-    public static void ComposeBody(IContainer container, Prepared document, CancellationToken cancellationToken)
+    /// <summary>
+    /// The body, its figures sized within <paramref name="frame"/>. The token is checked between blocks,
+    /// so a canceled request stops composing.
+    /// </summary>
+    public static void ComposeBody(IContainer container, Prepared document, CancellationToken cancellationToken, FigureFrame frame)
     {
-        var ctx = new Context(document, cancellationToken);
+        var ctx = new Context(document, cancellationToken, frame);
         container.Column(col =>
         {
             col.Spacing(BenchmarkPdfStyle.BlockSpacing);
@@ -184,7 +277,8 @@ internal static class BenchmarkPdfMarkdownComposer
             ctx.Token.ThrowIfCancellationRequested();
             var block = blocks[i];
 
-            if (block is LinkReferenceDefinitionGroup)
+            if (block is LinkReferenceDefinitionGroup
+                || (block is ParagraphBlock marker && IsUndrawnMarker(marker, ctx.Document)))
             {
                 continue;
             }
@@ -199,13 +293,13 @@ internal static class BenchmarkPdfMarkdownComposer
                 var headings = blocks.Skip(i).Take(last - i + 1).Cast<HeadingBlock>().ToList();
                 var next = last + 1 < blocks.Count ? blocks[last + 1] : null;
 
-                if (next is ParagraphBlock paragraph)
+                if (next is ParagraphBlock paragraph && !IsUndrawnMarker(paragraph, ctx.Document))
                 {
                     col.Item().PreventPageBreak().Column(group =>
                     {
                         group.Spacing(BenchmarkPdfStyle.BlockSpacing);
                         foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
-                        group.Item().Element(c => Paragraph(c, paragraph.Inline, ctx, CellAlign.Left));
+                        group.Item().Element(c => ParagraphOrFigure(c, paragraph, ctx));
                     });
                     i = last + 1;
                 }
@@ -257,7 +351,7 @@ internal static class BenchmarkPdfMarkdownComposer
                 Heading(container, heading, ctx);
                 break;
             case ParagraphBlock paragraph:
-                Paragraph(container, paragraph.Inline, ctx, CellAlign.Left);
+                ParagraphOrFigure(container, paragraph, ctx);
                 break;
             case MdTable table:
                 ComposeTable(container, table, ctx);
@@ -349,6 +443,49 @@ internal static class BenchmarkPdfMarkdownComposer
         {
             Align(t, align);
             Inlines(t, inline, default, ctx);
+        });
+    }
+
+    /// <summary>A figure when the paragraph is a marker with a chart, else the paragraph; an undrawn marker prints nothing.</summary>
+    private static void ParagraphOrFigure(IContainer container, ParagraphBlock paragraph, Context ctx)
+    {
+        if (ctx.Document.Figures.TryGetValue(paragraph, out var figure))
+        {
+            ComposeFigure(container, figure, ctx);
+        }
+        else if (!IsUndrawnMarker(paragraph, ctx.Document))
+        {
+            Paragraph(container, paragraph.Inline, ctx, CellAlign.Left);
+        }
+    }
+
+    /// <summary>
+    /// A tagged figure: the chart image, centered, as wide as the text column unless its height reaches
+    /// the frame's cap, and below it the caption "<b>Figure N.</b> <i>Title</i> — caption" in the
+    /// secondary size, kept on one page with the image.
+    /// </summary>
+    private static void ComposeFigure(IContainer container, Figure figure, Context ctx)
+    {
+        var chart = figure.Chart;
+        var (width, height) = FigureSize(chart.WidthPx, chart.HeightPx, ctx.Frame.Width, ctx.Frame.MaxHeight);
+        var (label, title, caption) = CaptionParts(figure);
+
+        container.PaddingVertical(4).PreventPageBreak().Column(col =>
+        {
+            col.Spacing(4);
+            col.Item().AlignCenter()
+                .Width((float)width).Height((float)height)
+                .SemanticFigure(AltTextOf(chart))
+                .Image(chart.Png)
+                .FitArea();
+            col.Item().SemanticCaption().Text(t =>
+            {
+                t.AlignCenter();
+                t.DefaultTextStyle(s => s.FontSize(BenchmarkPdfStyle.TableCellSize).LineHeight(1.3f));
+                t.Span(label).Bold();
+                if (title.Length > 0) t.Span(" " + title).Italic();
+                if (caption.Length > 0) t.Span((title.Length > 0 ? " — " : " ") + caption);
+            });
         });
     }
 

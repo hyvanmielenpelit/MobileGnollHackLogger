@@ -6,7 +6,8 @@
 - **Suite:** GnollHack Core Suite
 - **Questions:** 4
 - **Runs:** 1 (run 12)
-- **Peers:** Model A = Grok 5 (xAI, grok-5); Model B = Mistral Large 4 (Mistral, mistral-large-4)
+- **Compared with:** Model A = Grok 5 (xAI, grok-5); Model B = Mistral Large 4 (Mistral, mistral-large-4)
+- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 
 ## The result in one sentence
 
@@ -14,19 +15,25 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 
 ## Key figures
 
-- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps those of Models A and B.
-- **Rank:** 2 of 3 on intelligence (the order is not established where intervals overlap).
+- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3; its 95 % interval overlaps every peer's.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
 
 ## How it compares
 
-| Model | Intelligence Index | Median answer time | Cost per question |
+| Model | Intelligence Index | Median answer time | Cost per question | Critical errors |
+|---|---|---|---|---|
+| **GPT-5.6 Luna** | 80 (77–83) | 12.3 s | $0.036 | 1 of 4 answers |
+| Grok 5 (A) | 85 (81–89) | 9.8 s | $0.052 | not available |
+| Mistral Large 4 (B) | 78 (74–83) | not available | $0.021 | not available |
+
+| Dimension | GPT-5.6 Luna | Peer mean | Difference |
 |---|---|---|---|
-| **GPT-5.6 Luna** | 80 (77–83) | 12.3 s | $0.036 |
-| Grok 5 (A) | 85 (81–89) | 9.8 s | $0.052 |
-| Mistral Large 4 (B) | 78 (74–83) | not available | $0.021 |
+| Accuracy | 84 | 82 | +2 |
+| Completeness | 70 | 78 | -8 |
+| Conciseness | 88 | 85 | +3 |
+| Readability | 90 | 89 | +1 |
 
 GPT-5.6 Luna places 2nd of 3 on intelligence, but its interval overlaps those of Grok 5 and Mistral Large 4, so the order is not established. Its paired difference from Grok 5 is -4.6 points.
 
@@ -36,7 +43,7 @@ GPT-5.6 Luna places 2nd of 3 on intelligence, but its interval overlaps those of
 
 ## Where it fell short
 
-- Asserted a false outcome on Q3, where Grok 5 scored well. *(both graders agreed)*
+- Asserted a false outcome on Q3, where Grok 5 scored well.
 - Scored lowest on intermediate questions (49). *(from per-question results)*
 
 ## What this means for use as a game assistant
@@ -45,11 +52,11 @@ GPT-5.6 Luna is a capable assistant for everyday play, but its answers on item d
 
 ## How reliable this result is
 
-The result rests on 4 questions; its 95 % interval overlaps those of Models A and B.
+The result rests on 4 questions; its 95 % interval overlaps every peer's.
 
 The 95 % interval is 77–83, a span of 6 points, and rests on 4 of 4 questions with a scored answer.
 
-Testing every pair among these 3 models at once would flag chance differences as significant, so this view tests none. Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and choose the other under Compare with group.
+No pair of models is tested for significance: with 3 models, testing every pair would flag chance differences.
 
 ## About this benchmark
 
@@ -75,6 +82,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 7 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers named*
+*Document ID 101 · format version 8 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

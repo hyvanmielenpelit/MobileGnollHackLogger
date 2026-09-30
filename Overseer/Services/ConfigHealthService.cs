@@ -60,6 +60,16 @@ public class ConfigHealthService
             });
         }
 
+        if (!Benchmarking.BenchmarkReportChartStore.IsUsableRoot(_configuration[Benchmarking.BenchmarkReportChartStore.ConfigurationKey]))
+        {
+            alerts.Add(new SystemAlert
+            {
+                Id = "report-charts-location-missing",
+                Type = "warning",
+                Message = "Report chart storage is not configured. Set Benchmark:ReportPack:ChartsDataLocation to an absolute folder; until then, charts cannot be added to report documents."
+            });
+        }
+
         /* The content keyring. A missing or malformed ring must surface here, at startup, and
            not as an exception on a user's first confidential turn -- which is the worst
            possible moment to discover it, and would look like a bug in the chat rather than a

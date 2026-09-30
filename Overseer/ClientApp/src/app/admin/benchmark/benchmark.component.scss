@@ -2666,14 +2666,6 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   min-width: 0;
 }
 
-.mc-launcher-library-lead {
-  margin: 0;
-  max-width: 70ch;
-  font-size: var(--text-secondary);
-  line-height: var(--leading-body);
-  color: #a1a1aa;
-}
-
 /* One row per wizard step: a round number badge, then the title and its one-line summary. */
 .mc-launcher-steps {
   display: grid;

@@ -191,6 +191,11 @@ Right-click on the `Overseer` project → **Manage User Secrets**, and paste:
   "KbPath": "C:\\path\\to\\overseer_knowledgebase",
   "DumpLogPath": "C:\\path\\to\\dumplogs",
   "ConversationsDataLocation": "C:\\path\\to\\overseer_data\\conversations",
+  "Benchmark": {
+    "ReportPack": {
+      "ChartsDataLocation": "C:\\path\\to\\overseer_data\\charts"
+    }
+  },
   "AntiForgeryToken": "<anti-forgery-token>",
   "AesEncryptionKey": "<base64-encoded-key>",
   "Admins": "AdminUser1,AdminUser2",
@@ -199,6 +204,8 @@ Right-click on the `Overseer` project → **Manage User Secrets**, and paste:
 ```
 
 > **Note:** If your SQL Server Express instance uses a different name, replace `.\SQLEXPRESS` with the correct server and instance name (e.g., `localhost\MYINSTANCE`).
+
+> **Note:** `Benchmark:ReportPack:ChartsDataLocation` is the absolute folder where the chart images of AI Benchmark report documents are stored. It is created on first use and is not part of the database backup; see [`docs/overseer/ai-benchmark-report-pack.md`](docs/overseer/ai-benchmark-report-pack.md) § 13. Without it, report documents download without charts.
 
 ### Building
 

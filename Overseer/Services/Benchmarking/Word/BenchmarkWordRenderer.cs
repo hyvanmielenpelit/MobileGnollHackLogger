@@ -11,14 +11,12 @@ using System.Xml;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
+using Overseer.Models;
 using Overseer.Services.Benchmarking.Pdf;
-using A = DocumentFormat.OpenXml.Drawing;
 using Ap = DocumentFormat.OpenXml.ExtendedProperties;
 using Cp = DocumentFormat.OpenXml.CustomProperties;
-using DW = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using Ovml = DocumentFormat.OpenXml.Vml.Office;
 using Palette = Overseer.Services.Benchmarking.Pdf.BenchmarkDocumentPalette;
-using PIC = DocumentFormat.OpenXml.Drawing.Pictures;
 using V = DocumentFormat.OpenXml.Vml;
 using Vt = DocumentFormat.OpenXml.VariantTypes;
 using W10 = DocumentFormat.OpenXml.Vml.Wordprocessing;
@@ -54,8 +52,8 @@ public sealed class BenchmarkWordSourceTooLargeException : Exception
 /// </summary>
 public static class BenchmarkWordRenderer
 {
-    /// <summary>The page layout's version, printed in the title block and footer as "Word layout 1".</summary>
-    public const int LayoutVersion = 1;
+    /// <summary>The page layout's version, printed in the title block and footer as "Word layout 2".</summary>
+    public const int LayoutVersion = 2;
 
     /// <summary>The longest source text rendered, the PDF's limit; a longer one is refused before rendering starts.</summary>
     public const int MaxSourceCharacters = BenchmarkPdfRenderer.MaxSourceCharacters;
@@ -98,20 +96,24 @@ public static class BenchmarkWordRenderer
         => $"This document is too large for a Word document ({characters.ToString("N0", CultureInfo.InvariantCulture)} characters); download the Markdown instead.";
 
     /// <summary>
-    /// Markdown rendered as a Word document. Throws <see cref="BenchmarkWordSourceTooLargeException"/>
-    /// for a source above <see cref="MaxSourceCharacters"/>, and <see cref="OperationCanceledException"/>
-    /// once the token is canceled.
+    /// Markdown rendered as a Word document, each figure marker with a chart in <paramref name="charts"/>
+    /// drawn as a picture. Throws <see cref="BenchmarkWordSourceTooLargeException"/> for a source above
+    /// <see cref="MaxSourceCharacters"/>, and <see cref="OperationCanceledException"/> once the token is canceled.
     /// </summary>
-    public static byte[] RenderMarkdown(string markdown, BenchmarkPdfDocumentInfo info, CancellationToken ct = default)
+    public static byte[] RenderMarkdown(
+        string markdown, BenchmarkPdfDocumentInfo info, CancellationToken ct = default,
+        IReadOnlyList<BenchmarkReportRenderChart>? charts = null)
     {
         ArgumentNullException.ThrowIfNull(markdown);
         ArgumentNullException.ThrowIfNull(info);
         Guard(markdown);
         ct.ThrowIfCancellationRequested();
 
-        var sourced = info with { SourceSha256 = BenchmarkPdfRenderer.Sha256(markdown) };
-        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, sourced.Title);
+        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, info.Title, charts);
+        var sourced = info with { SourceSha256 = BenchmarkPdfRenderer.SourceSha256(markdown, prepared.OrderedFigures.Select(f => f.Chart)) };
         bool contents = sourced.AllowTableOfContents && prepared.Contents.Count >= 4;
+        int pageHeight = sourced.Paper == BenchmarkPdfPaper.Letter ? LetterHeight : A4Height;
+        int maxFigureHeight = (int)Math.Round((pageHeight - 2 * VerticalMargin) * BenchmarkPdfMarkdownComposer.FigureMaxHeightShare);
 
         return Generate(sourced, ct, (body, part, textWidth) =>
         {
@@ -121,7 +123,7 @@ public static class BenchmarkWordRenderer
                 body.Append(new Paragraph(Writer.Properties(WordStyles.ContentsRule)));
             }
 
-            var writer = new Writer(part, prepared, textWidth, ct);
+            var writer = new Writer(part, prepared, textWidth, ct, maxFigureHeight);
             writer.WriteBody(body);
             return writer.OrderedLists;
         });
@@ -232,7 +234,7 @@ public static class BenchmarkWordRenderer
             KeepNext = new KeepNext(),
             SpacingBetweenLines = new SpacingBetweenLines { Before = "0", After = "0", Line = "240", LineRule = LineSpacingRuleValues.Auto }
         });
-        logoParagraph.Append(new Run(Picture(main.GetIdOfPart(logo), 1U, "GnollBench logo", "GnollBench", logoWidth, logoHeight)));
+        logoParagraph.Append(new Run(Writer.Picture(main.GetIdOfPart(logo), 1U,"GnollBench logo", "GnollBench", logoWidth, logoHeight)));
         body.Append(logoParagraph);
 
         body.Append(StyledParagraph(WordStyles.DocumentKind, info.DocumentKind));
@@ -364,7 +366,7 @@ public static class BenchmarkWordRenderer
         }
 
         long size = 7 * EmuPerMillimeter;
-        paragraph.Append(new Run(Picture(emblemId, 2U, "GnollBench emblem", string.Empty, size, size)));
+        paragraph.Append(new Run(Writer.Picture(emblemId, 2U,"GnollBench emblem", string.Empty, size, size)));
         paragraph.Append(new Run(Writer.TextOf(" GnollBench · " + info.DocumentKind)));
         paragraph.Append(new Run(new TabChar(), new TabChar()));
         paragraph.Append(new Run(Writer.TextOf(info.SubjectLine)));
@@ -457,36 +459,6 @@ public static class BenchmarkWordRenderer
 
         return new Run(new RunProperties { NoProof = new NoProof() }, new Picture(shapeType, shape));
     }
-
-    /// <summary>An inline PNG, <paramref name="description"/> its alternative text (empty for a decorative picture).</summary>
-    private static Drawing Picture(string relationshipId, uint id, string name, string description, long width, long height)
-        => new(
-            new DW.Inline(
-                new DW.Extent { Cx = width, Cy = height },
-                new DW.EffectExtent { LeftEdge = 0L, TopEdge = 0L, RightEdge = 0L, BottomEdge = 0L },
-                new DW.DocProperties { Id = id, Name = name, Description = description },
-                new DW.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
-                new A.Graphic(
-                    new A.GraphicData(
-                        new PIC.Picture(
-                            new PIC.NonVisualPictureProperties(
-                                new PIC.NonVisualDrawingProperties { Id = 0U, Name = name + ".png", Description = description },
-                                new PIC.NonVisualPictureDrawingProperties()),
-                            new PIC.BlipFill(
-                                new A.Blip { Embed = relationshipId },
-                                new A.Stretch(new A.FillRectangle())),
-                            new PIC.ShapeProperties(
-                                new A.Transform2D(
-                                    new A.Offset { X = 0L, Y = 0L },
-                                    new A.Extents { Cx = width, Cy = height }),
-                                new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle })))
-                    { Uri = "http://schemas.openxmlformats.org/drawingml/2006/picture" }))
-            {
-                DistanceFromTop = 0U,
-                DistanceFromBottom = 0U,
-                DistanceFromLeft = 0U,
-                DistanceFromRight = 0U
-            });
 
     private static Paragraph StyledParagraph(string style, string text)
     {

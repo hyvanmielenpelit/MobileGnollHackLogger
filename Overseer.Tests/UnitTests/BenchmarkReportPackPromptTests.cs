@@ -142,7 +142,7 @@ public class BenchmarkReportPackPromptTests
         string system = Build(audience).SystemPrompt;
 
         Assert.Contains("runs no significance test", system);
-        Assert.Contains("say they overlap", system);
+        Assert.Contains("say that the intervals overlap and that the order between them is not established", system);
         Assert.Contains("significant, significantly or statistically", system);
         Assert.Contains("reliably better, reliably worse or clearly outperforms", system);
         Assert.Contains("eight consecutive words", system);
@@ -681,8 +681,140 @@ public class BenchmarkReportPackPromptTests
     {
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>());
 
-        Assert.Contains("says that the intervals overlap or that the order is not established. No hype or filler words.", message);
+        Assert.Contains("says that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, "
+            + "it says instead that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero. "
+            + "No hype or filler words.", message);
+        Assert.Contains("say only whether intervals overlap, or whether a paired interval excludes zero.", message);
+        Assert.Contains("A recommendation for model_developers concerns only what a model developer can change in the model", message);
         Assert.Contains("Every question under QUESTIONS NEEDING A NOTE gets a note", message);
+    }
+
+    // Report quality round: operator text, triage, paired result, unavailable and repeated facts ----
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void UserMessage_PrintsTheNoSignificanceSummaryOnly_NeverTheOperatorInstruction(BenchmarkReportAudience audience)
+    {
+        var prompt = Build(audience);
+
+        Assert.Contains("No pairwise significance test is run.", prompt.UserMessage);
+        Assert.DoesNotContain("Compare the intervals.", prompt.UserMessage);
+        Assert.DoesNotContain("Compare the intervals.", prompt.SystemPrompt);
+    }
+
+    [Fact]
+    public void UserMessage_GivesEachQuestionThePeerSpread_OnlyWhereThePeersAnsweredIt()
+    {
+        var sheet = ReportPackWriterTestData.Sheet();
+        sheet.Questions[1].PeerMin = 64;
+        sheet.Questions[1].PeerMax = 80;
+        sheet.Questions[1].PeersAbove = 2;
+        sheet.Questions[0].PeerMin = 80;
+        sheet.Questions[0].PeerMax = 90;
+        sheet.Questions[0].PeersAbove = 0;
+
+        string message = Build(BenchmarkReportAudience.InternalBrief, sheet).UserMessage;
+
+        Assert.Contains("[Q2] band: Intermediate | score: 50 | peer mean: 72 | difference: -22 | peers: min 64, max 80, 2 of 2 scored clearly higher | critical error: no", message);
+        Assert.Contains("[Q1] band: Simple | score: 90 | peer mean: 85 | difference: +5 | peers: min 80, max 90, 0 of 2 scored clearly higher | critical error: no", message);
+        Assert.Contains("[Q4] band: Advanced | score: n/a | peer mean: n/a | difference: n/a | critical error: no", message);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_StatesThePeerTriageRules(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("\"peers: min …, max …, N of M scored clearly higher\"", system);
+        Assert.Contains("scored more than five points above {{subject}}", system);
+        Assert.Contains("Where most peers answered a question well and {{subject}} missed it, that is evidence about the subject model, "
+            + "not about the chat, its tools, the corpus or the rubric. Where every model missed it, suspect the chat, its tools, the corpus or the rubric first.", system);
+        Assert.Contains("strengths and weaknesses prefer points where {{subject}} differs from its peers", system);
+    }
+
+    [Fact]
+    public void TheSlotsThatTriage_ApplyThePeerRule()
+    {
+        string brief = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
+        string Slot(string system, string name) => system.Split('\n').Single(l => l.StartsWith("- " + name + ":", StringComparison.Ordinal));
+
+        Assert.Contains("a question most peers answered well is evidence about the model, not the chat", Slot(brief, "overseerChat"));
+        Assert.Contains("suspect a question or its rubric first when every model missed it", Slot(brief, "benchmarkSystem"));
+        Assert.Contains("a \"chat\", \"corpus\" or \"suite\" lead rests on questions the peers missed as well", Slot(brief, "leads"));
+
+        string researcher = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
+        Assert.Contains("tell a miss of the model from one every model shared", Slot(researcher, "whyItScored"));
+    }
+
+    [Fact]
+    public void TheModelResultSlot_LeavesTheIntervalToTheAppendedSentence()
+    {
+        string system = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
+        string modelResult = system.Split('\n').Single(l => l.StartsWith("- modelResult:", StringComparison.Ordinal));
+
+        Assert.Contains("Code appends one sentence right after this paragraph that states the quality interval, its span and what it rests on; do not restate it.", modelResult);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    [InlineData(BenchmarkReportAudience.InternalBrief)]
+    public void ModelDeveloperRecommendations_ConcernOnlyTheModel(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("- A \"model_developers\" recommendation is something a model developer can change in the model itself: its knowledge, "
+            + "calibration, instruction following, verbosity or tool-use habits. It never concerns the Overseer's prompts, tools, retrieval, "
+            + "corpus, rubrics or tests, which the model's developers cannot change. The model never sees a rubric, so never recommend that it follow or check one.", system);
+    }
+
+    [Fact]
+    public void ExecutiveSummary_HasNoRecommendationRule()
+    {
+        Assert.DoesNotContain("recommendation is something a model developer can change", Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_StatesThePairedResultRules(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("Where the subject's and a peer's quality intervals overlap and that peer's pairedExcludesZero fact is not true, "
+            + "say that the intervals overlap and that the order between them is not established", system);
+        Assert.Contains("Where a peer's pairedExcludesZero fact is true, say that on the same questions the higher-scoring model scored higher on average "
+            + "and that the paired interval excludes zero, not adjusted for comparing several models. "
+            + "Never say for that pair that the order is not established, even where the intervals overlap.", system);
+        Assert.Contains("- Never use the words significant, significantly or statistically", system);
+        Assert.Contains("where that peer's pairedExcludesZero fact is true, it says instead that the paired interval excludes zero.", system);
+    }
+
+    [Fact]
+    public void TheComparisonSlot_DefersToThePairedResult()
+    {
+        string system = Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt;
+        string comparison = system.Split('\n').Single(l => l.StartsWith("- comparison:", StringComparison.Ordinal));
+
+        Assert.Contains("unless that peer's pairedExcludesZero fact is true; then state the paired result as WEIGHING THE EVIDENCE describes.", comparison);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_StatesTheUnavailableAndRepeatedValueRules(BenchmarkReportAudience audience)
+    {
+        string system = Build(audience).SystemPrompt;
+
+        Assert.Contains("Mention an unavailable figure only where leaving it out would mislead the reader", system);
+        Assert.DoesNotContain("If a fact is unavailable, say the figure is unavailable and why", system);
+        Assert.Contains("In the prose, never write a fact key outside its {{key}} token, and never describe the facts list, the fact sheet or how the data was given to you.", system);
+        Assert.Contains("State a value that several peers share once, for all of them; never list equal values one by one.", system);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void SystemPrompt_NeverAsksForGraderAgreementPerItem(BenchmarkReportAudience audience)
+    {
+        Assert.DoesNotContain("both graders agreed", Build(audience).SystemPrompt, StringComparison.OrdinalIgnoreCase);
     }
 
     // Repair ------------------------------------------------------------------------------------

@@ -183,7 +183,8 @@ public class BenchmarkReportPackJob
                     TimestampUtc = l.TimestampUtc,
                     Message = l.Message,
                     Severity = l.Severity
-                }).ToList()
+                }).ToList(),
+                ServerTimeUtc = DateTime.UtcNow
             };
         }
     }

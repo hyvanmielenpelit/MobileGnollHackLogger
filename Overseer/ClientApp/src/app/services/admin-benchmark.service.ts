@@ -2309,6 +2309,8 @@ export interface BenchmarkReportPackJobDto {
   costUsd: number | null;
   documents: BenchmarkReportPackDocumentProgressDto[];
   log: BenchmarkReportPackJobLogEntryDto[];
+  /** The server's clock when it answered; absent from a server that predates it. */
+  serverTimeUtc?: string;
 }
 
 /** A stored document in a list; never carries rendered text. */
@@ -2356,6 +2358,39 @@ export interface BenchmarkReportDocumentListItemDto {
   pricingBasis?: string;
   /** A peer's run was re-scored, re-run or deleted since the document was written. */
   peersChangedSinceGeneration?: boolean;
+  /** How many chart images the document holds, both namings counted. */
+  chartCount?: number;
+  /** The figures it has charts for, in manifest order. */
+  chartFigureKeys?: string[];
+  /** The settings hash its charts were drawn with; null without charts. */
+  chartSettingsHash?: string | null;
+  /** Each peer's entry key → the letter the anonymized copy names it by (`run:69` → `A`). */
+  peerLetters?: Record<string, string>;
+}
+
+/** Which copy a chart image is for: the named copy or the anonymized one. */
+export type ReportDocumentChartNaming = 'named' | 'anonymized';
+
+/** One chart image for a report document, as `PUT report-documents/{id}/charts` takes it. */
+export interface ReportDocumentChartUpload {
+  /** `p1a-quality`, `p1b-speed`, `p1c-cost`, `p2-profile`, `s1-quality-speed`, `s2-quality-cost` or `s3-speed-cost`. */
+  figureKey: string;
+  naming: ReportDocumentChartNaming;
+  title: string;
+  caption: string;
+  altText: string;
+  /** 64 hex characters: the hash of the settings the image was drawn with. */
+  settingsHash: string;
+  /** The PNG, base64 without a data-URL prefix. */
+  pngBase64: string;
+}
+
+/** A document's chart set after a replace. */
+export interface ReportDocumentChartsSummaryDto {
+  documentId: number;
+  chartCount: number;
+  figureKeys: string[];
+  settingsHash: string | null;
 }
 
 /** One validation problem, and whether the offending item was dropped. */
@@ -3035,6 +3070,16 @@ export class AdminBenchmarkService {
 
   deleteReportDocument(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/report-documents/${id}`);
+  }
+
+  /** Replaces a report document's whole chart set. */
+  putReportDocumentCharts(id: number, charts: ReportDocumentChartUpload[]): Observable<ReportDocumentChartsSummaryDto> {
+    return this.http.put<ReportDocumentChartsSummaryDto>(`/api/admin/benchmark/report-documents/${id}/charts`, { charts });
+  }
+
+  /** Removes every chart of a report document. */
+  deleteReportDocumentCharts(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/admin/benchmark/report-documents/${id}/charts`);
   }
 
   /**

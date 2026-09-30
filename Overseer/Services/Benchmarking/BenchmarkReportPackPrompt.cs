@@ -71,8 +71,9 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- Every question number, Q reference and evidence id must exist in the data. Every strength and weakness, and every lead where the document has leads, cites at least one evidence id.");
         Line(sb, "- A strength never cites a weakness row and a weakness never cites a strength row. A finding resting only on Conflicting rows says the graders disagree.");
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
-        Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say only whether intervals overlap.");
-        Line(sb, "- A sentence ranking {{subject}} against a peer whose interval overlaps it says that the intervals overlap or that the order is not established. No hype or filler words.");
+        Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say only whether intervals overlap, or whether a paired interval excludes zero.");
+        Line(sb, "- A sentence ranking {{subject}} against a peer whose interval overlaps it says that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, it says instead that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero. No hype or filler words.");
+        Line(sb, "- A recommendation for model_developers concerns only what a model developer can change in the model, never the Overseer's prompts, tools, retrieval, corpus, rubrics or tests.");
         Line(sb, "- Every question under QUESTIONS NEEDING A NOTE gets a note where the document has notes.");
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
         return sb.ToString();
@@ -194,7 +195,7 @@ public static class BenchmarkReportPackPrompt
     private static string SlotDescription(string slot) => slot switch
     {
         BenchmarkReportSlots.Comparison =>
-            $"At most {BenchmarkReportPackValidator.ComparisonMaxWords.ToString(CultureInfo.InvariantCulture)} words in one paragraph, printed under a code-rendered table of every model's Intelligence Index, interval, median answer time and cost per question: where {{{{subject}}}} stands among its peers and whether that position is established. Where the subject's interval overlaps a peer's (that peer's intervalOverlap fact is true), say so and that the order between them is not established. You may cite each peer's own facts listed under PEERS, the paired-difference facts included. Do not restate the table's figures one by one.",
+            $"At most {BenchmarkReportPackValidator.ComparisonMaxWords.ToString(CultureInfo.InvariantCulture)} words in one paragraph, printed under a code-rendered table of every model's Intelligence Index, interval, median answer time and cost per question: where {{{{subject}}}} stands among its peers and whether that position is established. Where the subject's interval overlaps a peer's (that peer's intervalOverlap fact is true), say so and that the order between them is not established, unless that peer's pairedExcludesZero fact is true; then state the paired result as WEIGHING THE EVIDENCE describes. You may cite each peer's own facts listed under PEERS, the paired-difference facts included. Do not restate the table's figures one by one.",
         BenchmarkReportSlots.Meaning =>
             $"At most {BenchmarkReportPackValidator.MeaningMaxWords.ToString(CultureInfo.InvariantCulture)} words: what this means for use as a game assistant, that is, what a player relying on {{{{subject}}}} could expect, drawn from the facts and findings.",
         BenchmarkReportSlots.Confidence =>
@@ -202,17 +203,17 @@ public static class BenchmarkReportPackPrompt
         BenchmarkReportSlots.Abstract =>
             $"At most {BenchmarkReportPackValidator.AbstractMaxWords.ToString(CultureInfo.InvariantCulture)} words: what was measured, the subject's result against its peers, and the main reasons for it. Do not list claims the claim verifier refuted here; they belong in the weaknesses, attributed to the claim verifier.",
         BenchmarkReportSlots.WhyItScored =>
-            $"Explain the patterns and causes across the weaknesses, grouped by category (domain knowledge, reading the game state, tool use, instruction following, completeness under the concise answer style, calibration), in at most {BenchmarkReportPackValidator.WhyItScoredMaxWords.ToString(CultureInfo.InvariantCulture)} words. Leave out a category the data does not support. The weaknesses list is printed right after this text; do not restate its items.",
+            $"Explain the patterns and causes across the weaknesses, grouped by category (domain knowledge, reading the game state, tool use, instruction following, completeness under the concise answer style, calibration), in at most {BenchmarkReportPackValidator.WhyItScoredMaxWords.ToString(CultureInfo.InvariantCulture)} words. Leave out a category the data does not support. Where the subject has peers, use the per-question peer figures to tell a miss of the model from one every model shared, as WEIGHING THE EVIDENCE describes. The weaknesses list is printed right after this text; do not restate its items.",
         BenchmarkReportSlots.WhatWorked =>
             $"Explain the patterns and causes across the strengths, grouped by category, in at most {BenchmarkReportPackValidator.WhatWorkedMaxWords.ToString(CultureInfo.InvariantCulture)} words. The strengths list is printed right after this text; do not restate its items.",
         BenchmarkReportSlots.Limitations =>
             $"At most {BenchmarkReportPackValidator.LimitationsMaxWords.ToString(CultureInfo.InvariantCulture)} words, printed as the last paragraph of Threats to validity: the limitations specific to this data, for example a degraded peer, a subject or peer with a single run, heavy grader disagreement on particular questions, or a difficulty band with few questions. Code already prints lines stating that the benchmark asks single-turn questions under one chat configuration, which sources of variation the interval covers, that the comparison runs no significance test when there are peers, that the graders are AI models whose provider relation to the subject is stated, the subject's degraded state when it has one, and the caveat of a writer from the subject's provider; do not restate any of them.",
         BenchmarkReportSlots.OverseerChat =>
-            $"At most {BenchmarkReportPackValidator.OverseerChatMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's first part, the Overseer chat and its tools: what the result suggests about the chat system prompt, the tools and the knowledge the assistant can reach, such as tool calls that found nothing or missing wiki, source or knowledge-base content. State these as things to check, not as conclusions.",
+            $"At most {BenchmarkReportPackValidator.OverseerChatMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's first part, the Overseer chat and its tools: what the result suggests about the chat system prompt, the tools and the knowledge the assistant can reach, such as tool calls that found nothing or missing wiki, source or knowledge-base content. State these as things to check, not as conclusions. Where the subject has peers, point only to questions the peers missed as well: a question most peers answered well is evidence about the model, not the chat, as WEIGHING THE EVIDENCE describes.",
         BenchmarkReportSlots.BenchmarkSystem =>
-            $"At most {BenchmarkReportPackValidator.BenchmarkSystemMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's second part, the benchmarking system: signs of harness, grading or rubric problems, such as grader disagreement, a rubric that may lack a fact the claim verifier supported, or a question the data suggests is ambiguous.",
+            $"At most {BenchmarkReportPackValidator.BenchmarkSystemMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's second part, the benchmarking system: signs of harness, grading or rubric problems, such as grader disagreement, a rubric that may lack a fact the claim verifier supported, or a question the data suggests is ambiguous. Where the subject has peers, suspect a question or its rubric first when every model missed it, not when most peers answered it well, as WEIGHING THE EVIDENCE describes.",
         BenchmarkReportSlots.ModelResult =>
-            $"At most {BenchmarkReportPackValidator.ModelResultMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's third part, the model's result: how the subject performed against its peers and why, as far as the data shows.",
+            $"At most {BenchmarkReportPackValidator.ModelResultMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's third part, the model's result: how the subject performed against its peers and why, as far as the data shows. Code appends one sentence right after this paragraph that states the quality interval, its span and what it rests on; do not restate it.",
         _ => "Markdown paragraphs."
     };
 
@@ -231,6 +232,7 @@ public static class BenchmarkReportPackPrompt
         Line(sb, plain
             ? $"- weaknesses: at most {Words(spec.MaxWeaknesses)} items{itemCap}, shown under \"Where it fell short\"."
             : $"- weaknesses: at most {Words(spec.MaxWeaknesses)} items, the failures that cost points.");
+        Line(sb, "- When PEERS lists peers, strengths and weaknesses prefer points where {{subject}} differs from its peers, such as a dimension, band or question well above or below the peer mean, over points that would read the same in a stand-alone report.");
 
         if (spec.UsesRecommendations)
         {
@@ -242,6 +244,8 @@ public static class BenchmarkReportPackPrompt
             {
                 Line(sb, $"- recommendations: at most {Words(BenchmarkReportPackValidator.MaxRecommendations(spec.Audience))} concrete next steps. \"for\" is one of: \"{BenchmarkReportSlots.TargetOverseerChat}\" (the chat system prompt, tools or knowledge base), \"{BenchmarkReportSlots.TargetBenchmark}\" (the benchmarking system: harness, graders, questions or rubrics), \"{BenchmarkReportSlots.TargetModelDevelopers}\" (the model's developers).");
             }
+
+            Line(sb, $"- A \"{BenchmarkReportSlots.TargetModelDevelopers}\" recommendation is something a model developer can change in the model itself: its knowledge, calibration, instruction following, verbosity or tool-use habits. It never concerns the Overseer's prompts, tools, retrieval, corpus, rubrics or tests, which the model's developers cannot change. The model never sees a rubric, so never recommend that it follow or check one.");
         }
 
         Line(sb, spec.RequiresQuestionTopics
@@ -255,7 +259,7 @@ public static class BenchmarkReportPackPrompt
 
         if (spec.UsesLeads)
         {
-            Line(sb, $"- leads: at most {Words(BenchmarkReportPackValidator.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"chat\" (the Overseer chat prompt or tools), \"corpus\" (missing or stale wiki, source or knowledge-base content). Leads are provisional and un-triaged, never findings: phrase each as something to check, not as a conclusion.");
+            Line(sb, $"- leads: at most {Words(BenchmarkReportPackValidator.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"chat\" (the Overseer chat prompt or tools), \"corpus\" (missing or stale wiki, source or knowledge-base content). Leads are provisional and un-triaged, never findings: phrase each as something to check, not as a conclusion. Where the subject has peers, a \"chat\", \"corpus\" or \"suite\" lead rests on questions the peers missed as well, as WEIGHING THE EVIDENCE describes.");
         }
 
         Line(sb);
@@ -270,7 +274,9 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
         Line(sb, "- Refer to a question as Q followed by its number from the QUESTIONS block, for example Q7. This is the only form in which a digit may appear.");
         Line(sb, "- Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.");
-        Line(sb, "- If a fact is unavailable, say the figure is unavailable and why; never estimate it.");
+        Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.");
+        Line(sb, "- In the prose, never write a fact key outside its {{key}} token, and never describe the facts list, the fact sheet or how the data was given to you.");
+        Line(sb, "- State a value that several peers share once, for all of them; never list equal values one by one.");
         Line(sb);
     }
 
@@ -307,8 +313,12 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "- When the response-style conflict fact is true, lower completeness is partly the effect of the benchmark's concise-answer instruction, not only of the model. Say so wherever completeness is discussed.");
         Line(sb, "- The response-style note is Overseer's own observation. Never attribute it to a grader.");
         Line(sb, "- Never re-grade an answer with your own judgment, and never invent a cause the data does not show.");
-        Line(sb, "- The comparison runs no significance test. When two quality intervals overlap, say they overlap and that the order between the models is not established; when they do not overlap, say only that. Never use the words significant, significantly or statistically, and never write reliably better, reliably worse or clearly outperforms.");
-        Line(sb, "- A sentence that ranks {{subject}} above or below a peer whose interval overlaps the subject's (that peer's intervalOverlap fact is true), with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails, must also say in the same sentence that the intervals overlap or that the order is not established.");
+        Line(sb, $"- Each question in QUESTIONS with peers carries \"peers: min …, max …, N of M scored clearly higher\": the lowest and highest peer score on that question, and how many of the M peers that answered it scored more than {Words((int)BenchmarkReportFacts.PeerAboveMarginPoints)} points above {{{{subject}}}}.");
+        Line(sb, "- Use the peers to tell the model from the system. Where most peers answered a question well and {{subject}} missed it, that is evidence about the subject model, not about the chat, its tools, the corpus or the rubric. Where every model missed it, suspect the chat, its tools, the corpus or the rubric first.");
+        Line(sb, "- The comparison runs no significance test across the models. Where the subject's and a peer's quality intervals overlap and that peer's pairedExcludesZero fact is not true, say that the intervals overlap and that the order between them is not established; where the intervals do not overlap, say only that.");
+        Line(sb, "- Where a peer's pairedExcludesZero fact is true, say that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero, not adjusted for comparing several models. Never say for that pair that the order is not established, even where the intervals overlap.");
+        Line(sb, "- Never use the words significant, significantly or statistically, and never write reliably better, reliably worse or clearly outperforms.");
+        Line(sb, "- A sentence that ranks {{subject}} above or below a peer whose interval overlaps the subject's (that peer's intervalOverlap fact is true), with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails, must also say in the same sentence that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, it says instead that the paired interval excludes zero.");
         Line(sb, "- A peer's paired difference (its pairedDifference and pairedInterval facts) is the subject's mean per-question difference from that peer over the questions both answered. It is an estimate from question sampling only, not adjusted for comparing several models and not a significance test; never present it as one.");
         Line(sb, "- Mention a degraded state, of the subject or of a peer, wherever a comparison depends on it.");
         Line(sb);
@@ -573,7 +583,10 @@ public static class BenchmarkReportPackPrompt
             string refuted = q.RefutedAnswerSentences is int sentences
                 ? $"refuted answer sentences: {sentences.ToString(CultureInfo.InvariantCulture)}"
                 : $"refuted claims: {q.RefutedClaims.ToString(CultureInfo.InvariantCulture)}";
-            Line(sb, $"[{Q(q.Number)}] band: {OneLine(q.Band)} | score: {Num(q.Score)} | peer mean: {Num(q.PeerMean)} | difference: {Signed(q.Difference)} | critical error: {(q.CriticalError ? "yes" : "no")} | {refuted} | tool calls: {Num(q.ToolCalls)}");
+            string spread = q.PeerCount > 0 && q.PeerMin.HasValue && q.PeerMax.HasValue
+                ? $" | {PeerSpread(q)}"
+                : string.Empty;
+            Line(sb, $"[{Q(q.Number)}] band: {OneLine(q.Band)} | score: {Num(q.Score)} | peer mean: {Num(q.PeerMean)} | difference: {Signed(q.Difference)}{spread} | critical error: {(q.CriticalError ? "yes" : "no")} | {refuted} | tool calls: {Num(q.ToolCalls)}");
 
             var entries = runs
                 .Select(r => (r.RunId, Item: r.Questions.FirstOrDefault(c => c.Number == q.Number)))
@@ -704,6 +717,10 @@ public static class BenchmarkReportPackPrompt
     }
 
     private static string Q(int number) => "Q" + number.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>"peers: min 60, max 90, 2 of 4 scored clearly higher".</summary>
+    internal static string PeerSpread(BenchmarkReportQuestion q)
+        => $"peers: min {Num(q.PeerMin)}, max {Num(q.PeerMax)}, {q.PeersAbove.ToString(CultureInfo.InvariantCulture)} of {q.PeerCount.ToString(CultureInfo.InvariantCulture)} scored clearly higher";
 
     private static string Num(double? value)
         => value.HasValue ? value.Value.ToString("0.#", CultureInfo.InvariantCulture) : "n/a";

@@ -4,7 +4,7 @@ import {
   BenchmarkRunReportJobDto
 } from '../../../services/admin-benchmark.service';
 import { parseServerUtcDate } from '../../../utils/date.util';
-import { audienceLabel, formatCostUsd, formatElapsed } from '../report-pack/benchmark-report-pack-dialog.component';
+import { audienceLabel, formatCostUsd, formatElapsed } from '../report-pack/report-document-format';
 
 /** The value every absent or null fact reads as. */
 export const NOT_RECORDED = 'not recorded';

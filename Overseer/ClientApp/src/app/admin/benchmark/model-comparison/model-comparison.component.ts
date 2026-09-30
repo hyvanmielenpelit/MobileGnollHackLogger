@@ -22,6 +22,7 @@ import { FormsModule } from '@angular/forms';
 import { NG_CHARTS_CONFIGURATION } from 'ng2-charts';
 import { Chart, defaults as chartDefaults } from 'chart.js';
 import type { ChartConfiguration, ChartType, Plugin } from 'chart.js';
+import { firstValueFrom } from 'rxjs';
 import type { Subscription } from 'rxjs';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
@@ -57,7 +58,7 @@ import {
   normalizeFigureStyle
 } from './figure-style';
 import { FigureStylePanelComponent, FigureStylePanelKind } from './figure-style-panel.component';
-import { ResolvedFigureTheme, resolveFigureTheme } from './figure-theme';
+import { ResolvedFigureTheme, contrastRatio, resolveFigureTheme } from './figure-theme';
 import { figureFont } from './figure-fonts';
 import { ensureFigureFont } from './figure-font-loader';
 import { FigureLogo, ensureFigureLogo, figureLogoAspect } from './figure-logo';
@@ -89,9 +90,12 @@ import {
   SpeedMeasure,
   buildComparisonFigures,
   buildNumberSamples,
+  costValue,
   glyphFor,
   modelOrderKeys,
-  normalizeProfile
+  normalizeProfile,
+  speedValue,
+  suiteCostSdUsd
 } from './model-comparison-charts';
 import type { NumberSamples } from './measure-format';
 import { MAX_COMPARISON_SOURCES } from './comparison-source-picker.component';
@@ -133,6 +137,7 @@ import {
   encodeFigureImage,
   figureArchiveFilename,
   figureExportFilename,
+  layoutBoxFor,
   previewLayoutFor,
   renderPlotOffscreen,
   renderTiledPlotOffscreen,
@@ -164,10 +169,39 @@ import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { PaneResizerComponent } from '../../../shared/pane-resizer/pane-resizer.component';
 import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
 import { showReasoningBadge } from '../../../utils/model-badge-format.util';
+import { AdminAlertService } from '../../../services/admin-alert.service';
 import {
-  BenchmarkReportPackDialogComponent,
-  ReportPackContext
-} from '../report-pack/benchmark-report-pack-dialog.component';
+  AdminBenchmarkService,
+  BenchmarkReportDocumentListItemDto,
+  BenchmarkReportPackDocumentProgressDto
+} from '../../../services/admin-benchmark.service';
+import { ReportPackContext, ReportPackPanelComponent } from '../report-pack/report-pack-panel.component';
+import {
+  ComposedReportChart,
+  DOCUMENT_CHART_LAYOUT,
+  REPORT_CHART_FIGURES,
+  ReportChartFigureKey,
+  ReportChartPublishProgress,
+  ReportChartPublishResult,
+  ReportChartPublisher,
+  ReportChartRowStatus,
+  ReportChartSelection,
+  ReportChartSettingsInput,
+  ReportChartTarget,
+  ReportChartVariant,
+  canonicalJson,
+  chartSettingsHash,
+  documentChartSize,
+  readStoredChartSelection,
+  storeChartSelection
+} from '../report-pack/report-charts';
+import { formatUtc } from '../report-pack/report-document-format';
+import {
+  DownloadCenterChartActions,
+  DownloadCenterContext,
+  DownloadCenterPanelComponent
+} from '../download-center/download-center-panel.component';
+import { anonymizeComparisonForSubject } from './report-chart-anonymize';
 import {
   ComparisonTableCell,
   ComparisonTableModel,
@@ -210,8 +244,8 @@ import {
   tableExportFilename
 } from './table-export';
 
-/** Which wizard step is on screen. Two steps: sources, then the charts and the table. */
-export type ComparisonWizardStep = 1 | 2;
+/** Which wizard step is on screen: sources, the charts and the table, the AI reports, the documents. */
+export type ComparisonWizardStep = 1 | 2 | 3 | 4;
 
 /**
  * Every wizard step with its title and a one-line summary of what it is for.
@@ -222,8 +256,13 @@ export const COMPARISON_WIZARD_STEPS: readonly {
   readonly step: ComparisonWizardStep; readonly title: string; readonly summary: string;
 }[] = [
   { step: 1, title: 'Sources', summary: 'Choose the runs or groups to compare.' },
-  { step: 2, title: 'Charts & table', summary: 'Choose the models to show, view the charts and the table, and export them.' }
+  { step: 2, title: 'Charts & table', summary: 'Choose the models to show, view the charts and the table, and export them.' },
+  { step: 3, title: 'Reports', summary: 'Write AI reports on one model of this comparison.' },
+  { step: 4, title: 'Documents', summary: 'View, chart, download and delete this comparison’s documents.' }
 ];
+
+/** The system alert raised while the server has no folder for report charts. */
+export const REPORT_CHARTS_ALERT_ID = 'report-charts-location-missing';
 
 /** How long a comparison may run before the footer offers the ways out. */
 const SLOW_COMPARISON_MS = 15_000;
@@ -546,7 +585,7 @@ export interface ComparisonFigureCard {
   imports: [
     CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent,
     FigureStylePanelComponent, ExportSizeSectionComponent, TableSettingsPanelComponent, ReorderableListComponent,
-    InfoTipComponent, PaneResizerComponent, BenchmarkReportPackDialogComponent
+    InfoTipComponent, PaneResizerComponent, ReportPackPanelComponent, DownloadCenterPanelComponent
   ],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
@@ -630,13 +669,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** The About dialog is open; its body renders only while it is. */
   aboutOpen = false;
 
-  /** The Report Pack dialog's *How the graders work* link; the host opens the guide at *Choosing grader models*. */
+  /** Step 3's *How the graders work* link; the host opens the guide at *Choosing grader models*. */
   @Output() graderGuideRequested = new EventEmitter<void>();
-
-  @ViewChild('reportPack') reportPack?: BenchmarkReportPackDialogComponent;
-
-  /** The Report Pack dialog is open; it is created on opening and destroyed on closing. */
-  reportsOpen = false;
 
   /** The request has run past `SLOW_COMPARISON_MS`, and the footer says how to leave it. */
   slowLoading = false;
@@ -869,6 +903,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       void this.loadFigureFont();
     }
     this.unsubscribeReducedMotion = this.reducedMotion.subscribe(() => this.rebuild());
+    this.alertSub = this.alertService.alerts$.subscribe(alerts => {
+      const missing = alerts.some(alert => alert.id === REPORT_CHARTS_ALERT_ID);
+      if (missing !== this.systemChartStorageMissing) {
+        this.systemChartStorageMissing = missing;
+        this.refreshDocumentChartActions();
+        this.cdr.markForCheck();
+      }
+    });
     this.rebuild();
   }
 
@@ -969,6 +1011,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private previewAttachQueued = false;
 
   ngOnDestroy(): void {
+    this.alertSub?.unsubscribe();
+    this.chartPublisher.cancel();
     this.clearSlowLoadingTimer();
     this.unsubscribeReducedMotion?.();
     this.reducedMotion.dispose();
@@ -985,14 +1029,22 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // The wizard
   //
-  // Two steps in a fixed order, with the step header as a tablist and Previous / Next as the
+  // Four steps in a fixed order, with the step header as a tablist and Previous / Next as the
   // primary traversal. Next is enabled only when the current step's selection is valid, and where
   // it is not, the reason is rendered as text beside it rather than left to a disabled button.
   // ---------------------------------------------------------------------------------------------
 
   step: ComparisonWizardStep = 1;
 
-  readonly steps: readonly ComparisonWizardStep[] = [1, 2];
+  readonly steps: readonly ComparisonWizardStep[] = [1, 2, 3, 4];
+
+  /**
+   * Steps 3 and 4 have been opened. Their panels are created on the first visit and kept, hidden
+   * while another step is shown, so a form, a running job's card, a table's page and its selection
+   * survive every step change.
+   */
+  visited3 = false;
+  visited4 = false;
 
   readonly stepTitles = Object.fromEntries(
     COMPARISON_WIZARD_STEPS.map(entry => [entry.step, entry.title])
@@ -1009,7 +1061,29 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * keyboard reader still learns the step exists and can read why it is unavailable.
    */
   isStepReachable(step: ComparisonWizardStep): boolean {
-    return step === 1 || this.comparison !== null;
+    if (step === 1) {
+      return true;
+    }
+    if (this.comparison === null) {
+      return false;
+    }
+    return step !== 3 || this.hasReportSubject;
+  }
+
+  /** Step 3 needs an entry a report can be about: one the server measured. */
+  get hasReportSubject(): boolean {
+    return (this.comparison?.entries ?? []).some(entry => !entry.excluded);
+  }
+
+  /** Why a step cannot be opened, for its tab's description; empty where it can. */
+  stepBlockedReason(step: ComparisonWizardStep): string {
+    if (this.isStepReachable(step)) {
+      return '';
+    }
+    if (this.comparison === null) {
+      return 'Compare the selected sources first.';
+    }
+    return 'Every model in this comparison was measured differently, so none of them can be the subject of a report.';
   }
 
   get canGoPrevious(): boolean {
@@ -1027,16 +1101,16 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * A comparison is being computed for the selection on step 1.
    *
    * Step-scoped rather than the bare `loading` flag: a refetch from step 2's Prices select or its
-   * Recompute button loads too, and the footer button there is Close, which the request does not
+   * Recompute button loads too, and the footer button there is Next, which the request does not
    * block.
    */
   get comparing(): boolean {
     return this.loading && this.step === 1;
   }
 
-  /** Compare while the current selection has no computed comparison; Next once it does; Close on step 2. */
+  /** Compare while the current selection has no computed comparison; Next once it does; Close on step 4. */
   get nextLabel(): string {
-    if (this.step === 2) {
+    if (this.step === 4) {
       return 'Close';
     }
     if (this.comparing) {
@@ -1069,7 +1143,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * The busy line of a refetch from step 2, where Close is not blocked and carries no spinner.
+   * The busy line of a refetch from step 2, where Next is not blocked and carries no spinner.
    * Empty on step 1, whose busy state is the footer button and `nextBlockedReason`.
    */
   get refetchStatus(): string {
@@ -1201,20 +1275,31 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.detachAll();
     }
     this.step = step;
+    if (step === 3) {
+      this.visited3 = true;
+    } else if (step === 4) {
+      this.visited4 = true;
+    }
     this.scheduleTableMeasure();
     // Marked, like every other mutator here: several callers are outside a template event —
     // ngOnChanges, the keyboard handler, the host reopening the dialog.
     this.cdr.markForCheck();
   }
 
+  /** The nearest earlier step that can be opened. */
   previousStep(): void {
-    if (this.canGoPrevious) {
-      this.goToStep((this.step - 1) as ComparisonWizardStep);
+    if (!this.canGoPrevious) {
+      return;
+    }
+    const previous = [...this.steps].reverse().find(step => step < this.step && this.isStepReachable(step));
+    if (previous !== undefined) {
+      this.goToStep(previous);
     }
   }
 
+  /** Compare on step 1 without a comparison, then the next step that can be opened, and Close on step 4. */
   nextStep(): void {
-    if (this.step === 2) {
+    if (this.step === 4) {
       this.closeRequested.emit();
       return;
     }
@@ -1227,7 +1312,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.compare.emit();
       return;
     }
-    this.goToStep((this.step + 1) as ComparisonWizardStep);
+    const next = this.steps.find(step => step > this.step && this.isStepReachable(step));
+    if (next !== undefined) {
+      this.goToStep(next);
+    }
   }
 
   /**
@@ -1267,10 +1355,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * refetch under an unchanged selection — step 2's Prices select or its Recompute button —
    * replaces one non-null payload with another and leaves the step alone, so a reader who went
    * back to step 1 while it computed is not yanked forward. Losing the payload drops back to step 1, where the
-   * sources are: step 2 has nothing to render without one.
+   * sources are: step 2 has nothing to render without one. A payload with no model a report can be
+   * about moves a reader on step 3 to step 2.
    */
   private applyComparisonToStep(previous: BenchmarkModelComparisonDto | null | undefined): void {
-    const next: ComparisonWizardStep = this.comparison === null ? 1 : !previous ? 2 : this.step;
+    let next: ComparisonWizardStep = this.comparison === null ? 1 : !previous ? 2 : this.step;
+    if (!this.isStepReachable(next)) {
+      next = 2;
+    }
     if (this.step === 2 && next !== 2) {
       this.detachPreview();
       this.detachAll();
@@ -1786,20 +1878,59 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   // ---------------------------------------------------------------------------------------------
-  // The Report Pack dialog
+  // Steps 3 and 4: the AI reports and the documents
   //
-  // Created on opening, so nothing of it (its requests, its job polling) exists while it is closed.
-  // It stops its own close and cancel events, like the About dialog.
+  // Step 3 hosts the Report Pack panel and step 4 the Download Center panel, each created on its
+  // first visit and kept. The wizard owns the chart selection, charts every document step 3 writes
+  // while the wizard is open, and lends step 4 the chart actions: both publish through one
+  // publisher, one document at a time, composing each figure from step 2's live settings.
   // ---------------------------------------------------------------------------------------------
+
+  private readonly benchmarkService = inject(AdminBenchmarkService);
+  private readonly alertService = inject(AdminAlertService);
+  private readonly hostElement = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly chartPublisher = new ReportChartPublisher(this.benchmarkService);
+  private alertSub: Subscription | null = null;
+
+  /** The figures each document type gets, remembered per browser. */
+  chartSelection: ReportChartSelection = readStoredChartSelection();
+
+  /** Step 3's chart progress per written document, by document id. */
+  chartStatus: Readonly<Record<number, ReportChartRowStatus>> = {};
+
+  /** Bumped to make step 4 list its documents again: a job finished, or a document was charted. */
+  documentsReloadToken = 0;
+
+  /** The chart actions step 4 is lent; replaced whenever one of their values changes. */
+  documentChartActions: DownloadCenterChartActions | null = null;
+
+  /** The hash of step 2's chart settings; null until it is first computed. */
+  currentChartSettingsHash: string | null = null;
+
+  private systemChartStorageMissing = false;
+  private publishChartStorageMissing = false;
+  private chartSettingsSignature = '';
+  private chartSettingsHashPending: Promise<string> | null = null;
+  private chartsAvailableKeys: readonly string[] = [];
+  private publishQueue: Promise<unknown> = Promise.resolve();
+  private pendingPublishes = 0;
+  private reportPackContextCache: { comparison: BenchmarkModelComparisonDto; basis: string; context: ReportPackContext } | null = null;
+  private documentsContextCache: { keys: string; context: DownloadCenterContext } | null = null;
 
   /**
    * The computed comparison as the report-pack request carries it: the entries' own sources, so every
    * subject key is one the server's recomputation produces, and the basis the comparison was computed on.
+   * One object per comparison and basis, so step 3's panel sees a new context only when there is one.
    */
   get reportPackContext(): ReportPackContext | null {
     const comparison = this.comparison;
     if (!comparison) {
       return null;
+    }
+    const basis = this.chartPricingBasis as ReportPackContext['pricingBasis'];
+    const cached = this.reportPackContextCache;
+    if (cached && cached.comparison === comparison && cached.basis === basis) {
+      return cached.context;
     }
     const idsOf = (kind: string): number[] => {
       const ids: number[] = [];
@@ -1810,10 +1941,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       }
       return ids;
     };
-    const basis = comparison.pricingBasis === 'AsRun' || comparison.pricingBasis === 'Current'
-      ? comparison.pricingBasis
-      : this.pricingBasis;
-    return {
+    const context: ReportPackContext = {
       runIds: idsOf('run'),
       groupIds: idsOf('group'),
       pricingBasis: basis,
@@ -1822,26 +1950,489 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       suiteId: comparison.baselineSuiteId ?? null,
       suiteName: comparison.baselineSuiteName ?? null
     };
+    this.reportPackContextCache = { comparison, basis, context };
+    return context;
   }
 
-  openReports(): void {
-    const context = this.reportPackContext;
-    if (!context) {
-      return;
+  /** Step 4's library: this comparison's documents, every row chosen. One object per entry set. */
+  get documentsContext(): DownloadCenterContext | null {
+    const comparison = this.comparison;
+    if (!comparison) {
+      return null;
     }
-    this.reportsOpen = true;
-    this.cdr.detectChanges();
-    this.reportPack?.open(context);
+    const entryKeys = comparison.entries.map(entry => entry.key);
+    const keys = entryKeys.join(',');
+    if (this.documentsContextCache?.keys === keys) {
+      return this.documentsContextCache.context;
+    }
+    const context: DownloadCenterContext = {
+      kind: 'library',
+      scope: { kind: 'comparison', entryKeys },
+      preselect: 'all',
+      title: 'Documents of this comparison'
+    };
+    this.documentsContextCache = { keys, context };
+    return context;
   }
 
-  onReportsClosed(): void {
-    this.reportsOpen = false;
-    this.cdr.markForCheck();
-    document.getElementById('mc-reports-trigger')?.focus();
+  /** The pricing basis step 2 shows: the computed comparison's, else the requested one. */
+  get chartPricingBasis(): string {
+    const basis = this.comparison?.pricingBasis;
+    return basis === 'AsRun' || basis === 'Current' ? basis : this.pricingBasis;
+  }
+
+  /** The figure keys the comparison can draw: two plotted models for each figure, three for the profile. */
+  get chartsAvailable(): readonly string[] {
+    return this.chartsAvailableKeys;
+  }
+
+  /** Chart storage is not configured: the system alert says so, or a publish stopped for it. */
+  get chartStorageMissing(): boolean {
+    return this.systemChartStorageMissing || this.publishChartStorageMissing;
+  }
+
+  /** Charts are being composed or uploaded, by step 3 or by step 4. */
+  get chartsPublishing(): boolean {
+    return this.pendingPublishes > 0 || this.chartPublisher.running;
+  }
+
+  /** The wizard's own close controls refuse while an export or a chart upload runs. */
+  get closeBlocked(): boolean {
+    return this.exporting || this.chartsPublishing;
+  }
+
+  /**
+   * Why charts drawn with step 2's theme would print badly, or null. Documents are printed on white
+   * paper: a dark theme prints as a dark block, and light text on a transparent background all but
+   * disappears. Advice only; the charts are drawn as chosen.
+   */
+  get chartAdvisory(): string | null {
+    const appearance = this.figureStyle.appearance;
+    if (appearance.theme === 'dark') {
+      return 'The charts use the dark theme, which prints as a dark block on white paper. Choose the light '
+        + 'theme under Theme on step 2 for documents that are printed.';
+    }
+    if (appearance.background === 'transparent'
+        && contrastRatio(appearance.textColor ?? resolveFigureTheme(appearance).chrome.body, '#ffffff') < 3) {
+      return 'The charts have a transparent background with light text, which can barely be read on white '
+        + 'paper. Choose a background or a darker text color under Theme on step 2.';
+    }
+    return null;
   }
 
   onReportsGraderGuideRequested(): void {
     this.graderGuideRequested.emit();
+  }
+
+  onChartSelectionChange(selection: ReportChartSelection): void {
+    this.chartSelection = selection;
+    storeChartSelection(selection);
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * A document of step 3's job was written: its charts are drawn and attached now, unless its type
+   * has no chart chosen. While the wizard is closed nothing is drawn; step 4's Update charts adds them.
+   */
+  onReportDocumentWritten(progress: BenchmarkReportPackDocumentProgressDto): void {
+    if (progress.documentId === null || progress.documentId === undefined) {
+      return;
+    }
+    if ((this.chartSelection[progress.audience] ?? []).length === 0 || !this.wizardOpen) {
+      return;
+    }
+    void this.chartWrittenDocument(progress.documentId);
+  }
+
+  /** Step 3's *Charts failed — retry*. */
+  onChartRetryRequested(progress: BenchmarkReportPackDocumentProgressDto): void {
+    if (progress.documentId !== null && progress.documentId !== undefined) {
+      void this.chartWrittenDocument(progress.documentId);
+    }
+  }
+
+  onReportJobFinished(): void {
+    this.documentsReloadToken++;
+    this.cdr.markForCheck();
+  }
+
+  /** Step 3's way to the documents: step 4, listed afresh. */
+  onReportDocumentsRequested(): void {
+    this.documentsReloadToken++;
+    this.goToStep(4);
+    document.getElementById('mc-step-tab-4')?.focus();
+  }
+
+  /**
+   * Composes and uploads the chosen figures of every target through the one publisher, after any
+   * publish already running. Figures the comparison cannot draw are left out of the selection.
+   */
+  publishCharts(
+    targets: readonly ReportChartTarget[],
+    selection: ReportChartSelection,
+    onProgress?: (progress: ReportChartPublishProgress) => void
+  ): Promise<ReportChartPublishResult> {
+    const available = new Set(this.chartsAvailableKeys);
+    const usable: Partial<Record<string, readonly ReportChartFigureKey[]>> = {};
+    for (const [audience, keys] of Object.entries(selection)) {
+      usable[audience] = ((keys ?? []) as readonly ReportChartFigureKey[]).filter(key => available.has(key));
+    }
+    this.pendingPublishes++;
+    this.cdr.markForCheck();
+    const run = async (): Promise<ReportChartPublishResult> => {
+      const hash = await this.chartSettingsHashNow();
+      return this.chartPublisher.publish(
+        targets, usable as ReportChartSelection, (key, variant) => this.composeReportChart(key, variant), hash, onProgress);
+    };
+    const result = this.publishQueue.then(run, run);
+    this.publishQueue = result.catch(() => undefined);
+    return result
+      .then(outcome => {
+        if (outcome.storageNotConfigured) {
+          this.publishChartStorageMissing = true;
+        }
+        return outcome;
+      })
+      .finally(() => {
+        this.pendingPublishes--;
+        this.refreshDocumentChartActions();
+        this.cdr.markForCheck();
+      });
+  }
+
+  /**
+   * Whether a document was written for the comparison open on step 2: its subject and every lettered
+   * peer are entries of it, and it counted as many entries. The server keys a comparison by its
+   * entry set; the client never computes that key, so it compares the entry set it can see.
+   */
+  documentMatchesComparison(doc: BenchmarkReportDocumentListItemDto): boolean {
+    const entries = this.comparison?.entries ?? [];
+    if (!doc.comparisonKey || entries.length === 0) {
+      return false;
+    }
+    const keys = new Set(entries.map(entry => entry.key));
+    if (!keys.has(doc.subjectKey)) {
+      return false;
+    }
+    if (doc.comparisonEntryCount !== undefined && doc.comparisonEntryCount !== keys.size) {
+      return false;
+    }
+    return Object.keys(doc.peerLetters ?? {}).every(key => keys.has(key));
+  }
+
+  /** Reads a written document for its peer letters, then charts it, and reports each step to step 3. */
+  private async chartWrittenDocument(documentId: number): Promise<void> {
+    this.setChartStatus(documentId, { state: 'attaching' });
+    let doc: BenchmarkReportDocumentListItemDto;
+    try {
+      doc = await firstValueFrom(this.benchmarkService.getReportDocument(documentId));
+    } catch {
+      this.setChartStatus(documentId, { state: 'failed', message: 'The document could not be read to chart it.' });
+      return;
+    }
+    if ((doc.peerCount ?? 0) <= 0) {
+      this.setChartStatus(documentId, { state: 'skipped', reason: 'It compares the model with no other model.' });
+      return;
+    }
+    if (doc.pricingBasis && doc.pricingBasis !== this.chartPricingBasis) {
+      this.setChartStatus(documentId, { state: 'skipped', reason: 'Step 2 now shows other prices than it was written on.' });
+      return;
+    }
+    if (!this.documentMatchesComparison(doc)) {
+      this.setChartStatus(documentId, { state: 'skipped', reason: 'Step 2 now shows another comparison.' });
+      return;
+    }
+
+    let result: ReportChartPublishResult;
+    try {
+      result = await this.publishCharts([{
+        documentId: doc.id,
+        audience: doc.audience,
+        subjectKey: doc.subjectKey,
+        peerLetters: doc.peerLetters ?? {},
+        label: doc.title
+      }], this.chartSelection);
+    } catch (error) {
+      this.setChartStatus(documentId, {
+        state: 'failed',
+        message: error instanceof Error && error.message ? error.message : 'The charts could not be drawn.'
+      });
+      return;
+    }
+
+    const published = result.published.find(item => item.documentId === documentId);
+    const failed = result.failed.find(item => item.documentId === documentId);
+    if (result.storageNotConfigured) {
+      this.setChartStatus(documentId, { state: 'failed', message: result.storageNotConfigured });
+    } else if (published) {
+      this.setChartStatus(documentId, { state: 'done', count: published.chartCount });
+    } else if (failed) {
+      this.setChartStatus(documentId, { state: 'failed', message: failed.message });
+    } else if (result.skipped.includes(documentId)) {
+      this.setChartStatus(documentId, { state: 'skipped', reason: 'No chart is chosen for its document type.' });
+    } else {
+      this.setChartStatus(documentId, { state: 'skipped', reason: 'Charting was canceled.' });
+    }
+    this.documentsReloadToken++;
+    this.cdr.markForCheck();
+  }
+
+  private setChartStatus(documentId: number, status: ReportChartRowStatus): void {
+    this.chartStatus = { ...this.chartStatus, [documentId]: status };
+    this.cdr.markForCheck();
+  }
+
+  /** The wizard's dialog is open; true where no dialog holds it. */
+  private get wizardOpen(): boolean {
+    const dialog = this.hostElement.nativeElement.closest('dialog');
+    return dialog ? dialog.open : true;
+  }
+
+  // --- The document charts ---
+
+  /** What shapes the document charts, as the settings hash reads it. */
+  chartSettingsInput(): ReportChartSettingsInput {
+    const { bar, scatter, profile, numbers, appearance } = this.figureStyle;
+    return {
+      figureStyle: {
+        bar, scatter, profile, numbers, appearance,
+        scatterDirectLabels: this.scatterDirectLabels,
+        scatterInlineValues: this.scatterInlineValues
+      },
+      layout: DOCUMENT_CHART_LAYOUT,
+      show: [...this.includedKeys].sort(),
+      highlight: [...this.emphasisKeys].sort(),
+      order: this.sort,
+      measures: { speed: this.speedMeasure, cost: this.costMeasure },
+      pricingBasis: this.chartPricingBasis,
+      computedAtUtc: this.comparison?.computedAtUtc ?? null
+    };
+  }
+
+  /** Step 2's settings hash, computing it now if the settings changed since it was last computed. */
+  chartSettingsHashNow(): Promise<string> {
+    this.refreshChartSettingsHash();
+    return this.chartSettingsHashPending ?? chartSettingsHash(this.chartSettingsInput());
+  }
+
+  /** Recomputes the settings hash when what shapes the charts changed; a hover or a view change leaves it. */
+  private refreshChartSettingsHash(): void {
+    if (!this.comparison) {
+      return;
+    }
+    const input = this.chartSettingsInput();
+    const signature = canonicalJson(input);
+    if (signature === this.chartSettingsSignature) {
+      return;
+    }
+    this.chartSettingsSignature = signature;
+    const pending = chartSettingsHash(input);
+    this.chartSettingsHashPending = pending;
+    pending.then(hash => {
+      if (this.chartSettingsHashPending !== pending) {
+        return;
+      }
+      this.currentChartSettingsHash = hash;
+      this.refreshDocumentChartActions();
+      this.cdr.markForCheck();
+    }, () => {
+      // No digest without a secure context: the charts cannot be called current, and a publish says why.
+    });
+  }
+
+  private refreshChartsAvailable(): void {
+    const plotted = this.plotted.length;
+    const keys = REPORT_CHART_FIGURES.filter(figure => plotted >= Math.max(2, figure.minModels)).map(figure => figure.key);
+    if (keys.join(',') !== this.chartsAvailableKeys.join(',')) {
+      this.chartsAvailableKeys = keys;
+    }
+  }
+
+  /** Lends step 4 a new chart actions object whenever one of their values changed, so its view follows. */
+  private refreshDocumentChartActions(): void {
+    const values = {
+      currentSettingsHash: this.currentChartSettingsHash,
+      pricingBasis: this.chartPricingBasis,
+      available: this.chartsAvailableKeys,
+      advisory: this.chartAdvisory,
+      storageMissing: this.chartStorageMissing
+    };
+    const current = this.documentChartActions;
+    if (current && current.currentSettingsHash === values.currentSettingsHash && current.pricingBasis === values.pricingBasis
+        && current.available === values.available && current.advisory === values.advisory
+        && current.storageMissing === values.storageMissing) {
+      return;
+    }
+    this.documentChartActions = {
+      ...values,
+      comparisonKeyMatches: doc => this.documentMatchesComparison(doc),
+      publish: (targets, selection, onProgress) => this.publishCharts(targets, selection, onProgress)
+    };
+  }
+
+  /**
+   * The bar orientation of a document chart: the style's, or under *Automatic* the one the document
+   * composition's own layout width takes, never the visible chart host's.
+   */
+  documentChartOrientation(key: ReportChartFigureKey = 'p1a-quality'): BarOrientation {
+    const choice = this.figureStyle.bar.orientation;
+    if (choice !== 'auto') {
+      return choice;
+    }
+    const size = documentChartSize(key);
+    const box = layoutBoxFor(size.widthPx, size.heightPx, DOCUMENT_CHART_LAYOUT.textScalePercent / 100);
+    return box.layoutWidth > 0 && box.layoutWidth < P1_STACK_BREAKPOINT_PX ? 'horizontal' : 'vertical';
+  }
+
+  /**
+   * One figure as a document prints it: composed off-screen at the document layout (1800 px wide,
+   * 175 % text, PNG) with step 2's theme, styles, Show, Highlight, order and measures.
+   *
+   * The named variant draws the comparison as step 2 does. The anonymized variant draws a copy in
+   * which the document's lettered peers are *Model A*… in the neutral gray, the others are left out,
+   * only the subject is highlighted, and set-level notes that name a model are dropped. Throws when
+   * the figure cannot be drawn for this comparison or does not fit.
+   */
+  async composeReportChart(key: ReportChartFigureKey, variant: ReportChartVariant): Promise<ComposedReportChart> {
+    const comparison = this.comparison;
+    if (!comparison) {
+      throw new Error('No comparison is open.');
+    }
+    const title = REPORT_CHART_FIGURES.find(figure => figure.key === key)?.title ?? key;
+    const built = this.buildDocumentFigures(comparison, variant, this.documentChartOrientation(key));
+    const card = this.documentCard(built.figures, key);
+    if (!card) {
+      throw new Error(`${title} cannot be drawn: this comparison plots too few models for it.`);
+    }
+    await this.prepareFigureComposition();
+    const chrome = this.exportChrome(card, built.setNotes);
+    const size = documentChartSize(key);
+    const resolution: FigureExportResolution = {
+      id: 'document', label: 'Document', widthPx: size.widthPx, heightPx: size.heightPx, group: 'Document'
+    };
+    const { layout, refusal } = resolveFigureLayout(chrome, resolution, 1, DOCUMENT_CHART_LAYOUT.textScalePercent / 100);
+    if (!layout) {
+      throw new Error(refusal ?? `${card.title} does not fit a document chart.`);
+    }
+    const canvas = await this.composeFigure(card, chrome, layout, 'png');
+    if (!canvas) {
+      throw new Error(`${card.title} could not be composed: its chart could not be built.`);
+    }
+    const encoded = await encodeFigureImage(canvas, 'png');
+    const computed = formatUtc(comparison.computedAtUtc) || comparison.computedAtUtc;
+    return {
+      png: encoded.blob,
+      widthPx: layout.pixelWidth,
+      heightPx: layout.pixelHeight,
+      title: card.title,
+      caption: [card.chrome.detail, `Drawn from the comparison computed ${computed}.`].filter(part => part).join(' '),
+      altText: this.documentChartAltText(key, card.title, built.figures)
+    };
+  }
+
+  /** The figure set a document chart is drawn from, and the set-level notes its chrome carries. */
+  private buildDocumentFigures(
+    comparison: BenchmarkModelComparisonDto,
+    variant: ReportChartVariant,
+    orientation: BarOrientation
+  ): { figures: ComparisonFigureSet; setNotes: readonly FigureNote[] } {
+    const options = {
+      sort: this.sort,
+      speedMeasure: this.speedMeasure,
+      costMeasure: this.costMeasure,
+      orientation,
+      directLabels: this.scatterDirectLabels,
+      inlineValues: this.scatterInlineValues,
+      reducedMotion: this.reducedMotion.matches,
+      highlightedKey: null,
+      style: this.figureStyle,
+      theme: this.figureTheme
+    };
+    if (variant.kind === 'named') {
+      const input = this.chartEntries.filter(entry => entry.excluded || this.includedKeys.includes(entry.key));
+      const figures = buildComparisonFigures(input, {
+        ...options, context: this.context, selectedKeys: this.emphasisKeys, glyphSource: this.chartEntries
+      });
+      return { figures, setNotes: this.setFigureNotes };
+    }
+
+    const anonymized = anonymizeComparisonForSubject(comparison, variant.subjectKey, variant.letters);
+    const entries = toChartEntries(anonymized);
+    const input = entries.filter(entry => entry.excluded || this.includedKeys.includes(entry.key));
+    const figures = buildComparisonFigures(input, {
+      ...options,
+      context: toChartContext(anonymized),
+      selectedKeys: this.includedKeys.includes(variant.subjectKey) ? [variant.subjectKey] : [],
+      glyphSource: entries
+    });
+    const names = [...comparison.entries, ...anonymized.entries]
+      .flatMap(entry => [entry.label, entry.modelDisplayName])
+      .filter(name => !!name && name.trim().length >= 2)
+      .map(name => name.toLowerCase());
+    const plottedKeys = new Set(figures.selection.plotted.map(entry => entry.key));
+    const setNotes: FigureNote[] = [
+      ...figures.selection.notices.map(text => ({ text, tone: 'warning' as const })),
+      ...questionCoverageNotes(anonymized.entries.filter(entry => plottedKeys.has(entry.key)))
+    ].filter(note => !names.some(name => note.text.toLowerCase().includes(name)));
+    return { figures, setNotes };
+  }
+
+  /** One figure of a set as a card, or null where the set plots too few models for it. */
+  private documentCard(figures: ComparisonFigureSet, key: ReportChartFigureKey): ComparisonFigureCard | null {
+    const plotted = figures.selection.plotted.length;
+    if (plotted < 2 || (key === 'p2-profile' && plotted < 3)) {
+      return null;
+    }
+    switch (key) {
+      case 'p1a-quality': return this.toCard(figures.smallMultiples.quality);
+      case 'p1b-speed': return this.toCard(figures.smallMultiples.speed);
+      case 'p1c-cost': return this.toCard(figures.smallMultiples.cost);
+      case 'p2-profile': return this.toProfileCard(figures.profile);
+      case 's1-quality-speed': return this.toCard(figures.qualitySpeed);
+      case 's2-quality-cost': return this.toCard(figures.qualityCost);
+      case 's3-speed-cost': return this.toCard(figures.speedCost);
+    }
+  }
+
+  /** The title, then one clause per plotted model: its value and interval on the figure's measures. */
+  private documentChartAltText(key: ReportChartFigureKey, title: string, figures: ComparisonFigureSet): string {
+    const clauses = figures.selection.plotted.map(entry => `${entry.label}: ${this.documentChartValues(key, entry)}`);
+    return clauses.length > 0 ? `${title}. ${clauses.join('; ')}.` : `${title}.`;
+  }
+
+  private documentChartValues(key: ReportChartFigureKey, entry: ModelComparisonEntry): string {
+    const quality = `Intelligence Index ${formatIndexText(entry.intelligenceIndex)} ± ${formatIndexText(entry.intelligenceIndexCi95HalfWidth)}`;
+    const speed = this.documentSpeedClause(entry);
+    const perQuestion = `cost per question ${formatUsdText(entry.candidateCostPerQuestionUsd)}`
+      + (entry.candidateCostPerQuestionSdUsd !== null ? ` ± ${formatUsdText(entry.candidateCostPerQuestionSdUsd)}` : '');
+    const suite = this.costMeasure === 'candidateSuite';
+    const sd = suite ? suiteCostSdUsd(entry) : entry.totalRunCostSdUsd;
+    const cost = `${suite ? 'candidate cost for the suite' : 'run cost with grading'} `
+      + `${formatUsdText(costValue(entry, this.costMeasure, this.context))}${sd !== null ? ` ± ${formatUsdText(sd)}` : ''}`;
+    switch (key) {
+      case 'p1a-quality': return quality;
+      case 'p1b-speed': return speed;
+      case 'p1c-cost': return cost;
+      case 'p2-profile': return [quality, speed, cost].join(', ');
+      case 's1-quality-speed': return [quality, speed].join(', ');
+      case 's2-quality-cost': return [quality, perQuestion].join(', ');
+      case 's3-speed-cost': return [speed, perQuestion].join(', ');
+    }
+  }
+
+  private documentSpeedClause(entry: ModelComparisonEntry): string {
+    const value = speedValue(entry, this.speedMeasure);
+    switch (this.speedMeasure) {
+      case 'speedIndex':
+        return `Speed Index ${formatIndexText(value)}`;
+      case 'ttftP50':
+        return `median time to first token ${formatMsText(value)} (P90 ${formatMsText(entry.ttftP90Ms)})`;
+      case 'totalModelTime':
+        return `model time for the suite ${formatMsText(value)}`
+          + (entry.totalModelTimeSdMs !== null ? ` ± ${formatMsText(entry.totalModelTimeSdMs)}` : '');
+      default:
+        return `mean model time per question ${formatMsText(value)}`;
+    }
   }
 
   /** One line on how much of the set can be charted together. */
@@ -2481,12 +3072,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * One card's chrome: everything the exported image carries besides the plot itself, at its
    * family's caption sizes and Better badge placement, with the footer emptied while the family
-   * hides it, in the theme.
+   * hides it, in the theme. The set-level notes are the comparison's unless a document chart
+   * brings its own.
    */
-  private exportChrome(card: ComparisonFigureCard): FigureExportChrome {
+  private exportChrome(card: ComparisonFigureCard, setNotes: readonly FigureNote[] = this.setFigureNotes): FigureExportChrome {
     const style = this.figureStyle[this.familyOf(card)];
     return {
-      chrome: { ...card.chrome, notes: [...card.chrome.notes, ...this.setFigureNotes] },
+      chrome: { ...card.chrome, notes: [...card.chrome.notes, ...setNotes] },
       footer: style.footer ? this.figureFooter : { suite: '', computedAt: '' },
       textSizes: {
         titlePx: style.titleSizePx,
@@ -5049,6 +5641,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
 
     this.modelRows = this.buildModelRows();
+    this.refreshChartsAvailable();
+    this.refreshChartSettingsHash();
+    this.refreshDocumentChartActions();
 
     // Every caller of this method changes what the template renders, and several of them are
     // outside change detection: a filter control, the reduced-motion listener, the resize

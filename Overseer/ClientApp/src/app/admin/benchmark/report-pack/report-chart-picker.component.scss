@@ -1,0 +1,89 @@
+/* The chart picker. .gh-table, .checkbox-label, .btn-link and .visually-hidden come from styles.scss. */
+
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+/* Four columns in a narrow sidebar: the table scrolls sideways rather than squeezing its labels. */
+.rcp-wrap {
+  overflow-x: auto;
+}
+
+.rcp-table {
+  inline-size: 100%;
+  font-size: var(--text-secondary);
+
+  caption {
+    caption-side: top;
+    text-align: start;
+    padding: 0 0 6px;
+    font-weight: 600;
+    color: #e4e4e7;
+  }
+
+  th,
+  td {
+    vertical-align: top;
+  }
+
+  th[scope="row"] {
+    min-inline-size: 7rem;
+    font-weight: 500;
+    text-align: start;
+    color: #e4e4e7;
+  }
+}
+
+.rcp-doc-col {
+  min-inline-size: 8rem;
+  text-align: start;
+}
+
+.rcp-col-name {
+  display: block;
+}
+
+.rcp-col-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 2px;
+  font-weight: 400;
+
+  .btn-link {
+    font-size: var(--text-secondary);
+  }
+
+  .btn-link[aria-disabled="true"] {
+    color: #71717a;
+    cursor: not-allowed;
+    text-decoration: none;
+  }
+}
+
+.rcp-reason {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-style: italic;
+  color: #a1a1aa;
+}
+
+.rcp-cell {
+  gap: 8px;
+
+  input[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+}
+
+.rcp-placement {
+  color: #a1a1aa;
+}
+
+td.is-disabled .rcp-placement,
+.rcp-row.is-unavailable .rcp-figure-title {
+  color: #71717a;
+}

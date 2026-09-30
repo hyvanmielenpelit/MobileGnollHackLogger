@@ -26,11 +26,11 @@ import {
   INTERNAL_REASONS,
   ROW_NOTES,
   STORED_SETTINGS_VERSION,
-  audienceLabel,
   downloadCenterIo,
   internalServerName,
   reportDocumentFileStem
 } from './benchmark-download-center.component';
+import { audienceLabel } from '../report-pack/report-document-format';
 import {
   REPORT_DISCLOSURE_FORMATS_NOTE,
   REPORT_DISCLOSURE_GUIDES,
@@ -39,6 +39,7 @@ import {
   reportDisclosureGuide,
   reportDisclosureInfo
 } from '../report-disclosure-guide';
+import { DownloadCenterPanelComponent } from './download-center-panel.component';
 import { sha256Hex } from './text-archive';
 import { zipEntryTimes } from './zip-entry-times.testing';
 
@@ -116,7 +117,10 @@ function arrayBufferOf(text: string): ArrayBuffer {
 
 describe('BenchmarkDownloadCenterComponent', () => {
   let fixture: ComponentFixture<BenchmarkDownloadCenterComponent>;
-  let component: BenchmarkDownloadCenterComponent;
+  /** The dialog wrapper: opening, closing, the title. */
+  let wrapper: BenchmarkDownloadCenterComponent;
+  /** The panel inside it: the packages, the rows and the download. */
+  let component: DownloadCenterPanelComponent;
   let httpMock: HttpTestingController;
   let saveText: jasmine.Spy;
   let saveBytes: jasmine.Spy;
@@ -150,8 +154,9 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
     httpMock = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(BenchmarkDownloadCenterComponent);
-    component = fixture.componentInstance;
+    wrapper = fixture.componentInstance;
     fixture.detectChanges();
+    component = wrapper.panel;
 
     saveText = spyOn(downloadCenterIo, 'saveText');
     saveBytes = spyOn(downloadCenterIo, 'saveBytes');
@@ -163,7 +168,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
   });
 
   afterEach(() => {
-    component.close();
+    wrapper.close();
     httpMock.verify();
     expect(unexpected).toEqual([]);
     localStorage.removeItem(DOWNLOAD_CENTER_STORAGE_KEY);
@@ -194,7 +199,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     context: DownloadCenterContext = runContext,
     job: BenchmarkRunReportJobDto | null = null
   ): void {
-    component.open(context);
+    wrapper.open(context);
     const list = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
     expect(list.request.method).toBe('GET');
     expect(list.request.params.get('runId')).toBe('42');
@@ -726,7 +731,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       infoDialog.close();
       await closeEvent;
       await settle();
-      expect(component.dialog!.nativeElement.open).toBeTrue();
+      expect(wrapper.dialog!.nativeElement.open).toBeTrue();
     });
 
     it('builds each document type\'s viewer explanation from its own guide', () => {
@@ -792,9 +797,15 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
       expect(new Set(ids).size).toBe(ids.length);
-      for (const id of ids) {
+      // The pagers and the PDF viewer are shared components that number their own ids.
+      const own = Array.from(host().querySelectorAll('[id]'))
+        .filter(element => !element.closest('app-table-pager, app-pdf-viewer-dialog'))
+        .map(element => element.id);
+      expect(own.length).toBeGreaterThan(0);
+      for (const id of own) {
         expect(id.startsWith(`${component.idPrefix}-`)).withContext(id).toBeTrue();
       }
+      expect(component.idPrefix).toBe(wrapper.idPrefix);
       const described = Array.from(host().querySelectorAll('[aria-describedby]'));
       expect(described.length).toBeGreaterThan(0);
       for (const element of described) {
@@ -875,7 +886,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(zip.files['MANIFEST.md'].match(/- \*\*PDF:\*\* PDF\/UA-1, PDF\/A-3A, US Letter/g)?.length).toBe(4);
       expect(JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!).paper).toBe('letter');
 
-      component.close();
+      wrapper.close();
       openRun();
       expect(component.paper).toBe('letter');
       expect(host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-letter`)!.checked).toBeTrue();
@@ -988,12 +999,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, '{not json');
       openRun();
       expect(component.packageId).toBe('internal');
-      component.close();
+      wrapper.close();
 
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 4, package: 'provider' }));
       openRun();
       expect(component.packageId).toBe('internal');
-      component.close();
+      wrapper.close();
 
       spyOn(Storage.prototype, 'getItem').and.throwError('denied');
       openRun();
@@ -1444,7 +1455,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       render();
       expect(overlay()).not.toBeNull();
 
-      component.close();
+      wrapper.close();
       fixture.nativeElement.querySelector('dialog')!.dispatchEvent(new Event('close'));
       render();
 
@@ -1516,7 +1527,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
 
     it('shows nothing when the job request fails', () => {
-      component.open(runContext);
+      wrapper.open(runContext);
       httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents').flush([doc(1, ExecutiveSummary)]);
       httpMock.expectOne(JOB_URL).flush({ error: 'Not found' }, { status: 404, statusText: 'Not Found' });
       render();
@@ -1563,7 +1574,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       openRun([], undefined, job('Writing'));
       expect(notice()).not.toBeNull();
 
-      component.close();
+      wrapper.close();
       fixture.nativeElement.querySelector('dialog')!.dispatchEvent(new Event('close'));
       tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS * 2);
 
@@ -1573,7 +1584,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
   describe('document context', () => {
     function openDocuments(details: Record<number, BenchmarkReportDocumentListItemDto | null>): void {
-      component.open({ kind: 'documents', documentIds: Object.keys(details).map(Number) });
+      wrapper.open({ kind: 'documents', documentIds: Object.keys(details).map(Number) });
       for (const [id, detail] of Object.entries(details)) {
         const request = httpMock.expectOne(`/api/admin/benchmark/report-documents/${id}`);
         requested.push(request.request.url);
@@ -1635,7 +1646,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(heading()).toBe('Downloads');
       expect(subtitle()).toBe('2 report documents and the reports of their runs');
 
-      component.open({
+      wrapper.open({
         kind: 'documents',
         documentIds: [1],
         title: 'Comparison reports',
@@ -1650,12 +1661,36 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
   });
 
+  it('keeps the panel’s nested dialogs from closing it, and closes from the panel’s Cancel', () => {
+    openRun();
+    const outer = wrapper.dialog!.nativeElement;
+    expect(outer.open).toBeTrue();
+    const heard: string[] = [];
+    outer.addEventListener('close', () => heard.push('close'));
+    outer.addEventListener('cancel', () => heard.push('cancel'));
+
+    for (const selector of ['dialog.dc-delete-dialog', 'dialog.pdfv']) {
+      const nested = host().querySelector<HTMLDialogElement>(selector)!;
+      expect(nested).withContext(selector).not.toBeNull();
+      nested.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
+      nested.dispatchEvent(new Event('close', { bubbles: true }));
+    }
+    expect(heard).toEqual([]);
+    expect(outer.open).toBeTrue();
+    // The wrapper lends no chart actions.
+    expect(host().querySelector('.dc-update-charts')).toBeNull();
+    expect(host().querySelector('.dc-col-charts')).toBeNull();
+
+    host().querySelector<HTMLButtonElement>('.dc-footer .dc-cancel')!.click();
+    expect(outer.open).toBeFalse();
+  });
+
   it('emits closed when the dialog closes', () => {
     openRun();
     const closed = jasmine.createSpy('closed');
-    component.closed.subscribe(closed);
+    wrapper.closed.subscribe(closed);
 
-    component.close();
+    wrapper.close();
     fixture.nativeElement.querySelector('dialog')!.dispatchEvent(new Event('close'));
 
     expect(closed).toHaveBeenCalled();

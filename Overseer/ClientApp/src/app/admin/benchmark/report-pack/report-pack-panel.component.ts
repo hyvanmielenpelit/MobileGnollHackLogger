@@ -4,6 +4,7 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  Input,
   OnDestroy,
   OnInit,
   Output,
@@ -11,12 +12,11 @@ import {
   inject
 } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import type { Subscription } from 'rxjs';
+import { Subscription, interval } from 'rxjs';
 
 import {
   AdminBenchmarkService,
   BenchmarkReportAudience,
-  BenchmarkReportDocumentListItemDto,
   BenchmarkReportPackDocumentProgressDto,
   BenchmarkReportPackJobDto,
   BenchmarkReportPackPreviewDto,
@@ -27,25 +27,30 @@ import {
 import { AdminService, SystemAiConfigDto } from '../../../services/admin.service';
 import { ModelPickerComponent, ModelPickerKey, ModelPickerOption, toModelPickerOptions } from '../../../shared/model-picker/model-picker.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { RunReportFrameComponent } from '../run-report-frame/run-report-frame.component';
 import { REPORT_PACK_WRITER_ADVICE, REPORT_WRITER_ADVICE_LEAD } from '../run-ai-reports/report-writer-advice';
+import type { ClientPollError } from '../run-ai-reports/run-report-writing-diagnostics';
+import { formatUtcSeconds } from '../run-ai-reports/run-report-writing-diagnostics';
 import type {
   BenchmarkModelComparisonEntryDto,
   BenchmarkModelComparisonPricingBasis
 } from '../model-comparison/model-comparison.models';
+import { ReportChartPickerComponent } from './report-chart-picker.component';
+import { ReportChartRowStatus, ReportChartSelection } from './report-charts';
 import {
-  ReportDocumentLibraryComponent,
-  ReportDocumentLibraryScope,
-  disclosureLabel,
+  REPORT_PACK_AUDIENCES,
+  audienceLabel,
+  documentChipClass,
   formatCostUsd,
+  formatElapsed,
   formatUtc,
   statusLabel
-} from './report-document-library.component';
+} from './report-document-format';
+import { buildReportPackDiagnostics, reportPackDiagnosticsFileName, reportPackIo } from './report-pack-diagnostics';
 
-export { disclosureLabel, formatCostUsd, formatUtc, statusLabel };
-
-/** What the Report Pack dialog is opened on: the comparison request, its entries and its suite. */
+/** What the Reports step works on: the comparison request, its entries and its suite. */
 export interface ReportPackContext {
   readonly runIds: readonly number[];
   readonly groupIds: readonly number[];
@@ -59,14 +64,6 @@ export interface ReportPackContext {
   readonly entryKeys: readonly string[];
   readonly suiteId: number | null;
   readonly suiteName: string | null;
-}
-
-/** One document the New report pack form offers. */
-export interface ReportPackAudienceOption {
-  readonly audience: BenchmarkReportAudience;
-  readonly label: string;
-  readonly description: string;
-  readonly checkedByDefault: boolean;
 }
 
 /** A subject the form offers: a non-Excluded entry of the comparison. */
@@ -90,26 +87,24 @@ export interface ReportPackEstimateView {
   readonly parts: readonly { name: string; cost: string }[];
 }
 
-export const REPORT_PACK_AUDIENCES: readonly ReportPackAudienceOption[] = [
-  {
-    audience: BenchmarkReportAudience.ExecutiveSummary,
-    label: 'Executive Summary',
-    description: 'For a non-specialist at the model’s provider, or a manager: plain language, short.',
-    checkedByDefault: true
-  },
-  {
-    audience: BenchmarkReportAudience.TechnicalReport,
-    label: 'Report for AI Researchers and Developers',
-    description: 'For AI researchers and model developers: figures against the peers, strengths, weaknesses and recommendations.',
-    checkedByDefault: true
-  },
-  {
-    audience: BenchmarkReportAudience.InternalBrief,
-    label: 'Internal Improvement Brief',
-    description: 'For the Overseer team: what to improve in the chat, the benchmark and the model. Internal only, at Full disclosure.',
-    checkedByDefault: false
-  }
-];
+/** The charts cell of a document's progress row: its words, which are the retry button's after a failure. */
+export interface ReportPackChartCell {
+  readonly text: string;
+  readonly retry: boolean;
+}
+
+/** One row of the document progress list. */
+export interface ReportPackDocumentRow {
+  readonly doc: BenchmarkReportPackDocumentProgressDto;
+  readonly audience: BenchmarkReportAudience;
+  readonly name: string;
+  readonly statusWord: string;
+  readonly chipClass: string;
+  readonly duration: string;
+  readonly modelCalls: string;
+  readonly errorMessage: string | null;
+  readonly charts: ReportPackChartCell;
+}
 
 /** The wait after the last change of subject, documents or writer before the estimate is requested. */
 export const REPORT_PACK_PREVIEW_DEBOUNCE_MS = 400;
@@ -123,18 +118,23 @@ export const REPORT_PACK_POLL_MAX_BACKOFF_MS = 30000;
 /** The per-viewer memory of the last writer used and of the sidebar's width. */
 export const REPORT_PACK_STORAGE_KEY = 'overseer.benchmark.reportPack';
 
+/** The warning shown when the server has no chart folder. */
+export const REPORT_PACK_CHART_STORAGE_MISSING_TEXT =
+  'Chart storage is not configured; documents will be written without charts.';
+
 /** The job statuses after which nothing changes. */
 const FINISHED_JOB_STATUSES = new Set(['Completed', 'CompletedWithErrors', 'Canceled', 'Failed']);
 
 /** A document's statuses once it is written or given up. */
 const FINISHED_DOCUMENT_STATUSES = new Set(['Completed', 'CompletedWithWarnings', 'Failed', 'Canceled']);
 
+/** A document's statuses once it is written. */
+const WRITTEN_DOCUMENT_STATUSES = new Set(['Completed', 'CompletedWithWarnings']);
+
 /** A document's statuses while the writer works on it. */
 const ACTIVE_DOCUMENT_STATUSES = new Set(['Writing', 'Repairing']);
 
-export function audienceLabel(audience: BenchmarkReportAudience): string {
-  return REPORT_PACK_AUDIENCES.find(option => option.audience === audience)?.label ?? `Document ${audience}`;
-}
+const numberFormat = new Intl.NumberFormat('en-US');
 
 /** An entry's option text, with the axes a Degraded entry is degraded on. */
 export function subjectOptionLabel(entry: BenchmarkModelComparisonEntryDto): string {
@@ -144,19 +144,6 @@ export function subjectOptionLabel(entry: BenchmarkModelComparisonEntryDto): str
   const axes = [entry.speedDegraded ? 'speed' : null, entry.costDegraded ? 'cost' : null]
     .filter((axis): axis is string => axis !== null);
   return axes.length > 0 ? `${entry.label} (${axes.join(' and ')} degraded)` : `${entry.label} (degraded)`;
-}
-
-/** `42 s`, `3 min 05 s`, `1 h 02 min`. */
-export function formatElapsed(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) {
-    return `${seconds} s`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes} min ${String(seconds % 60).padStart(2, '0')} s`;
-  }
-  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -188,7 +175,7 @@ function serverMessage(error: HttpErrorResponse): string | null {
   return null;
 }
 
-/** The dialog's stored record: the last writer used and the sidebar's width. */
+/** The panel's stored record: the last writer used and the sidebar's width. */
 interface StoredReportPackSettings {
   writerConfigId?: number;
   sidebarWidth?: number;
@@ -223,38 +210,77 @@ function writeStoredSettings(patch: StoredReportPackSettings): void {
 }
 
 /**
- * The Report Pack dialog, full-screen over the Model Comparison wizard: the sidebar starts a report
- * pack for one entry of the comparison; the main area follows its job and lists the documents written
- * for this comparison, with view, download and delete (the report document library).
+ * Step 3 of the Model Comparison wizard, *Reports*: a sidebar that starts a report pack for one
+ * entry of the comparison, with the charts each document carries; and a main area that follows the
+ * job, one row per document, and its log and diagnostics. The written documents are step 4's.
  *
- * `open(context)` shows it; `closed` fires however it closes. The dialog is a DOM descendant of the
- * wizard's `<dialog>`, so it stops its own close and cancel events, and those of the dialogs nested in
- * it, from reaching the wizard.
+ * The wizard creates it once and hides it while another step shows, so the job's polling and the
+ * one-second clock go on while it is hidden; both stop in `ngOnDestroy`. The form resets only when
+ * the comparison's entry keys change, and then the running job, if any, is found again.
  */
 @Component({
-  selector: 'app-benchmark-report-pack-dialog',
+  selector: 'app-report-pack-panel',
   standalone: true,
-  imports: [RunReportFrameComponent, ModelPickerComponent, InfoTipComponent, ReportDocumentLibraryComponent],
-  templateUrl: './benchmark-report-pack-dialog.component.html',
-  styleUrls: ['./benchmark-report-pack-dialog.component.scss'],
+  imports: [RunReportFrameComponent, ModelPickerComponent, InfoTipComponent, ReportChartPickerComponent],
+  templateUrl: './report-pack-panel.component.html',
+  styleUrls: ['./report-pack-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
+export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private readonly benchmarkService = inject(AdminBenchmarkService);
   private readonly adminService = inject(AdminService);
   private readonly cdr = inject(ChangeDetectorRef);
 
-  @ViewChild('reportPackDialog') dialog?: ElementRef<HTMLDialogElement>;
-  @ViewChild('reportPackHeading') heading?: ElementRef<HTMLElement>;
   @ViewChild('sameProviderDialog') sameProviderDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('generateButton') generateButton?: ElementRef<HTMLButtonElement>;
-  @ViewChild(ReportDocumentLibraryComponent) library?: ReportDocumentLibraryComponent;
 
-  /** Emitted when the dialog closes, however it was closed. */
-  @Output() readonly closed = new EventEmitter<void>();
+  /** The comparison; the form resets only when its entry keys change. */
+  @Input()
+  set context(value: ReportPackContext | null) {
+    this.applyContext(value ?? null);
+  }
+  get context(): ReportPackContext | null {
+    return this.currentContext;
+  }
+
+  /** The charts each document type carries; the wizard stores every change. */
+  @Input() chartSelection: ReportChartSelection = {};
+
+  /** The figure keys the comparison can draw. */
+  @Input() chartsAvailable: readonly string[] = [];
+
+  /** Why the charts may not match what the documents say (D10), or null. */
+  @Input() chartAdvisory: string | null = null;
+
+  /** The server has no chart folder: documents are written without charts. */
+  @Input() chartStorageMissing = false;
+
+  /** Each written document's chart state, keyed by document id. */
+  @Input() chartStatus: Readonly<Record<number, ReportChartRowStatus>> = {};
+
+  /** The prefix of every id in the panel, so the wizard can label its step region by `${idPrefix}-heading`. */
+  @Input() idPrefix = 'rp';
 
   /** The writer field's *How the graders work* link: the host opens the guide at *Choosing grader models*. */
   @Output() readonly graderGuideRequested = new EventEmitter<void>();
+
+  /** A document reached Completed or Completed with warnings; once per document id. */
+  @Output() readonly documentWritten = new EventEmitter<BenchmarkReportPackDocumentProgressDto>();
+
+  /** The job followed here finished; once per job. */
+  @Output() readonly jobFinished = new EventEmitter<BenchmarkReportPackJobDto>();
+
+  /** *See the documents* after a job: the host shows step 4. */
+  @Output() readonly documentsRequested = new EventEmitter<void>();
+
+  /** The chart picker's change, normalized. */
+  @Output() readonly chartSelectionChange = new EventEmitter<ReportChartSelection>();
+
+  /** *Charts failed — retry* on a document's row. */
+  @Output() readonly chartRetryRequested = new EventEmitter<BenchmarkReportPackDocumentProgressDto>();
+
+  /** Whether a job is running, emitted on every change. */
+  @Output() readonly busyChange = new EventEmitter<boolean>();
 
   readonly audiences = REPORT_PACK_AUDIENCES;
   readonly audienceLabel = audienceLabel;
@@ -263,20 +289,26 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   readonly formatUtc = formatUtc;
   readonly writerAdvice = REPORT_PACK_WRITER_ADVICE;
   readonly writerAdviceLead = REPORT_WRITER_ADVICE_LEAD;
+  readonly chartStorageMissingText = REPORT_PACK_CHART_STORAGE_MISSING_TEXT;
   readonly writerEmptyHint =
     'No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.';
 
-  context: ReportPackContext | null = null;
+  private currentContext: ReportPackContext | null = null;
+  /** The entry keys the form was last reset for. */
+  private contextKey: string | null = null;
 
   // --- New report pack ---
   subjects: ReportPackSubjectOption[] = [];
   subjectKey: string | null = null;
   private readonly checkedAudiences = new Set<BenchmarkReportAudience>();
+  /** The checked documents, in the fixed audience order; replaced on every change, for the chart picker. */
+  selectedAudiences: BenchmarkReportAudience[] = [];
 
   writers: SystemAiConfigDto[] = [];
   writersLoading = false;
   writersError: string | null = null;
   writerId: number | null = null;
+  private writersLoaded = false;
   private writerOptionsSource: SystemAiConfigDto[] | null = null;
   private writerOptionsCache: ModelPickerOption<SystemAiConfigDto>[] = [];
 
@@ -292,64 +324,110 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   starting = false;
   startError: string | null = null;
 
-  /** The job this dialog follows, and its last known state. */
+  /** The job this panel follows, and its last known state. */
   activeJobId: string | null = null;
   job: BenchmarkReportPackJobDto | null = null;
-  /** When `job` was last read, for the elapsed time of a running job. */
+  /** When `job` was last read (client clock), to run the server's clock on between readings. */
   jobReadAt = 0;
   /** The estimate when the job was started here, for its stat strip. */
   jobEstimateUsd: number | null = null;
   pollError: string | null = null;
   canceling = false;
 
-  // --- Documents ---
-  /** What the library lists; set on open, so its identity changes only with the comparison. */
-  libraryScope: ReportDocumentLibraryScope | null = null;
-  /** Bumped to make the library list its documents again. */
-  libraryReloadToken = 0;
-  /** How many documents the library holds. */
-  libraryDocumentCount = 0;
+  // --- Client polling, for the diagnostics ---
+  pollCount = 0;
+  lastSuccessUtc: Date | null = null;
+  lastPollError: ClientPollError | null = null;
+
+  copyStatus = '';
+  copyError: string | null = null;
 
   /** The sidebar's width in CSS px, as last stored; null for the frame's default. */
   sidebarWidth: number | null = readStoredSettings().sidebarWidth ?? null;
 
-  /** Bumped on every open and close, so a response for an earlier opening never lands. */
+  /** Bumped on every context reset and on destroy, so a response for an earlier comparison never lands. */
   private generation = 0;
   private previewTimer: ReturnType<typeof setTimeout> | null = null;
   private pollTimer: ReturnType<typeof setTimeout> | null = null;
   private pollFailures = 0;
-  /** The job whose finish already refreshed the documents list. */
-  private refreshedForJobId: string | null = null;
+  private tickSub: Subscription | null = null;
+  private writersSub: Subscription | null = null;
+  private destroyed = false;
+  private lastBusy = false;
+  /** The documents already announced by `documentWritten`, and the jobs by `jobFinished`. */
+  private readonly writtenDocumentIds = new Set<number>();
+  private readonly finishedJobIds = new Set<string>();
   private readonly subscriptions: Record<string, Subscription | undefined> = {};
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
+    this.loadWriters();
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     this.generation++;
     this.stopTimers();
+    this.stopTick();
+    this.writersSub?.unsubscribe();
+    this.writersSub = null;
   }
 
   // -------------------------------------------------------------------------------------------
-  // Opening and closing
+  // The comparison
   // -------------------------------------------------------------------------------------------
 
-  /** Shows the dialog for a comparison: its first non-Excluded entry as the subject, Executive and Technical checked. */
-  open(context: ReportPackContext): void {
-    this.generation++;
-    this.stopTimers();
-    this.context = context;
+  /**
+   * A new comparison resets the form (first non-Excluded entry as the subject, the default
+   * documents, the remembered writer) and looks for a running job; the same entry keys only update
+   * the request's facts, keeping the form and the job.
+   */
+  private applyContext(context: ReportPackContext | null): void {
+    const key = context ? context.entryKeys.join(',') : null;
+    const previous = this.currentContext;
+    this.currentContext = context;
+    if (this.destroyed) {
+      return;
+    }
+    if (key === this.contextKey) {
+      if (context && previous) {
+        this.refreshSubjects(context);
+        if (context.pricingBasis !== previous.pricingBasis && !this.jobInProgress) {
+          this.schedulePreview();
+        }
+      }
+      this.cdr.markForCheck();
+      return;
+    }
+    this.contextKey = key;
+    this.resetForm(context);
+  }
+
+  private refreshSubjects(context: ReportPackContext): void {
     this.subjects = context.entries
       .filter(entry => !entry.excluded && entry.state !== 'Excluded')
       .map(entry => ({ key: entry.key, label: subjectOptionLabel(entry) }));
-    this.subjectKey = this.subjects[0]?.key ?? null;
+    if (this.subjectKey === null || !this.subjects.some(subject => subject.key === this.subjectKey)) {
+      this.subjectKey = this.subjects[0]?.key ?? null;
+    }
+  }
+
+  private resetForm(context: ReportPackContext | null): void {
+    this.generation++;
+    this.stopTimers();
+    this.stopTick();
+    this.subjects = [];
+    this.subjectKey = null;
+    if (context) {
+      this.refreshSubjects(context);
+    }
     this.checkedAudiences.clear();
     for (const option of REPORT_PACK_AUDIENCES) {
       if (option.checkedByDefault) {
         this.checkedAudiences.add(option.audience);
       }
     }
+    this.syncSelectedAudiences();
     this.writerId = null;
     this.preview = null;
     this.previewPending = false;
@@ -363,63 +441,41 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.jobEstimateUsd = null;
     this.pollError = null;
     this.pollFailures = 0;
+    this.pollCount = 0;
+    this.lastSuccessUtc = null;
+    this.lastPollError = null;
     this.canceling = false;
-    this.refreshedForJobId = null;
-    this.libraryScope = { kind: 'comparison', entryKeys: [...context.entryKeys] };
-    this.libraryReloadToken++;
-    this.libraryDocumentCount = 0;
+    this.copyStatus = '';
+    this.copyError = null;
     this.sidebarWidth = readStoredSettings().sidebarWidth ?? null;
+    // Reached from an input setter, inside the host's change detection: the event waits for it to end.
+    this.syncRunning(true);
 
-    const generation = this.generation;
-    this.loadWriters(generation);
-    this.loadActiveJob(generation);
-
-    const dialog = this.dialog?.nativeElement;
-    if (dialog && !dialog.open) {
-      dialog.showModal();
+    if (context) {
+      this.applyRememberedWriter();
+      this.loadActiveJob(this.generation);
     }
-    this.heading?.nativeElement.focus();
     this.cdr.markForCheck();
-  }
-
-  close(): void {
-    this.dialog?.nativeElement?.close();
-  }
-
-  /** The dialog's close and cancel events; neither may reach the wizard's dialog around it. */
-  onDialogEvent(event: Event): void {
-    event.stopPropagation();
-    if (event.type !== 'close' || this.dialog?.nativeElement?.open) {
-      return;
-    }
-    this.generation++;
-    this.stopTimers();
-    this.cdr.markForCheck();
-    this.closed.emit();
-  }
-
-  /** A nested dialog's close or cancel event, stopped so it reaches neither this dialog nor the wizard. */
-  stopNestedEvent(event: Event): void {
-    event.stopPropagation();
   }
 
   /** `<suite> · N models · M possible subjects`. */
   get subtitle(): string {
-    const suite = this.context?.suiteName || 'Suite not set';
-    const models = this.context?.entries.length ?? 0;
+    const suite = this.currentContext?.suiteName || 'Suite not set';
+    const models = this.currentContext?.entries.length ?? 0;
     const count = this.subjects.length;
     return `${suite} · ${plural(models, 'model', 'models')} · ${count} possible ${count === 1 ? 'subject' : 'subjects'}`;
   }
 
-  /** The line under *Documents of this comparison*: which documents it lists. */
-  get libraryScopeLine(): string {
-    const models = this.context?.entries.length ?? 0;
-    return `Reports whose subject is one of the ${plural(models, 'model', 'models')} of this comparison, `
-      + 'written for this same set of models.';
+  get headingId(): string {
+    return `${this.idPrefix}-heading`;
   }
 
   requestGraderGuide(): void {
     this.graderGuideRequested.emit();
+  }
+
+  requestDocuments(): void {
+    this.documentsRequested.emit();
   }
 
   onSidebarWidthChange(width: number): void {
@@ -428,8 +484,13 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  /** A nested dialog's close or cancel event, stopped so it never reaches the wizard's dialog. */
+  stopNestedEvent(event: Event): void {
+    event.stopPropagation();
+  }
+
   // -------------------------------------------------------------------------------------------
-  // The form: subject, documents, writer
+  // The form: subject, documents, charts, writer
   // -------------------------------------------------------------------------------------------
 
   selectSubject(key: string): void {
@@ -456,6 +517,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     } else {
       this.checkedAudiences.delete(audience);
     }
+    this.syncSelectedAudiences();
     this.startError = null;
     this.schedulePreview();
   }
@@ -464,9 +526,13 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.setAudience(audience, (event.target as HTMLInputElement).checked);
   }
 
-  /** The checked documents, in the fixed audience order. */
-  get selectedAudiences(): BenchmarkReportAudience[] {
-    return REPORT_PACK_AUDIENCES.map(option => option.audience).filter(audience => this.checkedAudiences.has(audience));
+  private syncSelectedAudiences(): void {
+    this.selectedAudiences = REPORT_PACK_AUDIENCES.map(option => option.audience)
+      .filter(audience => this.checkedAudiences.has(audience));
+  }
+
+  onChartSelectionChange(selection: ReportChartSelection): void {
+    this.chartSelectionChange.emit(selection);
   }
 
   get writerOptions(): ModelPickerOption<SystemAiConfigDto>[] {
@@ -502,14 +568,16 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
 
   /** The picker's description: the refusal or the warning while there is one. */
   get writerDescribedBy(): string | null {
-    const ids = [this.preview?.refusal ? 'rp-writer-refusal' : '', this.sameProviderWarning ? 'rp-same-provider-text' : '']
-      .filter(id => id !== '');
+    const ids = [
+      this.preview?.refusal ? `${this.idPrefix}-writer-refusal` : '',
+      this.sameProviderWarning ? `${this.idPrefix}-same-provider-text` : ''
+    ].filter(id => id !== '');
     return ids.length > 0 ? ids.join(' ') : null;
   }
 
   /** The request body, or null while the form is incomplete. */
   buildRequest(acknowledgeSameProvider = false): BenchmarkReportPackRequest | null {
-    const context = this.context;
+    const context = this.currentContext;
     if (!context || this.subjectKey === null || this.writerId === null) {
       return null;
     }
@@ -520,7 +588,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
         ? BenchmarkReportPackPricingBasis.AsRun
         : BenchmarkReportPackPricingBasis.Current,
       subjectKey: this.subjectKey,
-      audiences: this.selectedAudiences,
+      audiences: [...this.selectedAudiences],
       writerModelConfigurationId: this.writerId,
       acknowledgeSameProvider
     };
@@ -643,7 +711,8 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
 
   /** The Generate button's description: the estimate, and the reason it is blocked while it is. */
   get generateDescribedBy(): string {
-    return this.generateBlockedReason !== null ? 'rp-estimate rp-generate-blocked' : 'rp-estimate';
+    const estimate = `${this.idPrefix}-estimate`;
+    return this.generateBlockedReason !== null ? `${estimate} ${this.idPrefix}-generate-blocked` : estimate;
   }
 
   /** Generate: a same-provider writer asks first, on every generate; any other writer starts at once. */
@@ -686,6 +755,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.starting = true;
     this.startError = null;
     this.pollError = null;
+    this.syncRunning();
     const estimateUsd = this.preview?.estimatedTotalCostUsd ?? null;
     writeStoredSettings({ writerConfigId: request.writerModelConfigurationId });
     const generation = this.generation;
@@ -698,8 +768,8 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
         this.activeJobId = response.jobId;
         this.job = null;
         this.jobEstimateUsd = estimateUsd;
-        this.refreshedForJobId = null;
         this.pollFailures = 0;
+        this.syncRunning();
         this.pollJob();
         this.cdr.markForCheck();
       },
@@ -712,11 +782,13 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
         // The server saw a same-provider writer the preview did not: ask, as for the preview's.
         if (error.status === 409 && !acknowledgeSameProvider && !isJobDto(body) && isSameProviderWarning(body)) {
           this.serverWarning = body.message;
+          this.syncRunning();
           this.cdr.markForCheck();
           this.openSameProviderConfirm(body.message);
           return;
         }
         this.startError = this.startErrorMessage(error);
+        this.syncRunning();
         this.cdr.markForCheck();
       }
     });
@@ -728,7 +800,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     if (error.status === 409 && isJobDto(body)) {
       this.adoptJob(body);
       return `Another report pack is being written, for ${body.subjectLabel}, started ${formatUtc(body.startedAtUtc)}. `
-        + 'One job runs at a time; its progress is shown in Documents of this comparison.';
+        + 'One job runs at a time; its progress is shown here.';
     }
     if (error.status === 409 && isSameProviderWarning(body)) {
       this.serverWarning = body.message;
@@ -755,8 +827,13 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     return this.job === null || !FINISHED_JOB_STATUSES.has(this.job.status);
   }
 
+  /** A job is running: the host keeps the wizard from closing on it unawares. */
+  get jobRunning(): boolean {
+    return this.jobInProgress;
+  }
+
   /** The job has finished; its card shows a one-line summary. */
-  get jobFinished(): boolean {
+  get isJobFinished(): boolean {
     return this.job !== null && FINISHED_JOB_STATUSES.has(this.job.status);
   }
 
@@ -764,17 +841,44 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     return this.job?.documents ?? [];
   }
 
+  /**
+   * The server's clock now: its last reading plus the client time since that response arrived;
+   * the client's clock when the server sent none.
+   */
+  private serverNowMs(): number {
+    const serverTime = this.job?.serverTimeUtc;
+    if (serverTime) {
+      const server = parseServerUtcDate(serverTime).getTime();
+      if (!Number.isNaN(server)) {
+        return server + Math.max(0, Date.now() - this.jobReadAt);
+      }
+    }
+    return Date.now();
+  }
+
+  /** Milliseconds from `startUtc` to `endUtc`, or to the server's clock now while `endUtc` is absent. */
+  private spanToNow(startUtc: string | null | undefined, endUtc: string | null | undefined): number | null {
+    if (!startUtc) {
+      return null;
+    }
+    const start = parseServerUtcDate(startUtc).getTime();
+    const end = endUtc ? parseServerUtcDate(endUtc).getTime() : this.serverNowMs();
+    if (Number.isNaN(start) || Number.isNaN(end)) {
+      return null;
+    }
+    return Math.max(0, end - start);
+  }
+
   get jobElapsed(): string {
     const job = this.job;
     if (!job) {
       return '';
     }
-    const start = Date.parse(job.startedAtUtc);
-    const end = job.completedAtUtc ? Date.parse(job.completedAtUtc) : this.jobReadAt;
-    return Number.isNaN(start) || Number.isNaN(end) ? '' : formatElapsed(end - start);
+    const ms = this.spanToNow(job.startedAtUtc, job.completedAtUtc);
+    return ms === null ? '' : formatElapsed(ms);
   }
 
-  /** The live line: announced as the job advances from phase to phase. */
+  /** The live line: it changes as the job moves from phase to phase, never with the clock. */
   get jobStatusLine(): string {
     const job = this.job;
     if (!job) {
@@ -822,6 +926,55 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     }));
   }
 
+  /** One row per document: its chip, its duration on the server's clock, its model calls and its charts. */
+  get documentRows(): ReportPackDocumentRow[] {
+    const job = this.job;
+    if (!job) {
+      return [];
+    }
+    const finished = FINISHED_JOB_STATUSES.has(job.status);
+    return job.documents.map((doc): ReportPackDocumentRow => {
+      const duration = doc.startedAtUtc
+        ? this.spanToNow(doc.startedAtUtc, doc.completedAtUtc ?? (finished ? job.completedAtUtc : null))
+        : null;
+      return {
+        doc,
+        audience: doc.audience,
+        name: audienceLabel(doc.audience),
+        statusWord: statusLabel(doc.status),
+        chipClass: documentChipClass(doc.status),
+        duration: duration === null ? '—' : formatElapsed(duration),
+        modelCalls: numberFormat.format(doc.modelCalls),
+        errorMessage: doc.errorMessage || null,
+        charts: this.chartCell(doc)
+      };
+    });
+  }
+
+  private chartCell(doc: BenchmarkReportPackDocumentProgressDto): ReportPackChartCell {
+    if (this.chartStorageMissing || (this.chartSelection[doc.audience] ?? []).length === 0) {
+      return { text: 'Charts: none', retry: false };
+    }
+    const status = doc.documentId === null ? undefined : this.chartStatus[doc.documentId];
+    if (!status) {
+      return { text: '—', retry: false };
+    }
+    switch (status.state) {
+      case 'attaching':
+        return { text: 'Charts: attaching…', retry: false };
+      case 'done':
+        return { text: `Charts: ${numberFormat.format(status.count)}`, retry: false };
+      case 'failed':
+        return { text: 'Charts failed — retry', retry: true };
+      default:
+        return { text: 'Charts: none', retry: false };
+    }
+  }
+
+  retryCharts(row: ReportPackDocumentRow): void {
+    this.chartRetryRequested.emit(row.doc);
+  }
+
   get jobTokens(): string {
     const job = this.job;
     if (!job) {
@@ -831,7 +984,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
   }
 
   get jobCostLabel(): string {
-    return this.jobFinished ? 'Cost' : 'Cost so far';
+    return this.isJobFinished ? 'Cost' : 'Cost so far';
   }
 
   get jobEstimate(): string | null {
@@ -845,7 +998,7 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
       return '';
     }
     const total = job.documents.length;
-    const written = job.documents.filter(d => d.status === 'Completed' || d.status === 'CompletedWithWarnings').length;
+    const written = job.documents.filter(d => WRITTEN_DOCUMENT_STATUSES.has(d.status)).length;
     const tail = [this.jobElapsed, formatCostUsd(job.costUsd)].filter(part => part !== '').join(', ');
     let head: string;
     switch (job.status) {
@@ -873,8 +1026,9 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.job = null;
     this.jobEstimateUsd = null;
     this.pollError = null;
+    this.syncRunning();
     this.cdr.markForCheck();
-    document.getElementById('rp-documents-heading')?.focus();
+    document.getElementById(`${this.idPrefix}-progress-heading`)?.focus();
   }
 
   cancelJob(): void {
@@ -922,7 +1076,6 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
 
   private adoptJob(job: BenchmarkReportPackJobDto): void {
     this.activeJobId = job.id;
-    this.refreshedForJobId = null;
     this.pollFailures = 0;
     this.applyJob(job);
   }
@@ -931,15 +1084,22 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.job = job;
     this.jobReadAt = Date.now();
     this.pollError = null;
+    for (const doc of job.documents) {
+      if (doc.documentId !== null && WRITTEN_DOCUMENT_STATUSES.has(doc.status) && !this.writtenDocumentIds.has(doc.documentId)) {
+        this.writtenDocumentIds.add(doc.documentId);
+        this.documentWritten.emit(doc);
+      }
+    }
     if (FINISHED_JOB_STATUSES.has(job.status)) {
       this.clearPollTimer();
-      if (this.refreshedForJobId !== job.id) {
-        this.refreshedForJobId = job.id;
-        this.libraryReloadToken++;
+      if (!this.finishedJobIds.has(job.id)) {
+        this.finishedJobIds.add(job.id);
+        this.jobFinished.emit(job);
       }
     } else {
       this.schedulePoll(REPORT_PACK_POLL_MS);
     }
+    this.syncRunning();
   }
 
   private schedulePoll(delay: number): void {
@@ -959,20 +1119,27 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     this.clearPollTimer();
     this.subscriptions['poll']?.unsubscribe();
     const generation = this.generation;
+    this.pollCount++;
     this.subscriptions['poll'] = this.benchmarkService.getReportPackJob(id).subscribe({
       next: job => {
         if (generation !== this.generation) {
           return;
         }
         this.pollFailures = 0;
+        this.lastSuccessUtc = new Date();
         this.applyJob(job);
         this.cdr.markForCheck();
       },
-      error: () => {
+      error: (error: unknown) => {
         if (generation !== this.generation) {
           return;
         }
         this.pollFailures++;
+        const http = error instanceof HttpErrorResponse ? error : null;
+        this.lastPollError = {
+          httpStatus: http && http.status > 0 ? http.status : null,
+          message: (http ? serverMessage(http) ?? (http.statusText || http.message) : null) || 'Unknown error'
+        };
         this.pollError = 'The job’s progress could not be read. Retrying.';
         this.schedulePoll(Math.min(REPORT_PACK_POLL_MS * 2 ** this.pollFailures, REPORT_PACK_POLL_MAX_BACKOFF_MS));
         this.cdr.markForCheck();
@@ -980,30 +1147,48 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Keeps `busyChange` and the one-second clock in step with whether a job is running. */
+  private syncRunning(deferEvent = false): void {
+    const running = this.jobInProgress;
+    if (running && this.activeJobId !== null) {
+      if (!this.tickSub && !this.destroyed) {
+        this.tickSub = interval(1000).subscribe(() => this.cdr.markForCheck());
+      }
+    } else {
+      this.stopTick();
+    }
+    if (running !== this.lastBusy) {
+      this.lastBusy = running;
+      if (deferEvent) {
+        void Promise.resolve().then(() => this.busyChange.emit(running));
+      } else {
+        this.busyChange.emit(running);
+      }
+    }
+  }
+
+  private stopTick(): void {
+    this.tickSub?.unsubscribe();
+    this.tickSub = null;
+  }
+
   // -------------------------------------------------------------------------------------------
   // Writers
   // -------------------------------------------------------------------------------------------
 
-  private loadWriters(generation: number): void {
+  private loadWriters(): void {
     this.writersLoading = true;
     this.writersError = null;
-    this.subscriptions['writers'] = this.adminService.getSystemConfigs().subscribe({
+    this.writersSub?.unsubscribe();
+    this.writersSub = this.adminService.getSystemConfigs().subscribe({
       next: configs => {
-        if (generation !== this.generation) {
-          return;
-        }
         this.writersLoading = false;
+        this.writersLoaded = true;
         this.writers = (configs ?? []).filter(c => (c.modelRole & 4) === 4 && c.hasApiKey && c.isEnabled);
-        const remembered = readStoredSettings().writerConfigId ?? null;
-        if (this.writerId === null && remembered !== null && this.writers.some(w => w.id === remembered)) {
-          this.selectWriter(remembered);
-        }
+        this.applyRememberedWriter();
         this.cdr.markForCheck();
       },
       error: () => {
-        if (generation !== this.generation) {
-          return;
-        }
         this.writersLoading = false;
         this.writersError = 'The report writers could not be loaded.';
         this.cdr.markForCheck();
@@ -1011,18 +1196,68 @@ export class BenchmarkReportPackDialogComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** The last writer used, while it still qualifies and no writer is chosen. */
+  private applyRememberedWriter(): void {
+    if (!this.writersLoaded || this.writerId !== null || this.currentContext === null) {
+      return;
+    }
+    const remembered = readStoredSettings().writerConfigId ?? null;
+    if (remembered !== null && this.writers.some(w => w.id === remembered)) {
+      this.selectWriter(remembered);
+    }
+  }
+
   // -------------------------------------------------------------------------------------------
-  // Documents
+  // Diagnostics
   // -------------------------------------------------------------------------------------------
 
-  onLibraryDocuments(documents: readonly BenchmarkReportDocumentListItemDto[]): void {
-    this.libraryDocumentCount = documents.length;
+  diagnosticsText(nowUtc: Date = new Date()): string {
+    return buildReportPackDiagnostics({
+      context: this.currentContext,
+      job: this.job,
+      subjectKey: this.subjectKey,
+      chartSelection: this.chartSelection,
+      chartStatus: this.chartStatus,
+      chartStorageMissing: this.chartStorageMissing,
+      chartAdvisory: this.chartAdvisory,
+      client: {
+        pollCount: this.pollCount,
+        lastSuccessUtc: this.lastSuccessUtc,
+        consecutiveFailures: this.pollFailures,
+        lastError: this.lastPollError
+      },
+      estimateUsd: this.jobEstimateUsd,
+      nowUtc
+    });
+  }
+
+  async copyDiagnostics(): Promise<void> {
+    const generation = this.generation;
+    this.copyStatus = '';
+    this.copyError = null;
+    this.cdr.markForCheck();
+    const ok = await reportPackIo.copy(this.diagnosticsText());
+    if (generation !== this.generation) {
+      return;
+    }
+    if (ok) {
+      this.copyStatus = 'Copied';
+    } else {
+      this.copyError = 'The diagnostics could not be copied to the clipboard. Download them instead.';
+    }
     this.cdr.markForCheck();
   }
 
-  /** The *Downloads* notice's Open Download Center: every document of the comparison. */
-  openAllDownloads(button: HTMLElement): void {
-    this.library?.openDownloadCenterForAll(button);
+  downloadDiagnostics(): void {
+    const now = new Date();
+    const subject = this.job?.subjectLabel
+      ?? this.subjects.find(subject => subject.key === this.subjectKey)?.label
+      ?? null;
+    reportPackIo.download(reportPackDiagnosticsFileName(subject, now), this.diagnosticsText(now));
+  }
+
+  logTime(timestampUtc: string): string {
+    return formatUtcSeconds(timestampUtc) ?? timestampUtc;
   }
 
   // -------------------------------------------------------------------------------------------

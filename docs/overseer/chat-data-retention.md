@@ -201,6 +201,15 @@ When executed (either automatically by the background service or manually from t
 
 Every phase honours `DryRun`: it counts what it would change and changes nothing. A failure sets `Success = false` and `ErrorMessage` on the result, and the exception is rethrown to the caller.
 
+### Report Chart Files (manual only)
+
+The chart images of AI Benchmark report documents live on disk under `Benchmark:ReportPack:ChartsDataLocation`, one folder per document (`<ChartsDataLocation>/<documentId>/`, a `manifest.json` and the PNGs), described in `ai-benchmark-report-pack.md` § 13. They are not part of the full pass. The Database tab's **Clear Report Chart Files** card (`POST /api/admin/maintenance/clear-report-charts`, trigger `Manual:ClearReportCharts`) deletes all of them at once, through the same granular-maintenance runner as the other actions:
+
+- It deletes only numeric document folders and the `.staging` folder; anything else in the folder is left alone and named in the log (*"Left alone: …"*), and the root folder itself is never deleted.
+- The result sets `DeletedDiskFolderCount`, `DeletedDiskFileCount` and `ReclaimedDiskBytes`, and the log reads *"[DRY RUN] Would delete N chart folders (M files, X MB), K of them for documents that no longer exist."*, or *"Deleted …"* for a real run. A real run drops the cached chart metrics.
+- The report documents and their text are kept. Their PDF and Word copies have no charts until **Update charts** in the Comparison Wizard adds them again, which draws them in the browser with no AI call.
+- When `ChartsDataLocation` is empty, relative or missing, the endpoint answers 400 `{ message }` and the button is disabled with that reason.
+
 ### 3. Maintenance History (`MaintenanceRunLog`)
 
 Every full pass and every granular Admin action writes one `MaintenanceRunLog` row through `ChatRetentionService.RecordRunAsync`: when it started and finished, its trigger (`Scheduled`, `Startup`, `Manual`, or `Manual:<Action>`), whether it was a dry run, whether it succeeded, every count in the result, the error message, and the log lines (truncated to 4,000 characters). Dry runs are recorded and flagged, so the history shows what an admin previewed as well as what ran. A failed history write is logged and never fails the maintenance it describes.
@@ -235,6 +244,7 @@ The `DatabaseStorageMetricsService` queries live database DMVs and physical file
 - **Transaction Log**: The same query over `sys.database_files WHERE type = 1`. The log is outside the Express cap but not outside the disk, and the bulk purges are what grow it.
 - **Table Allocations**: Queried from `sys.tables`, `sys.indexes`, `sys.partitions`, and `sys.allocation_units` over **every user table** (`is_ms_shipped = 0`), ordered by total size. The twelve largest are listed individually; the rest are summed into one *Other* figure, and an all-tables total is reported. Space figures include non-clustered indexes, reported separately as *Index (MB)*; the row count reads the heap or clustered index only.
 - **Disk Attachment Scanning**: Aggregates directory counts, file counts, and total byte size within `ConversationsDataLocation`. The result is cached for two minutes and invalidated by any purge or sweep.
+- **Report Chart Files**: The same scan over `Benchmark:ReportPack:ChartsDataLocation` — document folders, files and bytes — reported as `ReportChartsConfigured`, `ReportChartFolderCount`, `ReportChartFileCount`, `ReportChartSizeBytes` and `ReportChartSizeMb`. Cached for two minutes and dropped after a real **Clear Report Chart Files**. The HTML storage report has a *Report chart files* row.
 
 Each query, and each counter group below, has its own `try`/`catch`, so one failing query never blanks the rest of the panel.
 
@@ -252,6 +262,7 @@ The Admin **Database** tab exposes:
 - Real-time gauge and status badge (`Normal`, `Warning`, `Critical`), the transaction log, the last and next maintenance run.
 - Active, Pinned, Inactive, Trash, Confidential, Own-TTL, Immediate-purge and Ephemeral session counters.
 - Estimated reclaimable database space.
+- A *Report Chart Files* box after *Disk Attachments*: *N documents · M files · X MB*, or *Not configured (Benchmark:ReportPack:ChartsDataLocation)*; it is absent when the server sends no chart fields.
 - Read-only Retention Policy, Content Key Ring, Schema and Next Pass Preview panels.
 - Granular manual action buttons with interactive confirmation dialogs, centered loading modals, and toast notifications. **One Dry Run switch governs the full pass and every granular action**; a dry run skips the confirmation because it changes nothing.
 - A result console listing every non-zero count, the trigger, and any error, and a Recent Maintenance Runs table from `MaintenanceRunLog`.
@@ -267,6 +278,7 @@ The Admin **Database** tab exposes:
 | `POST` | `/api/admin/maintenance/prune-audit-log` | Phase 7; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/prune-ai-error-log` | Phase 8; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Phase 6 |
+| `POST` | `/api/admin/maintenance/clear-report-charts` | Clear Report Chart Files (not a phase of the full pass); 400 when chart storage is not configured |
 | `GET` | `/api/admin/maintenance/history` | Maintenance history, newest first |
 | `POST` | `/api/admin/maintenance/send-report-email` | On-demand storage report email |
 

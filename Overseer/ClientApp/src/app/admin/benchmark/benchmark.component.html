@@ -1481,20 +1481,11 @@
           </details>
         </div>
 
-        <!-- Rendered only inside this tab's @if, so it loads when the tab is shown, not on page load,
-             and afresh on every showing; the reload token covers the wizard closing. -->
+        <!-- Rendered only inside this tab's @if, so it counts the documents when the tab is shown, not
+             on page load, and afresh on every showing; the reload token covers the wizard closing. -->
         <div class="mc-launcher-library">
-          <p class="mc-launcher-library-lead">
-            Every report document written from a model comparison, newest first. A run's own reports
-            are in its run report.
-          </p>
-          <app-report-document-library
-            [scope]="comparisonReportsScope"
-            heading="Comparison reports"
-            idPrefix="mcl"
-            [showComparisonColumn]="true"
-            [reloadToken]="comparisonReportsReloadToken">
-          </app-report-document-library>
+          <app-report-documents-launcher idPrefix="mcl" [reloadToken]="comparisonReportsReloadToken">
+          </app-report-documents-launcher>
         </div>
       </div>
     </div>

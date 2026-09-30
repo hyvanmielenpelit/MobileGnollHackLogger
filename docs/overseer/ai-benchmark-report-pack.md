@@ -9,8 +9,8 @@ Report for AI Researchers and Developers about one run on its own, with no peers
 run is scored by the report writer the run names (§ 11).
 
 This document describes the feature for developers: what each document holds, how the figures and the
-prose are kept apart, how the prose is validated, what is stored, and how a stored document is rendered
-at download. It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
+prose are kept apart, how the prose is validated, what is stored, how a stored document is rendered
+at download, and how its PDF and Word copies carry charts (§ 13). It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
 the run report and Model Comparison. Read that first if you have not.
 
 The one design rule behind everything below: **numbers come from code, words come from the writer, and
@@ -24,12 +24,14 @@ Implementation:
 | Fact sheet, content snapshot, writer output, validation notes and DTOs | `Overseer/Models/BenchmarkReportPackModels.cs` |
 | The writer's prompts and the repair message | `BenchmarkReportPackPrompt` |
 | Parsing the writer's JSON | `BenchmarkReportPackParser` |
-| The seventeen validation rules and the drop policy | `BenchmarkReportPackValidator` |
+| The eighteen validation rules and the drop policy | `BenchmarkReportPackValidator` |
 | A comparison's identity, and its startup backfill | `BenchmarkReportComparisonKey`, `BenchmarkReportDocumentBackfill` |
 | Generation: preparation, the writer call, repair, storage | `BenchmarkReportPackService` |
 | The background job and its progress | `BenchmarkReportPackJob`, `BenchmarkReportPackJobManager` |
 | A run's run-completion documents: scheduling, the queued job, the run's status | `BenchmarkRunReportDocumentService` (singleton) |
 | Deterministic Markdown rendering | `BenchmarkReportPackRenderer` (pure, static), behind `BenchmarkReportRenderService` |
+| Chart images on disk: storage, validation, manifest, loading | `BenchmarkReportChartStore` (singleton), `Overseer/Models/BenchmarkReportChartModels.cs` |
+| Which figure goes where, and the figure markers | `BenchmarkReportChartPlacement` |
 | Endpoints | `AdminBenchmarkReportPacksController` (the write-now endpoint included), `AdminBenchmarkReportDocumentsController` |
 | Golden files | `Overseer.Tests/UnitTests/Golden/ReportPack/` |
 
@@ -37,7 +39,7 @@ Implementation:
 
 ## 1. Purpose and the Three Documents
 
-The Model Comparison wizard's **Reports** button opens the full-screen **Report Pack dialog**. The admin
+Step 3 of the Model Comparison wizard, **Reports**, starts a report pack (§ 12). The admin
 picks one comparison entry as the **subject** — a run or an analysis group — and a separate **report
 writer** model, and chooses which documents to write. The other entries of the comparison are the
 subject's **peers**, lettered A, B, C… in quality-rank order.
@@ -47,9 +49,9 @@ is omitted from ranking, and the fact sheet marks the affected facts unavailable
 
 | Document | Reader | Disclosure | Skeleton |
 |---|---|---|---|
-| **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Summary or Full (§ 6) | Headline (one sentence) · key figures, with a *Rank* line when there are peers · *How it compares* (peers only: a code-rendered table of every entry's Intelligence Index with its interval, median answer time and cost per question, then a paragraph of at most 70 words on where the model stands and whether that position is established) · *What it did well* (at most 3, each at most 30 words) · *Where it fell short* (at most 3, each at most 30 words) · *What this means for use as a game assistant* (at most 90 words) · *How reliable this result is* (at most 60 words) · *Evaluation terms* |
-| **Report for AI Researchers and Developers** (stored as `TechnicalReport`) | AI researchers and model developers. Precise and neutral | Any level | Headline · abstract (at most 150 words) · *Setup and method*, with a *Compared models* table when there are peers (model, provider, kind, runs, thinking level, harness version, run dates) · figures against the peers, with each peer's *Paired difference* · *Speed and cost* · *Why it scored this way* (the patterns and causes behind the weaknesses, by category, at most 300 words) then *Weaknesses* · *What worked well* (the patterns behind the strengths, at most 150 words) then *Strengths* (at most 8 of each) · question topics for every question · a note for each question more than 15 points below the peer mean or with a critical error (with no peers: scoring below 50 or with a critical error) · at most 6 recommendations for the model's next iteration, each naming the change proposed and, in a few words, the weakness it answers, with its evidence · *Threats to validity*, ending in the writer's *limitations* paragraph (at most 120 words) · *Evaluation terms* |
-| **Internal Improvement Brief** | The Overseer team and its AI agents. Direct and practical | **Full only**; internal | Headline · three parts in the order of *What the Benchmark Is For*: the Overseer chat and its tools (at most 200 words), the benchmarking system (at most 150), the model's result (at most 150) · strengths and weaknesses (at most 8 of each) · question topics and notes · at most 8 recommendations for the chat, the benchmark or model developers · at most 6 **leads** |
+| **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Summary or Full (§ 6) | Headline (one sentence) · key figures (with peers, the *Intelligence* line carries the rank) · *How it compares* (peers only: a code-rendered table of every entry's Intelligence Index with its interval, median answer time, cost per question and critical errors, a compact table of the subject's dimensions against the peer mean, any charts (§ 13), then a paragraph of at most 70 words on where the model stands and whether that position is established) · *What it did well* (at most 3, each at most 30 words) · *Where it fell short* (at most 3, each at most 30 words) · *What this means for use as a game assistant* (at most 90 words) · *How reliable this result is* (at most 60 words, then the code-rendered interval sentence and, with peers, the one sentence on why no pair is tested for significance) · *Evaluation terms* |
+| **Report for AI Researchers and Developers** (stored as `TechnicalReport`) | AI researchers and model developers. Precise and neutral | Any level | Headline · abstract (at most 150 words) · *Setup and method*, with a *Compared models* table when there are peers (model, provider, kind, runs, thinking level, harness version, run dates) · figures against the peers, with each peer's *Paired difference* · *Speed and cost* · *Why it scored this way* (the patterns and causes behind the weaknesses, by category, at most 300 words) then *Weaknesses* · *What worked well* (the patterns behind the strengths, at most 150 words) then *Strengths* (at most 8 of each) · question topics for every question · a note for each question more than 15 points below the peer mean or with a critical error (with no peers: scoring below 50 or with a critical error) · at most 6 recommendations for the model's next iteration — only what a model developer can change in the model — each naming the change proposed and, in a few words, the weakness it answers, with its evidence · *Threats to validity*, ending in the writer's *limitations* paragraph (at most 120 words) · *Evaluation terms* |
+| **Internal Improvement Brief** | The Overseer team and its AI agents. Direct and practical | **Full only**; internal | Headline · three parts in the order of *What the Benchmark Is For*: the Overseer chat and its tools (at most 200 words), the benchmarking system (at most 150), the model's result (at most 150, then its key figures, the code-rendered interval sentence and any charts) · strengths and weaknesses (at most 8 of each) · question topics and notes · at most 8 recommendations for the chat, the benchmark or model developers · at most 6 **leads** · the fact sheet as JSON (in the Markdown and HTML copies; the PDF and Word copies say *"The fact sheet is in the Markdown copy of this document."*) |
 
 The writer fills named **slots** and **lists** only; the renderer supplies every heading, table and
 figure. The slot ids are in `BenchmarkReportSlots`: `comparison`, `meaning` and `confidence` (Executive
@@ -99,7 +101,9 @@ the item keeps its support label and prints no evidence line):
 - the **facts** the item cites, by their human label (`BenchmarkReportFactLabels`) and display value, or
   *not available*;
 - the **questions** the item is about — its own question list and the `Q` ids it cites, or, when it
-  names none itself, the questions of the rows it cites — each with its score, *Q6 (59 / 100)*;
+  names none itself, the questions of the rows it cites — each with its score, *Q6 (59 / 100)*; at most
+  six, the lowest scores first for a weakness or a recommendation and the highest first for a
+  strength, then *"and N more"*;
 - the **claim verifier**: *"the claim verifier refuted an answer sentence on Q6"* when a ruling on the
   answer's own text among those questions was refuted (a document stored without ruling roles reads
   *a claim*).
@@ -147,9 +151,13 @@ The writer never writes a figure. It references:
 | `R3` | A finding row, in an item's `evidence` list only; the prose describes the finding instead |
 
 Counts in prose are number words. Interval overlap is stated descriptively — *"its 95 % interval
-overlaps those of Models B and C"*. The comparison runs **no significance test**, and every document
-repeats the comparison's *Pairwise significance* excluded-measure statement; the writer prompt carries it
-too, as its *NO SIGNIFICANCE TEST* block.
+overlaps those of Models B and C"*. The comparison runs **no significance test**. A document with peers
+says so once, in its own words, where the comparison left pairwise significance out: *"No pair of models
+is tested for significance: with N models, testing every pair would flag chance differences."* (*"The two
+models are not tested for significance, so a gap between them may be noise."* for two models), in the
+Executive Summary's *How reliable this result is* and in the researcher report's *Quality* block. The
+comparison's own *Instead* sentence addresses its operator and is never printed. The writer prompt
+carries the comparison's statement as its *NO SIGNIFICANCE TEST* block.
 
 **Per-peer facts.** Each peer `X` has its own facts, so the writer can say how the subject compares with
 it: `peer.X.quality.index`, `peer.X.quality.interval`, `peer.X.quality.rank`,
@@ -174,6 +182,22 @@ an estimate: it reflects question sampling only, is not adjusted for comparing s
 **not a significance test** — rule 11 still bans *significant* and its kin, and the renderer prints that
 caveat under the table that shows it (§ 7).
 
+`peer.X.pairedExcludesZero` (format 8) is a boolean: true when both bounds of the paired interval, **as
+printed** to one decimal, lie on the same side of zero. It displays *the paired interval excludes zero*
+or *the paired interval includes zero*, and is unavailable wherever the paired difference is. Where it is
+true the Report for AI Researchers and Developers prints, under its *Quality* table, *"On the same
+questions the paired difference with {peer} excludes zero (not adjusted for several comparisons)."*, and
+the writer may state the paired result for that pair instead of *not established* (§ 3, rule 16).
+
+**Comparison and per-question facts (format 8).** `comparison.peerRuns` states the peers' run counts in
+one clause — *"every peer has 1 run"*, or *"peers have 1 to 3 runs"* — and is withheld on a stand-alone
+sheet. Each question of the sheet also carries `peerMin`, `peerMax` and `peersAbove`: the lowest and
+highest peer score on it, and how many peers scored more than 5 points above the subject on the same item
+and revision (`BenchmarkReportFacts.PeerAboveMarginPoints`). The writer prompt shows them on each question
+line as *"peers: min 60, max 90, 2 of 4 scored clearly higher"*. The `dimension.<d>.difference` and
+`band.<b>.difference` facts keep their unrounded value but display the difference of the two printed
+whole numbers, and so does a question's *Difference* column, so every printed row adds up.
+
 **Support labels.** Each strength and weakness is printed with a support label computed by code from the
 finding rows it cites, never written by the model:
 
@@ -187,8 +211,10 @@ finding rows it cites, never written by the model:
 | *Computed*, printed *From per-question results* | The item cites facts or questions only, no finding row |
 
 The Executive Summary prints the same label in plain words (`BenchmarkReportPackRenderer.PlainSupportLabel`):
-*both graders agreed*, *raised by one grader*, *raised by one grader, from the model's own company*, *the
-graders disagree*, *raised by the grader* and *from per-question results*.
+*raised by one grader*, *raised by one grader, from the model's own company*, *the graders disagree*,
+*raised by the grader* and *from per-question results*. An item both graders agreed on, the ordinary
+case, carries no label there (from format 8; the label is chosen at render, so older documents lose
+their *both graders agreed* too).
 
 **Fact labels.** A rendered document never prints a raw fact key: every key has a human label in
 `BenchmarkReportFactLabels` (*Intelligence Index*, *95 % interval*, *Critical errors*…), used by the
@@ -208,7 +234,7 @@ whether that member shares the subject's provider.
 
 ## 3. Validation, Repair and Drops
 
-`BenchmarkReportPackValidator` checks the writer's JSON against seventeen rules. Each failure is a
+`BenchmarkReportPackValidator` checks the writer's JSON against eighteen rules. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
 `weaknesses[1]`…) and message.
 
@@ -229,13 +255,14 @@ whether that member shares the subject's provider.
 | 13 | In the Executive Summary's `confidence` slot only: the quality interval is not called *narrow*, *narrower*, *wide*, *wider*, *tight*, *tighter* or *broad* (`BenchmarkReportPackValidator.IntervalWidthWords`, whole words ignoring case); the code-rendered sentence after the slot states the interval and its span |
 | 14 | The headline and the abstract do not mention the claim verifier: *verifier* or *verifiers*, as a whole word ignoring case (`VerifierInSummaryRule`). A claim-verifier ruling is advisory and belongs, attributed, among the weaknesses |
 | 15 | Every question the prompt lists under *QUESTIONS NEEDING A NOTE* has a note in `questionNotes` (`MissingQuestionNoteRule`) |
-| 16 | A sentence that holds `{{subject}}` and a `{{peer:X}}` token together with a comparative word (`ComparativeWords`: *higher, lower, better, worse, ahead, behind, outperform(s/ed), beat(s), leads, trails*), where `peer.X.intervalOverlap` says the two intervals overlap, also says *overlap* or *not established* (`OverlapHedgeRule`). Tokens are set aside before the text is split into sentences, so a fact key's dots never end one |
+| 16 | A sentence that holds `{{subject}}` and a `{{peer:X}}` token together with a comparative word (`ComparativeWords`: *higher, lower, better, worse, ahead, behind, outperform(s/ed), beat(s), leads, trails*), where `peer.X.intervalOverlap` says the two intervals overlap, also says *overlap* or *not established* (`OverlapHedgeRule`); where that peer's `peer.X.pairedExcludesZero` is true, stating the paired result — *paired* and *excludes zero* in the sentence, or the fact's token — satisfies it as well. Tokens are set aside before the text is split into sentences, so a fact key's dots never end one |
 | 17 | No hype or filler words (`HypeWords`: *impressive, remarkable, outstanding, stellar, exceptional, robust, seamless, leverage, delve, game-changing, cutting-edge*), as whole words ignoring case, in any prose (`HypeWordRule`) |
+| 18 | A `model_developers` recommendation mentions nothing a model developer cannot change (`OverseerOnlyTerms`: *rubric, retrieval, index, corpus, regression test, system prompt, tool guide*, with their plural and inflected forms, as whole words ignoring case; `ModelDeveloperScopeRule`) |
 
 Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
 slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
-Summary's `confidence` slot, rule 14 to the headline and each paragraph of the abstract, and rule 16 to
-each sentence of the prose.
+Summary's `confidence` slot, rule 14 to the headline and each paragraph of the abstract, rule 16 to
+each sentence of the prose, and rule 18 to the text of each recommendation for `model_developers`.
 
 **Readability.** The system prompt of every audience adds: one idea per sentence; sentences of at most
 about 25 words; active voice; a count from the facts rather than *many* or *several*; the category of a
@@ -252,12 +279,14 @@ then the evidence."*
    over-cap slot with a word limit (the abstract, `meaning`, `confidence`, `comparison`, `whyItScored`,
    `whatWorked`, `limitations`, `overseerChat`, `benchmarkSystem`, `modelResult`) loses its last
    paragraphs until it fits.
-3. **Rules 12 to 17 never drop** (`BenchmarkReportPackValidator.IsWarningRule`). A missing question
+3. **Rules 12 to 18 never drop** (`BenchmarkReportPackValidator.IsWarningRule`). A missing question
    note (rule 15) has nothing to drop. A spelling slip, an interval adjective, a mention of the claim
-   verifier, an unhedged comparison across overlapping intervals or a hype word is not worth losing a
-   finding or the one paragraph of a required slot: after the repair turn, text that still uses a
-   British spelling, calls the interval narrow or wide, names the verifier in the headline or the
-   abstract, ranks the subject against an overlapping peer without saying so, or uses a hype word is
+   verifier, an unhedged comparison across overlapping intervals, a hype word or a model-developer
+   recommendation that strays into the Overseer is not worth losing a finding or the one paragraph of a
+   required slot: after the repair turn, text that still uses a British spelling, calls the interval
+   narrow or wide, names the verifier in the headline or the abstract, ranks the subject against an
+   overlapping peer without saying so, uses a hype word or recommends to model developers a change to a
+   rubric, the retrieval or the corpus is
    **kept**, its note is recorded without `Dropped`, and the document is stored as
    **CompletedWithWarnings**. The
    Executive Summary states the interval's span in a code-rendered sentence whatever the writer wrote
@@ -265,7 +294,29 @@ then the evidence."*
 4. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
    row is stored. A headline whose only fault is rule 12 is kept.
 
-The dialog and the Download Center show the validation notes, so a dropped item is never silent.
+The wizard's Reports step marks such a document *Completed with warnings*, and the notes are stored with
+it (`ValidationNotesJson`, returned by the detail endpoint, § 9), so a dropped item is never silent.
+
+**Writer rules added in format 8** (the R numbers of § 7), in the system prompt of every audience:
+
+- **Peer-aware triage (R13).** Each question line carries the peers' spread (§ 2). Where most peers
+  answered a question well and the subject missed it, that is evidence about the model; where every
+  model missed it, the writer suspects the chat, its tools, the corpus or the rubric first. The slots
+  `overseerChat`, `benchmarkSystem` and `whyItScored` and the leads are told to apply it, and strengths
+  and weaknesses prefer points where the subject differs from its peers.
+- **Model-developer recommendations (R12)** concern only the model — its knowledge, calibration,
+  instruction following, verbosity and tool-use habits — never the Overseer's prompts, tools, retrieval,
+  corpus, rubrics or tests. Rule 18 checks it.
+- **Paired results (R14).** Where a peer's `pairedExcludesZero` is true, the writer says that on the
+  same questions the higher-scoring model scored higher on average and that the paired interval excludes
+  zero, not adjusted for comparing several models, and never *not established* for that pair; *significant*
+  and its kin stay banned.
+- **Unavailable figures and fact keys (R15).** An unavailable figure is mentioned only where leaving it
+  out would mislead, in plain words and never estimated; a fact key never appears outside its token, and
+  the prose never describes the facts list or the fact sheet.
+- **Shared values (R16).** A value several peers share is stated once, for all of them.
+- The `modelResult` slot is told that code appends the interval sentence after it (§ 1) and not to
+  restate it (R11).
 
 ---
 
@@ -274,8 +325,8 @@ The dialog and the Download Center show the validation notes, so a dropped item 
 **Rules enforced by the server.**
 
 - **The model under report is refused as its own writer** — the same provider and model id (400).
-- **A writer from the subject's provider** triggers a warning that must be acknowledged: the dialog
-  shows it in amber, and **Generate** then asks a nested *Same-Provider Report Writer* confirmation
+- **A writer from the subject's provider** triggers a warning that must be acknowledged: the Reports
+  step shows it in amber, and **Generate** then asks a nested *Same-Provider Report Writer* confirmation
   (**Write Anyway**) on every write (§ 12) before sending `acknowledgeSameProvider`; without it the start
   answers 409 with the warning. The acknowledgment is stored on each document as
   `SameProviderAcknowledged` and is never remembered.
@@ -294,8 +345,8 @@ at **medium** thinking or reasoning effort. Use **high** only if its documents o
 or lose items to validation; never **low**, because the writer must follow a strict schema and token
 rules. Not an economy tier (Flash, Flash-Lite): the documents go to people outside the team, and one call
 per document keeps the cost small. The same recommendation is in `ai-benchmark.md` § 3 *Choosing grader
-models and effort*, the *How the graders work* guide, the dialog's writer info tip and the report-writer
-info tip of the run report's **AI Reports** tab.
+models and effort*, the *How the graders work* guide, the Reports step's writer info tip and the
+report-writer info tip of the run report's **AI Reports** tab.
 
 **Per document.** The two documents a run or a pack writes most often ask different things of the
 writer, and each can be written by a different model:
@@ -369,7 +420,11 @@ lists only where no comparison filter applies. The backfill is idempotent. Those
 rows** — their peers' fingerprints were never stored — so they are never flagged *Comparison changed*.
 
 There is **no foreign key to runs**: deleting a run keeps its documents. Deleting a document cascades to
-its child rows.
+its child rows and removes its chart folder (§ 13).
+
+A document's **chart images are not in the row**. They are PNG files in a folder of their own on disk
+(§ 13), the only part of a document that is not immutable: they can be added, replaced or removed at
+any time without touching the row.
 
 ---
 
@@ -416,8 +471,12 @@ a span of 9 points, and rests on 4 of 4 questions with a scored answer."* from t
 reliability paragraph already places `{{quality.interval}}`, prints nothing there.
 
 **Peer naming** is *Named* or *Anonymized*. Anonymized prints peers as *Model A*, *Model B*…, removes the
-provider column, and replaces the peers' model ids and providers in every table. The subject is always
-named.
+provider column, and replaces the peers' model ids and providers in every table. A grader whose provider
+is withheld (a peer's provider that is not the subject's, as in *Evaluation terms*, § 1) reads *a model
+from a withheld provider* in place of its name and model id, in *Setup and method*, the *Reproducibility
+appendix* and the full question details. Named prints the peers' names wherever a fact states them by
+letter — the interval-overlap figure (*"overlaps every peer's"*) and *Judge-dependent pairs*. The subject
+is always named.
 
 The Report for AI Researchers and Developers renders at any level with either naming. The Executive
 Summary is **offered** at Summary and Full only (`BenchmarkReportPackRenderer.AllowedDisclosures`, which
@@ -434,9 +493,10 @@ Why provider copies default to Summary with anonymized peers is recorded in `ai-
 
 Every download renders the stored row at the chosen disclosure and peer naming with
 `BenchmarkReportPackRenderer`, a pure static renderer. `BenchmarkReportRenderService` loads the row and
-calls it; its constructor takes only the DbContext and a logger, and the documents controller's
-constructor takes only that service. Architecture tests pin both, so no model client, clock or
-configuration can reach the render path.
+calls it; its constructor takes only the DbContext, the chart store (§ 13) and a logger, and the
+documents controller's constructor takes only that service. Architecture tests pin both, so no model
+client, clock or configuration can reach the render path; the chart store reads its one setting,
+`ChartsDataLocation`, when it is created, and holds no model client.
 
 The guarantees:
 
@@ -459,7 +519,56 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 7** (the current one, 2026-09-29) makes a comparison document say how the model compares
+**Format version 8** (the current one, 2026-09-30) comes from a review of the first comparison
+documents, and adds charts to the PDF and Word copies (§ 13). It changes no score, index, grading
+prompt, comparability key or `HarnessVersion`: the report writer is not part of the graded instrument,
+and no comparability code reads `WriterPromptSha256` or the format and layout versions. Stored documents
+re-render with the new renderer on their next download; the prompt changes reach only documents written
+from now on.
+
+- **Significance, once (R1)**: one document-worded sentence (§ 2), in the Executive Summary's *How
+  reliable this result is* and the researcher report's *Quality* block; the *Significance* line of
+  *Threats to validity* is gone, and the comparison's *Instead* instruction is never printed.
+- **Named peers (R2)**: a Named copy names the peers in the interval-overlap figure and in *Judge-dependent
+  pairs* instead of giving their letters (§ 6).
+- **Whole-number differences (R3)**: every *Difference* — dimension, band and question — is the
+  difference of the two whole numbers printed beside it (§ 2).
+- **Note heading (R4)**: *"Questions more than 15 points below the peer mean, or with a critical error"*.
+- **Evidence lines (R5)**: at most six questions each, weakest or strongest first, then *"and N more"*
+  (§ 1).
+- **Cover (R6)**: with peers, the PDF and Word cover's subject line reads *"{Suite} · run #68 · compared
+  with 4 models"* (*group #N* for a group subject), and its facts table replaces the *Peers* row with
+  *Compared with* — the peers' labels and *(4 models)* in a Named copy, *"4 models (A to D), identities
+  withheld"* in an Anonymized one — and *Pricing basis*. The Markdown front matter lists *Compared with*
+  and *Pricing basis* in place of *Peers*. A stand-alone document's cover is unchanged (§ 8).
+- **File names (R7)**: `vs-<N>-models_` after `run-<id>_`, or first for a group subject, when the
+  document has peers (§ 8).
+- **Fact sheet in Markdown only (R8)**: the PDF and Word copies of the Internal Improvement Brief end
+  section 6 with *"The fact sheet is in the Markdown copy of this document."*
+  (`BenchmarkReportRenderOptions.IncludeFactSheet = false` for native renders); the Markdown copy keeps
+  the JSON.
+- **No Rank line (R9)**: the Executive Summary's separate *Rank* line of format 7 is gone; the rank is
+  on the *Intelligence* line.
+- **How it compares (R10)**: the table gains a *Critical errors* column and is followed by a compact
+  *Dimensions* table (subject, peer mean, difference); the Executive Summary's items no longer print
+  *(both graders agreed)* (§ 2).
+- **Internal Brief figures (R11)**: section 3 prints the interval sentence after *Key figures*.
+- **Paired results (R14)**: the `peer.X.pairedExcludesZero` fact and the researcher report's sentence for
+  each peer whose paired interval excludes zero (§ 2); validator rule 16 accepts the paired result for
+  that peer (§ 3).
+- **Withheld graders (R18)**: in an Anonymized copy a grader whose provider is withheld reads *a model
+  from a withheld provider* (§ 6).
+- **New facts**: `peer.X.pairedExcludesZero`, `comparison.peerRuns`, and the per-question `peerMin`,
+  `peerMax` and `peersAbove` (§ 2).
+- **Writer prompt**: the per-question peer spread, the peer-aware triage rule and rules R12 to R16 (§ 3);
+  validator rule 18, a warning, and the parser's `KnownSlots` gain `comparison` and `limitations`.
+- **Charts**: a `[[figure:<key>]]` marker at each anchor where the render is given a chart (§ 13), drawn
+  by *PDF layout 3* and *Word layout 2* (§ 8).
+
+A document stored under format 7 or earlier renders with every change above that needs no new fact;
+without `pairedExcludesZero` it prints no paired-result sentence, and its prose stays as it was written.
+
+**Format version 7** (2026-09-29) makes a comparison document say how the model compares
 with its peers, and gives the writer the peers' own figures to say it with. It changes no score, index,
 grading prompt, comparability key or `HarnessVersion`.
 
@@ -644,14 +753,20 @@ from the fixture's single-run subject. To regenerate every golden after an inten
 | `Benchmark:ReportPack:MaxOutputTokens` | 16000 | The writer call's output limit |
 | `Benchmark:ReportPack:AnswerExcerptChars` | 600 | The length answer excerpts are cut to in `ContentJson` |
 
-The excerpt length used is stored on each row, so changing the setting never changes a re-render.
+The excerpt length used is stored on each row, so changing the setting never changes a re-render. The
+third setting of the section, `Benchmark:ReportPack:ChartsDataLocation`, is not a generation setting: it
+says where chart images are stored (§ 13).
 
 ---
 
 ## 8. The Download Center
 
-One dialog, reachable from the run report dialog's **Downloads** button and from the Report Pack dialog,
-packages documents and run files for download.
+One panel, `app-download-center-panel` (`download-center/download-center-panel.component.*`), packages
+documents and run files for download. It is shown in two places: as a dialog —
+`app-benchmark-download-center`, a thin wrapper around the panel, reached from the run report dialog's
+**Downloads** button and from the Model Comparison launcher's **Open Download Center** (§ 12) — and,
+placed directly, as step 4 of the Model Comparison wizard, *Documents*, where it also manages the
+comparison's charts (§ 13).
 
 | Package | Contents | Disclosure | Peers | Formats |
 |---|---|---|---|---|
@@ -664,11 +779,36 @@ Opened on a run, the dialog lists every document whose subject includes the run,
 run-completion documents (§ 11) appear under both packages beside any Report Pack documents about it;
 while they are still being written, a notice says so and the list reloads when they are done (§ 11).
 
-Opened on a list of documents (`DownloadCenterDocumentsContext`), the dialog may take a `title` and a
-`subtitle` in place of *Downloads* and the document count. The documents library (§ 12) passes the title
-*Comparison reports* and the subtitle *"N documents of the comparison of M models"* (a comparison's
-documents) or *"N comparison report documents"* (the launcher's library); without them the current
-subtitle stands. Packages, disclosure levels, naming, formats and the ZIP are the same either way.
+Opened on a list of documents (`DownloadCenterDocumentsContext`, by id) or on a library
+(`DownloadCenterLibraryContext`), the panel may take a `title` and a `subtitle` in place of its own. A
+library context lists with one request: `scope` is `{ kind: 'comparison', entryKeys }` (this
+comparison's Report Pack documents, `comparison=<entry keys>&origin=reportPack`, § 9) or `{ kind: 'all' }`
+(every Report Pack document, `origin=reportPack&take=500`), with the reports of their subjects' runs, and
+`preselect` is `'all'` (every row starts as the package chooses it) or `'none'` (nothing starts chosen).
+The launcher opens it on `all` with nothing preselected and the title *Comparison reports*; the wizard's
+step 4 shows `comparison` with every row preselected and the title *Documents of this comparison*.
+Packages, disclosure levels, naming, formats and the ZIP are the same in every context.
+
+**The documents table** uses the shared data-table layer (`TableState`, `app-sort-header`,
+`app-table-pager`; the `frontend_ui_controls` skill § 8). Its columns are *Include*, *Created (UTC)*,
+*Subject* (with the suite on a second line), *Document* (with the *Run changed since this document was
+written* and *Comparison changed* tags in words), *Sharing*, *Disclosure*, *Names*, *Formats*, *Charts*
+(in the wizard only, § 13) and *Actions*. *Created* and *Document* sort; a filter row filters *Subject*
+by text and *Document* and, when there are several, *Suite* by value, with *Clear filters*. Pagers sit
+above and below the table, 10 rows to a page. Selection is by row and survives paging: a selection line
+reads *N selected — M not on this page*, with **Show selected only**, **Clear selection** and **Select the
+N shown**; there is no select-all in the header. Row actions are icon-only:
+
+- **View** opens the in-app PDF viewer: a Report Pack or run-completion document at the highest
+  disclosure it allows, the others offered as disclosure tabs with the per-document disclosure guide,
+  and, when it has peers, a second *Peer names* row (*Named*, *Anonymized*) opening at *Named*; a run
+  report as its PDF.
+- **Delete** (Report Pack documents only; a run's own documents are deleted from its run report) asks a
+  nested confirmation, then moves focus to the next row, else the previous, else the *Documents* heading.
+- **More actions**, in the wizard only, holds *Update charts* and *Remove charts* (§ 13).
+
+The panel is an inline-size container: the package column sits beside the table from 48rem of its own
+width, and below 64rem each row becomes a card of labeled cells.
 
 Each row offers its formats PDF first, then Word: pack documents and the run report PDF, Word, Markdown
 and HTML; the tool-call log PDF, Word and Markdown; diagnostics PDF, Word and Text. The choices are
@@ -690,9 +830,10 @@ with reduced motion the ring stands still.
 **File names.** A pack document at Full, and every internal-only file (run report, tool-call log,
 diagnostics), gets an `_INTERNAL` file-name suffix. A document whose subject is one run (`run:<digits>`,
 every run-completion document) is named from the run number first, with a `run-<digits>_` prefix, in its
-PDF, Word and Download Center names alike — `run-73_…_full_named_INTERNAL.pdf`; the client's
-`reportDocumentFileStem` and the server's `BenchmarkPdfFileNames.ForReportDocument` match the same key.
-A group subject has no prefix. The run report and tool-call log are fetched from the
+PDF, Word and Download Center names alike — `run-73_…_full_named_INTERNAL.pdf`. A document with peers
+adds `vs-<N>-models_`, N being its peer count, after the run prefix, or first for a group subject —
+`run-68_vs-4-models_…_summary_named.pdf`. The client's `reportDocumentFileStem` and the server's
+`BenchmarkPdfFileNames.ForReportDocument` build the same name. A group subject has no run prefix. The run report and tool-call log are fetched from the
 existing run endpoints and keep the server's file name; their PDFs and Word files are named by the server,
 with `_INTERNAL.pdf` and `_INTERNAL.docx`. Run diagnostics are a point-in-time capture, taken **once per
 download**: the `.txt`, the `.pdf` and the `.docx` of one download hold the same text and the same capture
@@ -727,18 +868,23 @@ still reaches no model client, clock or configuration, and the architecture pins
   drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
   never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
 - **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex of the Markdown's SHA-256} · PDF layout 2*, and a classification banner — amber
+  *Source {first 16 hex of the source hash} · PDF layout 3*, and a classification banner — amber
   *Confidential …* for a provider copy (the audience-aware stamp of § 6), red *INTERNAL …* for everything
-  else, the text saying what the color says. A table of contents follows when a document other than the
+  else, the text saying what the color says. A report document with peers has the subject line
+  *"{Suite} · run #68 · compared with 4 models"* (*group #N* for a group subject); a stand-alone one
+  keeps the suite and its runs. A table of contents follows when a document other than the
   Executive Summary has four or more `##` sections. A report document's facts table reads *Document ID*,
-  *Disclosure*, *Peers* (the count and how they are named, or *none (stand-alone report)*), *Suite*,
-  *Questions*, *Run* or *Runs*, then the creation time, *Generated format* (the format version the
+  *Disclosure*, then, with peers, *Compared with* (Named: the peers' labels in letter order and the count,
+  *"… and … (2 models)"*; Anonymized: *4 models (A to D), identities withheld*) and *Pricing basis*,
+  or, stand-alone, *Peers* (*none (stand-alone report)*), then *Suite*, *Questions*, *Run* or *Runs*, the
+  creation time, *Generated format* (the format version the
   document was generated under), *Writer* (display name, then provider, model id and thinking level, each
   empty part left out) and *Provenance* (the figures computed by Overseer, the prose by the writer and
   checked automatically for structure, permitted figures and references, word limits and disclosure,
   which does not verify its interpretations); it has no *Audience* row, since the document kind says it.
   The Markdown's front matter — the stamp and the *Date*, *Suite*, *Questions*, *Runs* and *Peers* list
-  under the title — and its closing footer — the document ID, version, writer and provenance lines — are
+  under the title, *Compared with* and *Pricing basis* in place of *Peers* when there are peers — and its
+  closing footer — the document ID, version, writer and provenance lines — are
   left out of the PDF and Word files (`BenchmarkReportRenderOptions.IncludeFrontMatter = false` and
   `IncludeDocumentFooter = false`), because the cover prints the same.
 - **Every page**: from page 2 a running header with the emblem, *GnollBench · {kind}* and the subject;
@@ -753,6 +899,16 @@ still reaches no model client, clock or configuration, and the architecture pins
   width, keeps those widths against the left margin instead of stretching across the page. Code blocks
   and the diagnostics text wrap anywhere. *PDF layout 2* (2026-09-29) brought the unsplit rows, the narrow
   tables, the placeholder and the new cover table.
+- **Figures** (*PDF layout 3*, 2026-09-30): a paragraph that is exactly a figure marker,
+  `[[figure:<key>]]`, is drawn as the chart given for that key (§ 13), and prints nothing when there is
+  none. The image is centered, as wide as the text column unless its height would pass 60 % of the page's
+  content height, in which case it is scaled down to that height. It is tagged `SemanticFigure` with the
+  chart's alternative text (its title, else *Chart*, when the text is empty), and the caption below it,
+  tagged `SemanticCaption`, reads **Figure N.** *Title* — caption, in the table text size. Image and
+  caption are kept on one page, and figures are numbered in order of appearance.
+- **Source hash**: SHA-256 over the UTF-8 Markdown followed by each drawn chart's SHA-256 (lowercase hex)
+  in figure order, so a changed chart changes the hash; with no chart drawn it equals the Markdown's own
+  hash, as before layout 3. The cover and the footer print its first 16 hex characters.
 - **Limits**: a source over 6,000,000 characters is refused with 413 and a message to download the
   Markdown instead; a render stops when the request is canceled. The diagnostics text is posted for
   rendering and is **never stored or logged**.
@@ -778,9 +934,9 @@ never by string templating. It is static and stateless like the PDF renderer, so
   that do not split across pages, numeric columns right-aligned, and column widths from the
   same weights the PDF uses.
 - **Page 1** mirrors the PDF: the wide logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex} · Word layout 1* and the classification banner; the facts table and the banner
-  text come from the same document information as the PDF's, so they changed with PDF layout 2 while
-  the Word layout number did not. The table of contents follows
+  *Source {first 16 hex} · Word layout 2* and the classification banner; the subject line, the facts table
+  and the banner text come from the same document information as the PDF's, so they change with the
+  PDF's cover. The source hash follows the PDF's rule, charts included. The table of contents follows
   under the PDF's rule, as a real `TOC` field pre-filled with links to the `##` sections and marked for
   Word to refresh (page numbers included) when the file is opened; Word may ask once to update fields.
 - **Every page**: from page 2 a header with the emblem, *GnollBench · {kind}* and the subject; a footer
@@ -791,7 +947,13 @@ never by string templating. It is static and stateless like the PDF renderer, so
   (ECMA-376 obfuscated font parts, not subset), so the document looks and edits the same without them
   installed; about 1 MB per file. A reader whose Word blocks embedded fonts sees Calibri and Consolas.
 - **Images**: the two logos are PNG (`Overseer/Resources/Word/`), because WebP pictures do not open in
-  Word 2019, Word 2021 or LibreOffice.
+  Word 2019, Word 2021 or LibreOffice. A Markdown image, `![alt](url)`, still prints as `[alt]`.
+- **Figures** (*Word layout 2*, 2026-09-30): a figure marker with a chart (§ 13) becomes an inline picture
+  in a paragraph of its own, the PNG in its own image part, as wide as the text column with its height
+  capped as in the PDF. Its `DocProperties` carry an id unique in the document from 3 (1 and 2 are the
+  logos), the name *Figure N* and the chart's alternative text as the description, which Word shows as
+  the picture's alt text. The picture is centered and kept with the caption paragraph below it, which
+  reads, as in the PDF, **Figure N.** *Title* — caption.
 - **Properties**: title, author *GnollBench (Overseer)*, subject, keywords, language `en-US` and the
   stored creation date (never the request time), plus the custom properties *GnollBench Classification*
   and *GnollBench Source SHA-256*. The file opens without *Compatibility Mode*.
@@ -865,7 +1027,9 @@ The start's refusals, in the order they are checked:
 - `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&take=`: List documents,
   newest first, without rendered text, each with `runChangedSinceGeneration`,
   `peersChangedSinceGeneration`, `comparisonKey`, `comparisonEntryCount` (the subject and its peers; a
-  group counts once), `peerCount` and `pricingBasis` (`AsRun` or `Current`). Every filter is optional:
+  group counts once), `peerCount`, `pricingBasis` (`AsRun` or `Current`), `peerLetters` (each peer's entry
+  key and its letter, from the fact sheet) and, from the chart manifest only (§ 13), `chartCount`,
+  `chartFigureKeys` and `chartSettingsHash`. Every filter is optional:
   - `runId` matches a run of the **subject** only, never a peer's run (§ 5);
   - `comparison=run:1,run:2,group:4` takes the comparison's entry keys, in any order, and matches the
     documents whose `ComparisonKey` they hash to; any other form answers 400 *The comparison must be a
@@ -879,21 +1043,33 @@ The start's refusals, in the order they are checked:
   The rendered Markdown (`text/markdown; charset=utf-8`), deterministic, with no model call; 400 for a
   refused combination.
 - `GET /api/admin/benchmark/report-documents/{id}/render/pdf?disclosure=&peers=&paper=a4|letter&inline=`: The same
-  document as a PDF (`application/pdf`), named `[run-<id>_]<title>_<disclosure>_<peers>[_INTERNAL].pdf`
-  (the prefix for a `run:<id>` subject, § 8); the same refusals as `render`, 400 for another `paper`,
-  413 over the size limit. A Report for AI Researchers and Developers is named
-  `[run-<id>_]<title without its "— <document name>" ending>_Researcher_Report_<disclosure>_<peers>[_INTERNAL].pdf`,
+  document as a PDF (`application/pdf`), named
+  `[run-<id>_][vs-<N>-models_]<title>_<disclosure>_<peers>[_INTERNAL].pdf` (the prefixes for a `run:<id>`
+  subject and for a document with peers, § 8), with the document's charts of the requested naming drawn
+  in it (§ 13); the same refusals as `render`, 400 for another `paper`, 413 over the size limit. A Report
+  for AI Researchers and Developers is named
+  `[run-<id>_][vs-<N>-models_]<title without its "— <document name>" ending>_Researcher_Report_<disclosure>_<peers>[_INTERNAL].pdf`,
   whether the stored title ends in the current name or the legacy *Technical Report*. With
   `inline=true` the response carries `Content-Disposition: inline` with the same file name, so a
   browser tab shows the PDF rather than saving it; the PDF viewer's *Open in new tab* uses it (§ 11).
 - `GET /api/admin/benchmark/report-documents/{id}/render/docx?disclosure=&peers=&paper=a4|letter`: The
   same document as Word
   (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`), named
-  `[run-<id>_]<title>_<disclosure>_<peers>[_INTERNAL].docx` (with `_Researcher_Report` as for the PDF),
-  with the PDF endpoint's refusals.
-- `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its run rows cascade. Deleting
-  a run-completion document also settles its run's status (§ 11); unlike the run endpoint above, this one
-  does not refuse while the run's documents are being written.
+  `[run-<id>_][vs-<N>-models_]<title>_<disclosure>_<peers>[_INTERNAL].docx` (with `_Researcher_Report` as
+  for the PDF), with its charts drawn as for the PDF and the PDF endpoint's refusals.
+- `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its run rows cascade, and its
+  chart folder is removed (a folder that cannot be removed is logged and never fails the delete).
+  Deleting a run-completion document also settles its run's status (§ 11); unlike the run endpoint
+  above, this one does not refuse while the run's documents are being written.
+- `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace the document's whole chart set (§ 13).
+  Body `{ charts: [{ figureKey, naming, title, caption, altText, settingsHash, pngBase64 }] }`, at most
+  40,000,000 bytes (`[RequestSizeLimit]`). 200 `{ documentId, chartCount, figureKeys, settingsHash }`;
+  400 `{ error }` for a stand-alone document (*"This document has no peers; charts are drawn only for
+  documents that compare models."*), when chart storage is not configured (*"Chart storage is not
+  configured. Set Benchmark:ReportPack:ChartsDataLocation to an absolute folder."*) and for any chart the
+  validation refuses; 404 for an unknown document.
+- `DELETE /api/admin/benchmark/report-documents/{id}/charts`: Remove the document's charts. 204, also
+  when there were none or chart storage is not configured; 404 for an unknown document.
 
 ### Run files as PDF and Word (`AdminBenchmarkController`)
 
@@ -919,7 +1095,8 @@ The start's refusals, in the order they are checked:
 - It never reads the live suite: question and rubric text come from the subject's answer rows.
 - It never re-writes a stored document. A changed run is flagged, not re-generated; generate a new pack
   if the old one is out of date. A run's run-completion documents are written again only after they are
-  deleted (§ 11).
+  deleted (§ 11). A document's charts can be replaced or removed at any time (§ 13), which changes its
+  PDF and Word copies but not the stored row, and involves no model call.
 
 ---
 
@@ -1095,73 +1272,241 @@ wrote the deleted document, so a rewrite starts from a deliberate choice.
 
 ---
 
-## 12. The Report Pack Dialog and the Comparison Reports Library
+## 12. The Comparison Wizard's Reports and Documents Steps, and the Comparison Reports Launcher
 
-**The documents library.** One component, `app-report-document-library`
-(`report-pack/report-document-library.component.*`), lists stored documents wherever they are shown
-outside a run: the Report Pack dialog and the Model Comparison launcher. It owns loading, selection,
-viewing, downloading and deleting, and both hosts only place it.
+The Model Comparison wizard has four steps: *1. Sources*, *2. Charts & table*, *3. Reports* (*"Write AI
+reports on one model of this comparison"*) and *4. Documents* (*"View, chart, download and delete this
+comparison's documents"*). Steps 3 and 4 are reachable once a comparison exists; step 3 also needs an
+entry that is not Excluded, and otherwise is `aria-disabled` with a visually hidden reason, and **Next**
+skips it. Next runs 2 → 3 → 4, and closes the wizard on step 4. Step 2's former **Reports** button and
+the Report Pack dialog it opened are gone; **About** and **Recompute** stay on step 2.
 
-- **Scope.** `{ kind: 'comparison', entryKeys }` lists this comparison's Report Pack documents
-  (`comparison=<entry keys>&origin=reportPack`, § 9); `{ kind: 'all' }` lists every Report Pack document
-  (`origin=reportPack&take=500`). Run-completion documents stay in their run's report. A document belongs
-  to a comparison when the comparison has the same set of entries (§ 5), so changing *Prices* keeps the
-  list, and adding or removing a model empties it.
-- **Columns.** A select column; *Created (UTC)*; *Subject*, with *Run changed since this document was
-  written* and *Comparison changed* tags in words; *Document*; *Compared with* in the `all` scope only
-  (*"4 other models"* and the suite on a second line); *Writer*; *Status* (*Written*, *Written with
-  warnings*); *Cost*; *Actions*. *Created*, *Subject*, *Document*, *Writer*, *Status* and *Cost* sort; a
-  filter row filters *Subject* by text, *Document* and, in the `all` scope, *Suite* by exact value. The
-  table uses the shared `TableState`, with pagers above and below the scrolling wrapper and a sticky
-  header. The component is an inline-size container: below 44rem of its own width, *Writer* and *Cost*
-  move into a second line of the *Document* cell instead of scrolling sideways.
-- **Selection and downloading.** Selection is by id, with *N selected — M not on this page*, **Show
-  selected only** and **Clear Selection**, and no select-all. **Download…** opens the Download Center
-  (§ 8) on the selection, or with none on every document of the filtered view, and says so in its
-  accessible name (*"Download all 6 documents shown"*).
-- **Row actions.** **View** opens the in-app PDF viewer at the document's highest allowed disclosure,
-  the others offered as disclosure tabs with the per-document disclosure guide. A document with peers
-  gets a second segmented row, *Peer names* (*Named*, *Anonymized*), opening at *Named*, and the guide's
-  note *"Switch Peer names to see the copy a provider would receive."*; *Open in new tab* and *Download
-  PDF* use the chosen pair. **Download** opens the Download Center on that document, and **Delete** asks
-  the delete confirmation first.
-- **Ids** derive from the host's `idPrefix` (`rp` in the dialog, `mcl` on the launcher), so both can live
-  in one page: `<prefix>-doc-<id>-view|download|delete|select`. The nested viewer, Download Center and
-  confirmation stop their own `close` and `cancel` events, and focus returns to the button that opened
-  them.
+Steps 3 and 4 are mounted on their first visit and afterwards hidden, never destroyed, when another step
+is active, so step 3's form, its running job and its polling, and step 4's table page, filters and
+selection survive a trip back to step 2. That trip is the loop the steps are built for: set the charts
+on step 2, generate on step 3, view on step 4, go back to step 2 to change them, then **Update charts…**
+on step 4 and view again (§ 13). While charts are being drawn and uploaded, the wizard's close controls
+are disabled and Escape is refused, as during an export.
 
-**The Report Pack dialog** (`benchmark-report-pack-dialog`) uses `app-run-report-frame` in its
-**sidebar** layout: a resizable sidebar with the form, then the main area with the documents, in reading
-and tab order. From 60rem of body width the sidebar is 20–32rem wide, at most 40 % of the body, 24rem by
-default, set by the `app-pane-resizer` between the two (drag, or Left and Right on it); the width is kept
-under `sidebarWidth` in `localStorage['overseer.benchmark.reportPack']`. Below 60rem the two stack, the
-sidebar first. Each column scrolls on its own.
+**Step 3, Reports** (`app-report-pack-panel`, `report-pack/report-pack-panel.component.*`), headed
+*Reports*, uses `app-run-report-frame` in its **sidebar** layout: a resizable sidebar with the form, then
+the main area with the job, in reading and tab order. From 60rem of body width the sidebar is 20–32rem
+wide, at most 40 % of the body, 24rem by default, set by the `app-pane-resizer` between the two (drag, or
+Left and Right on it); the width is kept under `sidebarWidth` in
+`localStorage['overseer.benchmark.reportPack']`. Below 60rem the two stack, the sidebar first. Each
+column scrolls on its own.
 
-- **Sidebar**: *Subject*; *Documents* (the three checkbox cards); *Report writer*, with the dialog-mode
-  info tip *Choosing a report writer* (`run-ai-reports/report-writer-advice.ts`, shared with the run
-  report's **AI Reports** tab, with an Internal Brief entry) and the *How the graders work* link; the
-  refusal or the amber same-provider warning; the *Estimated cost* panel (`.gh-estimate-panel`, shared
-  with the AI Reports tab); **Generate**.
+- **Sidebar**, *New report pack*: *Subject*; *Documents* (the three checkboxes); *Charts in PDF and
+  Word*, the chart picker (§ 13) with, on screen, the print advisory when step 2's theme would print
+  badly and, while the `report-charts-location-missing` alert is present, *"Chart storage is not
+  configured; documents will be written without charts."*; *Report writer*, with the dialog-mode info tip
+  *Choosing a report writer* (`run-ai-reports/report-writer-advice.ts`, shared with the run report's **AI
+  Reports** tab, with an Internal Brief entry) and the *How the graders work* link; the refusal or the
+  amber same-provider warning; the *Estimated cost* panel (`.gh-estimate-panel`, shared with the AI
+  Reports tab); **Generate**.
 - **Same-provider writer**: Generate opens a nested *Same-Provider Report Writer* confirmation, **Write
   Anyway**, on every write, and only then sends `acknowledgeSameProvider: true`. Nothing is remembered.
-- **Main area**: *Documents of this comparison*, a one-line scope, the job card while a job exists, a
-  *Downloads* notice with **Open Download Center** once the comparison has a document, and the library in
-  the comparison scope. The job card shows the stage rail (*Queued*, *Preparing*, one stage per document,
-  *Done*) and a stat strip (elapsed, writer, model calls, tokens, cost, estimate), and collapses when the
-  job finishes to a one-line summary with **Dismiss**, the per-document table and the log in a closed
-  disclosure; the library then reloads.
-- There is no Markdown preview: documents are read in the PDF viewer.
+- **Main area**, *Report pack progress*: a status line that changes with the job's phase; while a job
+  runs, the stage rail (*Queued*, *Preparing*, one stage per document, *Done*); a stat strip (elapsed,
+  writer, model calls, tokens, cost, estimate) that stays after the job finishes; one row per document
+  with its status chip, a live duration, its model calls and a charts cell — *Charts: attaching…*,
+  *Charts: 3*, *Charts failed — retry* (a button that tries again) or *Charts: none*; and *Log and
+  diagnostics*, a disclosure with the job log and icon-only **Copy diagnostics** and **Download
+  diagnostics** (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`, LF line endings, never naming
+  the user who started the job). Elapsed time ticks every second on the server's clock
+  (`serverTimeUtc` of the job view, the browser's clock as a fallback). Once the job finishes, a summary
+  with **See the documents**, which switches to step 4, and **Dismiss** sits above the stat strip.
+- Polling continues while the step is hidden and stops when the wizard is destroyed. There is no
+  Markdown preview: documents are read in the PDF viewer, from step 4.
 
-The dialog is opened with a `ReportPackContext` whose `entryKeys` are every entry of the comparison,
-Excluded ones included, because the Report Pack request sends every entry's run and group ids and the
-stored key hashes those.
+The panel is given a `ReportPackContext` whose `entryKeys` are every entry of the comparison, Excluded
+ones included, because the Report Pack request sends every entry's run and group ids and the stored key
+hashes those.
+
+**Step 4, Documents** is the Download Center panel (§ 8) placed directly in the wizard, on a library
+context of this comparison's Report Pack documents (`comparison=<entry keys>&origin=reportPack`, § 9),
+titled *Documents of this comparison*, with **every document preselected**. Run-completion documents stay
+in their run's report. A document belongs to a comparison when the comparison has the same set of
+entries (§ 5), so changing *Prices* keeps the list, and adding or removing a model empties it. The wizard
+lends the panel its chart actions (§ 13): the *Charts* column, **Update charts…** and each row's **More
+actions**. The list reloads when a job finishes and when a document is charted.
 
 **The Model Comparison launcher** (Admin → AI Benchmark → Model Comparison) leads with the action: a hero
 card with *Cross-model comparison*, its lead and **Open Comparison Wizard** (the page's only `.btn-gh`,
-*compass* glyph), then the *Last comparison* read-out, then *How the comparison works* — the two wizard
+*compass* glyph), then the *Last comparison* read-out, then *How the comparison works* — the four wizard
 steps and the like-for-like note — in a disclosure that is open on the first visit and afterwards as the
 operator left it (`localStorage['overseer.benchmark.modelComparison.launcher']`). Below it, **Comparison
-reports** is the library in the `all` scope. It loads when the tab is shown, not with the page, and again
-each time the tab is shown or the wizard closes, since the wizard may have written documents. The library
-is a list of documents, not a comparison control: the launcher still duplicates none of the wizard's
-controls.
+reports** (`app-report-documents-launcher`, `report-pack/report-documents-launcher.component.*`) sums up
+every Report Pack document in one line — *"5 report documents from 2 comparisons · the latest written
+…"*, or *"No reports yet. Reports written on the comparison wizard's Reports step appear here."* — with an
+*N changed since written* tag when a subject's or a peer's run changed, and a click-mode info tip. Its one
+`.btn-ghost` **Open Download Center** (*file-with-arrow*) is `aria-disabled` while there is nothing to
+open, the summary line saying why, and opens the Download Center dialog on every Report Pack document
+(`{ kind: 'all' }`) with **nothing preselected** and no chart actions. The summary loads when the tab is
+shown, not with the page, and again each time the tab is shown, the wizard closes (it may have written
+documents), a document is deleted in the Download Center or the Download Center closes; focus then
+returns to the button. The launcher still duplicates none of the wizard's controls.
+
+The run report's **Downloads** also opens the Download Center dialog, on the run, without chart actions.
+Both places, like step 4, show and download the charts a document already has in its PDF and Word
+copies; only the wizard can change them.
+
+---
+
+## 13. Charts in PDF and Word
+
+A comparison document's PDF and Word copies can carry the Model Comparison's own charts — the figures of
+step 2, drawn for print. **Charts are drawn in the browser, from step 2's settings, and stored on the
+server as PNG files beside the document; rendering only places them.** No model call is involved, the
+stored document row never changes, and the Markdown and HTML copies never carry a chart. Only a document
+with peers can have charts; a stand-alone document (every run-completion document) has none.
+
+### The figures and where they go
+
+Seven figures can be chosen per document type (`BenchmarkReportChartPlacement`; the client's
+`REPORT_CHART_FIGURES`), in this order:
+
+| Key | Figure | Needs |
+|---|---|---|
+| `p1a-quality` | Intelligence | Two plotted models |
+| `p1b-speed` | Speed | Two plotted models |
+| `p1c-cost` | Cost | Two plotted models |
+| `p2-profile` | Model profiles | Three plotted models |
+| `s1-quality-speed` | Intelligence against speed | Two plotted models |
+| `s2-quality-cost` | Intelligence against cost | Two plotted models |
+| `s3-speed-cost` | Speed against cost | Two plotted models |
+
+| Document | Where the figures go |
+|---|---|
+| Executive Summary | All in *How it compares*, after the comparison and dimensions tables and before the writer's paragraph |
+| Report for AI Researchers and Developers | Intelligence at the end of *Results against peers → Quality*; Speed and Cost at the end of their blocks; Model profiles at the very end of *Results against peers*; the three trade-off charts after the *Speed and cost* table (and not at all when that section is absent) |
+| Internal Improvement Brief | All in section 3, after *Key figures* and the interval sentence |
+
+Several figures at one anchor appear in the order of the first table.
+
+**Markers.** The renderer writes a line `[[figure:<key>]]`, with a blank line before and after, at each
+anchor for each chart it is given (`BenchmarkReportRenderOptions.Charts`), and only for a document with
+peers. The PDF and Word renderers draw the chart there (§ 8: `SemanticFigure` with the alternative text
+and a `SemanticCaption` in the PDF, an inline picture with its description in Word, both captioned
+**Figure N.** *Title* — caption and numbered in order of appearance); a marker with no chart prints
+nothing. The Markdown and HTML downloads pass no charts, so they never carry a marker. The source hash of
+a PDF or Word copy covers its drawn charts (§ 8), and adding charts moved the layouts to **PDF layout 3**
+and **Word layout 2**.
+
+### Choosing charts: the picker and its defaults
+
+`app-report-chart-picker` is a table captioned *Charts in PDF and Word*: one row per figure, one column
+per document type (*Executive Summary*, *Report for AI Researchers and Developers*, *Internal Improvement
+Brief*), one checkbox per cell named *"Include Intelligence in the Executive Summary"* with the target
+section under it, and **All** / **None** per column. Only the columns of the document types checked under
+*Documents* are enabled. A figure the comparison cannot draw stays listed with `aria-disabled`
+checkboxes and its reason (*needs three or more models*).
+
+The defaults are the Executive Summary's Intelligence and Intelligence against cost; all seven for the
+Report for AI Researchers and Developers; and Intelligence, Speed and Cost for the Internal Improvement
+Brief. The last selection is remembered per browser in `localStorage['overseer.benchmark.reportCharts']`
+(version 1).
+
+### How a chart is drawn
+
+`composeReportChart` in the wizard composes one figure off-screen through the same export pipeline as
+step 2's downloads, at the document layout (`DOCUMENT_CHART_LAYOUT` in `report-pack/report-charts.ts`):
+1800 px wide, 1800 × 1125 for bars and scatters and 1800 × 1350 for the profile, text at 175 %, PNG —
+about 9 pt text and about 270 dpi at column width. Everything else is **step 2's active setting, used as
+is**: theme, background, font, weights, colors, border, logo, the per-family styles, Show, Highlight, the
+model order and the measures. A bar orientation of *Automatic* is resolved from the document layout's
+width, never from the chart on screen. Documents print on white paper, so when step 2 uses the dark
+theme, or a transparent background with light text, an **on-screen advisory** says so, beside the picker
+on step 3 and in the Update charts dialog; it changes nothing.
+
+Each chart carries a title (the figure's), a caption (its detail line, then *"Drawn from the comparison
+computed {time}."*) and alternative text (the title, then one clause per plotted model with its value and
+interval). `chartSettingsHash` is the SHA-256 of the canonical JSON of the figure style, the layout, Show,
+Highlight, the order, the measures, the pricing basis and the comparison's `computedAtUtc`; it is stored
+with the charts, so step 4 can tell charts drawn with the settings on screen from older ones.
+
+**Anonymized variants.** Every figure is drawn twice: **named**, as step 2 shows it, and, when the
+document has peer letters, **anonymized** (`anonymizeComparisonForSubject`,
+`model-comparison/report-chart-anonymize.ts`): the peers relabeled *Model A*… with the letters of **that
+document's** fact sheet (`peerLetters` in the document list), their provider and model id removed and
+drawn in the neutral gray, other free text naming a peer rewritten or dropped, entries without a letter
+dropped, and the subject unchanged and highlighted. An anonymized render draws only anonymized images;
+a missing variant is left out, never replaced by the other.
+
+**The publisher.** `ReportChartPublisher` composes and uploads one document at a time: every selected
+figure of the document's type, both variants, converted to base64 and sent as the whole set in one
+`PUT`. It records a failure per document and carries on, can be canceled after the document in flight,
+and stops once — reported once, not per document — when the server says chart storage is not configured.
+The wizard owns one publisher and queues step 3's and step 4's work through it.
+
+### When charts are attached
+
+- **While the wizard is open**, each document of a step-3 job is charted as soon as its row reaches
+  *Completed*, with step 3's selection for its type (none when that type's selection is empty). Its row
+  shows the progress (§ 12).
+- **Otherwise** — the wizard closed during the job, a document written before charts existed, or charts
+  to redraw after step 2 changed — step 4 shows *None* or *differs from step 2* and **Update charts…**
+  adds or redraws them.
+
+### Managing charts on step 4
+
+In the wizard only, the Download Center panel gains:
+
+- a **Charts** column: *None*, *3 · current* (drawn with the settings step 2 shows now, by
+  `chartSettingsHash`), or *3 · differs from step 2*, tagged `.gh-tag-changed`;
+- a toolbar **Update charts…** for the selected Report Pack documents, which opens a nested dialog with
+  the picker limited to their document types and prefilled from the figures they already have (else from
+  the remembered selection), the print advisory, and **Update** / **Cancel**. Progress shows in the
+  preparing overlay. A document without peers, written on another pricing basis than step 2 shows, or
+  written for another comparison is skipped and listed under *Not charted* with its reason. When chart
+  storage is not configured the overlay closes and a visible warning says so;
+- a per-row **More actions** popover (`.gh-action-popover`) with *Update charts* for that document and
+  *Remove charts*, each unavailable with its reason on a second line.
+
+Step 4 is opened from the wizard with all of the comparison's documents preselected, so **Update
+charts…** applies to all of them at once; the launcher's Download Center opens with nothing preselected
+and without chart actions (§ 12).
+
+### Storage on the server
+
+`Benchmark:ReportPack:ChartsDataLocation` names the folder, which must be an **absolute path**; it is
+read once, when the singleton `BenchmarkReportChartStore` is created, so a change needs a restart. There
+is no fallback. Empty, whitespace or a relative path means *not configured*: uploads are refused with
+*"Chart storage is not configured. Set Benchmark:ReportPack:ChartsDataLocation to an absolute folder."*,
+renders draw no charts, and `ConfigHealthService` raises the warning alert
+`report-charts-location-missing`, which the wizard's Reports step reads. The folder is created on the
+first write, never at startup.
+
+**Layout.** One folder per document, `<ChartsDataLocation>/<documentId>/`, holding `manifest.json` and one
+`<figureKey>.<named|anonymized>.png` per image; `<ChartsDataLocation>/.staging/<documentId>-<guid>/`
+exists only while a set is being written. The manifest is camelCase UTF-8 JSON without a BOM: `version`
+(1), `documentId`, `settingsHash`, `createdAtUtc` and `charts`, one entry per image with `figureKey`,
+`naming`, `file`, `sha256`, `widthPx`, `heightPx`, `title`, `caption` and `altText`. Every path is built
+from the numeric document id, a known figure key and a fixed naming word, and is checked to lie inside
+the folder.
+
+**Atomic replace.** A `PUT` replaces the document's whole set, all or nothing, under a per-document lock:
+the files and the manifest are written to a staging folder, the old folder is deleted, and the staging
+folder is moved into place in one `Directory.Move`. A render reads the manifest and skips, with a logged
+warning, an image that is missing or whose SHA-256 differs from the manifest; **a render never fails
+because of its charts**. The list and detail DTOs read `chartCount`, `chartFigureKeys` and
+`chartSettingsHash` from the manifest alone.
+
+**Upload limits** (`BenchmarkReportChartStore.ValidateCharts`; every chart is checked before anything is
+written): a known figure key; naming `named` or `anonymized`; no figure and naming twice; at least one
+and at most 16 charts; one settings hash of 64 hex characters for the whole set; alternative text
+present and at most 1,000 characters, a title of at most 200 and a caption of at most 500; valid base64
+(a `data:image/png;base64,` prefix is accepted) that decodes to a PNG — by its signature — of at most
+4 MB, whose IHDR width and height are each 320 to 4,096 pixels; and a request body of at most
+40,000,000 bytes. The endpoints are in § 9.
+
+**Deleting.** Deleting a Report Pack document deletes its chart folder; a failure is logged and never
+fails the delete. `DELETE …/charts` removes one document's charts. The Admin **Database** tab shows the
+folder's size (*Report Chart Files*) and has a **Clear Report Chart Files** action that deletes every
+chart image, keeping the documents (`POST /api/admin/maintenance/clear-report-charts`; see
+[`chat-data-retention.md`](chat-data-retention.md)).
+
+**Not in the database backup.** The chart folder is outside the database, so a database backup does not
+contain it. Losing it loses only images: the documents and their text are intact, their PDF and Word
+copies simply have no charts, and **Update charts…** on step 4 draws them again from the comparison, with
+no AI call.

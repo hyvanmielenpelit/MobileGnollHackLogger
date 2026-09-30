@@ -288,6 +288,8 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.IBenchmarkRunReportWri
 // opens its own scope per job.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRunReportDocumentService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportRenderService>();
+// Singleton: its per-document write locks must be shared by every request.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportChartStore>();
 // Benchmark PDFs: the free Community license, and the embedded fonts registered once at startup.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 Overseer.Services.Benchmarking.Pdf.BenchmarkPdfResources.EnsureRegistered();

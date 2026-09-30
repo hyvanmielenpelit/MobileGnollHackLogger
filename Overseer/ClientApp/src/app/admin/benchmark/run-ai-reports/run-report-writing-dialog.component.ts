@@ -29,7 +29,13 @@ import { downloadTextFile } from '../../../utils/download.util';
 import { formatThinkingLevel } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
-import { audienceLabel, formatCostUsd, formatElapsed, statusLabel } from '../report-pack/benchmark-report-pack-dialog.component';
+import {
+  audienceLabel,
+  documentChipClass,
+  formatCostUsd,
+  formatElapsed,
+  statusLabel
+} from '../report-pack/report-document-format';
 import {
   ClientPollError,
   ClientPollState,
@@ -121,19 +127,6 @@ export function describeBlockingJob(label: string): string {
     return run[2] ? `the reports of Run #${run[1]} (${run[2]})` : `the reports of Run #${run[1]}`;
   }
   return label;
-}
-
-/** The chip modifier of a document status; the word is always shown beside the color. */
-export function documentChipClass(status: string): string {
-  switch (status) {
-    case 'Writing': return 'job-status-chip status-generating';
-    case 'Repairing': return 'job-status-chip status-repairing';
-    case 'Completed': return 'job-status-chip status-completed';
-    case 'CompletedWithWarnings': return 'job-status-chip status-partial';
-    case 'Failed': return 'job-status-chip status-failed';
-    case 'Canceled': return 'job-status-chip status-canceled';
-    default: return 'job-status-chip status-pending';
-  }
 }
 
 /** The `{ error }` or plain-string message of a refused request, or null. */

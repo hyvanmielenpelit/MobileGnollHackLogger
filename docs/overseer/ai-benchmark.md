@@ -25,7 +25,7 @@ The benchmark framework consists of:
 - **Provider Error Isolation**: Distinguishes between genuine model errors (wrong answers, hallucinations) and transient API infrastructure failures (HTTP 429 rate limits, 503 service unavailable, 529 overload). Provider errors are excluded from scores and denominators.
 - **Configurable Scoring Profiles**: Entities defining weights, level-to-score mappings, critical error ceilings, speed target latencies, decay factors, and maximum parallel questions.
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
-- **Report Packs and the Download Center**: For one Model Comparison entry, a separately chosen writer model writes an Executive Summary, a Technical Report and an Internal Improvement Brief from computed figures; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. The Report Pack dialog lists the documents of the comparison that is open; the Model Comparison launcher, under its **Open Comparison Wizard** button, lists every comparison document as **Comparison reports**. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
+- **Report Packs and the Download Center**: For one Model Comparison entry, a separately chosen writer model writes an Executive Summary, a Report for AI Researchers and Developers and an Internal Improvement Brief from computed figures; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. Their PDF and Word copies can carry the comparison's own charts, drawn in the browser from the wizard's chart settings and stored beside the document. The Model Comparison wizard's step 3, *Reports*, writes them, and its step 4, *Documents*, lists, views, charts, downloads and deletes the documents of the comparison that is open; the Model Comparison launcher, under its **Open Comparison Wizard** button, sums up every comparison document as **Comparison reports** and opens them in the Download Center. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
 
 ### Run Progress Dialog
 
@@ -3344,6 +3344,120 @@ the rows stored before it. The full description is
   rules in every writer prompt; validator rules 15–17 (a note for every question needing one, overlap
   wording in comparative sentences, no hype words), all warnings.
 
+### Model Comparison: Four Steps, Charts in PDF and Word, and the Download Center Table (2026-09-30) — No Harness Version Bump
+
+*The Report Pack dialog became two steps of the wizard, the comparison's charts go into the documents'
+PDF and Word copies, and the Download Center gained a real documents table.* Nothing here grades
+anything: no grading prompt, score, index or comparability key changes, and `HarnessVersion` and
+`ScoringMethodVersion` do not move — the report writer is not part of the graded instrument, and no
+comparability code reads its prompt hash or the format and layout versions. `ReportFormatVersion` moves
+from **7** to **8**, the PDF layout from **2** to **3** and the Word layout from **1** to **2**. No
+migration: chart images are files on disk, under the new setting
+`Benchmark:ReportPack:ChartsDataLocation`. Stored documents re-render on their next download; the writer
+prompt's changes reach only documents written from now on. The full description is
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 1–3, 7–9, 12 and 13.
+
+**The wizard's four steps.**
+
+| Step | Title | Holds |
+|------|-------|-------|
+| 1 | Sources | The runs and analysis groups to compare |
+| 2 | Charts & table | Every chart and the comparison table, with their settings and exports |
+| 3 | Reports | *Write AI reports on one model of this comparison*: the former Report Pack dialog's form, estimate, same-provider confirmation, job progress and diagnostics |
+| 4 | Documents | *View, chart, download and delete this comparison's documents*: the Download Center panel on this comparison's documents |
+
+Steps 3 and 4 are reachable once a comparison exists; step 3 also needs an entry that is not Excluded,
+and otherwise is `aria-disabled` with a visually hidden reason and skipped by **Next**. Next runs 2 → 3 →
+4, and on step 4 it closes the wizard. Step 2's **Reports** button and the dialog it opened are gone;
+**About** and **Recompute** stay on step 2. Steps 3 and 4 are created on their first visit and then
+hidden rather than destroyed, so a running job, its polling, the form and the documents table's page,
+filters and selection survive a trip back to step 2. The steps serve one loop: set the charts on step 2,
+generate on step 3, view on step 4, go back to step 2 to change the charts, **Update charts…** on step
+4, view again. While charts are being drawn and uploaded, the wizard's close controls are disabled and
+Escape is refused, as during an export. The launcher's *How the comparison works* names the four steps.
+
+**Step 3, Reports.** The form sits in the resizable sidebar as before, with a new fieldset, *Charts in
+PDF and Word*, between *Documents* and *Report writer*. The main area follows the job: one row per
+document with its status, a live duration on the server's clock, its model calls and its charts
+(*Charts: attaching…*, *Charts: 3*, *Charts failed — retry*, *Charts: none*); the stat strip, which stays
+with the cost and the estimate after the job finishes; a summary with **See the documents** (to step 4)
+and **Dismiss**; and *Log and diagnostics*, with icon-only **Copy diagnostics** and **Download
+diagnostics** (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`).
+
+**The chart picker and its defaults (D9).** A table of the seven figures — Intelligence, Speed, Cost,
+Model profiles, Intelligence against speed, Intelligence against cost, Speed against cost — against the
+three document types, one checkbox per cell with the section the chart lands in, and **All** / **None**
+per column. Only the columns of the document types being written are enabled; a figure the comparison
+cannot draw is listed but unavailable, with its reason. The defaults are Intelligence and Intelligence
+against cost for the Executive Summary, all seven for the Report for AI Researchers and Developers, and
+Intelligence, Speed and Cost for the Internal Improvement Brief; the last selection is remembered per
+browser.
+
+**Step 2's settings are used as is (D10).** A document chart is composed off-screen from step 2's active
+settings — theme, background, font, weights, colors, border, logo, per-family styles, Show, Highlight,
+order and measures — at a fixed print size (1800 px wide, text at 175 %, PNG). Documents are printed on
+white paper, so when step 2 uses the dark theme, or a transparent background with light text, an
+on-screen advisory beside the picker (and in the Update charts dialog) says the charts would print badly
+and where to change it. Nothing is changed for the operator. Each document also gets an anonymized
+variant of every figure, with the peers lettered as in that document.
+
+**When charts are attached.** While the wizard is open, each document of a step-3 job is charted as soon
+as it is written, with step 3's selection. A document written while the wizard was closed, or before
+this change, shows *None* on step 4 until **Update charts…** adds its charts.
+
+**Update charts.** On step 4, the Download Center shows a *Charts* column — *None*, *3 · current*, or
+*3 · differs from step 2* when step 2's settings changed since the charts were drawn — a toolbar
+**Update charts…** that opens a picker for the selected documents' types, prefilled from the charts they
+already have, and a per-row **More actions** popover with *Update charts* and *Remove charts*. The charts
+are redrawn in the browser from the comparison on screen, with no AI call. A document without peers,
+written on another pricing basis or for another comparison is skipped with its reason; when chart storage
+is not configured, a visible warning says so.
+
+**The Download Center's documents table.** The Download Center's list of documents, in every place it
+opens, is now the shared data table: columns *Include*, *Created*, *Subject*, *Document*, *Sharing*,
+*Disclosure*, *Names*, *Formats*, *Charts* (in the wizard only) and *Actions*; sorting by *Created* and
+*Document*; filters on *Subject*, *Document* and *Suite* with *Clear filters*; pagers above and below at
+10 rows; a selection line with **Show selected only**, **Clear selection** and **Select the N shown**, and
+no select-all in the header. Each row has icon-only **View** (the PDF viewer: a report document at its
+highest allowed disclosure, with a *Peer names* row when it has peers, or the run report's PDF) and, for
+a Report Pack document, **Delete** after a confirmation. Below 64rem of the panel's width the rows become
+cards. The dialog is now a thin wrapper around the panel that step 4 places directly.
+
+**Opening the Download Center (D5).** The Model Comparison launcher's *Comparison reports* is now a
+summary line — how many documents, from how many comparisons, the latest, and how many changed since they
+were written — and one **Open Download Center** button. Opened from there, the Download Center lists
+every Report Pack document with **nothing preselected**, and offers no chart actions. Opened as the
+wizard's step 4, it lists this comparison's documents with **all of them preselected**, so a download or
+an **Update charts…** applies to the whole comparison at once. The run report's **Downloads** opens it on
+the run, without chart actions, as before. Every place shows the charts a document already has.
+
+**Charts in PDF and Word.** The renderer writes a figure marker at each chart's place, and the PDF and
+Word renderers draw the chart there: a tagged figure with the chart's alternative text and a caption
+*Figure N. Title — caption* in the PDF (PDF/UA), an inline picture with the same description and caption
+in Word. The Markdown and HTML copies carry no chart. The source hash on the cover covers the drawn
+charts too.
+
+**Storage.** `Benchmark:ReportPack:ChartsDataLocation` (an absolute folder, `C:\hmp\overseer_data\charts`
+in `Overseer/appsettings.json`) holds one folder per document: a manifest and the PNGs, replaced as a
+whole set through a staging folder. Without the setting, uploads are refused, documents render without
+charts and a configuration warning alert appears. **The folder is not in the database backup**: losing it
+loses only images, and **Update charts…** redraws them with no AI call. The Admin Database tab shows the
+folder as *Report Chart Files* and has a **Clear Report Chart Files** maintenance action
+(`chat-data-retention.md`).
+
+**Format 8.** The comparison documents read more exactly and less repetitively: the no-significance
+statement is one sentence in the document's own words, printed once; Named copies name the peers in the
+overlap figure and the judge-dependent pairs; every printed difference is the difference of the printed
+whole numbers; evidence lines list at most six questions; the PDF and Word cover says how many models the
+subject is compared with, under which prices, and file names gain `vs-<N>-models_`; the Internal
+Improvement Brief's PDF and Word copies point to the Markdown copy for the fact sheet; the Executive
+Summary's *How it compares* adds critical errors and a dimensions table and drops the separate *Rank*
+line; and a peer whose paired interval excludes zero gets its own sentence. The writer learns each
+question's peer spread and is told to separate the model's misses from misses every model shared,
+to keep model-developer recommendations to the model (validator rule 18, a warning), to state a paired
+result where one excludes zero, to mention unavailable figures only where leaving them out would mislead,
+and to state a value shared by several peers once.
+
 ### Harness Version 29 Updates
 
 Prompted by the analysis of runs 50 and 51, the first two runs of a game-snapshot suite, which showed that
@@ -5530,7 +5644,7 @@ release, while a family name lasts.
 | Second Reader | **Gemini Flash** (not Flash-Lite) | `medium` | A different provider from the assessor. When the candidate is a Gemini Flash model, use a different Flash version, and expect the weaker same-family pairing the launcher warns about |
 | Reference Reader | **Gemini Flash** (not Flash-Lite) | `medium` | The same model on every run you compare. Google is the third family beside the Anthropic and OpenAI members |
 | Claim Verifier | **Gemini Flash** (not Flash-Lite) | `medium` (`high` if its rulings are often wrong; never `low`) | The same as the reader. The report already notes that one model in both roles makes their findings correlated |
-| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: it is refused, and a writer from the same provider needs a warning acknowledged. Chosen in the Report Pack dialog, in the launcher's optional **Report Writer** field for a run's own two documents, and in the run report's **AI Reports** tab; for a run's documents a writer from the candidate's provider is allowed after a warning and an explicit confirmation, but prefer another provider — the assessor's model is a good choice, and one sharing a family with neither panel member is better where the roster allows. The Executive Summary is short prose, the Report for AI Researchers and Developers long and number-dense, so give the latter the model you trust most with exact figures (`high` if it often needs repair); the two can have different writers. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
+| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: it is refused, and a writer from the same provider needs a warning acknowledged. Chosen on the Model Comparison wizard's Reports step, in the launcher's optional **Report Writer** field for a run's own two documents, and in the run report's **AI Reports** tab; for a run's documents a writer from the candidate's provider is allowed after a warning and an explicit confirmation, but prefer another provider — the assessor's model is a good choice, and one sharing a family with neither panel member is better where the roster allows. The Executive Summary is short prose, the Report for AI Researchers and Developers long and number-dense, so give the latter the model you trust most with exact figures (`high` if it often needs repair); the two can have different writers. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
 
 All roles avoid `xhigh` and `max`. Today's roster matches — Claude 5.5 Opus, GPT-6 Sol and Gemini 3.8
 Flash, all at `medium` — for a set whose candidates include neither Claude 5.5 Opus nor GPT-6 Sol. A set
@@ -5538,7 +5652,7 @@ that includes either takes the previous version of **both** members, Claude 5 Op
 every run of the set, so the whole set shares one panel; runs 68–72 were graded that way.
 
 **Where the recommendations appear.** The launcher's grader info popups, the *How the graders work*
-guide (its section *Choosing grader models*) and the Report Pack dialog's writer info tip name the same
+guide (its section *Choosing grader models*) and the Model Comparison Reports step's writer info tip name the same
 **families** — Claude Opus, GPT Sol, Gemini Flash — and the top tiers not to use, Claude Fable and GPT
 Astra, with price ratios but no versions or prices. The run report's **AI Reports** tab has a report
 writer info tip with per-document advice — the Executive Summary short, for a strong writing model at
@@ -5549,9 +5663,10 @@ Writer** info tip names no family: it asks for a strong model from another provi
 test, such as the one used as an assessor. The table in **The roster today, and why Anthropic is primary**
 names the exact versions. The project skills name no model or family at all and point here. When a
 provider renames or re-prices a line, this subsection, the roster table, the popups in
-`benchmark.component.html` (the Report Writer tip included), the guide component, the Report Pack dialog's
-writer info tip and the AI Reports tab's info tip (`run-ai-reports.component.html`) are the places to
-update.
+`benchmark.component.html` (the Report Writer tip included), the guide component, the shared writer
+advice behind the Reports step's and the AI Reports tab's info tips
+(`run-ai-reports/report-writer-advice.ts`) and the AI Reports tab's info tip
+(`run-ai-reports.component.html`) are the places to update.
 
 **Two consequences of the co-assessor rule.**
 
@@ -6500,12 +6615,14 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running report-pack job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel a report-pack job.
-- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` from its runs' scoring fingerprints.
+- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` and `peersChangedSinceGeneration` from its runs' scoring fingerprints, its comparison key, peer count, pricing basis and peer letters, and its charts' `chartCount`, `chartFigureKeys` and `chartSettingsHash` read from the chart manifest. The filters are in `ai-benchmark-report-pack.md` § 9.
 - `GET /api/admin/benchmark/report-documents/{id}`: Document detail: metadata, validation notes and the facts JSON.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`: Render a stored document as `text/markdown; charset=utf-8`, deterministically and with no model call. 400 for a refused combination (the Internal Brief renders at `full` only).
-- `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its `BenchmarkReportDocumentRuns` rows cascade. Deleting a run never deletes a document. Deleting a run's run-completion document returns the run's status to NotRequested when no job is in progress.
+- `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its `BenchmarkReportDocumentRuns` rows cascade and its chart folder is removed. Deleting a run never deletes a document. Deleting a run's run-completion document returns the run's status to NotRequested when no job is in progress.
+- `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace a document's whole chart set with the PNGs the browser drew (at most 16 images, 4 MB each, 40,000,000 bytes per request). 400 for a stand-alone document, for chart storage that is not configured and for any chart refused; 404 for an unknown document.
+- `DELETE /api/admin/benchmark/report-documents/{id}/charts`: Remove a document's charts. 204; 404 for an unknown document.
 
-The PDF and Word renderings of a document (`…/render/pdf`, `…/render/docx`, and `inline=true` on the PDF for viewing in a browser tab) are in `ai-benchmark-report-pack.md` § 9.
+The PDF and Word renderings of a document (`…/render/pdf`, `…/render/docx`, and `inline=true` on the PDF for viewing in a browser tab), with its charts drawn in them, and the chart endpoints' bodies and limits are in `ai-benchmark-report-pack.md` §§ 9 and 13. Clearing every chart image is a Database tab maintenance action, `POST /api/admin/maintenance/clear-report-charts` (`chat-data-retention.md`).
 
 ---
 

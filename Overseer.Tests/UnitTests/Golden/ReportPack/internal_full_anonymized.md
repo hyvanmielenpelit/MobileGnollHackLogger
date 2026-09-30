@@ -6,7 +6,8 @@
 - **Suite:** GnollHack Core Suite
 - **Questions:** 4
 - **Runs:** 1 (run 12)
-- **Peers:** Models A and B, identities withheld
+- **Compared with:** Models A and B, identities withheld
+- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
 
 ## 1. The Overseer chat and its tools
 
@@ -34,6 +35,8 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
+
+The 95 % interval is 77–83, a span of 6 points, and rests on 4 of 4 questions with a scored answer.
 
 ### Strengths
 
@@ -63,7 +66,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
 | Q3 | Breaking a thrown gem | Intermediate | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |
 | Q4 | Wand of wishing charges | Advanced | 87 | 91 | -4 | no | 0 | 4 | 13.4 s |
 
-### Questions below the peer mean or with a critical error
+### Questions more than 15 points below the peer mean, or with a critical error
 
 **Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters; the rubric says it can survive.
 
@@ -845,6 +848,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "orderIndex": 1,
       "peerCount": 2,
       "peerMean": 85,
+      "peersAbove": 0,
       "questionKey": "101",
       "refutedAnswerSentences": 0,
       "refutedClaims": 0,
@@ -862,6 +866,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "orderIndex": 2,
       "peerCount": 2,
       "peerMean": 70,
+      "peersAbove": 0,
       "questionKey": "102",
       "refutedAnswerSentences": 0,
       "refutedClaims": 0,
@@ -879,6 +884,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "orderIndex": 3,
       "peerCount": 2,
       "peerMean": 68,
+      "peersAbove": 0,
       "questionKey": "103",
       "refutedAnswerSentences": 1,
       "refutedClaims": 1,
@@ -896,6 +902,7 @@ GPT-5.6 Luna ranks 2nd of 3 at $0.036 per question.
       "orderIndex": 4,
       "peerCount": 2,
       "peerMean": 91,
+      "peersAbove": 0,
       "questionKey": "104",
       "refutedAnswerSentences": 0,
       "refutedClaims": 0,
@@ -969,6 +976,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 7 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
+*Document ID 101 · format version 8 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*
