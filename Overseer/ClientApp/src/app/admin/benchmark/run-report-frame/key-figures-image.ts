@@ -194,8 +194,8 @@ export const KEY_FIGURES_STORAGE_KEY = 'overseer.benchmark.runReport.keyFigures'
 const KEY_FIGURES_STORAGE_VERSION = 1;
 
 /**
- * The keys left out of the whole-strip image, from `{ version: 1, excluded: [...] }` in
- * localStorage; none when absent or unreadable. Storing the exclusions keeps a card added later in.
+ * The keys left out of the Summary panel and the whole-strip image, from
+ * `{ version: 1, excluded: [...] }` in localStorage; none when absent or unreadable. Storing the exclusions keeps a card added later in.
  */
 export function readStoredKeyFigureExclusions(): string[] {
   try {

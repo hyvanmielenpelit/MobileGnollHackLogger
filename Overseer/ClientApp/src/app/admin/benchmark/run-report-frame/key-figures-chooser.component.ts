@@ -4,12 +4,13 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  OnInit,
   Output,
   ViewChild,
   inject
 } from '@angular/core';
 
-import { KeyFiguresAction } from './key-figures-image';
+import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 
 /** One figure the run shows: its stable key, its label and its current value. */
 export interface KeyFigureChoice {
@@ -18,18 +19,13 @@ export interface KeyFigureChoice {
   readonly value: string;
 }
 
-/** Export the chosen figures: the exclusions to remember, and what to do with the image. */
-export interface KeyFiguresChooserExport {
-  readonly action: KeyFiguresAction;
-  readonly excluded: readonly string[];
-}
-
 /**
- * Which key figures go into the whole-strip image: one checkbox per card the run shows, and Copy
- * Image / Download PNG, which commit the choice and export it. Cancel discards the draft.
+ * Which key figures the run report shows and exports: one checkbox per card the run shows. Every
+ * change applies at once through `selectionChange`; Done, the close button, Escape and light dismiss
+ * only close.
  *
  * Never touches storage: the host passes the remembered exclusions to `open()` and stores the ones
- * `exportRequested` carries. Exclusions of figures this run does not show are kept.
+ * `selectionChange` carries. Exclusions of figures this run does not show are kept.
  *
  * Nested in the run report dialog, so its own close, cancel and click events stop here.
  */
@@ -40,11 +36,11 @@ export interface KeyFiguresChooserExport {
   styleUrls: ['./key-figures-chooser.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class KeyFiguresChooserComponent {
+export class KeyFiguresChooserComponent implements OnInit {
   private readonly cdr = inject(ChangeDetectorRef);
 
-  /** Emitted, inside the click, by Copy Image and Download PNG; the dialog then closes. */
-  @Output() readonly exportRequested = new EventEmitter<KeyFiguresChooserExport>();
+  /** Emitted on every change of the selection, with the exclusions to remember. */
+  @Output() readonly selectionChange = new EventEmitter<string[]>();
 
   @ViewChild('chooserDialog') chooserDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('chooserTitle') chooserTitle?: ElementRef<HTMLElement>;
@@ -52,7 +48,7 @@ export class KeyFiguresChooserComponent {
   /** The figures the run shows, in display order. */
   figures: KeyFigureChoice[] = [];
 
-  /** The draft: the keys of the checked figures. */
+  /** The keys of the checked figures. */
   private checked = new Set<string>();
 
   /** The remembered exclusions `open()` received. */
@@ -60,6 +56,10 @@ export class KeyFiguresChooserComponent {
 
   /** Where focus returns on close. */
   private opener: HTMLElement | null = null;
+
+  ngOnInit(): void {
+    ensureOverlayPolyfills();
+  }
 
   /** Shows the dialog with every figure checked that `excluded` does not name, and focuses its title. */
   open(figures: readonly KeyFigureChoice[], excluded: readonly string[], opener?: HTMLElement | null): void {
@@ -88,25 +88,21 @@ export class KeyFiguresChooserComponent {
     } else {
       this.checked.delete(key);
     }
-    this.cdr.markForCheck();
+    this.emitSelection();
   }
 
   selectAll(): void {
     this.checked = new Set(this.figures.map(figure => figure.key));
-    this.cdr.markForCheck();
+    this.emitSelection();
   }
 
   selectNone(): void {
     this.checked = new Set();
-    this.cdr.markForCheck();
+    this.emitSelection();
   }
 
   get selectedCount(): number {
     return this.figures.filter(figure => this.checked.has(figure.key)).length;
-  }
-
-  get nothingSelected(): boolean {
-    return this.selectedCount === 0;
   }
 
   /** `9 of 12 selected`. */
@@ -118,7 +114,7 @@ export class KeyFiguresChooserComponent {
    * The exclusions to remember: the unchecked figures of this run, and the stored ones of figures
    * this run does not show.
    */
-  get draftExcluded(): string[] {
+  get excluded(): string[] {
     const shown = new Set(this.figures.map(figure => figure.key));
     return [
       ...this.storedExcluded.filter(key => !shown.has(key)),
@@ -126,21 +122,14 @@ export class KeyFiguresChooserComponent {
     ];
   }
 
-  /** Copy Image and Download PNG: emits within the click, so a clipboard write keeps its user activation. */
-  commit(action: KeyFiguresAction): void {
-    if (this.nothingSelected) {
-      return;
-    }
-    this.exportRequested.emit({ action, excluded: this.draftExcluded });
-    this.close();
-  }
-
-  cancel(): void {
-    this.close();
-  }
-
-  private close(): void {
+  /** Done and the close button. */
+  done(): void {
     this.chooserDialog?.nativeElement.close();
+  }
+
+  private emitSelection(): void {
+    this.selectionChange.emit(this.excluded);
+    this.cdr.markForCheck();
   }
 
   /** The dialog's close and cancel events stop here, short of the run report dialog. */

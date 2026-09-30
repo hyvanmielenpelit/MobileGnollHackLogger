@@ -117,7 +117,7 @@ import {
   ImageContext, KeyFigureKey, KeyFiguresAction, exportKeyFiguresImage, readKeyFigureCells,
   readStoredKeyFigureExclusions, storeKeyFigureExclusions
 } from './run-report-frame/key-figures-image';
-import { KeyFiguresChooserComponent, KeyFiguresChooserExport } from './run-report-frame/key-figures-chooser.component';
+import { KeyFiguresChooserComponent } from './run-report-frame/key-figures-chooser.component';
 import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
 import { audienceLabel } from './report-pack/report-document-format';
 import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/run-ai-reports.component';
@@ -940,7 +940,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private runReportCopyTimer: ReturnType<typeof setTimeout> | null = null;
   /** A key-figures image is being composed; another export is refused until it finishes. */
   keyFiguresExporting = false;
-  /** The key figures left out of the whole-strip image, remembered for every run report. */
+  /** The key figures the Summary panel and the whole-strip image leave out, remembered for every run report. */
   keyFigureExclusions: string[] = readStoredKeyFigureExclusions();
   @ViewChild(KeyFiguresChooserComponent) keyFiguresChooser?: KeyFiguresChooserComponent;
   expandedQuestions = new Set<number>();
@@ -6711,12 +6711,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return keys;
   }
 
-  /** How many of the shown key figures the whole-strip image includes. */
+  /** Whether the Summary panel shows a key-figure card. */
+  isKeyFigureShown(key: KeyFigureKey): boolean {
+    return !this.keyFigureExclusions.includes(key);
+  }
+
+  /** How many of the shown key figures are selected. */
   get selectedKeyFigureCount(): number {
     return this.shownKeyFigureKeys.filter(key => !this.keyFigureExclusions.includes(key)).length;
   }
 
-  /** `9 of 12` while the image leaves out a figure the run shows, else null. */
+  /** `9 of 12` while the selection leaves out a figure the run shows, else null. */
   get keyFiguresSelectionLabel(): string | null {
     const total = this.shownKeyFigureKeys.length;
     const selected = this.selectedKeyFigureCount;
@@ -6731,11 +6736,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.keyFiguresChooser.open(figures, this.keyFigureExclusions, opener ?? null);
   }
 
-  /** The chooser's Copy Image or Download PNG: remembers the choice, then exports it within the same click. */
-  onKeyFiguresChosen(choice: KeyFiguresChooserExport): Promise<void> {
-    this.keyFigureExclusions = [...choice.excluded];
+  /** The chooser's live selection: filters the Summary cards and is remembered at once. */
+  onKeyFigureSelectionChange(excluded: string[]): void {
+    this.keyFigureExclusions = [...excluded];
     storeKeyFigureExclusions(this.keyFigureExclusions);
-    return this.exportKeyFigures(choice.action, null);
+    this.cdr.markForCheck();
   }
 
   /**

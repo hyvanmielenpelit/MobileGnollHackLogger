@@ -5413,15 +5413,19 @@ question*. It has its own **Copy** and **Download** like every card.
 `unweighted-mean`, `speed`, `mean-time`, `panel`, `agreement`, `holistic`, `answer-duration`,
 `wall-time`, `model-cost`, `estimated-cost`), unchanged by a label variant. Beside the *Key figures*
 heading's **Copy** and **Download** sits a text-only **Choose figures**, showing *(9 of 12)* while a
-subset is selected. It opens a nested dialog, *Key Figures in the Image*: one checkbox per card the run
-shows with its current value, *All* / *None*, a live *N of M selected* count, and **Cancel**, **Copy
-Image** and **Download PNG** — either export stores the choice and exports it at once; with nothing
-selected both are disabled with the reason *Select at least one figure.* The choice is stored as the
-**excluded** keys in `localStorage['overseer.benchmark.runReport.keyFigures']` (`{ "version": 1,
+subset is selected. It opens a nested dialog, *Choose key figures*: one checkbox per card the run shows
+with its current value, *All* / *None* and a live *N of M selected* count. The selection is a filter on
+both the Summary cards and the whole-strip image, and every change applies at once: the cards behind
+the dialog appear and disappear as boxes are checked, and the choice is stored immediately. **Done**,
+the close button in the header (tooltip *Close*), Escape and a backdrop click all just close the
+dialog. An unselected card is hidden (the `hidden` attribute), not removed, so the chooser still lists
+it and it can be selected again. An empty selection is allowed: the card grid is hidden and the Summary
+shows *No key figures are selected. Use Choose figures to show them.* in its place. The choice is stored
+as the **excluded** keys in `localStorage['overseer.benchmark.runReport.keyFigures']` (`{ "version": 1,
 "excluded": [...] }`), so a card added later is included, and it applies to every run report; the
-header's one-click **Copy** and **Download** export the saved selection, and their names add *", 9 of
-12 key figures"*. The whole-strip image lays out any subset square or landscape, never portrait, with
-footnotes from the included cards only; when a saved selection leaves none of a run's cards, the export
+header's one-click **Copy** and **Download** export the selection, and their names add *", 9 of 12 key
+figures"*. The whole-strip image lays out any subset square or landscape, never portrait, with
+footnotes from the included cards only; when the selection leaves none of a run's cards, the export
 says *None of this run's key figures is selected; use Choose figures.* instead of making an image.
 Per-card exports are unaffected.
 

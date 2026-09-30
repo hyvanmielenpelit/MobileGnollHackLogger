@@ -2774,8 +2774,8 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 .rr-fine-print { font-size: var(--text-secondary); }
 .rr-figures-head {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  margin-bottom: 10px; border-bottom: 1px solid var(--border-glass);
-  .gh-section-title { margin: 0; border-bottom: 0; }
+  margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border-glass);
+  .gh-section-title { margin: 0; padding: 0; border-bottom: 0; }
 }
 .rr-figures {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 10px; margin-bottom: 20px;
@@ -2786,10 +2786,13 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
   .btn-ghost { margin-inline-start: 4px; }
 }
 .rr-figures-choose-count { font-variant-numeric: tabular-nums; color: #bbb; }
+.rr-figures-empty { margin: 0 0 20px; font-size: var(--text-secondary); color: #999; }
 // Each card's Copy and Download show while it is hovered or holds focus, always without hover.
 .score-card { position: relative; }
 .score-card:is(:hover, :focus-within) app-key-figure-card-actions { opacity: 1; }
 @media (hover: none) { .score-card app-key-figure-card-actions { opacity: 1; } }
+// The author `display` of the grid and of a card outranks the user-agent `[hidden]` rule.
+.rr-figures[hidden], .score-card[hidden] { display: none; }
 .rr-skeleton { min-height: 64px; margin-bottom: 12px; border-radius: 6px; background: #1c1c1c; }
 .rr-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
 .question-actions { flex-wrap: wrap; }

@@ -378,6 +378,11 @@ with* copy *and* download*, both `aria-disabled` with the visible reason *"Selec
 while nothing is selected. It is a dialog, not an action popover (§4f): a multi-select checklist with a
 commit.*
 
+*Changed 2026-09-30 (key-figures filter): the chooser, now* Choose key figures*, filters the Summary
+cards as well as the image and applies each change at once; its footer is a single text-only **Done**
+(`btn-gh btn-gh-cancel`) and its header a close `.btn-icon-action` with a* Close *tooltip (§4.2). Copy
+Image, Download PNG and Cancel are gone; the head's icon-only Copy and Download export the selection.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |

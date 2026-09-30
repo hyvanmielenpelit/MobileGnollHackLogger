@@ -1,7 +1,7 @@
 import { Component, ViewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { KeyFigureChoice, KeyFiguresChooserComponent, KeyFiguresChooserExport } from './key-figures-chooser.component';
+import { KeyFigureChoice, KeyFiguresChooserComponent } from './key-figures-chooser.component';
 
 @Component({
   standalone: true,
@@ -9,12 +9,12 @@ import { KeyFigureChoice, KeyFiguresChooserComponent, KeyFiguresChooserExport } 
   template: `
     <dialog class="outer-dialog" (cancel)="events.push('cancel')" (close)="events.push('close')" (click)="events.push('click')">
       <button type="button" class="opener">Choose figures</button>
-      <app-key-figures-chooser (exportRequested)="exports.push($event)"></app-key-figures-chooser>
+      <app-key-figures-chooser (selectionChange)="changes.push($event)"></app-key-figures-chooser>
     </dialog>`
 })
 class HostComponent {
   readonly events: string[] = [];
-  readonly exports: KeyFiguresChooserExport[] = [];
+  readonly changes: string[][] = [];
   @ViewChild(KeyFiguresChooserComponent) chooser!: KeyFiguresChooserComponent;
 }
 
@@ -101,7 +101,7 @@ describe('KeyFiguresChooserComponent', () => {
     const title = dialog().querySelector('#kfchTitle') as HTMLElement;
     expect(title.tagName).toBe('H3');
     expect(title.getAttribute('tabindex')).toBe('-1');
-    expect(title.textContent?.trim()).toBe('Key Figures in the Image');
+    expect(title.textContent?.trim()).toBe('Choose key figures');
   });
 
   it('opens modally over the dialog it sits in and focuses its title', () => {
@@ -126,7 +126,7 @@ describe('KeyFiguresChooserComponent', () => {
     expect(checkedKeys()).toEqual(['intelligence', 'estimated-cost']);
     expect(status()).toBe('2 of 3 selected');
     expect(dialog().querySelector('.kfch-hint')?.textContent?.trim())
-      .toBe('Remembered for every run report. A figure a run does not have is left out.');
+      .toBe('Shown in the Summary and in the copied or downloaded image. Remembered for every run report; a figure a run does not have is left out.');
   });
 
   it('selects all and none, naming both links fully for assistive technology', () => {
@@ -146,34 +146,60 @@ describe('KeyFiguresChooserComponent', () => {
     expect(status()).toBe('0 of 3 selected');
   });
 
-  it('with nothing selected, marks both exports aria-disabled with a visible reason, and refuses them', () => {
-    open();
-    expect(dialog().querySelector('#kfchReason')).toBeNull();
-    click(button('.kfch-none'));
-
-    const reason = dialog().querySelector('#kfchReason') as HTMLElement;
-    expect(reason.classList).toContain('gh-field-error');
-    expect(reason.textContent?.trim()).toBe('Select at least one figure.');
-    for (const selector of ['.kfch-copy', '.kfch-download']) {
-      expect(button(selector).getAttribute('aria-disabled')).withContext(selector).toBe('true');
-      expect(button(selector).getAttribute('aria-describedby')).withContext(selector).toBe('kfchReason');
-      expect(button(selector).disabled).withContext(selector).toBeFalse();
-    }
-
-    click(button('.kfch-copy'));
-    click(button('.kfch-download'));
-    expect(fixture.componentInstance.exports).toEqual([]);
-    expect(dialog().open).toBeTrue();
+  it('emits nothing on open', () => {
+    open(['mean-time']);
+    expect(fixture.componentInstance.changes).toEqual([]);
   });
 
-  it('commits the draft on Copy Image, keeping exclusions of figures this run does not show', async () => {
+  it('emits the exclusions at once on every change, keeping those of figures this run does not show', () => {
     open(['panel']);
     click(boxes()[1]);
     expect(status()).toBe('2 of 3 selected');
+    expect(fixture.componentInstance.changes).toEqual([['panel', 'mean-time']]);
+    expect(dialog().open).toBeTrue();
+
+    click(button('.kfch-all'));
+    click(button('.kfch-none'));
+    expect(fixture.componentInstance.changes).toEqual([
+      ['panel', 'mean-time'],
+      ['panel'],
+      ['panel', 'intelligence', 'mean-time', 'estimated-cost']
+    ]);
+  });
+
+  it('closes on its header close button, which has a name and a tooltip, and emits nothing', async () => {
+    open();
+    const close = dialog().querySelector('.dialog-header button.btn-icon-action.kfch-close') as HTMLButtonElement;
+    expect(close.getAttribute('type')).toBe('button');
+    expect(close.getAttribute('aria-label')).toBe('Close key figures chooser');
+    expect(close.getAttribute('interestfor')).toBe('kfch-close-tip');
+    expect(close.getAttribute('style')).toContain('anchor-name: --kfch-close-tip');
+    const tip = dialog().querySelector('#kfch-close-tip') as HTMLElement;
+    expect(tip.getAttribute('popover')).toBe('hint');
+    expect(tip.getAttribute('style')).toContain('position-anchor: --kfch-close-tip');
+    expect(tip.textContent?.trim()).toBe('Close');
 
     const closed = nextEvent(dialog(), 'close');
-    click(button('.kfch-copy'));
-    expect(fixture.componentInstance.exports).toEqual([{ action: 'copy', excluded: ['panel', 'mean-time'] }]);
+    click(close);
+    await closed;
+    expect(dialog().open).toBeFalse();
+    expect(document.activeElement).toBe(opener());
+    expect(outer().open).toBeTrue();
+    expect(fixture.componentInstance.changes).toEqual([]);
+  });
+
+  it('has a single text-only Done in the footer, which closes and returns focus', async () => {
+    open();
+    const footer = Array.from(dialog().querySelectorAll<HTMLButtonElement>('.dialog-footer button'));
+    expect(footer.map(b => b.textContent?.trim())).toEqual(['Done']);
+    const done = footer[0];
+    expect(done.classList).toContain('btn-gh');
+    expect(done.classList).toContain('btn-gh-cancel');
+    expect(done.getAttribute('type')).toBe('button');
+    expect(done.querySelector('svg')).toBeNull();
+
+    const closed = nextEvent(dialog(), 'close');
+    click(done);
     await closed;
     expect(dialog().open).toBeFalse();
     expect(document.activeElement).toBe(opener());
@@ -181,25 +207,20 @@ describe('KeyFiguresChooserComponent', () => {
     expect(fixture.componentInstance.events).not.toContain('close');
   });
 
-  it('commits the draft on Download PNG', async () => {
-    open(['estimated-cost']);
-    click(button('.kfch-all'));
-    const closed = nextEvent(dialog(), 'close');
-    click(button('.kfch-download'));
-    expect(fixture.componentInstance.exports).toEqual([{ action: 'download', excluded: [] }]);
-    await closed;
-    expect(dialog().open).toBeFalse();
+  it('has no export buttons, Cancel or reason, even with nothing selected', () => {
+    open();
+    click(button('.kfch-none'));
+    for (const selector of ['#kfchReason', '.kfch-copy', '.kfch-download', '.kfch-cancel']) {
+      expect(dialog().querySelector(selector)).withContext(selector).toBeNull();
+    }
   });
 
-  it('discards the draft on Cancel, and starts from the stored choice when opened again', async () => {
+  it('starts from the given exclusions when opened again', async () => {
     open(['mean-time']);
     click(button('.kfch-none'));
     const closed = nextEvent(dialog(), 'close');
-    click(button('.kfch-cancel'));
+    click(button('.kfch-done'));
     await closed;
-    expect(dialog().open).toBeFalse();
-    expect(fixture.componentInstance.exports).toEqual([]);
-    expect(document.activeElement).toBe(opener());
 
     open(['mean-time']);
     expect(checkedKeys()).toEqual(['intelligence', 'estimated-cost']);
@@ -215,18 +236,5 @@ describe('KeyFiguresChooserComponent', () => {
     await closed;
     expect(fixture.componentInstance.events.length).toBe(eventsBefore);
     expect(outer().open).toBeTrue();
-  });
-
-  it('puts Cancel first in the footer, text only, and the two exports after it with their glyphs', () => {
-    open();
-    const footer = Array.from(dialog().querySelectorAll<HTMLButtonElement>('.dialog-footer button'));
-    expect(footer.map(b => b.textContent?.trim())).toEqual(['Cancel', 'Copy Image', 'Download PNG']);
-    expect(footer[0].classList).toContain('btn-gh-cancel');
-    expect(footer[0].querySelector('svg')).toBeNull();
-    for (const exportButton of footer.slice(1)) {
-      expect(exportButton.classList).toContain('btn-gh');
-      expect(exportButton.getAttribute('type')).toBe('button');
-      expect(exportButton.querySelector('svg.btn-icon')?.getAttribute('aria-hidden')).toBe('true');
-    }
   });
 });

@@ -351,12 +351,17 @@ To find specific popups, look in the corresponding component's `.html` template:
     ends in an `app-key-figure-card-actions` pair shown on hover or focus (opacity only). *Mean Time per
     Question* sits right after the Speed Index card and is always shown (`—` with no answered
     question). **Choose figures** opens `app-key-figures-chooser` (`run-report-frame/`), a nested
-    `<dialog class="gh-dialog">` with light dismiss whose checklist, *All* / *None*, status count and
-    footer **Cancel** · **Copy Image** · **Download PNG** commit the choice and export it in one click;
-    the choice is stored as the *excluded* keys in
+    `<dialog class="gh-dialog">` *Choose key figures* with light dismiss: a checklist, *All* / *None*
+    and a status count, a header close `.btn-icon-action` with an `interestfor` *Close* tooltip, and a
+    single footer **Done**. The selection is a live filter on both the Summary cards and the image:
+    every change emits `selectionChange` at once, and Done, the close button, Escape and light dismiss
+    only close. An unselected card, and the whole `.rr-figures` grid when nothing is selected, gets the
+    `hidden` attribute — **never an `@if`**, because the chooser builds its list from, and the export
+    filters, every rendered `.score-card`; a removed card could never be chosen again. With nothing
+    selected the Summary shows *No key figures are selected. Use Choose figures to show them.*
+    (`.rr-figures-empty`) in the grid's place. The choice is stored as the *excluded* keys in
     `localStorage['overseer.benchmark.runReport.keyFigures']` (`{ version: 1, excluded: [...] }`), so a
-    card added later is included, and the header's one-click Copy and Download export the saved
-    selection. The PNGs come from `run-report-frame/key-figures-image.ts`, which reads the rendered
+    card added later is included, and the header's one-click Copy and Download export the selection. The PNGs come from `run-report-frame/key-figures-image.ts`, which reads the rendered
     cards, filters them by the selection (footnotes from the included cells only) and composes them
     **square, or landscape as near square as possible, never portrait**, for any subset; the spec pins
     the layouts. While loading or after a failed load there is no tab row.

@@ -1765,7 +1765,7 @@
                      [attr.style]="'position-anchor: --rr-figures-download-tip'">Download key figures as PNG</div>
                 <button #keyFiguresChooserTrigger type="button" class="btn-ghost" id="rr-figures-choose-btn"
                         aria-haspopup="dialog"
-                        [attr.aria-label]="'Choose key figures for the image of run ' + selectedRunDetail.id + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' selected' : '')"
+                        [attr.aria-label]="'Choose key figures for run ' + selectedRunDetail.id + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' selected' : '')"
                         interestfor="rr-figures-choose-tip" [attr.style]="'anchor-name: --rr-figures-choose-tip'"
                         (click)="openKeyFiguresChooser(keyFiguresChooserTrigger)">
                   Choose figures
@@ -1774,11 +1774,11 @@
                   }
                 </button>
                 <div popover="hint" class="gh-tooltip" id="rr-figures-choose-tip"
-                     [attr.style]="'position-anchor: --rr-figures-choose-tip'">Choose the key figures in the image</div>
+                     [attr.style]="'position-anchor: --rr-figures-choose-tip'">Choose which key figures to show and export</div>
               </div>
             </div>
-            <div class="rr-figures" role="group" aria-labelledby="rrFiguresTitle">
-              <div class="score-card main-score" data-figure="intelligence">
+            <div class="rr-figures" role="group" aria-labelledby="rrFiguresTitle" [hidden]="selectedKeyFigureCount === 0">
+              <div class="score-card main-score" data-figure="intelligence" [hidden]="!isKeyFigureShown('intelligence')">
                 <span class="score-label">Intelligence Index</span>
                 @if (selectedRunDetail.qualityIndex == null && selectedRunDetail.finalScore == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
                   <span class="score-value text-muted">Not computed</span>
@@ -1797,7 +1797,7 @@
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Intelligence Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               @if (showRawQualityTile) {
-                <div class="score-card" data-figure="raw-quality">
+                <div class="score-card" data-figure="raw-quality" [hidden]="!isKeyFigureShown('raw-quality')">
                   <span class="score-label">Raw Quality Index</span>
                   <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.rawQualityIndex)">
                     {{ selectedRunDetail.rawQualityIndex }} / 100
@@ -1812,7 +1812,7 @@
                 because the model's two weakest answers were two of its easiest questions.
               -->
               @if (showUnweightedQualityTile) {
-                <div class="score-card" data-figure="unweighted-mean">
+                <div class="score-card" data-figure="unweighted-mean" [hidden]="!isKeyFigureShown('unweighted-mean')">
                   <span class="score-label">Unweighted Mean</span>
                   <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.unweightedQualityIndex)">
                     {{ selectedRunDetail.unweightedQualityIndex }} / 100
@@ -1826,7 +1826,7 @@
                 the index moves to the sub-line. The demoted form is presentational: nothing about the
                 score, the profile or the scoring method version changes with it.
               -->
-              <div class="score-card" data-figure="speed">
+              <div class="score-card" data-figure="speed" [hidden]="!isKeyFigureShown('speed')">
                 @if (demoteSpeedIndex) {
                   <span class="score-label">Median Model Time</span>
                   <span class="score-subvalue">
@@ -1863,7 +1863,7 @@
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="demoteSpeedIndex ? 'Median Model Time' : 'Speed Index'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
               <!-- Model time only, tools excluded, over the answered questions; the median beside it. -->
-              <div class="score-card" data-figure="mean-time">
+              <div class="score-card" data-figure="mean-time" [hidden]="!isKeyFigureShown('mean-time')">
                 <span class="score-label">Mean Time per Question</span>
                 <span class="score-subvalue" [class.text-muted]="meanModelTimeMs == null">{{ meanModelTimeLabel }}</span>
                 <span class="score-note">{{ meanModelTimeNote }}</span>
@@ -1879,7 +1879,7 @@
                 absolute-agreement ICC and the mean B − A. The headline index above is the panel's.
               -->
               @if (selectedRunDetail.isPanelRun) {
-                <div class="score-card panel-tile" data-figure="panel">
+                <div class="score-card panel-tile" data-figure="panel" [hidden]="!isKeyFigureShown('panel')">
                   <span class="score-label">Panel</span>
                   <span class="score-subvalue">
                     A {{ selectedRunDetail.assessorOnlyQualityIndex ?? 'N/A' }} · B {{ selectedRunDetail.coAssessorOnlyQualityIndex ?? 'N/A' }}
@@ -1890,7 +1890,7 @@
                 </div>
               }
               @if (showAgreementTile) {
-                <div class="score-card" data-figure="agreement">
+                <div class="score-card" data-figure="agreement" [hidden]="!isKeyFigureShown('agreement')">
                   <span class="score-label">{{ selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement' }}</span>
                   <span class="score-subvalue">
                     {{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · ' + agreementMeanSignedDeltaLabel : '' }}
@@ -1907,7 +1907,7 @@
                   <app-key-figure-card-actions [runId]="selectedRunDetail.id" [cardLabel]="selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement'" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
               }
-              <div class="score-card" data-figure="holistic">
+              <div class="score-card" data-figure="holistic" [hidden]="!isKeyFigureShown('holistic')">
                 <span class="score-label">Holistic Assessor Score</span>
                 <span class="score-subvalue">{{ selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A' }} / 100</span>
                 @if (selectedRunDetail.isPanelRun) {
@@ -1920,13 +1920,13 @@
                 Two cards rather than one because the gap between them is the grading pipeline: on run 24
                 the candidate answered for 12m 45s inside a 23m 39s run.
               -->
-              <div class="score-card" data-figure="answer-duration">
+              <div class="score-card" data-figure="answer-duration" [hidden]="!isKeyFigureShown('answer-duration')">
                 <span class="score-label">Answer Duration</span>
                 <span class="score-subvalue">{{ runAnswerDurationLabel(selectedRunDetail) }}</span>
                 <span class="score-note">{{ runAnswerDurationNote(selectedRunDetail) }}</span>
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Answer Duration" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
-              <div class="score-card" data-figure="wall-time">
+              <div class="score-card" data-figure="wall-time" [hidden]="!isKeyFigureShown('wall-time')">
                 <span class="score-label">Elapsed Wall Time</span>
                 <span class="score-subvalue">{{ runWallClockLabel(selectedRunDetail) }}</span>
                 <span class="score-note">{{ runWallClockNote(selectedRunDetail) }}</span>
@@ -1940,7 +1940,7 @@
                 card is absent on a run costed before that figure was recorded.
               -->
               @if (selectedRunDetail.estimatedCandidateCost != null) {
-                <div class="score-card" data-figure="model-cost">
+                <div class="score-card" data-figure="model-cost" [hidden]="!isKeyFigureShown('model-cost')">
                   <span class="score-label">Model Under Test</span>
                   <span class="score-subvalue">
                     {{ formatRunCandidateCost(selectedRunDetail) }}
@@ -1952,7 +1952,7 @@
                   <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Model Under Test" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
               }
-              <div class="score-card" data-figure="estimated-cost">
+              <div class="score-card" data-figure="estimated-cost" [hidden]="!isKeyFigureShown('estimated-cost')">
                 <span class="score-label">Estimated Cost</span>
                 <span class="score-subvalue">
                   {{ formatRunEstimatedCost(selectedRunDetail) }}
@@ -1964,6 +1964,9 @@
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Estimated Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
             </div>
+            @if (selectedKeyFigureCount === 0) {
+              <p class="rr-figures-empty">No key figures are selected. Use Choose figures to show them.</p>
+            }
 
             @if (failedAnswers().length > 0 && (formatStatus(selectedRunDetail.status) === 'Failed' || formatStatus(selectedRunDetail.status) === 'Canceled' || formatStatus(selectedRunDetail.status) === 'CompletedWithErrors')) {
               <div class="alert mb-20"
@@ -3145,8 +3148,8 @@
       </div>
     </app-run-report-frame>
   }
-  <!-- Key Figures in the Image: nested in the run report, opened by Choose figures. -->
-  <app-key-figures-chooser (exportRequested)="onKeyFiguresChosen($event)"></app-key-figures-chooser>
+  <!-- Choose key figures: nested in the run report, opened by Choose figures. -->
+  <app-key-figures-chooser (selectionChange)="onKeyFigureSelectionChange($event)"></app-key-figures-chooser>
 </dialog>
 
 <!-- The Download Center of the run report's Downloads. -->
