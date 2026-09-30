@@ -5475,6 +5475,69 @@ details* (see the compact header below). The choice is stored as the **excluded*
 stored empty list means every row. A card's own image carries only the chosen *Model* and
 *Assessor(s)* rows beside its emblem, widening toward 4 : 3 as before when they do not fit.
 
+### Key Figures: Candidate Cost, Answered and Critical Errors (2026-09-30)
+
+*Presentation only: nothing is graded, scored or stored differently, and neither the harness version
+nor the scoring method version changes. Keys are unchanged, so a stored figure selection still
+applies.*
+
+A review of the Summary tab's key-figure cards for errors, omissions and ambiguities. The per-card and
+whole-strip images read the cards from the page, so every wording below reaches them too.
+
+**Candidate Cost** (`model-cost`, was *Model Under Test*, which read as a model name). The note is the
+candidate's share *"10 % of estimated total"*, or *"10 % of the priced roles"* when pricing is
+incomplete and there is no total; the arithmetic is unchanged, so it still agrees with the cost panel.
+A second note gives the candidate's spend per question asked, *"$0.0221 per question · 18 asked"*:
+candidate cost divided by every answer row, whatever its status, as the report's At a Glance *Cost*
+divides. It is left out when the run has no answer rows. The per-card file name uses *Candidate Cost*.
+
+**Total Cost** (`estimated-cost`, was *Estimated Cost*, which beside *Candidate Cost* read as the
+candidate's). The note says what the total covers and at which prices: *"estimated · all roles ·
+catalog prices"*, *"… custom prices"* or *"… catalog and custom prices"*, *"pricing unknown"* with no
+pricing source, and *"no single total — a role has no price"* when pricing is incomplete (the value is
+then `-`).
+
+**Intelligence Index.** The interval note reads *"± 2 (95% CI)"*. A run from before per-question scoring,
+whose card falls back to the holistic score, adds *"holistic score — this run has no per-question
+index"*.
+
+**Raw Quality Index** gains the note *"before critical-error caps"*; **Unweighted Mean**'s note reads
+*"equal weights · difficulty weighting moved the index +2"*; **Holistic Assessor Score** on a
+single-assessor run gains *"assessor's whole-run judgment, not an index"* (the panel-run note is
+unchanged).
+
+**Speed and Mean Time.** The demoted Speed card (*Median Model Time*) gives the median in the Mean Time
+card's units, *"14.7 s"* rather than *"14,700 ms"*. Both it and **Mean Time per Question** carry the
+concurrency `*` (*Concurrency enabled; speed advisory*) on a concurrent run, as the ordinary Speed Index
+card does. Mean Time's note ends *"· over 16 answered"* when fewer questions were answered than the
+suite holds, since both its figures are over answered questions only.
+
+**Assessor / Reference Reader Agreement.** The value reads *"mean |Δ| 3.1 pts · signed −0.4"* and the
+note *"5 of 18 answers graded twice · Flagged only · blind"*. The `*` footnote names the cause that
+applies: trigger-selected coverage, or *"Only n = 3 of 18 answers were graded twice, too few for a mean
+to be an agreement rate."* on a small *Every answer* sample, or both sentences.
+
+**Answer Duration**'s note reads *"sum over answers, tools included"*: it is the sum of every answer's
+duration, tool time included, so under concurrency it can exceed the wall time.
+
+**Critical Errors** (`critical-errors`, new). The number of answers with an applied critical-error cap,
+by the report's rule: member A's flag, or on a panel run either member's. The value is the count or
+*None*; the notes name the questions (*"Q3, Q7"*) and, when any was disputed, *"1 disputed by the second
+reader"* (*reference reader* on a panel run), as At a Glance words it. Shown on every run with answer
+rows. The index weights by difficulty, so a critical error on an easy question barely moves it; this
+card is where it shows.
+
+**Answered** (`answered`, new, always shown). *"16 / 18"*: answered (Ok) questions over the suite's
+question count. The note is *"every question answered"*, or one clause per cause of the shortfall,
+joined with ` · `: *"2 without text"*, *"1 failed at the provider"*, *"1 never asked"* (an aborted run),
+and *"N other errors"* for the remainder, each capped by what remains so the clauses add up to the
+shortfall. An index over 16 of 18 questions is a different claim from one over 18.
+
+The two new cards follow *Unweighted Mean*, and both are shown by default because the stored selection
+records exclusions. The card keys, in display order: `intelligence`, `raw-quality`, `unweighted-mean`,
+`critical-errors`, `answered`, `speed`, `mean-time`, `panel`, `agreement`, `holistic`,
+`answer-duration`, `wall-time`, `model-cost`, `estimated-cost` — up to 14 cards.
+
 ### Run History Cards and a Compact Run Report Header (2026-09-30)
 
 *Presentation only: nothing is graded differently, and neither the harness version nor the scoring

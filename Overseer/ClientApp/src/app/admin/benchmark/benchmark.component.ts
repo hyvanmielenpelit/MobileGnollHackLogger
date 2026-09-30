@@ -2306,11 +2306,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * The candidate's share of the catalog total, apportioned across the same role amounts and in
+   * The candidate's share of the estimated total, apportioned across the same role amounts and in
    * the same order the cost panel receives them (candidate, assessor, co-assessor, second opinion,
    * claim verifier, synthesis, co-assessor synthesis), by the same largest-remainder rule — so the
-   * card and the panel below it always print the same whole percent. `'share unknown'` when the
-   * candidate figure itself is missing.
+   * card and the panel below it always print the same whole percent. With incomplete pricing there
+   * is no total, so the share is of the priced roles. `'share unknown'` when the candidate figure
+   * itself is missing.
    */
   candidateCostShareLabel(run: BenchmarkRunDetailDto): string {
     const candidate = run.estimatedCandidateCost;
@@ -2334,7 +2335,39 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (candidateIndex === -1) {
       return 'share unknown';
     }
-    return `${shares[candidateIndex]} % of catalog total`;
+    return run.pricingIncomplete
+      ? `${shares[candidateIndex]} % of the priced roles`
+      : `${shares[candidateIndex]} % of estimated total`;
+  }
+
+  /**
+   * The candidate's spend per question asked: every answer row, whatever its status, as the report's
+   * At a Glance cost divides. Null without a candidate cost or without answer rows.
+   */
+  candidateCostPerQuestionLabel(run: BenchmarkRunDetailDto): string | null {
+    const candidate = run.estimatedCandidateCost;
+    const asked = run.answers?.length ?? 0;
+    if (candidate == null || !Number.isFinite(candidate) || asked === 0) {
+      return null;
+    }
+    return `${this.formatCostAmount(candidate / asked)} per question · ${asked} asked`;
+  }
+
+  /** The Total Cost card's note: what the total covers and which prices it uses, or why there is none. */
+  totalCostNote(run: BenchmarkRunDetailDto): string {
+    if (run.pricingIncomplete) {
+      return 'no single total — a role has no price';
+    }
+    switch (run.pricingSource) {
+      case 'catalog': return 'estimated · all roles · catalog prices';
+      case 'custom': return 'estimated · all roles · custom prices';
+      case 'mixed': return 'estimated · all roles · catalog and custom prices';
+      case null:
+      case undefined:
+      case '':
+        return 'pricing unknown';
+      default: return `estimated · all roles · ${run.pricingSource} prices`;
+    }
   }
 
   /**
@@ -7052,7 +7085,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const keys: KeyFigureKey[] = ['intelligence'];
     if (this.showRawQualityTile) keys.push('raw-quality');
     if (this.showUnweightedQualityTile) keys.push('unweighted-mean');
-    keys.push('speed', 'mean-time');
+    if (this.showCriticalErrorsTile) keys.push('critical-errors');
+    keys.push('answered', 'speed', 'mean-time');
     if (run.isPanelRun) keys.push('panel');
     if (this.showAgreementTile) keys.push('agreement');
     keys.push('holistic', 'answer-duration', 'wall-time');
@@ -8227,6 +8261,66 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return (this.selectedRunDetail?.answers ?? []).filter(a => a.criticalError).length;
   }
 
+  /** Whether the Critical Errors card shows: the run has answer rows to count over. */
+  get showCriticalErrorsTile(): boolean {
+    return (this.selectedRunDetail?.answers?.length ?? 0) > 0;
+  }
+
+  /**
+   * The Critical Errors card's answers, by the report's rule: member A's flag, or in a panel run
+   * either member's, since a cap from either lowers the panel score. In question order.
+   */
+  get keyFigureCriticalErrorAnswers(): BenchmarkRunAnswerDto[] {
+    const run = this.selectedRunDetail;
+    return (run?.answers ?? [])
+      .filter(a => a.criticalError || (!!run?.isPanelRun && a.coAssessmentCriticalError === true))
+      .sort((x, y) => x.orderIndex - y.orderIndex);
+  }
+
+  /** The Critical Errors card's notes: the question numbers, then how many the second reader disputed. */
+  get keyFigureCriticalErrorNotes(): string[] {
+    const answers = this.keyFigureCriticalErrorAnswers;
+    if (answers.length === 0) return [];
+    const notes = [answers.map(a => `Q${a.orderIndex}`).join(', ')];
+    const disputed = answers.filter(a => a.secondOpinionCriticalError === false).length;
+    if (disputed > 0) {
+      const reader = this.selectedRunDetail?.isPanelRun ? 'reference reader' : 'second reader';
+      notes.push(`${disputed} disputed by the ${reader}`);
+    }
+    return notes;
+  }
+
+  /**
+   * The Answered card's note: every question answered, or one clause per cause of the shortfall.
+   * Each clause is capped by what remains, so the clauses always add up to total − answered.
+   */
+  get answeredNote(): string {
+    const run = this.selectedRunDetail;
+    if (!run) return '';
+    const total = run.totalQuestionCount ?? 0;
+    const answered = run.answeredQuestionCount ?? 0;
+    let remaining = Math.max(0, total - answered);
+    if (remaining === 0) return 'every question answered';
+    const asked = run.answers?.length ?? 0;
+    const causes: [number, string][] = [
+      [run.unansweredQuestionCount ?? 0, 'without text'],
+      [run.terminalFailureAnswerCount ?? 0, 'failed at the provider'],
+      [asked > 0 ? Math.max(0, total - asked) : 0, 'never asked']
+    ];
+    const clauses: string[] = [];
+    for (const [count, text] of causes) {
+      const taken = Math.min(count, remaining);
+      if (taken > 0) {
+        clauses.push(`${taken} ${text}`);
+        remaining -= taken;
+      }
+    }
+    if (remaining > 0) {
+      clauses.push(`${remaining} other error${remaining === 1 ? '' : 's'}`);
+    }
+    return clauses.join(' · ');
+  }
+
   /**
    * Of the flagged answers above, the ones whose raw score the cap actually lowered. A flagged
    * answer already at or below the ceiling before the cap applied is not counted here, so this
@@ -8425,7 +8519,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * it can exceed the original execution's wall time.
    */
   runAnswerDurationNote(run: BenchmarkRunDetailDto): string {
-    const base = 'candidate answering only';
+    const base = 'sum over answers, tools included';
     return run.rerunStartedAtUtc ? `${base} · includes re-executed answers` : base;
   }
 
@@ -8660,12 +8754,23 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return mean == null ? '—' : this.formatModelTime(mean);
   }
 
-  /** The Mean Time per Question card's note, with the median beside the mean. */
+  /**
+   * The Mean Time per Question card's note, with the median beside the mean; names the answered
+   * count when it is below the question count, since both figures are over answered questions only.
+   */
   get meanModelTimeNote(): string {
     const median = this.medianModelTimeMs;
-    return median == null
-      ? 'no answered question'
-      : `model time, tools excluded · median ${this.formatModelTime(median)}`;
+    if (median == null) return 'no answered question';
+    const note = `model time, tools excluded · median ${this.formatModelTime(median)}`;
+    const answered = this.answeredRunAnswers.length;
+    const total = this.selectedRunDetail?.totalQuestionCount ?? 0;
+    return answered < total ? `${note} · over ${answered} answered` : note;
+  }
+
+  /** The demoted Speed card's value: the median in the Mean Time card's units, or `—`. */
+  get medianModelTimeLabel(): string {
+    const median = this.medianModelTimeMs;
+    return median == null ? '—' : this.formatModelTime(median);
   }
 
   /** One decimal of seconds under a minute (`17.2 s`), whole minutes and seconds from one (`1m 12s`). */
@@ -8703,7 +8808,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const delta = this.selectedRunDetail?.secondOpinionMeanSignedDelta;
     if (delta == null) return '';
     const sign = delta > 0 ? '+' : delta < 0 ? '−' : '';
-    return `${sign}${Math.abs(delta).toFixed(1)} signed`;
+    return `${sign}${Math.abs(delta).toFixed(1)}`;
   }
 
   /**
@@ -8715,7 +8820,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get agreementCoverageLabel(): string {
     const run = this.selectedRunDetail;
     if (!run) return '';
-    return `${this.secondOpinionCompletedAnswerCount}/${run.answeredQuestionCount}`;
+    return `${this.secondOpinionCompletedAnswerCount} of ${run.answeredQuestionCount} answers graded twice`;
   }
 
   get agreementModeLabel(): string {
@@ -8747,12 +8852,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.agreementIsSelective || graded < AdminBenchmarkComponent.AGREEMENT_MIN_SAMPLE;
   }
 
+  /** The agreement advisory's footnote: one sentence per cause that applies. */
   get agreementAdvisoryTitle(): string {
     const run = this.selectedRunDetail;
     const graded = run?.secondOpinionGradedAnswerCount ?? 0;
     const answered = run?.answeredQuestionCount ?? 0;
-    return 'Coverage is selected by trigger, so this is conditioned on the first assessor’s own ' +
-      `uncertainty, not an unbiased agreement rate. n = ${graded} of ${answered}.`;
+    const sentences: string[] = [];
+    if (this.agreementIsSelective) {
+      sentences.push('Coverage is selected by trigger, so this is conditioned on the first assessor’s own ' +
+        `uncertainty, not an unbiased agreement rate. n = ${graded} of ${answered}.`);
+    }
+    if (graded < AdminBenchmarkComponent.AGREEMENT_MIN_SAMPLE) {
+      sentences.push(`Only n = ${graded} of ${answered} answers were graded twice, too few for a mean to be an agreement rate.`);
+    }
+    return sentences.join(' ');
   }
 
   /**

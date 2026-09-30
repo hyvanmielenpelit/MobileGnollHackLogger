@@ -1835,7 +1835,10 @@
                     {{ selectedRunDetail.qualityIndex != null ? selectedRunDetail.qualityIndex : (selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A') }} / 100
                   </span>
                   @if (indexConfidenceLabel) {
-                    <span class="score-note">{{ indexConfidenceLabel }} (95%)</span>
+                    <span class="score-note">{{ indexConfidenceLabel }} (95% CI)</span>
+                  }
+                  @if (selectedRunDetail.qualityIndex == null && selectedRunDetail.finalScore != null) {
+                    <span class="score-note">holistic score — this run has no per-question index</span>
                   }
                   @if ((selectedRunDetail.unansweredQuestionCount ?? 0) > 0) {
                     <span class="score-note">{{ selectedRunDetail.unansweredQuestionCount }} question(s) unanswered — the model produced no text, and each scores 0 here</span>
@@ -1849,6 +1852,7 @@
                   <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.rawQualityIndex)">
                     {{ selectedRunDetail.rawQualityIndex }} / 100
                   </span>
+                  <span class="score-note">before critical-error caps</span>
                   <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Raw Quality Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
               }
@@ -1864,10 +1868,27 @@
                   <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.unweightedQualityIndex)">
                     {{ selectedRunDetail.unweightedQualityIndex }} / 100
                   </span>
-                  <span class="score-note">weighting {{ weightingDeltaLabel }}</span>
+                  <span class="score-note">equal weights · difficulty weighting moved the index {{ weightingDeltaLabel }}</span>
                   <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Unweighted Mean" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
               }
+              <!-- Counted by the report's rule: in a panel run, a cap from either member. -->
+              @if (showCriticalErrorsTile) {
+                <div class="score-card" data-figure="critical-errors" [hidden]="!isKeyFigureShown('critical-errors')">
+                  <span class="score-label">Critical Errors</span>
+                  <span class="score-subvalue">{{ keyFigureCriticalErrorAnswers.length > 0 ? keyFigureCriticalErrorAnswers.length : 'None' }}</span>
+                  @for (note of keyFigureCriticalErrorNotes; track $index) {
+                    <span class="score-note">{{ note }}</span>
+                  }
+                  <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Critical Errors" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                </div>
+              }
+              <div class="score-card" data-figure="answered" [hidden]="!isKeyFigureShown('answered')">
+                <span class="score-label">Answered</span>
+                <span class="score-subvalue">{{ selectedRunDetail.answeredQuestionCount }} / {{ selectedRunDetail.totalQuestionCount }}</span>
+                <span class="score-note">{{ answeredNote }}</span>
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Answered" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
               <!--
                 Where the Speed Index cannot discriminate, the card leads with the figure that can and
                 the index moves to the sub-line. The demoted form is presentational: nothing about the
@@ -1877,7 +1898,10 @@
                 @if (demoteSpeedIndex) {
                   <span class="score-label">Median Model Time</span>
                   <span class="score-subvalue">
-                    {{ medianModelTimeMs | number:'1.0-0' }} ms
+                    {{ medianModelTimeLabel }}
+                    @if (selectedRunDetail.speedMeasurementDegraded) {
+                      <span class="degraded-tag" title="Concurrency enabled; speed advisory">*</span>
+                    }
                   </span>
                   <span class="score-note" [title]="showSpeedIndexSaturationAdvisory ? speedIndexSaturationAdvisoryTitle : runProfileFitAdvisoryTitle">
                     Speed Index {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100 &mdash;
@@ -1912,7 +1936,12 @@
               <!-- Model time only, tools excluded, over the answered questions; the median beside it. -->
               <div class="score-card" data-figure="mean-time" [hidden]="!isKeyFigureShown('mean-time')">
                 <span class="score-label">Mean Time per Question</span>
-                <span class="score-subvalue" [class.text-muted]="meanModelTimeMs == null">{{ meanModelTimeLabel }}</span>
+                <span class="score-subvalue" [class.text-muted]="meanModelTimeMs == null">
+                  {{ meanModelTimeLabel }}
+                  @if (selectedRunDetail.speedMeasurementDegraded) {
+                    <span class="degraded-tag" title="Concurrency enabled; speed advisory">*</span>
+                  }
+                </span>
                 <span class="score-note">{{ meanModelTimeNote }}</span>
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Mean Time per Question" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
@@ -1940,7 +1969,7 @@
                 <div class="score-card" data-figure="agreement" [hidden]="!isKeyFigureShown('agreement')">
                   <span class="score-label">{{ selectedRunDetail.isPanelRun ? 'Reference Reader Agreement' : 'Assessor Agreement' }}</span>
                   <span class="score-subvalue">
-                    {{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · ' + agreementMeanSignedDeltaLabel : '' }}
+                    mean |Δ| {{ agreementMeanAbsDeltaLabel }} pts{{ agreementMeanSignedDeltaLabel ? ' · signed ' + agreementMeanSignedDeltaLabel : '' }}
                     <!--
                       H4. At n = 1 a displayed 0.0 is the arithmetic of a single point and currently reads as
                       strong agreement. The same marker the Speed Index card uses, for the same reason: the
@@ -1959,6 +1988,8 @@
                 <span class="score-subvalue">{{ selectedRunDetail.finalScore != null ? selectedRunDetail.finalScore : 'N/A' }} / 100</span>
                 @if (selectedRunDetail.isPanelRun) {
                   <span class="score-note">member A; member B {{ selectedRunDetail.coAssessorFinalScore ?? 'N/A' }} / 100</span>
+                } @else {
+                  <span class="score-note">assessor's whole-run judgment, not an index</span>
                 }
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Holistic Assessor Score" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
@@ -1988,7 +2019,7 @@
               -->
               @if (selectedRunDetail.estimatedCandidateCost != null) {
                 <div class="score-card" data-figure="model-cost" [hidden]="!isKeyFigureShown('model-cost')">
-                  <span class="score-label">Model Under Test</span>
+                  <span class="score-label">Candidate Cost</span>
                   <span class="score-subvalue">
                     {{ formatRunCandidateCost(selectedRunDetail) }}
                     @if (selectedRunDetail.pricingIncomplete) {
@@ -1996,19 +2027,22 @@
                     }
                   </span>
                   <span class="score-note">{{ candidateCostShareLabel(selectedRunDetail) }}</span>
-                  <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Model Under Test" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                  @if (candidateCostPerQuestionLabel(selectedRunDetail); as perQuestion) {
+                    <span class="score-note">{{ perQuestion }}</span>
+                  }
+                  <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Candidate Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
               }
               <div class="score-card" data-figure="estimated-cost" [hidden]="!isKeyFigureShown('estimated-cost')">
-                <span class="score-label">Estimated Cost</span>
+                <span class="score-label">Total Cost</span>
                 <span class="score-subvalue">
                   {{ formatRunEstimatedCost(selectedRunDetail) }}
                   @if (selectedRunDetail.pricingIncomplete) {
                     <span class="degraded-tag" title="Some participating models lack pricing">*</span>
                   }
                 </span>
-                <span class="score-note">{{ selectedRunDetail.pricingSource || 'Pricing unknown' }}</span>
-                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Estimated Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+                <span class="score-note">{{ totalCostNote(selectedRunDetail) }}</span>
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Total Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
             </div>
             @if (selectedKeyFigureCount === 0) {
@@ -3042,7 +3076,7 @@
           <div role="tabpanel" class="rr-panel rr-panel-narrow" id="rr-panel-cost" aria-labelledby="rr-tab-cost" tabindex="0"
                [hidden]="runReportTab !== 'cost'">
             <!--
-              Where the Estimated Cost card's figure went. The roles and the grading subtotal are
+              Where the Total Cost card's figure went. The roles and the grading subtotal are
               visible rather than behind a hover, because the split is the point.
             -->
             <app-benchmark-cost-panel

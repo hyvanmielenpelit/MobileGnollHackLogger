@@ -36,8 +36,8 @@ export type KeyFigureTone = 'high' | 'mid' | 'low' | 'na';
  * with a label variant (Speed Index / Median Model Time; Assessor / Reference Reader Agreement).
  */
 export const KEY_FIGURE_KEYS = [
-  'intelligence', 'raw-quality', 'unweighted-mean', 'speed', 'mean-time', 'panel', 'agreement',
-  'holistic', 'answer-duration', 'wall-time', 'model-cost', 'estimated-cost'
+  'intelligence', 'raw-quality', 'unweighted-mean', 'critical-errors', 'answered', 'speed', 'mean-time',
+  'panel', 'agreement', 'holistic', 'answer-duration', 'wall-time', 'model-cost', 'estimated-cost'
 ] as const;
 
 export type KeyFigureKey = typeof KEY_FIGURE_KEYS[number];

@@ -49,7 +49,7 @@ const STRIP_FIXTURE = `
       <span class="score-value badge-score-mid">
         73 / 100
       </span>
-      <span class="score-note">± 8 (95%)</span>
+      <span class="score-note">± 8 (95% CI)</span>
       <app-key-figure-card-actions>
         <button type="button" aria-label="Copy Intelligence Index of run 72 as an image"></button>
         <div popover="hint" class="gh-tooltip">Copy as image</div>
@@ -63,7 +63,18 @@ const STRIP_FIXTURE = `
     <div class="score-card" data-figure="unweighted-mean">
       <span class="score-label">Unweighted Mean</span>
       <span class="score-subvalue badge-score-na">N/A / 100</span>
-      <span class="score-note">weighting +2</span>
+      <span class="score-note">equal weights · difficulty weighting moved the index +2</span>
+    </div>
+    <div class="score-card" data-figure="critical-errors">
+      <span class="score-label">Critical Errors</span>
+      <span class="score-subvalue">2</span>
+      <span class="score-note">Q3, Q7</span>
+      <span class="score-note">1 disputed by the second reader</span>
+    </div>
+    <div class="score-card" data-figure="answered">
+      <span class="score-label">Answered</span>
+      <span class="score-subvalue">16 / 18</span>
+      <span class="score-note">2 without text</span>
     </div>
     <div class="score-card" data-figure="speed">
       <span class="score-label">Speed Index</span>
@@ -76,7 +87,7 @@ const STRIP_FIXTURE = `
     </div>
     <div class="score-card" data-figure="speed">
       <span class="score-label">Median Model Time</span>
-      <span class="score-subvalue">24,985 ms</span>
+      <span class="score-subvalue">25.0 s</span>
       <span class="score-note">Speed Index 99 / 100 — advisory</span>
     </div>
     <div class="score-card" data-figure="speed">
@@ -97,18 +108,19 @@ const STRIP_FIXTURE = `
     </div>
     <div class="score-card" data-figure="agreement">
       <span class="score-label">Assessor Agreement</span>
-      <span class="score-subvalue">0.0 pts <span class="degraded-tag" title="One answer only">*</span></span>
-      <span class="score-note">1 of 10 · triggered · blind</span>
+      <span class="score-subvalue">mean |Δ| 0.0 pts <span class="degraded-tag" title="One answer only">*</span></span>
+      <span class="score-note">1 of 10 answers graded twice · Flagged only · blind</span>
     </div>
     <div class="score-card" data-figure="model-cost">
-      <span class="score-label">Model Under Test</span>
+      <span class="score-label">Candidate Cost</span>
       <span class="score-subvalue">$1.0000 <span class="degraded-tag" title="Some participating models lack pricing">*</span></span>
-      <span class="score-note">31 % of catalog total</span>
+      <span class="score-note">31 % of estimated total</span>
+      <span class="score-note">$0.0556 per question · 18 asked</span>
     </div>
     <div class="score-card">
-      <span class="score-label">Estimated Cost</span>
+      <span class="score-label">Total Cost</span>
       <span class="score-subvalue">$3.2322 <span class="degraded-tag" title="Some participating models lack pricing">*</span></span>
-      <span class="score-note">Anthropic API</span>
+      <span class="score-note">estimated · all roles · catalog prices</span>
     </div>
   </div>
 `;
@@ -224,15 +236,16 @@ describe('key figures image', () => {
     it('reads one cell per score card, in order', () => {
       const cells = readKeyFigureCells(root);
       expect(cells.map(c => c.label)).toEqual([
-        'Intelligence Index', 'Raw Quality Index', 'Unweighted Mean', 'Speed Index', 'Median Model Time',
-        'Speed Index', 'Mean Time per Question', 'Panel', 'Assessor Agreement', 'Model Under Test', 'Estimated Cost'
+        'Intelligence Index', 'Raw Quality Index', 'Unweighted Mean', 'Critical Errors', 'Answered', 'Speed Index',
+        'Median Model Time', 'Speed Index', 'Mean Time per Question', 'Panel', 'Assessor Agreement', 'Candidate Cost',
+        'Total Cost'
       ]);
     });
 
     it("reads each card's key from data-figure, and from its label where it has none", () => {
       expect(readKeyFigureCells(root).map(c => c.key)).toEqual([
-        'intelligence', 'raw-quality', 'unweighted-mean', 'speed', 'speed', 'speed', 'mean-time', 'panel',
-        'agreement', 'model-cost', 'estimated-cost'
+        'intelligence', 'raw-quality', 'unweighted-mean', 'critical-errors', 'answered', 'speed', 'speed', 'speed',
+        'mean-time', 'panel', 'agreement', 'model-cost', 'total-cost'
       ]);
     });
 
@@ -242,7 +255,7 @@ describe('key figures image', () => {
         key: 'intelligence',
         label: 'Intelligence Index',
         value: '73 / 100',
-        notes: ['± 8 (95%)'],
+        notes: ['± 8 (95% CI)'],
         main: true,
         headline: true,
         tone: 'mid',
@@ -260,30 +273,32 @@ describe('key figures image', () => {
 
     it('reads the headline flag from .score-value and .score-headline', () => {
       expect(readKeyFigureCells(root).map(c => c.headline))
-        .toEqual([true, false, false, true, false, true, false, false, false, false, false]);
+        .toEqual([true, false, false, false, false, true, false, true, false, false, false, false, false]);
     });
 
     it('reads the tone from the badge class, muted text as na, and none otherwise', () => {
       const tones = readKeyFigureCells(root).map(c => c.tone);
-      expect(tones).toEqual(['mid', 'high', 'na', 'low', null, 'na', null, null, null, null, null]);
+      expect(tones).toEqual(['mid', 'high', 'na', null, null, 'low', null, 'na', null, null, null, null, null]);
     });
 
     it('keeps one star per advisory marker and turns each distinct title into a footnote', () => {
       const cells = readKeyFigureCells(root);
-      const speed = cells[3];
+      const speed = cells[5];
       expect(speed.value).toBe('40 / 100**');
       expect(speed.footnotes).toEqual([
         '* Concurrency enabled; speed advisory',
         '* Profile latency target does not fit'
       ]);
-      expect(cells[8].value).toBe('0.0 pts*');
-      expect(cells[10].value).toBe('$3.2322*');
-      expect(cells[10].footnotes).toEqual(['* Some participating models lack pricing']);
+      expect(cells[10].value).toBe('mean |Δ| 0.0 pts*');
+      expect(cells[12].value).toBe('$3.2322*');
+      expect(cells[12].footnotes).toEqual(['* Some participating models lack pricing']);
     });
 
     it('reads every note of a card', () => {
-      const panel = readKeyFigureCells(root)[7];
-      expect(panel.notes).toEqual(['ICC 0.81 · mean B − A +1.2', '3 disagreement(s) over 10 answers both scored']);
+      const cells = readKeyFigureCells(root);
+      expect(cells[9].notes).toEqual(['ICC 0.81 · mean B − A +1.2', '3 disagreement(s) over 10 answers both scored']);
+      expect(cells[3].notes).toEqual(['Q3, Q7', '1 disputed by the second reader']);
+      expect(cells[11].notes).toEqual(['31 % of estimated total', '$0.0556 per question · 18 asked']);
     });
 
     it('reads one card without changing it', () => {
@@ -310,9 +325,9 @@ describe('key figures image', () => {
 
     it('keeps the cells the filter accepts, in order, and every cell without one', () => {
       const cells = readKeyFigureCells(root);
-      expect(filterKeyFigureCells(cells).length).toBe(11);
-      const kept = filterKeyFigureCells(cells, key => key === 'estimated-cost' || key === 'intelligence');
-      expect(kept.map(c => c.label)).toEqual(['Intelligence Index', 'Estimated Cost']);
+      expect(filterKeyFigureCells(cells).length).toBe(13);
+      const kept = filterKeyFigureCells(cells, key => key === 'total-cost' || key === 'intelligence');
+      expect(kept.map(c => c.label)).toEqual(['Intelligence Index', 'Total Cost']);
     });
 
     it('takes footnotes from the included cells only', () => {
@@ -827,7 +842,7 @@ describe('key figures image', () => {
 
     it('copies one card and names it in the message', async () => {
       const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
-      const card = root.querySelectorAll<HTMLElement>('.score-card')[3];
+      const card = root.querySelectorAll<HTMLElement>('.score-card')[5];
       const message = await exportKeyFiguresImage('copy', root, card, CONTEXT);
 
       expect(message).toBe('Speed Index copied as an image.');

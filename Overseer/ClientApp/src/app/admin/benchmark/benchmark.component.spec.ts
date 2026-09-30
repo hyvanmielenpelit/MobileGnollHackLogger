@@ -5685,7 +5685,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.showUnweightedQualityTile).toBeTrue();
       expect(component.weightingDeltaLabel).toBe('+2');
       expect(scoreCardText('Unweighted Mean')).toContain('92 / 100');
-      expect(scoreCardText('Unweighted Mean')).toContain('weighting +2');
+      expect(scoreCardText('Unweighted Mean')).toContain('equal weights · difficulty weighting moved the index +2');
     });
 
     it('should omit the unweighted tile when the two aggregations agree', () => {
@@ -5723,12 +5723,62 @@ describe('AdminBenchmarkComponent', () => {
 
       // The coverage never travels separately from the figure: 4 of 18 selected by trigger and
       // 18 of 18 are different measurements, and only the fraction tells them apart.
-      expect(component.agreementCoverageLabel).toBe('4/18');
+      expect(component.agreementCoverageLabel).toBe('4 of 18 answers graded twice');
       expect(component.agreementIsSelective).toBeTrue();
       const text = scoreCardText('Assessor Agreement');
-      expect(text).toContain('4.3 pts');
-      expect(text).toContain('4/18');
-      expect(text).toContain('Flagged only');
+      expect(text).toContain('mean |Δ| 4.3 pts');
+      expect(text).toContain('4 of 18 answers graded twice · Flagged only');
+    });
+
+    it('should name the signed mean after the absolute one', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        secondOpinionModeUsed: 3,
+        secondOpinionGradedAnswerCount: 18,
+        secondOpinionMeanAbsDelta: 3.1,
+        secondOpinionMeanSignedDelta: -0.4
+      });
+      fixture.detectChanges();
+
+      expect(scoreCardText('Assessor Agreement')).toContain('mean |Δ| 3.1 pts · signed −0.4');
+    });
+
+    it('should give the trigger-selected cause alone when the sample is large enough', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        secondOpinionModeUsed: 1,
+        secondOpinionGradedAnswerCount: 6,
+        secondOpinionMeanAbsDelta: 2.0
+      });
+      fixture.detectChanges();
+
+      expect(component.showAgreementAdvisory).toBeTrue();
+      expect(component.agreementAdvisoryTitle)
+        .toBe('Coverage is selected by trigger, so this is conditioned on the first assessor’s own uncertainty, not an unbiased agreement rate. n = 6 of 18.');
+    });
+
+    it('should give the small-sample cause alone for a small Every answer sample', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        secondOpinionModeUsed: 3,
+        secondOpinionGradedAnswerCount: 3,
+        secondOpinionMeanAbsDelta: 2.0
+      });
+      fixture.detectChanges();
+
+      expect(component.showAgreementAdvisory).toBeTrue();
+      expect(component.agreementAdvisoryTitle)
+        .toBe('Only n = 3 of 18 answers were graded twice, too few for a mean to be an agreement rate.');
+    });
+
+    it('should give both causes when coverage is selective and the sample small', () => {
+      component.selectedRunDetail = buildFinishedRun({
+        secondOpinionModeUsed: 1,
+        secondOpinionGradedAnswerCount: 2,
+        secondOpinionMeanAbsDelta: 2.0
+      });
+      fixture.detectChanges();
+
+      const title = component.agreementAdvisoryTitle;
+      expect(title).toContain('Coverage is selected by trigger');
+      expect(title).toContain('Only n = 2 of 18 answers were graded twice');
     });
 
     it('should drop the selective caveat when every answer was graded twice', () => {
@@ -5739,7 +5789,7 @@ describe('AdminBenchmarkComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(component.agreementCoverageLabel).toBe('18/18');
+      expect(component.agreementCoverageLabel).toBe('18 of 18 answers graded twice');
       expect(component.agreementIsSelective).toBeFalse();
       expect(scoreCardText('Assessor Agreement')).toContain('Every answer');
     });
@@ -5764,6 +5814,203 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(component.showAgreementTile).toBeFalse();
       expect(scoreCardText('Assessor Agreement')).toBe('');
+    });
+
+    describe('key figures: notes, Critical Errors and Answered', () => {
+      function answer(orderIndex: number, overrides: any = {}): any {
+        return {
+          id: orderIndex, orderIndex, questionText: `Q${orderIndex}`, difficulty: 1, answerText: 'a',
+          status: 'Ok', assessmentStatus: 'Scored', durationMs: 1000, modelTimeMs: 1000,
+          scrubbedArtifactCount: 0, answerFlags: 0, answerFlagNames: [], qualityScore: 80,
+          ...overrides
+        };
+      }
+
+      function figureCard(key: string): HTMLElement | null {
+        return fixture.nativeElement.querySelector(`.score-card[data-figure="${key}"]`);
+      }
+
+      function figureNotes(key: string): string[] {
+        return Array.from(figureCard(key)?.querySelectorAll('.score-note') ?? [])
+          .map(n => (n.textContent || '').replace(/\s+/g, ' ').trim());
+      }
+
+      function figureValue(key: string): string {
+        return (figureCard(key)?.querySelector('.score-subvalue')?.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+
+      it('should say the raw index is before the caps', () => {
+        component.selectedRunDetail = buildFinishedRun({ rawQualityIndex: 97 });
+        fixture.detectChanges();
+
+        expect(figureNotes('raw-quality')).toEqual(['before critical-error caps']);
+      });
+
+      it('should say the holistic score is not an index on a single-assessor run', () => {
+        component.selectedRunDetail = buildFinishedRun({ finalScore: 90 });
+        fixture.detectChanges();
+
+        expect(figureNotes('holistic')).toEqual(['assessor\'s whole-run judgment, not an index']);
+      });
+
+      it('should mark the holistic fallback on a run with no per-question index', () => {
+        component.selectedRunDetail = buildFinishedRun({ qualityIndex: null, unweightedQualityIndex: null, finalScore: 81 });
+        fixture.detectChanges();
+
+        const card = figureCard('intelligence')!;
+        expect(card.querySelector('.score-value')?.textContent).toContain('81 / 100');
+        expect(figureNotes('intelligence')).toContain('holistic score — this run has no per-question index');
+      });
+
+      it('should not mark the fallback when the index exists', () => {
+        component.selectedRunDetail = buildFinishedRun({ finalScore: 81 });
+        fixture.detectChanges();
+
+        expect(figureNotes('intelligence')).not.toContain('holistic score — this run has no per-question index');
+      });
+
+      it('should count critical errors and name their questions', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answers: [answer(7, { criticalError: true }), answer(3, { criticalError: true }), answer(5)]
+        });
+        fixture.detectChanges();
+
+        expect(component.keyFigureCriticalErrorAnswers.map(a => a.orderIndex)).toEqual([3, 7]);
+        expect(figureValue('critical-errors')).toBe('2');
+        expect(figureNotes('critical-errors')).toEqual(['Q3, Q7']);
+      });
+
+      it('should read None with no critical error', () => {
+        component.selectedRunDetail = buildFinishedRun({ answers: [answer(1), answer(2)] });
+        fixture.detectChanges();
+
+        expect(figureValue('critical-errors')).toBe('None');
+        expect(figureNotes('critical-errors')).toEqual([]);
+      });
+
+      it('should count member B\'s critical errors on a panel run, as the report does', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          isPanelRun: true,
+          answers: [answer(1, { criticalError: true }), answer(2, { coAssessmentCriticalError: true }), answer(3)]
+        });
+        fixture.detectChanges();
+
+        expect(component.keyFigureCriticalErrorAnswers.length).toBe(2);
+        expect(figureValue('critical-errors')).toBe('2');
+        expect(figureNotes('critical-errors')).toEqual(['Q1, Q2']);
+      });
+
+      it('should ignore member B\'s flag outside a panel run', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answers: [answer(1, { coAssessmentCriticalError: true })]
+        });
+        fixture.detectChanges();
+
+        expect(figureValue('critical-errors')).toBe('None');
+      });
+
+      it('should say how many critical errors the second reader disputed', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answers: [
+            answer(1, { criticalError: true, secondOpinionCriticalError: false }),
+            answer(2, { criticalError: true, secondOpinionCriticalError: true })
+          ]
+        });
+        fixture.detectChanges();
+
+        expect(figureNotes('critical-errors')).toEqual(['Q1, Q2', '1 disputed by the second reader']);
+      });
+
+      it('should name the reference reader on a panel run', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          isPanelRun: true,
+          answers: [answer(1, { criticalError: true, secondOpinionCriticalError: false })]
+        });
+        fixture.detectChanges();
+
+        expect(figureNotes('critical-errors')).toEqual(['Q1', '1 disputed by the reference reader']);
+      });
+
+      it('should hide the Critical Errors card on a run with no answer rows', () => {
+        component.selectedRunDetail = buildFinishedRun({ answers: [] });
+        fixture.detectChanges();
+
+        expect(figureCard('critical-errors')).toBeNull();
+        expect(component.shownKeyFigureKeys).not.toContain('critical-errors');
+        expect(component.shownKeyFigureKeys).toContain('answered');
+      });
+
+      it('should show every question answered', () => {
+        component.selectedRunDetail = buildFinishedRun();
+        fixture.detectChanges();
+
+        expect(figureValue('answered')).toBe('18 / 18');
+        expect(figureNotes('answered')).toEqual(['every question answered']);
+      });
+
+      it('should give one clause per cause, adding up to the shortfall', () => {
+        const answers = Array.from({ length: 17 }, (_, i) => answer(i + 1));
+        component.selectedRunDetail = buildFinishedRun({
+          answeredQuestionCount: 12,
+          totalQuestionCount: 18,
+          unansweredQuestionCount: 2,
+          terminalFailureAnswerCount: 1,
+          answers
+        });
+        fixture.detectChanges();
+
+        expect(figureValue('answered')).toBe('12 / 18');
+        const note = component.answeredNote;
+        expect(note).toBe('2 without text · 1 failed at the provider · 1 never asked · 2 other errors');
+        const sum = note.split(' · ').reduce((total, clause) => total + parseInt(clause, 10), 0);
+        expect(sum).toBe(18 - 12);
+      });
+
+      it('should use the singular for one other error', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answeredQuestionCount: 17,
+          totalQuestionCount: 18,
+          unansweredQuestionCount: 0,
+          answers: Array.from({ length: 18 }, (_, i) => answer(i + 1))
+        });
+
+        expect(component.answeredNote).toBe('1 other error');
+      });
+
+      it('should cap the clauses at the shortfall', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answeredQuestionCount: 16,
+          totalQuestionCount: 18,
+          unansweredQuestionCount: 2,
+          terminalFailureAnswerCount: 3,
+          answers: Array.from({ length: 18 }, (_, i) => answer(i + 1))
+        });
+
+        expect(component.answeredNote).toBe('2 without text');
+      });
+
+      it('should not report never-asked questions from an empty answer list', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answeredQuestionCount: 16,
+          totalQuestionCount: 18,
+          unansweredQuestionCount: 0,
+          answers: []
+        });
+
+        expect(component.answeredNote).toBe('2 other errors');
+      });
+
+      it('should place the two new cards after the quality cards', () => {
+        component.selectedRunDetail = buildFinishedRun({ answers: [answer(1)] });
+        fixture.detectChanges();
+
+        const keys: string[] = Array.from(fixture.nativeElement.querySelectorAll('.rr-figures .score-card'))
+          .map(c => (c as HTMLElement).getAttribute('data-figure') ?? '');
+        expect(keys.indexOf('critical-errors')).toBe(keys.indexOf('unweighted-mean') + 1);
+        expect(keys.indexOf('answered')).toBe(keys.indexOf('critical-errors') + 1);
+        expect(keys.indexOf('speed')).toBe(keys.indexOf('answered') + 1);
+        expect(component.shownKeyFigureKeys as string[]).toEqual(keys);
+      });
     });
 
     it('should name the questions on the tool-budget line and report contested and re-assessed answers', () => {
@@ -6051,9 +6298,29 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.demoteSpeedIndex).toBeTrue();
         expect(component.medianModelTimeMs).toBe(2500);
         expect(speedCardLabel()).toBe('Median Model Time');
-        expect(speedCardValueText()).toContain('2,500 ms');
+        expect(speedCardValueText()).toBe('2.5 s');
         expect(speedIndexNoteText()).toContain('Speed Index');
         expect(speedIndexNoteText()).toContain('saturated: 2 of 4 at the ceiling');
+      });
+
+      it('should keep the concurrency marker on the demoted card and on Mean Time', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          scoringProfileSpeedTargetMs: 30000,
+          speedMeasurementDegraded: true,
+          answers: [
+            scoredAnswer(1, 100, 1000), scoredAnswer(2, 100, 2000),
+            scoredAnswer(3, 50, 3000), scoredAnswer(4, 50, 4000)
+          ]
+        });
+        fixture.detectChanges();
+
+        expect(component.demoteSpeedIndex).toBeTrue();
+        const marker = speedCard()?.querySelector('.score-subvalue .degraded-tag');
+        expect(marker?.getAttribute('title')).toBe('Concurrency enabled; speed advisory');
+        const cards: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.score-card'));
+        const meanTime = cards.find(c => c.getAttribute('data-figure') === 'mean-time');
+        expect(meanTime?.querySelector('.score-subvalue .degraded-tag')?.getAttribute('title'))
+          .toBe('Concurrency enabled; speed advisory');
       });
 
       it('should not flag saturation just below half', () => {
@@ -7207,7 +7474,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const el: HTMLElement = fixture.nativeElement;
       const text = el.textContent || '';
-      expect(text).toContain('± 6 (95%)');
+      expect(text).toContain('± 6 (95% CI)');
       expect(text).toContain('blind');
     });
 
@@ -7516,7 +7783,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.formatCostAmount(Number.NaN)).toBe('-');
     });
 
-    it('should render Estimated Cost card with the incomplete-pricing marker when pricingIncomplete is true', () => {
+    it('should render the Total Cost card with the incomplete-pricing marker when pricingIncomplete is true', () => {
       component.activeSubTab = 'run';
       component.selectedRunDetail = {
         id: 1,
@@ -7524,20 +7791,20 @@ describe('AdminBenchmarkComponent', () => {
         suiteName: 'Test',
         status: 2,
         estimatedCost: 1.2345,
-        pricingSource: 'Anthropic API',
+        pricingSource: 'catalog',
         pricingIncomplete: true,
         answers: []
       } as any;
       fixture.detectChanges();
 
       const cards = Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[];
-      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Estimated Cost');
+      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Total Cost');
       expect(card).toBeTruthy();
-      
+
       const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
       expect(content).toContain('$1.2345');
-      expect(content).toContain('Anthropic API');
-      
+      expect(content).toContain('no single total — a role has no price');
+
       const marker = card!.querySelector('.degraded-tag');
       expect(marker).toBeTruthy();
       expect(marker?.textContent?.trim()).toBe('*');
@@ -7545,7 +7812,7 @@ describe('AdminBenchmarkComponent', () => {
 
     // H5. The summary row carries the same pair the run history Cost cell does: the model under
     // test first, the catalog total beside it.
-    it('should render a Model Under Test card with the candidate figure and its share of the total', () => {
+    it('should render a Candidate Cost card with the candidate figure and its share of the total', () => {
       component.activeSubTab = 'run';
       component.selectedRunDetail = {
         id: 1,
@@ -7558,18 +7825,59 @@ describe('AdminBenchmarkComponent', () => {
         estimatedSecondOpinionCost: 0.10,
         estimatedVerifierCost: 0.10,
         estimatedSynthesisCost: 0.03,
-        pricingSource: 'Anthropic API',
+        pricingSource: 'catalog',
         answers: []
       } as any;
       fixture.detectChanges();
 
       const cards = Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[];
-      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Model Under Test');
+      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Candidate Cost');
       expect(card).toBeTruthy();
 
       const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
       expect(content).toContain('$2.3000');
-      expect(content).toContain('76 % of catalog total');
+      expect(content).toContain('76 % of estimated total');
+      // No answer rows, so no per-question figure.
+      expect(content).not.toContain('per question');
+      expect(card!.querySelector('app-key-figure-card-actions')).toBeTruthy();
+    });
+
+    it('should add the candidate cost per question asked, over every answer row', () => {
+      component.activeSubTab = 'run';
+      component.selectedRunDetail = {
+        id: 1,
+        benchmarkSuiteId: 1,
+        suiteName: 'Test',
+        status: 2,
+        estimatedCost: 1.0,
+        estimatedCandidateCost: 0.3978,
+        estimatedAssessorCost: 0.6022,
+        pricingSource: 'catalog',
+        answers: Array.from({ length: 18 }, (_, i) => ({ id: i + 1, orderIndex: i + 1, status: i === 0 ? 'Error' : 'Ok' }))
+      } as any;
+
+      expect(component.candidateCostPerQuestionLabel(component.selectedRunDetail!)).toBe('$0.0221 per question · 18 asked');
+    });
+
+    it('should word the Total Cost note by pricing source', () => {
+      const run = (overrides: any) => ({ id: 1, answers: [], ...overrides }) as any;
+      expect(component.totalCostNote(run({ pricingSource: 'catalog' }))).toBe('estimated · all roles · catalog prices');
+      expect(component.totalCostNote(run({ pricingSource: 'custom' }))).toBe('estimated · all roles · custom prices');
+      expect(component.totalCostNote(run({ pricingSource: 'mixed' }))).toBe('estimated · all roles · catalog and custom prices');
+      expect(component.totalCostNote(run({ pricingSource: null }))).toBe('pricing unknown');
+      expect(component.totalCostNote(run({ pricingSource: 'mixed', pricingIncomplete: true }))).toBe('no single total — a role has no price');
+    });
+
+    it('should give the share of the priced roles when pricing is incomplete', () => {
+      const run = {
+        id: 1,
+        estimatedCost: null,
+        estimatedCandidateCost: 1.0,
+        estimatedAssessorCost: 3.0,
+        pricingIncomplete: true,
+        answers: []
+      } as any;
+      expect(component.candidateCostShareLabel(run)).toBe('25 % of the priced roles');
     });
 
     // H4. The card and the cost panel below it apportion the same five role amounts, in the same
@@ -7597,8 +7905,8 @@ describe('AdminBenchmarkComponent', () => {
       // synthesis 1.18 -- the floors sum to 98, so the two largest remainders (second opinion,
       // then candidate) each get one extra point, giving the candidate 26 %.
       const cards = Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[];
-      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Model Under Test');
-      expect(card!.textContent).toContain('26 % of catalog total');
+      const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Candidate Cost');
+      expect(card!.textContent).toContain('26 % of estimated total');
 
       const panelShares = Array.from(
         (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(
@@ -7608,7 +7916,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(panelShares[0]).toBe('26%');
     });
 
-    it('should omit the Model Under Test card when the candidate cost was never recorded', () => {
+    it('should omit the Candidate Cost card when the candidate cost was never recorded', () => {
       component.activeSubTab = 'run';
       component.selectedRunDetail = {
         id: 1,
@@ -7624,8 +7932,8 @@ describe('AdminBenchmarkComponent', () => {
 
       const labels = (Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[])
         .map(c => c.querySelector('.score-label')?.textContent?.trim());
-      expect(labels).not.toContain('Model Under Test');
-      expect(labels).toContain('Estimated Cost');
+      expect(labels).not.toContain('Candidate Cost');
+      expect(labels).toContain('Total Cost');
     });
 
     it('should say pricing incomplete in words under the run history cost, with no asterisk and no title', () => {
@@ -9364,7 +9672,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should leave both card notes unchanged for a run that was never re-run', () => {
       const run = buildRun({ status: 'Canceled' });
 
-      expect(component.runAnswerDurationNote(run)).toBe('candidate answering only');
+      expect(component.runAnswerDurationNote(run)).toBe('sum over answers, tools included');
       expect(component.runWallClockNote(run)).toBe('start to finish, grading included');
     });
 
@@ -9375,7 +9683,7 @@ describe('AdminBenchmarkComponent', () => {
         rerunCompletedAtUtc: '2026-09-09T10:20:04Z'
       });
 
-      expect(component.runAnswerDurationNote(run)).toBe('candidate answering only · includes re-executed answers');
+      expect(component.runAnswerDurationNote(run)).toBe('sum over answers, tools included · includes re-executed answers');
       expect(component.runWallClockNote(run)).toBe('start to finish, grading included · plus re-run 20m 4s');
     });
 
@@ -10963,7 +11271,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(names).toContain('Co-assessor');
       expect(names).toContain('Co-assessor synthesis');
       // Candidate, assessor, co-assessor and synthesis at 1 each and co-synthesis at 0: a quarter.
-      expect(component.candidateCostShareLabel(run)).toBe('25 % of catalog total');
+      expect(component.candidateCostShareLabel(run)).toBe('25 % of estimated total');
     });
 
     describe('re-assessment', () => {
@@ -12470,9 +12778,23 @@ describe('AdminBenchmarkComponent', () => {
         expect(cards.filter(card => card.hidden)).toEqual([]);
         expect(keys).toEqual(component.shownKeyFigureKeys);
         expect(keys).toEqual([
-          'intelligence', 'raw-quality', 'speed', 'mean-time', 'panel', 'agreement', 'holistic',
-          'answer-duration', 'wall-time', 'model-cost', 'estimated-cost'
+          'intelligence', 'raw-quality', 'critical-errors', 'answered', 'speed', 'mean-time', 'panel',
+          'agreement', 'holistic', 'answer-duration', 'wall-time', 'model-cost', 'estimated-cost'
         ]);
+      });
+
+      it('should name the answered count in the mean-time note when it is below the question count', () => {
+        component.selectedRunDetail = reportRun({
+          answeredQuestionCount: 2,
+          answers: [
+            reportAnswer(1, { modelTimeMs: 2000 }),
+            reportAnswer(2, { modelTimeMs: 4000 }),
+            reportAnswer(3, { status: 'Failed', qualityScore: null })
+          ]
+        });
+        fixture.detectChanges();
+
+        expect(textOf(meanTimeCard().querySelector('.score-note'))).toBe('model time, tools excluded · median 3.0 s · over 2 answered');
       });
 
       function figureCards(): HTMLElement[] {
@@ -12492,16 +12814,21 @@ describe('AdminBenchmarkComponent', () => {
         const chooser = dialog().querySelector('app-key-figures-chooser dialog') as HTMLDialogElement;
         expect(chooser.open).toBeTrue();
         expect(chooser.matches(':modal')).toBeTrue();
-        const allKeys = ['intelligence', 'speed', 'mean-time', 'holistic', 'answer-duration', 'wall-time', 'estimated-cost'];
+        const allKeys = [
+          'intelligence', 'critical-errors', 'answered', 'speed', 'mean-time', 'holistic', 'answer-duration',
+          'wall-time', 'estimated-cost'
+        ];
         const rows = Array.from(chooser.querySelectorAll('li[data-figure]')).map(li => li.getAttribute('data-figure'));
         expect(rows).toEqual(allKeys);
         expect(textOf(chooser.querySelector('li[data-figure="mean-time"] label'))).toBe('Mean Time per Question — 1.0 s');
-        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('7 of 7 selected');
+        expect(textOf(chooser.querySelector('li[data-figure="critical-errors"] label'))).toBe('Critical Errors — 1');
+        expect(textOf(chooser.querySelector('li[data-figure="answered"] label'))).toBe('Answered — 3 / 3');
+        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('9 of 9 selected');
 
         (chooser.querySelector('#kfch-speed') as HTMLInputElement).click();
         (chooser.querySelector('#kfch-estimated-cost') as HTMLInputElement).click();
         fixture.detectChanges();
-        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('5 of 7 selected');
+        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('7 of 9 selected');
 
         expect(JSON.parse(localStorage.getItem(KEY_FIGURES_STORAGE_KEY)!))
           .toEqual({ version: 1, excluded: ['speed', 'estimated-cost'] });
@@ -12511,7 +12838,9 @@ describe('AdminBenchmarkComponent', () => {
           expect(card.hidden).withContext(key).toBeTrue();
           expect(getComputedStyle(card).display).withContext(key).toBe('none');
         }
-        expect(shownFigureKeys()).toEqual(['intelligence', 'mean-time', 'holistic', 'answer-duration', 'wall-time']);
+        expect(shownFigureKeys()).toEqual([
+          'intelligence', 'critical-errors', 'answered', 'mean-time', 'holistic', 'answer-duration', 'wall-time'
+        ]);
 
         const closed = nextEvent(chooser, 'close');
         (chooser.querySelector('.kfch-done') as HTMLButtonElement).click();
@@ -12521,12 +12850,12 @@ describe('AdminBenchmarkComponent', () => {
         expect(chooser.open).toBeFalse();
         expect(document.activeElement).toBe(choose);
         expect(reportDialog().open).toBeTrue();
-        expect(textOf(choose)).toBe('Choose figures (5 of 7)');
-        expect(choose.getAttribute('aria-label')).toBe('Choose key figures for run 55, 5 of 7 selected');
+        expect(textOf(choose)).toBe('Choose figures (7 of 9)');
+        expect(choose.getAttribute('aria-label')).toBe('Choose key figures for run 55, 7 of 9 selected');
         expect(dialog().querySelector('#rr-figures-copy-btn')?.getAttribute('aria-label'))
-          .toBe('Copy key figures of run 55 as an image, 5 of 7 key figures');
+          .toBe('Copy key figures of run 55 as an image, 7 of 9 key figures');
         expect(dialog().querySelector('#rr-figures-download-btn')?.getAttribute('aria-label'))
-          .toBe('Download key figures of run 55 as a PNG image, 5 of 7 key figures');
+          .toBe('Download key figures of run 55 as a PNG image, 7 of 9 key figures');
 
         const save = spyOn(keyFiguresImageIo, 'save');
         const handler = spyOn(component, 'downloadKeyFigures').and.callThrough();
@@ -12558,7 +12887,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(getComputedStyle(figures).display).toBe('none');
         expect(textOf(dialog().querySelector('.rr-figures-empty')))
           .toBe('No key figures are selected. Use Choose figures to show them.');
-        expect(textOf(choose)).toBe('Choose figures (0 of 7)');
+        expect(textOf(choose)).toBe('Choose figures (0 of 9)');
 
         (chooser.querySelector('#kfch-holistic') as HTMLInputElement).click();
         fixture.detectChanges();
@@ -12571,7 +12900,10 @@ describe('AdminBenchmarkComponent', () => {
         await closed;
         fixture.detectChanges();
 
-        const others = ['intelligence', 'speed', 'mean-time', 'answer-duration', 'wall-time', 'estimated-cost'];
+        const others = [
+          'intelligence', 'critical-errors', 'answered', 'speed', 'mean-time', 'answer-duration', 'wall-time',
+          'estimated-cost'
+        ];
         expect(document.activeElement).toBe(choose);
         expect(reportDialog().open).toBeTrue();
         expect(component.keyFigureExclusions).toEqual(others);
@@ -12594,7 +12926,7 @@ describe('AdminBenchmarkComponent', () => {
 
         component.keyFigureExclusions = ['panel', 'holistic'];
         fixture.detectChanges();
-        expect(component.keyFiguresSelectionLabel).toBe('6 of 7');
+        expect(component.keyFiguresSelectionLabel).toBe('8 of 9');
         await clickAndSettle(dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement, handler);
         expect(copy).toHaveBeenCalledTimes(1);
         expect(status()).toBe('Key figures copied as an image.');
