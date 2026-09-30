@@ -27,6 +27,7 @@ import {
   keyFiguresStatusMessage,
   layoutFactRows,
   loadKeyFigureLogos,
+  measureStripCard,
   mixHex,
   readKeyFigureCell,
   readKeyFigureCells,
@@ -38,7 +39,7 @@ import {
   stripFootnotes,
   toImageFactRows
 } from './key-figures-image';
-import { RunFactRow } from './run-facts';
+import { RunFactModel, RunFactRow } from './run-facts';
 
 /** Every card kind the run report renders, each with a card-actions element that must be ignored. */
 const STRIP_FIXTURE = `
@@ -66,7 +67,7 @@ const STRIP_FIXTURE = `
     </div>
     <div class="score-card" data-figure="speed">
       <span class="score-label">Speed Index</span>
-      <span class="score-subvalue badge-score-low">
+      <span class="score-subvalue score-headline badge-score-low">
         40 / 100
         <span class="degraded-tag" title="Concurrency enabled; speed advisory">*</span>
         <span class="degraded-tag" title="Profile latency target does not fit">*</span>
@@ -80,7 +81,7 @@ const STRIP_FIXTURE = `
     </div>
     <div class="score-card" data-figure="speed">
       <span class="score-label">Speed Index</span>
-      <span class="score-subvalue text-muted">Not computed</span>
+      <span class="score-subvalue score-headline text-muted">Not computed</span>
       <span class="score-note">2 question(s) failed at the provider</span>
     </div>
     <div class="score-card" data-figure="mean-time">
@@ -141,8 +142,8 @@ const charWrap: TextWrapper = (text, maxWidth, sizePx) => {
   return lines;
 };
 
-function cell(label: string, main = false, notes: string[] = ['note']): KeyFigureCell {
-  return { key: keyFigureSlug(label), label, value: main ? '73 / 100' : '24 / 100', notes, main, tone: null, footnotes: [] };
+function cell(label: string, main = false, notes: string[] = ['note'], headline = main): KeyFigureCell {
+  return { key: keyFigureSlug(label), label, value: main ? '73 / 100' : '24 / 100', notes, main, headline, tone: null, footnotes: [] };
 }
 
 /** A main card and `count - 1` ordinary cards, each with one note. */
@@ -243,16 +244,23 @@ describe('key figures image', () => {
         value: '73 / 100',
         notes: ['± 8 (95%)'],
         main: true,
+        headline: true,
         tone: 'mid',
         footnotes: []
       });
       expect(raw.value).toBe('85 / 100');
       expect(raw.notes).toEqual([]);
       expect(raw.main).toBeFalse();
+      expect(raw.headline).toBeFalse();
 
       const text = JSON.stringify(readKeyFigureCells(root));
       expect(text).not.toContain('Copy as image');
       expect(text).not.toContain('Download as PNG');
+    });
+
+    it('reads the headline flag from .score-value and .score-headline', () => {
+      expect(readKeyFigureCells(root).map(c => c.headline))
+        .toEqual([true, false, false, true, false, true, false, false, false, false, false]);
     });
 
     it('reads the tone from the badge class, muted text as na, and none otherwise', () => {
@@ -450,6 +458,14 @@ describe('key figures image', () => {
       expect(layout.facts.stacked).toBeFalse();
     });
 
+    it('draws a headline value at the main card size without the main card', () => {
+      const speed = measureStripCard(cell('Speed Index', false, ['note'], true), 300, noWrap);
+      const intelligence = measureStripCard(cell('Intelligence Index', true), 300, noWrap);
+      const plain = measureStripCard(cell('Card 2'), 300, noWrap);
+      expect([speed.valuePx, speed.valueWeight]).toEqual([intelligence.valuePx, intelligence.valueWeight]);
+      expect([speed.valuePx, speed.valueWeight]).not.toEqual([plain.valuePx, plain.valueWeight]);
+    });
+
     it('wraps the footnotes into the layout', () => {
       const plain = chooseStripLayout(cellsOf(7), STRIP_TEXT, noWrap);
       const noted = chooseStripLayout(cellsOf(7), { ...STRIP_TEXT, footnotes: ['* One', '* Two'] }, noWrap);
@@ -476,6 +492,13 @@ describe('key figures image', () => {
       expect(CARD_IMAGE_MAX_WIDTH).toBe(853);
       expect([layout.width, layout.height, layout.notePx, layout.fits]).toEqual([853, 640, 15, false]);
       expect(layout.width / layout.height).toBeLessThanOrEqual(4 / 3 + 0.001);
+    });
+
+    it('draws a headline value at the main card size', () => {
+      const speed = chooseCardImageLayout(cell('Speed Index', false, ['note'], true), CARD_TEXT, noWrap);
+      const intelligence = chooseCardImageLayout(cell('Intelligence Index', true), CARD_TEXT, noWrap);
+      expect(speed.card.valuePx).toBe(intelligence.card.valuePx);
+      expect(speed.card.valueWeight).toBe(intelligence.card.valueWeight);
     });
 
     it('carries only the primary run facts in its header', () => {
@@ -577,6 +600,44 @@ describe('key figures image', () => {
       expect(layout.rows[0].lines.map(line => line.map(item => item.text))).toEqual([['Assessor 18/18'], ['Gap']]);
     });
 
+    it('starts a badge with a line break on a new line', () => {
+      const layout = layoutFactRows([{
+        label: 'Model',
+        runs: [{ kind: 'text', text: 'Name', strong: true }, { kind: 'badge', text: 'B', tone: 'role', lineBreak: true }],
+        primary: true
+      }], 600, halfWidth, SIZES);
+      expect(layout.rows[0].lines.map(line => line.map(item => item.text))).toEqual([['Name'], ['B']]);
+    });
+
+    const ASSESSOR_A: RunFactModel = {
+      role: 'A', name: 'Claude 5 Opus', provider: 'Anthropic', thinkingLevel: null, reasoningMode: 'max', serviceTier: null, customEndpoint: false
+    };
+    const ASSESSOR_B: RunFactModel = {
+      role: 'B', name: 'Other', provider: 'Acme', thinkingLevel: null, reasoningMode: null, serviceTier: null, customEndpoint: false
+    };
+
+    it('starts each later model on its own line', () => {
+      const facts = toImageFactRows(
+        [{ key: 'assessor', label: 'Assessors', item: { kind: 'models', models: [ASSESSOR_A, ASSESSOR_B] } }],
+        { text: 'Completed', tone: 'success' }
+      );
+      const layout = layoutFactRows(facts, 1200, halfWidth, SIZES);
+      expect(layout.rows[0].lines.map(line => line.map(item => item.text))).toEqual([
+        ['A', 'Claude 5 Opus', 'MAX', 'Anthropic'],
+        ['B', 'Other', 'Acme']
+      ]);
+      expect(layout.rows[0].lineHeights).toEqual([factBadgeHeight(SIZES), factBadgeHeight(SIZES)]);
+    });
+
+    it('keeps a single model on one line', () => {
+      const facts = toImageFactRows(
+        [{ key: 'assessor', label: 'Assessor', item: { kind: 'models', models: [ASSESSOR_A] } }],
+        { text: 'Completed', tone: 'success' }
+      );
+      const layout = layoutFactRows(facts, 1200, halfWidth, SIZES);
+      expect(layout.rows[0].lines.length).toBe(1);
+    });
+
     it('converts the header rows, with the badges, the status and the primary rows', () => {
       const rows: RunFactRow[] = [
         {
@@ -609,19 +670,19 @@ describe('key figures image', () => {
       expect(facts.map(row => row.label)).toEqual(['Model', 'Assessors', 'Prompt', 'Started', 'Board']);
       expect(facts.map(row => row.primary)).toEqual([true, true, false, false, false]);
       expect(facts[0].runs).toEqual([
-        { kind: 'text', text: 'GPT-6.1 Sol', strong: true, gapBefore: undefined },
+        { kind: 'text', text: 'GPT-6.1 Sol', strong: true, lineBreak: undefined },
         { kind: 'badge', text: 'High', tone: 'thinking' },
         { kind: 'badge', text: 'OpenAI', tone: 'openai' },
         { kind: 'badge', text: 'Flex', tone: 'config' },
         { kind: 'badge', text: 'Custom endpoint', tone: 'config' }
       ]);
       expect(facts[1].runs).toEqual([
-        { kind: 'badge', text: 'A', tone: 'role', gapBefore: undefined },
-        { kind: 'text', text: 'Claude 5 Opus', strong: true, gapBefore: undefined },
+        { kind: 'badge', text: 'A', tone: 'role', lineBreak: undefined },
+        { kind: 'text', text: 'Claude 5 Opus', strong: true, lineBreak: undefined },
         { kind: 'badge', text: 'max', tone: 'reasoning' },
         { kind: 'badge', text: 'Anthropic', tone: 'anthropic' },
-        { kind: 'badge', text: 'B', tone: 'role', gapBefore: 10 },
-        { kind: 'text', text: 'Other', strong: true, gapBefore: undefined },
+        { kind: 'badge', text: 'B', tone: 'role', lineBreak: true },
+        { kind: 'text', text: 'Other', strong: true, lineBreak: undefined },
         { kind: 'badge', text: 'Acme', tone: 'provider' }
       ]);
       expect(facts[2].runs).toEqual([

@@ -443,7 +443,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     **square, or landscape as near square as possible, never portrait**, for any subset; the spec pins
     the layouts. Above the cards the images draw the chosen run-fact rows through `toImageFactRows`
     (badges atomic, colors from `BADGE_PALETTE`, the run status after *Started*); the card image draws
-    only the chosen *Model* and *Assessor(s)* rows. While loading or after a failed load there is no tab row.
+    only the chosen *Model* and *Assessor(s)* rows. The Intelligence Index and the Speed Index values
+    share the headline size (`.score-value`, and `.score-subvalue.score-headline` on the Speed card
+    except in its demoted *Median Model Time* form); the image draws a cell at the headline size from
+    `KeyFigureCell.headline`, read from those classes, while `main` only makes the Intelligence card
+    span two strip columns — change both together. In the images' fact rows each model after the first
+    (the panel's *B* assessor) starts a line of its own. While loading or after a failed load there is no tab row.
     **No footer.** Escape and the header Close both close it, and closing always stops detail polling.
     Question cards have real `<button>` headers, filter toggles (*Critical errors*, *Disputed*,
     *Members disagree*, *Below 70*, *Flagged*) and *Expand all* / *Collapse all*. The **AI Reports**

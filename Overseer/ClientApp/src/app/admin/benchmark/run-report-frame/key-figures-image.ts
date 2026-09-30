@@ -55,6 +55,8 @@ export interface KeyFigureCell {
   readonly notes: readonly string[];
   /** The Intelligence Index card. */
   readonly main: boolean;
+  /** The value is drawn at the headline size: a `.score-value`, or a `.score-subvalue.score-headline`. */
+  readonly headline: boolean;
   readonly tone: KeyFigureTone | null;
   /** `* {title}` for each distinct advisory marker title. */
   readonly footnotes: readonly string[];
@@ -81,6 +83,8 @@ export type ImageFactRun =
     readonly kind: 'badge';
     readonly text: string;
     readonly tone: ImageBadgeTone;
+    /** Starts a new line. */
+    readonly lineBreak?: boolean;
     readonly gapBefore?: number;
   };
 
@@ -228,6 +232,8 @@ export function readKeyFigureCell(card: HTMLElement): KeyFigureCell {
 
   let value = '';
   let tone: KeyFigureTone | null = null;
+  const headline = !!valueElement
+    && (valueElement.classList.contains('score-value') || valueElement.classList.contains('score-headline'));
   if (valueElement) {
     const markers = Array.from(valueElement.querySelectorAll<HTMLElement>('.degraded-tag'))
       .map(tag => collapseWhitespace(tag.textContent) || '*');
@@ -252,7 +258,7 @@ export function readKeyFigureCell(card: HTMLElement): KeyFigureCell {
   }
 
   const key = collapseWhitespace(card.getAttribute('data-figure')) || keyFigureSlug(label);
-  return { key, label, value, notes, main: card.classList.contains('main-score'), tone, footnotes };
+  return { key, label, value, notes, main: card.classList.contains('main-score'), headline, tone, footnotes };
 }
 
 /** One cell per `.score-card` under `root`, in document order. */
@@ -355,9 +361,6 @@ export function storeImageDetailExclusions(excluded: readonly string[]): void {
 // Run facts
 // -----------------------------------------------------------------------------------------------
 
-/** The gap between two models in one row. */
-const FACT_MODEL_GAP = 10;
-
 /** The image tone of a run status badge, from its `badge-status-*` class or bare status key. */
 export function statusImageTone(statusBadgeClass: string): ImageBadgeTone {
   switch (statusBadgeClass.toLowerCase().replace(/^badge-status-/, '')) {
@@ -384,7 +387,8 @@ function providerImageTone(provider: string | undefined): ImageBadgeTone {
 
 /**
  * The header's run facts as the images draw them. Every row given is drawn; the caller passes the
- * chosen ones. The run status follows the start time as a badge; Model and Assessor(s) are primary.
+ * chosen ones. The run status follows the start time as a badge; Model and Assessor(s) are primary;
+ * each model after the first starts a new line.
  */
 export function toImageFactRows(rows: readonly RunFactRow[], status: { text: string; tone: ImageBadgeTone }): ImageFactRow[] {
   return rows.map(row => {
@@ -393,11 +397,11 @@ export function toImageFactRows(rows: readonly RunFactRow[], status: { text: str
     switch (item.kind) {
       case 'models':
         item.models.forEach((model, index) => {
-          const gapBefore = index > 0 ? FACT_MODEL_GAP : undefined;
+          const lineBreak = index > 0 ? true : undefined;
           if (model.role) {
-            runs.push({ kind: 'badge', text: model.role, tone: 'role', gapBefore });
+            runs.push({ kind: 'badge', text: model.role, tone: 'role', lineBreak });
           }
-          runs.push({ kind: 'text', text: model.name, strong: true, gapBefore: model.role ? undefined : gapBefore });
+          runs.push({ kind: 'text', text: model.name, strong: true, lineBreak: model.role ? undefined : lineBreak });
           for (const badge of runFactBadges(model)) {
             const tone: ImageBadgeTone = badge.kind === 'thinking' ? 'thinking'
               : badge.kind === 'reasoning' ? 'reasoning'
@@ -552,7 +556,7 @@ export function layoutFactRows(
         ?? (!previous ? 0 : run.kind === 'badge' || previous.run.kind === 'badge' ? FACT_BADGE_GAP : spaceWidth);
       if (run.kind === 'badge') {
         const text = badgeDisplayText(run);
-        tokens.push({ run, text, width: measure(text, badgePx, FACT_BADGE_WEIGHT) + badgeChrome, gap: leadGap, joins: false, lineBreak: false });
+        tokens.push({ run, text, width: measure(text, badgePx, FACT_BADGE_WEIGHT) + badgeChrome, gap: leadGap, joins: false, lineBreak: !!run.lineBreak });
         continue;
       }
       const weight = factTextWeight(run);
@@ -773,8 +777,8 @@ function stackHeight(blocks: readonly number[], gap: number): number {
 /** One card of the strip wrapped to `width`, with its padding. */
 export function measureStripCard(cell: KeyFigureCell, width: number, wrap: TextWrapper): MeasuredKeyFigureCard {
   const inner = Math.max(1, width - STRIP_CARD_PAD * 2);
-  const valuePx = cell.main ? STRIP_MAIN_VALUE_PX : STRIP_VALUE_PX;
-  const valueWeight = cell.main ? '800' : '700';
+  const valuePx = cell.headline ? STRIP_MAIN_VALUE_PX : STRIP_VALUE_PX;
+  const valueWeight = cell.headline ? '800' : '700';
   const labelLines = wrap(cell.label.toUpperCase(), inner, STRIP_LABEL_PX, '600');
   const valueLines = wrap(cell.value, inner, valuePx, valueWeight);
   const noteLines = cell.notes.map(note => wrap(note, inner, STRIP_NOTE_PX, '400'));
@@ -1041,8 +1045,8 @@ export interface CardImageLayout {
 /** One card wrapped for the card image. */
 function measureImageCard(cell: KeyFigureCell, width: number, notePx: number, wrap: TextWrapper): MeasuredKeyFigureCard {
   const inner = Math.max(1, width - CARD_IMAGE_CARD_PAD * 2);
-  const valuePx = cell.main ? CARD_IMAGE_MAIN_VALUE_PX : CARD_IMAGE_VALUE_PX;
-  const valueWeight = cell.main ? '800' : '700';
+  const valuePx = cell.headline ? CARD_IMAGE_MAIN_VALUE_PX : CARD_IMAGE_VALUE_PX;
+  const valueWeight = cell.headline ? '800' : '700';
   const labelLines = wrap(cell.label.toUpperCase(), inner, CARD_IMAGE_LABEL_PX, '600');
   const valueLines = wrap(cell.value, inner, valuePx, valueWeight);
   const noteLines = cell.notes.map(note => wrap(note, inner, notePx, '400'));

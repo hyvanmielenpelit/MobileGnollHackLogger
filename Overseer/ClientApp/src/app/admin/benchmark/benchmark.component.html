@@ -1885,11 +1885,11 @@
                   </span>
                 } @else if (selectedRunDetail.speedIndex == null && (selectedRunDetail.terminalFailureAnswerCount ?? 0) > 0) {
                   <span class="score-label">Speed Index</span>
-                  <span class="score-subvalue text-muted">Not computed</span>
+                  <span class="score-subvalue score-headline text-muted">Not computed</span>
                   <span class="score-note">{{ selectedRunDetail.terminalFailureAnswerCount }} question(s) failed at the provider</span>
                 } @else {
                   <span class="score-label">Speed Index</span>
-                  <span class="score-subvalue" [class]="getScoreBadgeClass(selectedRunDetail.speedIndex)">
+                  <span class="score-subvalue score-headline" [class]="getScoreBadgeClass(selectedRunDetail.speedIndex)">
                     {{ selectedRunDetail.speedIndex != null ? selectedRunDetail.speedIndex : 'N/A' }} / 100
                     @if (selectedRunDetail.speedMeasurementDegraded) {
                       <span class="degraded-tag" title="Concurrency enabled; speed advisory">*</span>
