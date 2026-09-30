@@ -7,22 +7,25 @@
   min-inline-size: 0;
 }
 
-// One label/value pair per line; two per line and stacked labels by container width below.
+// The label/value pairs flow side by side and wrap; baseline alignment keeps a tall pair from
+// stretching its neighbors. Stacked labels by container width below.
 .rr-facts {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 4px 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 28px;
   margin: 0;
   font-size: var(--text-secondary);
   line-height: var(--leading-body);
 }
 
 .rr-fact {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: max-content minmax(0, 1fr);   // fallback without subgrid
-  grid-template-columns: subgrid;                      // every label in a column shares one edge
+  display: flex;
+  flex: 0 1 auto;
   align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
 }
 
 dt {
@@ -71,7 +74,12 @@ dd {
   padding: 0;
   list-style: none;
 
-  > li + li::before {
+  // The separator trails its item, so a wrapped line never starts with one.
+  > li {
+    white-space: nowrap;
+  }
+
+  > li:not(:last-child)::after {
     content: '·';
     margin-inline: 6px;
     color: #666;
@@ -83,14 +91,7 @@ dd {
   color: #fcd34d;
 }
 
-@container rr-facts (inline-size >= 64rem) {
-  .rr-facts { grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr); }
-  .rr-fact { grid-column: span 2; }
-  // Every row is one pair, so the even rows are the right-hand column.
-  .rr-fact:nth-child(even) > dt { padding-inline-start: 12px; }
-}
-
 @container rr-facts (inline-size < 36rem) {
-  .rr-facts { grid-template-columns: minmax(0, 1fr); row-gap: 6px; }
-  .rr-fact { grid-template-columns: minmax(0, 1fr); row-gap: 1px; }
+  .rr-facts { row-gap: 6px; }
+  .rr-fact { flex: 1 1 100%; flex-direction: column; align-items: stretch; gap: 1px; }
 }

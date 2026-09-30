@@ -569,7 +569,7 @@
   }
 }
 
-.history-toolbar, .suites-toolbar {
+.suites-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -616,60 +616,8 @@
   min-height: 1lh;
 }
 
-.filter-group {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-
-  label {
-    font-size: 14px;
-    color: #aaa;
-  }
-}
-
 /* .gh-table now lives in styles.scss: declared here, emulated encapsulation kept it from
    ever reaching the Suite Health child component's tables. */
-
-/* Run History column widths. Twelve columns share one row, so every column that holds a short
-   value is sized to it and the text columns share what is left, wrapping rather than widening
-   the table. */
-.history-table-wrapper table {
-  /* Compact cell padding, in this table only. A sortable header keeps padding 0 on the cell and
-     pads its inner button, which lives in the sort header's own template. */
-  th:not(.gh-th-sortable), td { padding-inline: 10px; }
-  ::ng-deep .gh-th-sort { padding-inline: 10px; }
-
-  /* Content-sized columns, never wider than what they hold: ID, Status, Intelligence Index,
-     Speed Index, Instrument, Duration, Cost, Date (UTC) and Actions. */
-  th:nth-child(1), td:nth-child(1),
-  th:nth-child(5), td:nth-child(5),
-  th:nth-child(6), td:nth-child(6),
-  th:nth-child(7), td:nth-child(7),
-  th:nth-child(8), td:nth-child(8),
-  th:nth-child(9), td:nth-child(9),
-  th:nth-child(10), td:nth-child(10),
-  th:nth-child(11), td:nth-child(11),
-  th:nth-child(12), td:nth-child(12) {
-    width: 1%;
-  }
-
-  /* ID, both indexes, Duration, Cost and Date stay on one line; their headers may wrap. */
-  tbody td:nth-child(1),
-  tbody td:nth-child(6),
-  tbody td:nth-child(7),
-  tbody td:nth-child(9),
-  tbody td:nth-child(10),
-  tbody td:nth-child(11) {
-    white-space: nowrap;
-  }
-
-  /* The instrument stack is monospaced and never wraps, so it takes a little less padding. */
-  th:nth-child(8), td:nth-child(8) { padding-inline: 8px; }
-
-  /* Text columns share the remaining width and wrap: Suite, then Tested and Assessor Model. */
-  td:nth-child(2) { min-inline-size: 8rem; overflow-wrap: anywhere; }
-  td:nth-child(3), td:nth-child(4) { min-inline-size: 6rem; }
-}
 
 .status-badge {
   display: inline-block;
@@ -807,9 +755,11 @@
   font-weight: 500;
 }
 
+// The alert glyph, then the count; the words are visually hidden.
 .badge-degraded-count {
-  display: inline-block;
-  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11px;
   font-weight: 700;
   padding: 1px 5px;
@@ -870,80 +820,12 @@
   }
 }
 
-.degraded-indicator, .degraded-tag {
+.degraded-tag {
   color: #ffb74d;
   font-weight: 700;
   margin-left: 2px;
   cursor: help;
 }
-
-// H2. The instrument fingerprint sits in the run list so an operator can see at a glance whether two runs
-// form a reproduction. Monospaced because it is a hash prefix and is read character by character.
-.instrument-cell {
-  white-space: nowrap;
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-// The cell stays a table cell; the model-under-test cost and the catalog total stack inside it.
-.cost-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.cost-secondary {
-  color: #888;
-  font-size: .8em;
-}
-
-// Run History date and time, one above the other.
-.history-date-cell .history-date,
-.history-date-cell .history-time {
-  display: block;
-}
-
-.history-date-cell .history-time {
-  color: #888;
-}
-
-// Run History row actions, two by two. The popover="hint" tooltips between the buttons are
-// display: none until shown, and shown ones sit in the top layer, so neither is a grid item.
-.history-actions {
-  display: grid;
-  grid-template-columns: repeat(2, 32px);
-  gap: 4px;
-  justify-content: end;
-}
-
-// Scoped under the table so it out-ranks the global .gh-table .action-cell .action-btn margin.
-.history-table-wrapper .history-actions .action-btn {
-  margin: 0;
-}
-
-// The five entries stack, one per line, in the fixed order PROMPT, GUIDES, KB, WIKI, SRC. The
-// order is what lets two runs' cells be read against each other row for row.
-.instrument-fingerprints {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.instrument-fingerprint {
-  font-family: var(--gh-font-mono, ui-monospace, 'Cascadia Code', 'Consolas', monospace);
-  font-size: 0.85em;
-  line-height: 1.25;
-  color: var(--gh-text-secondary);
-  cursor: help;
-}
-
-// Colour reinforces the visible label; it never carries the meaning on its own, so the stack reads
-// the same in greyscale and to a colour-blind operator.
-.instrument-fingerprint.fp-prompt { color: var(--primary-color); }
-.instrument-fingerprint.fp-guides { color: var(--nav-color); }
-.instrument-fingerprint.fp-kb { color: var(--fp-kb-color); }
-.instrument-fingerprint.fp-wiki { color: var(--fp-wiki-color); }
-.instrument-fingerprint.fp-source { color: var(--fp-source-color); }
 
 .instrument-changed {
   display: inline-block;
@@ -965,6 +847,360 @@
   background-color: rgba(255, 255, 255, 0.05);
   border: 1px dashed var(--border-glass);
   color: var(--nav-color);
+}
+
+// --- Run History: a card per run, laid out by the list's own width ---
+
+.rh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The Runs heading, its info button, the status line and Refresh at the end of the row. The
+   status line wraps under the heading where the row is narrow. */
+.rh-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  border-bottom: 1px solid var(--border-glass);
+
+  .rh-list-title {
+    margin: 0;
+    padding-block-end: 6px;
+    border-bottom: 0;
+
+    &:focus:not(:focus-visible) {
+      outline: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 2px;
+      border-radius: 2px;
+    }
+  }
+
+  app-info-tip {
+    align-self: center;
+    margin-block-end: 6px;
+  }
+}
+
+.rh-list-status {
+  margin-inline-start: auto;
+  padding-block-end: 6px;
+}
+
+.rh-refresh {
+  align-self: center;
+  margin-inline-start: auto;
+  margin-block-end: 6px;
+}
+
+.rh-loading,
+.rh-empty,
+.rh-no-matches {
+  margin: 0;
+}
+
+.rh-filter-bar {
+  padding-block: 4px 2px;
+}
+
+.rh-search {
+  flex: 1 1 16rem;
+}
+
+/* Sort by, pushed to the end of the search row. */
+.rh-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.rh-sort-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.rh-sort-select {
+  min-block-size: 32px;
+  padding-block: 4px;
+  font-size: var(--text-secondary);
+}
+
+.rh-clear-filters {
+  margin-inline-start: 4px;
+}
+
+.rh-card-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: rh-cards / inline-size;
+}
+
+.rh-card-item {
+  min-inline-size: 0;
+}
+
+/* The header, the metrics and the actions on one row, the instrument under a hairline. The metric
+   columns have a fixed width, so they line up down the list and the cards scan like a table. */
+.rh-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "head metrics actions"
+    "instrument instrument instrument";
+  gap: 10px 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+}
+
+.rh-card-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+/* The run id, the status and the run's markers. The gap spaces them, not their own margins. */
+.rh-card-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  .badge-degraded-count,
+  .badge-progress-count,
+  .instrument-changed {
+    margin: 0;
+  }
+}
+
+.rh-card-id {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+}
+
+.rh-sep {
+  color: #71717a;
+}
+
+/* The model under test and its badges. Focused after Load more and after a delete, so it carries a
+   ring for that focus alone. */
+.rh-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.4;
+  color: #ececec;
+  overflow-wrap: anywhere;
+
+  .rh-card-model {
+    min-inline-size: 0;
+  }
+
+  &:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.rh-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  line-height: 1.4;
+  color: #a1a1aa;
+
+  > span {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.rh-card-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Four metrics, each a small-caps label over its value and any second line. */
+.rh-metrics {
+  grid-area: metrics;
+  display: grid;
+  grid-template-columns: repeat(4, 7.5rem);
+  gap: 12px;
+  margin: 0;
+
+  dt {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #888;
+  }
+
+  dd {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    margin: 2px 0 0;
+    font-size: var(--text-body);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.rh-metric {
+  min-inline-size: 0;
+}
+
+.rh-metric-note {
+  font-size: var(--text-secondary);
+  line-height: 1.3;
+  color: #a1a1aa;
+}
+
+.rh-metric-warn {
+  color: #ffb74d;
+}
+
+.rh-card-actions {
+  grid-area: actions;
+  display: inline-flex;
+  align-self: start;
+  gap: 4px;
+
+  .action-btn {
+    margin: 0;
+  }
+
+  // Set apart from the three that only read the run.
+  .rh-delete-btn {
+    margin-inline-start: 8px;
+  }
+}
+
+/* The five hashes as inline label and value pairs, then the info tip that lists them in full. */
+.rh-instrument-strip {
+  grid-area: instrument;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding-block-start: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.rh-instrument {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  margin: 0;
+}
+
+.rh-instrument-pair {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+
+  dt {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: #888;
+  }
+
+  dd {
+    margin: 0;
+  }
+}
+
+// Monospaced because it is a hash prefix and is read character by character. Color reinforces the
+// visible label; it never carries the meaning on its own.
+.rh-hash,
+.rh-hash-full {
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
+}
+
+.rh-hash-full {
+  overflow-wrap: anywhere;
+}
+
+.rh-hash {
+  color: var(--nav-color);
+
+  &.fp-prompt { color: var(--primary-color); }
+  &.fp-guides { color: var(--nav-color); }
+  &.fp-kb { color: var(--fp-kb-color); }
+  &.fp-wiki { color: var(--fp-wiki-color); }
+  &.fp-source { color: var(--fp-source-color); }
+}
+
+/* A narrower list: the metrics move under the header, spread across the card's width. */
+@container rh-cards (inline-size < 60rem) {
+  .rh-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head actions"
+      "metrics metrics"
+      "instrument instrument";
+  }
+
+  .rh-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  }
+}
+
+/* A phone: one column, the actions on their own line under the header. */
+@container rh-cards (inline-size < 30rem) {
+  .rh-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "actions"
+      "metrics"
+      "instrument";
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rh-card {
+    transition: none;
+  }
 }
 
 /* .difficulty-badge and .assessed-diff-badge live in styles.scss, in the question-card
@@ -2723,8 +2959,68 @@ styles.scss. The .active-run-banner .pulse-indicator reduced-motion rule sits ne
 }
 
 // Run report dialog: app-run-report-frame lays out the header, the tab row and the panel body.
-.rr-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.rr-status { font-size: 12px; color: #888; }
+// The Run actions group, then Close at the top-right corner.
+.rr-header-controls { display: flex; align-items: flex-start; gap: 16px; }
+// Two columns: the labeled buttons equal in width and left-aligned in the first, the icon buttons in
+// the second. Without a board the snapshot cell stays empty. The closed popover and the hidden
+// tooltips are display: none, and open ones sit in the top layer, so none of them takes a cell.
+.rr-actions {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "downloads snapshot"
+    "rerun copy";
+  gap: 6px;
+  align-items: center;
+  .action-btn { margin: 0; }
+}
+#rr-downloads-trigger { grid-area: downloads; }
+#rr-rerun-trigger { grid-area: rerun; }
+#rr-snapshot-btn { grid-area: snapshot; }
+#rr-copy-diagnostics-btn { grid-area: copy; }
+#rr-downloads-trigger, #rr-rerun-trigger { justify-content: flex-start; inline-size: 100%; }
+// Under the group, so the live region takes no grid cell and a message never shifts the buttons.
+.rr-status {
+  position: absolute; inset-block-start: 100%; inset-inline-end: 0;
+  margin-block-start: 2px; white-space: nowrap; font-size: 12px; color: #888;
+}
+// A narrow report: the header's width is spare and its height is not, so the actions take one row.
+@container run-report-frame (inline-size < 40rem) {
+  .rr-actions { grid-template-columns: none; grid-template-areas: none; grid-auto-flow: column; }
+  #rr-downloads-trigger, #rr-rerun-trigger, #rr-snapshot-btn, #rr-copy-diagnostics-btn { grid-area: auto; }
+}
+// The header's main facts, at the body size.
+.rr-run-facts-primary { font-size: var(--text-body); }
+// Run details: a quiet disclosure under the main facts, with no box of its own. Its read-out shows
+// only while it is closed; a board gap tag shows open or closed.
+.gh-disclosure.rr-run-details {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  min-inline-size: 0;
+  > summary {
+    padding: 2px 0;
+    gap: 8px;
+    min-inline-size: 0;
+    font-size: var(--text-secondary);
+    font-weight: 600;
+    color: #a1a1aa;
+    &:hover { color: var(--primary-color); }
+  }
+  &[open] > summary { margin-block-end: 4px; }
+  &[open] .rr-run-details-readout { display: none; }
+}
+.rr-run-details-title { flex: none; }
+.rr-run-details-readout {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: #a1a1aa;
+}
+.rr-run-details .rr-run-details-gap { flex: none; display: inline-flex; margin-top: 0; }
 // The frame draws the row's rule across its full width.
 .rr-tabs { border-bottom: 0; }
 .rr-tab-flag {

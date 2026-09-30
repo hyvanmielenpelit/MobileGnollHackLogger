@@ -87,11 +87,11 @@ A run that never reached the end of its suite has a real cost and a real elapsed
 
 **A cancelled retry is not an abort.** A retry never removes an answer row, so a run whose answers covered its suite before the retry still covers it after the cancel — writing `Canceled` there would be a claim the run stopped early, and would make every later re-run refuse it. All six retry handlers (`RunFailedQuestionsAsync`, `RerunSingleQuestionAsync`, `ReassessSingleQuestionAsync`'s non-trial branch, `RerunFinalSynthesisAsync`, `RetryFailedAssessmentsAsync` and `RetryFailedClaimVerificationAsync`) therefore call `RestoreTerminalStatusAsync` on cancellation, which re-finalises the run over its whole answer set and records the reason in `ErrorMessage`. Each also checks the token as the first statement of its `try`, so a retry launched with an already-cancelled token takes that path rather than failing on whatever it touched first; the load that precedes the `try` deliberately passes `CancellationToken.None`, because a throw there would escape past both the handlers and the `finally` that releases the run manager. `POST .../runs/{id}/cancel` does the same for a row whose answer rows cover its suite, writing `Canceled by operator.` as the reason. A trial re-assessment is unchanged: it restores the status the caller captured.
 
-**An interrupted run becomes `Failed` and carries no index.** `CleanupOrphanedRunsAsync` runs at startup and finalises every row left `Running` by a restart. It records the totals, sets `Failed` with `Run interrupted by application restart.`, and publishes no index: an index over the answers that happen to exist describes a fraction of the instrument and is, once stored, indistinguishable from an index over all of it. `TotalDurationMs` is left at zero, because wall clock to the moment cleanup runs would include the outage between the crash and the restart. The Run History cell and the report both fall back to the timestamps and label the figure as elapsed.
+**An interrupted run becomes `Failed` and carries no index.** `CleanupOrphanedRunsAsync` runs at startup and finalises every row left `Running` by a restart. It records the totals, sets `Failed` with `Run interrupted by application restart.`, and publishes no index: an index over the answers that happen to exist describes a fraction of the instrument and is, once stored, indistinguishable from an index over all of it. `TotalDurationMs` is left at zero, because wall clock to the moment cleanup runs would include the outage between the crash and the restart. The Run History card's *Duration* and the report both fall back to the timestamps and label the figure as elapsed.
 
 **Re-scoring and re-running are refused on such a run.** The test is `BenchmarkRunFinalizer.IsAbortedRun`: the status is `Canceled` or `Failed` **and** the run has fewer answer rows than `TotalQuestionCount`. `RescoreRunAsync` returns an error for such a run, and the six endpoints that end in `Apply` — reassess answer, rerun answer, rerun synthesis, retry failed assessments, retry claim verification, rerun failed questions — answer 400 with the same message. The coverage half of the test is what the refusal text has always claimed ("stopped before finishing its suite"), and it is what separates a run cancelled part-way through answering from one cancelled during its grading stages or during a retry, whose answer set is whole and whose next finalisation recomputes an honest status over all of it. A `TotalQuestionCount` of zero was never recorded and counts as not covered. Reading, reporting, calibrating, cancelling and deleting stay available; only recomputing indices is refused. A `CompletedWithErrors` run is **not** refused, because it reached the end of its suite. In the admin UI the four reachable controls are disabled and a notice above the Rescore button explains why, so a disabled button is never unexplained. The client reads the verdict as the `isAborted` flag on the run summary and detail DTOs rather than reimplementing the test — it falls back to the status alone only for a response from a server that predates the flag. The server guard is the authority.
 
-**Run History shows the duration and the shortfall.** The Duration cell shows candidate answer time for a run that finished, and wall clock up to the stop for one that did not, falling back to the two timestamps when neither figure was recorded; the column sorts by what it displays. Beside the status badge, **any** terminal run that answered fewer questions than its suite holds carries an `answered / total` badge — which is what separates an index of 74 over 16 of 18 questions from 74 over 18.
+**Run History shows the duration and the shortfall.** A Run History card's *Duration* shows candidate answer time for a run that finished, and wall clock up to the stop for one that did not, with a visible second line *until stopped*; it falls back to the two timestamps when neither figure was recorded, and the *Duration, shortest first* order sorts by what it displays. In the card's kicker, after the status badge and the degraded-answer count, **any** terminal run that answered fewer questions than its suite holds carries an `answered / total` badge — which is what separates an index of 74 over 16 of 18 questions from 74 over 18. The other qualifiers are visible lines as well, never a hover-only `*`: *advisory timing* under the Speed Index, *pricing incomplete* under the cost, and *{n} of {total} failed at the provider* under an index that was not computed.
 
 **The run detail dialog carries both figures, as two cards.** *Answer Duration* is the time the candidate spent producing answers; *Elapsed Wall Time* is start to finish with grading included. They are the same pair the report prints as **Total Candidate Answer Time** and **Total Elapsed Wall Time**, and the gap between them is the grading pipeline — on run 24, 12m 45s of answering inside a 23m 39s run. Neither card falls back to the other: a figure labelled as answer time shows answer time or a dash, because substituting the wall clock under that label would report a different measurement as though it were the labelled one. The wall-clock card *does* fall back to the two timestamps, which is the same measurement by another route rather than a different one — a run interrupted by a restart records no wall clock of its own.
 
@@ -99,7 +99,7 @@ A run that never reached the end of its suite has a real cost and a real elapsed
 
 **The provider's finish reason is persisted.** `BenchmarkRunAnswer.ProviderFinishReason` holds the provider's own verbatim reason for ending the response — Anthropic `stop_reason`, OpenAI `incomplete_details.reason` or status, Google `finishReason` — unmapped. It is distinct from `TerminationReason`, which describes what the harness loop did. The pair is what separates an empty answer the model produced from one a transport defect destroyed, and therefore what the harness scores 0 from scoring method 10 on. Null means "not recorded" and never "stopped normally". The three providers emit it as a `finish_reason` `ChatEvent`, which `AgentLoopRunner` consumes without yielding onward; truncation detection now prefers this typed value and keeps the older debug-text match only as a fallback for a provider that does not emit it.
 
-**A moved instrument and a changed option are different things.** The Run History instrument badge compares a run's three hashes against the next older completed run of the same suite. `CandidateSystemPromptSha256` covers the prompt *as built*, so a run option that changes the prompt text — `verboseMode` is the usual one — moves the hash without the instrument having moved. The badge therefore consults `CandidatePromptOptionsJson` first: differing options are reported as `OPTIONS CHANGED` naming the keys that differ, and only runs whose options match can say anything about whether the instrument held still. Runs 24 and 25 of 2026-09-08 are the worked example — the two candidate hashes differ by 92 characters and by exactly one option, 25 minutes apart, on unchanged code, and `INSTRUMENT CHANGED` fired twice while the instrument never moved.
+**A moved instrument and a changed option are different things.** The Run History instrument badge, the last part of a card's kicker, compares a run's three hashes against the next older completed run of the same suite. `CandidateSystemPromptSha256` covers the prompt *as built*, so a run option that changes the prompt text — `verboseMode` is the usual one — moves the hash without the instrument having moved. The badge therefore consults `CandidatePromptOptionsJson` first: differing options are reported as `OPTIONS CHANGED` naming the keys that differ, and only runs whose options match can say anything about whether the instrument held still. Runs 24 and 25 of 2026-09-08 are the worked example — the two candidate hashes differ by 92 characters and by exactly one option, 25 minutes apart, on unchanged code, and `INSTRUMENT CHANGED` fired twice while the instrument never moved.
 
 ---
 
@@ -3151,10 +3151,10 @@ change, and nothing a run records changes.
 square emblem before *Run #N* in the run report and before the Download Center's and Report Pack dialog's
 titles, and both logos in every PDF and Word file, stay.
 
-**Run History.** The table fits its panel: the ID, status, index, instrument, duration, cost, date and
-action columns take the width of their content, and the suite and model columns share the rest, with long
-names wrapping. The date sits over the time, and the four action buttons form a 2 × 2 grid. The whole
-table fits a 1440-px window; below that the table alone scrolls sideways.
+**Run History.** Run History is no longer a table. Since 2026-09-30 it is a card list, one full-width
+card per run, with a search, **Sort by**, facets (the Suite facet replacing the server-side *Filter by
+Suite* select), removable chips and **Load more** over the newest 200 runs; see *Run History Cards and a
+Compact Run Report Header (2026-09-30)* below.
 
 **Download Center.** The packages are **Internal**, **External** and **Custom**, each card with a one-line
 tagline under its name. The summary line, the ZIP's `MANIFEST.md` and its file name say *Internal
@@ -5450,26 +5450,112 @@ one was set and *Custom endpoint* when the run did not use the official endpoint
 global `.config-badge`. Each badge has a visually hidden lead-in (*thinking level*, *reasoning mode*,
 *service tier*), and nothing in the list carries a `title` tooltip.
 
-**Widths.** The list lays out by its container's width: two label/value pairs per line from 64 rem,
-labels aligned per column through subgrid; one pair per line between 36 and 64 rem; below 36 rem each
-label stacks above its value.
+**Widths.** The list flows rather than forming a grid: each label/value pair sits inline, the pairs
+wrap as the width allows, and a tall pair never stretches its neighbor. Below 36 rem of the list's width
+each pair takes a line and its label stacks above its value. (The first version was a two-column grid
+from 64 rem, which left empty rows beside a tall *Board*; see the compact header below.)
 
 **Board.** The *Board delivered — …* sentence is now the *Board* row: one figure per recorded role
 (*Assessor 18/18 · Co-assessor 18/18 · Reference reader 18/18 · Claim verifier 16/16*, read aloud as
-*18 of 18*), the synthesis and difficulty-assessment note, and each *Graded without the board — …*
-warning in amber on its own line. The figures are unchanged, and so is the *Board delivered* line of
+*18 of 18*), the synthesis and difficulty-assessment note — now behind a click-mode info tip, *Board
+delivery* (`#rr-board-note-tip`), since it is the same on every run — and each *Graded without the
+board — …* warning in amber on its own line. Each figure keeps its separator at its end, so a wrapped
+line never starts with a dot, and a figure never breaks inside itself. The figures are unchanged, and so is the *Board delivered* line of
 the diagnostics text, which `BenchmarkReportBuilder.cs` shares.
 
 **The images.** The whole-strip image draws the same rows under its title, with the same badges in the
 same colors (`BADGE_PALETTE` in `key-figures-image.ts` mirrors `styles.scss`), and the run status as a
 badge after the start time. Which rows it carries is chosen in *Choose key figures* under a second
 checklist, **Image details**, with its own *All* / *None* and count; the default is every row but
-*Board*, which is grading diagnostics while the images are made to be shared. The dialog header always
-lists every row. The choice is stored as the **excluded** row keys (`model`, `assessor`, `prompt`,
+*Board*, which is grading diagnostics while the images are made to be shared. The dialog header is not
+affected by this choice: it shows *Model* and *Assessor(s)* always and the other rows under *Run
+details* (see the compact header below). The choice is stored as the **excluded** row keys (`model`, `assessor`, `prompt`,
 `profile`, `started`, `board`) in `localStorage['overseer.benchmark.runReport.imageDetails']`
 (`{ "version": 1, "excluded": [...] }`); while nothing is stored the exclusions are `["board"]`, and a
 stored empty list means every row. A card's own image carries only the chosen *Model* and
 *Assessor(s)* rows beside its emblem, widening toward 4 : 3 as before when they do not fit.
+
+### Run History Cards and a Compact Run Report Header (2026-09-30)
+
+*Presentation only: nothing is graded differently, and neither the harness version nor the scoring
+method version changes. Only the Angular client changes; no server change, no database change.*
+
+**Run History is a card list.** The 12-column table is gone. Each run is one full-width card, built on
+the Download Center's card-list pattern (`frontend_ui_controls` § 8h):
+
+- **Kicker:** `#75`, the status badge, the degraded-answer count (an *alert-triangle* glyph, the number
+  and *degraded answers*, no ⚠ character and no hover-only `title`), the `answered / total` badge, and
+  `INSTRUMENT CHANGED` / `OPTIONS CHANGED`.
+- **Title:** the model under test, with the same thinking-level, reasoning-mode and provider badges the
+  run report header uses (no service-tier badge, which the run summary does not carry).
+- **Meta line:** suite · *assessed by* the assessor · the start time in UTC · *by* the user who started
+  it, when recorded.
+- **Metrics:** *Intelligence*, *Speed*, *Duration* and *Cost*, in fixed-width columns so the figures
+  line up down the list. Their qualifiers are visible second lines (see *Run History shows the duration
+  and the shortfall* above), and the cost shows the model under test's own figure with the whole run's
+  *catalog* total beneath.
+- **Actions:** icon-only **View details**, **Download Markdown report** (now the *file-with-arrow*
+  glyph), **Download tool-call log** and, set apart, **Delete run**. After a delete, focus moves to the
+  card now in the deleted one's place.
+- **Instrument strip,** under a hairline: *PROMPT*, *GUIDES*, *KB*, *WIKI* and *SRC* with each hash's
+  first 8 characters (`-` when not recorded). The full hashes are in a click-mode info tip, *Instrument
+  of run N*, at the end of the strip, not in `title` tooltips.
+
+The list lays out by its own width: metrics beside the title from 60 rem, under it below that, and one
+column below 30 rem, with no sideways scroll.
+
+**The filter bar.** Above the list: a **search** (*Search runs*, over `#id`, suite, model name and id,
+provider, assessor, status, harness version and the five fingerprints, debounced; Escape with text clears
+it), **Sort by**, the facets, and the removable chips with **Clear all**. The orders are *Newest first*
+(the default), *Oldest first*, *Intelligence Index, highest first*, *Speed Index, highest first*, *Cost,
+lowest first*, *Cost, highest first*, *Duration, shortest first*, *Tested model (A–Z)* and *Suite (A–Z)*;
+the choice is remembered per browser in `localStorage['overseer.benchmark.runHistory.view']`
+(`{ "version": 1, "sort": … }`). The facets are *Suite*, *Tested model*, *Assessor*, *Status*, *Flags*
+(*Degraded answers*, *Unanswered questions*, *Failed at the provider*, *Advisory timing*, *Pricing
+incomplete*, *None*), *Changes* (*Instrument changed*, *Options changed*, *No change*) and *Started*
+(last 24 hours, 7 days or 30 days); each is listed only while the runs hold two values or more, or while
+it has a selection. The list's one polite live region is the status line in its head, *Showing 10 of
+75 runs* (*· filtered from N* while a filter is active). **Refresh** is a compact `.btn-ghost` at the end
+of the head.
+
+**Load more.** Ten cards show at first, then **Show 10 more** and, while more than one batch remains,
+**Show all N**; either moves focus to the first new card's title. The count returns to ten when the
+search, the sort or a filter changes. *No benchmark runs recorded yet* and *No runs match these filters*
+(with **Clear all filters**) are separate empty states.
+
+**The newest 200 runs, and no server-side suite select.** The list loads the newest 200 runs in one
+request, the API's cap, and filters them in the browser. The *Filter by Suite* select, which reloaded the
+list for one suite, is gone; the *Suite* facet replaces it and combines with the other facets without a
+reload. When exactly 200 runs come back the status line adds *· Only the newest 200 runs are loaded*.
+What the select could still reach — one suite's runs older than the newest 200 — is not reachable from
+this list.
+
+**The run report header is compact.**
+
+- **Facts.** Under the title, *Model* and *Assessor(s)* are always shown. *Prompt*, *Scoring profile*,
+  *Started* and *Board* sit in a *Run details* disclosure, closed by default. While closed, its summary
+  carries a one-line read-out, for example *Gameplay Help · Standard Intelligence Index · Started
+  2026-09-30 13:35 UTC · Board 18/18*; the board reads as the question count when every figure is
+  complete, else *Board incomplete*. While the board has gaps, a *Graded without the board* tag stays in
+  the summary whether the section is open or closed, because a warning never hides behind a disclosure.
+  Open or closed is remembered per browser in `localStorage['overseer.benchmark.runReport.header']`
+  (`{ "version": 1, "detailsOpen": … }`) and applies to every run report. Both parts use the flowing
+  facts layout described under *Widths* above, so the header has no empty rows.
+- **Actions.** The *Run actions* group is a two-column grid: **Downloads** over **Re-run**, equal in
+  width, then the icon-only **View game snapshot** over **Copy diagnostics**. *Copied* appears under the
+  group without moving the buttons. **Close** is no longer in the group, since it is a dialog control and
+  not a run action; it sits apart at the top-right corner. Below 40 rem of the dialog's width the group is
+  one row, since on a phone the header's width is spare and its height is not.
+- The header's items align to the top, so Close and the actions no longer center against a tall title
+  block. The Model Comparison wizard's sidebar layout is unchanged.
+
+The key-figures images do not change; they still draw the run-fact rows chosen under *Image details*,
+the board note included.
+
+**Shared code.** The search, **Sort by** with its remembered choice, facets, chips, status line and Load
+more of both card lists come from one plain-TypeScript class, `CardListState`
+(`shared/data-table/card-list-state.ts`). The Download Center was moved onto it with no change in
+behavior, its stored keys or its visible text.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).

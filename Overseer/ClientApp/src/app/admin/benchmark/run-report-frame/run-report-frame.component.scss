@@ -80,7 +80,7 @@
 }
 
 /* Single layout: the header and tab row stay put at every width and the body is the one scroller.
-   A short viewport keeps a usable body. */
+   A short viewport keeps a usable body. The header's actions sit at its top, beside a tall identity. */
 :host(.rrf-layout-single) {
   overflow: hidden;
 
@@ -91,6 +91,7 @@
 
   .rrf-header {
     position: static;
+    align-items: flex-start;
   }
 
   .rrf-body {

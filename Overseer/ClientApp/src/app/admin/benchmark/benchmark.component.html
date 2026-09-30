@@ -783,211 +783,230 @@
   <!-- TAB 2: RUN HISTORY -->
   @if (activeSubTab === 'history') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-history" aria-labelledby="bm-tab-history" tabindex="0">
-      <div class="history-toolbar mb-20">
-        <div class="filter-group">
-          <label for="historySuiteFilter">Filter by Suite (server-side — reloads the list):</label>
-          <select id="historySuiteFilter" class="gh-input" [(ngModel)]="historySuiteFilter" (ngModelChange)="loadHistory()">
-            <option [ngValue]="null">All Suites</option>
-            @for (suite of suites; track suite.id) {
-              <option [ngValue]="suite.id">{{ suite.name }}</option>
-            }
-          </select>
+      <!-- The loaded runs as a filterable list of cards shown ten at a time; historyRuns stays in server order. -->
+      <section class="rh-list" aria-labelledby="rh-list-title">
+        <div class="rh-list-head">
+          <!-- Focused after a delete that leaves no card to focus. -->
+          <h4 class="gh-section-title rh-list-title" id="rh-list-title" tabindex="-1">Runs</h4>
+          <app-info-tip trigger="click" tipId="rh-list-tip" subject="Run history">
+            <dl>
+              <div>
+                <dt><span class="gh-info-term">Intelligence</span></dt>
+                <dd>The Intelligence Index: answer quality from 0 to 100, weighted by each question's assessed difficulty.</dd>
+              </div>
+              <div>
+                <dt><span class="gh-info-term">Speed</span></dt>
+                <dd>The Speed Index: answer time from 0 to 100 against the scoring profile's target. <em>Advisory timing</em> marks a run timed under concurrent execution.</dd>
+              </div>
+              <div>
+                <dt><span class="gh-info-term">Cost</span></dt>
+                <dd>The model under test; the whole run's catalog total beneath.</dd>
+              </div>
+              <div>
+                <dt><span class="gh-info-term">Instrument</span></dt>
+                <dd>The first eight characters of five hashes: the candidate system prompt, the tool guides, the knowledge base, the GnollHack wiki and the GnollHack source. The info button at the end of a card lists them in full.</dd>
+              </div>
+              <div>
+                <dt><span class="gh-info-term">Instrument changed, Options changed</span></dt>
+                <dd>Compared with the next older run of the same suite that is not running. <em>Instrument changed</em>: a hash moved. <em>Options changed</em>: the prompt options differ, so the two runs are not a reproduction.</dd>
+              </div>
+            </dl>
+          </app-info-tip>
+          <!-- The list's one polite live region. -->
+          <p class="gh-list-status rh-list-status" id="rh-list-status" role="status">{{ historyListStatus }}</p>
+          <button type="button" class="btn-ghost rh-refresh" (click)="loadHistory()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Refresh
+          </button>
         </div>
-        <button type="button" class="btn-gh" (click)="loadHistory()">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-          Refresh
-        </button>
-      </div>
 
-      @if (loadingHistory) {
-        <div class="loading-spinner">Loading benchmark history...</div>
-      } @else if (historyRuns.length === 0) {
-        <div class="empty-state">No benchmark runs recorded yet. Start one from the Run Benchmark tab.</div>
-      } @else if (historyTable.noMatches(historyRuns)) {
-        <div class="empty-state">
-          No runs match these filters.
-          <button type="button" class="gh-filter-clear" (click)="historyTable.clearFilters()">Clear filters</button>
-        </div>
-      } @else {
-        <app-table-pager [state]="historyTable" [rows]="historyRuns" noun="runs"
-                         (changed)="onHistoryTableChanged()"></app-table-pager>
-        <div class="history-table-wrapper gh-datatable-scroll">
-          <table class="gh-table gh-datatable">
-            <thead>
-              <tr>
-                <th app-sort-header [state]="historyTable" column="id" label="ID"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th app-sort-header [state]="historyTable" column="suiteName" label="Suite"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th app-sort-header [state]="historyTable" column="testedModelDisplayNameUsed" label="Tested Model"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th app-sort-header [state]="historyTable" column="assessorModelDisplayNameUsed" label="Assessor Model"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th app-sort-header [state]="historyTable" column="status" label="Status"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th app-sort-header [state]="historyTable" column="qualityIndex" label="Intelligence Index"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th app-sort-header [state]="historyTable" column="speedIndex" label="Speed Index"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th scope="col">Instrument</th>
-                <th app-sort-header [state]="historyTable" column="durationMs" label="Duration"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th app-sort-header [state]="historyTable" column="estimatedCost" label="Cost"
-                    (changed)="onHistoryTableChanged()" tabindex="0"
-                    interestfor="tip-cost-header" style="anchor-name: --tip-cost-header"></th>
-                <th app-sort-header [state]="historyTable" column="startedAtUtc" label="Date (UTC)"
-                    (changed)="onHistoryTableChanged()"></th>
-                <th scope="col">Actions</th>
-              </tr>
-              <tr class="gh-filter-row">
-                <td></td>
-                <td>
-                  <label class="visually-hidden" for="hist-f-suite">Filter by suite</label>
-                  <input id="hist-f-suite" type="text" class="gh-input gh-filter-input" placeholder="Suite"
-                         [ngModel]="historyTable.filters['suiteName']" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="historyTable.setFilter('suiteName', $event)">
-                </td>
-                <td>
-                  <label class="visually-hidden" for="hist-f-tested">Filter by tested model</label>
-                  <input id="hist-f-tested" type="text" class="gh-input gh-filter-input" placeholder="Tested Model"
-                         [ngModel]="historyTable.filters['testedModelDisplayNameUsed']" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="historyTable.setFilter('testedModelDisplayNameUsed', $event)">
-                </td>
-                <td>
-                  <label class="visually-hidden" for="hist-f-assessor">Filter by assessor model</label>
-                  <input id="hist-f-assessor" type="text" class="gh-input gh-filter-input" placeholder="Assessor Model"
-                         [ngModel]="historyTable.filters['assessorModelDisplayNameUsed']" [ngModelOptions]="{ standalone: true }"
-                         (ngModelChange)="historyTable.setFilter('assessorModelDisplayNameUsed', $event)">
-                </td>
-                <td>
-                  <label class="visually-hidden" for="hist-f-status">Filter by status</label>
-                  <select id="hist-f-status" class="gh-input gh-filter-select"
-                          [ngModel]="historyTable.filters['status']" [ngModelOptions]="{ standalone: true }"
-                          (ngModelChange)="historyTable.setFilter('status', $event)">
-                    <option value="">All</option>
-                    @for (option of historyStatusOptions; track option) {
-                      <option [value]="option">{{ option }}</option>
-                    }
-                  </select>
-                </td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td>
-                  @if (historyTable.hasActiveFilters) {
-                    <button type="button" class="gh-filter-clear" (click)="historyTable.clearFilters()">Clear filters</button>
+        @if (historyRuns.length === 0) {
+          @if (loadingHistory) {
+            <p class="rh-loading">Loading benchmark history&hellip;</p>
+          } @else {
+            <p class="empty-state rh-empty">No benchmark runs recorded yet. Start one from the Run Benchmark tab.</p>
+          }
+        } @else {
+          <!-- Search, Sort by, the facets and the active filters. -->
+          <div class="gh-filter-bar rh-filter-bar">
+            <div class="gh-filter-bar-row">
+              <div class="gh-search-field rh-search">
+                <label class="visually-hidden" for="rh-search">Search runs</label>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="search" class="gh-input" id="rh-search" autocomplete="off"
+                       placeholder="Search id, model, suite, assessor or hash"
+                       [value]="historyList.searchText" (input)="onHistorySearchInput($event)" (keydown)="onHistorySearchKeydown($event)">
+              </div>
+              <div class="rh-sort">
+                <label class="rh-sort-label" for="rh-sort">Sort by</label>
+                <select class="gh-input rh-sort-select" id="rh-sort" (change)="onHistorySortChange($event)">
+                  @for (sort of historySorts; track sort.id) {
+                    <option [value]="sort.id" [selected]="historyList.sortId === sort.id">{{ sort.label }}</option>
                   }
-                </td>
-              </tr>
-            </thead>
-            <tbody>
+                </select>
+              </div>
+            </div>
+
+            @if (historyFacets.length > 0) {
+              <div class="gh-facet-row rh-facet-row">
+                @for (facet of historyFacets; track facet.column) {
+                  <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" [options]="facet.options"
+                                    [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel" noun="runs"
+                                    (selectedChange)="onHistoryFacetChange(facet.column, $event)"></app-filter-facet>
+                }
+              </div>
+            }
+
+            @if (historyChips.length > 0) {
+              <div class="gh-filter-bar-row rh-chips-row">
+                <ul class="gh-filter-chips rh-filter-chips" role="list" aria-label="Active filters">
+                  @for (chip of historyChips; track chip.key) {
+                    <li>
+                      <button type="button" class="gh-filter-chip"
+                              [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                              (click)="removeHistoryChip(chip)">
+                        <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                        <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                      </button>
+                    </li>
+                  }
+                </ul>
+                <button type="button" class="gh-filter-clear rh-clear-filters" (click)="clearHistoryFilters()">Clear all</button>
+              </div>
+            }
+          </div>
+
+          @if (historyTable.noMatches(historyRuns)) {
+            <p class="empty-state rh-no-matches">No runs match these filters.
+              <button type="button" class="gh-filter-clear" (click)="clearHistoryFilters()">Clear all filters</button>
+            </p>
+          } @else {
+            <ul class="rh-card-list" role="list" aria-labelledby="rh-list-title" [attr.aria-busy]="loadingHistory ? 'true' : null">
               @for (run of historyView; track run.id) {
-                <tr>
-                  <td>#{{ run.id }}</td>
-                  <td>{{ run.suiteName }}</td>
-                  <td><strong>{{ run.testedModelDisplayNameUsed }}</strong></td>
-                  <td>{{ run.assessorModelDisplayNameUsed }}</td>
-                  <td>
-                    <span class="status-badge" [class]="'badge-status-' + formatStatus(run.status).toLowerCase()">
-                      {{ formatStatusLabel(run.status) }}
-                    </span>
-                    @if ((run.degradedAnswerCount ?? 0) > 0) {
-                      <span class="badge-degraded-count" title="Degraded answers count">⚠ {{ run.degradedAnswerCount }}</span>
-                    }
-                    @if (answerShortfallOf(run); as progress) {
-                      <span class="badge-progress-count"
-                            [attr.interestfor]="'tip-progress-' + run.id"
-                            [attr.style]="'anchor-name: --tip-progress-' + run.id">{{ progress.answered }} / {{ progress.total }}</span>
-                      <div popover="hint" class="gh-tooltip" [id]="'tip-progress-' + run.id"
-                           [attr.style]="'position-anchor: --tip-progress-' + run.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
-                    }
-                  </td>
-                  <td>
-                    @if (run.qualityIndex != null) {
-                      <span class="score-badge" [class]="getScoreBadgeClass(run.qualityIndex)">
-                        {{ run.qualityIndex }} / 100
-                      </span>
-                    } @else if (run.finalScore != null) {
-                      <span class="score-badge" [class]="getScoreBadgeClass(run.finalScore)">
-                        {{ run.finalScore }} / 100
-                      </span>
-                    } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
-                      <span class="text-muted"
-                            [attr.interestfor]="'tip-notcomputed-q-' + run.id"
-                            [attr.style]="'anchor-name: --tip-notcomputed-q-' + run.id">not computed</span>
-                      <div popover="hint" class="gh-tooltip" [id]="'tip-notcomputed-q-' + run.id"
-                           [attr.style]="'position-anchor: --tip-notcomputed-q-' + run.id">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} questions failed at the provider; indexes are withheld</div>
-                    } @else {
-                      <span class="text-muted">N/A</span>
-                    }
-                  </td>
-                  <td>
-                    @if (run.speedIndex != null) {
-                      <span class="score-badge" [class]="getScoreBadgeClass(run.speedIndex)">
-                        {{ run.speedIndex }} / 100
-                      </span>
-                      @if (run.speedMeasurementDegraded) {
-                        <span class="degraded-indicator" title="Advisory timing — measured under concurrent execution">*</span>
-                      }
-                    } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
-                      <span class="text-muted"
-                            [attr.interestfor]="'tip-notcomputed-s-' + run.id"
-                            [attr.style]="'anchor-name: --tip-notcomputed-s-' + run.id">not computed</span>
-                      <div popover="hint" class="gh-tooltip" [id]="'tip-notcomputed-s-' + run.id"
-                           [attr.style]="'position-anchor: --tip-notcomputed-s-' + run.id">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} questions failed at the provider; indexes are withheld</div>
-                    } @else {
-                      <span class="text-muted">-</span>
-                    }
-                  </td>
-                  <td class="instrument-cell">
-                    <span class="instrument-fingerprints">
-                      @for (entry of fingerprintEntries(run); track entry.label) {
-                        <span class="instrument-fingerprint" [class]="entry.cssClass" [attr.title]="entry.title">
-                          {{ entry.label }} {{ entry.short }}
-                        </span>
-                      }
-                    </span>
-                    @if (instrumentChangeOf(run); as change) {
-                      <span class="instrument-changed" [class]="change.kind === 'options' ? 'options-changed' : ''"
-                            [attr.aria-label]="(change.kind === 'options' ? 'Run options changed since run ' : 'Instrument changed since run ') + change.comparedToRunId"
-                            [attr.interestfor]="'tip-instr-' + run.id"
-                            [attr.style]="'anchor-name: --tip-instr-' + run.id">{{ change.kind === 'options' ? 'OPTIONS CHANGED' : 'INSTRUMENT CHANGED' }}</span>
-                      <div popover="hint" class="gh-tooltip" [id]="'tip-instr-' + run.id"
-                           [attr.style]="'position-anchor: --tip-instr-' + run.id">{{ change.description }}</div>
-                    }
-                  </td>
-                  <td>
-                    <span [attr.interestfor]="isAbortedRun(run) ? 'tip-dur-' + run.id : null"
-                          [attr.style]="isAbortedRun(run) ? 'anchor-name: --tip-dur-' + run.id : null">{{ formatDuration(runDurationMs(run)) }}</span>
-                    @if (isAbortedRun(run)) {
-                      <div popover="hint" class="gh-tooltip" [id]="'tip-dur-' + run.id"
-                           [attr.style]="'position-anchor: --tip-dur-' + run.id">Wall-clock time until the run stopped</div>
-                    }
-                  </td>
-                  <td class="cost-cell">
-                    <div class="cost-stack">
-                      @if (run.estimatedCandidateCost != null || run.estimatedCost != null) {
-                        <span class="cost-primary">
-                          {{ formatCostAmount(run.estimatedCandidateCost ?? run.estimatedCost) }}
-                          @if (run.pricingIncomplete) {
-                            <span class="degraded-tag" title="Some participating models lack pricing">*</span>
+                @let change = instrumentChangeOf(run);
+                @let progress = answerShortfallOf(run);
+                <li class="rh-card-item">
+                  <article class="rh-card" [attr.data-run-id]="run.id" [attr.aria-labelledby]="'rh-run-' + run.id + '-title'">
+                    <header class="rh-card-head">
+                      <!-- A dot on screen between the parts, a comma for assistive technology. -->
+                      <div class="rh-card-kicker">
+                        <span class="rh-card-id">#{{ run.id }}</span>
+                        <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                        <span class="status-badge" [class]="statusBadgeClass(run.status)">{{ formatStatusLabel(run.status) }}</span>
+                        @if ((run.degradedAnswerCount ?? 0) > 0) {
+                          <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <span class="badge-degraded-count"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>{{ run.degradedAnswerCount }}<span class="visually-hidden">{{ run.degradedAnswerCount === 1 ? ' degraded answer' : ' degraded answers' }}</span></span>
+                        }
+                        @if (progress) {
+                          <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <span class="badge-progress-count"
+                                [attr.interestfor]="'tip-progress-' + run.id"
+                                [attr.style]="'anchor-name: --tip-progress-' + run.id">{{ progress.answered }} / {{ progress.total }}</span>
+                          <div popover="hint" class="gh-tooltip" [id]="'tip-progress-' + run.id"
+                               [attr.style]="'position-anchor: --tip-progress-' + run.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
+                        }
+                        @if (change) {
+                          <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <span class="instrument-changed" [class]="change.kind === 'options' ? 'options-changed' : ''"
+                                [attr.aria-label]="(change.kind === 'options' ? 'Run options changed since run ' : 'Instrument changed since run ') + change.comparedToRunId"
+                                [attr.interestfor]="'tip-instr-' + run.id"
+                                [attr.style]="'anchor-name: --tip-instr-' + run.id">{{ change.kind === 'options' ? 'OPTIONS CHANGED' : 'INSTRUMENT CHANGED' }}</span>
+                          <div popover="hint" class="gh-tooltip" [id]="'tip-instr-' + run.id"
+                               [attr.style]="'position-anchor: --tip-instr-' + run.id">{{ change.description }}</div>
+                        }
+                      </div>
+                      <!-- Focused after Load more and after a delete. -->
+                      <h5 class="rh-card-title" [id]="'rh-run-' + run.id + '-title'" tabindex="-1">
+                        <span class="rh-card-model">{{ run.testedModelDisplayNameUsed || run.testedModelIdUsed }}</span>
+                        @for (badge of historyModelBadges(run); track badge.kind) {
+                          @switch (badge.kind) {
+                            @case ('provider') {
+                              <app-provider-badge [provider]="badge.provider" />
+                            }
+                            @case ('thinking') {
+                              <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                            }
+                            @case ('reasoning') {
+                              <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                            }
+                            @default {
+                              <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                            }
                           }
-                        </span>
-                        <span class="cost-secondary">catalog {{ formatRunEstimatedCost(run) }}</span>
-                      } @else {
-                        <span class="text-muted">-</span>
-                      }
-                    </div>
-                  </td>
-                  <td class="history-date-cell">
-                    <span class="history-date">{{ run.startedAtUtc | date:'yyyy-MM-dd' }}</span>
-                    <span class="history-time">{{ run.startedAtUtc | date:'HH:mm' }}</span>
-                  </td>
-                  <td class="action-cell">
-                    <div class="history-actions">
+                        }
+                      </h5>
+                      <p class="rh-card-meta">
+                        <span class="rh-card-suite">{{ run.suiteName }}</span>
+                        <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                        <span>assessed by {{ run.assessorModelDisplayNameUsed }}</span>
+                        <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                        <time class="rh-card-time" [attr.datetime]="run.startedAtUtc">{{ run.startedAtUtc | date:'yyyy-MM-dd HH:mm' }} UTC</time>
+                        @if (run.startedByUserName) {
+                          <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <span>by {{ run.startedByUserName }}</span>
+                        }
+                      </p>
+                    </header>
+
+                    <dl class="rh-metrics">
+                      <div class="rh-metric" data-metric="intelligence">
+                        <dt>Intelligence</dt>
+                        <dd>
+                          @if (run.qualityIndex != null) {
+                            <span class="score-badge" [class]="getScoreBadgeClass(run.qualityIndex)">{{ run.qualityIndex }} / 100</span>
+                          } @else if (run.finalScore != null) {
+                            <span class="score-badge" [class]="getScoreBadgeClass(run.finalScore)">{{ run.finalScore }} / 100</span>
+                          } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
+                            <span class="text-muted">not computed</span>
+                            <span class="rh-metric-note">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} failed at the provider</span>
+                          } @else {
+                            <span class="text-muted">N/A</span>
+                          }
+                        </dd>
+                      </div>
+                      <div class="rh-metric" data-metric="speed">
+                        <dt>Speed</dt>
+                        <dd>
+                          @if (run.speedIndex != null) {
+                            <span class="score-badge" [class]="getScoreBadgeClass(run.speedIndex)">{{ run.speedIndex }} / 100</span>
+                            @if (run.speedMeasurementDegraded) {
+                              <span class="rh-metric-note rh-metric-warn">advisory timing</span>
+                            }
+                          } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
+                            <span class="text-muted">not computed</span>
+                            <span class="rh-metric-note">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} failed at the provider</span>
+                          } @else {
+                            <span class="text-muted">&mdash;</span>
+                          }
+                        </dd>
+                      </div>
+                      <div class="rh-metric" data-metric="duration">
+                        <dt>Duration</dt>
+                        <dd>
+                          <span class="rh-metric-value">{{ formatDuration(runDurationMs(run)) }}</span>
+                          @if (isAbortedRun(run)) {
+                            <span class="rh-metric-note">until stopped</span>
+                          }
+                        </dd>
+                      </div>
+                      <div class="rh-metric" data-metric="cost">
+                        <dt>Cost</dt>
+                        <dd>
+                          @if (run.estimatedCandidateCost != null || run.estimatedCost != null) {
+                            <span class="rh-metric-value rh-cost-primary">{{ formatCostAmount(run.estimatedCandidateCost ?? run.estimatedCost) }}</span>
+                            <span class="rh-metric-note rh-cost-catalog">catalog {{ formatRunEstimatedCost(run) }}</span>
+                            @if (run.pricingIncomplete) {
+                              <span class="rh-metric-note rh-metric-warn">pricing incomplete</span>
+                            }
+                          } @else {
+                            <span class="text-muted">&mdash;</span>
+                          }
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div class="rh-card-actions" role="group" [attr.aria-label]="'Actions for run ' + run.id">
                       <button type="button" class="action-btn" (click)="viewRunDetail(run.id)"
                               [attr.aria-label]="'View details for run ' + run.id"
                               [attr.interestfor]="'tip-view-run-' + run.id"
@@ -1000,7 +1019,7 @@
                               [attr.aria-label]="'Download Markdown report for run ' + run.id"
                               [attr.interestfor]="'tip-dl-run-' + run.id"
                               [attr.style]="'anchor-name: --tip-dl-run-' + run.id">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
                       </button>
                       <div popover="hint" class="gh-tooltip" [id]="'tip-dl-run-' + run.id"
                            [attr.style]="'position-anchor: --tip-dl-run-' + run.id">Download Markdown report</div>
@@ -1012,7 +1031,7 @@
                       </button>
                       <div popover="hint" class="gh-tooltip" [id]="'tip-tcl-run-' + run.id"
                            [attr.style]="'position-anchor: --tip-tcl-run-' + run.id">Download tool-call log</div>
-                      <button type="button" class="action-btn action-btn-danger" (click)="deleteRun(run.id)"
+                      <button type="button" class="action-btn action-btn-danger rh-delete-btn" (click)="deleteRun(run.id)"
                               [attr.aria-label]="'Delete run ' + run.id"
                               [attr.interestfor]="'tip-del-run-' + run.id"
                               [attr.style]="'anchor-name: --tip-del-run-' + run.id">
@@ -1021,17 +1040,46 @@
                       <div popover="hint" class="gh-tooltip" [id]="'tip-del-run-' + run.id"
                            [attr.style]="'position-anchor: --tip-del-run-' + run.id">Delete run</div>
                     </div>
-                  </td>
-                </tr>
+
+                    <!-- The five hashes, shortened; the info tip at the end lists them in full. -->
+                    <div class="rh-instrument-strip">
+                      <dl class="rh-instrument">
+                        @for (entry of fingerprintEntries(run); track entry.label) {
+                          <div class="rh-instrument-pair">
+                            <dt>{{ entry.label }}<span class="visually-hidden"> ({{ fingerprintLongName(entry) }})</span></dt>
+                            <dd class="rh-hash" [class]="entry.cssClass">{{ entry.short }}</dd>
+                          </div>
+                        }
+                      </dl>
+                      <app-info-tip trigger="click" [tipId]="'rh-instr-' + run.id" [subject]="'Instrument of run ' + run.id">
+                        <dl>
+                          @for (entry of fingerprintEntries(run); track entry.label) {
+                            @let parts = fingerprintParts(entry);
+                            <div>
+                              <dt><span class="gh-info-term">{{ parts.term }}</span></dt>
+                              <dd class="rh-hash-full">{{ parts.value }}</dd>
+                            </div>
+                          }
+                        </dl>
+                      </app-info-tip>
+                    </div>
+                  </article>
+                </li>
               }
-            </tbody>
-          </table>
-        </div>
-        <div popover="hint" class="gh-tooltip" id="tip-cost-header"
-             style="position-anchor: --tip-cost-header">Model under test; whole-run catalog total beneath</div>
-        <app-table-pager [state]="historyTable" [rows]="historyRuns" noun="runs" [announce]="false"
-                         (changed)="onHistoryTableChanged()"></app-table-pager>
-      }
+            </ul>
+
+            @let remaining = historyList.remainingCount(historyRuns);
+            @if (remaining > 0) {
+              <div class="gh-load-more rh-load-more">
+                <button type="button" class="btn-ghost rh-show-more" (click)="showMoreHistory()">Show {{ historyList.nextBatchCount(historyRuns) }} more</button>
+                @if (remaining > historyList.batch) {
+                  <button type="button" class="gh-filter-clear rh-show-all" (click)="showAllHistory()">Show all {{ historyList.matching(historyRuns).length }}</button>
+                }
+              </div>
+            }
+          }
+        }
+      </section>
     </div>
   }
 
@@ -1602,70 +1650,86 @@
             }
           </div>
           @if (selectedRunDetail) {
-            <app-run-facts class="rr-run-facts" [rows]="selectedRunFacts" />
+            <app-run-facts class="rr-run-facts rr-run-facts-primary" [rows]="selectedRunPrimaryFacts" />
+            <!-- The secondary facts, open or closed as the viewer last left them. The summary holds text only;
+                 a board gap stays visible while it is closed. -->
+            <details class="gh-disclosure rr-run-details" id="rr-run-details"
+                     [open]="runHeaderDetailsOpen" (toggle)="onRunHeaderDetailsToggle($event)">
+              <summary>
+                <span class="rr-run-details-title">Run details</span>
+                <span class="rr-run-details-readout" aria-hidden="true">{{ runDetailsReadout }}</span>
+                @if (runHeaderBoardHasGaps) {
+                  <span class="gh-tag gh-tag-changed rr-run-details-gap">Graded without the board</span>
+                }
+              </summary>
+              <app-run-facts class="rr-run-facts" [rows]="selectedRunDetailFacts" />
+            </details>
           }
         </div>
       </div>
 
-      <!-- A group, not a toolbar: every action is its own Tab stop, with no arrow-key roving. -->
-      <div runReportActions class="rr-actions" role="group" aria-label="Run actions">
+      <!-- The run's actions, then Close, which is a dialog control rather than a run action. -->
+      <div runReportActions class="rr-header-controls">
         @if (selectedRunDetail) {
-          <button type="button" class="btn-ghost" id="rr-downloads-trigger" (click)="openRunDownloads()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
-            Downloads
-          </button>
-
-          <button #rerunTrigger type="button" class="btn-ghost" id="rr-rerun-trigger"
-                  popovertarget="rr-rerun-popover" [attr.aria-expanded]="rerunPopoverOpen"
-                  [attr.style]="'anchor-name: --rr-rerun'">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-            Re-run
-            @if (rerunPopoverOpen) {
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
-            } @else {
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            }
-          </button>
-          <!-- Right after its trigger, so Tab moves from the trigger into the items and on. -->
-          <div #rerunPopover popover="auto" id="rr-rerun-popover" class="gh-action-popover"
-               role="group" aria-label="Re-run and repair"
-               [attr.style]="'position-anchor: --rr-rerun'"
-               (toggle)="onRerunToggle($event)" (keydown)="onRerunPopoverKeydown($event)">
-            @for (action of rerunActions(selectedRunDetail); track action.key) {
-              <button type="button" class="gh-action-popover-item" [attr.data-action]="action.key"
-                      [attr.aria-disabled]="action.reason ? 'true' : null"
-                      (click)="onRerunAction(action)">
-                <span>{{ action.label }}</span>
-                @if (action.reason) {
-                  <span class="gh-action-popover-item-reason">{{ action.reason }}</span>
-                }
-              </button>
-            }
-          </div>
-
-          @if (selectedRunHasBoard) {
-            <button type="button" class="action-btn" id="rr-snapshot-btn"
-                    [attr.aria-label]="'View game snapshot of run ' + selectedRunDetail.id"
-                    interestfor="rr-snapshot-tip" [attr.style]="'anchor-name: --rr-snapshot'"
-                    (click)="openRunBoard(selectedRunDetail.id)">
-              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+          <!-- A group, not a toolbar: every action is its own Tab stop, with no arrow-key roving. -->
+          <div class="rr-actions" role="group" aria-label="Run actions">
+            <button type="button" class="btn-ghost" id="rr-downloads-trigger" (click)="openRunDownloads()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+              Downloads
             </button>
-            <div popover="hint" class="gh-tooltip" id="rr-snapshot-tip"
-                 [attr.style]="'position-anchor: --rr-snapshot'">View game snapshot</div>
-          }
 
-          <button type="button" class="action-btn" id="rr-copy-diagnostics-btn"
-                  [attr.aria-label]="'Copy diagnostics of run ' + selectedRunDetail.id"
-                  interestfor="rr-copy-diagnostics-tip" [attr.style]="'anchor-name: --rr-copy-diagnostics'"
-                  (click)="copyRunReportDiagnostics()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-          </button>
-          <div popover="hint" class="gh-tooltip" id="rr-copy-diagnostics-tip"
-               [attr.style]="'position-anchor: --rr-copy-diagnostics'">Copy diagnostics</div>
-          <span class="rr-status" role="status">{{ runReportCopyStatus }}</span>
+            <button #rerunTrigger type="button" class="btn-ghost" id="rr-rerun-trigger"
+                    popovertarget="rr-rerun-popover" [attr.aria-expanded]="rerunPopoverOpen"
+                    [attr.style]="'anchor-name: --rr-rerun'">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              Re-run
+              @if (rerunPopoverOpen) {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
+              } @else {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              }
+            </button>
+            <!-- Right after its trigger, so Tab moves from the trigger into the items and on. -->
+            <div #rerunPopover popover="auto" id="rr-rerun-popover" class="gh-action-popover"
+                 role="group" aria-label="Re-run and repair"
+                 [attr.style]="'position-anchor: --rr-rerun'"
+                 (toggle)="onRerunToggle($event)" (keydown)="onRerunPopoverKeydown($event)">
+              @for (action of rerunActions(selectedRunDetail); track action.key) {
+                <button type="button" class="gh-action-popover-item" [attr.data-action]="action.key"
+                        [attr.aria-disabled]="action.reason ? 'true' : null"
+                        (click)="onRerunAction(action)">
+                  <span>{{ action.label }}</span>
+                  @if (action.reason) {
+                    <span class="gh-action-popover-item-reason">{{ action.reason }}</span>
+                  }
+                </button>
+              }
+            </div>
+
+            @if (selectedRunHasBoard) {
+              <button type="button" class="action-btn" id="rr-snapshot-btn"
+                      [attr.aria-label]="'View game snapshot of run ' + selectedRunDetail.id"
+                      interestfor="rr-snapshot-tip" [attr.style]="'anchor-name: --rr-snapshot'"
+                      (click)="openRunBoard(selectedRunDetail.id)">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon><line x1="8" y1="2" x2="8" y2="18"></line><line x1="16" y1="6" x2="16" y2="22"></line></svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" id="rr-snapshot-tip"
+                   [attr.style]="'position-anchor: --rr-snapshot'">View game snapshot</div>
+            }
+
+            <button type="button" class="action-btn" id="rr-copy-diagnostics-btn"
+                    [attr.aria-label]="'Copy diagnostics of run ' + selectedRunDetail.id"
+                    interestfor="rr-copy-diagnostics-tip" [attr.style]="'anchor-name: --rr-copy-diagnostics'"
+                    (click)="copyRunReportDiagnostics()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="rr-copy-diagnostics-tip"
+                 [attr.style]="'position-anchor: --rr-copy-diagnostics'">Copy diagnostics</div>
+            <span class="rr-status" role="status">{{ runReportCopyStatus }}</span>
+          </div>
         }
 
-        <button type="button" class="btn-icon-action" aria-label="Close run details" (click)="closeRunDetail()">
+        <button type="button" class="btn-icon-action rr-close" aria-label="Close run details" (click)="closeRunDetail()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>

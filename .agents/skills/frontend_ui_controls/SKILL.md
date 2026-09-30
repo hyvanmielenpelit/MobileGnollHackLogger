@@ -199,7 +199,7 @@ you already read the label, it is noise; drop it.
 | trash | Delete Runs, Delete All Suite Runs, Delete a report document (`.action-btn-danger`, on each Report Pack row of the Download Center and on the run report's AI Reports tab, and the **Delete** of its confirmation) | Destructive. The redundancy is *wanted*: a second signal before an irreversible action |
 | refresh / rotate | Refresh, Re-score Run, Re-run Failed Questions, **Re-run** (the run report's popover trigger, followed by a chevron state indicator) | "This runs again" — the circular-arrow convention is universal |
 | undo (curved arrow back) | Reset a settings section to its defaults | "Back to where it started" — distinct from rotate, which means "runs again" |
-| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Reports step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`) | "A file arrives on your disk" |
+| file-with-arrow | Download Markdown Report, Download table, **Downloads** (the run report's header; opens the Download Center), **Open Download Center** (the AI Reports tab and the report writing progress dialog), **Download PDF** (the PDF viewer), Download diagnostics (the report writing progress dialog and the Model Comparison wizard's Reports step), **Open Download Center** (`.btn-ghost`, the Model Comparison launcher's *Comparison reports*, `app-report-documents-launcher`), **Download Markdown report** (icon-only, each Run History card) | "A file arrives on your disk" |
 | download (one arrow into a tray) | Download one chart | "This one image arrives on your disk" |
 | download-all (two arrows into one tray) | Download all charts | "Every chart arrives at once" — the one-chart glyph doubled, so the pair reads as one versus all |
 | copy (two rectangles) | Copy figure, Copy the table as Markdown, **Copy diagnostics** (icon-only, the run report's header, the report writing progress dialog and the Model Comparison wizard's Reports step) | "Copies to the clipboard" — nothing is saved to disk |
@@ -388,6 +388,17 @@ Image, Download PNG and Cancel are gone; the head's icon-only Copy and Download 
 text-only `.btn-link`s as the figures group's, with visually hidden completions naming their group
 (*image details* / *of the image details*) so the two pairs have distinct names (§4.1). No new button
 class or glyph.*
+
+*Changed 2026-09-30 (Run History cards and a compact run report header): Run History became a card
+list (§8h). Each card's icon-only **Download Markdown report** moved from the one-arrow* download *glyph,
+which is reserved for "one chart", to* file-with-arrow*, the glyph every other Markdown report download
+uses. The degraded-answer count in a card's kicker is a 12 px Feather* alert-triangle *SVG
+(`aria-hidden`), the number and visually hidden *degraded answers*, replacing the ⚠ character and its
+`title` (the no-emoji and no-`title` rules). The list head's **Refresh** is a compact `.btn-ghost` with*
+rotate*, no longer a full-size `.btn-gh` (§2b). In the run report header, **Close** left the* Run
+actions *group, a dialog control rather than a run action; the group is a two-column grid of*
+Downloads *and* Re-run *beside the icon-only* View game snapshot *and* Copy diagnostics*. No new button
+class.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1072,9 +1083,10 @@ concerns.
 
 ## 8. Data tables
 
-The three benchmark tables — **Run History**, **Runs in this group** and **Analysis groups** —
-share one implementation of paging, column sorting and column filtering. Three hand-rolled
-copies in one tab would be three places for the same bug.
+The benchmark tables — **Runs in this group** and **Analysis groups** (`multi-run.component`), and
+the Model Comparison's source and entry tables — share one implementation of paging, column sorting and
+column filtering. Hand-rolled copies in one tab would be several places for the same bug. **Run
+History** was the first of these tables; it is now a card list (§8h).
 
 The layer is deliberately **headless plus presentational**, not a generic `<app-data-table>`.
 These tables' cells carry tier badges, score badges, instrument fingerprints, tooltips and
@@ -1082,12 +1094,14 @@ three-button action groups; funnelling all of that through a column-definition D
 produce worse markup than hand-written rows. What the tables genuinely share is the *state
 arithmetic*, the *pager markup* and the *styling*.
 
-The same `TableState` also drives **card lists** (§8h): a list whose rows are small forms rather than
-values to compare, filtered by a faceted filter bar and shown in batches with Load more.
+The same `TableState` also drives **card lists** (§8h): a list of rich rows — small forms, or records
+with many facts and several actions — filtered by a faceted filter bar and shown in batches with Load
+more. `CardListState` wraps a `TableState` to add the filter bar's and Load more's state.
 
 | Piece | File |
 |---|---|
 | `TableState<T>`, `exactFilter()`, `anyOfFilter()`, `customFilter()`, `PAGE_SIZES` | `shared/data-table/table-state.ts` |
+| `CardListState<T>` and its option, facet and chip types | `shared/data-table/card-list-state.ts` |
 | `<th app-sort-header>` | `shared/data-table/sort-header.component.ts` |
 | `<app-table-pager>` | `shared/data-table/table-pager.component.ts` |
 | `<app-filter-facet>` | `shared/data-table/filter-facet.component.ts` |
@@ -1114,12 +1128,14 @@ A component owns one `TableState` per table as an ordinary field, declares its a
 and renders `state.view(sourceRows)`:
 
 ```ts
-historyTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
-  { id: r => r.id, suiteName: r => r.suiteName, qualityIndex: r => r.qualityIndex ?? null },
-  { suiteName: r => r.suiteName, status: exactFilter(r => r.status) }
+groupTable = new TableState<BenchmarkRunGroupDto>('createdAtUtc', 'desc').registerAccessors(
+  { name: g => g.name, tier: g => this.tierOrder(g.tier), createdAtUtc: g => new Date(g.createdAtUtc) },
+  { name: g => g.name, tier: exactFilter(g => g.tier) }
 );
+```
 
-get historyView(): BenchmarkRunSummaryDto[] { return this.historyTable.view(this.historyRuns); }
+```html
+@for (group of groupTable.view(groups); track group.id) { … }
 ```
 
 `TableState` has no Angular dependency — no injectables, no DOM, no events — so it unit-tests
@@ -1145,13 +1161,14 @@ as plain TypeScript. The rules it guarantees, each with a spec in `table-state.s
 > takes `.slice(0, 5)` as "the five newest". Both are correct only against server order. Under
 > a user-chosen sort, in-place sorting would silently move the *INSTRUMENT CHANGED* badges onto
 > the wrong runs. Never sort a source array in place; keep helpers reading the source list and
-> give only the template the view.
+> give only the template the view. This holds for a card list too: Run History's cards render
+> `historyList.view(historyRuns)` (§8h), and `historyRuns` stays in server order.
 
 ### 8c. Sortable headers
 
 ```html
-<th app-sort-header [state]="historyTable" column="qualityIndex" label="Index"
-    (changed)="cdr.detectChanges()"></th>
+<th app-sort-header [state]="groupTable" column="tier" label="Tier"
+    (changed)="onTableChanged()"></th>
 ```
 
 The component's host element **is** the `<th>` (hence the attribute selector), so there is no
@@ -1184,15 +1201,17 @@ empty where a column is not filterable.
 - **Two empty states, not one.** `rows.length === 0` means nothing has been recorded yet;
   `state.noMatches(rows)` means the filters hide everything. They want different messages, and
   the second one offers *Clear filters*. One message for both causes is a support ticket.
-- A server-side query control (Run History's *Filter by Suite*, which changes what is fetched)
-  is **not** a column filter. Keep it in the toolbar, left of the column filters, and let its
-  `<label>` say which of the two it is.
+- A server-side query control (one that changes what is fetched) is **not** a column filter.
+  Keep it in the toolbar, left of the column filters, and let its `<label>` say which of the two
+  it is. Prefer not to need one: Run History's *Filter by Suite* select was replaced by a
+  client-side *Suite* facet over the loaded runs (§8h), because two suite filters with different
+  semantics confuse.
 
 ### 8e. The pager
 
 ```html
-<app-table-pager [state]="historyTable" [rows]="historyRuns" noun="runs"
-                 (changed)="cdr.detectChanges()"></app-table-pager>
+<app-table-pager [state]="groupTable" [rows]="groups" noun="groups"
+                 (changed)="onTableChanged()"></app-table-pager>
 ```
 
 `[rows]` is the **full source list**, never the view — the pager computes the filtered count
@@ -1278,11 +1297,16 @@ never receive it.
 
 ### 8h. Card lists
 
-The Download Center's documents (`app-download-center-panel`) are the first card list. Use one
-**when every row is a small form** — two selects, a group of checkboxes, several actions — rather
-than values to compare down a column. A table fights such rows at every width: it overflows sideways,
-wraps a title over ten lines, and below some breakpoint has to fake cards anyway. A list of values to
-scan and compare stays a §8 table.
+The Download Center's documents (`app-download-center-panel`) are the first card list; **Run
+History** (`benchmark.component`, `#bm-panel-history`) is the second. Use one **when every row is a
+small form** — two selects, a group of checkboxes, several actions — rather than values to compare
+down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
+kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
+instrument hashes, which as a 12-column table overflowed sideways and hid its qualifiers in `title`
+tooltips. A table fights such rows at every width: it overflows sideways, wraps a title over ten lines,
+and below some breakpoint has to fake cards anyway. A list of few values to scan and compare stays a §8
+table. Where a card list still has to scan like a table, give its metrics fixed-width columns so they
+line up down the list at a wide width, as Run History's `.rh-metrics` does.
 
 **Markup.**
 
@@ -1291,7 +1315,8 @@ scan and compare stays a §8 table.
   `<article aria-labelledby="{rowId}-title">`. The title is a heading one level under the section's
   (`<h5>` under an `<h4>`), so screen-reader users hear the count up front and jump card to card by
   heading.
-- **Selection is a real checkbox, top left**, keeping the row's `aria-label` (*Include …*). The title
+- **Selection, where the list has one, is a real checkbox, top left** (Run History has none),
+  keeping the row's `aria-label` (*Include …*). The title
   is a `<label for>` that checkbox, so a click on it selects the card. A selected card is shown by the
   tick, a gold border and a tint together (`:has(input:checked)`), never by color alone. **Never make
   the whole card a label or a click target**: it holds selects and buttons, and interactive content
@@ -1305,7 +1330,8 @@ scan and compare stays a §8 table.
   comma, so assistive technology does not read the parts run together.
 - Layout by **the list's own width**: the list is an inline-size container, and the card's grid
   switches from *select · head · actions / options* to one column of head, actions and options below
-  about 30rem. No viewport media queries.
+  about 30rem. Run History's card is *head · metrics · actions / instrument*, puts the metrics under the
+  head below 60rem and goes to one column below 30rem. No viewport media queries.
 
 **The filter bar**, above the list, in this order:
 
@@ -1323,14 +1349,15 @@ scan and compare stays a §8 table.
    `aria-hidden` *x* (§3a). Removing one moves focus to the next chip, else the previous, else the
    search field. **Clear all** (`.gh-filter-clear`) clears every filter except *Show selected only*,
    which has its own control, and focuses the search field.
-4. The **selection bar** (§8f, adapted): *N selected — M not shown*, **Show selected only**, **Clear
-   selection**, **Select all N** (**Select all N matching** while a filter is active), and any action
-   that applies to the selection.
+4. The **selection bar** (§8f, adapted), in a list with selection: *N selected — M not shown*, **Show
+   selected only**, **Clear selection**, **Select all N** (**Select all N matching** while a filter is
+   active), and any action that applies to the selection.
 
 The bar may be **sticky** at the top of the list's scroller where the width allows (the Download
 Center: from 36rem of the panel); below that a phone cannot spare the height. A sticky box stops at its
 scroller's padding edge: offset it by the negative padding, with matching padding of its own, and pin
-the flush position in a spec.
+the flush position in a spec. Run History's bar is not sticky yet: the admin page's scroller has not
+been measured for that offset.
 
 **`TableState` for card lists.** `anyOfFilter(row => value | values)` declares a multi-select column
 whose selection lives in `valueFilters` (`setFilterValues`, `filterValues`); it matches a row when any
@@ -1339,6 +1366,61 @@ value) => boolean)` is for a search over several fields or a derived condition (
 active while its string is non-blank. `setSort(column, direction)` serves a Sort by select.
 `filterRowsExcept(rows, column)` applies every active filter but one column's — what a facet counts its
 options against. `hasActiveFilters` and `clearFilters()` cover both kinds.
+
+**`CardListState` — the state every card list shares** (`shared/data-table/card-list-state.ts`). Both
+card lists build on it: the Download Center behind a private `list` getter (built on first use,
+because its `idPrefix` is an input), Run History as `historyList`. **A third card
+list uses it too, rather than copying either host**; if it needs something the class lacks, extend the
+class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
+beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
+unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps
+the filter registrations, the sort accessors and the filtering.
+
+```ts
+readonly historyList = new CardListState(this.historyTable, {
+  idPrefix: 'rh',                       // facet ids: rh-facet-{column}
+  sorts: RUN_HISTORY_SORTS, defaultSort: 'newest',   // Newest first
+  storageKey: 'overseer.benchmark.runHistory.view',
+  facets: [{ column: 'suite', label: 'Suite', values: r => r.suiteName }, /* … */],
+  singleFacets: [{ column: 'started', label: 'Started', anyLabel: 'Any time', options, matches }],
+  onChange: () => this.cdr.detectChanges()
+});
+```
+
+- **Options** (`CardListStateOptions<T>`): `idPrefix`; `batch` (10); `searchColumn` (`search`, a
+  `customFilter` column); `debounceMs` (200); `sorts` (`CardListSort`: `id`, `label`, `column`,
+  `direction`), `defaultSort` and `storageKey`, under which the choice is stored as `{ version: 1, sort }`
+  behind `try/catch` (an unknown or unreadable value falls back to `defaultSort`); `facets`
+  (`CardListFacetSpec<T>`: `column`, `label`, `values` — the same accessor registered with
+  `anyOfFilter` — and optionally `order` as `'alphabetical'` (the default), a fixed list or a
+  comparator, `labelOf`, `anyLabel` and `enabled`); `singleFacets` (`CardListSingleFacetSpec<T>`:
+  `column`, `label`, `anyLabel`, `options`, `matches(row, value)`, optionally `listedWhen` and
+  `enabled`); `facetOrder`, the column order of the combined list; `memoDeps`, further inputs the facets
+  depend on, compared element by element with `===` (the Download Center's chart actions and their
+  settings hash); and `onChange`, called after a debounced search applies, outside any event handler —
+  `detectChanges()` in a Default component, `markForCheck()` in an OnPush one.
+- **State:** `visibleCount`, `searchText`, `sortId`.
+- **Batching:** `matching(rows)`, `view(rows)` (the first `visibleCount` matching rows),
+  `remainingCount(rows)`, `nextBatchCount(rows)`; `showMore(rows)` and `showAll(rows)` return **the index
+  of the first new card**, for the host to focus; `resetBatch()`.
+- **Search and sort:** `setSearchInput(text)` (debounced); `clearSearchOnEscape(event)` returns true
+  when it cleared text and stopped the event, false for an empty field or another key;
+  `setSort(id)` applies, stores and resets the batch.
+- **Facets and chips:** `setFacet(column, values)`; `facets(rows)` and `chips(rows)`
+  (`CardListFacet`, `CardListChip`), **memoized** on an internal revision, the rows array's identity and
+  `memoDeps`, so a change-detection pass gets the same array back; `invalidate()` bumps the revision for
+  a change the host makes itself (a selection, a reload into the same array); `removeChip(chip, rows?)`
+  returns the chip's index before removal, for the host's focus logic; `clearFilters(keepColumns)` (the
+  Download Center keeps `['selected']`).
+- **Lifecycle:** `reset()` starts a new list — clears the search, its timer and every filter, returns to
+  page 1, restores the stored sort and resets the batch; `statusText(rows, { one, many })` is the status
+  line; `dispose()` cancels a pending search, from `ngOnDestroy`.
+
+**What stays in the host:** the markup, the selection and its bar, and **focus** — after a chip is
+removed (next chip, else the previous, else the search field), after **Clear all** (the search field),
+after Show more (the title of the card at the returned index) and after a delete. Thin handlers update
+the state, run change detection, then move focus. The host also calls `invalidate()` after replacing its
+rows where the array identity alone would not show it.
 
 **`app-filter-facet`** (`shared/data-table/filter-facet.component.ts`), standalone and `OnPush`:
 
@@ -1349,7 +1431,7 @@ options against. `hasActiveFilters` and `clearFilters()` cover both kinds.
 | `options` | `{ value, label, count }[]`, from a memoized getter (§4e's rule) |
 | `selected` | The host's selection, fed back; the facet emits and never owns it |
 | `mode` | `multiple` (checkboxes) or `single` (radios, `anyLabel` first, which emits `[]`) |
-| `noun` | The hidden text after each count (*Executive Summary, 4 documents*) |
+| `noun` | The hidden text after each count (*Executive Summary, 4 documents*); it defaults to *documents*, so any other list must pass its own (Run History: `noun="runs"`) |
 | `selectedChange` | Emitted on every change; the popover stays open |
 
 - The trigger is a `.gh-facet-btn` pill with `popovertarget` and `aria-expanded` bound from the
@@ -1365,16 +1447,19 @@ options against. `hasActiveFilters` and `clearFilters()` cover both kinds.
   **Escape** closes the popover only (`preventDefault()` and `stopPropagation()`), as §4f requires.
 - Explicit anchor names on both ends by `[attr.style]`, a `flip-block` fallback, a capped scrolling
   height, `ensureOverlayPolyfills()` and `refreshAnchorPositioning()` on open — the §4.2 and §4f rules.
-- **Counts are memoized** on a revision the host bumps whenever the rows, a row's selection, a filter
-  or the package changes; a fresh array per change-detection pass would re-render every facet.
+- **Counts are memoized** — by `CardListState.facets(rows)`, on its revision, the rows array's identity
+  and `memoDeps`; the host calls `invalidate()` whenever a row's selection or the package changes. A
+  fresh array per change-detection pass would re-render every facet, and in Run History would rerun
+  the O(n) `instrumentChangeOf` behind the *Changes* facet for every run.
 
 **Load more**, not numbered pages, for card lists: cards differ in height, so a page of ten is not a
 stable screen, and a selection spread over pages is what §8f has to warn about. Show a batch (10),
 then **Show N more** (`.btn-ghost`) and, while more than one batch remains, **Show all M**
 (`.gh-filter-clear`), both text-only in a centered `.gh-load-more`. After either, **focus the first
-new card's title** (an `<h5 tabindex="-1">` with a `:focus-visible` ring), so a keyboard user carries
-on where the new content starts. Return to one batch when a filter, the search or the sort changes;
-keep the count on a reload of the same list and after a delete. Infinite scroll is not used: an
+new card's title** (an `<h5 tabindex="-1">` with a `:focus-visible` ring) — the card at the index
+`CardListState.showMore` / `showAll` returns — so a keyboard user carries on where the new content
+starts. `CardListState` returns to one batch when a filter, the search, a chip or the sort changes, and
+keeps the count on a reload of the same list and after a delete, because the host calls nothing then. Infinite scroll is not used: an
 explicit button is predictable for keyboard and screen-reader users. The list's **one polite live
 region** is the status line in its header (`.gh-list-status`, *Showing 10 of 23 documents*, *·
 filtered from 40* while a filter is active).
@@ -1486,8 +1571,12 @@ Diff this against your markup before calling button, tab or table work finished.
 **Card lists**
 - [ ] Rows that are small forms are a card list (§8h): `ul[role="list"]`, one `article[aria-labelledby]`
       per row, its title a heading one level under the section's.
-- [ ] Selection is a real checkbox with the title as its `<label>`; the whole card is not a label.
-- [ ] Facets are `app-filter-facet`, counted against the other filters, from a memoized getter.
+- [ ] The list's search, sort, facets, chips, status line and batching come from `CardListState`
+      (`shared/data-table/card-list-state.ts`), not a copy of another host's code.
+- [ ] Selection, where there is one, is a real checkbox with the title as its `<label>`; the whole
+      card is not a label.
+- [ ] Facets are `app-filter-facet`, counted against the other filters, from a memoized getter, with
+      `noun` set unless the list counts documents.
 - [ ] Escape in the search clears its text without closing the dialog around it, and passes through
       when the field is empty.
 - [ ] Load more focuses the first new card's title, and returns to one batch on a filter, search or

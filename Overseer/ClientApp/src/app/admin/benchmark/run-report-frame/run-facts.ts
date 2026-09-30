@@ -55,6 +55,9 @@ export type RunFactItem =
 export const RUN_FACT_KEYS = ['model', 'assessor', 'prompt', 'profile', 'started', 'board'] as const;
 export type RunFactKey = typeof RUN_FACT_KEYS[number];
 
+/** The rows the run report header always shows; the rest sit in its Run details disclosure. */
+export const RUN_FACT_PRIMARY_KEYS = ['model', 'assessor'] as const;
+
 export interface RunFactRow {
   readonly key: RunFactKey;
   readonly label: string;
@@ -161,6 +164,48 @@ export function runFactPlainText(row: RunFactRow): string {
     case 'board':
       return item.figures.map(f => `${f.role} ${f.delivered}/${f.total}`).join(' · ');
   }
+}
+
+/**
+ * The secondary rows as one line, joined by ` · `: the prompt name without its tags, the scoring
+ * profile, `Started {text}` and `Board {delivered}/{total}`, or `Board incomplete` while any figure
+ * falls short. Complete figures that differ read as the largest, the question count. Rows that are absent,
+ * and the model and assessor rows, contribute nothing.
+ */
+export function runFactsReadout(rows: readonly RunFactRow[]): string {
+  const parts: string[] = [];
+  for (const row of rows) {
+    const item = row.item;
+    switch (row.key) {
+      case 'prompt':
+        if (item.kind === 'prompt') {
+          parts.push(item.name);
+        }
+        break;
+      case 'profile':
+        if (item.kind === 'text') {
+          parts.push(item.text);
+        }
+        break;
+      case 'started':
+        if (item.kind === 'text' || item.kind === 'time') {
+          parts.push(`Started ${item.text}`);
+        }
+        break;
+      case 'board':
+        if (item.kind === 'board' && item.figures.length > 0) {
+          const complete = item.figures.every(f => f.delivered === f.total);
+          if (complete) {
+            const total = Math.max(...item.figures.map(f => f.total));
+            parts.push(`Board ${total}/${total}`);
+          } else {
+            parts.push('Board incomplete');
+          }
+        }
+        break;
+    }
+  }
+  return parts.join(' · ');
 }
 
 /** An ISO timestamp with a zone designator; the server stores UTC, so a bare one is UTC. */

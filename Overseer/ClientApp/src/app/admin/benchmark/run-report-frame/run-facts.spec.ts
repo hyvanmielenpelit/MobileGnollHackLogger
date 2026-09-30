@@ -1,5 +1,6 @@
 import type { BenchmarkRunDetailDto } from '../../../services/admin-benchmark.service';
 import {
+  RUN_FACT_PRIMARY_KEYS,
   RunFactModel,
   RunFactRow,
   boardDeliveryFigures,
@@ -7,7 +8,8 @@ import {
   candidatePromptParts,
   formatCandidatePrompt,
   runFactBadges,
-  runFactPlainText
+  runFactPlainText,
+  runFactsReadout
 } from './run-facts';
 
 function run(overrides: Partial<BenchmarkRunDetailDto> = {}): BenchmarkRunDetailDto {
@@ -205,6 +207,52 @@ describe('run facts', () => {
         '2026-09-30 13:35:24 UTC',
         'Assessor 18/18 · Co-assessor 17/18 · Reference reader 18/18 · Claim verifier 16/16'
       ]);
+    });
+  });
+
+  describe('RUN_FACT_PRIMARY_KEYS', () => {
+    it('is the model and the assessor', () => {
+      expect([...RUN_FACT_PRIMARY_KEYS]).toEqual(['model', 'assessor']);
+    });
+  });
+
+  describe('runFactsReadout', () => {
+    const COMPLETE_BOARD: Partial<BenchmarkRunDetailDto> = {
+      boardDelivery: [
+        { role: 'assessor', delivered: 18, total: 18, missingQuestions: [] },
+        { role: 'claim verifier', delivered: 16, total: 16, missingQuestions: [] }
+      ]
+    };
+
+    function secondary(rows: RunFactRow[]): RunFactRow[] {
+      return rows.filter(r => !(RUN_FACT_PRIMARY_KEYS as readonly string[]).includes(r.key));
+    }
+
+    it('reads the prompt name without its tags, the profile, the start time and the board at the question count', () => {
+      const rows = buildRunFacts(
+        run({ ...COMPLETE_BOARD, candidatePromptOptionsJson: PROMPT_JSON, scoringProfileName: 'Standard Intelligence Index' }),
+        { gaps: [] });
+      expect(runFactsReadout(secondary(rows)))
+        .toBe('Gameplay Help · Standard Intelligence Index · Started 2026-09-30 13:35:24 UTC · Board 18/18');
+    });
+
+    it('ignores the model and assessor rows', () => {
+      const rows = buildRunFacts(run({ candidatePromptOptionsJson: PROMPT_JSON }), { gaps: [] });
+      expect(runFactsReadout(rows)).toBe(runFactsReadout(secondary(rows)));
+    });
+
+    it('leaves out a missing prompt row and a missing board row', () => {
+      const rows = buildRunFacts(run(), { gaps: [] });
+      expect(runFactsReadout(secondary(rows))).toBe('Default · Started 2026-09-30 13:35:24 UTC');
+    });
+
+    it('reads a board with gaps as incomplete', () => {
+      const rows = buildRunFacts(run({ ...PANEL, ...BOARD }), { gaps: ['co-assessor: Q4'] });
+      expect(runFactsReadout(secondary(rows))).toBe('Default · Started 2026-09-30 13:35:24 UTC · Board incomplete');
+    });
+
+    it('reads no rows as an empty string', () => {
+      expect(runFactsReadout([])).toBe('');
     });
   });
 

@@ -164,6 +164,15 @@ describe('RunReportFrameComponent in single layout', () => {
     }
   });
 
+  it('aligns the header to its top, at every width', () => {
+    for (const width of [1200, 500]) {
+      fixture.componentInstance.width = width;
+      fixture.detectChanges();
+
+      expect(getComputedStyle(q('.rrf-header')).alignItems).withContext(`${width}`).toBe('flex-start');
+    }
+  });
+
   it('scrollBodyToTop() resets the body scroll', () => {
     const body = q('.rrf-body');
     body.scrollTop = 400;
@@ -254,6 +263,13 @@ describe('RunReportFrameComponent in sidebar layout', () => {
     expect(resizer.getAttribute('aria-controls')).toBe(q('aside.rrf-sidebar').id);
     expect(resizer.getAttribute('aria-label')).toBe('Resize New report pack');
     expect(resizer.previousElementSibling).toBe(q('aside.rrf-sidebar'));
+  });
+
+  it('keeps the header centered', () => {
+    for (const width of [1200, 700]) {
+      setWidth(width);
+      expect(getComputedStyle(q('.rrf-header')).alignItems).withContext(`${width}`).toBe('center');
+    }
   });
 
   it('below 60rem, stacks the sidebar above the main column and hides the resizer', () => {

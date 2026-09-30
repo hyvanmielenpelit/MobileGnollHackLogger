@@ -48,8 +48,9 @@
               @for (figure of row.item.figures; track figure.role) {
                 <li>{{ figure.role }} {{ figure.delivered }}<span class="visually-hidden"> of </span><span aria-hidden="true">/</span>{{ figure.total }}</li>
               }
-              <li class="text-muted">{{ row.item.note }}</li>
             </ul>
+            <!-- One Board row per page, so the tip id stays unique when the header renders two lists. -->
+            <app-info-tip trigger="click" tipId="rr-board-note-tip" subject="Board delivery">The final synthesis sees the board; the difficulty assessment sees a digest of it without the map.</app-info-tip>
             @for (gap of row.item.gaps; track gap) {
               <span class="rr-fact-warning"><strong>Graded without the board — {{ gap }}</strong></span>
             }

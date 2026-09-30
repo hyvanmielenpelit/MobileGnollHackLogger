@@ -5,7 +5,9 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
 import { ModelPickerComponent } from '../../shared/model-picker/model-picker.component';
 import { of, throwError, Subject } from 'rxjs';
-import { AdminBenchmarkComponent, RUN_REPORT_TAB_STORAGE_KEY } from './benchmark.component';
+import {
+  AdminBenchmarkComponent, RUN_HISTORY_VIEW_STORAGE_KEY, RUN_REPORT_HEADER_STORAGE_KEY, RUN_REPORT_TAB_STORAGE_KEY
+} from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { AdminBenchmarkService, BenchmarkRunAnswerDto, BenchmarkRunReportDocumentsStatus } from '../../services/admin-benchmark.service';
@@ -43,6 +45,8 @@ describe('AdminBenchmarkComponent', () => {
       localStorage.removeItem(COMPARISON_SELECTION_KEY);
       localStorage.removeItem(COMPARISON_LAUNCHER_KEY);
       localStorage.removeItem(RUN_REPORT_TAB_STORAGE_KEY);
+      localStorage.removeItem(RUN_REPORT_HEADER_STORAGE_KEY);
+      localStorage.removeItem(RUN_HISTORY_VIEW_STORAGE_KEY);
       localStorage.removeItem(KEY_FIGURES_STORAGE_KEY);
       localStorage.removeItem(IMAGE_DETAILS_STORAGE_KEY);
     } catch { /* private-browsing modes throw */ }
@@ -7624,7 +7628,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(labels).toContain('Estimated Cost');
     });
 
-    it('should render Cost column in run history table with the incomplete-pricing marker when pricingIncomplete is true', () => {
+    it('should say pricing incomplete in words under the run history cost, with no asterisk and no title', () => {
       component.activeSubTab = 'history';
       component.historyRuns = [
         {
@@ -7637,19 +7641,15 @@ describe('AdminBenchmarkComponent', () => {
       ];
       fixture.detectChanges();
 
-      const headers = Array.from(fixture.nativeElement.querySelectorAll('.gh-table th')) as HTMLElement[];
-      const costHeader = headers.find(th => th.textContent?.trim() === 'Cost');
-      expect(costHeader).toBeTruthy();
+      const metric = fixture.nativeElement.querySelector('.rh-card .rh-metric[data-metric="cost"]') as HTMLElement;
+      expect(metric).toBeTruthy();
+      expect(metric.querySelector('dt')?.textContent?.trim()).toBe('Cost');
 
-      const row = fixture.nativeElement.querySelector('.gh-table tbody tr');
-      expect(row).toBeTruthy();
-      
-      const cellText = row!.textContent || '';
-      expect(cellText).toContain('$0.5000');
-
-      const marker = row!.querySelector('.degraded-tag');
-      expect(marker).toBeTruthy();
-      expect(marker?.textContent?.trim()).toBe('*');
+      const lines = Array.from(metric.querySelectorAll('dd > span')).map(span => span.textContent?.trim());
+      expect(lines).toEqual(['$0.5000', 'catalog $0.5000', 'pricing incomplete']);
+      expect(metric.textContent).not.toContain('*');
+      expect(metric.querySelector('[title]')).toBeNull();
+      expect(metric.querySelector('.degraded-tag')).toBeNull();
     });
   });
 
@@ -8729,7 +8729,7 @@ describe('AdminBenchmarkComponent', () => {
     });
   });
 
-  describe('Run History table (data-table)', () => {
+  describe('Run History card list (data-table)', () => {
     function buildHistoryRun(overrides: Record<string, unknown> = {}): any {
       return {
         id: 1,
@@ -8792,42 +8792,69 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.historyStatusOptions).toEqual(['Completed', 'Completed with limits']);
     });
 
-    it('should page and filter the view without touching historyRuns', () => {
-      const runs = Array.from({ length: 3 }, (_, i) => buildHistoryRun({ id: i + 1, suiteName: `Suite ${i + 1}` }));
+    it('should batch and filter the view without touching historyRuns', () => {
+      const runs = Array.from({ length: 25 }, (_, i) => buildHistoryRun({ id: 25 - i, suiteName: `Suite ${(i % 2) + 1}` }));
       component.historyRuns = runs;
 
-      component.historyTable.setFilter('suiteName', 'Suite 2');
+      expect(component.historyView.length).toBe(10);
+      component.showMoreHistory();
+      expect(component.historyView.length).toBe(20);
 
-      expect(component.historyView.map(r => r.id)).toEqual([2]);
+      // A facet change returns the list to one batch.
+      component.onHistoryFacetChange('suite', ['Suite 2']);
+      expect(component.historyView.length).toBe(10);
+      expect(component.historyView.every(r => r.suiteName === 'Suite 2')).toBeTrue();
+      expect(component.historyList.matching(component.historyRuns).length).toBe(12);
+
       expect(component.historyRuns).toBe(runs);
-      expect(component.historyRuns.length).toBe(3);
+      expect(component.historyRuns.length).toBe(25);
+      expect(component.historyRuns.map(r => r.id)).toEqual(Array.from({ length: 25 }, (_, i) => 25 - i));
     });
 
-    it('should stack a labelled row per fingerprint, dashing a hash that was not recorded', () => {
+    /** An element's visible text: its text without the visually hidden parts. */
+    function visibleText(element: Element): string {
+      const clone = element.cloneNode(true) as Element;
+      clone.querySelectorAll('.visually-hidden').forEach(hidden => hidden.remove());
+      return (clone.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    it('should list a labeled pair per fingerprint, dashing a hash that was not recorded, and the full hashes in its info tip', () => {
       component.historyRuns = [buildHistoryRun({ id: 1, wikiHeadSha: null })];
       component.activeSubTab = 'history';
       fixture.detectChanges();
 
-      const entries = Array.from(
-        fixture.nativeElement.querySelectorAll('.instrument-cell .instrument-fingerprint')
-      ) as HTMLElement[];
+      const strip = fixture.nativeElement.querySelector('.rh-card .rh-instrument-strip') as HTMLElement;
+      const pairs = Array.from(strip.querySelectorAll('dl.rh-instrument > div')) as HTMLElement[];
 
-      // Five rows whatever the run recorded: the label carries the meaning, so the cell stays
-      // legible in greyscale, and a missing hash is visible as a dash rather than absent.
-      expect(entries.length).toBe(5);
-      expect(entries.map(e => e.textContent?.trim())).toEqual([
-        'PROMPT sha-a',
-        'GUIDES guide-a',
-        'KB kb-a',
-        'WIKI -',
-        'SRC src-a'
+      // Five pairs whatever the run recorded: the label carries the meaning, so the strip stays
+      // legible in grayscale, and a missing hash is visible as a dash rather than absent.
+      expect(pairs.length).toBe(5);
+      expect(pairs.map(pair => visibleText(pair.querySelector('dt')!))).toEqual(['PROMPT', 'GUIDES', 'KB', 'WIKI', 'SRC']);
+      expect(pairs.map(pair => pair.querySelector('dt .visually-hidden')?.textContent?.trim())).toEqual([
+        '(candidate system prompt)', '(tool guides)', '(knowledge base)', '(wiki)', '(source code)'
       ]);
+      const values = pairs.map(pair => pair.querySelector('dd') as HTMLElement);
+      expect(values.map(dd => dd.textContent?.trim())).toEqual(['sha-a', 'guide-a', 'kb-a', '-', 'src-a']);
 
       const cssClasses = ['fp-prompt', 'fp-guides', 'fp-kb', 'fp-wiki', 'fp-source'];
-      cssClasses.forEach((cssClass, i) => expect(entries[i].classList.contains(cssClass)).toBeTrue());
+      cssClasses.forEach((cssClass, i) => expect(values[i].classList.contains(cssClass)).toBeTrue());
+      expect(getComputedStyle(values[0]).fontFamily).toContain('monospace');
 
-      expect(entries[3].getAttribute('title')).toBe('GnollHack wiki Git HEAD SHA: not recorded');
-      expect(entries[4].getAttribute('title')).toBe('GnollHack source Git HEAD SHA: src-a');
+      expect(strip.querySelectorAll('[title]').length).toBe(0);
+
+      const button = strip.querySelector('app-info-tip button.gh-info-btn') as HTMLButtonElement;
+      expect(button.getAttribute('aria-label')).toBe('About Instrument of run 1');
+      const tip = strip.querySelector('#rh-instr-1') as HTMLElement;
+      const terms = Array.from(tip.querySelectorAll('dt')).map(dt => dt.textContent?.trim());
+      const full = Array.from(tip.querySelectorAll('dd')).map(dd => dd.textContent?.trim());
+      expect(terms).toEqual([
+        'Candidate system prompt SHA-256',
+        'Tool guides SHA-256',
+        'Knowledge base Git HEAD SHA',
+        'GnollHack wiki Git HEAD SHA',
+        'GnollHack source Git HEAD SHA'
+      ]);
+      expect(full).toEqual(['sha-a', 'guide-a', 'kb-a', 'not recorded', 'src-a']);
     });
 
     /** Enters Run History through its real tab, with the server returning these runs. */
@@ -8837,14 +8864,27 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
     }
 
-    /** The height of an element's text as laid out, one line box per wrapped line. */
-    function textHeight(element: HTMLElement): number {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      return range.getBoundingClientRect().height;
+    /** The runs whose cards are shown, by id, in order. */
+    function shownIds(): number[] {
+      return (Array.from(fixture.nativeElement.querySelectorAll('.rh-card-list article.rh-card')) as HTMLElement[])
+        .map(card => Number(card.getAttribute('data-run-id')));
     }
 
-    it('should keep the cost cell a table cell, and stack the date over the time and the actions two by two', () => {
+    /** The active-filter chips. */
+    function chipButtons(): HTMLButtonElement[] {
+      return Array.from(fixture.nativeElement.querySelectorAll('.rh-filter-chips .gh-filter-chip')) as HTMLButtonElement[];
+    }
+
+    function historyStatus(): string {
+      return (fixture.nativeElement.querySelector('#rh-list-status')?.textContent || '').trim();
+    }
+
+    /** Resolves once a debounced search has applied. */
+    function afterSearchDebounce(): Promise<void> {
+      return new Promise(resolve => setTimeout(resolve, 250));
+    }
+
+    it('should show the degraded count as a glyph and words, the start time, both cost lines and the four actions', () => {
       openHistoryWith([buildHistoryRun({
         id: 42,
         startedAtUtc: '2026-09-28T16:12:00',
@@ -8853,23 +8893,30 @@ describe('AdminBenchmarkComponent', () => {
         degradedAnswerCount: 2
       })]);
 
-      const row = fixture.nativeElement.querySelector('.history-table-wrapper tbody tr') as HTMLTableRowElement;
-      expect(row).toBeTruthy();
-      expect(row.querySelector('.badge-degraded-count')?.textContent?.trim()).toBe('⚠ 2');
+      const card = fixture.nativeElement.querySelector('.rh-card-list > li > article.rh-card') as HTMLElement;
+      expect(card).toBeTruthy();
+      expect(card.getAttribute('aria-labelledby')).toBe('rh-run-42-title');
+      expect(card.querySelector('h5#rh-run-42-title')?.getAttribute('tabindex')).toBe('-1');
 
-      const costCell = row.querySelector('td.cost-cell') as HTMLTableCellElement;
-      expect(getComputedStyle(costCell).display).toBe('table-cell');
-      const stacks = costCell.querySelectorAll('.cost-stack');
-      expect(stacks.length).toBe(1);
-      expect(stacks[0].querySelector('.cost-primary')?.textContent?.trim()).toBe('$2.5211');
-      expect(stacks[0].querySelector('.cost-secondary')?.textContent?.trim()).toBe('catalog $6.0068');
+      const degraded = card.querySelector('.rh-card-kicker .badge-degraded-count') as HTMLElement;
+      expect(degraded.textContent?.replace(/\s+/g, ' ').trim()).toBe('2 degraded answers');
+      expect(visibleText(degraded)).toBe('2');
+      const glyph = degraded.querySelector('svg') as SVGElement;
+      expect(glyph.getAttribute('aria-hidden')).toBe('true');
+      expect(glyph.getAttribute('width')).toBe('12');
+      expect(degraded.hasAttribute('title')).toBeFalse();
+      expect(card.textContent).not.toContain('⚠');
 
-      const dateCell = row.querySelector('td.history-date-cell') as HTMLTableCellElement;
-      expect(dateCell.querySelector('.history-date')?.textContent?.trim()).toBe('2026-09-28');
-      expect(dateCell.querySelector('.history-time')?.textContent?.trim()).toBe('16:12');
+      const time = card.querySelector('.rh-card-meta time') as HTMLTimeElement;
+      expect(time.getAttribute('datetime')).toBe('2026-09-28T16:12:00');
+      expect(time.textContent?.trim()).toBe('2026-09-28 16:12 UTC');
 
-      const actions = row.querySelector('.action-cell .history-actions') as HTMLElement;
-      expect(getComputedStyle(actions).display).toBe('grid');
+      const cost = card.querySelector('.rh-metric[data-metric="cost"]') as HTMLElement;
+      expect(Array.from(cost.querySelectorAll('dd > span')).map(span => span.textContent?.trim()))
+        .toEqual(['$2.5211', 'catalog $6.0068']);
+
+      const actions = card.querySelector('.rh-card-actions[role="group"]') as HTMLElement;
+      expect(actions.getAttribute('aria-label')).toBe('Actions for run 42');
       const buttons = Array.from(actions.querySelectorAll('button.action-btn')) as HTMLButtonElement[];
       expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual([
         'View details for run 42',
@@ -8877,10 +8924,18 @@ describe('AdminBenchmarkComponent', () => {
         'Download tool-call log for run 42',
         'Delete run 42'
       ]);
+      // The file-with-arrow glyph: a file whose arrow points down into it.
+      expect(buttons[1].querySelector('path')?.getAttribute('d')).toMatch(/^M14 2H6/);
+      expect(buttons[1].querySelector('polyline[points="9 15 12 18 15 15"]')).toBeTruthy();
+      expect(buttons[2].querySelector('polyline[points="9 15 12 18 15 15"]')).toBeNull();
+      expect(buttons[3].classList.contains('action-btn-danger')).toBeTrue();
+      expect(buttons.map(b => b.getAttribute('interestfor'))).toEqual([
+        'tip-view-run-42', 'tip-dl-run-42', 'tip-tcl-run-42', 'tip-del-run-42'
+      ]);
+      expect(card.querySelectorAll('[title]').length).toBe(0);
     });
 
-    it('should fit the run history table in 1360 px without scrolling sideways', async () => {
-      const longSuite = 'Snapshot: Tommi2 2026-09-17 (long variant for wrapping)';
+    it('should fit ten run cards in 1360 px without scrolling sideways, their metrics lined up', async () => {
       const hash = (seed: string, length: number) => seed.repeat(Math.ceil(length / seed.length)).substring(0, length);
       const instrument = {
         candidateSystemPromptSha256: hash('3f9d06fa', 64),
@@ -8891,7 +8946,7 @@ describe('AdminBenchmarkComponent', () => {
         candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
       };
       const suites = [
-        { benchmarkSuiteId: 7, suiteName: longSuite },
+        { benchmarkSuiteId: 7, suiteName: 'Snapshot: Tommi2 2026-09-17 (long variant for wrapping)' },
         { benchmarkSuiteId: 5, suiteName: 'Snapshot: Tommi2 2026-09-17' },
         { benchmarkSuiteId: 3, suiteName: 'GnollHack Mechanics Core' }
       ];
@@ -8920,22 +8975,266 @@ describe('AdminBenchmarkComponent', () => {
       await document.fonts.ready;
       fixture.detectChanges();
 
-      const rows = Array.from(
-        fixture.nativeElement.querySelectorAll('.history-table-wrapper tbody tr')
-      ) as HTMLTableRowElement[];
-      expect(rows.length).toBe(10);
-      expect(fixture.nativeElement.querySelectorAll('.history-table-wrapper .instrument-fingerprint').length).toBe(50);
-      expect(Array.from(fixture.nativeElement.querySelectorAll('.history-table-wrapper .instrument-changed'))
+      const cards = Array.from(fixture.nativeElement.querySelectorAll('.rh-card-list > li > article.rh-card')) as HTMLElement[];
+      expect(cards.length).toBe(10);
+      expect(fixture.nativeElement.querySelectorAll('.rh-card .rh-instrument dd').length).toBe(50);
+      expect(Array.from(fixture.nativeElement.querySelectorAll('.rh-card .instrument-changed'))
         .map((badge: any) => badge.textContent.trim())).toEqual(['INSTRUMENT CHANGED']);
 
-      const scroller = fixture.nativeElement.querySelector('.history-table-wrapper.gh-datatable-scroll') as HTMLElement;
-      expect(scroller.clientWidth).toBeGreaterThan(0);
-      expect(scroller.scrollWidth).toBeLessThanOrEqual(scroller.clientWidth);
+      const list = fixture.nativeElement.querySelector('.rh-card-list') as HTMLElement;
+      expect(list.clientWidth).toBeGreaterThan(0);
+      expect(list.scrollWidth).toBeLessThanOrEqual(list.clientWidth);
+      for (const card of cards) {
+        expect(card.scrollWidth).withContext(card.getAttribute('data-run-id')!).toBeLessThanOrEqual(card.clientWidth);
+      }
 
-      // The long suite name wraps rather than widening the table.
-      const longRow = rows.find(r => r.cells[1].textContent?.trim() === longSuite) as HTMLTableRowElement;
-      expect(longRow).toBeTruthy();
-      expect(textHeight(longRow.cells[1])).toBeGreaterThan(textHeight(longRow.cells[0]) * 1.5);
+      // Each metric column starts at the same x-position on every card, so the list scans like a table.
+      for (let column = 0; column < 4; column++) {
+        const lefts = cards.map(card =>
+          Math.round((card.querySelectorAll('.rh-metrics > .rh-metric')[column] as HTMLElement).getBoundingClientRect().left));
+        expect(new Set(lefts).size).withContext(`metric column ${column}`).toBe(1);
+      }
+    });
+
+    it('should filter by the Suite facet without asking the server again', () => {
+      openHistoryWith([
+        buildHistoryRun({ id: 3, suiteName: 'Alpha' }),
+        buildHistoryRun({ id: 2, suiteName: 'Beta' }),
+        buildHistoryRun({ id: 1, suiteName: 'Alpha' })
+      ]);
+      benchmarkServiceMock.getRuns.calls.reset();
+
+      const facet = component.historyFacets.find(f => f.column === 'suite')!;
+      expect(facet.facetId).toBe('rh-facet-suite');
+      expect(facet.options.map(o => [o.value, o.count])).toEqual([['Alpha', 2], ['Beta', 1]]);
+      expect(fixture.nativeElement.querySelector('.rh-facet-row #rh-facet-suite-trigger')).toBeTruthy();
+      // The server-side suite select is gone.
+      expect(fixture.nativeElement.querySelector('#historySuiteFilter')).toBeNull();
+
+      component.onHistoryFacetChange('suite', ['Alpha']);
+
+      expect(shownIds()).toEqual([3, 1]);
+      expect(chipButtons().map(chip => chip.getAttribute('aria-label'))).toEqual(['Remove filter Suite: Alpha']);
+      expect(benchmarkServiceMock.getRuns).not.toHaveBeenCalled();
+    });
+
+    it('should find a run by its #id and by a hash prefix', async () => {
+      openHistoryWith([
+        buildHistoryRun({ id: 42, knowledgeBaseHeadSha: '1b512e27aa55' }),
+        buildHistoryRun({ id: 7 })
+      ]);
+      const search = fixture.nativeElement.querySelector('#rh-search') as HTMLInputElement;
+      expect(fixture.nativeElement.querySelector('label[for="rh-search"]')?.textContent?.trim()).toBe('Search runs');
+
+      search.value = '#42';
+      search.dispatchEvent(new Event('input'));
+      await afterSearchDebounce();
+      expect(shownIds()).toEqual([42]);
+
+      search.value = '1B512E';
+      search.dispatchEvent(new Event('input'));
+      await afterSearchDebounce();
+      expect(shownIds()).toEqual([42]);
+      expect(chipButtons().map(chip => chip.getAttribute('aria-label'))).toEqual(['Remove filter Search: “1B512E”']);
+
+      search.value = '#7';
+      search.dispatchEvent(new Event('input'));
+      await afterSearchDebounce();
+      expect(shownIds()).toEqual([7]);
+    });
+
+    it('should clear the search on Escape without closing anything, and let Escape through when it is empty', async () => {
+      openHistoryWith([buildHistoryRun({ id: 2 }), buildHistoryRun({ id: 1 })]);
+      const panel = fixture.nativeElement.querySelector('#bm-panel-history') as HTMLElement;
+      const reached: KeyboardEvent[] = [];
+      panel.addEventListener('keydown', event => reached.push(event));
+      const search = fixture.nativeElement.querySelector('#rh-search') as HTMLInputElement;
+
+      search.value = 'model';
+      search.dispatchEvent(new Event('input'));
+      const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      search.dispatchEvent(escape);
+
+      expect(escape.defaultPrevented).toBeTrue();
+      expect(reached).toEqual([]);
+      expect(search.value).toBe('');
+      expect(component.historyList.searchText).toBe('');
+      // The pending search was dropped with the text.
+      await afterSearchDebounce();
+      expect(component.historyTable.hasActiveFilters).toBeFalse();
+      expect(shownIds()).toEqual([2, 1]);
+
+      const again = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+      search.dispatchEvent(again);
+      expect(again.defaultPrevented).toBeFalse();
+      expect(reached.length).toBe(1);
+      expect(reached[0]).toBe(again);
+    });
+
+    it('should remember the Sort by choice and restore it', () => {
+      openHistoryWith([buildHistoryRun({ id: 2, qualityIndex: 50 }), buildHistoryRun({ id: 1, qualityIndex: 90 })]);
+      const select = fixture.nativeElement.querySelector('#rh-sort') as HTMLSelectElement;
+      expect(fixture.nativeElement.querySelector('label[for="rh-sort"]')?.textContent?.trim()).toBe('Sort by');
+      expect(Array.from(select.options).map(option => option.textContent?.trim())).toEqual([
+        'Newest first',
+        'Oldest first',
+        'Intelligence Index, highest first',
+        'Speed Index, highest first',
+        'Cost, lowest first',
+        'Cost, highest first',
+        'Duration, shortest first',
+        'Tested model (A–Z)',
+        'Suite (A–Z)'
+      ]);
+      expect(select.value).toBe('newest');
+      expect(shownIds()).toEqual([2, 1]);
+
+      select.value = 'intelligence-desc';
+      select.dispatchEvent(new Event('change'));
+
+      expect(shownIds()).toEqual([1, 2]);
+      expect(JSON.parse(localStorage.getItem(RUN_HISTORY_VIEW_STORAGE_KEY)!)).toEqual({ version: 1, sort: 'intelligence-desc' });
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      expect(restored.componentInstance.historyList.sortId).toBe('intelligence-desc');
+      expect(restored.componentInstance.historyTable.sortColumn).toBe('qualityIndex');
+      expect(restored.componentInstance.historyTable.sortDirection).toBe('desc');
+      restored.destroy();
+    });
+
+    it('should move focus to the next chip after a chip is removed, then to the search field', () => {
+      openHistoryWith([
+        buildHistoryRun({ id: 3, suiteName: 'Alpha' }),
+        buildHistoryRun({ id: 2, suiteName: 'Beta' }),
+        buildHistoryRun({ id: 1, suiteName: 'Gamma' })
+      ]);
+      component.onHistoryFacetChange('suite', ['Alpha', 'Beta']);
+      expect(chipButtons().map(chip => chip.getAttribute('aria-label')))
+        .toEqual(['Remove filter Suite: Alpha', 'Remove filter Suite: Beta']);
+
+      chipButtons()[0].click();
+      expect(chipButtons().map(chip => chip.getAttribute('aria-label'))).toEqual(['Remove filter Suite: Beta']);
+      expect(document.activeElement).toBe(chipButtons()[0]);
+      expect(shownIds()).toEqual([2]);
+
+      chipButtons()[0].click();
+      expect(chipButtons()).toEqual([]);
+      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#rh-search'));
+      expect(shownIds()).toEqual([3, 2, 1]);
+    });
+
+    it('should focus the first new card title after Show 10 more', () => {
+      openHistoryWith(Array.from({ length: 25 }, (_, i) => buildHistoryRun({ id: 25 - i })));
+      expect(shownIds().length).toBe(10);
+
+      const more = fixture.nativeElement.querySelector('.rh-load-more .rh-show-more') as HTMLButtonElement;
+      expect(more.classList.contains('btn-ghost')).toBeTrue();
+      expect(more.textContent?.trim()).toBe('Show 10 more');
+      const all = fixture.nativeElement.querySelector('.rh-load-more .rh-show-all') as HTMLButtonElement;
+      expect(all.classList.contains('gh-filter-clear')).toBeTrue();
+      expect(all.textContent?.trim()).toBe('Show all 25');
+
+      more.click();
+
+      expect(shownIds().length).toBe(20);
+      expect(document.activeElement?.id).toBe('rh-run-15-title');
+      expect(historyStatus()).toBe('Showing 20 of 25 runs');
+      expect((fixture.nativeElement.querySelector('.rh-show-more') as HTMLElement).textContent?.trim()).toBe('Show 5 more');
+      // One batch or less remains, so Show all is not offered.
+      expect(fixture.nativeElement.querySelector('.rh-show-all')).toBeNull();
+    });
+
+    it('should move focus to the next card title after a delete, else the previous one, else the heading', () => {
+      const runs = [3, 2, 1].map(id => buildHistoryRun({ id }));
+      openHistoryWith(runs);
+      benchmarkServiceMock.deleteRun.and.returnValue(of(undefined as any));
+
+      // The middle card: its successor takes its place.
+      benchmarkServiceMock.getRuns.and.returnValue(of([runs[0], runs[2]]));
+      (fixture.nativeElement.querySelector('button[aria-label="Delete run 2"]') as HTMLButtonElement).click();
+      component.executeConfirmAction();
+      expect(benchmarkServiceMock.deleteRun).toHaveBeenCalledWith(2);
+      expect(shownIds()).toEqual([3, 1]);
+      expect(document.activeElement?.id).toBe('rh-run-1-title');
+
+      // The last card: the one before it.
+      benchmarkServiceMock.getRuns.and.returnValue(of([runs[0]]));
+      (fixture.nativeElement.querySelector('button[aria-label="Delete run 1"]') as HTMLButtonElement).click();
+      component.executeConfirmAction();
+      expect(document.activeElement?.id).toBe('rh-run-3-title');
+
+      // The only card: the list's heading.
+      benchmarkServiceMock.getRuns.and.returnValue(of([]));
+      (fixture.nativeElement.querySelector('button[aria-label="Delete run 3"]') as HTMLButtonElement).click();
+      component.executeConfirmAction();
+      expect(document.activeElement?.id).toBe('rh-list-title');
+    });
+
+    it('should count the runs in the status line, and say when the newest 200 are all that is loaded', () => {
+      openHistoryWith(Array.from({ length: 12 }, (_, i) => buildHistoryRun({ id: 12 - i })));
+      const status = fixture.nativeElement.querySelector('#rh-list-status') as HTMLElement;
+      expect(status.getAttribute('role')).toBe('status');
+      expect(historyStatus()).toBe('Showing 10 of 12 runs');
+
+      benchmarkServiceMock.getRuns.calls.reset();
+      benchmarkServiceMock.getRuns.and.returnValue(of(Array.from({ length: 200 }, (_, i) => buildHistoryRun({ id: 200 - i }))));
+      const refresh = fixture.nativeElement.querySelector('.rh-list-head .rh-refresh') as HTMLButtonElement;
+      expect(refresh.classList.contains('btn-ghost')).toBeTrue();
+      refresh.click();
+
+      expect(benchmarkServiceMock.getRuns).toHaveBeenCalledOnceWith(undefined, 200);
+      expect(historyStatus()).toBe('Showing 10 of 200 runs · Only the newest 200 runs are loaded');
+    });
+
+    it('should tell no runs recorded apart from no runs matching the filters', () => {
+      openHistoryWith([]);
+      const panel = () => fixture.nativeElement.querySelector('#bm-panel-history') as HTMLElement;
+      expect(panel().textContent).toContain('No benchmark runs recorded yet.');
+      expect(panel().querySelector('.rh-no-matches')).toBeNull();
+      expect(panel().querySelector('.rh-filter-bar')).toBeNull();
+
+      benchmarkServiceMock.getRuns.and.returnValue(of([buildHistoryRun({ id: 2 }), buildHistoryRun({ id: 1 })]));
+      (panel().querySelector('.rh-refresh') as HTMLButtonElement).click();
+      component.onHistoryFacetChange('status', ['Failed']);
+
+      const noMatches = panel().querySelector('.rh-no-matches') as HTMLElement;
+      expect(noMatches.textContent).toContain('No runs match these filters.');
+      expect(panel().textContent).not.toContain('No benchmark runs recorded yet.');
+      expect(panel().querySelector('.rh-card-list')).toBeNull();
+
+      const clear = Array.from(noMatches.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Clear all filters') as HTMLButtonElement;
+      clear.click();
+      expect(shownIds()).toEqual([2, 1]);
+      expect(document.activeElement).toBe(panel().querySelector('#rh-search'));
+    });
+
+    it('should count the Changes facet by instrumentChangeOf', () => {
+      openHistoryWith([
+        // A knowledge-base move since run 3, whose options cannot be compared with none.
+        buildHistoryRun({ id: 4, knowledgeBaseHeadSha: 'kb-b' }),
+        // Detailed rather than concise since run 2.
+        buildHistoryRun({ id: 3, candidatePromptOptionsJson: '{"verboseMode":true}' }),
+        buildHistoryRun({ id: 2, candidatePromptOptionsJson: '{"verboseMode":false}' }),
+        buildHistoryRun({ id: 1 })
+      ]);
+
+      const counts = new Map<string, number>();
+      for (const run of component.historyRuns) {
+        const change = component.instrumentChangeOf(run);
+        const value = change ? (change.kind === 'options' ? 'Options changed' : 'Instrument changed') : 'No change';
+        counts.set(value, (counts.get(value) ?? 0) + 1);
+      }
+
+      const facet = component.historyFacets.find(f => f.column === 'changes')!;
+      expect(facet.options.map(o => [o.value, o.count])).toEqual([
+        ['Instrument changed', counts.get('Instrument changed') ?? 0],
+        ['Options changed', counts.get('Options changed') ?? 0],
+        ['No change', counts.get('No change') ?? 0]
+      ]);
+      expect(facet.options.map(o => o.count)).toEqual([1, 1, 2]);
+
+      component.onHistoryFacetChange('changes', ['Instrument changed']);
+      expect(shownIds()).toEqual([4]);
     });
   });
 
@@ -10968,7 +11267,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const buttons = Array.from(group.querySelectorAll(':scope > button')) as HTMLButtonElement[];
       const names = buttons.map(b => b.getAttribute('aria-label') || (b.textContent || '').replace(/\s+/g, ' ').trim());
-      expect(names).toEqual(['Downloads', 'Re-run', 'View game snapshot of run 55', 'Copy diagnostics of run 55', 'Close run details']);
+      expect(names).toEqual(['Downloads', 'Re-run', 'View game snapshot of run 55', 'Copy diagnostics of run 55']);
       for (const button of buttons) {
         expect(button.getAttribute('type')).toBe('button');
         expect(button.hasAttribute('title')).withContext(names[buttons.indexOf(button)]).toBeFalse();
@@ -10981,7 +11280,17 @@ describe('AdminBenchmarkComponent', () => {
       expect(buttons[2].getAttribute('interestfor')).toBe('rr-snapshot-tip');
       expect(buttons[3].classList.contains('action-btn')).toBeTrue();
       expect(buttons[3].getAttribute('interestfor')).toBe('rr-copy-diagnostics-tip');
-      expect(buttons[4].classList.contains('btn-icon-action')).toBeTrue();
+      expect(getComputedStyle(group).display).toBe('grid');
+
+      // Close is a dialog control, not a run action: it sits beside the group, not in it.
+      const close = dialog.querySelector('.rr-header-controls > .rr-close') as HTMLButtonElement;
+      expect(close).toBeTruthy();
+      expect(close.classList.contains('btn-icon-action')).toBeTrue();
+      expect(close.getAttribute('aria-label')).toBe('Close run details');
+      expect(close.getAttribute('type')).toBe('button');
+      expect(close.hasAttribute('title')).toBeFalse();
+      expect(group.contains(close)).toBeFalse();
+      expect(group.parentElement?.classList.contains('rr-header-controls')).toBeTrue();
 
       const popover = dialog.querySelector('#rr-rerun-popover') as HTMLElement;
       expect(popover.getAttribute('popover')).toBe('auto');
@@ -10993,6 +11302,146 @@ describe('AdminBenchmarkComponent', () => {
       const own = (selector: string) => Array.from(dialog.querySelectorAll(selector)).filter(el => el.closest('dialog') === dialog);
       expect(own('.modal-actions-bar')).toEqual([]);
       expect(own('.dialog-footer')).toEqual([]);
+    });
+
+    const HEADER_PROMPT_OPTIONS = JSON.stringify({ verboseMode: false, enableToolUse: true, hasGameSnapshot: true });
+    const FULL_BOARD = [
+      { role: 'assessor', delivered: 3, total: 3, missingQuestions: [] },
+      { role: 'claim verifier', delivered: 3, total: 3, missingQuestions: [] }
+    ];
+    const BOARD_WITH_GAP = [
+      { role: 'assessor', delivered: 3, total: 3, missingQuestions: [] },
+      { role: 'second reader', delivered: 2, total: 3, missingQuestions: [2] }
+    ];
+
+    function runDetails(): HTMLDetailsElement {
+      return reportDialog().querySelector('details#rr-run-details') as HTMLDetailsElement;
+    }
+
+    function factKeys(selector: string): (string | null)[] {
+      return Array.from(reportDialog().querySelectorAll(`${selector} [data-fact]`)).map(fact => fact.getAttribute('data-fact'));
+    }
+
+    it('should show Model and Assessors always, and the other facts inside a closed Run details with its read-out', () => {
+      openReport(reportRun({ candidatePromptOptionsJson: HEADER_PROMPT_OPTIONS, boardDelivery: FULL_BOARD }));
+
+      expect(factKeys('.rr-identity app-run-facts.rr-run-facts-primary')).toEqual(['model', 'assessor']);
+      const details = runDetails();
+      expect(details.classList).toContain('gh-disclosure');
+      expect(details.open).toBeFalse();
+      expect(factKeys('#rr-run-details app-run-facts')).toEqual(['prompt', 'profile', 'started', 'board']);
+      // Both lists together keep the header's order, and the board note's tip is rendered once.
+      expect(factKeys('.rr-identity')).toEqual(['model', 'assessor', 'prompt', 'profile', 'started', 'board']);
+      expect(reportDialog().querySelectorAll('#rr-board-note-tip').length).toBe(1);
+
+      const summary = details.querySelector(':scope > summary') as HTMLElement;
+      expect(summary.querySelector('.rr-run-details-title')?.textContent?.trim()).toBe('Run details');
+      expect(summary.querySelector('button, a, input, select, textarea')).toBeNull();
+      const readout = summary.querySelector('.rr-run-details-readout') as HTMLElement;
+      expect(readout.getAttribute('aria-hidden')).toBe('true');
+      expect(readout.textContent?.trim()).toBe(component.runDetailsReadout);
+      expect(component.runDetailsReadout).toMatch(/^Gameplay Help · Standard · Started \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC · Board 3\/3$/);
+      expect(getComputedStyle(readout).display).not.toBe('none');
+      expect(summary.querySelector('.rr-run-details-gap')).toBeNull();
+    });
+
+    it('should remember Run details open, and restore it on the next report and the next visit', async () => {
+      openReport(reportRun());
+      const toggled = nextEvent(runDetails(), 'toggle');
+      (runDetails().querySelector(':scope > summary') as HTMLElement).click();
+      await toggled;
+      fixture.detectChanges();
+
+      expect(runDetails().open).toBeTrue();
+      expect(component.runHeaderDetailsOpen).toBeTrue();
+      expect(JSON.parse(localStorage.getItem(RUN_REPORT_HEADER_STORAGE_KEY)!)).toEqual({ version: 1, detailsOpen: true });
+      expect(getComputedStyle(runDetails().querySelector('.rr-run-details-readout') as HTMLElement).display).toBe('none');
+
+      const closed = nextEvent(reportDialog(), 'close');
+      component.closeRunDetail();
+      await closed;
+      await macrotask();
+      openReport(reportRun({ id: 56 }));
+      expect(runDetails().open).toBeTrue();
+
+      const restored = TestBed.createComponent(AdminBenchmarkComponent);
+      expect(restored.componentInstance.runHeaderDetailsOpen).toBeTrue();
+      restored.destroy();
+    });
+
+    it('should start Run details closed when the stored state is unreadable', () => {
+      localStorage.setItem(RUN_REPORT_HEADER_STORAGE_KEY, '{not json');
+      const unreadable = TestBed.createComponent(AdminBenchmarkComponent);
+      expect(unreadable.componentInstance.runHeaderDetailsOpen).toBeFalse();
+      unreadable.destroy();
+
+      localStorage.setItem(RUN_REPORT_HEADER_STORAGE_KEY, JSON.stringify({ version: 2, detailsOpen: true }));
+      const unknown = TestBed.createComponent(AdminBenchmarkComponent);
+      expect(unknown.componentInstance.runHeaderDetailsOpen).toBeFalse();
+      unknown.destroy();
+    });
+
+    it('should say Graded without the board in the Run details summary while it is closed', () => {
+      openReport(reportRun({ boardDelivery: BOARD_WITH_GAP }));
+
+      const details = runDetails();
+      expect(details.open).toBeFalse();
+      const tag = details.querySelector(':scope > summary .rr-run-details-gap') as HTMLElement;
+      expect(tag).toBeTruthy();
+      expect(tag.classList).toContain('gh-tag');
+      expect(tag.classList).toContain('gh-tag-changed');
+      expect(tag.textContent?.trim()).toBe('Graded without the board');
+      expect(tag.closest('[aria-hidden="true"]')).toBeNull();
+      expect(getComputedStyle(tag).display).not.toBe('none');
+      expect(tag.getBoundingClientRect().height).toBeGreaterThan(0);
+      expect(component.runDetailsReadout).toContain('Board incomplete');
+    });
+
+    describe('header layout at 1200 px', () => {
+      function openWide(run: any): HTMLElement {
+        const dialog = reportDialog();
+        dialog.style.width = '1200px';
+        dialog.style.maxWidth = '1200px';
+        openReport(run);
+        return dialog.querySelector('.rrf-header') as HTMLElement;
+      }
+
+      afterEach(() => {
+        reportDialog().style.removeProperty('width');
+        reportDialog().style.removeProperty('max-width');
+      });
+
+      it('should keep the header within 190 px with Run details closed', async () => {
+        const header = openWide(reportRun({
+          isPanelRun: true, coAssessorModelDisplayNameUsed: 'Second Assessor', coAssessorModelProviderUsed: 'Anthropic',
+          testedModelThinkingLevelUsed: 'high', candidatePromptOptionsJson: HEADER_PROMPT_OPTIONS, boardDelivery: FULL_BOARD,
+          hasBoardRecord: true
+        }));
+        await document.fonts.ready;
+        fixture.detectChanges();
+
+        expect(runDetails().open).toBeFalse();
+        expect(header.getBoundingClientRect().width).toBeGreaterThan(1000);
+        expect(header.getBoundingClientRect().height).toBeLessThanOrEqual(190);
+      });
+
+      it('should not stretch a primary fact beyond its tallest child', async () => {
+        openWide(reportRun({
+          isPanelRun: true, coAssessorModelDisplayNameUsed: 'Second Assessor', coAssessorModelProviderUsed: 'Anthropic',
+          testedModelThinkingLevelUsed: 'high'
+        }));
+        await document.fonts.ready;
+        fixture.detectChanges();
+
+        const facts = Array.from(reportDialog().querySelectorAll('.rr-run-facts-primary .rr-fact')) as HTMLElement[];
+        expect(facts.length).toBe(2);
+        for (const fact of facts) {
+          const height = fact.getBoundingClientRect().height;
+          const tallest = Math.max(...Array.from(fact.children).map(child => child.getBoundingClientRect().height));
+          expect(height).withContext(fact.getAttribute('data-fact')!).toBeGreaterThan(0);
+          expect(height).withContext(fact.getAttribute('data-fact')!).toBeLessThanOrEqual(tallest + 2);
+        }
+      });
     });
 
     it('should open the Re-run popover on its first enabled item, with aria-expanded from its toggle event', async () => {
@@ -11201,7 +11650,7 @@ describe('AdminBenchmarkComponent', () => {
       const cleanup = spyOn(component, 'onRunDetailClosed').and.callThrough();
 
       const closed = nextEvent(reportDialog(), 'close');
-      (runActions().querySelector('button[aria-label="Close run details"]') as HTMLButtonElement).click();
+      (reportDialog().querySelector('button.rr-close[aria-label="Close run details"]') as HTMLButtonElement).click();
       await closed;
       await macrotask();
 
@@ -11272,8 +11721,10 @@ describe('AdminBenchmarkComponent', () => {
 
       const dialog = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog') as HTMLElement;
       expect(dialog.querySelector('#runDetailTitle')?.textContent?.trim()).toBe('Run #77');
-      expect(dialog.querySelector('button[aria-label="Close run details"]')).toBeTruthy();
+      expect(dialog.querySelector('.rr-header-controls > button.rr-close[aria-label="Close run details"]')).toBeTruthy();
       expect(dialog.querySelector('#rr-downloads-trigger')).toBeNull();
+      expect(dialog.querySelector('[role="group"][aria-label="Run actions"]')).toBeNull();
+      expect(dialog.querySelector('#rr-run-details')).toBeNull();
       expect(dialog.querySelectorAll('.rr-skeleton').length).toBeGreaterThan(0);
       expect(dialog.querySelector('.rrf-body')?.getAttribute('aria-busy')).toBe('true');
 

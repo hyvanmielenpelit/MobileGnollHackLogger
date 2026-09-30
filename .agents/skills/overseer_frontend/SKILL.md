@@ -302,6 +302,42 @@ To find specific popups, look in the corresponding component's `.html` template:
     returns to the button). The panel is inside `@if (activeSubTab === 'modelcomparison')`, so the
     summary loads when the tab is shown and again on every showing; the wizard's close bumps
     `comparisonReportsReloadToken`. The panel duplicates none of the wizard's controls.
+  - **The Run History tab** (`#bm-panel-history`) is a card list (`frontend_ui_controls` §8h), one
+    full-width `article.rh-card` per run in a `ul.rh-card-list[role=list]` labelled by the `h4.gh-section-title`
+    *Runs* (`#rh-list-title`). The head holds a click-mode info tip (`rh-list-tip`: the indexes, the
+    cost pair, the five hashes and what *Instrument changed* / *Options changed* compare against), the
+    polite status line `#rh-list-status` (*Showing 10 of 75 runs*, *· filtered from N*, and *· Only the
+    newest 200 runs are loaded* when exactly 200 came back) and **Refresh** (`.btn-ghost`, *rotate*).
+    The filter bar copies the Download Center's markup with `rh-` ids: `#rh-search` (*Search runs*, over
+    `#id`, suite, model name and id, provider, assessor, status, harness version and the five
+    fingerprints; Escape with text clears it), `#rh-sort` **Sort by** (*Newest first*, *Oldest first*,
+    the two index orders, the two cost orders, *Duration, shortest first*, *Tested model (A–Z)*, *Suite
+    (A–Z)*; stored under `overseer.benchmark.runHistory.view`), the facets *Suite*, *Tested model*,
+    *Assessor*, *Status*, *Flags*, *Changes* and *Started* (single mode), each with `noun="runs"`, and
+    the chips with **Clear all**; there is no selection and no sticky bar. The state is `historyList`, a
+    `CardListState` over `historyTable` (`idPrefix: 'rh'`, `onChange` running `detectChanges()`, since
+    the component is Default change detection); `historyView` is `historyList.view(historyRuns)`, and
+    `historyRuns` stays in server order for `instrumentChangeOf`, `completedRunsOfSelectedSuite` and
+    the other helpers that depend on it.
+    `loadHistory()` fetches the newest 200 runs (`getRuns(undefined, 200)`); the server-side suite
+    select and `historySuiteFilter` are gone, replaced by the client-side *Suite* facet. A card holds a
+    kicker (`#N`, the status badge, the degraded count with a Feather *alert-triangle* SVG and visually
+    hidden *degraded answers*, the progress count, `INSTRUMENT CHANGED` / `OPTIONS CHANGED`, parts
+    separated by an `aria-hidden` dot and a visually hidden comma), the `h5.rh-card-title`
+    (`#rh-run-{id}-title`, `tabindex="-1"`) with the model under test's `runFactBadges`, a meta line
+    (suite · *assessed by* · `<time datetime>` · *by* user), `dl.rh-metrics` (*Intelligence*, *Speed*,
+    *Duration*, *Cost*, fixed 7.5 rem columns; *advisory timing*, *until stopped*, *pricing incomplete*
+    and *catalog …* as visible second lines, never `*` with `title`), the `role="group"` *Actions for
+    run N* (**View details** *eye*, **Download Markdown report** *file-with-arrow*, **Download tool-call
+    log**, and **Delete run** `.action-btn-danger` set apart) and, under a hairline, `dl.rh-instrument`
+    (*PROMPT*, *GUIDES*, *KB*, *WIKI*, *SRC* with 8-character `fp-*` hashes and visually hidden long
+    names; the full hashes in a click-mode info tip `rh-instr-{id}`, no `title`). The list is an
+    inline-size container (`rh-cards`): below 60 rem the metrics move under the head, below 30 rem one
+    column. Ten cards, then **Show 10 more** / **Show all N**, focusing the first new card's title; a
+    removed chip moves focus to the next chip, else the previous, else `#rh-search`; after a delete,
+    focus goes to the card now at the deleted one's index, else the previous, else `#rh-list-title`.
+    *No benchmark runs recorded yet…* and *No runs match these filters.* (with **Clear all filters**) are
+    separate empty states.
 
   Not an exhaustive list of this component's dialogs, only the ones recorded here so far:
   - `#runProgressDialog`: the run progress dialog, **full-screen** (`gh-dialog-fullscreen`, no
@@ -334,20 +370,37 @@ To find specific popups, look in the corresponding component's `.html` template:
     *Writing* (a 30-s grace for *NotRequested*), and the completion chime fires at the end of stage 4,
     not at *Completed*. The Download Center, opened on such a run, shows a *being written* notice and
     polls the run's report job every 5 s until it finishes.
-  - `#runDetailDialog`: the run report dialog, **full-screen**. The header holds *Run #N*, the
-    status and a `role="group"` *Run actions* (never `role="toolbar"`: it has no arrow-key roving):
-    **Downloads** (opens the Download Center), **Re-run** (an action popover, `frontend_ui_controls`
-    §4f: *Re-score run*, *Re-run final synthesis*, *Retry failed assessments*, *Retry claim
-    verification*, *Re-run failed questions*, a disabled one showing its reason), the icon-only **View
-    game snapshot** and **Copy diagnostics**, and **Close**; the decorative GnollBench emblem
-    (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. Under the title the header lists the
-    run's settings as `app-run-facts` (`run-report-frame/run-facts.*`, OnPush, fed the memoized
-    `selectedRunFacts` built by `buildRunFacts` in `run-facts.ts`): a `dl` of *Model*, *Assessor(s)*
-    (panel members tagged `A` / `B`), *Prompt*, *Scoring profile*, *Started* (`<time datetime>`) and
-    *Board*, every model badged by `runFactBadges` with the model pickers' rules (plus service tier and
-    *Custom endpoint* on the model under test, as `.config-badge`), two pairs per line from 64 rem of
-    container width, one below, stacked labels below 36 rem; no `title` attributes. The header always
-    lists every row. `app-run-report-frame layout="single"`
+  - `#runDetailDialog`: the run report dialog, **full-screen**. The header's actions slot holds
+    `div.rr-header-controls`: a `role="group"` *Run actions* (never `role="toolbar"`: it has no
+    arrow-key roving) and, outside it, **Close** (`.rr-close`, a `.btn-icon-action` named *Close run
+    details*: a dialog control, not a run action). The group's direct children are **Downloads** (opens
+    the Download Center), **Re-run** (an action popover, `frontend_ui_controls` §4f: *Re-score run*,
+    *Re-run final synthesis*, *Retry failed assessments*, *Retry claim verification*, *Re-run failed
+    questions*, a disabled one showing its reason) with its popover, and the icon-only **View game
+    snapshot** and **Copy diagnostics**. The group is a two-column grid — Downloads over Re-run, equal
+    width and left-aligned, then snapshot over copy — with the `.rr-status` *Copied* line positioned
+    under it so it takes no cell; below 40 rem of the `run-report-frame` container it is one row. The
+    decorative GnollBench emblem (`.gnollbench-emblem`, `alt=""`) stands before *Run #N*. Under the
+    title the header lists the run's settings as `app-run-facts` (`run-report-frame/run-facts.*`,
+    OnPush) built by `buildRunFacts` in `run-facts.ts`: *Model*, *Assessor(s)* (panel members tagged
+    `A` / `B`), *Prompt*, *Scoring profile*, *Started* (`<time datetime>`) and *Board*, every model badged
+    by `runFactBadges` with the model pickers' rules (plus service tier and *Custom endpoint* on the
+    model under test, as `.config-badge`); no `title` attributes. **The primary rows**
+    (`RUN_FACT_PRIMARY_KEYS`: *Model*, *Assessor(s)*) are always shown, in `.rr-run-facts-primary`
+    (`selectedRunPrimaryFacts`); **the rest** (`selectedRunDetailFacts`) sit in
+    `details.gh-disclosure.rr-run-details` *Run details*, closed by default. Its text-only summary holds
+    the title, the `aria-hidden` one-line read-out `runFactsReadout` (*Gameplay Help · Standard
+    Intelligence Index · Started … · Board 18/18*, or *Board incomplete*) while closed, and, while the
+    board has gaps, a visible `gh-tag gh-tag-changed` *Graded without the board*, open or closed. The
+    open state is read once from `localStorage['overseer.benchmark.runReport.header']` (`{ version: 1,
+    detailsOpen }`, `RUN_REPORT_HEADER_STORAGE_KEY`, try/catch, default closed) and written from the
+    native `toggle` event. Both splits are memoized on the same run object as `selectedRunFacts`. The
+    facts are a wrapping flow, not a grid (`display: flex; flex-wrap: wrap`, inline `dt` + `dd` pairs, so
+    a tall pair stretches nothing), with labels stacked below 36 rem; the *Board* figures carry their
+    separator dot at their end (`li:not(:last-child)::after`, `nowrap`), so a wrapped line never starts
+    with a dot, and the same-every-run note is a click-mode `app-info-tip` `#rr-board-note-tip`
+    (*Board delivery*). In the single layout the header's items align to the top
+    (`:host(.rrf-layout-single) .rrf-header`). `app-run-report-frame layout="single"`
     keeps the header and a tab row (`[runReportTabs]`) in place and scrolls one body (`[runReportBody]`;
     `scrollBodyToTop()` on a tab change). The row is `.gh-tabs .gh-tabs-secondary`, *Run report
     sections*, ten tabs without icons from `runReportTabs` (`rr-tab-<key>` controlling
@@ -487,7 +540,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     wizard's step 4 (below). Contexts: `run`, `documents` (chosen ids) and `library` (`scope` —
     `{ kind: 'comparison', entryKeys }` or `{ kind: 'all' }` — and `preselect: 'all' | 'none'`, listed
     with one request, `origin=reportPack`). **The documents list** is a card list (`frontend_ui_controls`
-    §8h). Its header is the *Documents* heading, a dialog-mode `app-info-tip` **About document options**
+    §8h). Its search, **Sort by**, facets, chips, status line and Load more come from the shared
+    `CardListState` (`shared/data-table/card-list-state.ts`), behind a private `list` getter that
+    builds it on first use, after the `idPrefix` input is bound; the panel's public members (`searchText`, `sortId`,
+    `facets`, `activeChips`, `showMore`…) and exported constants are one-line delegates and aliases
+    over it (`DownloadFacet` = `CardListFacet`, `DownloadFilterChip` = `CardListChip`), and the
+    selection, its bar and every focus move stay in the panel. Its header is the *Documents* heading, a dialog-mode `app-info-tip` **About document options**
     (sections *Sharing*, *Disclosure* — the guides per document type and their notes — *Peer names*,
     *Formats* and, with chart actions, *Charts*; text in `DOWNLOAD_OPTIONS_HELP`) and the polite status
     line *Showing 10 of 23 documents* (*· filtered from N* while a filter is active). The filter bar

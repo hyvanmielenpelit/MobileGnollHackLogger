@@ -78,9 +78,9 @@ import { BenchmarkBackgroundActivityService } from '../../services/benchmark-bac
 import { BenchmarkPollTickerService, BenchmarkPollTickerHandle } from '../../services/benchmark-poll-ticker.service';
 import { parseServerUtcDate, elapsedMsBetween } from '../../utils/date.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDifficulty } from '../../utils/model-badge-format.util';
-import { TableState, exactFilter } from '../../shared/data-table/table-state';
-import { SortHeaderComponent } from '../../shared/data-table/sort-header.component';
-import { TablePagerComponent } from '../../shared/data-table/table-pager.component';
+import { TableState, anyOfFilter, customFilter } from '../../shared/data-table/table-state';
+import { CardListChip, CardListFacet, CardListSort, CardListState } from '../../shared/data-table/card-list-state';
+import { FilterFacetComponent } from '../../shared/data-table/filter-facet.component';
 import {
   COMPARISON_WIZARD_STEPS,
   ModelComparisonComponent
@@ -122,7 +122,8 @@ import {
 import { KeyFiguresChooserComponent } from './run-report-frame/key-figures-chooser.component';
 import { RunFactsComponent } from './run-report-frame/run-facts.component';
 import {
-  RunFactRow, buildRunFacts, candidatePromptParts, formatCandidatePrompt, runFactPlainText
+  RUN_FACT_PRIMARY_KEYS, RunFactBadge, RunFactRow, buildRunFacts, candidatePromptParts, formatCandidatePrompt,
+  runFactBadges, runFactPlainText, runFactsReadout
 } from './run-report-frame/run-facts';
 import { BenchmarkDownloadCenterComponent } from './download-center/benchmark-download-center.component';
 import { audienceLabel } from './report-pack/report-document-format';
@@ -153,6 +154,63 @@ export type RunReportTabKey = typeof RUN_REPORT_TABS[number]['key'];
 
 /** Where the run report's chosen tab is remembered, per viewer. */
 export const RUN_REPORT_TAB_STORAGE_KEY = 'overseer.benchmark.runReport.tab';
+
+/** Where the run report header's Run details open state is remembered, per viewer, as `{ version: 1, detailsOpen }`. */
+export const RUN_REPORT_HEADER_STORAGE_KEY = 'overseer.benchmark.runReport.header';
+
+/** Where Run History's Sort by order is remembered, per viewer, as `{ version: 1, sort }`. */
+export const RUN_HISTORY_VIEW_STORAGE_KEY = 'overseer.benchmark.runHistory.view';
+
+/** The orders Run History's Sort by offers. Run ids ascend with time, so the id stands in for the date. */
+export const RUN_HISTORY_SORTS: readonly CardListSort[] = [
+  { id: 'newest', label: 'Newest first', column: 'id', direction: 'desc' },
+  { id: 'oldest', label: 'Oldest first', column: 'id', direction: 'asc' },
+  { id: 'intelligence-desc', label: 'Intelligence Index, highest first', column: 'qualityIndex', direction: 'desc' },
+  { id: 'speed-desc', label: 'Speed Index, highest first', column: 'speedIndex', direction: 'desc' },
+  { id: 'cost-asc', label: 'Cost, lowest first', column: 'estimatedCost', direction: 'asc' },
+  { id: 'cost-desc', label: 'Cost, highest first', column: 'estimatedCost', direction: 'desc' },
+  { id: 'duration-asc', label: 'Duration, shortest first', column: 'durationMs', direction: 'asc' },
+  { id: 'tested-asc', label: 'Tested model (A–Z)', column: 'testedModelDisplayNameUsed', direction: 'asc' },
+  { id: 'suite-asc', label: 'Suite (A–Z)', column: 'suiteName', direction: 'asc' }
+];
+
+/** The Flags facet's values, in the order it lists them. */
+const RUN_HISTORY_FLAGS = [
+  'Degraded answers', 'Unanswered questions', 'Failed at the provider', 'Advisory timing', 'Pricing incomplete', 'None'
+] as const;
+
+/** The Changes facet's values, in the order it lists them. */
+const RUN_HISTORY_CHANGES = ['Instrument changed', 'Options changed', 'No change'] as const;
+
+/** The Started facet's ranges. */
+const RUN_HISTORY_STARTED_RANGES: readonly { value: string; label: string; hours: number }[] = [
+  { value: '24h', label: 'Last 24 hours', hours: 24 },
+  { value: '7d', label: 'Last 7 days', hours: 24 * 7 },
+  { value: '30d', label: 'Last 30 days', hours: 24 * 30 }
+];
+
+/** The run count the runs endpoint returns at most; Run History says when it holds that many. */
+const RUN_HISTORY_LIMIT = 200;
+
+/** What each instrument label stands for, read after the short label by assistive technology. */
+const FINGERPRINT_LONG_NAMES: Record<BenchmarkFingerprintEntry['label'], string> = {
+  PROMPT: 'candidate system prompt',
+  GUIDES: 'tool guides',
+  KB: 'knowledge base',
+  WIKI: 'wiki',
+  SRC: 'source code'
+};
+
+/** The remembered Run details open state; closed when none is stored, it is unreadable or storage is unavailable. */
+function readStoredRunHeaderDetailsOpen(): boolean {
+  try {
+    const raw = localStorage.getItem(RUN_REPORT_HEADER_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) as { version?: unknown; detailsOpen?: unknown } | null : null;
+    return !!parsed && typeof parsed === 'object' && parsed.version === 1 && parsed.detailsOpen === true;
+  } catch {
+    return false;
+  }
+}
 
 const SNAPSHOT_TEXT_EXPORT_FAILED = 'Exported without the snapshot text: it could not be loaded.';
 
@@ -350,7 +408,7 @@ interface BenchmarkRunSettings {
     SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
     QuestionGenerationDialogComponent, SuiteDescriptionGenerationDialogComponent,
-    SortHeaderComponent, TablePagerComponent, ModelComparisonComponent,
+    FilterFacetComponent, ModelComparisonComponent,
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
     QuestionYamlImportDialogComponent, QuestionYamlHelpDialogComponent, SnapshotUploadDialogComponent,
     SnapshotSuiteWizardComponent, BenchmarkGraderGuideComponent,
@@ -795,11 +853,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   // History
   historyRuns: BenchmarkRunSummaryDto[] = [];
-  historySuiteFilter: number | null = null;
   loadingHistory = false;
 
   /**
-   * Sort, filter and page state for the Run History table. `historyRuns` itself stays in the
+   * Sort and filter state for the Run History card list. `historyRuns` itself stays in the
    * server's own order — `instrumentChangeOf` and `completedRunsOfSelectedSuite` both locate a
    * run by its position in that list, and a user-chosen sort would make either misread the data.
    * `view()` never mutates its input, so both keep reading `historyRuns` unaffected by this.
@@ -814,23 +871,77 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       // Null sorts last automatically, which is right for a run that never scored.
       qualityIndex: r => r.qualityIndex ?? r.finalScore,
       speedIndex: r => r.speedIndex,
-      // The same expression the Duration cell displays, so the column sorts by what it shows.
+      // The same expression the Duration metric displays, so the list sorts by what it shows.
       durationMs: r => this.runDurationMs(r),
       estimatedCost: r => r.estimatedCandidateCost ?? r.estimatedCost,
       startedAtUtc: r => new Date(r.startedAtUtc)
     },
     {
-      suiteName: r => r.suiteName,
-      testedModelDisplayNameUsed: r => r.testedModelDisplayNameUsed,
-      assessorModelDisplayNameUsed: r => r.assessorModelDisplayNameUsed,
-      // Keyed on the same label the Status cell shows, so the <select> options and the cell text
-      // always agree.
-      status: exactFilter(r => this.formatStatusLabel(r.status))
+      search: customFilter((r, value) => this.historySearchText(r).includes(value.toLowerCase())),
+      suite: anyOfFilter(r => r.suiteName || null),
+      tested: anyOfFilter(r => r.testedModelDisplayNameUsed || null),
+      assessor: anyOfFilter(r => r.assessorModelDisplayNameUsed || null),
+      // Keyed on the same label the status badge shows, so the facet and the card always agree.
+      status: anyOfFilter(r => this.formatStatusLabel(r.status)),
+      flags: anyOfFilter(r => this.historyFlagsOf(r)),
+      changes: anyOfFilter(r => this.historyChangeOf(r)),
+      started: customFilter((r, value) => this.historyStartedWithin(r, value))
     }
   );
 
+  /** The Run History card list over `historyTable`: the search, Sort by, the facets, the chips and the batch. */
+  readonly historyList = new CardListState<BenchmarkRunSummaryDto>(this.historyTable, {
+    idPrefix: 'rh',
+    sorts: RUN_HISTORY_SORTS,
+    defaultSort: 'newest',
+    storageKey: RUN_HISTORY_VIEW_STORAGE_KEY,
+    facets: [
+      { column: 'suite', label: 'Suite', values: r => r.suiteName || null },
+      { column: 'tested', label: 'Tested model', values: r => r.testedModelDisplayNameUsed || null },
+      { column: 'assessor', label: 'Assessor', values: r => r.assessorModelDisplayNameUsed || null },
+      // The order of historyStatusOptions: the default string order.
+      { column: 'status', label: 'Status', values: r => this.formatStatusLabel(r.status), order: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
+      { column: 'flags', label: 'Flags', values: r => this.historyFlagsOf(r), order: RUN_HISTORY_FLAGS },
+      { column: 'changes', label: 'Changes', values: r => this.historyChangeOf(r), order: RUN_HISTORY_CHANGES }
+    ],
+    singleFacets: [
+      {
+        column: 'started',
+        label: 'Started',
+        anyLabel: 'Any time',
+        options: RUN_HISTORY_STARTED_RANGES,
+        matches: (r, range) => this.historyStartedWithin(r, range),
+        listedWhen: rows => rows.filter(r => this.historyStartedAt(r) !== null).length >= 2
+      }
+    ],
+    // A debounced search applies outside any event handler, so the view is checked by hand.
+    onChange: () => this.cdr.detectChanges()
+  });
+
+  /** The orders Sort by offers. */
+  readonly historySorts = RUN_HISTORY_SORTS;
+
+  /** The cards on screen: the loaded runs filtered, sorted and cut to the batch. */
   get historyView(): BenchmarkRunSummaryDto[] {
-    return this.historyTable.view(this.historyRuns);
+    return this.historyList.view(this.historyRuns);
+  }
+
+  /** The listed facets of the filter bar, memoized on `historyRuns` and the list's revision. */
+  get historyFacets(): CardListFacet[] {
+    return this.historyList.facets(this.historyRuns);
+  }
+
+  /** The removable chips of the active filters. */
+  get historyChips(): CardListChip[] {
+    return this.historyList.chips(this.historyRuns);
+  }
+
+  /** The list's status line, with a note when the runs endpoint's limit was reached. */
+  get historyListStatus(): string {
+    const text = this.historyList.statusText(this.historyRuns, { one: 'run', many: 'runs' });
+    return text && this.historyRuns.length >= RUN_HISTORY_LIMIT
+      ? `${text} · Only the newest ${RUN_HISTORY_LIMIT} runs are loaded`
+      : text;
   }
 
   /** The statuses actually present in the loaded history, so a retired status drops out on its own. */
@@ -842,8 +953,154 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return Array.from(seen).sort();
   }
 
-  onHistoryTableChanged(): void {
+  /** The tested model's badges per run, built once per run object. */
+  private readonly historyBadgeCache = new WeakMap<BenchmarkRunSummaryDto, RunFactBadge[]>();
+
+  /** The tested model's badges on a Run History card: the run report's rules, without a service tier. */
+  historyModelBadges(run: BenchmarkRunSummaryDto): RunFactBadge[] {
+    let badges = this.historyBadgeCache.get(run);
+    if (!badges) {
+      badges = runFactBadges({
+        name: run.testedModelDisplayNameUsed || run.testedModelIdUsed || 'not recorded',
+        provider: run.testedModelProviderUsed || null,
+        thinkingLevel: run.testedModelThinkingLevelUsed ?? null,
+        reasoningMode: run.testedModelReasoningModeUsed ?? null,
+        serviceTier: null,
+        customEndpoint: false
+      });
+      this.historyBadgeCache.set(run, badges);
+    }
+    return badges;
+  }
+
+  /** An instrument label's long name, read after the short label by assistive technology. */
+  fingerprintLongName(entry: BenchmarkFingerprintEntry): string {
+    return FINGERPRINT_LONG_NAMES[entry.label];
+  }
+
+  /** A fingerprint's full description split into its name and its value, for the instrument info tip. */
+  fingerprintParts(entry: BenchmarkFingerprintEntry): { term: string; value: string } {
+    const at = entry.title.indexOf(': ');
+    return at < 0
+      ? { term: entry.title, value: '' }
+      : { term: entry.title.slice(0, at), value: entry.title.slice(at + 2) };
+  }
+
+  onHistorySearchInput(event: Event): void {
+    this.historyList.setSearchInput((event.target as HTMLInputElement).value);
+  }
+
+  /** Escape with text clears the search at once; in an empty field it passes through. */
+  onHistorySearchKeydown(event: KeyboardEvent): void {
+    if (this.historyList.clearSearchOnEscape(event)) {
+      this.cdr.detectChanges();
+    }
+  }
+
+  onHistorySortChange(event: Event): void {
+    if (this.historyList.setSort((event.target as HTMLSelectElement).value)) {
+      this.cdr.detectChanges();
+    }
+  }
+
+  onHistoryFacetChange(column: string, values: string[]): void {
+    this.historyList.setFacet(column, values);
     this.cdr.detectChanges();
+  }
+
+  /** Removes a chip's filter, then focuses the chip now in its place, else the previous one, else the search. */
+  removeHistoryChip(chip: CardListChip): void {
+    const index = this.historyList.removeChip(chip, this.historyRuns);
+    this.cdr.detectChanges();
+    const chips = Array.from(document.querySelectorAll<HTMLButtonElement>('#bm-panel-history .rh-filter-chips .gh-filter-chip'));
+    const target = index >= 0 ? chips[index] ?? chips[index - 1] : undefined;
+    (target ?? document.getElementById('rh-search'))?.focus();
+  }
+
+  /** Clears the search and every filter, then focuses the search. */
+  clearHistoryFilters(): void {
+    this.historyList.clearFilters();
+    this.cdr.detectChanges();
+    document.getElementById('rh-search')?.focus();
+  }
+
+  showMoreHistory(): void {
+    this.focusHistoryCard(this.historyList.showMore(this.historyRuns));
+  }
+
+  showAllHistory(): void {
+    this.focusHistoryCard(this.historyList.showAll(this.historyRuns));
+  }
+
+  /** Renders, then focuses the title of the card at `index` in the view, if there is one. */
+  private focusHistoryCard(index: number): void {
+    this.cdr.detectChanges();
+    const run = this.historyView[index];
+    if (run) {
+      document.getElementById(`rh-run-${run.id}-title`)?.focus();
+    }
+  }
+
+  /** After a delete: the card now at the deleted one's index, else the previous one, else the list's heading. */
+  private focusAfterHistoryDelete(index: number): void {
+    const view = this.historyView;
+    const run = view[index] ?? view[index - 1];
+    const target = run ? document.getElementById(`rh-run-${run.id}-title`) : null;
+    (target ?? document.getElementById('rh-list-title'))?.focus();
+  }
+
+  /** What the search matches a run against, lower-cased. */
+  private historySearchText(run: BenchmarkRunSummaryDto): string {
+    return [
+      `#${run.id}`,
+      run.suiteName,
+      run.testedModelDisplayNameUsed,
+      run.testedModelIdUsed,
+      run.testedModelProviderUsed,
+      run.assessorModelDisplayNameUsed,
+      this.formatStatusLabel(run.status),
+      run.harnessVersion,
+      run.candidateSystemPromptSha256,
+      run.toolGuidesSha256,
+      run.knowledgeBaseHeadSha,
+      run.wikiHeadSha,
+      run.sourceCodeHeadSha
+    ].filter(part => !!part).join(' ').toLowerCase();
+  }
+
+  /** The Flags facet's values of a run, from its counts; `None` when it has none of them. */
+  private historyFlagsOf(run: BenchmarkRunSummaryDto): string[] {
+    const flags: string[] = [];
+    if ((run.degradedAnswerCount ?? 0) > 0) flags.push('Degraded answers');
+    if ((run.unansweredQuestionCount ?? 0) > 0) flags.push('Unanswered questions');
+    if ((run.terminalFailureAnswerCount ?? 0) > 0) flags.push('Failed at the provider');
+    if (run.speedMeasurementDegraded) flags.push('Advisory timing');
+    if (run.pricingIncomplete) flags.push('Pricing incomplete');
+    return flags.length > 0 ? flags : ['None'];
+  }
+
+  /** The Changes facet's value of a run, from `instrumentChangeOf`. */
+  private historyChangeOf(run: BenchmarkRunSummaryDto): string {
+    const change = this.instrumentChangeOf(run);
+    return change ? (change.kind === 'options' ? 'Options changed' : 'Instrument changed') : 'No change';
+  }
+
+  private historyStartedAt(run: BenchmarkRunSummaryDto): Date | null {
+    if (!run.startedAtUtc) {
+      return null;
+    }
+    const started = parseServerUtcDate(run.startedAtUtc);
+    return Number.isNaN(started.getTime()) ? null : started;
+  }
+
+  /** Whether a run started within the Started facet's range `range` of now. */
+  private historyStartedWithin(run: BenchmarkRunSummaryDto, range: string): boolean {
+    const hours = RUN_HISTORY_STARTED_RANGES.find(r => r.value === range)?.hours;
+    const started = this.historyStartedAt(run);
+    if (hours === undefined || !started) {
+      return false;
+    }
+    return Date.now() - started.getTime() <= hours * 3600_000;
   }
 
   // --- Run History: series badge, group column and the group builder ---
@@ -1720,6 +1977,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.terminatingDifficultyJob = false;
     this.stopSeriesPolling();
     this.comparisonSubscription?.unsubscribe();
+    this.historyList.dispose();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
     if (this.runReportCopyTimer) { clearTimeout(this.runReportCopyTimer); }
@@ -6124,18 +6382,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   // --- History & Details ---
 
-  loadHistory() {
+  /** Loads the newest runs of every suite; `afterLoad` runs once they are rendered. */
+  loadHistory(afterLoad?: () => void) {
     this.loadingHistory = true;
-    // The endpoint clamps to 200 regardless, so asking for exactly that keeps a full page rather
-    // than leaving the table half-empty behind its own pager.
-    this.benchmarkService.getRuns(this.historySuiteFilter || undefined, 200).subscribe({
+    // The endpoint clamps to 200 regardless, so asking for exactly that loads every run it will return.
+    this.benchmarkService.getRuns(undefined, RUN_HISTORY_LIMIT).subscribe({
       next: (data) => {
         this.historyRuns = data;
+        this.historyList.invalidate();
         this.loadingHistory = false;
         // A remembered comparison selection is validated against the list that has just arrived,
         // because a run deleted since the last visit must not be sent to the compare endpoint.
         this.pruneComparisonSelection();
         this.cdr.detectChanges();
+        afterLoad?.();
       },
       error: (err) => {
         this.loadingHistory = false;
@@ -6683,6 +6943,70 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.runFactsRows;
   }
 
+  /** The header facts always shown: Model and Assessor(s). Split once per `selectedRunFacts` rows. */
+  get selectedRunPrimaryFacts(): RunFactRow[] {
+    return this.splitRunFacts().primary;
+  }
+
+  /** The header facts inside Run details: Prompt, Scoring profile, Started and Board. */
+  get selectedRunDetailFacts(): RunFactRow[] {
+    return this.splitRunFacts().detail;
+  }
+
+  /** Run details' one-line read-out, shown in its summary while it is closed. */
+  get runDetailsReadout(): string {
+    return this.splitRunFacts().readout;
+  }
+
+  /** Whether a grading role saw the run without the board; the summary then says so while closed. */
+  get runHeaderBoardHasGaps(): boolean {
+    return this.splitRunFacts().boardHasGaps;
+  }
+
+  /** Whether the header's Run details is open, remembered per viewer. */
+  runHeaderDetailsOpen = readStoredRunHeaderDetailsOpen();
+
+  /** Follows Run details' native toggle, so a key press and the bound `open` are tracked too, and remembers it. */
+  onRunHeaderDetailsToggle(event: Event): void {
+    const details = event.target as HTMLDetailsElement | null;
+    if (!details || details !== event.currentTarget) {
+      return;
+    }
+    this.runHeaderDetailsOpen = details.open;
+    try {
+      localStorage.setItem(RUN_REPORT_HEADER_STORAGE_KEY, JSON.stringify({ version: 1, detailsOpen: details.open }));
+    } catch {
+      // Storage unavailable: the choice lasts until the page reloads.
+    }
+  }
+
+  /** The rows `splitRunFacts` last split, and what it made of them. */
+  private runFactsSplit: {
+    rows: RunFactRow[];
+    primary: RunFactRow[];
+    detail: RunFactRow[];
+    readout: string;
+    boardHasGaps: boolean;
+  } | null = null;
+
+  private splitRunFacts(): { primary: RunFactRow[]; detail: RunFactRow[]; readout: string; boardHasGaps: boolean } {
+    const rows = this.selectedRunFacts;
+    let split = this.runFactsSplit;
+    if (!split || split.rows !== rows) {
+      const primaryKeys: readonly string[] = RUN_FACT_PRIMARY_KEYS;
+      const detail = rows.filter(row => !primaryKeys.includes(row.key));
+      split = {
+        rows,
+        primary: rows.filter(row => primaryKeys.includes(row.key)),
+        detail,
+        readout: runFactsReadout(detail),
+        boardHasGaps: detail.some(row => row.item.kind === 'board' && row.item.gaps.length > 0)
+      };
+      this.runFactsSplit = split;
+    }
+    return split;
+  }
+
   /** What the images say about the run: the header's run facts, limited to the chosen image details. */
   keyFiguresContext(detail: BenchmarkRunDetailDto): ImageContext {
     const rows = detail === this.selectedRunDetail
@@ -7227,12 +7551,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       buttonText: 'Delete Run',
       buttonClass: 'btn-gh btn-gh-delete',
       action: () => {
+        // Where the run's card was, so focus lands on the card that takes its place.
+        const index = this.historyView.findIndex(run => run.id === runId);
         this.benchmarkService.deleteRun(runId).subscribe({
           next: () => {
             if (this.selectedRunDetail?.id === runId) {
               this.closeRunDetail();
             }
-            this.loadHistory();
+            this.loadHistory(index >= 0 ? () => this.focusAfterHistoryDelete(index) : undefined);
             this.loadAllFootprints();
           },
           error: (err) => console.error('Failed to delete run', err)

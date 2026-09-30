@@ -107,12 +107,21 @@ describe('RunFactsComponent', () => {
     expect(text(time)).toBe('2026-09-30 13:35:24 UTC');
   });
 
-  it('reads the board figures as "18 of 18" and shows the gap warning', () => {
+  it('reads the board figures as "18 of 18", explains the board in an info tip and shows the gap warning', () => {
     const board = fact('board');
     const items = Array.from(board.querySelectorAll('.rr-fact-inline-list li'));
-    expect(items.map(text)).toEqual([
-      'Assessor 18 of /18', 'Claim verifier 16 of /16', 'Synthesis: yes · Difficulty assessment: digest (no map)'
-    ]);
+    expect(items.map(text)).toEqual(['Assessor 18 of /18', 'Claim verifier 16 of /16']);
+    // The separator trails every item but the last, so a wrapped line never starts with one.
+    expect(items.map(li => getComputedStyle(li, '::after').content)).toEqual(['"·"', 'none']);
+    expect(items.map(li => getComputedStyle(li, '::before').content)).toEqual(['none', 'none']);
+    expect(items.map(li => getComputedStyle(li).whiteSpace)).toEqual(['nowrap', 'nowrap']);
+
+    const tip = board.querySelector('dd app-info-tip') as HTMLElement;
+    expect(tip).not.toBeNull();
+    expect(tip.querySelector('button')?.getAttribute('aria-label')).toBe('About Board delivery');
+    expect(text(board.querySelector('#rr-board-note-tip')))
+      .toBe('The final synthesis sees the board; the difficulty assessment sees a digest of it without the map.');
+
     const spoken = (li: Element): string => {
       const copy = li.cloneNode(true) as HTMLElement;
       copy.querySelectorAll('[aria-hidden="true"]').forEach(hidden => hidden.remove());
@@ -139,6 +148,42 @@ describe('RunFactsComponent', () => {
       expect(name.getBoundingClientRect().height).toBeLessThan(40);
     } finally {
       header.remove();
+    }
+  });
+
+  it('flows the pairs in a wrapping flex row, not a grid', () => {
+    const style = getComputedStyle(root().querySelector('.rr-facts') as HTMLElement);
+    expect(style.display).toBe('flex');
+    expect(style.flexWrap).toBe('wrap');
+    expect(getComputedStyle(fact('model')).display).toBe('flex');
+  });
+
+  it('keeps a three-line Board pair from stretching the pair before it', () => {
+    const shell = document.createElement('div');
+    shell.style.cssText = 'width: 1800px;';
+    document.body.appendChild(shell);
+    try {
+      shell.appendChild(root());
+      const short = ROWS.filter(row => row.key === 'profile' || row.key === 'started');
+      fixture.componentRef.setInput('rows', short);
+      fixture.detectChanges();
+      const alone = fact('started').getBoundingClientRect().height;
+
+      const board = ROWS.find(row => row.key === 'board')!;
+      const tall: RunFactRow = board.item.kind === 'board'
+        ? { ...board, item: { ...board.item, gaps: ['co-assessor: Q4', 'claim verifier: Q7'] } }
+        : board;
+      fixture.componentRef.setInput('rows', [...short, tall]);
+      fixture.detectChanges();
+
+      const started = fact('started').getBoundingClientRect();
+      const boardRect = fact('board').getBoundingClientRect();
+      // Both on one line, and the Board pair is three lines tall: its list and two warnings.
+      expect(boardRect.top).toBeLessThan(started.bottom);
+      expect(boardRect.height).toBeGreaterThan(alone * 2.5);
+      expect(started.height).toBe(alone);
+    } finally {
+      shell.remove();
     }
   });
 
