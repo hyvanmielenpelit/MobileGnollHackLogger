@@ -233,6 +233,18 @@ public class BenchmarkRunAnswer
     [MaxLength(2048)]
     public string? CriticalErrorQuote { get; set; }
 
+    /// <summary>
+    /// The assessor marked the answer as not attempted: it says it could not find or verify what
+    /// the question asks. Null before scoring method 13, and on an answer not yet graded.
+    /// </summary>
+    public bool? NotAttempted { get; set; }
+
+    /// <summary>
+    /// How the critical-error flags of this answer were resolved. Null before scoring method 13,
+    /// and on an answer whose graders have not all scored.
+    /// </summary>
+    public BenchmarkCriticalErrorResolution? CriticalErrorResolution { get; set; }
+
     // --- Assessor panel ----------------------------------------------------------------------
 
     /// <summary>
@@ -261,6 +273,9 @@ public class BenchmarkRunAnswer
     public int? CoAssessmentQualityScore { get; set; }
     public int? CoAssessmentRawQualityScore { get; set; }
     public bool? CoAssessmentCriticalError { get; set; }
+
+    /// <summary>Member B's <see cref="NotAttempted"/>.</summary>
+    public bool? CoAssessmentNotAttempted { get; set; }
 
     /// <summary>
     /// Member B's full verdict as JSON: levels, critical error and its quote, quality scores,

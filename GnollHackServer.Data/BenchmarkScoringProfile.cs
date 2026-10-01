@@ -24,6 +24,11 @@ public class BenchmarkScoringProfile
 
     public int CriticalErrorCeiling { get; set; } = 25;
 
+    // Lowest quality score for an answer graded not attempted with no critical error and
+    // Accuracy level 5 or above, from scoring method 13. Null: no floor. No initializer: a profile
+    // snapshot stored without this field must deserialize as null to keep its signature.
+    public int? NotAttemptedScore { get; set; }
+
     // Quality score below which an answer is re-graded by the run's second-opinion assessor,
     // if one was selected. 0 disables the score trigger; a critical error triggers a re-grade
     // regardless. It lives on the profile rather than in configuration because it changes what

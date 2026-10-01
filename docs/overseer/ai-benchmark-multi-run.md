@@ -155,7 +155,7 @@ The group layer adds only what a replicate set makes meaningful:
 | IQR | P75 − P25, linear interpolation between order statistics | *R* < 2 |
 | Coefficient of variation | SD / mean, reported as a percentage | *R* < 2, or mean = 0 |
 | 95 % CI on the item mean | mean ± *t*(*R*−1) · SD / √*R* | *R* < 2 |
-| **Critical-error rate** | *k* / *R*, where *k* is the runs in which the assessor flagged a critical error | — |
+| **Critical-error rate** | *k* / *R*, where *k* is the runs with a critical error on the item: a **confirmed** one on a scoring-method-13 run, member A's flag on an earlier run | — |
 | Median model time | Median of the item's model-attributable times | no timings |
 
 > **Sample SD here, population SD in the suite-health table.** `BenchmarkItemStatistics.StdDev` uses
@@ -171,6 +171,17 @@ answer will swing between runs no matter which model answers it.
 **A critical-error rate strictly between 0 and 1** is the signal worth acting on. It means the same
 question sometimes does and sometimes does not trip the score ceiling — either a genuinely borderline
 answer or, more often, a rubric that does not decide the case.
+
+**What counts as a critical error depends on the scoring method.**
+
+- **Method 13 and later:** only a **confirmed** one — resolved *Agreed*, *UpheldByVerifier* or
+  *SingleAssessor* (`BenchmarkCriticalErrorResolver.IsConfirmed`). A split the claim verifier
+  overturned, or left unresolved, does not count.
+- **Method 12 and earlier:** member A's flag, the assessor's, as before. Those runs record no
+  resolution.
+
+A set spanning the boundary differs on at least two Instrument keys (the scoring method version and
+the harness version), so it is below Tier B and is never one group: no rate mixes the two definitions.
 
 ---
 

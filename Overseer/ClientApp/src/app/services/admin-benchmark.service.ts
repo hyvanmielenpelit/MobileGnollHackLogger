@@ -108,6 +108,11 @@ export interface BenchmarkScoringProfileDto {
   weightReadability: number;
   levelScoresJson: string;
   criticalErrorCeiling: number;
+  /**
+   * Lowest quality score for an answer graded not attempted with no critical error and Accuracy
+   * level 5 or above, from scoring method 13. Null: no floor.
+   */
+  notAttemptedScore?: number | null;
   /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
   secondOpinionQualityThreshold: number;
   /** Off (0), Flagged (1), FlaggedAndOutliers (2) or All (3). */
@@ -134,6 +139,11 @@ export interface CreateBenchmarkScoringProfileRequest {
   weightReadability: number;
   levelScoresJson: string;
   criticalErrorCeiling: number;
+  /**
+   * Lowest quality score for an answer graded not attempted with no critical error and Accuracy
+   * level 5 or above, from scoring method 13. Null: no floor.
+   */
+  notAttemptedScore: number | null;
   /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
   secondOpinionQualityThreshold: number;
   /** Off (0), Flagged (1), FlaggedAndOutliers (2) or All (3). */
@@ -156,6 +166,12 @@ export interface UpdateBenchmarkScoringProfileRequest {
   weightReadability: number;
   levelScoresJson: string;
   criticalErrorCeiling: number;
+  /**
+   * Lowest quality score for an answer graded not attempted with no critical error and Accuracy
+   * level 5 or above, from scoring method 13. Null: no floor. Always sent: an update that omits it
+   * clears it.
+   */
+  notAttemptedScore: number | null;
   /** Quality score below which an answer is re-graded, when the run has a second-opinion assessor. 0 disables the score trigger. */
   secondOpinionQualityThreshold: number;
   /** Off (0), Flagged (1), FlaggedAndOutliers (2) or All (3). */
@@ -992,6 +1008,15 @@ export interface BenchmarkRunAnswerDto {
   /** The claim the assessor called a critical error, quoted from the graded answer. */
   criticalErrorQuote?: string | null;
 
+  /** The assessor marked the answer not attempted. Null for an answer graded before scoring method 13. */
+  notAttempted?: boolean | null;
+
+  /** How the answer's critical-error flags were resolved. Null before scoring method 13. */
+  criticalErrorResolution?: BenchmarkCriticalErrorResolution | null;
+
+  /** Null before scoring method 13, outside the quality index, and while the answer is not yet graded. */
+  outcomeClass?: BenchmarkOutcomeClass | null;
+
   /**
    * The panel score: the mean of the two members' quality scores, set only when both scored.
    * Null on a single-assessor run, where qualityScore is the published score.
@@ -1009,6 +1034,7 @@ export interface BenchmarkRunAnswerDto {
   coAssessmentQualityScore?: number | null;
   coAssessmentRawQualityScore?: number | null;
   coAssessmentCriticalError?: boolean | null;
+  coAssessmentNotAttempted?: boolean | null;
   coAssessmentJson?: string | null;
   coAssessedByModelDisplayNameUsed?: string | null;
   coAssessedAtUtc?: string | null;
@@ -1297,7 +1323,9 @@ export interface BenchmarkRunDetailDto {
   refutedClaimAnswerCount?: number;
   /**
    * Answers whose critical-error quote the claim verifier supported against the source code/wiki.
-   * Advisory: the quality cap stands and no index moved. Absent on a run before harness 19.
+   * Advisory before scoring method 13: the quality cap stands and no index moved. From scoring
+   * method 13 a critical error only one panel member raised is overturned. Absent on a run before
+   * harness 19.
    */
   contestedCriticalErrorAnswerCount?: number | null;
   /**
@@ -1572,7 +1600,46 @@ export interface BenchmarkRunDetailDto {
   /** True when the run has a stored board record, which `getRunBoard` returns. */
   hasBoardRecord?: boolean;
 
+  /** The run's answers by outcome class and its critical errors by resolution. Null before scoring method 13. */
+  outcomeSummary?: BenchmarkRunOutcomeSummaryDto | null;
+
   answers: BenchmarkRunAnswerDto[];
+}
+
+/**
+ * How an answer's critical-error flags were resolved (scoring method 13 on). Agreed,
+ * UpheldByVerifier and SingleAssessor are confirmed and cap the score; Unresolved averages the two
+ * panel members; OverturnedByVerifier lifts the cap.
+ */
+export type BenchmarkCriticalErrorResolution =
+  'None' | 'Agreed' | 'UpheldByVerifier' | 'OverturnedByVerifier' | 'Unresolved' | 'SingleAssessor';
+
+export type BenchmarkOutcomeClass = 'Correct' | 'Partial' | 'Incorrect' | 'NotAttempted' | 'NoAnswer';
+
+/** A run's answers by outcome class and its critical errors by resolution. Question lists hold 1-based question numbers. */
+export interface BenchmarkRunOutcomeSummaryDto {
+  correctCount: number;
+  partialCount: number;
+  incorrectCount: number;
+  notAttemptedCount: number;
+  noAnswerCount: number;
+  /** Correct, partial, incorrect and not attempted together. */
+  classifiedCount: number;
+  confirmedCriticalErrorCount: number;
+  unresolvedCriticalErrorCount: number;
+  overturnedCriticalErrorCount: number;
+  /** Confirmed critical errors ÷ classified answers, a fraction, with its 95 % Wilson interval. Null when nothing is classified. */
+  criticalErrorRate: number | null;
+  criticalErrorRateLow: number | null;
+  criticalErrorRateHigh: number | null;
+  /** Correct ÷ (correct + partial + incorrect). Null when that denominator is 0. */
+  correctWhenAttempted: number | null;
+  /** Incorrect ÷ (incorrect + not attempted). Null when both are 0. */
+  wrongInsteadOfAbstaining: number | null;
+  confirmedCriticalErrorQuestions: number[];
+  unresolvedCriticalErrorQuestions: number[];
+  overturnedCriticalErrorQuestions: number[];
+  notAttemptedQuestions: number[];
 }
 
 /** The board a run was made with, served from the run's own stored board record. */

@@ -2100,7 +2100,7 @@ public class BenchmarkService
 
             if (isPanelRun)
             {
-                ComputePanelScore(answer);
+                ComputePanelScore(answer, run);
             }
 
             await db.SaveChangesAsync(CancellationToken.None);
@@ -2127,7 +2127,7 @@ public class BenchmarkService
             }
             if (isPanelRun)
             {
-                ComputePanelScore(answer);
+                ComputePanelScore(answer, run);
             }
             _logger.LogWarning("Benchmark run {RunId} answer {OrderIndex} assessment failed: {Error}",
                 run.Id, answer.OrderIndex, ex.Message);
@@ -2148,7 +2148,7 @@ public class BenchmarkService
 
         if (!gradeA && !gradeB)
         {
-            ComputePanelScore(answer);
+            ComputePanelScore(answer, run);
             await db.SaveChangesAsync(CancellationToken.None);
             return;
         }
@@ -2224,6 +2224,7 @@ public class BenchmarkService
             answer.ConcisenessLevel = res.ConcisenessLevel;
             answer.ReadabilityLevel = res.ReadabilityLevel;
             answer.CriticalError = res.CriticalError;
+            answer.NotAttempted = res.NotAttempted;
             answer.ReviewComment = res.Comment;
             answer.AssessorBoardChars = assessorBoardChars;
 
@@ -2395,7 +2396,7 @@ public class BenchmarkService
 
             var (qualityScore, rawQualityScore, _) = BenchmarkScoring.Quality(
                 res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
-                res.CriticalError, constants);
+                res.CriticalError, constants, res.NotAttempted);
 
             answer.QualityScore = qualityScore;
             answer.RawQualityScore = rawQualityScore;
@@ -2449,7 +2450,7 @@ public class BenchmarkService
 
         if (isPanelRun)
         {
-            ComputePanelScore(answer);
+            ComputePanelScore(answer, run);
         }
 
         await db.SaveChangesAsync(CancellationToken.None);
@@ -2714,7 +2715,7 @@ public class BenchmarkService
 
         var (qualityScore, rawQualityScore, _) = BenchmarkScoring.Quality(
             res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
-            res.CriticalError, constants);
+            res.CriticalError, constants, res.NotAttempted);
 
         answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
         {
@@ -2725,6 +2726,7 @@ public class BenchmarkService
             CriticalError = res.CriticalError,
             CriticalErrorQuote = BenchmarkAssessmentFailure.Truncate(res.CriticalErrorQuote, 2048),
             CriticalErrorDemoted = res.CriticalErrorDemoted,
+            NotAttempted = res.NotAttempted,
             QualityScore = qualityScore,
             RawQualityScore = rawQualityScore,
             Comment = res.Comment,
@@ -2747,6 +2749,7 @@ public class BenchmarkService
         answer.CoAssessmentQualityScore = qualityScore;
         answer.CoAssessmentRawQualityScore = rawQualityScore;
         answer.CoAssessmentCriticalError = res.CriticalError;
+        answer.CoAssessmentNotAttempted = res.NotAttempted;
         answer.CoAssessorBoardChars = boardChars;
         answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
         answer.CoAssessmentError = null;
@@ -2776,6 +2779,23 @@ public class BenchmarkService
     }
 
     /// <summary>
+    /// <see cref="ComputePanelScore(BenchmarkRunAnswer)"/> for a panel answer of <paramref name="run"/>.
+    /// Under scoring method 13 and later the critical-error flags are resolved first and the panel
+    /// score averages the resolved member scores (<see cref="BenchmarkCriticalErrorResolver.ApplyTo"/>).
+    /// </summary>
+    internal static void ComputePanelScore(BenchmarkRunAnswer answer, BenchmarkRun run)
+    {
+        if (BenchmarkCriticalErrorResolver.Applies(run))
+        {
+            BenchmarkCriticalErrorResolver.ApplyTo(answer, run, isPanelRun: true);
+        }
+        else
+        {
+            ComputePanelScore(answer);
+        }
+    }
+
+    /// <summary>
     /// Clears an answer's verdicts before it is re-executed: member A's verdict, and in a panel run
     /// member B's and the panel score, with B's status back to <c>Pending</c>. The second-opinion
     /// verdict is cleared in every run, since the new answer may not select one again. Token and
@@ -2795,6 +2815,8 @@ public class BenchmarkService
         answer.SpeedScore = null;
         answer.Score = null;
         answer.CriticalError = false;
+        answer.NotAttempted = null;
+        answer.CriticalErrorResolution = null;
         answer.ReviewComment = null;
         answer.AssessmentError = null;
         answer.AssessedByModelConfigurationId = null;
@@ -2817,6 +2839,7 @@ public class BenchmarkService
         answer.CoAssessmentQualityScore = null;
         answer.CoAssessmentRawQualityScore = null;
         answer.CoAssessmentCriticalError = null;
+        answer.CoAssessmentNotAttempted = null;
         answer.CoAssessmentJson = null;
         answer.CoAssessmentRawText = null;
         answer.CoAssessedByModelSnapshot = null;
@@ -2845,7 +2868,7 @@ public class BenchmarkService
         }
 
         var (quality, rawQuality, _) = BenchmarkScoring.Quality(
-            accuracy, completeness, conciseness, readability, record.CriticalError, constants);
+            accuracy, completeness, conciseness, readability, record.CriticalError, constants, record.NotAttempted);
 
         record.QualityScore = quality;
         record.RawQualityScore = rawQuality;
@@ -3728,6 +3751,7 @@ public class BenchmarkService
                 if (plan.IsPanel)
                 {
                     ApplyPanelClaimVerificationOutcome(answer, verifications, plan.MemberA, plan.MemberB);
+                    ComputePanelScore(answer, run);
                 }
                 else
                 {
@@ -4450,7 +4474,7 @@ public class BenchmarkService
                 answer.CompletenessLevel ?? res.CompletenessLevel,
                 answer.ConcisenessLevel ?? res.ConcisenessLevel,
                 answer.ReadabilityLevel ?? res.ReadabilityLevel,
-                res.CriticalError, constants);
+                res.CriticalError, constants, res.NotAttempted);
             validation ??= ValidateEvidenceInformed(
                 verdict.RawText, targets, answer.AccuracyLevel ?? 0, answer.CriticalError, res.AccuracyLevel, res.CriticalError);
 
@@ -5133,7 +5157,7 @@ public class BenchmarkService
             var res = verdict.Result;
             var (quality, _, _) = BenchmarkScoring.Quality(
                 res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
-                res.CriticalError, constants);
+                res.CriticalError, constants, res.NotAttempted);
 
             double deltaValue = quality - Convert.ToDouble(referenceScore, System.Globalization.CultureInfo.InvariantCulture);
             // An integer reference keeps an integer delta in the stored record.
@@ -5157,6 +5181,7 @@ public class BenchmarkService
                 disagreed,
                 originalCriticalError = referenceCritical,
                 calibrationCriticalError = res.CriticalError,
+                notAttempted = res.NotAttempted,
                 accuracyLevel = res.AccuracyLevel,
                 completenessLevel = res.CompletenessLevel,
                 concisenessLevel = res.ConcisenessLevel,
@@ -5650,7 +5675,7 @@ public class BenchmarkService
         var res = verdict.Result;
         var (trialQuality, _, _) = BenchmarkScoring.Quality(
             res.AccuracyLevel, res.CompletenessLevel, res.ConcisenessLevel, res.ReadabilityLevel,
-            res.CriticalError, constants);
+            res.CriticalError, constants, res.NotAttempted);
 
         answer.SecondOpinionQualityScore = trialQuality;
         answer.SecondOpinionCriticalError = res.CriticalError;
@@ -5667,6 +5692,7 @@ public class BenchmarkService
             readabilityLevel = res.ReadabilityLevel,
             criticalError = res.CriticalError,
             criticalErrorQuote = res.CriticalErrorQuote,
+            notAttempted = res.NotAttempted,
             qualityScore = trialQuality,
             comment = res.Comment,
             accuracyEvidence = res.AccuracyEvidence,
@@ -5964,7 +5990,7 @@ public class BenchmarkService
         var second = parseResult.Result;
         var (secondQuality, _, _) = BenchmarkScoring.Quality(
             second.AccuracyLevel, second.CompletenessLevel, second.ConcisenessLevel, second.ReadabilityLevel,
-            second.CriticalError, constants);
+            second.CriticalError, constants, second.NotAttempted);
 
         answer.SecondOpinionQualityScore = secondQuality;
         answer.SecondOpinionCriticalError = second.CriticalError;
@@ -5981,6 +6007,7 @@ public class BenchmarkService
             readabilityLevel = second.ReadabilityLevel,
             criticalError = second.CriticalError,
             criticalErrorQuote = second.CriticalErrorQuote,
+            notAttempted = second.NotAttempted,
             qualityScore = secondQuality,
             comment = second.Comment,
             accuracyEvidence = second.AccuracyEvidence,
@@ -6441,6 +6468,8 @@ public class BenchmarkService
             DurationMs = a.DurationMs,
             AssessedDifficulty = a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty),
             CriticalError = isMemberB ? record != null && (a.CoAssessmentCriticalError ?? record.CriticalError) : a.CriticalError,
+            CriticalErrorResolution = BenchmarkAssessmentPrompt.SynthesisCriticalErrorResolution(run, a),
+            NotAttempted = BenchmarkAssessmentPrompt.IsNotAttemptedOutcome(run, a),
             AccuracyEvidence = isMemberB ? record?.AccuracyEvidence : ReadEvidence(a.AssessmentEvidenceJson, "accuracy"),
             CompletenessEvidence = isMemberB ? record?.CompletenessEvidence : ReadEvidence(a.AssessmentEvidenceJson, "completeness"),
             UnverifiedClaimCount = isMemberB ? record?.UnverifiedClaims?.Count ?? 0 : a.UnverifiedClaimCount ?? 0,
@@ -7063,7 +7092,7 @@ public class BenchmarkService
 
             var (quality, rawQuality, _) = BenchmarkScoring.Quality(
                 a.AccuracyLevel.Value, a.CompletenessLevel.Value, a.ConcisenessLevel.Value, a.ReadabilityLevel.Value,
-                a.CriticalError, constants);
+                a.CriticalError, constants, a.NotAttempted == true);
 
             a.QualityScore = quality;
             a.RawQualityScore = rawQuality;
@@ -7075,14 +7104,22 @@ public class BenchmarkService
         }
 
         // Member B's scores are recomputed from its own stored levels on the same terms, and each
-        // answer's panel score from the two.
+        // answer's panel score from the two. Under scoring method 13 and later a single-assessor
+        // answer's critical-error resolution is rewritten as well.
         bool isPanelRun = BenchmarkRunFinalizer.IsPanelRun(run);
         if (isPanelRun)
         {
             foreach (var a in run.Answers)
             {
                 RecomputeCoAssessmentScores(a, constants);
-                ComputePanelScore(a);
+                ComputePanelScore(a, run);
+            }
+        }
+        else if (BenchmarkCriticalErrorResolver.Applies(run))
+        {
+            foreach (var a in run.Answers)
+            {
+                BenchmarkCriticalErrorResolver.ApplyTo(a, run, isPanelRun: false);
             }
         }
 
@@ -8270,25 +8307,13 @@ public class BenchmarkService
     /// verification per submitted claim, in submission order, with the submitted text echoed back —
     /// and by verbatim text as a fallback, so a reordered response is still read correctly, then as
     /// the same item (<see cref="SameItem"/>), which is how a panel member's quote finds the item it
-    /// was merged into.
+    /// was merged into. The matching is
+    /// <see cref="BenchmarkCriticalErrorResolver.QuoteVerdict(IReadOnlyList{BenchmarkClaimVerification}, string)"/>.
     /// </summary>
     internal static bool CriticalErrorQuoteWasSupported(
         IReadOnlyList<BenchmarkClaimVerification>? verifications,
         string? criticalErrorQuote)
-    {
-        if (verifications == null || verifications.Count == 0) return false;
-        if (string.IsNullOrWhiteSpace(criticalErrorQuote)) return false;
-
-        string quote = criticalErrorQuote.Trim();
-
-        var match = verifications.FirstOrDefault(
-            v => v.ClaimIndex == 0 && string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal));
-        match ??= verifications.FirstOrDefault(
-            v => string.Equals(v.Claim?.Trim(), quote, StringComparison.Ordinal));
-        match ??= verifications.FirstOrDefault(v => SameItem(v.Claim, quote));
-
-        return match != null && match.EffectiveVerdict == BenchmarkClaimVerdict.Supported;
-    }
+        => BenchmarkCriticalErrorResolver.QuoteVerdict(verifications, criticalErrorQuote) == BenchmarkClaimVerdict.Supported;
 
     /// <summary>
     /// <see cref="CriticalErrorQuoteWasSupported(IReadOnlyList{BenchmarkClaimVerification}, string)"/>

@@ -130,6 +130,8 @@ public enum BenchmarkAnswerFlags
     // never that it is overturned — a refutation and a support are both advisory evidence, and a
     // human reads the cited code path before anything rests on either. A second-opinion trigger is
     // already implied by CriticalError itself, so this adds no trigger of its own.
+    // From scoring method 13 the flag itself is still advisory, but a supported quote of a critical
+    // error only one panel member raised overturns it (BenchmarkCriticalErrorResolver).
     ContestedCriticalError = 2048,
 
     // The claim verifier contested an ACCURACY deduction against the source code and wiki, for either
@@ -156,6 +158,35 @@ public enum BenchmarkAnswerFlags
     // and the level may well be deserved. Nothing here changes a score; it routes the verdict to a
     // second reader. See BenchmarkVerdictConsistency.IsDimensionOutlier.
     DimensionOutlier = 8192
+}
+
+/// <summary>
+/// How an answer's critical-error flags were resolved under scoring method 13 and later. Null on
+/// every answer of an earlier method. Agreed, UpheldByVerifier and SingleAssessor are confirmed
+/// critical errors; Unresolved keeps the two members' scores averaged; OverturnedByVerifier lifts
+/// the cap.
+/// </summary>
+public enum BenchmarkCriticalErrorResolution
+{
+    // Neither grader flagged a critical error.
+    None = 0,
+
+    // Both panel members flagged a critical error.
+    Agreed = 1,
+
+    // One panel member flagged it and the claim verifier ruled the quoted sentence Refuted: the
+    // cap applies to both members' scores.
+    UpheldByVerifier = 2,
+
+    // One panel member flagged it and the claim verifier ruled the quoted sentence Supported: the
+    // flagging member's pre-cap score is used.
+    OverturnedByVerifier = 3,
+
+    // One panel member flagged it and the verifier gave no usable ruling on the quote.
+    Unresolved = 4,
+
+    // The only assessor of a single-assessor run flagged it.
+    SingleAssessor = 5
 }
 
 /// <summary>

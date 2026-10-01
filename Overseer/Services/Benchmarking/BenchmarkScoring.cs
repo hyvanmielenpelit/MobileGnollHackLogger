@@ -16,6 +16,14 @@ public record BenchmarkScoringConstants
     public int CriticalErrorCeiling { get; init; } = 25;
 
     /// <summary>
+    /// The raw quality an answer the assessor marked not attempted is raised to, when it carries no
+    /// critical error and its Accuracy level is at least 5. Null disables the floor. Applied by
+    /// <see cref="BenchmarkScoring.Quality"/> before the raw score is rounded, and never together
+    /// with the critical-error cap.
+    /// </summary>
+    public int? NotAttemptedScore { get; init; } = 50;
+
+    /// <summary>
     /// Quality score below which an answer is re-graded by the run's second-opinion assessor,
     /// when one was selected in the start dialog. 0 disables the score trigger; a critical
     /// error triggers a re-grade regardless. Carried on the profile, and therefore snapshotted
@@ -92,7 +100,8 @@ public static class BenchmarkScoring
     /// <summary>
     /// The constants a run was actually scored with, read back from the profile snapshot the run
     /// stored at start time. Falls back to the defaults for a run that carries no snapshot, and
-    /// for any field the snapshot omits.
+    /// for any field the snapshot omits, except <see cref="BenchmarkScoringConstants.NotAttemptedScore"/>:
+    /// a snapshot without it predates the floor, so it reads null.
     ///
     /// One reader, deliberately: the snapshot is a storage format, and the report, the run-detail
     /// projection and the admin diagnostics all need the same fields out of it. A second parser
@@ -141,6 +150,15 @@ public static class BenchmarkScoring
                 ? bl.GetBoolean()
                 : defaults.SecondOpinionBlind;
 
+            int ceiling = root.TryGetProperty("CriticalErrorCeiling", out var ce)
+                          && ce.ValueKind == JsonValueKind.Number && ce.TryGetInt32(out int cev)
+                ? cev
+                : defaults.CriticalErrorCeiling;
+            int? notAttemptedScore = root.TryGetProperty("NotAttemptedScore", out var na)
+                                     && na.ValueKind == JsonValueKind.Number && na.TryGetInt32(out int nav)
+                ? nav
+                : null;
+
             return defaults with
             {
                 SpeedTargetMs = target,
@@ -149,7 +167,9 @@ public static class BenchmarkScoring
                 SecondOpinionQualityThreshold = secondOpinion,
                 SecondOpinionMode = mode,
                 SecondOpinionOutlierDeltaPoints = outlierDelta,
-                SecondOpinionBlind = secondOpinionBlind
+                SecondOpinionBlind = secondOpinionBlind,
+                CriticalErrorCeiling = ceiling,
+                NotAttemptedScore = notAttemptedScore
             };
         }
         catch (JsonException)
@@ -171,13 +191,20 @@ public static class BenchmarkScoring
         return table[clampedLevel];
     }
 
+    /// <summary>
+    /// The weighted geometric mean of the four level scores. <c>RawScore</c> is the score before the
+    /// critical-error cap and after the not-attempted floor
+    /// (<see cref="BenchmarkScoringConstants.NotAttemptedScore"/>), which applies only when
+    /// <paramref name="notAttempted"/> is set, there is no critical error and Accuracy is at least 5.
+    /// </summary>
     public static (int Score, int RawScore, bool CapApplied) Quality(
         int accuracyLevel,
         int completenessLevel,
         int concisenessLevel,
         int readabilityLevel,
         bool criticalError,
-        BenchmarkScoringConstants? constants = null)
+        BenchmarkScoringConstants? constants = null,
+        bool notAttempted = false)
     {
         var cfg = constants ?? BenchmarkScoringConstants.Default;
 
@@ -190,6 +217,15 @@ public static class BenchmarkScoring
                             Math.Pow(c, cfg.WeightCompleteness) *
                             Math.Pow(cn, cfg.WeightConciseness) *
                             Math.Pow(r, cfg.WeightReadability);
+
+        if (notAttempted
+            && !criticalError
+            && accuracyLevel >= 5
+            && cfg.NotAttemptedScore is int floor
+            && floor > rawQuality)
+        {
+            rawQuality = floor;
+        }
 
         rawQuality = Math.Clamp(rawQuality, 1.0, 100.0);
         int rawScore = (int)Math.Round(rawQuality, MidpointRounding.AwayFromZero);

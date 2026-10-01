@@ -599,4 +599,117 @@ public class BenchmarkScoringTests
 
         Assert.Null(BenchmarkScoring.IntraclassCorrelationAbsolute(constant));
     }
+
+    // --- The not-attempted floor ---
+
+    [Fact]
+    public void NotAttemptedScore_DefaultsToFifty()
+    {
+        Assert.Equal(50, BenchmarkScoringConstants.Default.NotAttemptedScore);
+    }
+
+    [Fact]
+    public void Quality_NotAttempted_RaisesTheRawQualityToTheFloor()
+    {
+        var config = BenchmarkScoringConstants.Default;
+
+        // Accuracy 5 (87) with the other three at level 0 (1): 87^0.55 ≈ 11.7.
+        var (unfloored, unflooredRaw, _) = BenchmarkScoring.Quality(5, 0, 0, 0, false, config);
+        Assert.Equal(12, unfloored);
+        Assert.Equal(12, unflooredRaw);
+
+        var (quality, raw, capApplied) = BenchmarkScoring.Quality(5, 0, 0, 0, false, config, notAttempted: true);
+        Assert.Equal(50, quality);
+        Assert.Equal(50, raw);
+        Assert.False(capApplied);
+
+        var (custom, customRaw, _) = BenchmarkScoring.Quality(
+            5, 0, 0, 0, false, config with { NotAttemptedScore = 40 }, notAttempted: true);
+        Assert.Equal(40, custom);
+        Assert.Equal(40, customRaw);
+    }
+
+    [Fact]
+    public void Quality_NotAttempted_IsNotFlooredWithACriticalError()
+    {
+        var config = BenchmarkScoringConstants.Default;
+
+        var (quality, raw, capApplied) = BenchmarkScoring.Quality(5, 0, 0, 0, true, config, notAttempted: true);
+
+        Assert.Equal(12, quality);
+        Assert.Equal(12, raw);
+        Assert.False(capApplied);
+    }
+
+    [Fact]
+    public void Quality_NotAttempted_IsNotFlooredBelowAccuracyFive()
+    {
+        var config = BenchmarkScoringConstants.Default;
+
+        var expected = BenchmarkScoring.Quality(4, 0, 0, 0, false, config);
+        var actual = BenchmarkScoring.Quality(4, 0, 0, 0, false, config, notAttempted: true);
+
+        Assert.Equal(expected, actual);
+        Assert.True(actual.Score < 50);
+    }
+
+    [Fact]
+    public void Quality_NotAttempted_IsNotFlooredWithoutAProfileValue()
+    {
+        var config = BenchmarkScoringConstants.Default with { NotAttemptedScore = null };
+
+        var (quality, raw, _) = BenchmarkScoring.Quality(5, 0, 0, 0, false, config, notAttempted: true);
+
+        Assert.Equal(12, quality);
+        Assert.Equal(12, raw);
+    }
+
+    [Fact]
+    public void Quality_NotAttempted_LeavesAScoreAlreadyAboveTheFloor()
+    {
+        var config = BenchmarkScoringConstants.Default;
+
+        var expected = BenchmarkScoring.Quality(5, 4, 6, 5, false, config);
+        var actual = BenchmarkScoring.Quality(5, 4, 6, 5, false, config, notAttempted: true);
+
+        Assert.True(expected.Score > 50);
+        Assert.Equal(expected, actual);
+    }
+
+    // --- ConstantsFromSnapshot ---
+
+    [Fact]
+    public void ConstantsFromSnapshot_ReadsTheCeilingAndTheNotAttemptedScore()
+    {
+        var constants = BenchmarkScoring.ConstantsFromSnapshot("{\"CriticalErrorCeiling\":30,\"NotAttemptedScore\":45}");
+
+        Assert.Equal(30, constants.CriticalErrorCeiling);
+        Assert.Equal(45, constants.NotAttemptedScore);
+    }
+
+    [Fact]
+    public void ConstantsFromSnapshot_WithoutTheFields_DefaultsTheCeiling_AndHasNoFloor()
+    {
+        var constants = BenchmarkScoring.ConstantsFromSnapshot("{\"SpeedTargetMs\":2000}");
+
+        Assert.Equal(25, constants.CriticalErrorCeiling);
+        Assert.Null(constants.NotAttemptedScore);
+    }
+
+    [Fact]
+    public void ConstantsFromSnapshot_AnExplicitNullNotAttemptedScore_HasNoFloor()
+    {
+        var constants = BenchmarkScoring.ConstantsFromSnapshot("{\"CriticalErrorCeiling\":25,\"NotAttemptedScore\":null}");
+
+        Assert.Null(constants.NotAttemptedScore);
+    }
+
+    [Fact]
+    public void ConstantsFromSnapshot_WithoutASnapshot_IsTheDefaults()
+    {
+        var constants = BenchmarkScoring.ConstantsFromSnapshot(null);
+
+        Assert.Equal(25, constants.CriticalErrorCeiling);
+        Assert.Equal(50, constants.NotAttemptedScore);
+    }
 }

@@ -32,6 +32,13 @@ public class BenchmarkPerQuestionAssessmentResult
     [JsonPropertyName("criticalErrorQuote")]
     public string? CriticalErrorQuote { get; set; }
 
+    /// <summary>
+    /// The answer gives no value, outcome or recommendation and says it could not find or verify
+    /// what the question asks. Changes none of the four levels; false when the field is absent.
+    /// </summary>
+    [JsonPropertyName("notAttempted")]
+    public bool NotAttempted { get; set; }
+
     /// <summary>The rubric point behind the accuracy deduction, or the assessor's own basis.</summary>
     [JsonPropertyName("accuracyEvidence")]
     public string? AccuracyEvidence { get; set; }
@@ -327,6 +334,19 @@ public static class BenchmarkAssessmentParser
                 }
             }
 
+            bool notAttempted = false;
+            if (root.TryGetProperty("notAttempted", out var naProp) || root.TryGetProperty("not_attempted", out naProp))
+            {
+                if (naProp.ValueKind == JsonValueKind.True || naProp.ValueKind == JsonValueKind.False)
+                {
+                    notAttempted = naProp.GetBoolean();
+                }
+                else if (naProp.ValueKind == JsonValueKind.String && bool.TryParse(naProp.GetString(), out var naBool))
+                {
+                    notAttempted = naBool;
+                }
+            }
+
             string? comment = null;
             if (root.TryGetProperty("comment", out var commentProp) && commentProp.ValueKind == JsonValueKind.String)
             {
@@ -425,6 +445,7 @@ public static class BenchmarkAssessmentParser
                 ReadabilityLevel = Math.Clamp(readabilityLevel, 0, 6),
                 CriticalError = criticalError,
                 CriticalErrorQuote = criticalErrorQuote,
+                NotAttempted = notAttempted,
                 AccuracyEvidence = accuracyEvidence,
                 CompletenessEvidence = completenessEvidence,
                 ReadabilityEvidence = readabilityEvidence,

@@ -5568,4 +5568,347 @@ public class BenchmarkReportBuilderTests
             }
         }
     }
+
+    // --- Critical-error resolution and outcomes, scoring method 13 ----------------------------------
+
+    private const string Method13ProfileSnapshot =
+        "{\"SpeedTargetMs\":15000,\"SpeedDecayK\":20.0,\"SpeedDifficultyScaling\":1.0," +
+        "\"SecondOpinionQualityThreshold\":50,\"CriticalErrorCeiling\":25,\"NotAttemptedScore\":50}";
+
+    private const string Method13QuoteA = "Praying at 1 HP is always safe.";
+    private const string Method13QuoteB = "Elbereth scares every minotaur.";
+
+    private const string Method13QualityFormula = "- **Quality Score:** $Quality = A^{0.55} \\cdot C^{0.25} \\cdot Cn^{0.10} \\cdot R^{0.10}$ ";
+
+    private const string FloorLabel = "*(NOT ATTEMPTED — floor of 50 applied)*";
+
+    /// <summary>Member A's verdict at the given levels: its quote is <see cref="Method13QuoteA"/> when it flags.</summary>
+    private static BenchmarkRunAnswer Method13Answer(
+        int orderIndex,
+        int score,
+        int rawScore,
+        (int A, int C, int Cn, int R) levels,
+        bool criticalError = false,
+        bool notAttempted = false)
+    {
+        var answer = ScoredAnswer(orderIndex, BenchmarkDifficulty.Intermediate, 50, score);
+        answer.RawQualityScore = rawScore;
+        answer.AccuracyLevel = levels.A;
+        answer.CompletenessLevel = levels.C;
+        answer.ConcisenessLevel = levels.Cn;
+        answer.ReadabilityLevel = levels.R;
+        answer.CriticalError = criticalError;
+        answer.CriticalErrorQuote = criticalError ? Method13QuoteA : null;
+        answer.NotAttempted = notAttempted;
+        return answer;
+    }
+
+    /// <summary>Member B's verdict, in its columns and its JSON record: its quote is <see cref="Method13QuoteB"/> when it flags.</summary>
+    private static BenchmarkRunAnswer WithMemberB(
+        BenchmarkRunAnswer answer,
+        int score,
+        int rawScore,
+        (int A, int C, int Cn, int R) levels,
+        bool criticalError = false,
+        bool notAttempted = false)
+    {
+        answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+        answer.CoAssessmentQualityScore = score;
+        answer.CoAssessmentRawQualityScore = rawScore;
+        answer.CoAssessmentCriticalError = criticalError;
+        answer.CoAssessmentNotAttempted = notAttempted;
+        answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+        {
+            AccuracyLevel = levels.A,
+            CompletenessLevel = levels.C,
+            ConcisenessLevel = levels.Cn,
+            ReadabilityLevel = levels.R,
+            CriticalError = criticalError,
+            CriticalErrorQuote = criticalError ? Method13QuoteB : null,
+            NotAttempted = notAttempted,
+            QualityScore = score,
+            RawQualityScore = rawScore
+        }.Serialize();
+        return answer;
+    }
+
+    /// <summary>One verifier item on <paramref name="quote"/>, raised by <paramref name="member"/>.</summary>
+    private static string QuoteVerificationJson(string quote, BenchmarkClaimVerdict verdict, string member)
+        => JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, quote, verdict, "src/pray.c:120", "The source decides it.") { RaisedBy = new[] { member } }
+        });
+
+    /// <summary>
+    /// A finalized scoring method 13 run on equally difficult questions, with the profile's ceiling 25
+    /// and not-attempted floor 50; a panel run when <paramref name="panel"/>.
+    /// </summary>
+    private static BenchmarkRun Method13Run(bool panel, params BenchmarkRunAnswer[] answers)
+    {
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, answers);
+        run.HarnessVersion = "40";
+        run.ScoringMethodVersion = BenchmarkCriticalErrorResolver.FirstScoringMethod;
+        run.ScoringProfileSnapshotJson = Method13ProfileSnapshot;
+        if (panel)
+        {
+            run.CoAssessorModelConfigurationId = 9;
+            run.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-judge", displayName: "Claude Judge");
+        }
+
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+        return run;
+    }
+
+    /// <summary>
+    /// Six panel answers, one per outcome: Q1 correct; Q2 flagged by both members (agreed); Q3 flagged
+    /// by member A and refuted (upheld); Q4 flagged by member A and supported (overturned); Q5 flagged
+    /// by member B with no verifier item (unresolved); Q6 marked not attempted by both, the floor
+    /// lifting levels 5/0/6/6 (29) to 50.
+    /// </summary>
+    private static BenchmarkRun Method13PanelRun()
+    {
+        var five = (5, 5, 5, 5);
+        var floored = (5, 0, 6, 6);
+
+        var q3 = WithMemberB(Method13Answer(3, 25, 85, five, criticalError: true), 70, 70, five);
+        q3.ClaimVerificationJson = QuoteVerificationJson(Method13QuoteA, BenchmarkClaimVerdict.Refuted, "A");
+        var q4 = WithMemberB(Method13Answer(4, 25, 90, five, criticalError: true), 80, 80, five);
+        q4.ClaimVerificationJson = QuoteVerificationJson(Method13QuoteA, BenchmarkClaimVerdict.Supported, "A");
+
+        return Method13Run(
+            panel: true,
+            WithMemberB(Method13Answer(1, 90, 90, five), 88, 88, five),
+            WithMemberB(Method13Answer(2, 25, 80, five, criticalError: true), 25, 75, five, criticalError: true),
+            q3,
+            q4,
+            WithMemberB(Method13Answer(5, 80, 80, five), 25, 70, five, criticalError: true),
+            WithMemberB(Method13Answer(6, 50, 50, floored, notAttempted: true), 50, 50, floored, notAttempted: true));
+    }
+
+    [Fact]
+    public void Method13PanelRun_CriticalErrorsLine_NamesConfirmedResolutions_TheRateAndTheSplits()
+    {
+        var run = Method13PanelRun();
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // Confirmed: Q2 (agreed) and Q3 (upheld), 2 of the 6 classified answers; Wilson 9.7–70.0 %.
+        Assert.Contains(
+            "- **Critical Errors:** 2 confirmed (Q2, both panel members; Q3, upheld by the claim verifier) · rate 33% (95% CI 10–70%, 2 of 6) · 1 split(s) unresolved, averaged (Q5) · 1 overturned by the claim verifier (Q4)" + Environment.NewLine,
+            report);
+        Assert.DoesNotContain("applied (question(s)", report);
+        Assert.Contains("| Critical errors | 2 confirmed (Q2, Q3); 1 split(s) unresolved; 1 overturned by the claim verifier |", AtAGlanceOf(report));
+        Assert.Contains("The **Critical Errors** count under Results Summary is the number to read", report);
+    }
+
+    [Fact]
+    public void Method13PanelRun_OutcomesLine_FollowsTheCriticalErrorsLine()
+    {
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Method13PanelRun());
+
+        // Correct Q1; partial Q4 and Q5 (flagged, not confirmed); incorrect Q2 and Q3; not attempted Q6.
+        //   correct when attempted 1 of 5; wrong instead of abstaining 2 of (2 + 1).
+        const string outcomes = "- **Outcomes:** 1 correct, 2 partial, 2 incorrect, 1 not attempted, 0 without an answer · correct when attempted 20% (1 of 5) · wrong instead of abstaining 67% (2 of 3)";
+        Assert.Contains(outcomes + Environment.NewLine, report);
+
+        int criticalErrors = report.IndexOf("- **Critical Errors:**", StringComparison.Ordinal);
+        int outcomesAt = report.IndexOf(outcomes, StringComparison.Ordinal);
+        int speed = report.IndexOf("## 7. Final Indices", StringComparison.Ordinal);
+        Assert.True(criticalErrors >= 0 && criticalErrors < outcomesAt && outcomesAt < speed);
+    }
+
+    [Fact]
+    public void Method13PanelRun_PerQuestionLabels_NameTheResolution_AndTheFloor()
+    {
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Method13PanelRun());
+
+        Assert.Contains("> - **Quality Score:** 25 / 100 (raw: 80) *(CRITICAL ERROR CAP APPLIED — confirmed by both panel members)*", report);
+        Assert.Contains("> - **Panel Score:** 25 (mean of A and B) — critical error confirmed by both panel members", report);
+        Assert.Contains("> - **Quality Score:** 25 / 100 (raw: 85) *(CRITICAL ERROR CAP APPLIED — upheld by the claim verifier)*", report);
+        Assert.Contains("> - **Panel Score:** 25 (mean of A and B) — critical error upheld by the claim verifier: member B counted at most 25", report);
+        Assert.Contains("> - **Quality Score:** 25 / 100 (raw: 90) *(CRITICAL ERROR OVERTURNED by the claim verifier — the panel score uses the pre-cap score)*", report);
+        Assert.Contains("> - **Panel Score:** 85 (mean of A and B) — critical error overturned by the claim verifier: member A counted at its pre-cap score", report);
+        Assert.Contains("> - **Panel Score:** 52.5 (mean of A and B) — critical-error split unresolved: both members averaged as graded", report);
+
+        // Q6: both members' verdicts were lifted by the floor.
+        Assert.Contains("> - **Quality Score:** 50 / 100 " + FloorLabel, report);
+        Assert.Contains("critical error no " + FloorLabel, report);
+        Assert.Equal(2, Regex.Matches(report, Regex.Escape(FloorLabel)).Count);
+        Assert.DoesNotContain("*(CRITICAL ERROR CAP APPLIED)*", report);
+    }
+
+    [Fact]
+    public void Method13PanelRun_MethodText_StatesTheResolutionRule_WithTheProfilesCeilingAndFloor()
+    {
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(Method13PanelRun());
+
+        Assert.Contains(
+            Method13QualityFormula + "(raised to at least 50 when the grader marks the answer not attempted, raises no critical error and gives Accuracy 5 or above; then capped at 25 if criticalError is true)."
+            + " In the panel score a critical error both members flag stands; one only one member flags is settled by the claim verifier's verdict on that member's quote: refuted upholds it and the other member counts at most 25, supported overturns it and the flagging member counts at its pre-cap score, and otherwise both members are averaged as graded." + Environment.NewLine,
+            report);
+        Assert.DoesNotContain("(capped at 25 if criticalError is true)", report);
+        Assert.DoesNotContain("Critical-error resolution sensitivity", report);
+    }
+
+    /// <summary>
+    /// Four single-assessor answers: Q1 correct; Q2 a critical error the assessor raised; Q3 not
+    /// attempted with the floor lifting 29 to 50; Q4 not attempted at 87, where the floor does not bind.
+    /// </summary>
+    private static BenchmarkRun Method13SingleAssessorRun()
+        => Method13Run(
+            panel: false,
+            Method13Answer(1, 87, 87, (5, 5, 5, 5)),
+            Method13Answer(2, 25, 87, (5, 5, 5, 5), criticalError: true),
+            Method13Answer(3, 50, 50, (5, 0, 6, 6), notAttempted: true),
+            Method13Answer(4, 87, 87, (5, 5, 5, 5), notAttempted: true));
+
+    [Fact]
+    public void Method13SingleAssessorRun_PrintsTheNewLines_AndCountsTheCapOnTheConfirmedError()
+    {
+        var run = Method13SingleAssessorRun();
+        Assert.Equal(BenchmarkCriticalErrorResolution.SingleAssessor, run.Answers.Single(a => a.OrderIndex == 2).CriticalErrorResolution);
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // 1 of 4 classified; Wilson 4.6–69.9 %.
+        Assert.Contains("- **Critical Errors:** 1 confirmed (Q2, assessor) · rate 25% (95% CI 5–70%, 1 of 4)" + Environment.NewLine, report);
+        Assert.Contains("- **Outcomes:** 1 correct, 0 partial, 1 incorrect, 2 not attempted, 0 without an answer · correct when attempted 50% (1 of 2) · wrong instead of abstaining 33% (1 of 3)" + Environment.NewLine, report);
+        Assert.Contains("| Critical errors | 1 confirmed (Q2) |", AtAGlanceOf(report));
+
+        Assert.Contains("> - **Quality Score:** 25 / 100 (raw: 87) *(CRITICAL ERROR CAP APPLIED — confirmed by the assessor)*", report);
+        Assert.Contains("> - **Quality Score:** 50 / 100 " + FloorLabel, report);
+        Assert.Single(Regex.Matches(report, Regex.Escape(FloorLabel)));
+
+        Assert.Contains(
+            Method13QualityFormula + "(raised to at least 50 when the grader marks the answer not attempted, raises no critical error and gives Accuracy 5 or above; then capped at 25 if criticalError is true)." + Environment.NewLine,
+            report);
+        Assert.DoesNotContain("In the panel score", report);
+    }
+
+    [Fact]
+    public void Method13Run_WithoutAFloorInItsProfile_SaysSo_AndLabelsNoFloor()
+    {
+        var run = Method13SingleAssessorRun();
+        run.ScoringProfileSnapshotJson = StandardProfileSnapshot;
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains(Method13QualityFormula + "(no not-attempted floor in this profile; then capped at 25 if criticalError is true).", report);
+        Assert.DoesNotContain(FloorLabel, report);
+    }
+
+    [Fact]
+    public void Method12Runs_KeepTheirCriticalErrorsLine_AndMethodText()
+    {
+        var single = ScoredAnswer(2, BenchmarkDifficulty.Intermediate, 50, 25);
+        single.RawQualityScore = 87;
+        single.CriticalError = true;
+        single.NotAttempted = true;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, ScoredAnswer(1, BenchmarkDifficulty.Intermediate, 50, 87), single);
+        run.ScoringMethodVersion = 12;
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("- **Critical Errors:** 1 applied (question(s) 2)", report);
+        Assert.Contains("> - **Quality Score:** 25 / 100 (raw: 87) *(CRITICAL ERROR CAP APPLIED)*", report);
+        Assert.Contains("- **Quality Score:** $Quality = A^{0.55} \\cdot C^{0.25} \\cdot Cn^{0.10} \\cdot R^{0.10}$ (capped at 25 if criticalError is true)" + Environment.NewLine, report);
+        Assert.DoesNotContain("- **Outcomes:**", report);
+        Assert.DoesNotContain("1 confirmed", report);
+        Assert.DoesNotContain("NOT ATTEMPTED", report);
+        Assert.DoesNotContain("Critical-error resolution sensitivity", report);
+    }
+
+    // --- The method 13 resolution sensitivity on a method 12 panel run --------------------------------
+
+    /// <summary>
+    /// <see cref="PanelReportRun"/> (method 12) with three one-member critical errors, published as
+    /// graded: Q1 member A at 25 (raw 70) beside B's 80, no verifier item (panel 52.5); Q2 member A at
+    /// 25 (raw 60) beside B's 90, the quote refuted (panel 57.5); Q5 member B at 25 (raw 60) beside A's
+    /// 50, the quote supported (panel 37.5).
+    /// </summary>
+    private static BenchmarkRun Method12PanelRunWithSplits()
+    {
+        var run = PanelReportRun();
+
+        var q1 = run.Answers.Single(a => a.OrderIndex == 1);
+        q1.QualityScore = 25;
+        q1.RawQualityScore = 70;
+        q1.CriticalError = true;
+        q1.CriticalErrorQuote = "Some sentence no verifier item matches.";
+        q1.PanelQualityScore = 52.5;
+
+        var q2 = run.Answers.Single(a => a.OrderIndex == 2);
+        q2.QualityScore = 25;
+        q2.RawQualityScore = 60;
+        q2.CriticalError = true;
+        q2.CriticalErrorQuote = Method13QuoteA;
+        q2.ClaimVerificationJson = QuoteVerificationJson(Method13QuoteA, BenchmarkClaimVerdict.Refuted, "A");
+        q2.PanelQualityScore = 57.5;
+
+        var q5 = run.Answers.Single(a => a.OrderIndex == 5);
+        q5.CoAssessmentQualityScore = 25;
+        q5.CoAssessmentRawQualityScore = 60;
+        q5.CoAssessmentCriticalError = true;
+        EditMemberB(q5, r =>
+        {
+            r.CriticalError = true;
+            r.CriticalErrorQuote = Method13QuoteB;
+            r.QualityScore = 25;
+            r.RawQualityScore = 60;
+        });
+        q5.ClaimVerificationJson = QuoteVerificationJson(Method13QuoteB, BenchmarkClaimVerdict.Supported, "B");
+        q5.PanelQualityScore = 37.5;
+
+        return run;
+    }
+
+    [Fact]
+    public void Method12PanelRun_PrintsTheMethod13ResolutionSensitivity_InSection2AndSection7()
+    {
+        var run = Method12PanelRunWithSplits();
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // Q1 stays 52.5; Q2 upheld: (25 + min(90, 25)) / 2 = 25; Q3 82 and Q4 89 unflagged; Q5
+        // overturned: (50 + 60) / 2 = 55. Equal weights: (52.5 + 25 + 82 + 89 + 55) / 5 = 60.7, so 61.
+        const string body = "61 / 100 — Intelligence Index recomputed with each one-member critical-error split settled by the claim verifier's verdict on the flagging member's quote: upheld by the claim verifier on Q2 (the other member counted at most 25); overturned by the claim verifier on Q5 (the flagging member counted at its pre-cap score); 1 split(s) stay averaged (Q1); advisory, changes no score.";
+        Assert.Contains("- **Critical-error resolution sensitivity (scoring method 13 rule):** " + body + Environment.NewLine, report);
+        Assert.Contains("### Critical-error resolution sensitivity (scoring method 13 rule): " + body + Environment.NewLine, report);
+
+        int notComputed = report.IndexOf("- **Sensitivity figures:** not computed for a panel run.", StringComparison.Ordinal);
+        int line = report.IndexOf("- **Critical-error resolution sensitivity", StringComparison.Ordinal);
+        int finalIndices = report.IndexOf("## 7. Final Indices", StringComparison.Ordinal);
+        Assert.True(notComputed >= 0 && notComputed < line && line < finalIndices);
+        Assert.DoesNotContain("Critical-error resolution sensitivity", AtAGlanceOf(report));
+
+        // Advisory: no stored value moved.
+        Assert.Equal(new double?[] { 52.5, 57.5, 82, 89, 37.5 }, run.Answers.OrderBy(a => a.OrderIndex).Select(a => a.PanelQualityScore));
+        Assert.All(run.Answers, a => Assert.Null(a.CriticalErrorResolution));
+
+        // The method 12 lines are unchanged.
+        Assert.Contains("- **Quality Score:** $Quality = A^{0.55} \\cdot C^{0.25} \\cdot Cn^{0.10} \\cdot R^{0.10}$ (capped at 25 if criticalError is true)" + Environment.NewLine, report);
+        Assert.DoesNotContain("- **Outcomes:**", report);
+    }
+
+    [Fact]
+    public void Method12PanelRun_PrintsNoResolutionSensitivity_WhenTheVerifierSettlesNoSplit()
+    {
+        // Only Q1's split, with no verifier item: it would stay averaged, so nothing would change.
+        var run = Method12PanelRunWithSplits();
+        foreach (var answer in run.Answers.Where(a => a.OrderIndex is 2 or 5))
+        {
+            answer.ClaimVerificationJson = null;
+        }
+
+        Assert.DoesNotContain("Critical-error resolution sensitivity", BenchmarkReportBuilder.BuildMarkdownReport(run));
+        Assert.DoesNotContain("Critical-error resolution sensitivity", BenchmarkReportBuilder.BuildMarkdownReport(PanelReportRun()));
+    }
+
+    [Fact]
+    public void Method13PanelRun_PrintsNoResolutionSensitivity()
+    {
+        var run = Method12PanelRunWithSplits();
+        run.ScoringMethodVersion = BenchmarkCriticalErrorResolver.FirstScoringMethod;
+
+        Assert.DoesNotContain("Critical-error resolution sensitivity", BenchmarkReportBuilder.BuildMarkdownReport(run));
+    }
 }

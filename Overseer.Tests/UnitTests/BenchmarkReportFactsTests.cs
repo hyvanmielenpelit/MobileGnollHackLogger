@@ -1222,6 +1222,43 @@ public class BenchmarkReportFactsTests
         Assert.Equal(groupSecond.CompletedAtUtc, group.LastRunUtc);
     }
 
+    [Fact]
+    public void ErrorsCritical_OnAScoringMethod13Run_CountsConfirmedCriticalErrorsOnly()
+    {
+        // Q1 both members flagged (agreed); Q2 member A flagged and the verifier overturned it; Q3
+        // member B flagged and the split stayed unresolved.
+        var subject = AsPanelRun(
+            Run(1, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 80), new AnswerSpec(12, 2, 1, 60), new AnswerSpec(13, 3, 1, 40)),
+            accuracyLevel: 5, completenessLevel: 5, concisenessLevel: 5, readabilityLevel: 5);
+        subject.ScoringMethodVersion = BenchmarkCriticalErrorResolver.FirstScoringMethod;
+        var q1 = subject.Answers.Single(a => a.OrderIndex == 1);
+        q1.CriticalError = true;
+        q1.CoAssessmentCriticalError = true;
+        q1.CriticalErrorResolution = BenchmarkCriticalErrorResolution.Agreed;
+        var q2 = subject.Answers.Single(a => a.OrderIndex == 2);
+        q2.CriticalError = true;
+        q2.CriticalErrorResolution = BenchmarkCriticalErrorResolution.OverturnedByVerifier;
+        var q3 = subject.Answers.Single(a => a.OrderIndex == 3);
+        q3.CoAssessmentCriticalError = true;
+        q3.CriticalErrorResolution = BenchmarkCriticalErrorResolution.Unresolved;
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 60));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", subject));
+
+        var critical = FactOf(sheet, "errors.critical");
+        Assert.Equal("1 of 3 answers", critical.Display);
+        Assert.Equal(1, critical.Value!.GetValue<int>());
+        Assert.Equal("1 of 3 answers", Assert.Single(Assert.Single(sheet.Entries, e => e.IsSubject).Extra, f => f.Key == "errors.critical").Display);
+        Assert.Equal(new[] { true, false, false }, sheet.Questions.OrderBy(q => q.Number).Select(q => q.CriticalError));
+
+        // The same flags on a scoring method 12 run: every answer a member flagged.
+        subject.ScoringMethodVersion = 12;
+        var legacy = BuildSheet(Input(comparison, "run:1", subject));
+
+        Assert.Equal("3 of 3 answers", FactOf(legacy, "errors.critical").Display);
+        Assert.Equal(new[] { true, true, true }, legacy.Questions.OrderBy(q => q.Number).Select(q => q.CriticalError));
+    }
+
     // --- Format version 9 --------------------------------------------------------------------------
 
     [Fact]

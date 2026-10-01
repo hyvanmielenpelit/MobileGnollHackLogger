@@ -5626,8 +5626,268 @@ more of both card lists come from one plain-TypeScript class, `CardListState`
 (`shared/data-table/card-list-state.ts`). The Download Center was moved onto it with no change in
 behavior, its stored keys or its visible text.
 
+### Harness Version 45 & Scoring Method Version 13 Updates
+
+The critical-error and abstention round (2026-10-01). Three grading changes ship together:
+
+- a critical error is **confirmed** before it caps a panel score;
+- every critical error is **grounded in the answer key**;
+- an honest abstention is **no longer penalized** below a wrong answer.
+
+Separate figures make guessing and dangerous errors visible on their own. `HarnessVersion` moves to
+**"45"** and `ScoringMethodVersion` to **13**, before the first measurement season is frozen.
+`CandidateSystemPromptSha256` and `ToolGuidesSha256` do not move. One EF Core migration,
+`AddNotAttemptedAndCriticalErrorResolution`, adds four nullable columns:
+
+- `BenchmarkRunAnswers.NotAttempted`, `CoAssessmentNotAttempted` and `CriticalErrorResolution`;
+- `BenchmarkScoringProfiles.NotAttemptedScore`, set to 50 on every existing profile.
+
+No `BenchmarkAnswerFlags` member is added; the new state lives in those columns.
+
+#### What was wrong
+
+1. **A single grader's flag capped the answer.** The cap sets quality to 25, about 3.3 index points
+   per cap on an 18-question suite. It was often wrong: spurious caps are recorded on runs 28, 31, 35,
+   39, 40, 43, 44, 45 and 57. In a panel run a cap only one member applied was averaged, so half of a
+   disputed penalty still landed. The claim verifier often showed the quoted sentence true, but by
+   design it never changed a score.
+2. **The cap kept the own-knowledge loophole.** Method 12 forbade own-knowledge Accuracy deductions,
+   which had been wrong on 6 of 8 answers of run 55 and 7 of 18 of run 53, mostly NetHack priors
+   charged against GnollHack facts. The critical-error rule still read *"the rubric's ground truth or
+   your own verified knowledge contradicts"*.
+3. **Honesty scored worse than being wrong.** The production prompt asks the model to say what it does
+   not know, never to present speculation as fact, and to tell the player when it could not find
+   something. An honest *"I could not verify this; check X"* got Completeness 0, which the geometric
+   mean turns into about 32. A substantially wrong answer (Accuracy 2, Completeness 3–4) scored about
+   48–52.
+
+| # | Change | Effect |
+|---|---|---|
+| D1 | **Confirmed critical errors** (panel runs). A cap counts when both members flag it. When only one does, the claim verifier's ruling on the quoted sentence decides: Refuted upholds the cap for both members, Supported lifts it, Indeterminate or no ruling leaves the average | Removes the largest single source of grading noise without dropping real errors |
+| D2 | **Critical errors come from the answer key.** A critical error needs a claim the rubric or the game board contradicts. An own-knowledge suspicion goes to `unverifiedClaims` as *Suspected false* | Pre-specified criteria, consistent with method 12 |
+| D3 | **Not attempted.** A new verdict field, `notAttempted`. An honest, specific abstention with no false claim scores at least the profile's Not-attempted score, default 50 | Honesty no longer scores below a substantially wrong answer |
+| D4 | **Uncertainty and alternatives.** A statement marked as uncertain is graded for Accuracy as stated, and is not a critical error unless it advises a dangerous action. A list of alternatives earns no Completeness for that point, and each alternative is graded as a claim | Calibrated hedging is not punished; fishing with alternatives earns nothing |
+| D5 | **Separate figures.** A confirmed critical-error rate with a 95 % Wilson interval, and an outcome breakdown: correct, partial, incorrect, not attempted and no answer, plus *correct when attempted* and *wrong instead of abstaining* | Guessing and dangerous errors are visible on their own, not only through the index |
+| D6 | **Retrospective view.** On a stored method-12 panel run, the report prints what the D1 rule would have made of each critical-error split | The effect can be checked on runs 68–72 before anything new is run, at no cost |
+
+#### D1 — Confirmed critical errors (panel runs)
+
+`BenchmarkCriticalErrorResolver.ResolvePanel` resolves each answer both members scored, and stores
+the result in `CriticalErrorResolution`:
+
+| A flags | B flags | Verifier's effective verdict on the flagging member's quote | Resolution | Member scores the panel score averages |
+|---|---|---|---|---|
+| no | no | — | `None` | A and B as graded |
+| yes | yes | (any) | `Agreed` | A and B as graded (both capped) |
+| one | the other not | Refuted | `UpheldByVerifier` | The flagging member as graded; the other capped: min(score, ceiling) |
+| one | the other not | Supported | `OverturnedByVerifier` | The flagging member's pre-cap score (`RawQualityScore`, or `CoAssessmentRawQualityScore` for B); the other as graded |
+| one | the other not | Indeterminate, or no matching item | `Unresolved` | A and B as graded (the average, as before) |
+
+- **Panel score.** `PanelQualityScore` is the mean of the two scores used. `PanelDisagreed` keeps its
+  meaning: it reads the members' own scores and flags.
+- **Member-alone indices** keep each member's own graded score.
+- **Quote match.** Over the verification items the flagging member raised: the item at index 0 with
+  the quote's exact text, then any item with that text, then the same item
+  (`BenchmarkCriticalErrorResolver.QuoteVerdict`). It reads `EffectiveVerdict`, so a dead citation
+  counts as Indeterminate.
+- **Ceiling.** The run's recorded profile ceiling, from the profile snapshot.
+- **Single-assessor runs** record `SingleAssessor` when the assessor flags, otherwise `None`. The score
+  is unchanged.
+- **Confirmed** means `Agreed`, `UpheldByVerifier` or `SingleAssessor`
+  (`BenchmarkCriticalErrorResolver.IsConfirmed`). `Unresolved` is reported as unresolved and
+  `OverturnedByVerifier` as overturned.
+- **Methods 12 and earlier** are unchanged, and their resolution column is null.
+- **The synthesis prompt** states how each critical error was resolved.
+
+This is the first time a verifier ruling moves a score, and the verifier has 55 recorded wrong
+verdicts. The rule limits its reach: it settles only splits, never overrides two agreeing members,
+and an Indeterminate ruling keeps the average.
+
+#### D2 — Critical errors come from the answer key
+
+Section 5 of the grading preamble now reads: *"Mark criticalError only for a claim the rubric's ground
+truth or the GAME BOARD contradicts. A claim you believe false from your own knowledge alone is not a
+critical error: report it in `unverifiedClaims`, quoted verbatim and prefixed `Suspected false: ` as
+section 1 describes, and the claim verifier checks it against the source. A claim the rubric merely
+omits belongs in `unverifiedClaims` too (section 7)."*
+
+**Consequence for rubric authors.** A dangerous falsehood the rubric does not foresee is caught only as
+a refuted *Suspected false* claim: reported, but not capped. Name dangerous values in the rubric's
+CRITICAL ERROR clauses.
+
+#### D3 and D4 — Not attempted, uncertainty and alternatives
+
+The preamble gains section 8, *NOT ATTEMPTED, UNCERTAINTY AND ALTERNATIVES*
+(`BenchmarkAssessmentPrompt`), and the output schema gains `"notAttempted": false` after
+`criticalErrorQuote`.
+
+- **`notAttempted`** is true when the answer does not give what the question asks for and says why: it
+  could not find or could not verify the information. It may add what it did find, where to look, or
+  behavior it labels as NetHack's. It is false for an answer that gives a value, an outcome or a
+  recommendation however tentatively, for a refusal for any other reason, and for an answer that does
+  not address the question. It changes none of the four levels.
+- **An uncertain statement** (*"I believe…"*, *"in NetHack this is X, but GnollHack may differ"*) is
+  graded for Accuracy as the claim it makes. A tentative claim the rubric or the board contradicts
+  lowers Accuracy, but it is not a critical error, because the cap requires a confidently asserted
+  falsehood. The exception is tentative advice to take an action the rubric's CRITICAL ERROR section
+  names.
+- **Alternatives instead of an answer.** When the question asks for a value, an outcome or a decision
+  and the answer offers two or more alternatives without committing, that point earns no Completeness
+  credit, and each alternative counts as a claim for Accuracy.
+
+**The floor.** `BenchmarkScoring.Quality` raises the raw quality to the profile's `NotAttemptedScore`
+when all of these hold:
+
+- `notAttempted` is true;
+- `criticalError` is false;
+- the Accuracy level is 5 or above;
+- `NotAttemptedScore` is above the raw quality.
+
+The floor applies before `RawQualityScore` is rounded, so `RawQualityScore` is the score after the
+floor and before the cap. The floor and the cap never apply together. In a panel run each member's
+own verdict decides its own floor.
+
+**The profile field.** `NotAttemptedScore`, `int?`, valid 0–100; null means no floor. The seeded
+default profile and new profiles carry 50, and the migration sets existing profiles to 50. A profile
+snapshot stored before this round has no such field and reads null.
+
+#### D5 — Outcome figures (reporting only)
+
+`BenchmarkOutcomeSummary` classifies the answers that count toward the quality index. Nothing in it
+feeds an index.
+
+- **No answer** is a model-produced empty answer.
+- **Every other answer** is classified once graded; in a panel run, once both members scored.
+- **Mean level** is the mean of the two members' levels in a panel run, otherwise the assessor's own.
+
+Classes, first match wins:
+
+1. **Incorrect** — a confirmed critical error, or mean Accuracy ≤ 2.
+2. **Not attempted** — the assessor's `notAttempted`, or both members' in a panel run.
+3. **Correct** — mean Accuracy ≥ 5, mean Completeness ≥ 4, and no critical-error flag from either
+   member.
+4. **Partial** — everything else.
+
+Figures:
+
+- the count of each class, and the confirmed, unresolved and overturned critical-error counts with
+  their questions;
+- **critical-error rate** = confirmed ÷ classified (correct + partial + incorrect + not attempted),
+  with a 95 % Wilson interval (`BenchmarkProportionInterval.Wilson95`); null when nothing is
+  classified;
+- **correct when attempted** = correct ÷ (correct + partial + incorrect);
+- **wrong instead of abstaining** = incorrect ÷ (incorrect + not attempted), null when both are 0.
+
+The Wilson interval for $k$ confirmed errors in $n$ classified answers, with $\hat{p} = k/n$ and
+$z = 1.959964$:
+
+$$\frac{\hat{p} + \frac{z^2}{2n}}{1 + \frac{z^2}{n}} \pm \frac{z\sqrt{\frac{\hat{p}(1-\hat{p})}{n} + \frac{z^2}{4n^2}}}{1 + \frac{z^2}{n}}$$
+
+clamped to [0, 1], with the lower bound exactly 0 when $k = 0$ and the upper bound exactly 1 when
+$k = n$.
+
+Every figure is null for a run before scoring method 13. They are shown in report § 2 — the *Critical
+Errors* line in its method-13 form and a new *Outcomes* line — in the run detail API as
+`outcomeSummary`, and on the *Critical Errors* key-figure card.
+
+#### D6 — Critical-error resolution sensitivity (method-12 panel runs)
+
+On a panel run scored under method 12 or earlier, when the D1 rule would resolve at least one split as
+`UpheldByVerifier` or `OverturnedByVerifier`, the report prints an advisory line, *Critical-error
+resolution sensitivity (scoring method 13 rule)*. It sits in § 2 with the other sensitivities and
+again in § 7, and gives:
+
+- the index recomputed from D1's panel scores;
+- the questions upheld and the questions overturned;
+- how many splits stay averaged.
+
+It changes no stored value. D3 cannot be shown retrospectively, because a method-12 verdict carries no
+`notAttempted`.
+
+#### Why these rules (scientific basis)
+
+- **Confirming a critical error.** Large-scale constructed-response scoring double-scores a
+  high-stakes binary call and sends disagreements to a resolution step. Juries of LLM judges from
+  different families outperform a single judge (Verga et al., 2024). D1 is two scoring members from two
+  families plus a tool-grounded adjudicator: a majority of three independent judgments from the
+  Anthropic, OpenAI and Google families. When the adjudicator cannot rule, the tie stays averaged, the
+  expected value under no further information.
+- **Pre-specified negative criteria.** HealthBench (Arora et al., 2025) writes the penalized errors
+  into the rubric rather than letting the grader invent them. That is D2.
+- **Harm reported apart from quality.** Med-PaLM (Singhal et al., 2023) and HELM (Liang et al., 2022)
+  report harm separately, which is D5's rate. It is a binomial proportion over few items, so it carries
+  a Wilson interval, which behaves well at small *n* and near 0, unlike the Wald interval (Brown, Cai &
+  DasGupta, 2001; Wilson, 1927).
+- **The cap stays 25.** The problem was reliability, not size. The order is now: correct > abstain
+  (50) > confirmed dangerous error (≤ 25).
+- **Guessing.** A test that scores only right answers rewards guessing. The remedies are formula
+  scoring (Lord & Novick, 1968; Frary, 1988) and proper scoring rules (Brier, 1950; Gneiting &
+  Raftery, 2007). SimpleQA (Wei et al., 2024) grades correct / incorrect / not attempted and reports
+  correct given attempted. AA-Omniscience (Artificial Analysis, 2025) scores +1 / −1 / 0, so a guess
+  pays only above 50 % confidence. Kalai et al. (2025) show that binary grading trains models to guess,
+  and that an error should cost more than an abstention, with an explicit confidence threshold *t*.
+- **Hedging.** SimpleQA counts a hedge across candidates as incorrect when one of them is wrong; D4's
+  alternatives rule is its rubric-scale version. A tentative false claim still loses Accuracy, but it is
+  not a critical error, because the cap requires a confidently asserted falsehood.
+- **No "incorrect" ceiling yet.** Capping answers at Accuracy ≤ 2 would be a second cliff on a single
+  grader's level boundary — the noise D1 removes. D5 makes guessing visible instead, especially
+  *wrong instead of abstaining*, which is AA-Omniscience's hallucination rate. Revisit with the first
+  season's outcome data.
+
+**The implied confidence threshold.** On the 0–100 scale, a model should answer rather than abstain
+when its confidence of being right exceeds
+
+$$t = \frac{S_\text{abstain} - S_\text{wrong}}{S_\text{right} - S_\text{wrong}}$$
+
+| Case | $S_\text{abstain}$ | $S_\text{wrong}$ | $t$ (with $S_\text{right} \approx 92$) |
+|---|---|---|---|
+| Before (method 12) | ≈ 32 | ≈ 48 (substantially wrong) | negative: the scoring prefers a guess |
+| Method 13, against a capped critical error | 50 | ≤ 25 | ≈ (50 − 25) / (92 − 25) ≈ 0.37 |
+| Method 13, against a substantially wrong but harmless answer | 50 | ≈ 48 | ≈ 0: abstaining and being wrong tie |
+
+**References.**
+
+- Arora, R. K. et al. (2025). *HealthBench*. OpenAI.
+- Artificial Analysis (2025). *AA-Omniscience* methodology.
+- Brier, G. W. (1950). Verification of forecasts expressed in terms of probability. *Monthly Weather
+  Review*, 78(1).
+- Brown, L. D., Cai, T. T., & DasGupta, A. (2001). Interval estimation for a binomial proportion.
+  *Statistical Science*, 16(2).
+- Frary, R. B. (1988). Formula scoring of multiple-choice tests (correction for guessing).
+  *Educational Measurement: Issues and Practice*, 7(2).
+- Gneiting, T., & Raftery, A. E. (2007). Strictly proper scoring rules, prediction, and estimation.
+  *JASA*, 102(477).
+- Kalai, A. T., Nachum, O., Vempala, S. S., & Zhang, E. (2025). *Why Language Models Hallucinate*.
+  OpenAI.
+- Liang, P. et al. (2022). *Holistic Evaluation of Language Models*.
+- Lord, F. M., & Novick, M. R. (1968). *Statistical Theories of Mental Test Scores*.
+- Singhal, K. et al. (2023). Large language models encode clinical knowledge. *Nature*, 620.
+- Verga, P. et al. (2024). *Replacing Judges with Juries*.
+- Wei, J. et al. (2024). *Measuring short-form factuality in large language models* (SimpleQA).
+  OpenAI.
+- Wilson, E. B. (1927). Probable inference, the law of succession, and statistical inference. *JASA*,
+  22(158).
+
+#### Comparability and re-grading
+
+- **Not comparable with any earlier run.** `ScoringMethodVersion` (12 → 13) and `HarnessVersion`
+  (44 → 45) are both Instrument keys, and the profile snapshot gains `NotAttemptedScore`. A method-13
+  run is therefore NotComparable with every earlier run. The change lands before the first season
+  freezes.
+- **Stored hashes are kept.** The profile signature appends `;notAttemptedScore=<n>` only when the value
+  is non-null, so snapshots stored before keep their hashes. `BenchmarkComparabilityKey.DefinitionVersion`
+  stays 2.
+- **Method-12 runs stay re-scorable, not re-gradable.** Re-assess, calibrate, re-run, retry and series
+  resume are refused on them once the constant moves (`IsCurrentScoringMethod`), as intended. Rescore
+  stays allowed, and `LastMethodRescoreCanApply` stays 10.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
+- **Not-attempted floor** (scoring method 13): when `notAttempted` is true, `criticalError` is false and
+  the Accuracy level is at least 5, $\text{Quality}_\text{raw} = \max(\text{Quality}_\text{raw}, S_\text{NA})$,
+  where $S_\text{NA}$ is the profile's `NotAttemptedScore` (default 50; null means no floor). It applies
+  before `RawQualityScore` is rounded, so `RawQualityScore` is after the floor and before the cap. The
+  floor and the cap never apply together.
 - **Model Time**: $\text{ModelTime} = \max(0, \text{DurationMs} - \text{ToolTimeMs})$ — the turn duration with harness tool I/O removed. This, not `DurationMs`, is what speed is scored on.
 - **Speed Target**: $Target(q) = T \cdot (1 + s \cdot \text{Difficulty}(q) / 100)$, where $T$ is `SpeedTargetMs` and $s$ is `SpeedDifficultyScaling`.
 - **Speed Score**: $\text{Speed} = \text{clamp}(100 - k \cdot \log_2(\text{ModelTime} / Target(q)), 1, 100)$, where $k$ is `SpeedDecayK`.
@@ -5655,6 +5915,17 @@ co-assessor.
   as `PanelQualityScore` and null unless both members scored. In a panel run it takes the place of
   $\text{Quality}(q)$ in the Intelligence Index, its standard error and the Unweighted Quality Mean
   (`BenchmarkScoring.IndexQuality`); an answer with a null panel score is excluded from them.
+- **Panel Quality under resolution** (scoring method 13): $\text{Panel}(q) = (S_A(q) + S_B(q)) / 2$,
+  where $S_A$ and $S_B$ are the member scores the critical-error resolution selects
+  (`BenchmarkCriticalErrorResolver.ResolvePanel`). With $c$ the run's recorded critical-error ceiling:
+  - *None*, *Agreed* or *Unresolved*: $S_A = \text{Quality}_A$, $S_B = \text{Quality}_B$, the formula
+    above;
+  - *UpheldByVerifier*: the flagging member as graded, the other $\min(\text{Quality}, c)$;
+  - *OverturnedByVerifier*: the flagging member's pre-cap score (`RawQualityScore`, or
+    `CoAssessmentRawQualityScore` for member B), the other as graded.
+
+  The member-alone indices, the panel agreement figures and `PanelDisagreed` keep reading each
+  member's own graded score.
 - **Index Raw Quality**: the pre-cap counterpart that feeds the Raw Quality Index — on a single-assessor
   run the assessor's `RawQualityScore ?? QualityScore`; on a panel run the mean of the two members'
   `RawQualityScore ?? QualityScore`, null unless both scored (`BenchmarkScoring.IndexRawQuality`). No
@@ -5764,7 +6035,7 @@ family preference spans them.
 | | Neither is the model under test: take an older, or otherwise non-candidate, model of each family | Launch refused (400) when provider and model id equal the candidate's |
 | | Fixed across every run you intend to compare | The panel is part of the `AssessorConfiguration` key; the diagnostics refuse runs graded by different panels |
 | **Reference reader** (the second reader's slot, stored in the `SecondOpinion*` fields) | From a third family, neither a candidate nor a member; grades every answer, blind; never scores | Mode forced to `All` and blind; a start-dialog advisory, not a block, when it shares a provider with the candidate or a member |
-| **Claim verifier** | From a third family, neither a candidate nor a member; checks the union of both members' charges once; never scores | The same advisory |
+| **Claim verifier** | From a third family, neither a candidate nor a member; checks the union of both members' charges once; sets no level, and from scoring method 13 its ruling on a critical-error quote settles a split between the two members | The same advisory |
 | **Google** models | Non-scoring roles only: reference reader and claim verifier | Roster choice. Nothing in code names a vendor; the report's *Panel Disclosure* states which roles scored |
 
 An older same-family member removes **self**-preference; **family** preference remains, and the panel's
@@ -6174,7 +6445,7 @@ the run's instrument. The model choices are explained in **Choosing grader model
 
 ### The claim verifier: what it changes, and when to run it
 
-The claim verifier scores nothing, and it is usually the most expensive grading role, so whether to run it
+The claim verifier sets no level, and it is usually the most expensive grading role, so whether to run it
 is a real choice. This subsection states what it does from the code (line numbers as of 2026-09-27). The
 guide's section *The Claim Verifier* is its plain-language form, and the launcher's Claim Verifier popup
 summarizes it.
@@ -6207,9 +6478,18 @@ is 15 tool calls, 8 iterations, 12 model calls, 300 s and a 16,000-token output 
 **What it outputs.** For each item, *Supported*, *Refuted* or *Indeterminate*, with a citation and a
 basis. A ruling without a citation, or with a dead one, counts as Indeterminate.
 
-**Effect on scores: none.** A rescore recomputes from the stored levels and critical-error flag only
-(`BenchmarkService.cs` ~6972–6989). No path lifts the critical-error cap, and the report calls the role
-*"Advisory throughout"*.
+**Effect on scores.** It changes no level. From scoring method 13, its ruling on a critical-error quote
+settles a split between the two panel members.
+
+- **Scoring method 12 and earlier: none.** A rescore recomputes from the stored levels and
+  critical-error flag only (`BenchmarkService.cs` ~6972–6989). No path lifts the critical-error cap,
+  and the report calls the role *"Advisory throughout"*.
+- **Scoring method 13, panel runs: one-member critical-error splits only.** When only one member flags
+  a critical error, the verifier's effective verdict on that member's quote decides the panel score:
+  Refuted upholds the cap for both members, Supported lifts it, and Indeterminate or no ruling keeps the
+  average of the two members' scores (`BenchmarkCriticalErrorResolver`). It never overrides two
+  agreeing members, and it never moves a level. A single-assessor run's score is unchanged. See
+  *Harness Version 45 & Scoring Method Version 13 Updates* (§ 2).
 
 **What it changes around the scores:**
 
@@ -6252,7 +6532,8 @@ human decision, not a verdict.
 even at economy-tier prices, because each check makes several tool calls. On run 14 it took 67 % and
 refuted nothing.
 
-**Without it.** Scores are unchanged. The report prints *None selected* with the count of unchecked claims.
+**Without it.** Scores are unchanged, except that from scoring method 13 every one-member critical-error
+split on a panel run stays averaged (*Unresolved*). The report prints *None selected* with the count of unchecked claims.
 Every item listed above is lost, and the `ClaimVerifierConfiguration` instrument key differs.
 
 **When to use it, and when not.**

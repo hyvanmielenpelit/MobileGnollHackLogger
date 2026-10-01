@@ -756,4 +756,26 @@ public class BenchmarkAssessmentParserTests
         Assert.NotNull(findings);
         Assert.Empty(findings);
     }
+
+    [Theory]
+    [InlineData("\"notAttempted\": true,", true)]
+    [InlineData("\"notAttempted\": false,", false)]
+    [InlineData("\"notAttempted\": \"true\",", true)]
+    [InlineData("\"notAttempted\": \"TRUE\",", true)]
+    [InlineData("\"notAttempted\": \"false\",", false)]
+    [InlineData("\"not_attempted\": true,", true)]
+    [InlineData("\"not_attempted\": \"True\",", true)]
+    [InlineData("\"notAttempted\": \"maybe\",", false)]
+    [InlineData("\"notAttempted\": 1,", false)]
+    [InlineData("", false)]
+    public void NotAttempted_IsReadAsABoolOrABoolString_AndDefaultsToFalse(string field, bool expected)
+    {
+        string raw = Verdict().Replace("\"criticalErrorQuote\": null,", "\"criticalErrorQuote\": null," + field);
+        Assert.Equal(field.Length == 0, raw == Verdict());
+
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(raw, Answer);
+
+        Assert.True(result.Success);
+        Assert.Equal(expected, result.Result!.NotAttempted);
+    }
 }

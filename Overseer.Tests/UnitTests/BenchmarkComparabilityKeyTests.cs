@@ -786,6 +786,29 @@ public class BenchmarkComparabilityKeyTests
             Value(BenchmarkComparabilityKey.Extract(valid), BenchmarkComparabilityKey.ScoringProfileKey));
     }
 
+    [Fact]
+    public void ScoringProfileKey_SnapshotWithoutNotAttemptedScore_MatchesAnUnsetOne()
+    {
+        // A snapshot stored before profiles carried a not-attempted score has no such property.
+        var node = System.Text.Json.Nodes.JsonNode.Parse(Snapshot())!.AsObject();
+        Assert.True(node.Remove(nameof(BenchmarkScoringProfile.NotAttemptedScore)));
+
+        var legacy = Run(13);
+        legacy.ScoringProfileSnapshotJson = node.ToJsonString();
+        var unset = Run(14);
+        unset.ScoringProfileSnapshotJson = Snapshot();
+        var floored = Run(14);
+        floored.ScoringProfileSnapshotJson = Snapshot(p => p.NotAttemptedScore = 50);
+
+        string legacyKey = Value(BenchmarkComparabilityKey.Extract(legacy), BenchmarkComparabilityKey.ScoringProfileKey);
+        Assert.Equal(
+            legacyKey,
+            Value(BenchmarkComparabilityKey.Extract(unset), BenchmarkComparabilityKey.ScoringProfileKey));
+        Assert.NotEqual(
+            legacyKey,
+            Value(BenchmarkComparabilityKey.Extract(floored), BenchmarkComparabilityKey.ScoringProfileKey));
+    }
+
     private static BenchmarkComparabilityResult ResolveWithProfileSnapshots(string first, string second)
     {
         var a = Run(13);

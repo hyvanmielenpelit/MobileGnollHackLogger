@@ -296,6 +296,7 @@ public class BenchmarkSnapshotImporter
                     Name = "Situational Advisor",
                     SpeedTargetMs = 25000,
                     SpeedDecayK = 20.0,
+                    NotAttemptedScore = 50,
                     IsDefault = false,
                     CreatedAtUtc = DateTime.UtcNow,
                     ModifiedAtUtc = DateTime.UtcNow

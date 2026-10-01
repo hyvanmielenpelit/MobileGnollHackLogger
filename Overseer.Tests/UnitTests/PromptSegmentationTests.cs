@@ -636,13 +636,13 @@ public class PromptSegmentationTests
         // The order a grader reads: the preamble, the board, then the question's body.
         Assert.Equal(preamble + nl + boardBlock + nl + body, full);
 
-        // The seams are the blank lines after the unverified-claims section and after the board.
+        // The seams are the blank lines after the alternatives section and after the board.
         Assert.StartsWith("You are an expert game knowledge and reasoning assessor", preamble);
-        Assert.EndsWith("and the claim verifier checks it against the source." + nl, preamble);
+        Assert.EndsWith("and each alternative counts as a claim for ACCURACY." + nl, preamble);
         Assert.StartsWith(BenchmarkAssessmentPrompt.GradingBoardHeading + nl, boardBlock);
         Assert.EndsWith("--- END GAME CONTEXT BOARD ---" + nl, boardBlock);
         Assert.StartsWith("--- QUESTION AND CANDIDATE ANSWER ---" + nl, body);
-        Assert.Contains("against the source." + nl + nl + BenchmarkAssessmentPrompt.GradingBoardHeading + nl, full);
+        Assert.Contains("a claim for ACCURACY." + nl + nl + BenchmarkAssessmentPrompt.GradingBoardHeading + nl, full);
         Assert.Contains("--- END GAME CONTEXT BOARD ---" + nl + nl + "--- QUESTION AND CANDIDATE ANSWER ---" + nl, full);
 
         // The preamble carries the suite and nothing question-specific; the body carries none of the

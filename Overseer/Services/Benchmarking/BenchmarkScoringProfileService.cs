@@ -151,6 +151,7 @@ public class BenchmarkScoringProfileService
         existing.WeightReadability = profile.WeightReadability;
         existing.LevelScoresJson = profile.LevelScoresJson;
         existing.CriticalErrorCeiling = profile.CriticalErrorCeiling;
+        existing.NotAttemptedScore = profile.NotAttemptedScore;
         existing.SecondOpinionQualityThreshold = profile.SecondOpinionQualityThreshold;
         existing.SecondOpinionMode = profile.SecondOpinionMode;
         existing.SecondOpinionOutlierDeltaPoints = profile.SecondOpinionOutlierDeltaPoints;
@@ -270,6 +271,12 @@ public class BenchmarkScoringProfileService
             errors.Add("CriticalErrorCeiling must be between 1 and 100.");
         }
 
+        // Null is meaningful: no floor for an answer graded not attempted.
+        if (profile.NotAttemptedScore is int notAttemptedScore && (notAttemptedScore < 0 || notAttemptedScore > 100))
+        {
+            errors.Add("NotAttemptedScore must be empty or between 0 and 100.");
+        }
+
         // 0 is meaningful here, unlike the ceiling above: it disables the score trigger and
         // leaves second opinions to critical errors alone.
         if (profile.SecondOpinionQualityThreshold < 0 || profile.SecondOpinionQualityThreshold > 100)
@@ -359,12 +366,15 @@ public class BenchmarkScoringProfileService
     /// here or to <see cref="SpeedCalibrationSignature"/> would make two profiles that score
     /// differently compare equal, which is a false replicate rather than a false difference.
     /// Extend one of the two methods whenever the entity gains a field.</para>
+    ///
+    /// <para><c>NotAttemptedScore</c> is appended only when it has a value, so a profile without a
+    /// not-attempted floor renders exactly as every profile did before the field existed.</para>
     /// </summary>
     public static string CanonicalSignature(BenchmarkScoringProfile profile)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
-        return string.Join(";", new[]
+        string signature = string.Join(";", new[]
         {
             $"weightAccuracy={Number(profile.WeightAccuracy)}",
             $"weightCompleteness={Number(profile.WeightCompleteness)}",
@@ -379,6 +389,10 @@ public class BenchmarkScoringProfileService
             $"secondOpinionMinimumSample={Number(profile.SecondOpinionMinimumSample)}",
             $"maxParallelQuestions={Number(profile.MaxParallelQuestions)}"
         });
+
+        return profile.NotAttemptedScore is int notAttemptedScore
+            ? $"{signature};notAttemptedScore={Number(notAttemptedScore)}"
+            : signature;
     }
 
     /// <summary>
@@ -446,6 +460,7 @@ public class BenchmarkScoringProfileService
             WeightReadability = profile.WeightReadability,
             LevelScores = ParseLevelScores(profile.LevelScoresJson),
             CriticalErrorCeiling = profile.CriticalErrorCeiling,
+            NotAttemptedScore = profile.NotAttemptedScore,
             SecondOpinionQualityThreshold = profile.SecondOpinionQualityThreshold,
             SecondOpinionMode = Enum.IsDefined(typeof(BenchmarkSecondOpinionMode), profile.SecondOpinionMode)
                 ? (BenchmarkSecondOpinionMode)profile.SecondOpinionMode
@@ -481,6 +496,7 @@ public class BenchmarkScoringProfileService
             WeightReadability = 0.10,
             LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]",
             CriticalErrorCeiling = 25,
+            NotAttemptedScore = 50,
             SecondOpinionQualityThreshold = 50,
             // FlaggedPlusSample, with a minimum sample of 4: a fresh install's Default profile
             // should measure grader agreement on every run, not only on runs where the candidate

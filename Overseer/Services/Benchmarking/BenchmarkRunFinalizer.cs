@@ -569,6 +569,17 @@ public static class BenchmarkRunFinalizer
         }
 
         bool isPanelRun = IsPanelRun(run);
+
+        // Under scoring method 13 and later the critical-error resolution decides a panel answer's
+        // score, so it is written before any index reads that score.
+        if (BenchmarkCriticalErrorResolver.Applies(run))
+        {
+            foreach (var answer in answers)
+            {
+                BenchmarkCriticalErrorResolver.ApplyTo(answer, run, isPanelRun);
+            }
+        }
+
         var scorableItems = answers
             .Where(CountsTowardQualityIndex)
             .Select(a => (BenchmarkScoring.IndexQuality(a, isPanelRun), IndexDifficulty(a)))

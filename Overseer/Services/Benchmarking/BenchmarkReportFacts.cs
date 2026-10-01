@@ -65,7 +65,8 @@ using Overseer.Models;
 //
 // Errors and claims
 //   answers.scored           "4": the answers that count toward the index, the denominator of errors.critical
-//   errors.critical          "1 of 4 answers": answers at least one grader flagged with a critical error
+//   errors.critical          "1 of 4 answers": answers at least one grader flagged with a critical error;
+//                            from scoring method 13, answers with a confirmed one
 //   claims.supported, claims.refuted, claims.indeterminate   the claim verifier's rulings on the answers' own claims
 //
 // Tools (succeeded calls, from the per-call rows where the run has them, else the summary)
@@ -1508,7 +1509,7 @@ public static class BenchmarkReportFacts
                 PeerMin = peerMin,
                 PeerMax = peerMax,
                 PeersAbove = peersAbove,
-                CriticalError = counting.Any(HasCriticalError),
+                CriticalError = counting.Any(subject.Critical.Contains),
                 RefutedClaims = answers.Sum(a => a.ClaimsRefutedCount ?? 0),
                 RefutedAnswerSentences = RefutedAnswerSentencesOf(answers),
                 ToolCalls = counting.Count > 0 ? counting.Average(a => (double)SucceededCalls(a)) : 0,
@@ -1861,9 +1862,15 @@ public static class BenchmarkReportFacts
     private static BenchmarkDifficulty BandOf(BenchmarkRunAnswer answer)
         => BenchmarkDifficultyBands.BandOf(answer.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(answer.Difficulty));
 
-    /// <summary>At least one grader flagged a critical error: member A's flag, or member B's in a panel run.</summary>
-    private static bool HasCriticalError(BenchmarkRunAnswer answer)
-        => answer.CriticalError || answer.CoAssessmentCriticalError == true;
+    /// <summary>
+    /// A critical error: from scoring method 13 a confirmed one
+    /// (<see cref="BenchmarkCriticalErrorResolver.IsConfirmed"/>); before it, at least one grader's
+    /// flag, member A's or member B's in a panel run.
+    /// </summary>
+    private static bool HasCriticalError(BenchmarkRun run, BenchmarkRunAnswer answer)
+        => BenchmarkCriticalErrorResolver.Applies(run)
+            ? BenchmarkCriticalErrorResolver.IsConfirmed(answer)
+            : answer.CriticalError || answer.CoAssessmentCriticalError == true;
 
     private static int SucceededCalls(BenchmarkRunAnswer answer)
         => BenchmarkChatTransfer.ToolCallCountsFor(answer).Values.Sum();
@@ -2007,7 +2014,10 @@ public static class BenchmarkReportFacts
         /// <summary>Counting answers with a published score.</summary>
         public List<(BenchmarkRun Run, BenchmarkRunAnswer Answer, double Quality)> Scored { get; } = new();
 
-        public int CriticalCount => Counting.Count(HasCriticalError);
+        /// <summary>Counting answers with a critical error (<see cref="HasCriticalError"/>).</summary>
+        public HashSet<BenchmarkRunAnswer> Critical { get; } = new(ReferenceEqualityComparer.Instance);
+
+        public int CriticalCount => Critical.Count;
 
         public double? ToolCallsPerQuestion => Counting.Count > 0 ? Counting.Average(a => (double)SucceededCalls(a)) : null;
 
@@ -2051,6 +2061,10 @@ public static class BenchmarkReportFacts
                     if (!BenchmarkRunFinalizer.CountsTowardQualityIndex(answer)) continue;
 
                     stats.Counting.Add(answer);
+                    if (HasCriticalError(run, answer))
+                    {
+                        stats.Critical.Add(answer);
+                    }
                     if (BenchmarkScoring.IndexQuality(answer, panel) is double quality)
                     {
                         stats.Scored.Add((run, answer, quality));

@@ -2,6 +2,8 @@ namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,7 +95,95 @@ public class BenchmarkScoringProfileServiceTests
         Assert.Empty(errors);
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(101)]
+    public void ValidateProfile_RejectsANotAttemptedScoreOutsideZeroToOneHundred(int notAttemptedScore)
+    {
+        var service = NewService(out _);
+        var profile = NewProfile(BenchmarkSecondOpinionMode.Flagged, minimumSample: 0);
+        profile.NotAttemptedScore = notAttemptedScore;
+
+        bool valid = service.ValidateProfile(profile, out var errors);
+
+        Assert.False(valid);
+        Assert.Contains(errors, e => e.Contains("NotAttemptedScore must be empty or between 0 and 100", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    [InlineData(null)]
+    public void ValidateProfile_AcceptsANotAttemptedScoreOfZeroToOneHundredOrNone(int? notAttemptedScore)
+    {
+        var service = NewService(out _);
+        var profile = NewProfile(BenchmarkSecondOpinionMode.Flagged, minimumSample: 0);
+        profile.NotAttemptedScore = notAttemptedScore;
+
+        bool valid = service.ValidateProfile(profile, out var errors);
+
+        Assert.True(valid);
+        Assert.Empty(errors);
+    }
+
+    [Theory]
+    [InlineData(45)]
+    [InlineData(null)]
+    public void ToConstants_MapsTheNotAttemptedScore(int? notAttemptedScore)
+    {
+        var service = NewService(out _);
+        var profile = FullProfile();
+        profile.NotAttemptedScore = notAttemptedScore;
+
+        Assert.Equal(notAttemptedScore, service.ToConstants(profile).NotAttemptedScore);
+    }
+
+    [Fact]
+    public async Task DefaultProfileSeed_HasANotAttemptedScoreOfFifty()
+    {
+        var service = NewService(out _);
+
+        var profile = await service.GetDefaultProfileAsync();
+
+        Assert.Equal(50, profile.NotAttemptedScore);
+    }
+
     // --- CanonicalSignature ---------------------------------------------------------------------
+
+    /// <summary>
+    /// A profile without a not-attempted floor renders the signature every profile rendered before
+    /// the field existed, so a stored snapshot that reads it as null keeps its comparability hash.
+    /// The literal is pinned rather than recomputed: any change to it ends every comparable series.
+    /// </summary>
+    [Fact]
+    public void CanonicalSignature_WithoutANotAttemptedScore_IsUnchangedFromBeforeTheField()
+    {
+        var profile = FullProfile();
+        profile.NotAttemptedScore = null;
+
+        Assert.Equal(
+            "weightAccuracy=0.55;weightCompleteness=0.25;weightConciseness=0.1;weightReadability=0.1;"
+            + "levelScores=1,15,35,55,72,87,100;criticalErrorCeiling=25;secondOpinionQualityThreshold=50;"
+            + "secondOpinionMode=4;secondOpinionBlind=1;secondOpinionOutlierDeltaPoints=25;"
+            + "secondOpinionMinimumSample=4;maxParallelQuestions=1",
+            BenchmarkScoringProfileService.CanonicalSignature(profile));
+    }
+
+    [Fact]
+    public void CanonicalSignature_WithANotAttemptedScore_AppendsItAndChangesTheHash()
+    {
+        var withoutFloor = FullProfile();
+        withoutFloor.NotAttemptedScore = null;
+
+        var withFloor = FullProfile();
+        withFloor.NotAttemptedScore = 50;
+
+        string before = BenchmarkScoringProfileService.CanonicalSignature(withoutFloor);
+        string after = BenchmarkScoringProfileService.CanonicalSignature(withFloor);
+
+        Assert.Equal(before + ";notAttemptedScore=50", after);
+        Assert.NotEqual(Sha256Hex(before), Sha256Hex(after));
+    }
 
     /// <summary>
     /// One mutation per quality-scoring field on <see cref="BenchmarkScoringProfile"/>. A field left
@@ -117,6 +207,7 @@ public class BenchmarkScoringProfileServiceTests
             (nameof(BenchmarkScoringProfile.WeightReadability), p => p.WeightReadability = 0.15),
             (nameof(BenchmarkScoringProfile.LevelScoresJson), p => p.LevelScoresJson = "[1, 15, 35, 55, 72, 90, 100]"),
             (nameof(BenchmarkScoringProfile.CriticalErrorCeiling), p => p.CriticalErrorCeiling = 30),
+            (nameof(BenchmarkScoringProfile.NotAttemptedScore), p => p.NotAttemptedScore = 40),
             (nameof(BenchmarkScoringProfile.SecondOpinionQualityThreshold), p => p.SecondOpinionQualityThreshold = 60),
             (nameof(BenchmarkScoringProfile.SecondOpinionMode), p => p.SecondOpinionMode = (int)BenchmarkSecondOpinionMode.All),
             (nameof(BenchmarkScoringProfile.SecondOpinionBlind), p => p.SecondOpinionBlind = false),
@@ -299,6 +390,7 @@ public class BenchmarkScoringProfileServiceTests
             WeightReadability = 0.10,
             LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]",
             CriticalErrorCeiling = 25,
+            NotAttemptedScore = 50,
             SecondOpinionQualityThreshold = 50,
             SecondOpinionMode = (int)BenchmarkSecondOpinionMode.FlaggedPlusSample,
             SecondOpinionBlind = true,
@@ -312,6 +404,9 @@ public class BenchmarkScoringProfileServiceTests
             ModifiedAtUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc)
         };
     }
+
+    private static string Sha256Hex(string text)
+        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
 
     private static BenchmarkScoringProfile NewProfile(BenchmarkSecondOpinionMode mode, int minimumSample)
     {

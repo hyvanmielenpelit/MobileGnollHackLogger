@@ -37,7 +37,8 @@ public sealed record BenchmarkVerdictView(
     string? CompletenessEvidence,
     IReadOnlyList<string> UnverifiedClaims,
     bool OutOfRubricAccuracy,
-    bool ContestedVerdict)
+    bool ContestedVerdict,
+    bool NotAttempted)
 {
     /// <summary>
     /// The label <see cref="BenchmarkClaimVerification.RaisedBy"/>, <see cref="BenchmarkClaimVerification.AccusedBy"/>
@@ -80,7 +81,8 @@ public sealed record BenchmarkVerdictView(
             BenchmarkAssessmentParser.ReadEvidenceField(a.AssessmentEvidenceJson, "completeness"),
             ReadClaims(a.UnverifiedClaimsJson),
             flags.HasFlag(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction),
-            flags.HasFlag(BenchmarkAnswerFlags.ContestedVerdict));
+            flags.HasFlag(BenchmarkAnswerFlags.ContestedVerdict),
+            a.NotAttempted == true);
     }
 
     /// <summary>
@@ -119,7 +121,8 @@ public sealed record BenchmarkVerdictView(
             record.CompletenessEvidence,
             record.UnverifiedClaims ?? new List<string>(),
             record.Flags?.OutOfRubricAccuracy ?? false,
-            record.Flags?.ContestedVerdict ?? false);
+            record.Flags?.ContestedVerdict ?? false,
+            record.NotAttempted);
     }
 
     /// <summary>The view of <paramref name="member"/>: <see cref="FromPrimary"/> for A, <see cref="FromCoAssessment"/> for B.</summary>
@@ -168,6 +171,10 @@ public sealed class BenchmarkCoAssessmentRecord
 
     [JsonPropertyName("criticalErrorDemoted")]
     public bool CriticalErrorDemoted { get; set; }
+
+    /// <summary>Member B's <see cref="BenchmarkRunAnswer.NotAttempted"/>; false on a record that predates it.</summary>
+    [JsonPropertyName("notAttempted")]
+    public bool NotAttempted { get; set; }
 
     [JsonPropertyName("qualityScore")]
     public int? QualityScore { get; set; }

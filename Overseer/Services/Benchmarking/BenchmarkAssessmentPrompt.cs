@@ -74,6 +74,21 @@ public class BenchmarkPerQuestionVerdictSummary
     public bool? SecondOpinionCriticalError { get; set; }
     public int? AssessedDifficulty { get; set; }
     public bool CriticalError { get; set; }
+
+    /// <summary>
+    /// How the answer's critical-error flags were resolved; see
+    /// <see cref="BenchmarkAssessmentPrompt.SynthesisCriticalErrorResolution"/>. Null before scoring
+    /// method 13, where the synthesis prompt prints <see cref="CriticalError"/> alone.
+    /// </summary>
+    public BenchmarkCriticalErrorResolution? CriticalErrorResolution { get; set; }
+
+    /// <summary>
+    /// The answer's outcome class is <i>not attempted</i>; see
+    /// <see cref="BenchmarkAssessmentPrompt.IsNotAttemptedOutcome"/>. Always false before scoring
+    /// method 13.
+    /// </summary>
+    public bool NotAttempted { get; set; }
+
     public string? ReviewComment { get; set; }
     public BenchmarkAnswerStatus Status { get; set; }
 }
@@ -229,7 +244,19 @@ public static class BenchmarkAssessmentPrompt
     //   run 53, and the docked level was what scored. Completeness, Conciseness, Readability, the
     //   critical-error definition, the weights and the level-to-points mapping do not move.
     // Scores are not comparable with v11 on Accuracy, and therefore on the quality score and every index.
-    public const int ScoringMethodVersion = 12;
+    // v13: critical errors are confirmed. In a panel run a critical error only one member flagged is
+    //   settled by the claim verifier's ruling on that member's quote: Refuted upholds the cap for
+    //   both members, Supported lifts it, and Indeterminate or no ruling keeps the average of the two
+    //   members' scores. A critical error comes only from the rubric or the GAME BOARD; a statement
+    //   the assessor believes false from its own knowledge goes to unverifiedClaims as
+    //   "Suspected false: " instead. The verdict gains a notAttempted field: an honest abstention with
+    //   no critical error and Accuracy 5 or above is raised to the profile's NotAttemptedScore floor
+    //   (default 50). The grading preamble gains rules for statements marked as uncertain and for
+    //   alternatives offered instead of an answer. The report adds outcome figures: the confirmed
+    //   critical-error rate with its 95 % Wilson interval, and the correct, partial, incorrect, not
+    //   attempted and no-answer counts.
+    // Scores are not comparable with v12 on any answer with a critical error or marked not attempted.
+    public const int ScoringMethodVersion = 13;
 
     /// <summary>
     /// The harness the run executed under. A constant rather than a configuration key: it exists
@@ -685,8 +712,15 @@ public static class BenchmarkAssessmentPrompt
     ///     as a user's default is, so a default run's CandidateSystemPromptSha256 moves (H2). The
     ///     stats tools trim name and object_class and get_knowledge_article trims topic (T1); no tool
     ///     guide changes, so ToolGuidesSha256 does not move. ScoringMethodVersion stays 12.
+    /// v45: the grading preamble's section 5 takes a critical error only from the rubric or the GAME
+    ///     BOARD and sends an own-knowledge suspicion to unverifiedClaims as "Suspected false: ", and
+    ///     a new section 8 defines notAttempted and the rules for uncertain statements and for
+    ///     alternatives offered instead of an answer. The output schema gains notAttempted. The
+    ///     synthesis prompt states how each critical error was resolved and marks an answer NOT
+    ///     ATTEMPTED. Moves with ScoringMethodVersion 13; CandidateSystemPromptSha256 and
+    ///     ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "44";
+    public const string HarnessVersion = "45";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -871,7 +905,7 @@ public static class BenchmarkAssessmentPrompt
         // The cap needs the claim to be false, not merely unlisted. A rubric is an incomplete
         // ground-truth list, so "absent from the rubric" and "contradicted by the rubric" are
         // different findings and only the second one can carry a critical error.
-        sb.AppendLine("- **A claim the rubric does not mention is not thereby invented.** Mark criticalError only for a claim the rubric's ground truth or your own verified knowledge **contradicts**; a claim the rubric merely omits belongs in `unverifiedClaims` (section 7), where the harness checks it against the source.");
+        sb.AppendLine($"- **A claim the rubric does not mention is not thereby invented.** Mark criticalError only for a claim the rubric's ground truth or the GAME BOARD **contradicts**. A claim you believe false from your own knowledge alone is not a critical error: report it in `unverifiedClaims`, quoted verbatim and prefixed `{BenchmarkSuspectedFalseClaim.Prefix}` as section 1 describes, and the claim verifier checks it against the source. A claim the rubric merely omits belongs in `unverifiedClaims` too (section 7).");
         // The SOURCE line names where the rubric's author looked, not every correct place to look,
         // so a citation outside it is a claim to verify rather than a defect.
         sb.AppendLine("- **The rubric's SOURCE line records where the rubric's author found its facts; it is not the list of correct citations.** A source location the answer cites that the SOURCE line does not name — another function, another file or another line — is not wrong for that reason and never lowers ACCURACY by itself. When you cannot tell whether such a citation is right, copy its sentence to `unverifiedClaims`; the claim verifier checks it.");
@@ -892,6 +926,11 @@ public static class BenchmarkAssessmentPrompt
         sb.AppendLine("`unverifiedClaims` is a list of sentences the answer asserts that the rubric neither states nor contradicts, and that you cannot positively refute. Copy each one **verbatim** from the candidate answer — the harness checks that the text appears there and silently drops a paraphrase, exactly as it does for `criticalErrorQuote`.");
         sb.AppendLine("These are recorded, not penalised. Across several runs by unrelated models, a claim that keeps recurring is evidence the rubric is incomplete; a claim only one model ever makes is evidence that model invented it. Return an empty list when every claim is adjudicable.");
         sb.AppendLine($"A sentence you believe false from your own knowledge, which neither the rubric nor the board settles, is also an entry here, written `{BenchmarkSuspectedFalseClaim.Prefix}<the sentence, verbatim from the answer> — <your reason>`. The harness checks the quoted sentence against the answer as it checks any other entry, and the claim verifier checks it against the source.");
+        sb.AppendLine();
+        sb.AppendLine("### 8. NOT ATTEMPTED, UNCERTAINTY AND ALTERNATIVES");
+        sb.AppendLine("- **`notAttempted`.** Set it to true when the answer does not give what the question asks for and says why: it states that it could not find, or could not verify, that information. It may add what it did find, where to look, or behavior it labels as NetHack's. Set it to false for every other answer: one that gives a value, an outcome or a recommendation, however tentatively; a refusal for any other reason; an answer that does not address the question. Grade the four levels exactly as you otherwise would; `notAttempted` changes nothing about them.");
+        sb.AppendLine("- **A statement the answer marks as uncertain** (\"I believe…\", \"I could not confirm…\", \"in NetHack this is X, but GnollHack may differ\") is graded for ACCURACY as the claim it actually makes. A true statement about NetHack, or a correct statement that something is uncertain, is not an error. A tentative claim that the rubric or the GAME BOARD contradicts lowers ACCURACY like any other claim. It is not confidently asserted, so it is not a critical error, unless it recommends an action that the rubric's CRITICAL ERROR section names: tentative advice to take a dangerous action is still a critical error.");
+        sb.AppendLine("- **Alternatives instead of an answer.** When the question asks for a value, an outcome or a decision and the answer offers two or more alternatives without committing to one, that point earns no COMPLETENESS credit, and each alternative counts as a claim for ACCURACY.");
 
         return sb.ToString();
     }
@@ -987,6 +1026,7 @@ public static class BenchmarkAssessmentPrompt
   ""readabilityLevel"": 5,
   ""criticalError"": false,
   ""criticalErrorQuote"": null,
+  ""notAttempted"": false,
   ""unverifiedClaims"": [""Verbatim sentence from the answer that you could neither confirm nor refute.""],
   ""accuracyEvidence"": ""Rubric point 2: prayer timeout reset amounts. The answer omits 350/175."",
   ""completenessEvidence"": ""Matches rubric."",
@@ -1465,9 +1505,20 @@ public static class BenchmarkAssessmentPrompt
                 // leaving it here reintroduced the same bias one level up, in the prompt that
                 // produces the Holistic Assessor Score.
                 sb.AppendLine($"Computed Scores: Quality={v.QualityScore ?? 0}/100, Speed={v.SpeedScore ?? 0}/100");
-                if (v.CriticalError)
+                // Scoring method 13: a panel answer's critical error is stated with its resolution,
+                // which is the same for both members' syntheses.
+                string? resolvedCriticalError = CriticalErrorResolutionLine(v.CriticalErrorResolution);
+                if (resolvedCriticalError != null)
+                {
+                    sb.AppendLine(resolvedCriticalError);
+                }
+                else if (v.CriticalError)
                 {
                     sb.AppendLine("CRITICAL ERROR: YES");
+                }
+                if (v.NotAttempted)
+                {
+                    sb.AppendLine("NOT ATTEMPTED: yes");
                 }
                 // The evidence, not just the prose. A synthesis that can see which rubric point a
                 // deduction rested on distinguishes a rubric failure from the grader's own
@@ -1581,5 +1632,42 @@ public static class BenchmarkAssessmentPrompt
             .ToList();
         string line = byLevel.Count > 0 ? string.Join(", ", byLevel) : "no scored answers";
         sb.AppendLine($"{dimension}: {line}");
+    }
+
+    /// <summary>
+    /// The synthesis prompt's critical-error line for a panel resolution. Null for no resolution,
+    /// <c>None</c> and <c>SingleAssessor</c>, which print the single-assessor line or nothing.
+    /// </summary>
+    private static string? CriticalErrorResolutionLine(BenchmarkCriticalErrorResolution? resolution) => resolution switch
+    {
+        BenchmarkCriticalErrorResolution.Agreed => "CRITICAL ERROR: YES (confirmed by both panel members)",
+        BenchmarkCriticalErrorResolution.UpheldByVerifier => "CRITICAL ERROR: YES (flagged by one panel member, upheld by the claim verifier)",
+        BenchmarkCriticalErrorResolution.OverturnedByVerifier => "CRITICAL ERROR: NO (flagged by one panel member, overturned by the claim verifier, not applied)",
+        BenchmarkCriticalErrorResolution.Unresolved => "CRITICAL ERROR: SPLIT (flagged by one panel member, unresolved, averaged)",
+        _ => null
+    };
+
+    /// <summary>
+    /// <see cref="BenchmarkPerQuestionVerdictSummary.CriticalErrorResolution"/> for an answer:
+    /// the answer's own resolution on a run graded under scoring method 13 or later, null before.
+    /// </summary>
+    internal static BenchmarkCriticalErrorResolution? SynthesisCriticalErrorResolution(BenchmarkRun run, BenchmarkRunAnswer answer)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(answer);
+        return run.ScoringMethodVersion >= 13 ? answer.CriticalErrorResolution : null;
+    }
+
+    /// <summary>
+    /// <see cref="BenchmarkPerQuestionVerdictSummary.NotAttempted"/> for an answer: its outcome class
+    /// (<see cref="BenchmarkOutcomeSummary.Classify"/>) is <i>not attempted</i>. Always false before
+    /// scoring method 13.
+    /// </summary>
+    internal static bool IsNotAttemptedOutcome(BenchmarkRun run, BenchmarkRunAnswer answer)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(answer);
+        return BenchmarkOutcomeSummary.Classify(run, answer, BenchmarkRunFinalizer.IsPanelRun(run))
+            == BenchmarkOutcomeClass.NotAttempted;
     }
 }

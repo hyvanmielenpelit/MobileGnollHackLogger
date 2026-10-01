@@ -201,6 +201,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = p.WeightReadability,
             LevelScoresJson = p.LevelScoresJson,
             CriticalErrorCeiling = p.CriticalErrorCeiling,
+            NotAttemptedScore = p.NotAttemptedScore,
             SecondOpinionQualityThreshold = p.SecondOpinionQualityThreshold,
             SecondOpinionMode = p.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = p.SecondOpinionOutlierDeltaPoints,
@@ -236,6 +237,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = request.WeightReadability,
             LevelScoresJson = request.LevelScoresJson,
             CriticalErrorCeiling = request.CriticalErrorCeiling,
+            NotAttemptedScore = request.NotAttemptedScore,
             SecondOpinionQualityThreshold = request.SecondOpinionQualityThreshold,
             SecondOpinionMode = request.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = request.SecondOpinionOutlierDeltaPoints,
@@ -264,6 +266,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = created.WeightReadability,
             LevelScoresJson = created.LevelScoresJson,
             CriticalErrorCeiling = created.CriticalErrorCeiling,
+            NotAttemptedScore = created.NotAttemptedScore,
             SecondOpinionQualityThreshold = created.SecondOpinionQualityThreshold,
             SecondOpinionMode = created.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = created.SecondOpinionOutlierDeltaPoints,
@@ -292,6 +295,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = request.WeightReadability,
             LevelScoresJson = request.LevelScoresJson,
             CriticalErrorCeiling = request.CriticalErrorCeiling,
+            NotAttemptedScore = request.NotAttemptedScore,
             SecondOpinionQualityThreshold = request.SecondOpinionQualityThreshold,
             SecondOpinionMode = request.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = request.SecondOpinionOutlierDeltaPoints,
@@ -320,6 +324,7 @@ public class AdminBenchmarkController : ControllerBase
             WeightReadability = updated.WeightReadability,
             LevelScoresJson = updated.LevelScoresJson,
             CriticalErrorCeiling = updated.CriticalErrorCeiling,
+            NotAttemptedScore = updated.NotAttemptedScore,
             SecondOpinionQualityThreshold = updated.SecondOpinionQualityThreshold,
             SecondOpinionMode = updated.SecondOpinionMode,
             SecondOpinionOutlierDeltaPoints = updated.SecondOpinionOutlierDeltaPoints,
@@ -3019,6 +3024,8 @@ public class AdminBenchmarkController : ControllerBase
                     return (Succeeded: succeeded, Failed: failed, Refused: refused);
                 });
 
+        var outcomeSummary = BenchmarkOutcomeSummary.Compute(run, run.Answers.ToList());
+
         var dto = new BenchmarkRunDetailDto
         {
             Id = run.Id,
@@ -3295,6 +3302,28 @@ public class AdminBenchmarkController : ControllerBase
                     })
                     .ToList(),
 
+            OutcomeSummary = outcomeSummary == null ? null : new BenchmarkRunOutcomeSummaryDto
+            {
+                CorrectCount = outcomeSummary.CorrectCount,
+                PartialCount = outcomeSummary.PartialCount,
+                IncorrectCount = outcomeSummary.IncorrectCount,
+                NotAttemptedCount = outcomeSummary.NotAttemptedCount,
+                NoAnswerCount = outcomeSummary.NoAnswerCount,
+                ClassifiedCount = outcomeSummary.ClassifiedCount,
+                ConfirmedCriticalErrorCount = outcomeSummary.ConfirmedCriticalErrorCount,
+                UnresolvedCriticalErrorCount = outcomeSummary.UnresolvedCriticalErrorCount,
+                OverturnedCriticalErrorCount = outcomeSummary.OverturnedCriticalErrorCount,
+                CriticalErrorRate = outcomeSummary.CriticalErrorRate,
+                CriticalErrorRateLow = outcomeSummary.CriticalErrorRateLow,
+                CriticalErrorRateHigh = outcomeSummary.CriticalErrorRateHigh,
+                CorrectWhenAttempted = outcomeSummary.CorrectWhenAttempted,
+                WrongInsteadOfAbstaining = outcomeSummary.WrongInsteadOfAbstaining,
+                ConfirmedCriticalErrorQuestions = outcomeSummary.ConfirmedCriticalErrorQuestions.ToList(),
+                UnresolvedCriticalErrorQuestions = outcomeSummary.UnresolvedCriticalErrorQuestions.ToList(),
+                OverturnedCriticalErrorQuestions = outcomeSummary.OverturnedCriticalErrorQuestions.ToList(),
+                NotAttemptedQuestions = outcomeSummary.NotAttemptedQuestions.ToList()
+            },
+
             Answers = run.Answers.OrderBy(a => a.OrderIndex).Select(a =>
             {
                 bool hasToolCallOutcome = toolCallOutcomesByAnswer.TryGetValue(a.Id, out var toolCallOutcome);
@@ -3377,6 +3406,9 @@ public class AdminBenchmarkController : ControllerBase
                     AssessmentDurationMs = a.AssessmentDurationMs,
                     AssessmentEvidenceJson = a.AssessmentEvidenceJson,
                     CriticalErrorQuote = a.CriticalErrorQuote,
+                    NotAttempted = a.NotAttempted,
+                    CriticalErrorResolution = a.CriticalErrorResolution?.ToString(),
+                    OutcomeClass = BenchmarkOutcomeSummary.Classify(run, a, isPanelRun)?.ToString(),
                     UnverifiedClaimCount = a.UnverifiedClaimCount,
                     UnverifiedClaimsJson = a.UnverifiedClaimsJson,
                     PanelQualityScore = a.PanelQualityScore,
@@ -3386,6 +3418,7 @@ public class AdminBenchmarkController : ControllerBase
                     CoAssessmentQualityScore = a.CoAssessmentQualityScore,
                     CoAssessmentRawQualityScore = a.CoAssessmentRawQualityScore,
                     CoAssessmentCriticalError = a.CoAssessmentCriticalError,
+                    CoAssessmentNotAttempted = a.CoAssessmentNotAttempted,
                     CoAssessmentJson = a.CoAssessmentJson,
                     CoAssessedByModelDisplayNameUsed = a.CoAssessedByModelSnapshot.Label(),
                     CoAssessedAtUtc = a.CoAssessedAtUtc,

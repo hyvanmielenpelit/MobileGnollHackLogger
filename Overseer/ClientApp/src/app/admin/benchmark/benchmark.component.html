@@ -550,8 +550,9 @@
                                     (selectionChange)="selectClaimVerifierModel($event.model)"></app-model-picker>
                   <app-info-tip trigger="click" tipId="bmClaimVerifierModelHint" subject="Claim Verifier">
                     <p>When a grader says a fact in an answer is wrong or unverifiable, the verifier looks it up in the
-                      game source and wiki and rules it true, false or undecided. It never changes a score. It shows
-                      where a grader was wrong, so you know which answers to re-assess, which rubrics miss facts and
+                      game source and wiki and rules it true, false or undecided. It changes no level. From scoring
+                      method 13, its ruling on a critical-error quote settles a split between the two panel members.
+                      It shows where a grader was wrong, so you know which answers to re-assess, which rubrics miss facts and
                       which facts the chat gets wrong. Use it on runs you will analyze or use to choose models, and
                       skip it for quick checks: it is often the most expensive grading role.</p>
                     <p><strong>Recommended:</strong> Gemini Flash (not Flash-Lite) at medium effort; high if its rulings
@@ -1447,6 +1448,10 @@
                 <dd>{{ profile.criticalErrorCeiling }}</dd>
               </div>
               <div class="profile-spec">
+                <dt>Not Attempted</dt>
+                <dd>{{ profile.notAttemptedScore != null ? profile.notAttemptedScore : 'Off' }}</dd>
+              </div>
+              <div class="profile-spec">
                 <dt>2nd Opinion Below</dt>
                 <dd>{{ profile.secondOpinionQualityThreshold ? profile.secondOpinionQualityThreshold : 'Off' }}</dd>
               </div>
@@ -1901,11 +1906,11 @@
                   <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Unweighted Mean" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
                 </div>
               }
-              <!-- Counted by the report's rule: in a panel run, a cap from either member. -->
+              <!-- Counted by the report's rule: in a panel run, a cap from either member; from scoring method 13, confirmed critical errors. -->
               @if (showCriticalErrorsTile) {
                 <div class="score-card" data-figure="critical-errors" [hidden]="!isKeyFigureShown('critical-errors')">
                   <span class="score-label">Critical Errors</span>
-                  <span class="score-subvalue">{{ keyFigureCriticalErrorAnswers.length > 0 ? keyFigureCriticalErrorAnswers.length : 'None' }}</span>
+                  <span class="score-subvalue">{{ keyFigureCriticalErrorCount > 0 ? keyFigureCriticalErrorCount : 'None' }}</span>
                   @for (note of keyFigureCriticalErrorNotes; track $index) {
                     <span class="score-note">{{ note }}</span>
                   }
@@ -2218,7 +2223,7 @@
                     @if (contestedCriticalErrorAnswerCount > 0) {
                       <div>
                         <strong>{{ contestedCriticalErrorAnswerCount }} answer(s) carry a contested critical error</strong>@if (contestedCriticalErrorQuestionNumbers) { <span> (question(s) {{ contestedCriticalErrorQuestionNumbers }})</span> } &mdash;
-                        the quoted claim was checked against the source code/wiki by the claim verifier and supported. Advisory; the cap stands and no score changed. Re-assess from the run detail.
+                        the quoted claim was checked against the source code/wiki by the claim verifier and supported. Before scoring method 13 this is advisory: the cap stands and no score changed. From scoring method 13, a critical error only one panel member raised is overturned. Re-assess from the run detail.
                       </div>
                     }
                     @if ((contestedAccuracyDeductionAnswerCount ?? 0) > 0) {
@@ -2410,7 +2415,7 @@
                           -->
                           <span class="badge-flag"
                                 [class]="'badge-flag-' + flag.toLowerCase() + (isAdvisoryFlagName(flag) ? ' badge-flag-advisory' : '')"
-                                [title]="flag === 'RefutedClaim' ? 'Advisory: a claim outside the rubric was checked against the source/wiki and refuted. Recorded after scoring; no score changed.' : flag === 'UnevidencedDeduction' ? 'Advisory: a level was docked with evidence that names no defect, or that rests only on unverifiability. The verdict stands and no score changed.' : flag === 'OmissionAsAccuracy' ? 'Advisory: an omission was docked as accuracy, which Completeness already grades. The verdict stands and no score changed.' : flag === 'ContestedCriticalError' ? 'Advisory: the critical-error quote was checked against the source/wiki by the claim verifier and supported. Contested, not overturned — the quality cap stands and no score changed.' : flag === 'ContestedAccuracyDeduction' ? 'Advisory: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was refuted by the claim verifier, or a sentence the assessor quoted as false was supported by it. Contested, not overturned — the deduction stands and no score changed.' : flag === 'DimensionOutlier' ? 'Advisory: one grading dimension scored ≤ 1 while the other three scored ≥ 3, with no defect of that kind named in the assessor comment. Routed to a second reader; no score changed.' : isAdvisoryFlagName(flag) ? 'Advisory only — this does not affect the run status or the clean answer count.' : 'Transport defect detected in this answer.'">{{ flagBadgeLabel(flag) }}</span>
+                                [title]="flag === 'RefutedClaim' ? 'Advisory: a claim outside the rubric was checked against the source/wiki and refuted. Recorded after scoring; no score changed.' : flag === 'UnevidencedDeduction' ? 'Advisory: a level was docked with evidence that names no defect, or that rests only on unverifiability. The verdict stands and no score changed.' : flag === 'OmissionAsAccuracy' ? 'Advisory: an omission was docked as accuracy, which Completeness already grades. The verdict stands and no score changed.' : flag === 'ContestedCriticalError' ? 'Advisory: the critical-error quote was checked against the source/wiki by the claim verifier and supported. Contested — before scoring method 13 the quality cap stands and no score changed; from scoring method 13 a critical error only one panel member raised is overturned.' : flag === 'ContestedAccuracyDeduction' ? 'Advisory: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was refuted by the claim verifier, or a sentence the assessor quoted as false was supported by it. Contested, not overturned — the deduction stands and no score changed.' : flag === 'DimensionOutlier' ? 'Advisory: one grading dimension scored ≤ 1 while the other three scored ≥ 3, with no defect of that kind named in the assessor comment. Routed to a second reader; no score changed.' : isAdvisoryFlagName(flag) ? 'Advisory only — this does not affect the run status or the clean answer count.' : 'Transport defect detected in this answer.'">{{ flagBadgeLabel(flag) }}</span>
                         }
                       }
                       @if (formatAssessmentStatus(ans.assessmentStatus) !== 'Scored') {
@@ -2418,8 +2423,12 @@
                           Assessment: {{ formatAssessmentStatus(ans.assessmentStatus) }}
                         </span>
                       }
-                      @if (ans.criticalError) {
-                        <span class="critical-badge" title="Critical error cap applied (Quality capped at 25)">CRITICAL ERROR</span>
+                      @if (showCriticalErrorBadge(ans)) {
+                        <span class="critical-badge" [title]="criticalErrorBadgeTitle(ans)">CRITICAL ERROR</span>
+                      }
+                      @if (ans.outcomeClass === 'NotAttempted') {
+                        <span class="badge-flag badge-flag-notattempted badge-flag-advisory"
+                              title="The answer says it could not find or verify the answer; scored at least the profile's not-attempted score">NOT ATTEMPTED</span>
                       }
                       @if (ans.panelDisagreed) {
                         <span class="panel-disagree-badge"
@@ -3379,6 +3388,11 @@
             <label for="critCeiling">Critical Error Ceiling</label>
             <input id="critCeiling" type="number" min="1" max="100" class="gh-input" [(ngModel)]="profileForm.criticalErrorCeiling" aria-describedby="critCeilingHint">
             <span id="critCeilingHint" class="form-hint">The highest quality score an answer may keep when the assessor flags a <em>critical error</em> &mdash; a confidently asserted falsehood a player would act on to their direct detriment. Applied as a cap after the weighted score is computed: a flagged answer scoring above this value is reduced to it; one already below is left unchanged. Must be between 1 and 100. Default <code>25</code>.</span>
+          </div>
+          <div class="form-group">
+            <label for="notAttemptedScore">Not-Attempted Score</label>
+            <input id="notAttemptedScore" type="number" min="0" max="100" step="1" class="gh-input" [(ngModel)]="profileForm.notAttemptedScore" aria-describedby="notAttemptedScoreHint">
+            <span id="notAttemptedScoreHint" class="form-hint">Lowest score for an answer that says it could not find or verify the answer and makes no false claim (scoring method 13 on). At 50, giving an answer pays off when the model is at least about as likely to be right as wrong. Blank turns it off. 0&ndash;100, default <code>50</code>.</span>
           </div>
           <div class="form-group">
             <label for="secondOpinionThreshold">Second Reader Threshold</label>

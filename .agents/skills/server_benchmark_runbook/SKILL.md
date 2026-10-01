@@ -322,7 +322,17 @@ identical**:
   a panel run never shows that dialog.
 - **State the decision rule before the runs are made**, on the three axes:
   - *Intelligence* — Intelligence Index with its interval, critical errors, refuted claims. A
-    candidate inside the baseline's interval is a tie, not a loss or a win.
+    candidate inside the baseline's interval is a tie, not a loss or a win. From scoring method 13
+    (harness 45) also compare, from report § 2 or the Critical Errors key-figure card:
+    - the **confirmed critical-error rate** with its 95 % Wilson interval — confirmed only, not
+      unresolved or overturned splits; on a small suite the interval is wide, so overlapping
+      intervals are a tie here too;
+    - **correct when attempted** — correct ÷ (correct + partial + incorrect);
+    - **wrong instead of abstaining** — incorrect ÷ (incorrect + not attempted), lower is better: it
+      shows a model that guesses where the production prompt tells it to say it does not know.
+
+    State in advance which of these can veto a candidate the index favors. A method-13 set is never
+    compared with a method-12 run.
   - *Speed* — **median model time and TTFT P50 / P90**, never the Speed Index, which saturates
     and is comparable only within one thinking level. Name the ceiling a mid-game player
     tolerates, in milliseconds, from the analysis.

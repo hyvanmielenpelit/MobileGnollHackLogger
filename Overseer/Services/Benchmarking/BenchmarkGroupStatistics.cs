@@ -177,7 +177,10 @@ public sealed record BenchmarkGroupItemStatistics
     /// </summary>
     public bool MeanConfidenceTruncated { get; init; }
 
-    /// <summary>Runs in which the assessor flagged a critical error on this item.</summary>
+    /// <summary>
+    /// Runs in which this item drew a critical error: from scoring method 13 a confirmed one
+    /// (<see cref="BenchmarkCriticalErrorResolver.IsConfirmed"/>), before it the assessor's flag.
+    /// </summary>
     public int CriticalErrorCount { get; init; }
 
     /// <summary>
@@ -1094,7 +1097,7 @@ public static class BenchmarkGroupStatistics
             half = StudentTCritical95(runCount - 1) * sd.Value / Math.Sqrt(runCount);
         }
 
-        int criticalErrors = samples.Count(s => s.Answer.CriticalError);
+        int criticalErrors = samples.Count(s => HasCriticalError(s.Run, s.Answer));
 
         // The item's weight is fixed across the group. See BenchmarkGroupItemStatistics.Weight.
         var ratings = samples
@@ -1138,6 +1141,15 @@ public static class BenchmarkGroupStatistics
             Analysis = analysis
         };
     }
+
+    /// <summary>
+    /// A confirmed critical error on a run scored under scoring method 13 or later, member A's flag
+    /// on an earlier run.
+    /// </summary>
+    private static bool HasCriticalError(BenchmarkRun run, BenchmarkRunAnswer answer)
+        => BenchmarkCriticalErrorResolver.Applies(run)
+            ? BenchmarkCriticalErrorResolver.IsConfirmed(answer)
+            : answer.CriticalError;
 
     /// <summary>
     /// The pooled index and its two components.

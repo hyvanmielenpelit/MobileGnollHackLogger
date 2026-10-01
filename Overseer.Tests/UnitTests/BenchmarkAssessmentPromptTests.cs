@@ -194,7 +194,7 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void ScoringMethodVersion_IsTwelve()
+    public void ScoringMethodVersion_IsThirteen()
     {
         // v4 was the artifact scrubbing and speed recalibration. v5 changed what a critical
         // error is — an omission can no longer be one, and the claim must be quoted. v6 changed
@@ -212,16 +212,21 @@ public class BenchmarkAssessmentPromptTests
         // depth, which the production concise prompt tells the candidate not to produce; a level
         // below 6 must name a wrong or imprecise statement. It moves every index. v12 grades
         // ACCURACY against the rubric and the board only: an own-knowledge suspicion is reported as a
-        // "Suspected false: " unverified claim for the verifier instead of lowering the level.
+        // "Suspected false: " unverified claim for the verifier instead of lowering the level. v13
+        // confirms critical errors: a one-member panel split is settled by the claim verifier, a
+        // critical error comes only from the rubric or the board, and an honest abstention marked
+        // notAttempted is raised to the profile's not-attempted floor.
         // Scores are not comparable across any of those boundaries on the answers they touch, and
         // the report prints the version so a mixed comparison is visible rather than silent.
-        Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        Assert.Equal(13, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 
     [Fact]
-    public void HarnessVersion_IsFortyFour()
+    public void HarnessVersion_IsFortyFive()
     {
-        Assert.Equal("44", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 45: grading preamble section 8, notAttempted in the output schema, and critical-error
+        // resolutions and NOT ATTEMPTED in the synthesis prompt.
+        Assert.Equal("45", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -269,7 +274,7 @@ public class BenchmarkAssessmentPromptTests
         // A rubric is an incomplete ground-truth list, so "absent from the rubric" is not evidence
         // of falsehood and cannot carry the critical-error cap on its own.
         Assert.Contains("A claim the rubric does not mention is not thereby invented", prompt);
-        Assert.Contains("a claim the rubric merely omits belongs in `unverifiedClaims`", prompt);
+        Assert.Contains("A claim the rubric merely omits belongs in `unverifiedClaims` too (section 7).", prompt);
     }
 
     [Fact]
@@ -860,18 +865,222 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs44_ScoringMethodIs12()
+    public void Versions_HarnessIs45_ScoringMethodIs13()
     {
-        Assert.Equal("44", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("45", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 44 keeps scoring method 12: nothing in it moves a score. 44: per-role raisers
-        // (accusedBy, suspectedBy) in the panel claim manifest, convergence rows split by the
-        // questions each member and both named, the Panel Agreement member spread, mean model time
-        // per question beside the median, and the recorded source-code-references prompt option,
-        // disallowed unless requested. No answer flag is added; a default run's chat prompt, with
-        // source code references disallowed, moves CandidateSystemPromptSha256. The stats tools and
-        // get_knowledge_article trim their name and topic arguments, with no tool guide change.
-        Assert.Equal(12, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        // Harness 45 moves with scoring method 13: confirmed critical errors and the not-attempted
+        // floor change scores. The grading preamble takes a critical error only from the rubric or
+        // the board and gains section 8 (notAttempted, uncertain statements, alternatives), the
+        // output schema gains notAttempted, and the synthesis prompt states each critical error's
+        // resolution and marks an answer NOT ATTEMPTED. No tool guide or chat prompt changes.
+        Assert.Equal(13, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
+
+    [Fact]
+    public void OutputSchema_CarriesNotAttempted_DirectlyAfterTheCriticalErrorQuote()
+    {
+        string body = BenchmarkAssessmentPrompt.BuildPerQuestionBody(
+            1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok);
+        string nl = Environment.NewLine;
+
+        Assert.Contains("  \"criticalErrorQuote\": null," + nl + "  \"notAttempted\": false," + nl, body);
+        Assert.True(
+            body.IndexOf("\"notAttempted\"", StringComparison.Ordinal) < body.IndexOf("\"comment\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PerQuestionPreamble_EndsWithSectionEight_NotAttemptedUncertaintyAndAlternatives()
+    {
+        string preamble = BenchmarkAssessmentPrompt.BuildPerQuestionPreamble("Suite");
+        string nl = Environment.NewLine;
+
+        int section7 = preamble.IndexOf("### 7. UNVERIFIED CLAIMS", StringComparison.Ordinal);
+        int section8 = preamble.IndexOf("### 8. NOT ATTEMPTED, UNCERTAINTY AND ALTERNATIVES", StringComparison.Ordinal);
+        Assert.True(section7 >= 0 && section7 < section8);
+        Assert.DoesNotContain("### 9.", preamble);
+
+        Assert.Contains("- **`notAttempted`.** Set it to true when the answer does not give what the question asks for and says why: it states that it could not find, or could not verify, that information. It may add what it did find, where to look, or behavior it labels as NetHack's. Set it to false for every other answer: one that gives a value, an outcome or a recommendation, however tentatively; a refusal for any other reason; an answer that does not address the question. Grade the four levels exactly as you otherwise would; `notAttempted` changes nothing about them.", preamble);
+        Assert.Contains("- **A statement the answer marks as uncertain** (\"I believe…\", \"I could not confirm…\", \"in NetHack this is X, but GnollHack may differ\") is graded for ACCURACY as the claim it actually makes. A true statement about NetHack, or a correct statement that something is uncertain, is not an error. A tentative claim that the rubric or the GAME BOARD contradicts lowers ACCURACY like any other claim. It is not confidently asserted, so it is not a critical error, unless it recommends an action that the rubric's CRITICAL ERROR section names: tentative advice to take a dangerous action is still a critical error.", preamble);
+        Assert.EndsWith("- **Alternatives instead of an answer.** When the question asks for a value, an outcome or a decision and the answer offers two or more alternatives without committing to one, that point earns no COMPLETENESS credit, and each alternative counts as a claim for ACCURACY." + nl, preamble);
+    }
+
+    [Fact]
+    public void PerQuestionPrompt_TakesACriticalErrorOnlyFromTheRubricOrTheBoard()
+    {
+        string prompt = BenchmarkAssessmentPrompt.BuildPerQuestionPrompt(
+            "Suite", 1, "Question?", BenchmarkDifficulty.Simple, "Rubric.", "Answer.", BenchmarkAnswerStatus.Ok);
+
+        Assert.Contains("Mark criticalError only for a claim the rubric's ground truth or the GAME BOARD **contradicts**. A claim you believe false from your own knowledge alone is not a critical error: report it in `unverifiedClaims`, quoted verbatim and prefixed `Suspected false: ` as section 1 describes, and the claim verifier checks it against the source. A claim the rubric merely omits belongs in `unverifiedClaims` too (section 7).", prompt);
+        Assert.DoesNotContain("your own verified knowledge **contradicts**", prompt);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_MethodThirteen_StatesEachCriticalErrorResolution()
+    {
+        var agreed = Verdict(1, accuracyLevel: 2, accuracyEvidence: "Wrong.");
+        agreed.CriticalError = true;
+        agreed.CriticalErrorResolution = BenchmarkCriticalErrorResolution.Agreed;
+        var upheld = Verdict(2, accuracyLevel: 2, accuracyEvidence: "Wrong.");
+        upheld.CriticalErrorResolution = BenchmarkCriticalErrorResolution.UpheldByVerifier;
+        var overturned = Verdict(3, accuracyLevel: 5, accuracyEvidence: "Level 5.");
+        overturned.CriticalError = true;
+        overturned.CriticalErrorResolution = BenchmarkCriticalErrorResolution.OverturnedByVerifier;
+        var unresolved = Verdict(4, accuracyLevel: 4, accuracyEvidence: "Imprecise.");
+        unresolved.CriticalErrorResolution = BenchmarkCriticalErrorResolution.Unresolved;
+        var single = Verdict(5, accuracyLevel: 2, accuracyEvidence: "Wrong.");
+        single.CriticalError = true;
+        single.CriticalErrorResolution = BenchmarkCriticalErrorResolution.SingleAssessor;
+        var none = Verdict(6, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+        none.CriticalErrorResolution = BenchmarkCriticalErrorResolution.None;
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt(
+            "Suite", new[] { agreed, upheld, overturned, unresolved, single, none });
+
+        Assert.Equal("CRITICAL ERROR: YES (confirmed by both panel members)", CriticalErrorLine(prompt, 1));
+        Assert.Equal("CRITICAL ERROR: YES (flagged by one panel member, upheld by the claim verifier)", CriticalErrorLine(prompt, 2));
+        Assert.Equal("CRITICAL ERROR: NO (flagged by one panel member, overturned by the claim verifier, not applied)", CriticalErrorLine(prompt, 3));
+        Assert.Equal("CRITICAL ERROR: SPLIT (flagged by one panel member, unresolved, averaged)", CriticalErrorLine(prompt, 4));
+        Assert.Equal("CRITICAL ERROR: YES", CriticalErrorLine(prompt, 5));
+        Assert.Null(CriticalErrorLine(prompt, 6));
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_MarksANotAttemptedAnswer()
+    {
+        var abstained = Verdict(1, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+        abstained.NotAttempted = true;
+        var answered = Verdict(2, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { abstained, answered });
+
+        Assert.Contains("NOT ATTEMPTED: yes", QuestionBlock(prompt, 1));
+        Assert.DoesNotContain("NOT ATTEMPTED", QuestionBlock(prompt, 2));
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_BeforeMethodThirteen_PrintsTheCriticalErrorFlagAlone()
+    {
+        // A summary of a method-12 run carries no resolution and no not-attempted outcome.
+        var flagged = Verdict(1, accuracyLevel: 2, accuracyEvidence: "Wrong.");
+        flagged.CriticalError = true;
+        var clean = Verdict(2, accuracyLevel: 6, accuracyEvidence: "Matches rubric.");
+
+        string prompt = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { flagged, clean });
+
+        Assert.Equal("CRITICAL ERROR: YES", CriticalErrorLine(prompt, 1));
+        Assert.Null(CriticalErrorLine(prompt, 2));
+        Assert.DoesNotContain("NOT ATTEMPTED", prompt);
+        Assert.DoesNotContain("panel member", QuestionBlock(prompt, 1));
+    }
+
+    [Theory]
+    [InlineData(12, false)]
+    [InlineData(13, true)]
+    public void SynthesisCriticalErrorResolution_IsTheAnswersOwn_FromMethodThirteen(int method, bool expected)
+    {
+        var run = new BenchmarkRun { ScoringMethodVersion = method };
+        var answer = new BenchmarkRunAnswer { CriticalErrorResolution = BenchmarkCriticalErrorResolution.UpheldByVerifier };
+
+        BenchmarkCriticalErrorResolution? want = expected ? BenchmarkCriticalErrorResolution.UpheldByVerifier : null;
+
+        Assert.Equal(want, BenchmarkAssessmentPrompt.SynthesisCriticalErrorResolution(run, answer));
+    }
+
+    [Theory]
+    [InlineData(13, 5, true, null, true)]
+    [InlineData(12, 5, true, null, false)]
+    [InlineData(13, 5, false, null, false)]
+    [InlineData(13, 2, true, null, false)]
+    [InlineData(13, 5, true, BenchmarkCriticalErrorResolution.SingleAssessor, false)]
+    [InlineData(13, 5, true, BenchmarkCriticalErrorResolution.None, true)]
+    public void IsNotAttemptedOutcome_SingleAssessorRun(
+        int method, int accuracy, bool notAttempted, BenchmarkCriticalErrorResolution? resolution, bool expected)
+    {
+        var run = new BenchmarkRun { ScoringMethodVersion = method };
+        var answer = GradedAnswer(accuracy);
+        answer.NotAttempted = notAttempted;
+        answer.CriticalErrorResolution = resolution;
+
+        Assert.Equal(expected, BenchmarkAssessmentPrompt.IsNotAttemptedOutcome(run, answer));
+    }
+
+    [Theory]
+    [InlineData(5, 5, true, true, null, true)]
+    [InlineData(5, 5, true, false, null, false)]
+    [InlineData(4, 0, true, true, null, false)]
+    [InlineData(3, 2, true, true, null, true)]
+    [InlineData(5, 5, true, true, BenchmarkCriticalErrorResolution.Agreed, false)]
+    [InlineData(5, 5, true, true, BenchmarkCriticalErrorResolution.UpheldByVerifier, false)]
+    [InlineData(5, 5, true, true, BenchmarkCriticalErrorResolution.Unresolved, true)]
+    public void IsNotAttemptedOutcome_PanelRun_NeedsBothMembers(
+        int accuracyA, int accuracyB, bool notAttemptedA, bool notAttemptedB, BenchmarkCriticalErrorResolution? resolution, bool expected)
+    {
+        var run = new BenchmarkRun { ScoringMethodVersion = 13, CoAssessorModelConfigurationId = 2 };
+        var answer = GradedAnswer(accuracyA);
+        answer.NotAttempted = notAttemptedA;
+        answer.CoAssessmentNotAttempted = notAttemptedB;
+        answer.CriticalErrorResolution = resolution;
+        answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+        answer.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+        {
+            AccuracyLevel = accuracyB,
+            CompletenessLevel = 3,
+            ConcisenessLevel = 5,
+            ReadabilityLevel = 5
+        }.Serialize();
+
+        Assert.Equal(expected, BenchmarkAssessmentPrompt.IsNotAttemptedOutcome(run, answer));
+    }
+
+    [Fact]
+    public void IsNotAttemptedOutcome_IsFalseForAnUngradedAnswer()
+    {
+        var single = new BenchmarkRun { ScoringMethodVersion = 13 };
+        var ungraded = GradedAnswer(5);
+        ungraded.NotAttempted = true;
+        ungraded.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
+        Assert.False(BenchmarkAssessmentPrompt.IsNotAttemptedOutcome(single, ungraded));
+
+        // A panel answer member B has not scored is not graded either.
+        var panel = new BenchmarkRun { ScoringMethodVersion = 13, CoAssessorModelConfigurationId = 2 };
+        var memberAOnly = GradedAnswer(5);
+        memberAOnly.NotAttempted = true;
+        memberAOnly.CoAssessmentNotAttempted = true;
+        memberAOnly.CoAssessmentStatus = BenchmarkAssessmentStatus.Pending;
+        Assert.False(BenchmarkAssessmentPrompt.IsNotAttemptedOutcome(panel, memberAOnly));
+    }
+
+    private static BenchmarkRunAnswer GradedAnswer(int accuracyLevel) => new()
+    {
+        OrderIndex = 1,
+        Status = BenchmarkAnswerStatus.Ok,
+        AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+        AccuracyLevel = accuracyLevel,
+        CompletenessLevel = 3,
+        ConcisenessLevel = 5,
+        ReadabilityLevel = 5
+    };
+
+    /// <summary>The per-question block of question <paramref name="orderIndex"/> in a synthesis prompt.</summary>
+    private static string QuestionBlock(string prompt, int orderIndex)
+    {
+        int start = prompt.IndexOf($"### Question #{orderIndex} ", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        int next = prompt.IndexOf("### Question #", start + 1, StringComparison.Ordinal);
+        int end = next >= 0 ? next : prompt.IndexOf("--- OUTPUT JSON SCHEMA ---", start, StringComparison.Ordinal);
+        return prompt.Substring(start, end - start);
+    }
+
+    /// <summary>The single "CRITICAL ERROR:" line of a question's block, or null when it has none.</summary>
+    private static string? CriticalErrorLine(string prompt, int orderIndex)
+    {
+        var lines = QuestionBlock(prompt, orderIndex)
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .Where(l => l.StartsWith("CRITICAL ERROR:", StringComparison.Ordinal))
+            .ToList();
+        Assert.True(lines.Count <= 1);
+        return lines.SingleOrDefault();
     }
 
     [Fact]

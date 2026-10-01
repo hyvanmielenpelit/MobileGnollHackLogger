@@ -488,6 +488,13 @@ public class BenchmarkScoringProfileDto
     public double WeightReadability { get; set; }
     public string LevelScoresJson { get; set; } = string.Empty;
     public int CriticalErrorCeiling { get; set; }
+
+    /// <summary>
+    /// Lowest quality score for an answer graded not attempted with no critical error and Accuracy
+    /// level 5 or above, from scoring method 13. Null: no floor.
+    /// </summary>
+    public int? NotAttemptedScore { get; set; }
+
     public int SecondOpinionQualityThreshold { get; set; }
 
     /// <summary>Off (0), Flagged (1), FlaggedAndOutliers (2) or All (3).</summary>
@@ -522,6 +529,7 @@ public class CreateBenchmarkScoringProfileRequest
     public double WeightReadability { get; set; } = 0.10;
     public string LevelScoresJson { get; set; } = "[1, 15, 35, 55, 72, 87, 100]";
     public int CriticalErrorCeiling { get; set; } = 25;
+    public int? NotAttemptedScore { get; set; } = 50;
     public int SecondOpinionQualityThreshold { get; set; } = 50;
     public int SecondOpinionMode { get; set; } = (int)BenchmarkSecondOpinionMode.Flagged;
     public int SecondOpinionOutlierDeltaPoints { get; set; } = 25;
@@ -543,6 +551,7 @@ public class UpdateBenchmarkScoringProfileRequest
     public double WeightReadability { get; set; }
     public string LevelScoresJson { get; set; } = string.Empty;
     public int CriticalErrorCeiling { get; set; }
+    public int? NotAttemptedScore { get; set; }
     public int SecondOpinionQualityThreshold { get; set; }
     public int SecondOpinionMode { get; set; }
     public int SecondOpinionOutlierDeltaPoints { get; set; }
@@ -681,6 +690,24 @@ public class BenchmarkRunAnswerDto
     public string? CriticalErrorQuote { get; set; }
 
     /// <summary>
+    /// The assessor marked the answer not attempted. Null for an answer graded before scoring
+    /// method 13, which never asked.
+    /// </summary>
+    public bool? NotAttempted { get; set; }
+
+    /// <summary>
+    /// How the answer's critical-error flags were resolved, as the name of a
+    /// <c>BenchmarkCriticalErrorResolution</c> value. Null before scoring method 13.
+    /// </summary>
+    public string? CriticalErrorResolution { get; set; }
+
+    /// <summary>
+    /// The answer's outcome class, as the name of a <c>BenchmarkOutcomeClass</c> value. Null before
+    /// scoring method 13, outside the quality index, and while the answer is not yet graded.
+    /// </summary>
+    public string? OutcomeClass { get; set; }
+
+    /// <summary>
     /// Claims the assessor could neither confirm nor refute. Null for a run graded before the
     /// field existed — null is "never asked", zero is "asked and found none".
     /// </summary>
@@ -705,6 +732,7 @@ public class BenchmarkRunAnswerDto
     public int? CoAssessmentQualityScore { get; set; }
     public int? CoAssessmentRawQualityScore { get; set; }
     public bool? CoAssessmentCriticalError { get; set; }
+    public bool? CoAssessmentNotAttempted { get; set; }
     public string? CoAssessmentJson { get; set; }
     public string? CoAssessedByModelDisplayNameUsed { get; set; }
     public DateTime? CoAssessedAtUtc { get; set; }
@@ -1378,7 +1406,47 @@ public class BenchmarkRunDetailDto
     /// </summary>
     public List<BenchmarkBoardDeliveryDto> BoardDelivery { get; set; } = new();
 
+    /// <summary>The run's answers by outcome class and its critical errors by resolution. Null before scoring method 13.</summary>
+    public BenchmarkRunOutcomeSummaryDto? OutcomeSummary { get; set; }
+
     public List<BenchmarkRunAnswerDto> Answers { get; set; } = new();
+}
+
+/// <summary>
+/// <see cref="Overseer.Services.Benchmarking.BenchmarkOutcomeSummary"/> without its per-answer list,
+/// which the answers carry as <see cref="BenchmarkRunAnswerDto.OutcomeClass"/>. Question lists hold
+/// 1-based question numbers.
+/// </summary>
+public class BenchmarkRunOutcomeSummaryDto
+{
+    public int CorrectCount { get; set; }
+    public int PartialCount { get; set; }
+    public int IncorrectCount { get; set; }
+    public int NotAttemptedCount { get; set; }
+    public int NoAnswerCount { get; set; }
+
+    /// <summary>Correct, partial, incorrect and not attempted together.</summary>
+    public int ClassifiedCount { get; set; }
+
+    public int ConfirmedCriticalErrorCount { get; set; }
+    public int UnresolvedCriticalErrorCount { get; set; }
+    public int OverturnedCriticalErrorCount { get; set; }
+
+    /// <summary>Confirmed critical errors ÷ classified answers, with its 95 % Wilson interval. Null when nothing is classified.</summary>
+    public double? CriticalErrorRate { get; set; }
+    public double? CriticalErrorRateLow { get; set; }
+    public double? CriticalErrorRateHigh { get; set; }
+
+    /// <summary>Correct ÷ (correct + partial + incorrect). Null when that denominator is 0.</summary>
+    public double? CorrectWhenAttempted { get; set; }
+
+    /// <summary>Incorrect ÷ (incorrect + not attempted). Null when both are 0.</summary>
+    public double? WrongInsteadOfAbstaining { get; set; }
+
+    public List<int> ConfirmedCriticalErrorQuestions { get; set; } = new();
+    public List<int> UnresolvedCriticalErrorQuestions { get; set; } = new();
+    public List<int> OverturnedCriticalErrorQuestions { get; set; } = new();
+    public List<int> NotAttemptedQuestions { get; set; } = new();
 }
 
 public class BenchmarkBoardDeliveryDto

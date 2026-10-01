@@ -1202,6 +1202,88 @@ public static class BenchmarkReportBuilder
     /// <summary>A signed one-decimal delta, with "+" on a positive one.</summary>
     private static string SignedDelta(double value) => $"{(value > 0 ? "+" : string.Empty)}{Inv(value, "F1")}";
 
+    /// <summary>A fraction as a whole percent without the sign: 0.0556 is "6".</summary>
+    private static string PercentNumber(double fraction)
+        => Inv(Math.Round(fraction * 100.0, MidpointRounding.AwayFromZero), "F0");
+
+    /// <summary>A fraction as a whole percent: 0.0556 is "6%".</summary>
+    private static string PercentText(double fraction) => PercentNumber(fraction) + "%";
+
+    /// <summary>Who confirmed a critical error, as the scoring method 13 Critical Errors line names it.</summary>
+    private static string ConfirmedResolutionText(BenchmarkCriticalErrorResolution? resolution) => resolution switch
+    {
+        BenchmarkCriticalErrorResolution.Agreed => "both panel members",
+        BenchmarkCriticalErrorResolution.UpheldByVerifier => "upheld by the claim verifier",
+        BenchmarkCriticalErrorResolution.SingleAssessor => "assessor",
+        _ => "confirmed"
+    };
+
+    /// <summary>
+    /// A scoring method 13 panel answer's resolution as its Panel Score line names it, or empty for
+    /// none. <paramref name="ceiling"/> is the run's critical-error ceiling.
+    /// </summary>
+    private static string PanelResolutionNote(BenchmarkRunAnswer a, int ceiling)
+    {
+        string flagging = a.CriticalError ? "A" : "B";
+        string other = a.CriticalError ? "B" : "A";
+        return a.CriticalErrorResolution switch
+        {
+            BenchmarkCriticalErrorResolution.Agreed => " — critical error confirmed by both panel members",
+            BenchmarkCriticalErrorResolution.UpheldByVerifier => $" — critical error upheld by the claim verifier: member {other} counted at most {ceiling}",
+            BenchmarkCriticalErrorResolution.OverturnedByVerifier => $" — critical error overturned by the claim verifier: member {flagging} counted at its pre-cap score",
+            BenchmarkCriticalErrorResolution.Unresolved => " — critical-error split unresolved: both members averaged as graded",
+            _ => string.Empty
+        };
+    }
+
+    /// <summary>
+    /// Member A's critical-error label on a question under scoring method 13, naming the resolution.
+    /// <paramref name="capLoweredScore"/> is whether the cap lowered member A's own score.
+    /// </summary>
+    private static string ResolvedCapNote(BenchmarkCriticalErrorResolution? resolution, bool capLoweredScore)
+    {
+        if (resolution == BenchmarkCriticalErrorResolution.OverturnedByVerifier)
+        {
+            return " *(CRITICAL ERROR OVERTURNED by the claim verifier — the panel score uses the pre-cap score)*";
+        }
+
+        string by = resolution switch
+        {
+            BenchmarkCriticalErrorResolution.Agreed => "confirmed by both panel members",
+            BenchmarkCriticalErrorResolution.UpheldByVerifier => "upheld by the claim verifier",
+            BenchmarkCriticalErrorResolution.Unresolved => "split unresolved, averaged",
+            BenchmarkCriticalErrorResolution.SingleAssessor => "confirmed by the assessor",
+            _ => "not resolved"
+        };
+        return capLoweredScore
+            ? $" *(CRITICAL ERROR CAP APPLIED — {by})*"
+            : $" *(CRITICAL ERROR — cap not binding; {by})*";
+    }
+
+    /// <summary>
+    /// Whether the not-attempted floor raised a member's quality score: the member marked the answer
+    /// not attempted and raised no critical error, its stored pre-cap score is the profile's floor,
+    /// and its levels re-scored without the floor come out lower than with it.
+    /// </summary>
+    private static bool NotAttemptedFloorApplied(
+        bool notAttempted,
+        bool criticalError,
+        int accuracy,
+        int completeness,
+        int conciseness,
+        int readability,
+        int? storedRawScore,
+        BenchmarkScoringConstants constants)
+    {
+        if (!notAttempted || criticalError || constants.NotAttemptedScore is not int floor || storedRawScore != floor)
+        {
+            return false;
+        }
+
+        return BenchmarkScoring.Quality(accuracy, completeness, conciseness, readability, false, constants, notAttempted: true).Score
+            > BenchmarkScoring.Quality(accuracy, completeness, conciseness, readability, false, constants).Score;
+    }
+
     /// <summary>One line of a table cell: line breaks collapsed and <c>|</c> escaped; "—" when empty.</summary>
     private static string TableCell(string? text)
     {
@@ -1805,8 +1887,13 @@ public static class BenchmarkReportBuilder
         // anyone disputed it — a run whose every cap is disputed must still say 2, not 0, or the
         // reader cannot tell a capped-and-unchallenged answer from a capped-and-contested one. In a
         // panel run a cap from either member lowers the panel score, so either member's counts.
-        bool CapApplied(BenchmarkRunAnswer a) => a.CriticalError || (isPanelRun && a.CoAssessmentCriticalError == true);
+        // From scoring method 13 it is a confirmed critical error (Agreed, UpheldByVerifier or
+        // SingleAssessor); an unresolved or overturned split is named separately.
+        bool resolvesCriticalErrors = BenchmarkCriticalErrorResolver.Applies(run);
+        bool AnyMemberFlagged(BenchmarkRunAnswer a) => a.CriticalError || (isPanelRun && a.CoAssessmentCriticalError == true);
+        bool CapApplied(BenchmarkRunAnswer a) => resolvesCriticalErrors ? BenchmarkCriticalErrorResolver.IsConfirmed(a) : AnyMemberFlagged(a);
         var appliedCriticalAnswers = answers.Where(CapApplied).OrderBy(a => a.OrderIndex).ToList();
+        var outcomeSummary = BenchmarkOutcomeSummary.Compute(run, answers);
 
         // Split direction matters: an applied cap the second reader disagreed with is a different
         // claim from a critical error the second reader raised on its own initiative.
@@ -1815,10 +1902,11 @@ public static class BenchmarkReportBuilder
             .OrderBy(a => a.OrderIndex)
             .ToList();
         var raisedOnlyBySecondReader = answers
-            .Where(a => !CapApplied(a) && a.SecondOpinionCriticalError == true)
+            .Where(a => !AnyMemberFlagged(a) && a.SecondOpinionCriticalError == true)
             .OrderBy(a => a.OrderIndex)
             .ToList();
-        bool criticalErrorsLinePrints = appliedCriticalAnswers.Count > 0 || disputedBySecondReader.Count > 0 || raisedOnlyBySecondReader.Count > 0;
+        bool criticalErrorsLinePrints = appliedCriticalAnswers.Count > 0 || disputedBySecondReader.Count > 0 || raisedOnlyBySecondReader.Count > 0
+            || (outcomeSummary != null && (outcomeSummary.ClassifiedCount > 0 || outcomeSummary.UnresolvedCriticalErrorCount > 0 || outcomeSummary.OverturnedCriticalErrorCount > 0));
 
         if (se.HasValue && run.QualityIndex.HasValue)
         {
@@ -1903,7 +1991,46 @@ public static class BenchmarkReportBuilder
         // The critical-error count and the sensitivity figures sit with the Intelligence Index they
         // qualify, ahead of the Speed Index, in the order § 7 Final Indices prints them.
 
-        if (appliedCriticalAnswers.Count > 0 || splitAnswers.Count > 0)
+        if (outcomeSummary != null && criticalErrorsLinePrints)
+        {
+            // Scoring method 13: confirmed critical errors with their resolution, the rate over the
+            // classified answers with its Wilson interval, then the splits that stayed averaged and
+            // those the claim verifier overturned.
+            var criticalErrorsLine = new StringBuilder($"- **Critical Errors:** {appliedCriticalAnswers.Count} confirmed");
+            if (appliedCriticalAnswers.Count > 0)
+            {
+                criticalErrorsLine.Append($" ({string.Join("; ", appliedCriticalAnswers.Select(a => $"Q{a.OrderIndex}, {ConfirmedResolutionText(a.CriticalErrorResolution)}"))})");
+            }
+            if (outcomeSummary.CriticalErrorRate is double rate)
+            {
+                string interval = outcomeSummary.CriticalErrorRateLow is double low && outcomeSummary.CriticalErrorRateHigh is double high
+                    ? $"95% CI {PercentNumber(low)}–{PercentText(high)}, "
+                    : string.Empty;
+                criticalErrorsLine.Append($" · rate {PercentText(rate)} ({interval}{outcomeSummary.ConfirmedCriticalErrorCount} of {outcomeSummary.ClassifiedCount})");
+            }
+            if (outcomeSummary.UnresolvedCriticalErrorCount > 0)
+            {
+                criticalErrorsLine.Append($" · {outcomeSummary.UnresolvedCriticalErrorCount} split(s) unresolved, averaged ({string.Join(", ", outcomeSummary.UnresolvedCriticalErrorQuestions.Select(q => $"Q{q}"))})");
+            }
+            if (outcomeSummary.OverturnedCriticalErrorCount > 0)
+            {
+                criticalErrorsLine.Append($" · {outcomeSummary.OverturnedCriticalErrorCount} overturned by the claim verifier ({string.Join(", ", outcomeSummary.OverturnedCriticalErrorQuestions.Select(q => $"Q{q}"))})");
+            }
+            if (disputedBySecondReader.Count > 0)
+            {
+                criticalErrorsLine.Append($" — {disputedBySecondReader.Count} disputed by the {readerName} (question(s) {string.Join(", ", disputedBySecondReader.Select(a => a.OrderIndex))})");
+            }
+            if (raisedOnlyBySecondReader.Count > 0)
+            {
+                criticalErrorsLine.Append($"; {raisedOnlyBySecondReader.Count} raised only by the {readerName} (question(s) {string.Join(", ", raisedOnlyBySecondReader.Select(a => a.OrderIndex))})");
+            }
+            if (verifierSupportedQuoteAnswers.Count > 0)
+            {
+                criticalErrorsLine.Append($"; verifier-supported quote(s): {string.Join(", ", verifierSupportedQuoteAnswers.Select(a => $"Q{a.OrderIndex}"))}");
+            }
+            sb.AppendLine(criticalErrorsLine.ToString());
+        }
+        else if (outcomeSummary == null && (appliedCriticalAnswers.Count > 0 || splitAnswers.Count > 0))
         {
             var criticalErrorsLine = new StringBuilder($"- **Critical Errors:** {appliedCriticalAnswers.Count} applied");
             if (appliedCriticalAnswers.Count > 0)
@@ -1931,11 +2058,74 @@ public static class BenchmarkReportBuilder
             sb.AppendLine(criticalErrorsLine.ToString());
         }
 
+        // Scoring method 13: every classified answer by outcome class.
+        if (outcomeSummary != null)
+        {
+            int attempted = outcomeSummary.CorrectCount + outcomeSummary.PartialCount + outcomeSummary.IncorrectCount;
+            int abstainedOrWrong = outcomeSummary.IncorrectCount + outcomeSummary.NotAttemptedCount;
+            string correctWhenAttempted = outcomeSummary.CorrectWhenAttempted is double cwa
+                ? $"{PercentText(cwa)} ({outcomeSummary.CorrectCount} of {attempted})"
+                : "n/a";
+            string wrongInsteadOfAbstaining = outcomeSummary.WrongInsteadOfAbstaining is double wia
+                ? $"{PercentText(wia)} ({outcomeSummary.IncorrectCount} of {abstainedOrWrong})"
+                : "n/a";
+            sb.AppendLine($"- **Outcomes:** {outcomeSummary.CorrectCount} correct, {outcomeSummary.PartialCount} partial, {outcomeSummary.IncorrectCount} incorrect, {outcomeSummary.NotAttemptedCount} not attempted, {outcomeSummary.NoAnswerCount} without an answer · correct when attempted {correctWhenAttempted} · wrong instead of abstaining {wrongInsteadOfAbstaining}");
+        }
+
         // The four sensitivity figures each re-score member A's verdict alone, so a panel run states
         // once why it has none and points at the member-alone indices instead.
         if (isPanelRun)
         {
             sb.AppendLine("- **Sensitivity figures:** not computed for a panel run. The contested-verdict, evidence-informed, verification-cleared and FORM-cleared sensitivities each re-score member A's verdict alone, which would give one family's judge a correction channel the other does not have; the member-alone indices above bound how much the published index depends on either member.");
+        }
+
+        // A panel run scored before method 13: the index the method 13 critical-error rule
+        // (BenchmarkCriticalErrorResolver.ResolvePanel) would have published, printed only when that
+        // rule settles at least one split by the claim verifier. Its panel score replaces the published
+        // one on the upheld and overturned answers alone; every other answer keeps its own, which the
+        // rule leaves unchanged. Over the Intelligence Index's own items and weights; nothing is
+        // written. § 7 Final Indices prints the same clause.
+        string? resolutionSensitivityClause = null;
+        if (isPanelRun && !resolvesCriticalErrors)
+        {
+            int ceiling = BenchmarkCriticalErrorResolver.CeilingOf(run);
+            var resolvedPanel = indexAnswers
+                .Select(a => (Answer: a, Resolved: BenchmarkCriticalErrorResolver.ResolvePanel(a, ceiling)))
+                .ToList();
+            List<int> QuestionsResolved(BenchmarkCriticalErrorResolution resolution) => resolvedPanel
+                .Where(x => x.Resolved?.Resolution == resolution)
+                .Select(x => x.Answer.OrderIndex)
+                .OrderBy(q => q)
+                .ToList();
+            var upheld = QuestionsResolved(BenchmarkCriticalErrorResolution.UpheldByVerifier);
+            var overturned = QuestionsResolved(BenchmarkCriticalErrorResolution.OverturnedByVerifier);
+            if (upheld.Count > 0 || overturned.Count > 0)
+            {
+                var unresolved = QuestionsResolved(BenchmarkCriticalErrorResolution.Unresolved);
+                int? resolvedIndex = BenchmarkScoring.QualityIndex(resolvedPanel
+                    .Select(x => ((x.Resolved is { } r && (r.Resolution is BenchmarkCriticalErrorResolution.UpheldByVerifier or BenchmarkCriticalErrorResolution.OverturnedByVerifier))
+                                      ? (double?)((r.ScoreA + r.ScoreB) / 2.0)
+                                      : IndexQualityOf(x.Answer),
+                                  (int?)(x.Answer.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(x.Answer.Difficulty))))
+                    .ToList());
+                if (resolvedIndex.HasValue)
+                {
+                    var settled = new List<string>();
+                    if (upheld.Count > 0)
+                    {
+                        settled.Add($"upheld by the claim verifier on {string.Join(", ", upheld.Select(q => $"Q{q}"))} (the other member counted at most {ceiling})");
+                    }
+                    if (overturned.Count > 0)
+                    {
+                        settled.Add($"overturned by the claim verifier on {string.Join(", ", overturned.Select(q => $"Q{q}"))} (the flagging member counted at its pre-cap score)");
+                    }
+                    string averaged = unresolved.Count > 0
+                        ? $"{unresolved.Count} split(s) stay averaged ({string.Join(", ", unresolved.Select(q => $"Q{q}"))})"
+                        : "0 split(s) stay averaged";
+                    resolutionSensitivityClause = $"Critical-error resolution sensitivity (scoring method 13 rule):** {resolvedIndex.Value} / 100 — Intelligence Index recomputed with each one-member critical-error split settled by the claim verifier's verdict on the flagging member's quote: {string.Join("; ", settled)}; {averaged}; advisory, changes no score.";
+                    sb.AppendLine($"- **{resolutionSensitivityClause}");
+                }
+            }
         }
 
         if (!isPanelRun && splitAnswers.Count > 0)
@@ -2019,7 +2209,8 @@ public static class BenchmarkReportBuilder
                             conciseness,
                             readability,
                             a.CriticalError,
-                            scoringConstants).Score;
+                            scoringConstants,
+                            notAttempted: resolvesCriticalErrors && a.NotAttempted == true).Score;
                     }
                     return (score, (int?)(a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)));
                 })
@@ -2816,7 +3007,10 @@ public static class BenchmarkReportBuilder
             string contestedCriticalErrorFigure = isPanelRun
                 ? $"A {contestedCriticalErrorCount}, B {memberBContestedCriticalErrorCount}"
                 : Inv(contestedCriticalErrorCount);
-            sb.AppendLine($"- **Contested Critical Errors:** {contestedCriticalErrorFigure} (question(s) {string.Join(", ", contestedCriticalErrorAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported** as a standalone sentence; the error may lie in its context, so read the verdict's basis before treating the critical error as overturned. Advisory: the cap stands and no index moved; re-assess from the run detail.{secondReaderDisputeNote}");
+            string contestedEffect = resolvesCriticalErrors && isPanelRun
+                ? "Under scoring method 13 a supported quote overturns a critical error only one member raised (see the Critical Errors line); one both members raised stands. Re-assess from the run detail."
+                : "Advisory: the cap stands and no index moved; re-assess from the run detail.";
+            sb.AppendLine($"- **Contested Critical Errors:** {contestedCriticalErrorFigure} (question(s) {string.Join(", ", contestedCriticalErrorAnswers.Select(a => $"Q{a.OrderIndex}"))}) — the critical-error quote was checked against the source code/wiki by the claim verifier and **supported** as a standalone sentence; the error may lie in its context, so read the verdict's basis before treating the critical error as overturned. {contestedEffect}{secondReaderDisputeNote}");
         }
         if (contestedAccuracyDeductionCount > 0 || memberBContestedAccuracyDeductionCount > 0)
         {
@@ -4226,9 +4420,19 @@ public static class BenchmarkReportBuilder
                     // changed anything — an answer whose raw score already sat at or below the
                     // cap is unaffected by it, and the report must not say otherwise.
                     bool capLoweredScore = a.RawQualityScore.HasValue && a.RawQualityScore.Value > a.QualityScore.Value;
-                    string capNote = a.CriticalError
-                        ? (capLoweredScore ? " *(CRITICAL ERROR CAP APPLIED)*" : " *(CRITICAL ERROR — cap not binding)*")
-                        : string.Empty;
+                    string capNote = !a.CriticalError
+                        ? string.Empty
+                        : resolvesCriticalErrors
+                        ? ResolvedCapNote(a.CriticalErrorResolution, capLoweredScore)
+                        : (capLoweredScore ? " *(CRITICAL ERROR CAP APPLIED)*" : " *(CRITICAL ERROR — cap not binding)*");
+                    if (resolvesCriticalErrors
+                        && a.AccuracyLevel.HasValue && a.CompletenessLevel.HasValue && a.ConcisenessLevel.HasValue && a.ReadabilityLevel.HasValue
+                        && NotAttemptedFloorApplied(a.NotAttempted == true, a.CriticalError,
+                            a.AccuracyLevel.Value, a.CompletenessLevel.Value, a.ConcisenessLevel.Value, a.ReadabilityLevel.Value,
+                            a.RawQualityScore ?? a.QualityScore, scoringConstants))
+                    {
+                        capNote += $" *(NOT ATTEMPTED — floor of {scoringConstants.NotAttemptedScore} applied)*";
+                    }
                     if (BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(a))
                     {
                         sb.AppendLine($"> - **Quality Score:** {a.QualityScore.Value} / 100 *(NO ANSWER — scored 0 by rule; no grader read this)*");
@@ -4341,7 +4545,13 @@ public static class BenchmarkReportBuilder
                         string memberBRaw = a.CoAssessmentRawQualityScore.HasValue && memberB.QualityScore.HasValue && a.CoAssessmentRawQualityScore.Value != memberB.QualityScore.Value
                             ? $" (raw: {a.CoAssessmentRawQualityScore.Value})"
                             : string.Empty;
-                        sb.AppendLine($"> - **Panel Member B ({memberBAnswerLabel}):** Accuracy={memberB.AccuracyLevel}/6, Completeness={memberB.CompletenessLevel}/6, Conciseness={memberB.ConcisenessLevel}/6, Readability={memberB.ReadabilityLevel}/6 — {memberBScore}{memberBRaw}, critical error {(memberB.CriticalError ? "yes" : "no")}");
+                        string memberBFloor = resolvesCriticalErrors
+                            && NotAttemptedFloorApplied(a.CoAssessmentNotAttempted == true, memberB.CriticalError,
+                                memberB.AccuracyLevel, memberB.CompletenessLevel, memberB.ConcisenessLevel, memberB.ReadabilityLevel,
+                                a.CoAssessmentRawQualityScore ?? memberB.QualityScore, scoringConstants)
+                            ? $" *(NOT ATTEMPTED — floor of {scoringConstants.NotAttemptedScore} applied)*"
+                            : string.Empty;
+                        sb.AppendLine($"> - **Panel Member B ({memberBAnswerLabel}):** Accuracy={memberB.AccuracyLevel}/6, Completeness={memberB.CompletenessLevel}/6, Conciseness={memberB.ConcisenessLevel}/6, Readability={memberB.ReadabilityLevel}/6 — {memberBScore}{memberBRaw}, critical error {(memberB.CriticalError ? "yes" : "no")}{memberBFloor}");
                         if (!string.IsNullOrWhiteSpace(memberB.Comment))
                         {
                             sb.AppendLine($">   - **Comment:** {memberB.Comment}");
@@ -4375,7 +4585,8 @@ public static class BenchmarkReportBuilder
                     if (a.PanelQualityScore.HasValue)
                     {
                         string membersDisagree = a.PanelDisagreed == true ? " — members disagree" : string.Empty;
-                        sb.AppendLine($"> - **Panel Score:** {ScoreText(a.PanelQualityScore.Value)} (mean of A and B){membersDisagree}");
+                        string resolutionNote = resolvesCriticalErrors ? PanelResolutionNote(a, scoringConstants.CriticalErrorCeiling) : string.Empty;
+                        sb.AppendLine($"> - **Panel Score:** {ScoreText(a.PanelQualityScore.Value)} (mean of A and B){resolutionNote}{membersDisagree}");
                     }
                     else if (!BenchmarkRunFinalizer.IsModelProducedEmptyAnswer(a))
                     {
@@ -4524,7 +4735,20 @@ public static class BenchmarkReportBuilder
         }
         sb.AppendLine();
         sb.AppendLine("### Aggregation Formulas");
-        sb.AppendLine("- **Quality Score:** $Quality = A^{0.55} \\cdot C^{0.25} \\cdot Cn^{0.10} \\cdot R^{0.10}$ (capped at 25 if criticalError is true)");
+        if (resolvesCriticalErrors)
+        {
+            string floorRule = scoringConstants.NotAttemptedScore is int notAttemptedFloor
+                ? $"raised to at least {notAttemptedFloor} when the grader marks the answer not attempted, raises no critical error and gives Accuracy 5 or above; "
+                : "no not-attempted floor in this profile; ";
+            string panelRule = isPanelRun
+                ? $" In the panel score a critical error both members flag stands; one only one member flags is settled by the claim verifier's verdict on that member's quote: refuted upholds it and the other member counts at most {scoringConstants.CriticalErrorCeiling}, supported overturns it and the flagging member counts at its pre-cap score, and otherwise both members are averaged as graded."
+                : string.Empty;
+            sb.AppendLine($"- **Quality Score:** $Quality = A^{{0.55}} \\cdot C^{{0.25}} \\cdot Cn^{{0.10}} \\cdot R^{{0.10}}$ ({floorRule}then capped at {scoringConstants.CriticalErrorCeiling} if criticalError is true).{panelRule}");
+        }
+        else
+        {
+            sb.AppendLine("- **Quality Score:** $Quality = A^{0.55} \\cdot C^{0.25} \\cdot Cn^{0.10} \\cdot R^{0.10}$ (capped at 25 if criticalError is true)");
+        }
         sb.AppendLine("- **Model Time:** $ModelTime = \\max(0, \\text{DurationMs} - \\text{ToolTimeMs})$ — the turn duration with harness tool I/O removed");
         sb.AppendLine("- **Speed Target:** $Target(q) = T \\cdot (1 + s \\cdot \\text{Difficulty}(q) / 100)$, where $T$ is SpeedTargetMs and $s$ is SpeedDifficultyScaling");
         sb.AppendLine("- **Speed Score:** $Speed = \\text{clamp}(100 - k \\cdot \\log_2(\\text{ModelTime} / Target(q)), 1, 100)$, where $k$ is SpeedDecayK");
@@ -4957,6 +5181,11 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"### Panel Member B Alone: {(run.CoAssessorOnlyQualityIndex.HasValue ? $"{run.CoAssessorOnlyQualityIndex.Value} / 100" : "not recorded")} — {memberBLabel}, {memberBRelation}; advisory, the published index is the panel's.");
             sb.AppendLine("### Sensitivity Figures: not computed for a panel run — each re-scores member A's verdict alone; see § 2.");
         }
+        // The same value and clause as § 2, from the same variable.
+        if (resolutionSensitivityClause != null)
+        {
+            sb.AppendLine($"### {resolutionSensitivityClause.Replace(":**", ":", StringComparison.Ordinal)}");
+        }
         // Same value and clause as § 2 — this is where the headline figures live, and it is the
         // one that says how fragile they are.
         if (splitAnswers.Count > 0 && sensitivityIndex.HasValue)
@@ -5040,9 +5269,18 @@ public static class BenchmarkReportBuilder
         }
 
         // At a Glance, from the figures the sections above printed.
+        string criticalErrorVerb = resolvesCriticalErrors ? "confirmed" : "applied";
         var glanceCriticalErrors = new StringBuilder(appliedCriticalAnswers.Count > 0
-            ? $"{appliedCriticalAnswers.Count} applied ({string.Join(", ", appliedCriticalAnswers.Select(a => $"Q{a.OrderIndex}"))})"
-            : "none applied");
+            ? $"{appliedCriticalAnswers.Count} {criticalErrorVerb} ({string.Join(", ", appliedCriticalAnswers.Select(a => $"Q{a.OrderIndex}"))})"
+            : $"none {criticalErrorVerb}");
+        if (outcomeSummary is { UnresolvedCriticalErrorCount: > 0 })
+        {
+            glanceCriticalErrors.Append($"; {outcomeSummary.UnresolvedCriticalErrorCount} split(s) unresolved");
+        }
+        if (outcomeSummary is { OverturnedCriticalErrorCount: > 0 })
+        {
+            glanceCriticalErrors.Append($"; {outcomeSummary.OverturnedCriticalErrorCount} overturned by the claim verifier");
+        }
         if (disputedBySecondReader.Count > 0)
         {
             glanceCriticalErrors.Append($"; {disputedBySecondReader.Count} disputed by the {readerName}");

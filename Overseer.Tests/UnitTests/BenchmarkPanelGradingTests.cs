@@ -48,7 +48,8 @@ public class BenchmarkPanelGradingTests
         bool criticalError = false,
         string? quote = null,
         string accuracyEvidence = "Matches rubric.",
-        string comment = "Graded.")
+        string comment = "Graded.",
+        bool notAttempted = false)
         => JsonSerializer.Serialize(new
         {
             accuracyLevel = accuracy,
@@ -57,6 +58,7 @@ public class BenchmarkPanelGradingTests
             readabilityLevel = readability,
             criticalError,
             criticalErrorQuote = quote,
+            notAttempted,
             unverifiedClaims = Array.Empty<string>(),
             accuracyEvidence,
             completenessEvidence = "Matches rubric.",
@@ -195,6 +197,28 @@ public class BenchmarkPanelGradingTests
     }
 
     [Fact]
+    public void ApplyCoAssessment_NotAttempted_IsFlooredAndRecordedOnTheRecordAndTheColumn()
+    {
+        var answer = AnswerScoredByA();
+        var parse = Parse(Verdict(5, 0, 0, 0, notAttempted: true, comment: "The answer says it could not verify the value."));
+        Assert.True(parse.Success);
+
+        BenchmarkService.ApplyCoAssessment(answer, parse, null, Constants, null, null);
+
+        var (quality, rawQuality, _) = BenchmarkScoring.Quality(5, 0, 0, 0, false, Constants, notAttempted: true);
+        Assert.Equal(Constants.NotAttemptedScore, quality);
+        Assert.Equal(quality, answer.CoAssessmentQualityScore);
+        Assert.Equal(rawQuality, answer.CoAssessmentRawQualityScore);
+        Assert.True(answer.CoAssessmentNotAttempted);
+        Assert.True(BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!.NotAttempted);
+        Assert.True(BenchmarkVerdictView.FromCoAssessment(answer)!.NotAttempted);
+
+        // Member A's verdict says nothing of the kind.
+        Assert.Null(answer.NotAttempted);
+        Assert.False(BenchmarkVerdictView.FromPrimary(answer)!.NotAttempted);
+    }
+
+    [Fact]
     public void ApplyCoAssessment_AFailedParse_FailsMemberBOnly()
     {
         var answer = AnswerScoredByA();
@@ -305,6 +329,152 @@ public class BenchmarkPanelGradingTests
 
         Assert.Equal(25.0, answer.PanelQualityScore);
         Assert.True(answer.PanelDisagreed);
+    }
+
+    // --- Critical-error resolution (scoring method 13) ----------------------------------------
+
+    private const string FlaggedQuote = "Silver dragon scale mail gives AC 9";
+
+    /// <summary>
+    /// A panel answer both members graded 5/5/5/5 (87), with a critical error on
+    /// <see cref="FlaggedQuote"/> raised by the members named; a flag caps its member at 25.
+    /// </summary>
+    private static BenchmarkRunAnswer PanelAnswerFlaggedBy(bool flagA, bool flagB)
+    {
+        var answer = AnswerScoredByA(quality: flagA ? 25 : 87, criticalError: flagA);
+        answer.RawQualityScore = 87;
+        BenchmarkService.ApplyCoAssessment(answer, Parse(Verdict(5, 5, 5, 5,
+            criticalError: flagB,
+            quote: flagB ? FlaggedQuote : null,
+            accuracyEvidence: flagB ? "The answer says silver dragon scale mail gives AC 9, which is false." : "Matches rubric.")),
+            null, Constants, null, null);
+        Assert.Equal(flagB ? 25 : 87, answer.CoAssessmentQualityScore);
+        Assert.Equal(87, answer.CoAssessmentRawQualityScore);
+        return answer;
+    }
+
+    /// <summary>A union verification with one item: the flagged quote, raised by <paramref name="raisedBy"/>.</summary>
+    private static string QuoteVerification(BenchmarkClaimVerdict verdict, string raisedBy)
+        => "[{\"claimIndex\":0,\"claim\":\"" + FlaggedQuote + "\",\"verdict\":\"" + verdict
+           + "\",\"citation\":\"src/objects.c:1\",\"basis\":\"b\",\"raisedBy\":[\"" + raisedBy + "\"]}]";
+
+    [Fact]
+    public void ComputePanelScore_Method13_BothMembersFlag_IsAgreed()
+    {
+        var run = PanelRun();
+        var answer = PanelAnswerFlaggedBy(flagA: true, flagB: true);
+
+        BenchmarkService.ComputePanelScore(answer, run);
+
+        Assert.Equal(BenchmarkCriticalErrorResolution.Agreed, answer.CriticalErrorResolution);
+        Assert.Equal(25.0, answer.PanelQualityScore);
+        Assert.False(answer.PanelDisagreed);
+    }
+
+    [Theory]
+    [InlineData(true, BenchmarkClaimVerdict.Refuted, BenchmarkCriticalErrorResolution.UpheldByVerifier, 25.0)]
+    [InlineData(false, BenchmarkClaimVerdict.Refuted, BenchmarkCriticalErrorResolution.UpheldByVerifier, 25.0)]
+    [InlineData(true, BenchmarkClaimVerdict.Supported, BenchmarkCriticalErrorResolution.OverturnedByVerifier, 87.0)]
+    [InlineData(false, BenchmarkClaimVerdict.Supported, BenchmarkCriticalErrorResolution.OverturnedByVerifier, 87.0)]
+    [InlineData(true, BenchmarkClaimVerdict.Indeterminate, BenchmarkCriticalErrorResolution.Unresolved, 56.0)]
+    [InlineData(false, BenchmarkClaimVerdict.Indeterminate, BenchmarkCriticalErrorResolution.Unresolved, 56.0)]
+    public void ComputePanelScore_Method13_ASplitFlag_IsSettledByTheVerifierOnTheFlaggingMembersQuote(
+        bool memberAFlags, BenchmarkClaimVerdict verdict, BenchmarkCriticalErrorResolution expectedResolution, double expectedPanel)
+    {
+        var run = PanelRun();
+        var answer = PanelAnswerFlaggedBy(flagA: memberAFlags, flagB: !memberAFlags);
+        answer.ClaimVerificationJson = QuoteVerification(verdict, memberAFlags ? "A" : "B");
+
+        BenchmarkService.ComputePanelScore(answer, run);
+
+        Assert.Equal(expectedResolution, answer.CriticalErrorResolution);
+        Assert.Equal(expectedPanel, answer.PanelQualityScore);
+        // A split flag is a disagreement whichever way it resolves.
+        Assert.True(answer.PanelDisagreed);
+        // The members' own columns keep their verdicts.
+        Assert.Equal(memberAFlags ? 25 : 87, answer.QualityScore);
+        Assert.Equal(memberAFlags ? 87 : 25, answer.CoAssessmentQualityScore);
+    }
+
+    [Fact]
+    public void ComputePanelScore_Method13_ASplitFlagWithNoVerification_IsUnresolved()
+    {
+        var run = PanelRun();
+        var answer = PanelAnswerFlaggedBy(flagA: true, flagB: false);
+
+        BenchmarkService.ComputePanelScore(answer, run);
+
+        Assert.Equal(BenchmarkCriticalErrorResolution.Unresolved, answer.CriticalErrorResolution);
+        Assert.Equal((25 + 87) / 2.0, answer.PanelQualityScore);
+    }
+
+    [Fact]
+    public void ComputePanelScore_Method13_AVerdictOnTheOtherMembersItem_DoesNotSettleTheFlag()
+    {
+        var run = PanelRun();
+        var answer = PanelAnswerFlaggedBy(flagA: true, flagB: false);
+        answer.ClaimVerificationJson = QuoteVerification(BenchmarkClaimVerdict.Supported, "B");
+
+        BenchmarkService.ComputePanelScore(answer, run);
+
+        Assert.Equal(BenchmarkCriticalErrorResolution.Unresolved, answer.CriticalErrorResolution);
+        Assert.Equal((25 + 87) / 2.0, answer.PanelQualityScore);
+    }
+
+    [Fact]
+    public void ComputePanelScore_Method13_WithAMemberUnscored_ClearsThePanelColumns()
+    {
+        var run = PanelRun();
+        var answer = PanelAnswerFlaggedBy(flagA: true, flagB: false);
+        BenchmarkService.ComputePanelScore(answer, run);
+        answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+
+        BenchmarkService.ComputePanelScore(answer, run);
+
+        Assert.Null(answer.PanelQualityScore);
+        Assert.Null(answer.PanelDisagreed);
+        Assert.Null(answer.CriticalErrorResolution);
+    }
+
+    [Fact]
+    public void AVerificationSupportingTheFlaggingMembersQuote_RaisesThePanelScore_OnceRecomputed()
+    {
+        var run = PanelRun();
+        var answer = PanelAnswerFlaggedBy(flagA: true, flagB: false);
+        BenchmarkService.ComputePanelScore(answer, run);
+        Assert.Equal(BenchmarkCriticalErrorResolution.Unresolved, answer.CriticalErrorResolution);
+        Assert.Equal((25 + 87) / 2.0, answer.PanelQualityScore);
+
+        var verifications = BenchmarkReportContent.ReadVerifications(QuoteVerification(BenchmarkClaimVerdict.Supported, "A"))!;
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer, verifications, BenchmarkVerdictView.FromPrimary(answer), BenchmarkVerdictView.FromCoAssessment(answer));
+        BenchmarkService.ComputePanelScore(answer, run);
+
+        Assert.Equal(BenchmarkCriticalErrorResolution.OverturnedByVerifier, answer.CriticalErrorResolution);
+        Assert.Equal(87.0, answer.PanelQualityScore);
+        Assert.True(((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedCriticalError));
+        // Member A's verdict keeps its flag and its capped score.
+        Assert.True(answer.CriticalError);
+        Assert.Equal(25, answer.QualityScore);
+    }
+
+    [Fact]
+    public void ComputePanelScore_BeforeMethod13_IgnoresTheVerifier_AndRecordsNoResolution()
+    {
+        var run = PanelRun();
+        run.ScoringMethodVersion = BenchmarkCriticalErrorResolver.FirstScoringMethod - 1;
+        var answer = PanelAnswerFlaggedBy(flagA: true, flagB: false);
+        answer.ClaimVerificationJson = QuoteVerification(BenchmarkClaimVerdict.Supported, "A");
+        var legacy = PanelAnswerFlaggedBy(flagA: true, flagB: false);
+        legacy.ClaimVerificationJson = answer.ClaimVerificationJson;
+
+        BenchmarkService.ComputePanelScore(answer, run);
+        BenchmarkService.ComputePanelScore(legacy);
+
+        Assert.Equal((25 + 87) / 2.0, answer.PanelQualityScore);
+        Assert.Equal(legacy.PanelQualityScore, answer.PanelQualityScore);
+        Assert.Equal(legacy.PanelDisagreed, answer.PanelDisagreed);
+        Assert.Null(answer.CriticalErrorResolution);
     }
 
     // --- The empty-answer and board-guard branches ----------------------------------------
@@ -525,6 +695,9 @@ public class BenchmarkPanelGradingTests
     public void ClearForRerun_InAPanelRun_ClearsBothMembers_TheReferenceReader_AndThePanel()
     {
         var answer = FullyGradedPanelAnswer();
+        answer.NotAttempted = false;
+        answer.CoAssessmentNotAttempted = true;
+        answer.CriticalErrorResolution = BenchmarkCriticalErrorResolution.None;
         Assert.NotNull(answer.PanelQualityScore);
 
         BenchmarkService.ClearForRerun(answer, isPanelRun: true);
@@ -532,6 +705,9 @@ public class BenchmarkPanelGradingTests
         Assert.Equal(BenchmarkAssessmentStatus.Pending, answer.AssessmentStatus);
         Assert.Null(answer.QualityScore);
         Assert.Null(answer.AccuracyLevel);
+        Assert.Null(answer.NotAttempted);
+        Assert.Null(answer.CoAssessmentNotAttempted);
+        Assert.Null(answer.CriticalErrorResolution);
 
         Assert.Equal(BenchmarkAssessmentStatus.Pending, answer.CoAssessmentStatus);
         Assert.Null(answer.CoAssessmentError);
@@ -642,6 +818,144 @@ public class BenchmarkPanelGradingTests
 
         Assert.Equal(0, answer.CoAssessmentQualityScore);
         Assert.Equal(before, answer.CoAssessmentJson);
+    }
+
+    [Fact]
+    public void RecomputeCoAssessmentScores_KeepsTheNotAttemptedFloor()
+    {
+        var answer = AnswerScoredByA();
+        BenchmarkService.ApplyCoAssessment(answer, Parse(Verdict(5, 0, 0, 0, notAttempted: true)), null, Constants, null, null);
+        var profile = Constants with { NotAttemptedScore = 40 };
+
+        BenchmarkService.RecomputeCoAssessmentScores(answer, profile);
+
+        Assert.Equal(40, answer.CoAssessmentQualityScore);
+        Assert.Equal(40, answer.CoAssessmentRawQualityScore);
+        Assert.True(BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!.NotAttempted);
+    }
+
+    private static BenchmarkRun RescorableRun(BenchmarkRun run, int questionCount, long? profileId)
+    {
+        run.Status = BenchmarkRunStatus.Completed;
+        run.CompletedAtUtc = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc);
+        run.TotalQuestionCount = questionCount;
+        run.ScoringProfileId = profileId;
+        return run;
+    }
+
+    [Fact]
+    public async Task Rescore_OfAMethod13PanelRun_KeepsTheNotAttemptedFloor_AndTheCriticalErrorResolution()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var (service, _) = CreateServiceOver(dbOptions);
+        var profile = new BenchmarkScoringProfile { Name = "Rescore profile", NotAttemptedScore = 50 };
+
+        long runId;
+        await using (var seedDb = new ApplicationDbContext(dbOptions))
+        {
+            seedDb.BenchmarkScoringProfiles.Add(profile);
+            await seedDb.SaveChangesAsync(ct);
+
+            var run = RescorableRun(PanelRun(), questionCount: 2, profileId: profile.Id);
+
+            // Question 1: both members marked it not attempted at Accuracy 5; the stored scores are stale.
+            var abstained = AnswerScoredByA(quality: 1);
+            abstained.CompletenessLevel = 0;
+            abstained.ConcisenessLevel = 0;
+            abstained.ReadabilityLevel = 0;
+            abstained.NotAttempted = true;
+            abstained.CoAssessmentStatus = BenchmarkAssessmentStatus.Scored;
+            abstained.CoAssessmentQualityScore = 1;
+            abstained.CoAssessmentRawQualityScore = 1;
+            abstained.CoAssessmentCriticalError = false;
+            abstained.CoAssessmentNotAttempted = true;
+            abstained.CoAssessmentJson = new BenchmarkCoAssessmentRecord
+            {
+                AccuracyLevel = 5,
+                CompletenessLevel = 0,
+                ConcisenessLevel = 0,
+                ReadabilityLevel = 0,
+                NotAttempted = true,
+                QualityScore = 1,
+                RawQualityScore = 1
+            }.Serialize();
+
+            // Question 2: member A alone flagged, and the verifier supported its quote.
+            var split = PanelAnswerFlaggedBy(flagA: true, flagB: false);
+            split.OrderIndex = 2;
+            split.ClaimVerificationJson = QuoteVerification(BenchmarkClaimVerdict.Supported, "A");
+            BenchmarkService.ComputePanelScore(split, run);
+            Assert.Equal(87.0, split.PanelQualityScore);
+
+            run.Answers.Add(abstained);
+            run.Answers.Add(split);
+            seedDb.BenchmarkRuns.Add(run);
+            await seedDb.SaveChangesAsync(ct);
+            runId = run.Id;
+        }
+
+        var (success, error) = await service.RescoreRunAsync(runId);
+        Assert.True(success, error);
+
+        await using var readback = new ApplicationDbContext(dbOptions);
+        var rescored = await readback.BenchmarkRuns.Include(r => r.Answers).FirstAsync(r => r.Id == runId, ct);
+        Assert.Equal(BenchmarkAssessmentPrompt.ScoringMethodVersion, rescored.ScoringMethodVersion);
+
+        var constants = new BenchmarkScoringProfileService(null!, NullLogger<BenchmarkScoringProfileService>.Instance).ToConstants(profile);
+        Assert.True(BenchmarkScoring.Quality(5, 0, 0, 0, false, constants).Score < 50);
+
+        var rescoredAbstained = rescored.Answers.Single(a => a.OrderIndex == 1);
+        Assert.Equal(50, rescoredAbstained.QualityScore);
+        Assert.Equal(50, rescoredAbstained.RawQualityScore);
+        Assert.Equal(50, rescoredAbstained.CoAssessmentQualityScore);
+        Assert.Equal(50.0, rescoredAbstained.PanelQualityScore);
+        Assert.Equal(BenchmarkCriticalErrorResolution.None, rescoredAbstained.CriticalErrorResolution);
+
+        var rescoredSplit = rescored.Answers.Single(a => a.OrderIndex == 2);
+        Assert.Equal(25, rescoredSplit.QualityScore);
+        Assert.Equal(87, rescoredSplit.RawQualityScore);
+        Assert.Equal(87, rescoredSplit.CoAssessmentQualityScore);
+        Assert.Equal(BenchmarkCriticalErrorResolution.OverturnedByVerifier, rescoredSplit.CriticalErrorResolution);
+        Assert.Equal(87.0, rescoredSplit.PanelQualityScore);
+    }
+
+    [Fact]
+    public async Task Rescore_OfAMethod13SingleAssessorRun_RecordsEachAnswersResolution()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        var (service, _) = CreateServiceOver(dbOptions);
+
+        long runId;
+        await using (var seedDb = new ApplicationDbContext(dbOptions))
+        {
+            var run = RescorableRun(PanelRun(), questionCount: 2, profileId: null);
+            run.CoAssessorModelConfigurationId = null;
+            var flagged = AnswerScoredByA(quality: 25, criticalError: true);
+            var clean = AnswerScoredByA();
+            clean.OrderIndex = 2;
+            run.Answers.Add(flagged);
+            run.Answers.Add(clean);
+            seedDb.BenchmarkRuns.Add(run);
+            await seedDb.SaveChangesAsync(ct);
+            runId = run.Id;
+        }
+
+        var (success, error) = await service.RescoreRunAsync(runId);
+        Assert.True(success, error);
+
+        await using var readback = new ApplicationDbContext(dbOptions);
+        var rescored = await readback.BenchmarkRuns.Include(r => r.Answers).FirstAsync(r => r.Id == runId, ct);
+        var rescoredFlagged = rescored.Answers.Single(a => a.OrderIndex == 1);
+        Assert.Equal(BenchmarkCriticalErrorResolution.SingleAssessor, rescoredFlagged.CriticalErrorResolution);
+        Assert.Equal(25, rescoredFlagged.QualityScore);
+        Assert.Null(rescoredFlagged.PanelQualityScore);
+        Assert.Equal(BenchmarkCriticalErrorResolution.None, rescored.Answers.Single(a => a.OrderIndex == 2).CriticalErrorResolution);
     }
 
     // --- Grader overrides are refused in panel runs ------------------------------------------

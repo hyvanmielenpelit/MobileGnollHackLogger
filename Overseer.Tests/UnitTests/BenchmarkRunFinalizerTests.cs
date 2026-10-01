@@ -1515,4 +1515,102 @@ public class BenchmarkRunFinalizerTests
         Assert.Equal(0, run.TotalCoAssessmentInputTokens);
         Assert.Equal(0, run.TotalCoAssessmentOutputTokens);
     }
+
+    // --- Critical-error resolution (scoring method 13) ----------------------------------------------
+
+    private const string FlaggedQuote = "Praying at 1 HP is always safe.";
+
+    /// <summary>
+    /// Three answers at equal difficulty. Q1: no flags, 80 and 70. Q2: member A flags (25, pre-cap 90)
+    /// and the verifier supports its quote; member B 70. Q3: member A flags (25, pre-cap 90) and the
+    /// verifier refutes its quote; member B 80. The stored panel scores are the plain means.
+    /// </summary>
+    private static List<BenchmarkRunAnswer> ResolutionAnswers()
+    {
+        BenchmarkRunAnswer Flagged(int orderIndex, int memberB, BenchmarkClaimVerdict verdict)
+        {
+            var answer = PanelAnswer(orderIndex, 25, memberB);
+            answer.RawQualityScore = 90;
+            answer.CriticalError = true;
+            answer.CriticalErrorQuote = FlaggedQuote;
+            answer.ClaimVerificationJson = System.Text.Json.JsonSerializer.Serialize(new List<BenchmarkClaimVerification>
+            {
+                new BenchmarkClaimVerification(0, FlaggedQuote, verdict, "src/pray.c:120", "basis") { RaisedBy = new[] { "A" } }
+            });
+            return answer;
+        }
+
+        return new List<BenchmarkRunAnswer>
+        {
+            PanelAnswer(1, 80, 70),
+            Flagged(2, 70, BenchmarkClaimVerdict.Supported),
+            Flagged(3, 80, BenchmarkClaimVerdict.Refuted)
+        };
+    }
+
+    [Fact]
+    public void Apply_Method13PanelRun_IndexesTheResolvedScores()
+    {
+        var run = PanelRun(3);
+        run.ScoringMethodVersion = 13;
+        var answers = ResolutionAnswers();
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(BenchmarkCriticalErrorResolution.None, answers[0].CriticalErrorResolution);
+        Assert.Equal(BenchmarkCriticalErrorResolution.OverturnedByVerifier, answers[1].CriticalErrorResolution);
+        Assert.Equal(BenchmarkCriticalErrorResolution.UpheldByVerifier, answers[2].CriticalErrorResolution);
+
+        // Q2 takes member A's pre-cap 90; Q3 caps member B at 25.
+        Assert.Equal(75.0, answers[0].PanelQualityScore);
+        Assert.Equal(80.0, answers[1].PanelQualityScore);
+        Assert.Equal(25.0, answers[2].PanelQualityScore);
+        Assert.True(answers[1].PanelDisagreed);
+        Assert.True(answers[2].PanelDisagreed);
+
+        // (75 + 80 + 25) / 3.
+        Assert.Equal(60, run.QualityIndex);
+        Assert.Equal(60, run.UnweightedQualityIndex);
+
+        // The member-alone indices keep each member's own graded scores.
+        Assert.Equal(43, run.AssessorOnlyQualityIndex);
+        Assert.Equal(73, run.CoAssessorOnlyQualityIndex);
+    }
+
+    [Fact]
+    public void Apply_Method12PanelRun_KeepsTheStoredPanelScores_AndRecordsNoResolution()
+    {
+        var run = PanelRun(3);
+        run.ScoringMethodVersion = 12;
+        var answers = ResolutionAnswers();
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.All(answers, a => Assert.Null(a.CriticalErrorResolution));
+        Assert.Equal(47.5, answers[1].PanelQualityScore);
+        Assert.Equal(52.5, answers[2].PanelQualityScore);
+
+        // (75 + 47.5 + 52.5) / 3 = 58.3.
+        Assert.Equal(58, run.QualityIndex);
+        Assert.Equal(43, run.AssessorOnlyQualityIndex);
+        Assert.Equal(73, run.CoAssessorOnlyQualityIndex);
+    }
+
+    [Fact]
+    public void Apply_Method13SingleAssessorRun_RecordsTheResolution_AndLeavesTheIndex()
+    {
+        var run = new BenchmarkRun { Id = 2, TotalQuestionCount = 2, ScoringMethodVersion = 13 };
+        var answers = new List<BenchmarkRunAnswer> { MakeAnswer(1), MakeAnswer(2) };
+        answers[0].QualityScore = 25;
+        answers[0].RawQualityScore = 90;
+        answers[0].CriticalError = true;
+        answers[1].QualityScore = 75;
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        Assert.Equal(BenchmarkCriticalErrorResolution.SingleAssessor, answers[0].CriticalErrorResolution);
+        Assert.Equal(BenchmarkCriticalErrorResolution.None, answers[1].CriticalErrorResolution);
+        Assert.Null(answers[0].PanelQualityScore);
+        Assert.Equal(50, run.QualityIndex);
+    }
 }

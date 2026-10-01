@@ -3227,6 +3227,79 @@ describe('AdminBenchmarkComponent', () => {
       expect(fixture.nativeElement.querySelector('.disputed-badge')).toBeTruthy();
     });
 
+    function questionCard(orderIndex: number): HTMLElement | undefined {
+      return (Array.from(fixture.nativeElement.querySelectorAll('.question-detail-card')) as HTMLElement[])
+        .find(card => card.querySelector('.q-number')?.textContent?.trim() === `Q${orderIndex}`);
+    }
+
+    function criticalBadgeTitle(orderIndex: number): string | null {
+      return questionCard(orderIndex)?.querySelector('.critical-badge')?.getAttribute('title') ?? null;
+    }
+
+    it('should state the critical-error resolution in the badge title from scoring method 13', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        scoringMethodVersion: 13,
+        isPanelRun: true,
+        answers: [
+          buildScoredAnswer(1, { criticalError: true, coAssessmentCriticalError: true, criticalErrorResolution: 'Agreed' }),
+          buildScoredAnswer(2, { criticalError: true, coAssessmentCriticalError: false, criticalErrorResolution: 'UpheldByVerifier' }),
+          buildScoredAnswer(3, { criticalError: true, coAssessmentCriticalError: false, criticalErrorResolution: 'Unresolved' }),
+          buildScoredAnswer(4, { criticalError: false, coAssessmentCriticalError: true, criticalErrorResolution: 'OverturnedByVerifier' }),
+          buildScoredAnswer(5, { criticalError: false, coAssessmentCriticalError: false, criticalErrorResolution: 'None' })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(criticalBadgeTitle(1)).toBe('Critical error confirmed by both panel members — Quality capped at 25');
+      expect(criticalBadgeTitle(2)).toBe('Critical error flagged by one panel member and upheld by the claim verifier — both members capped at 25');
+      expect(criticalBadgeTitle(3)).toBe('Critical error flagged by one panel member only, with no verifier ruling — split unresolved, the two members averaged');
+      expect(criticalBadgeTitle(4)).toBe('Critical error flagged by one panel member and overturned by the claim verifier — not applied');
+      expect(questionCard(5)).toBeTruthy();
+      expect(criticalBadgeTitle(5)).toBeNull();
+    });
+
+    it('should name a single assessor\'s critical error from scoring method 13', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        scoringMethodVersion: 13,
+        answers: [buildScoredAnswer(1, { criticalError: true, criticalErrorResolution: 'SingleAssessor' })]
+      });
+      fixture.detectChanges();
+
+      expect(criticalBadgeTitle(1)).toBe('Critical error flagged by the assessor — Quality capped at 25');
+    });
+
+    it('should keep the critical-error badge title and its flag rule before scoring method 13', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        scoringMethodVersion: 12,
+        answers: [
+          buildScoredAnswer(1, { criticalError: true, criticalErrorResolution: 'OverturnedByVerifier' }),
+          buildScoredAnswer(2, { criticalError: false, criticalErrorResolution: 'Agreed' })
+        ]
+      });
+      fixture.detectChanges();
+
+      expect(criticalBadgeTitle(1)).toBe('Critical error cap applied (Quality capped at 25)');
+      expect(criticalBadgeTitle(2)).toBeNull();
+    });
+
+    it('should badge a not-attempted answer', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        scoringMethodVersion: 13,
+        answers: [
+          buildScoredAnswer(1, { notAttempted: true, outcomeClass: 'NotAttempted', criticalErrorResolution: 'None' }),
+          buildScoredAnswer(2, { notAttempted: false, outcomeClass: 'Correct', criticalErrorResolution: 'None' })
+        ]
+      });
+      fixture.detectChanges();
+
+      const badge = questionCard(1)?.querySelector('.badge-flag-notattempted') as HTMLElement;
+      expect(badge).toBeTruthy();
+      expect(badge.textContent!.trim()).toBe('NOT ATTEMPTED');
+      expect(badge.getAttribute('title'))
+        .toBe('The answer says it could not find or verify the answer; scored at least the profile\'s not-attempted score');
+      expect(questionCard(2)?.querySelector('.badge-flag-notattempted')).toBeNull();
+    });
+
     function missingQuote(orderIndex: number, literal: string): any {
       return { questionId: 100 + orderIndex, orderIndex, literal, lineExcerpt: `- "${literal}"` };
     }
@@ -3714,6 +3787,72 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.profileValidationErrors)
         .toContain('Second reader threshold must be between 0 and 100.');
       expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
+    });
+
+    it('should default a new profile to a not-attempted score of 50 and send it', () => {
+      component.openCreateProfile();
+      component.scoringProfileFormDialog?.nativeElement.close();
+      expect(component.profileForm.notAttemptedScore).toBe(50);
+
+      benchmarkServiceMock.createScoringProfile.and.returnValue(of({ id: 9 } as any));
+      component.profileForm.name = 'Abstention Profile';
+      component.saveProfile();
+
+      expect(component.profileValidationErrors).toEqual([]);
+      expect(benchmarkServiceMock.createScoringProfile.calls.mostRecent().args[0].notAttemptedScore).toBe(50);
+    });
+
+    it('should load a profile\'s not-attempted score for editing and send a blank one as null', () => {
+      const profile: any = {
+        id: 4, name: 'Abstention Profile', isDefault: false,
+        weightAccuracy: 0.55, weightCompleteness: 0.25, weightConciseness: 0.10, weightReadability: 0.10,
+        levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]', criticalErrorCeiling: 25, notAttemptedScore: 40,
+        secondOpinionQualityThreshold: 50, secondOpinionMode: 1, secondOpinionOutlierDeltaPoints: 25,
+        speedTargetMs: 15000, speedDecayK: 20, speedDifficultyScaling: 1, maxParallelQuestions: 1,
+        createdAtUtc: '2026-10-01T00:00:00Z', modifiedAtUtc: '2026-10-01T00:00:00Z'
+      };
+      component.openEditProfile(profile);
+      component.scoringProfileFormDialog?.nativeElement.close();
+      expect(component.profileForm.notAttemptedScore).toBe(40);
+
+      // An update that omits the field clears it on the server, so a blank field is sent as null.
+      benchmarkServiceMock.updateScoringProfile.and.returnValue(of(profile));
+      component.profileForm.notAttemptedScore = undefined as any;
+      component.saveProfile();
+
+      const sent = benchmarkServiceMock.updateScoringProfile.calls.mostRecent().args[1];
+      expect(Object.prototype.hasOwnProperty.call(sent, 'notAttemptedScore')).toBeTrue();
+      expect(sent.notAttemptedScore).toBeNull();
+
+      // A profile served without the field edits as blank.
+      const legacy: any = { ...profile };
+      delete legacy.notAttemptedScore;
+      component.openEditProfile(legacy);
+      component.scoringProfileFormDialog?.nativeElement.close();
+      expect(component.profileForm.notAttemptedScore).toBeNull();
+    });
+
+    it('should reject a not-attempted score outside 0 to 100 before calling the server', () => {
+      component.editingProfileId = null;
+      component.profileForm = { ...component.profileForm, name: 'Abstention Profile', notAttemptedScore: 140 };
+
+      component.saveProfile();
+
+      expect(component.profileValidationErrors)
+        .toContain('Not-attempted score must be blank or a whole number between 0 and 100.');
+      expect(benchmarkServiceMock.createScoringProfile).not.toHaveBeenCalled();
+    });
+
+    it('should label the not-attempted score field and explain it', () => {
+      fixture.detectChanges();
+      const label = fixture.nativeElement.querySelector('label[for="notAttemptedScore"]') as HTMLElement;
+      expect(label.textContent?.trim()).toBe('Not-Attempted Score');
+      const input = fixture.nativeElement.querySelector('#notAttemptedScore') as HTMLInputElement;
+      expect(input.type).toBe('number');
+      expect(input.getAttribute('aria-describedby')).toBe('notAttemptedScoreHint');
+      const hint = (fixture.nativeElement.querySelector('#notAttemptedScoreHint') as HTMLElement).textContent!.replace(/\s+/g, ' ');
+      expect(hint).toContain('Lowest score for an answer that says it could not find or verify the answer and makes no false claim (scoring method 13 on).');
+      expect(hint).toContain('At 50, giving an answer pays off when the model is at least about as likely to be right as wrong.');
     });
 
     it('should label the profile form second-reader fields and open the guide at coverage from it', () => {
@@ -5349,7 +5488,9 @@ describe('AdminBenchmarkComponent', () => {
       expect(reader.textContent).toContain('A second model grades answers again');
       const verifier = card().querySelector('#bmClaimVerifierModelHint') as HTMLElement;
       expect(verifier.textContent).not.toContain('advisory, changes no score');
-      expect(verifier.textContent).toContain('It never changes a score');
+      expect(verifier.textContent).not.toContain('It never changes a score');
+      expect(verifier.textContent).toContain('It changes no level.');
+      expect(verifier.textContent).toContain('settles a split between the two panel members');
     });
 
     it('should open the grader guide at the roles overview from the Grading group', () => {
@@ -6079,6 +6220,90 @@ describe('AdminBenchmarkComponent', () => {
         expect(figureCard('critical-errors')).toBeNull();
         expect(component.shownKeyFigureKeys).not.toContain('critical-errors');
         expect(component.shownKeyFigureKeys).toContain('answered');
+      });
+
+      describe('from scoring method 13', () => {
+        function outcomeSummary(overrides: any = {}): any {
+          return {
+            correctCount: 10, partialCount: 4, incorrectCount: 2, notAttemptedCount: 1, noAnswerCount: 1,
+            classifiedCount: 17,
+            confirmedCriticalErrorCount: 1, unresolvedCriticalErrorCount: 1, overturnedCriticalErrorCount: 1,
+            criticalErrorRate: 1 / 17, criticalErrorRateLow: 0.0104, criticalErrorRateHigh: 0.2598,
+            correctWhenAttempted: 10 / 16, wrongInsteadOfAbstaining: 2 / 3,
+            confirmedCriticalErrorQuestions: [3], unresolvedCriticalErrorQuestions: [5],
+            overturnedCriticalErrorQuestions: [9], notAttemptedQuestions: [11],
+            ...overrides
+          };
+        }
+
+        function resolvedAnswers(): any[] {
+          return [
+            answer(3, { criticalError: true, coAssessmentCriticalError: true, criticalErrorResolution: 'Agreed' }),
+            answer(5, { criticalError: true, coAssessmentCriticalError: false, criticalErrorResolution: 'Unresolved' }),
+            answer(9, { criticalError: false, coAssessmentCriticalError: true, criticalErrorResolution: 'OverturnedByVerifier' }),
+            answer(11, { criticalErrorResolution: 'None', outcomeClass: 'NotAttempted' })
+          ];
+        }
+
+        it('should count confirmed critical errors, with the rate, unresolved and overturned', () => {
+          component.selectedRunDetail = buildFinishedRun({
+            scoringMethodVersion: 13,
+            isPanelRun: true,
+            outcomeSummary: outcomeSummary(),
+            answers: resolvedAnswers()
+          });
+          fixture.detectChanges();
+
+          expect(component.keyFigureCriticalErrorAnswers.map(a => a.orderIndex)).toEqual([3]);
+          expect(figureValue('critical-errors')).toBe('1');
+          expect(figureNotes('critical-errors')).toEqual([
+            'Q3',
+            'rate 6 % (95 % CI 1–26 %)',
+            '1 unresolved (Q5) · 1 overturned by the verifier (Q9)'
+          ]);
+        });
+
+        it('should read None with no confirmed critical error and still give the rate', () => {
+          component.selectedRunDetail = buildFinishedRun({
+            scoringMethodVersion: 13,
+            outcomeSummary: outcomeSummary({
+              confirmedCriticalErrorCount: 0, unresolvedCriticalErrorCount: 0, overturnedCriticalErrorCount: 0,
+              confirmedCriticalErrorQuestions: [], unresolvedCriticalErrorQuestions: [], overturnedCriticalErrorQuestions: [],
+              criticalErrorRate: 0, criticalErrorRateLow: 0, criticalErrorRateHigh: 0.184
+            }),
+            answers: [answer(1, { criticalErrorResolution: 'None' }), answer(2, { criticalErrorResolution: 'None' })]
+          });
+          fixture.detectChanges();
+
+          expect(figureValue('critical-errors')).toBe('None');
+          expect(figureNotes('critical-errors')).toEqual(['rate 0 % (95 % CI 0–18 %)']);
+        });
+
+        it('should keep the flag rule and its notes before scoring method 13', () => {
+          component.selectedRunDetail = buildFinishedRun({
+            scoringMethodVersion: 12,
+            isPanelRun: true,
+            outcomeSummary: outcomeSummary(),
+            answers: resolvedAnswers()
+          });
+          fixture.detectChanges();
+
+          expect(figureValue('critical-errors')).toBe('3');
+          expect(figureNotes('critical-errors')).toEqual(['Q3, Q5, Q9']);
+        });
+
+        it('should keep the key figure cards and their order', () => {
+          component.selectedRunDetail = buildFinishedRun({ scoringMethodVersion: 12, answers: resolvedAnswers() });
+          fixture.detectChanges();
+          const before = [...component.shownKeyFigureKeys];
+
+          component.selectedRunDetail = buildFinishedRun({
+            scoringMethodVersion: 13, outcomeSummary: outcomeSummary(), answers: resolvedAnswers()
+          });
+          fixture.detectChanges();
+
+          expect(component.shownKeyFigureKeys).toEqual(before);
+        });
       });
 
       it('should show every question answered', () => {
@@ -6998,6 +7223,40 @@ describe('AdminBenchmarkComponent', () => {
       expect(text.split('\n').find(l => l.startsWith('[Q2]'))).not.toContain('boardChars=');
       expect(component.evidenceInformedWithdrawn(run.answers[0])).toEqual(['Accuracy deduction: peacefuls are never displaced']);
       expect(component.evidenceInformedWithdrawn({ ...run.answers[0], evidenceInformedJson: 'not json' })).toEqual([]);
+    });
+
+    function diagnosticsOutcomeSummary(): any {
+      return {
+        correctCount: 1, partialCount: 0, incorrectCount: 0, notAttemptedCount: 1, noAnswerCount: 0,
+        classifiedCount: 2,
+        confirmedCriticalErrorCount: 0, unresolvedCriticalErrorCount: 0, overturnedCriticalErrorCount: 1,
+        criticalErrorRate: 0, criticalErrorRateLow: 0, criticalErrorRateHigh: 0.658,
+        correctWhenAttempted: 1, wrongInsteadOfAbstaining: 0,
+        confirmedCriticalErrorQuestions: [], unresolvedCriticalErrorQuestions: [],
+        overturnedCriticalErrorQuestions: [1], notAttemptedQuestions: [2]
+      };
+    }
+
+    it('should add the critical-error resolution and outcome lines from scoring method 13', () => {
+      const run = buildDiagnosticsRun({ scoringMethodVersion: 13, outcomeSummary: diagnosticsOutcomeSummary() });
+      run.answers[0] = { ...run.answers[0], coAssessmentCriticalError: true, criticalErrorResolution: 'OverturnedByVerifier' };
+      run.answers[1] = { ...run.answers[1], criticalErrorResolution: 'None', notAttempted: true, outcomeClass: 'NotAttempted' };
+      component.activeRunDetail = run;
+      const lines = component.runDiagnosticsText.split('\n');
+
+      const critical = lines.findIndex(l => l.startsWith('critical errors:'));
+      expect(lines[critical]).toContain('critical errors: 0, unverified claims:');
+      expect(lines[critical + 1]).toBe('critical error resolution: confirmed 0, unresolved 0, overturned 1 (Q1); rate 0 % (95 % CI 0–66 %) of 2 classified');
+      expect(lines[critical + 2]).toBe('answer outcomes: correct 1, partial 0, incorrect 0, not attempted 1 (Q2), no answer 0; '
+        + 'correct when attempted 100 %, wrong instead of abstaining 0 %');
+    });
+
+    it('should leave the resolution and outcome lines out before scoring method 13', () => {
+      component.activeRunDetail = buildDiagnosticsRun({ outcomeSummary: diagnosticsOutcomeSummary() });
+      const text = component.runDiagnosticsText;
+
+      expect(text).not.toContain('critical error resolution:');
+      expect(text).not.toContain('answer outcomes:');
     });
 
     it('should name the snapshot in the prompt summary only when the run had one', () => {

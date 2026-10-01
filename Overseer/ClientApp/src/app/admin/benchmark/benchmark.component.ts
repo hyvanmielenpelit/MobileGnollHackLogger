@@ -8,6 +8,7 @@ import {
   BenchmarkRunSummaryDto,
   BenchmarkRunDetailDto,
   BenchmarkRunAnswerDto,
+  BenchmarkRunOutcomeSummaryDto,
   BenchmarkScoringProfileDto,
   CreateBenchmarkSuiteRequest,
   UpdateBenchmarkSuiteRequest,
@@ -596,6 +597,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     weightReadability: 0.10,
     levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
     criticalErrorCeiling: 25,
+    notAttemptedScore: 50,
     secondOpinionQualityThreshold: 50,
     secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
     secondOpinionOutlierDeltaPoints: 25,
@@ -2811,6 +2813,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       weightReadability: 0.10,
       levelScoresJson: '[1, 15, 35, 55, 72, 87, 100]',
       criticalErrorCeiling: 25,
+      notAttemptedScore: 50,
       secondOpinionQualityThreshold: 50,
       secondOpinionMode: BenchmarkSecondOpinionMode.Flagged,
       secondOpinionOutlierDeltaPoints: 25,
@@ -2835,6 +2838,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       weightReadability: profile.weightReadability,
       levelScoresJson: profile.levelScoresJson,
       criticalErrorCeiling: profile.criticalErrorCeiling,
+      notAttemptedScore: profile.notAttemptedScore ?? null,
       secondOpinionQualityThreshold: profile.secondOpinionQualityThreshold ?? 50,
       secondOpinionMode: profile.secondOpinionMode ?? BenchmarkSecondOpinionMode.Flagged,
       secondOpinionOutlierDeltaPoints: profile.secondOpinionOutlierDeltaPoints ?? 25,
@@ -2880,6 +2884,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         return;
       }
     }
+
+    // Blank is meaningful: no not-attempted floor. Always sent, because an update that omits it
+    // clears it. Mirrors BenchmarkScoringProfileService.ValidateProfile.
+    const notAttemptedScore = this.profileForm.notAttemptedScore ?? null;
+    if (notAttemptedScore != null && (!Number.isInteger(notAttemptedScore) || notAttemptedScore < 0 || notAttemptedScore > 100)) {
+      this.profileValidationErrors.push('Not-attempted score must be blank or a whole number between 0 and 100.');
+      return;
+    }
+    this.profileForm.notAttemptedScore = notAttemptedScore;
 
     if (this.editingProfileId) {
       this.benchmarkService.updateScoringProfile(this.editingProfileId, this.profileForm as UpdateBenchmarkScoringProfileRequest).subscribe({
@@ -5805,6 +5818,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           ? this.panelUnverifiedClaimsLabel(run)
           : `${run.answers.reduce((sum, a) => sum + (a.unverifiedClaimCount ?? 0), 0)}`;
         lines.push(`critical errors: ${criticalHere.length}${criticalHere.length > 0 ? ` (${criticalHere.map(i => 'Q' + i).join(', ')}${criticalSplitHere})` : ''}, unverified claims: ${unverifiedHere}`);
+        const outcomeSummary = this.outcomeSummaryOf(run);
+        if (outcomeSummary) {
+          lines.push(this.criticalErrorResolutionDiagnosticsLine(outcomeSummary));
+          lines.push(this.outcomeDiagnosticsLine(outcomeSummary));
+        }
         const signedDeltaStr = run.secondOpinionMeanSignedDelta != null
           ? `, ${run.secondOpinionMeanSignedDelta > 0 ? '+' : run.secondOpinionMeanSignedDelta < 0 ? '−' : ''}${Math.abs(run.secondOpinionMeanSignedDelta).toFixed(1)} mean signed delta`
           : '';
@@ -8291,7 +8309,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /**
    * The answers a critical-error cap applied to, by the report's rule: member A's flag, or in a
-   * panel run either member's, since a cap from either lowers the panel score. In question order.
+   * panel run either member's, since a cap from either lowers the panel score. From scoring method
+   * 13, the confirmed critical errors. In question order.
    */
   private criticalErrorAnswersOf(run: BenchmarkRunDetailDto | null | undefined): BenchmarkRunAnswerDto[] {
     if (!run) return [];
@@ -8300,13 +8319,133 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       .sort((x, y) => x.orderIndex - y.orderIndex);
   }
 
+  /** From scoring method 13 the cap follows the answer's critical-error resolution, not the raw flags. */
   private isCriticalErrorApplied(run: BenchmarkRunDetailDto, a: BenchmarkRunAnswerDto): boolean {
+    if (this.resolvesCriticalErrors(run)) {
+      return a.criticalErrorResolution === 'Agreed'
+        || a.criticalErrorResolution === 'UpheldByVerifier'
+        || a.criticalErrorResolution === 'SingleAssessor';
+    }
     return !!a.criticalError || (!!run.isPanelRun && a.coAssessmentCriticalError === true);
   }
 
-  /** The Critical Errors card's notes: the question numbers, then how many the second reader disputed. */
+  /**
+   * Whether an answer header shows the CRITICAL ERROR badge: member A's flag, or from scoring
+   * method 13 any critical-error resolution but None, including the unresolved and overturned ones.
+   */
+  showCriticalErrorBadge(ans: BenchmarkRunAnswerDto): boolean {
+    if (this.resolvesCriticalErrors(this.selectedRunDetail)) {
+      return ans.criticalErrorResolution != null && ans.criticalErrorResolution !== 'None';
+    }
+    return !!ans.criticalError;
+  }
+
+  /** The CRITICAL ERROR badge's title: from scoring method 13 it states the resolution. */
+  criticalErrorBadgeTitle(ans: BenchmarkRunAnswerDto): string {
+    const resolution = this.resolvesCriticalErrors(this.selectedRunDetail) ? ans.criticalErrorResolution : null;
+    switch (resolution) {
+      case 'Agreed':
+        return 'Critical error confirmed by both panel members — Quality capped at 25';
+      case 'UpheldByVerifier':
+        return 'Critical error flagged by one panel member and upheld by the claim verifier — both members capped at 25';
+      case 'SingleAssessor':
+        return 'Critical error flagged by the assessor — Quality capped at 25';
+      case 'Unresolved':
+        return 'Critical error flagged by one panel member only, with no verifier ruling — split unresolved, the two members averaged';
+      case 'OverturnedByVerifier':
+        return 'Critical error flagged by one panel member and overturned by the claim verifier — not applied';
+      default:
+        return 'Critical error cap applied (Quality capped at 25)';
+    }
+  }
+
+  /** Scoring method 13 on: critical errors carry a resolution and answers an outcome class. */
+  private resolvesCriticalErrors(run: BenchmarkRunDetailDto | null | undefined): boolean {
+    return (run?.scoringMethodVersion ?? 0) >= 13;
+  }
+
+  /** The run's outcome summary; null before scoring method 13. */
+  private outcomeSummaryOf(run: BenchmarkRunDetailDto | null | undefined): BenchmarkRunOutcomeSummaryDto | null {
+    return run && this.resolvesCriticalErrors(run) ? run.outcomeSummary ?? null : null;
+  }
+
+  /** A fraction as a whole percent, without the sign. */
+  private wholePercent(fraction: number): number {
+    return Math.round(fraction * 100);
+  }
+
+  /** *rate 6 % (95 % CI 1–26 %)*, or null when the summary has no rate. */
+  private criticalErrorRateLabel(summary: BenchmarkRunOutcomeSummaryDto): string | null {
+    if (summary.criticalErrorRate == null) return null;
+    const interval = summary.criticalErrorRateLow != null && summary.criticalErrorRateHigh != null
+      ? ` (95 % CI ${this.wholePercent(summary.criticalErrorRateLow)}–${this.wholePercent(summary.criticalErrorRateHigh)} %)`
+      : '';
+    return `rate ${this.wholePercent(summary.criticalErrorRate)} %${interval}`;
+  }
+
+  /** The diagnostics capture's critical-error resolution line, scoring method 13 on. */
+  private criticalErrorResolutionDiagnosticsLine(summary: BenchmarkRunOutcomeSummaryDto): string {
+    const parts = [
+      `confirmed ${summary.confirmedCriticalErrorCount}${this.questionListSuffix(summary.confirmedCriticalErrorQuestions)}`,
+      `unresolved ${summary.unresolvedCriticalErrorCount}${this.questionListSuffix(summary.unresolvedCriticalErrorQuestions)}`,
+      `overturned ${summary.overturnedCriticalErrorCount}${this.questionListSuffix(summary.overturnedCriticalErrorQuestions)}`
+    ];
+    return `critical error resolution: ${parts.join(', ')}; ${this.criticalErrorRateLabel(summary) ?? 'rate n/a'} of ${summary.classifiedCount} classified`;
+  }
+
+  /** The diagnostics capture's outcome-class line, scoring method 13 on. */
+  private outcomeDiagnosticsLine(summary: BenchmarkRunOutcomeSummaryDto): string {
+    const percent = (fraction: number | null) => fraction == null ? 'n/a' : `${this.wholePercent(fraction)} %`;
+    const counts = [
+      `correct ${summary.correctCount}`,
+      `partial ${summary.partialCount}`,
+      `incorrect ${summary.incorrectCount}`,
+      `not attempted ${summary.notAttemptedCount}${this.questionListSuffix(summary.notAttemptedQuestions)}`,
+      `no answer ${summary.noAnswerCount}`
+    ];
+    return `answer outcomes: ${counts.join(', ')}; correct when attempted ${percent(summary.correctWhenAttempted)}, wrong instead of abstaining ${percent(summary.wrongInsteadOfAbstaining)}`;
+  }
+
+  /** ` (Q3, Q7)`, or empty without questions. */
+  private questionListSuffix(questions: number[]): string {
+    return questions.length > 0 ? ` (${questions.map(q => `Q${q}`).join(', ')})` : '';
+  }
+
+  /** The Critical Errors card's value: confirmed critical errors from scoring method 13, else capped answers. */
+  get keyFigureCriticalErrorCount(): number {
+    const summary = this.outcomeSummaryOf(this.selectedRunDetail);
+    return summary ? summary.confirmedCriticalErrorCount : this.keyFigureCriticalErrorAnswers.length;
+  }
+
+  /**
+   * The Critical Errors card's notes: the question numbers, then how many the second reader disputed.
+   * From scoring method 13 also the rate with its interval, and the unresolved and overturned splits.
+   */
   get keyFigureCriticalErrorNotes(): string[] {
     const answers = this.keyFigureCriticalErrorAnswers;
+    const summary = this.outcomeSummaryOf(this.selectedRunDetail);
+    if (summary) {
+      const notes: string[] = [];
+      if (summary.confirmedCriticalErrorQuestions.length > 0) {
+        notes.push(summary.confirmedCriticalErrorQuestions.map(q => `Q${q}`).join(', '));
+      }
+      const rate = this.criticalErrorRateLabel(summary);
+      if (rate) notes.push(rate);
+      const splits: string[] = [];
+      if (summary.unresolvedCriticalErrorCount > 0) {
+        splits.push(`${summary.unresolvedCriticalErrorCount} unresolved${this.questionListSuffix(summary.unresolvedCriticalErrorQuestions)}`);
+      }
+      if (summary.overturnedCriticalErrorCount > 0) {
+        splits.push(`${summary.overturnedCriticalErrorCount} overturned by the verifier${this.questionListSuffix(summary.overturnedCriticalErrorQuestions)}`);
+      }
+      if (splits.length > 0) notes.push(splits.join(' · '));
+      const disputedConfirmed = answers.filter(a => a.secondOpinionCriticalError === false).length;
+      if (disputedConfirmed > 0) {
+        const reader = this.selectedRunDetail?.isPanelRun ? 'reference reader' : 'second reader';
+        notes.push(`${disputedConfirmed} disputed by the ${reader}`);
+      }
+      return notes;
+    }
     if (answers.length === 0) return [];
     const notes = [answers.map(a => `Q${a.orderIndex}`).join(', ')];
     const disputed = answers.filter(a => a.secondOpinionCriticalError === false).length;

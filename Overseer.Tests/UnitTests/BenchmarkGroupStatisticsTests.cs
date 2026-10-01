@@ -432,6 +432,53 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(4, item.Analysis!.RunCount);
     }
 
+    [Fact]
+    public void PerItem_OnScoringMethod13Runs_CountsConfirmedCriticalErrorsOnly()
+    {
+        // One item over four panel runs, member A flagging in the first three:
+        //   run 1 both members flagged (agreed), run 2 the verifier overturned A's flag,
+        //   run 3 the split stayed unresolved, run 4 no flag.
+        //   method 13: confirmed in 1 of 4 runs = 0.25; method 12: member A's flag, 3 of 4 = 0.75
+        var questions = Questions(50);
+        var runs = new[]
+        {
+            PanelRun(1, questions, new[] { 25 }, new[] { 25 }),
+            PanelRun(2, questions, new[] { 25 }, new[] { 80 }),
+            PanelRun(3, questions, new[] { 25 }, new[] { 70 }),
+            PanelRun(4, questions, new[] { 90 }, new[] { 85 })
+        };
+        var resolutions = new[]
+        {
+            BenchmarkCriticalErrorResolution.Agreed,
+            BenchmarkCriticalErrorResolution.OverturnedByVerifier,
+            BenchmarkCriticalErrorResolution.Unresolved,
+            BenchmarkCriticalErrorResolution.None
+        };
+        for (int i = 0; i < runs.Length; i++)
+        {
+            var answer = runs[i].Answers[0];
+            answer.CriticalError = resolutions[i] != BenchmarkCriticalErrorResolution.None;
+            answer.CoAssessmentCriticalError = resolutions[i] == BenchmarkCriticalErrorResolution.Agreed;
+            answer.CriticalErrorResolution = resolutions[i];
+            runs[i].ScoringMethodVersion = BenchmarkCriticalErrorResolver.FirstScoringMethod;
+        }
+
+        var item = Assert.Single(BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Items);
+
+        Assert.Equal(1, item.CriticalErrorCount);
+        Assert.Equal(0.25, item.CriticalErrorRate, 9);
+
+        foreach (var run in runs)
+        {
+            run.ScoringMethodVersion = 12;
+        }
+
+        var legacy = Assert.Single(BenchmarkGroupStatistics.Compute(Suite(), questions, runs).Items);
+
+        Assert.Equal(3, legacy.CriticalErrorCount);
+        Assert.Equal(0.75, legacy.CriticalErrorRate, 9);
+    }
+
     /// <summary>
     /// <see cref="Run"/> as a panel run: member A's scores are <paramref name="memberA"/>, member B's
     /// <paramref name="memberB"/>, and each answer's panel score is their mean.
