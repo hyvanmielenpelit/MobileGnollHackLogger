@@ -223,6 +223,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   pinnedSessionCount = 0;
   maxSessionQuota = 50;
   maxPinnedQuota = 5;
+  /** Active chats a delete destroys at once instead of moving to Trash, unpinned and pinned. */
+  immediatePurgeCount = 0;
+  immediatePurgePinnedCount = 0;
+  /** Confidential chats the current search skipped. */
+  confidentialExcludedCount = 0;
   cancelingSubAgentId: string | null = null;
   trashCount = 0;
 
@@ -2283,6 +2288,9 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         this.pinnedSessionCount = response?.pinnedCount ?? this.sessions.filter(s => s.isPinned).length;
         this.maxSessionQuota = response?.maxQuota || 50;
         this.maxPinnedQuota = response?.maxPinned || 5;
+        this.immediatePurgeCount = response?.immediatePurgeCount ?? 0;
+        this.immediatePurgePinnedCount = response?.immediatePurgePinnedCount ?? 0;
+        this.confidentialExcludedCount = response?.confidentialExcludedCount ?? 0;
         this.loadingSessions = false;
         this.trashModal?.loadTrash();
         this.cdr.detectChanges();
@@ -2728,6 +2736,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
+  /** Whether the chat the delete dialog is about is destroyed at once rather than moved to Trash. */
+  get deleteTargetPurgesImmediately(): boolean {
+    return this.sessions.find(s => s.id === this.sessionToDelete)?.immediatePurgeOnDelete === true;
+  }
+
   requestDeleteSession(id: number, event: Event) {
     event.stopPropagation();
     this.sessionToDelete = id;
@@ -2806,6 +2819,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       return total;
     }
     return Math.max(0, total - this.pinnedSessionCount);
+  }
+
+  /** How many of the bulk delete's targets are destroyed at once instead of going to Trash. */
+  get bulkDeletePurgeCount(): number {
+    return this.immediatePurgeCount + (this.includePinnedInBulkDelete ? this.immediatePurgePinnedCount : 0);
   }
 
   openBulkDeleteDialog() {
@@ -3215,7 +3233,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
 
   private warnEphemeralLeave() {
     if (!this.hasEphemeralContent) return;
-    this.setEphemeralNotice('The incognito chat stays in memory while you are away. It is destroyed when you close it, when it expires, or when this tab closes.');
+    this.setEphemeralNotice(`The incognito chat stays in memory while you are away. It ends when you delete it, or after ${this.ephemeralTimeoutMinutes} minutes without activity, even if you close this tab.`);
   }
 
   private setEphemeralNotice(text: string) {

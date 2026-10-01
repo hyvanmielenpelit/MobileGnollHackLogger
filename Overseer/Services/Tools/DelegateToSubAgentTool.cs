@@ -352,6 +352,7 @@ public class DelegateToSubAgentTool : IToolHandler
                 ParentToolCallId = toolCallId,
                 AllowedToolNames = subAgentDef.AllowedTools,
                 ShowDebugLog = context.ShowDebugLog,
+                DisableProviderPromptCache = context.DisableProviderPromptCache,
                 AiProvider = aiProvider,
                 Budget = context.Budget
             };

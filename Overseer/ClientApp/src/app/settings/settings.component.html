@@ -783,6 +783,9 @@
   <h3>Move Active Chats to Trash</h3>
   <p>Are you sure you want to move <strong>{{ bulkDeleteTargetCount }}</strong> active chat{{ bulkDeleteTargetCount === 1 ? '' : 's' }} to Trash?</p>
   <p class="text-muted" style="font-size: 0.9em; margin-top: 6px;">Soft-deleted chats remain in Trash for 30 days before permanent deletion.</p>
+  @if (bulkDeletePurgeCount > 0) {
+    <p class="bulk-delete-purge-note">{{ bulkDeletePurgeCount }} confidential chat{{ bulkDeletePurgeCount === 1 ? '' : 's' }} will be destroyed at once instead of going to Trash.</p>
+  }
   @if (pinnedSessionCount > 0) {
     <div class="margin-y-20 mt-10 mb-15">
       <label class="checkbox-label align-start">

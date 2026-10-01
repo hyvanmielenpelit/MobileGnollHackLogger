@@ -639,6 +639,12 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
 
 /* Explains why a control is disabled, so it is set apart from .form-hint, which describes
    what the setting does. Gold rather than grey because it comes from the administrator. */
+.bulk-delete-purge-note {
+  color: var(--danger-color, #ff6b6b);
+  font-size: 0.9em;
+  margin-block-start: 6px;
+}
+
 .confidential-floor-note {
   display: block;
   font-size: 0.85em;

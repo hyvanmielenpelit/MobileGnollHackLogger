@@ -438,8 +438,10 @@ public class ConfidentialityPostureService
                    the question. The trigger is therefore the absence of a decision alone -- an
                    unestablished posture is what the question is *about*, so asking again after
                    it has been answered would make the prompt unanswerable. Which question is
-                   asked still depends on the posture. */
-                if (userTrustsForConfidential == null)
+                   asked still depends on the posture. Nothing is unclear about a model an
+                   administrator has verified at or above the threshold, so it is not asked. */
+                if (userTrustsForConfidential == null
+                    && !(posture.IsOperatorVerified && posture.Posture.MeetsConfidentialThreshold()))
                 {
                     return new ConfidentialityGateResult(
                         ConfidentialityGateOutcome.AskOnce,

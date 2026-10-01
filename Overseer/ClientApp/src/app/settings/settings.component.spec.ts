@@ -415,7 +415,7 @@ describe('SettingsComponent', () => {
 
     it('should populate the confidentiality settings and the floor from getSettings', () => {
       createWith({
-        confidentialPersistence: 'Ephemeral',
+        confidentialPersistence: 'Encrypted',
         confidentialRetentionDays: 7,
         confidentialDisableToolEgress: true,
         confidentialDisableTitleGeneration: true,
@@ -425,7 +425,7 @@ describe('SettingsComponent', () => {
         confidentialFloor: defaultFloor
       });
 
-      expect(component.confidentialPersistence).toBe('Ephemeral');
+      expect(component.confidentialPersistence).toBe('Encrypted');
       expect(component.confidentialRetentionDays).toBe(7);
       expect(component.confidentialDisablePromptCache).toBeFalse();
       expect(component.confidentialImmediatePurge).toBeFalse();
@@ -451,23 +451,45 @@ describe('SettingsComponent', () => {
     it('should not offer an option the floor forbids', () => {
       createWith({ confidentialFloor: { ...defaultFloor, modelGate: 'AskWhenUnclear' } });
 
-      expect(component.persistenceOptions.map(o => o.value)).toEqual(['Encrypted', 'Ephemeral']);
+      expect(component.persistenceOptions.map(o => o.value)).toEqual(['Encrypted']);
       expect(component.modelGateOptions.map(o => o.value)).toEqual(['AskWhenUnclear', 'VerifiedPostureOnly']);
     });
 
     it('should offer every option when no floor is configured', () => {
       createWith({ confidentialFloor: null });
 
-      expect(component.persistenceOptions.length).toBe(3);
+      expect(component.persistenceOptions.map(o => o.value)).toEqual(['Plaintext', 'Encrypted']);
       expect(component.modelGateOptions.length).toBe(3);
       expect(component.maxConfidentialRetentionDays).toBe(component.retentionMaxDays);
     });
+
+    it('should never offer "Never stored" as a Storage choice', () => {
+      createWith({ confidentialFloor: null });
+
+      expect(component.persistenceOptions.map(o => o.label)).not.toContain('Never stored');
+      expect(component.persistenceOptions.map(o => o.value)).not.toContain('Ephemeral');
+    });
+
+    it('should show a saved "Never stored" preference as Encrypted at rest and save it as Encrypted', fakeAsync(() => {
+      createWith({ confidentialFloor: null, confidentialPersistence: 'Ephemeral' });
+      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+
+      expect(component.confidentialPersistence).toBe('Encrypted');
+      expect(component.selectedPersistenceHint).toContain('enveloped');
+
+      component.confidentialImmediatePurge = !component.confidentialImmediatePurge;
+      component.onSettingChange();
+      tick();
+
+      expect((saveSpy.calls.mostRecent().args[16] as any).confidentialPersistence).toBe('Encrypted');
+    }));
 
     it('should report only the settings the floor has maximised as fixed by an administrator', () => {
       createWith({ confidentialFloor: defaultFloor });
 
       expect(component.toolEgressFixedByAdmin).toBeTrue();
-      expect(component.persistenceFixedByAdmin).toBeFalse();
+      // Encrypted is the strictest Storage choice a saved chat has, so the floor leaves nothing to choose.
+      expect(component.persistenceFixedByAdmin).toBeTrue();
       expect(component.retentionFixedByAdmin).toBeFalse();
       expect(component.titleGenerationFixedByAdmin).toBeFalse();
       expect(component.promptCacheFixedByAdmin).toBeFalse();
@@ -485,7 +507,7 @@ describe('SettingsComponent', () => {
       expect(component.promptCacheFixedByAdmin).toBeTrue();
       expect(component.immediatePurgeFixedByAdmin).toBeTrue();
       expect(component.modelGateFixedByAdmin).toBeTrue();
-      expect(component.persistenceOptions.map(o => o.value)).toEqual(['Ephemeral']);
+      expect(component.persistenceOptions.map(o => o.value)).toEqual(['Encrypted']);
       expect(component.modelGateOptions.map(o => o.value)).toEqual(['VerifiedPostureOnly']);
     });
 

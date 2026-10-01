@@ -142,7 +142,21 @@ public class ConfidentialPolicyResolver
     /// The effective policy for a user: each value the stricter of theirs and the floor's.
     /// </summary>
     /// <param name="settings">The user's settings, or null when they have none.</param>
-    public ConfidentialPolicy Resolve(UserAiSettings? settings)
+    /// <param name="persistentSession">
+    /// True for a stored session, where <see cref="ConfidentialPersistence.Ephemeral"/> has no
+    /// meaning and resolves to <see cref="ConfidentialPersistence.Encrypted"/>; Incognito is the
+    /// never-stored mode. False for an incognito session's template.
+    /// </param>
+    public ConfidentialPolicy Resolve(UserAiSettings? settings, bool persistentSession = true)
+    {
+        var policy = ResolveValues(settings);
+
+        return persistentSession && policy.Persistence == ConfidentialPersistence.Ephemeral
+            ? policy with { Persistence = ConfidentialPersistence.Encrypted }
+            : policy;
+    }
+
+    private ConfidentialPolicy ResolveValues(UserAiSettings? settings)
     {
         if (settings == null)
             return _floor;
@@ -198,6 +212,14 @@ public class ConfidentialPolicyResolver
             return ConfidentialPolicy.Defaults;
         }
     }
+
+    /// <summary>
+    /// Whether new content of a stored session is written enveloped: it is confidential and its
+    /// snapshot is not <see cref="ConfidentialPersistence.Plaintext"/>. A missing or unreadable
+    /// snapshot reads as the defaults, so it counts as encrypted.
+    /// </summary>
+    public static bool StoresEncrypted(ChatSession session)
+        => session.IsConfidential && ReadSnapshot(session).Persistence != ConfidentialPersistence.Plaintext;
 
     /// <summary>
     /// Writes the policy onto a session: the JSON snapshot, and the two scalars the retention

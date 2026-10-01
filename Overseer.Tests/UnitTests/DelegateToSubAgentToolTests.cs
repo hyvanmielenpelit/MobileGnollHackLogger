@@ -171,6 +171,40 @@ public class DelegateToSubAgentToolTests
         Assert.Equal("high", mockProvider.LastThinkingLevel);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ExecuteAsync_SubAgentRequest_InheritsDisableProviderPromptCache(bool disabled)
+    {
+        var (tool, db, mockProvider, _) = CreateTestSetup();
+        var session = new ChatSession { Id = 15, AspNetUserId = "user15", Title = "Test", CreatedUtc = DateTime.UtcNow, LastMessageUtc = DateTime.UtcNow };
+        db.ChatSession.Add(session);
+        db.UserAiModels.Add(new UserAiModel
+        {
+            Id = 15,
+            AspNetUserId = "user15",
+            Provider = "OpenAI",
+            ModelId = "gpt-5.6-luna",
+            OrderIndex = 0
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var context = new ToolExecutionContext
+        {
+            SessionId = Overseer.Services.Privacy.SessionRef.Persistent(15),
+            AgentDepth = 0,
+            MaxAgentDepth = 1,
+            EnableSubAgents = true,
+            DisableProviderPromptCache = disabled
+        };
+        var validParams = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"compare prayers\"}").RootElement;
+
+        var result = await tool.ExecuteAsync(validParams, context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal(disabled, mockProvider.LastDisablePromptCache);
+    }
+
     [Fact]
     public async Task ExecuteAsync_CatalogFallback_ResolvesMaxOutputTokens_To128000()
     {
@@ -854,6 +888,7 @@ public class DelegateToSubAgentToolTests
         public string? LastModelId { get; private set; }
         public string? LastApiKey { get; private set; }
         public List<object>? LastMessageHistory { get; private set; }
+        public bool? LastDisablePromptCache { get; private set; }
         public bool EmitToolCallOnFirstIteration { get; set; } = false;
         private int _streamCallCount = 0;
 
@@ -868,7 +903,7 @@ public class DelegateToSubAgentToolTests
                 messageHistory.Add(new { role = "tool", content = r.Content });
         }
 
-        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null, bool cacheConversationTail = true)
+        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null, bool cacheConversationTail = true, bool disablePromptCache = false)
         {
             LastModelId = modelId;
             LastMaxOutputTokens = maxOutputTokens;
@@ -876,6 +911,7 @@ public class DelegateToSubAgentToolTests
             LastReasoningMode = reasoningMode;
             LastServiceTier = serviceTier;
             LastMessageHistory = new List<object>(messageHistory);
+            LastDisablePromptCache = disablePromptCache;
             return new Dictionary<string, object>();
         }
 

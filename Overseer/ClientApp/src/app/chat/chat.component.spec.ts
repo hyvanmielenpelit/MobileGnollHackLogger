@@ -1082,6 +1082,128 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(closeSpy).toHaveBeenCalled();
       expect(loadSessionsSpy).toHaveBeenCalledWith(true);
     });
+
+    it('should count the confidential chats a bulk delete destroys at once, pinned ones only when included', () => {
+      component.immediatePurgeCount = 2;
+      component.immediatePurgePinnedCount = 1;
+
+      component.includePinnedInBulkDelete = false;
+      expect(component.bulkDeletePurgeCount).toBe(2);
+
+      component.includePinnedInBulkDelete = true;
+      expect(component.bulkDeletePurgeCount).toBe(3);
+    });
+  });
+
+  describe('confidential chats in the session list', () => {
+    function stubSessions(body: Record<string, unknown>) {
+      spyOn(chatService, 'getSessions').and.returnValue(
+        of(new HttpResponse({ body: { hasMore: false, ...body } as any })));
+    }
+
+    const purgedSession = {
+      id: 7, title: 'Secret plans', lastMessageUtc: new Date().toISOString(),
+      isConfidential: true, immediatePurgeOnDelete: true
+    };
+    const trashedSession = {
+      id: 8, title: 'Ordinary chat', lastMessageUtc: new Date().toISOString()
+    };
+
+    function openDeleteDialogFor(id: number): HTMLDialogElement {
+      const compiled = fixture.nativeElement as HTMLElement;
+      const row = Array.from(compiled.querySelectorAll('.sidebar li'))
+        .find(li => li.querySelector('.session-title')?.textContent?.includes(id === 7 ? 'Secret plans' : 'Ordinary chat'));
+      (row!.querySelector('.session-delete-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      return compiled.querySelector('dialog.gh-dialog[open]') as HTMLDialogElement;
+    }
+
+    it('should store the delete and search counts the session list reports', () => {
+      stubSessions({
+        sessions: [purgedSession], immediatePurgeCount: 1, immediatePurgePinnedCount: 2, confidentialExcludedCount: 3
+      });
+      fixture.detectChanges();
+
+      component.loadSessions();
+
+      expect(component.sessions[0].immediatePurgeOnDelete).toBeTrue();
+      expect(component.immediatePurgeCount).toBe(1);
+      expect(component.immediatePurgePinnedCount).toBe(2);
+      expect(component.confidentialExcludedCount).toBe(3);
+    });
+
+    it('should say a confidential chat is destroyed at once rather than moved to Trash', () => {
+      stubSessions({ sessions: [purgedSession, trashedSession] });
+      fixture.detectChanges();
+      component.loadSessions();
+
+      const dialog = openDeleteDialogFor(7);
+
+      expect(component.deleteTargetPurgesImmediately).toBeTrue();
+      expect(dialog.querySelector('h3')?.textContent).toContain('Delete Confidential Chat');
+      expect(dialog.textContent).toContain('It does not go to Trash and cannot be restored.');
+      expect(dialog.querySelector('.btn-gh-delete')?.textContent?.trim()).toBe('Delete chat');
+      dialog.close();
+    });
+
+    it('should keep the Trash wording for a chat that goes to Trash', () => {
+      stubSessions({ sessions: [purgedSession, trashedSession] });
+      fixture.detectChanges();
+      component.loadSessions();
+
+      const dialog = openDeleteDialogFor(8);
+
+      expect(component.deleteTargetPurgesImmediately).toBeFalse();
+      expect(dialog.querySelector('h3')?.textContent).toContain('Move Conversation to Trash');
+      expect(dialog.querySelector('.btn-gh-delete')?.textContent?.trim()).toBe('Move to Trash');
+      dialog.close();
+    });
+
+    it('should say how many confidential chats a search skipped', () => {
+      stubSessions({ sessions: [], confidentialExcludedCount: 1 });
+      component.sessionSearchQuery = 'mines';
+      fixture.detectChanges();
+      component.loadSessions();
+
+      const note = (fixture.nativeElement as HTMLElement).querySelector('.search-excluded-note');
+      expect(note?.textContent?.trim()).toBe('1 confidential chat not searched.');
+    });
+
+    it('should not show the skipped-chats line when nothing was skipped', () => {
+      stubSessions({ sessions: [], confidentialExcludedCount: 0 });
+      component.sessionSearchQuery = 'mines';
+      fixture.detectChanges();
+      component.loadSessions();
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.search-excluded-note')).toBeNull();
+    });
+  });
+
+  describe('the Report message button', () => {
+    const assistantMessage = { id: 5, role: 'assistant', content: 'An answer', timestampUtc: '2026-10-01T10:00:00Z' } as any;
+
+    it('should be offered on an assistant message in a Standard chat', () => {
+      component.messages = [assistantMessage];
+      fixture.detectChanges();
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.report-btn')).toBeTruthy();
+    });
+
+    it('should not be offered in a confidential chat', () => {
+      component.messages = [assistantMessage];
+      component.isConfidentialSession = true;
+      fixture.detectChanges();
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.report-btn')).toBeNull();
+    });
+
+    it('should not be offered in an incognito chat', () => {
+      component.messages = [assistantMessage];
+      component.isEphemeralSession = true;
+      fixture.detectChanges();
+
+      expect((fixture.nativeElement as HTMLElement).querySelector('.report-btn')).toBeNull();
+    });
   });
 });
 
@@ -2337,6 +2459,15 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect(component.canDeactivate()).toBeTrue();
       expect(component.privacyNotice).toContain('stays in memory');
       expect(component.isEphemeralSession).toBeTrue();
+    });
+
+    it('should say the chat survives a closed tab and ends on delete or the idle timeout', () => {
+      component.ephemeralTimeoutMinutes = 45;
+
+      component.canDeactivate();
+
+      expect(component.privacyNotice).toContain('It ends when you delete it, or after 45 minutes without activity, even if you close this tab.');
+      expect(component.privacyNotice).not.toContain('when this tab closes');
     });
 
     it('should announce the notice politely and let it be dismissed', () => {

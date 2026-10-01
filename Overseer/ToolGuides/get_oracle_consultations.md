@@ -1,4 +1,4 @@
-Access the Oracle of Delphi major consultations the player has received in their current game.
+Access the Oracle of Delphi major consultations the player has received, as stored on the device across all their games, not only the current one.
 
 This tool has two modes:
 

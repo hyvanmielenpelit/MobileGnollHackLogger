@@ -389,6 +389,7 @@ public class ChatService
         /* Declared out here with isConfidentialSession because the assistant message is
            persisted in a second scope block, after the agent loop has run. */
         bool encryptContent = false;
+        bool decryptContent = false;
         Overseer.Services.Privacy.ConfidentialPolicy? confidentialPolicy = null;
         string? provider = null;
         string? model = null;
@@ -711,7 +712,13 @@ public class ChatService
                a confidential session cannot. Everything else the mode implies -- blocked tool
                egress, no title model, no prompt cache, suppressed telemetry -- still applies,
                because those follow from isConfidentialSession. */
-            encryptContent = isConfidentialSession && !isEphemeralSession;
+            /* Reads always decrypt in a stored confidential session, because Decrypt passes
+               plaintext through and a Plaintext-policy session can still hold envelopes written
+               before its policy was honored. Writes encrypt only when the snapshotted policy is
+               not Plaintext ("Stored readable"). */
+            decryptContent = isConfidentialSession && !isEphemeralSession;
+            encryptContent = decryptContent
+                && confidentialPolicy?.Persistence != Overseer.Services.Privacy.ConfidentialPersistence.Plaintext;
 
             /* Two sources, one shape. The ephemeral branch materialises detached ChatMessage
                and ChatMessageToolCall instances from the store so everything downstream --
@@ -755,7 +762,7 @@ public class ChatService
             /* Decrypted IN PLACE, and this is the one place that is safe: pastToolCalls is an
                AsNoTracking projection into detached instances, so nothing here is ever written
                back. Without it ToolCallHistoryDigest.Build would summarise base64. */
-            if (encryptContent)
+            if (decryptContent)
             {
                 foreach (var tc in pastToolCalls)
                 {
@@ -775,7 +782,7 @@ public class ChatService
                    would make the SaveChangesAsync at the end of this turn write plaintext into
                    a confidential session -- inverting the feature, silently, and only for the
                    sessions that asked for protection. */
-                var content = (encryptContent ? _contentProtection.Decrypt(session, pm.Content) : pm.Content) ?? "";
+                var content = (decryptContent ? _contentProtection.Decrypt(session, pm.Content) : pm.Content) ?? "";
                 if (includeToolDigest && pm.Role == "assistant")
                 {
                     var digest = ToolCallHistoryDigest.Build(toolCallsLookup[pm.Id]);
@@ -816,7 +823,7 @@ public class ChatService
                                 var bytes = System.IO.File.ReadAllBytes(fullPath);
                                 /* These files are .enc in a confidential session, so without the
                                    decrypt the model is handed ciphertext labelled image/png. */
-                                if (encryptContent)
+                                if (decryptContent)
                                     bytes = _contentProtection.DecryptFile(session, bytes);
 
                                 msgImageAttachments.Add(new SendMessageAttachment { ContentType = att.ContentType ?? "", Base64Data = Convert.ToBase64String(bytes) });
@@ -1355,6 +1362,7 @@ public class ChatService
                lockout. A sub-agent given a permissive tool set would reopen the channel the
                mode exists to close. */
             BlockExternalEgress = confidentialPolicy?.DisableToolEgress ?? false,
+            DisableProviderPromptCache = confidentialPolicy?.DisablePromptCache == true,
             EventSink = async (evt) => {
                 evt.SessionId = wireRef;
                 _ongoingChatManager.ProcessEvent(sessionRef, evt);
@@ -1413,6 +1421,7 @@ public class ChatService
             VolatileSuffix = segmentedPrompt?.VolatileSuffix,
             SegmentedPrompt = segmentedPrompt,
             PromptCacheKey = promptCacheKey,
+            DisableProviderPromptCache = confidentialPolicy?.DisablePromptCache == true,
             CredentialKey = AiRequestGovernor.GetCredentialKey(provider ?? "", userId, systemModelId),
             PermitWaitTimeout = TimeSpan.FromSeconds(_configuration.GetValue<int>("AiRateLimitSettings:PermitWaitSeconds", 120)),
             SeedHistory = messageHistory,

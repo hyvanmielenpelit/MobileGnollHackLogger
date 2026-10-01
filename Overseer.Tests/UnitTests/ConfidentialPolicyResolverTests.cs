@@ -101,9 +101,47 @@ public class ConfidentialPolicyResolverTests
     {
         var resolver = CreateResolver();
 
-        var resolved = resolver.Resolve(new UserAiSettings { ConfidentialPersistence = "Ephemeral" });
+        var resolved = resolver.Resolve(new UserAiSettings { ConfidentialPersistence = "Ephemeral" }, persistentSession: false);
 
         Assert.Equal(ConfidentialPersistence.Ephemeral, resolved.Persistence);
+    }
+
+    [Theory]
+    [InlineData("Ephemeral", null)]
+    [InlineData(null, "Ephemeral")]
+    public void ASavedEphemeralPersistenceResolvesToEncryptedForAPersistentSession(string? userValue, string? floorValue)
+    {
+        /* "Never stored" is not a Storage choice for a stored confidential chat: Incognito is the
+           never-stored mode. A preference saved before the option was removed, or a floor that
+           names it, gives the stored session encrypted storage. */
+        var resolver = CreateResolver(new Dictionary<string, string?>
+        {
+            { "PrivacySettings:ConfidentialFloor:Persistence", floorValue }
+        });
+
+        var resolved = resolver.Resolve(new UserAiSettings { ConfidentialPersistence = userValue });
+
+        Assert.Equal(ConfidentialPersistence.Encrypted, resolved.Persistence);
+        Assert.True(resolved.ToControlState().ContentEncrypted);
+    }
+
+    [Theory]
+    [InlineData("Plaintext", false)]
+    [InlineData("Encrypted", true)]
+    [InlineData(null, true)]
+    public void StoresEncryptedFollowsTheSnapshot(string? persistence, bool expected)
+    {
+        var session = new ChatSession { Id = 1, IsConfidential = true };
+        if (persistence != null)
+        {
+            ConfidentialPolicyResolver.ApplyToSession(session, ConfidentialPolicy.Defaults with
+            {
+                Persistence = Enum.Parse<ConfidentialPersistence>(persistence)
+            });
+        }
+
+        Assert.Equal(expected, ConfidentialPolicyResolver.StoresEncrypted(session));
+        Assert.False(ConfidentialPolicyResolver.StoresEncrypted(new ChatSession { Id = 2 }));
     }
 
     [Fact]

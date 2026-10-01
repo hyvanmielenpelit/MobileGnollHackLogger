@@ -45,7 +45,7 @@ public class BenchmarkDeliveryFailureTests
             string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel,
             ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null,
             string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null,
-            string? promptCacheKey = null, bool cacheConversationTail = true)
+            string? promptCacheKey = null, bool cacheConversationTail = true, bool disablePromptCache = false)
         {
             string? first = messageHistory
                 .Select(m => ProviderHelper.GetProperty(m, "content")?.ToString())

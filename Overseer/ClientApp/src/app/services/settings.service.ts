@@ -286,7 +286,10 @@ export function posturePrivacyLevel(
   return (verifiedUtc && rank >= POSTURE_RANKS['ZeroRetention']) ? 'strong' : 'moderate';
 }
 
-/** The storage modes in ladder order, weakest first, with the text and helper line the UI shows. */
+/**
+ * The storage modes a saved confidential chat can use, weakest first, with the text and helper
+ * line the UI shows. `Ephemeral` is not among them: Incognito is the never-stored mode.
+ */
 export const CONFIDENTIAL_PERSISTENCE_OPTIONS: ReadonlyArray<{ value: ConfidentialPersistence; label: string; hint: string }> = [
   {
     value: 'Plaintext',
@@ -297,13 +300,22 @@ export const CONFIDENTIAL_PERSISTENCE_OPTIONS: ReadonlyArray<{ value: Confidenti
     value: 'Encrypted',
     label: 'Encrypted at rest',
     hint: 'Message content is enveloped in the database, so the stored rows are not readable on their own.'
-  },
-  {
-    value: 'Ephemeral',
-    label: 'Never stored',
-    hint: 'Nothing is written to the database. The conversation is gone once you leave it.'
   }
 ];
+
+/**
+ * The storage mode a saved confidential chat actually gets. A saved preference or floor of
+ * `Ephemeral` reads as `Encrypted`, as the server resolves it.
+ */
+export function savedChatConfidentialPersistence(persistence: ConfidentialPersistence): ConfidentialPersistence;
+export function savedChatConfidentialPersistence(
+  persistence: ConfidentialPersistence | null | undefined
+): ConfidentialPersistence | null | undefined;
+export function savedChatConfidentialPersistence(
+  persistence: ConfidentialPersistence | null | undefined
+): ConfidentialPersistence | null | undefined {
+  return persistence === 'Ephemeral' ? 'Encrypted' : persistence;
+}
 
 /** The model gates in ladder order, weakest first. */
 export const CONFIDENTIAL_MODEL_GATE_OPTIONS: ReadonlyArray<{ value: ConfidentialModelGate; label: string; hint: string }> = [

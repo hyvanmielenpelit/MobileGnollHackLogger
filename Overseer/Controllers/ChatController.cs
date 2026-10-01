@@ -60,6 +60,12 @@ public class ChatController : ControllerBase
     /// </summary>
     public const int MaxPlaintextTitleLength = 256;
 
+    /// <summary>
+    /// The title a new encrypted confidential session is first inserted with, before its id
+    /// exists to bind the envelope of the real one.
+    /// </summary>
+    public const string ConfidentialPlaceholderTitle = "Confidential chat";
+
     private const long SendRequestBodyByteLimit = 134_217_728; // 128 MB
 
     public ChatController(
@@ -117,6 +123,10 @@ public class ChatController : ControllerBase
         int totalActive = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted);
         int pinnedCount = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted && s.IsPinned);
         int unpinnedActive = Math.Max(0, totalActive - pinnedCount);
+        /* What a bulk delete would destroy at once rather than move to Trash, split by pin state
+           because the bulk delete leaves pinned chats unless asked. */
+        int immediatePurgeCount = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted && !s.IsPinned && s.ImmediatePurgeOnDelete);
+        int immediatePurgePinnedCount = await _dbContext.ChatSession.CountAsync(s => s.AspNetUserId == userId && !s.IsDeleted && s.IsPinned && s.ImmediatePurgeOnDelete);
 
         var query = _dbContext.ChatSession
             .Where(s => s.AspNetUserId == userId && !s.IsDeleted);
@@ -128,12 +138,26 @@ public class ChatController : ControllerBase
                reported so the omission is never silent. The predicate matches on Title as
                well as on message Content, so excluding the session covers both -- and it has
                to, because in an encrypted session neither one is searchable text. */
-            query = query.Where(s => !s.IsConfidential).Where(s =>
+            /* The exception is a session whose snapshotted policy stores it readable: it stays
+               searchable, as its privacy badge says. The snapshot is JSON, so it is read here in
+               memory for this user's confidential sessions only; a missing or unreadable
+               snapshot reads as the defaults and stays excluded. */
+            var confidentialSnapshots = await _dbContext.ChatSession
+                .Where(s => s.AspNetUserId == userId && !s.IsDeleted && s.IsConfidential)
+                .Select(s => new { s.Id, s.ConfidentialPolicyJson })
+                .ToListAsync();
+            var searchableConfidentialIds = confidentialSnapshots
+                .Where(s => !Overseer.Services.Privacy.ConfidentialPolicyResolver.ReadSnapshot(
+                        new ChatSession { ConfidentialPolicyJson = s.ConfidentialPolicyJson })
+                    .ToControlState().ExcludedFromSearch)
+                .Select(s => s.Id)
+                .ToList();
+
+            query = query.Where(s => !s.IsConfidential || searchableConfidentialIds.Contains(s.Id)).Where(s =>
                 (s.Title != null && EF.Functions.Like(s.Title, $"%{term}%")) ||
                 _dbContext.ChatMessage.Any(m => m.ChatSessionId == s.Id && !m.IsHidden && m.Role != "system" && m.Content != null && EF.Functions.Like(m.Content, $"%{term}%"))
             );
-            confidentialExcludedCount = await _dbContext.ChatSession
-                .CountAsync(s => s.AspNetUserId == userId && s.IsDeleted == false && s.IsConfidential);
+            confidentialExcludedCount = confidentialSnapshots.Count - searchableConfidentialIds.Count;
         }
 
         var rawSessions = await query
@@ -144,7 +168,8 @@ public class ChatController : ControllerBase
             .Select(s => new
             {
                 s.Id, s.Title, s.LastMessageUtc, s.IsGnollHackSession, s.IsPinned,
-                s.IsConfidential, s.EncryptedContentKey, s.ContentKeyNonce, s.ContentKeyTag, s.ContentKeyVersion
+                s.IsConfidential, s.ImmediatePurgeOnDelete,
+                s.EncryptedContentKey, s.ContentKeyNonce, s.ContentKeyTag, s.ContentKeyVersion
             })
             .ToListAsync();
 
@@ -160,7 +185,9 @@ public class ChatController : ControllerBase
             s.LastMessageUtc,
             s.IsGnollHackSession,
             s.IsPinned,
-            s.IsConfidential
+            s.IsConfidential,
+            // True only for a confidential session created under a purge-on-delete policy.
+            s.ImmediatePurgeOnDelete
         }).ToList();
         swDb.Stop();
 
@@ -184,6 +211,8 @@ public class ChatController : ControllerBase
             totalCount = totalActive,
             maxQuota = _configuration.GetValue<int>("ChatRetentionSettings:MaxActiveSessionsPerUser", 50),
             maxPinned = _configuration.GetValue<int>("ChatRetentionSettings:MaxPinnedSessionsPerUser", 5),
+            immediatePurgeCount = immediatePurgeCount,
+            immediatePurgePinnedCount = immediatePurgePinnedCount,
             /* How many confidential chats the search skipped. Reported so the client can say
                so: a search that silently omits results is worse than one that finds nothing. */
             confidentialExcludedCount = confidentialExcludedCount
@@ -226,7 +255,7 @@ public class ChatController : ControllerBase
            identifying into. The validation above runs on the plaintext and is unaffected --
            note that base64 legitimately contains a forward slash, so nothing may re-validate
            the stored value against that character class. */
-        if (session.IsConfidential)
+        if (Overseer.Services.Privacy.ConfidentialPolicyResolver.StoresEncrypted(session))
         {
             _contentProtection.EnsureSessionKey(session);
             session.Title = _contentProtection.Encrypt(session, title);
@@ -1176,7 +1205,7 @@ public class ChatController : ControllerBase
 
             var ephemeralSettings = await _dbContext.UserAiSettings.FindAsync(userId);
             Overseer.Services.Privacy.ConfidentialPolicyResolver.ApplyToSession(
-                template, _confidentialPolicyResolver.Resolve(ephemeralSettings));
+                template, _confidentialPolicyResolver.Resolve(ephemeralSettings, persistentSession: false));
 
             // Neither retention scalar means anything here: nothing is stored, so nothing
             // expires on a schedule. The sliding timeout in the store is the only lifetime.
@@ -1257,11 +1286,12 @@ public class ChatController : ControllerBase
            entity for the wrapped key to persist with it, and its Id must already be assigned:
            the id is the envelope's associated data, so wrapping a key onto an unsaved session
            would produce rows nothing can decrypt. */
-        if (session.IsConfidential)
+        bool encryptContent = Overseer.Services.Privacy.ConfidentialPolicyResolver.StoresEncrypted(session);
+        if (encryptContent)
             _contentProtection.EnsureSessionKey(session);
 
         string? Protect(string? value)
-            => session.IsConfidential ? _contentProtection.Encrypt(session, value) : value;
+            => encryptContent ? _contentProtection.Encrypt(session, value) : value;
 
         // Rewrite any existing snapshot system message's content to the supersession marker.
         var existingSnapshots = await _dbContext.ChatMessage
@@ -1378,7 +1408,7 @@ public class ChatController : ControllerBase
 
             var ephemeralSettings = await _dbContext.UserAiSettings.FindAsync(userId);
             Overseer.Services.Privacy.ConfidentialPolicyResolver.ApplyToSession(
-                template, _confidentialPolicyResolver.Resolve(ephemeralSettings));
+                template, _confidentialPolicyResolver.Resolve(ephemeralSettings, persistentSession: false));
 
             /* Neither retention scalar means anything here: nothing is stored, so nothing
                expires on a schedule. The sliding timeout in the store is the only lifetime. */
@@ -1389,10 +1419,11 @@ public class ChatController : ControllerBase
         }
         else
         {
+            string startingTitle = request.Message.Length > 50 ? request.Message.Substring(0, 47) + "..." : request.Message;
             var session = new ChatSession
             {
                 AspNetUserId = userId,
-                Title = request.Message.Length > 50 ? request.Message.Substring(0, 47) + "..." : request.Message,
+                Title = startingTitle,
                 CreatedUtc = DateTime.UtcNow,
                 LastMessageUtc = DateTime.UtcNow,
                 IsConfidential = request.IsConfidential
@@ -1408,9 +1439,23 @@ public class ChatController : ControllerBase
                     session, _confidentialPolicyResolver.Resolve(confidentialSettings));
             }
 
+            /* The envelope's associated data is the session id, so an encrypted title can only
+               be written after the first save. Until then the row carries a fixed,
+               non-identifying title, and the plaintext one never reaches the database. */
+            bool encryptTitle = Overseer.Services.Privacy.ConfidentialPolicyResolver.StoresEncrypted(session);
+            if (encryptTitle)
+                session.Title = ConfidentialPlaceholderTitle;
+
             _dbContext.ChatSession.Add(session);
             await _dbContext.SaveChangesAsync();
             sessionRef = Overseer.Services.Privacy.SessionRef.Persistent(session.Id);
+
+            if (encryptTitle)
+            {
+                _contentProtection.EnsureSessionKey(session);
+                session.Title = _contentProtection.Encrypt(session, startingTitle);
+                await _dbContext.SaveChangesAsync();
+            }
 
             await _chatRetentionService.EnforceUserSessionQuotaAsync(userId);
         }

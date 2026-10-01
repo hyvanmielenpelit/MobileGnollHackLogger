@@ -79,8 +79,14 @@ public class ConfidentialGateTurnTests : IDisposable
             foreach (var r in results) messageHistory.Add(new { role = "tool", content = r.Content });
         }
 
-        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null, bool cacheConversationTail = true)
-            => new Dictionary<string, object> { { "model", modelId } };
+        /// <summary>The <c>disablePromptCache</c> argument of the most recent request, or null before one.</summary>
+        public bool? LastDisablePromptCache { get; private set; }
+
+        public Dictionary<string, object> BuildChatRequestBody(string modelId, List<object> messageHistory, int? maxOutputTokens, string? thinkingLevel, ToolsForRequest requestTools, string? reasoningMode = null, string? reasoningSummary = null, string? serviceTier = null, bool? parallelToolCalls = null, SegmentedPrompt? segmentedPrompt = null, string? promptCacheKey = null, bool cacheConversationTail = true, bool disablePromptCache = false)
+        {
+            LastDisablePromptCache = disablePromptCache;
+            return new Dictionary<string, object> { { "model", modelId } };
+        }
 
         public bool TryRewriteToolResult(List<object> messageHistory, string toolCallId, string replacementText) => false;
         public object BuildFunctionDeclaration(string name, string description, object parameterSchema) => new { name };
@@ -447,5 +453,102 @@ public class ConfidentialGateTurnTests : IDisposable
         Assert.DoesNotContain(events, e => e.Type == "confidential_gate");
         Assert.DoesNotContain(events, e => e.Type == "private_badge");
         Assert.DoesNotContain(events, e => e.Type == "error");
+        Assert.False(container.GetRequiredService<StubAiProvider>().LastDisablePromptCache);
+    }
+
+    [Fact]
+    public async Task AskWhenUnclearDoesNotAskAboutAnOperatorVerifiedZeroRetentionModel()
+    {
+        var (container, _http) = BuildContainer(Guid.NewGuid().ToString());
+        using var _ = container;
+
+        var (userId, configId) = await SeedSystemModelAsync(
+            container, postureVerifiedUtc: DateTime.UtcNow, posture: "ZeroRetention");
+        var store = container.GetRequiredService<EphemeralSessionStore>();
+        var held = store.Create(userId, Template(userId, ConfidentialityGateMode.AskWhenUnclear));
+
+        var events = await RunTurnAsync(container, held.Ref, userId, systemModelId: configId);
+
+        Assert.DoesNotContain(events, e => e.Type == "confidential_gate");
+        Assert.DoesNotContain(events, e => e.Type == "error");
+        Assert.Contains(events, e => e.Type == "user_message_created");
+    }
+
+    [Fact]
+    public async Task AnExplicitNoStillRefusesAnOperatorVerifiedModelUnderAskWhenUnclear()
+    {
+        var (container, http) = BuildContainer(Guid.NewGuid().ToString());
+        using var _ = container;
+
+        var (userId, configId) = await SeedSystemModelAsync(
+            container, trusted: false, postureVerifiedUtc: DateTime.UtcNow, posture: "ZeroRetention");
+        var store = container.GetRequiredService<EphemeralSessionStore>();
+        var held = store.Create(userId, Template(userId, ConfidentialityGateMode.AskWhenUnclear));
+
+        var events = await RunTurnAsync(container, held.Ref, userId, systemModelId: configId);
+
+        Assert.Single(events, e => e.Type == "error");
+        Assert.DoesNotContain(events, e => e.Type == "confidential_gate");
+        Assert.Equal(0, http.Handler.Calls);
+    }
+
+    [Fact]
+    public async Task AConfidentialTurnAsksTheProviderForNoPromptCache()
+    {
+        var (container, _http) = BuildContainer(Guid.NewGuid().ToString());
+        using var _ = container;
+
+        string userId = await SeedUserKeyAsync(container);
+        var store = container.GetRequiredService<EphemeralSessionStore>();
+        var held = store.Create(userId, Template(userId, ConfidentialityGateMode.UserDecides));
+
+        var events = await RunTurnAsync(container, held.Ref, userId);
+
+        Assert.DoesNotContain(events, e => e.Type == "error");
+        Assert.True(container.GetRequiredService<StubAiProvider>().LastDisablePromptCache);
+    }
+
+    [Fact]
+    public async Task APlaintextPolicySessionStoresItsContentReadable()
+    {
+        var (container, _http) = BuildContainer(Guid.NewGuid().ToString());
+        using var _ = container;
+
+        string userId = await SeedUserKeyAsync(container);
+
+        long sessionId;
+        using (var scope = container.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var session = new ChatSession
+            {
+                AspNetUserId = userId,
+                Title = "Readable confidential chat",
+                CreatedUtc = DateTime.UtcNow,
+                LastMessageUtc = DateTime.UtcNow,
+                IsConfidential = true
+            };
+            ConfidentialPolicyResolver.ApplyToSession(
+                session, ConfidentialPolicy.Defaults with { Persistence = ConfidentialPersistence.Plaintext });
+            db.ChatSession.Add(session);
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+            sessionId = session.Id;
+        }
+
+        var events = await RunTurnAsync(container, SessionRef.Persistent(sessionId), userId);
+        Assert.DoesNotContain(events, e => e.Type == "error");
+
+        using (var scope = container.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var messages = db.ChatMessage.Where(m => m.ChatSessionId == sessionId).ToList();
+
+            Assert.Contains(messages, m => m.Role == "user" && m.Content == "Something private");
+            Assert.Contains(messages, m => m.Role == "assistant" && m.Content == StubAiProvider.ReplyText);
+            Assert.DoesNotContain(messages, m => ContentProtectionService.IsEncrypted(m.Content));
+
+            var stored = db.ChatSession.Single(s => s.Id == sessionId);
+            Assert.False(ContentProtectionService.HasSessionKey(stored));
+        }
     }
 }

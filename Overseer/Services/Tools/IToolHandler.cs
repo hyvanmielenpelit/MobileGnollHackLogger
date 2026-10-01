@@ -83,6 +83,12 @@ namespace Overseer.Services.Tools
         /// </remarks>
         public bool BlockExternalEgress { get; set; } = false;
 
+        /// <summary>
+        /// Whether this turn's provider requests carry no prompt-cache directives. Set for a
+        /// confidential or incognito session and inherited by every sub-agent run.
+        /// </summary>
+        public bool DisableProviderPromptCache { get; set; } = false;
+
         public ToolExecutionContext CloneFor(string toolCallId)
         {
             return new ToolExecutionContext
@@ -109,7 +115,8 @@ namespace Overseer.Services.Tools
                 ActiveUserModelId = this.ActiveUserModelId,
                 ActiveSystemModelId = this.ActiveSystemModelId,
                 ParallelExecutionMode = this.ParallelExecutionMode,
-                BlockExternalEgress = this.BlockExternalEgress
+                BlockExternalEgress = this.BlockExternalEgress,
+                DisableProviderPromptCache = this.DisableProviderPromptCache
             };
         }
     }

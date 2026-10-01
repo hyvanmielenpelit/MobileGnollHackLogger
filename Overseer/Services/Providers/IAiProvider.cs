@@ -25,7 +25,8 @@ public interface IAiProvider
         bool? parallelToolCalls = null,
         SegmentedPrompt? segmentedPrompt = null,
         string? promptCacheKey = null,
-        bool cacheConversationTail = true);
+        bool cacheConversationTail = true,
+        bool disablePromptCache = false);
 
     /// <param name="endpoint">
     /// Where the request goes and how it authenticates. Pass

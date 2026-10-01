@@ -239,6 +239,55 @@ public class AnthropicProviderTests
         Assert.False(thinkingProp3.TryGetProperty("display", out _));
     }
 
+    /// <summary>A chat request with every cache breakpoint site present: two cacheable system segments, a tool and a tail.</summary>
+    private static string SerializeChatRequest(bool disablePromptCache)
+    {
+        var provider = new AnthropicProvider(CreateConfig());
+        var history = provider.PrepareMessageHistory(new List<object>
+        {
+            provider.FormatMessage("system", "Frozen. Session. Volatile.", null),
+            provider.FormatMessage("user", "Something private", null)
+        });
+        var tools = new ToolsForRequest
+        {
+            FunctionDeclarations = new List<object>
+            {
+                provider.BuildFunctionDeclaration("wiki_search", "Searches the wiki.", new { type = "object" })
+            }
+        };
+
+        var body = provider.BuildChatRequestBody(
+            "claude-fable-5-1", history, 1024, null, tools,
+            segmentedPrompt: new SegmentedPrompt("Frozen. ", "Session. ", "Volatile."),
+            disablePromptCache: disablePromptCache);
+
+        return JsonSerializer.Serialize(body);
+    }
+
+    private static int CountOccurrences(string text, string value)
+        => (text.Length - text.Replace(value, "", StringComparison.Ordinal).Length) / value.Length;
+
+    [Fact]
+    public void BuildChatRequestBody_WithPromptCacheDisabled_SendsNoCacheControlAnywhere()
+    {
+        string json = SerializeChatRequest(disablePromptCache: true);
+
+        Assert.DoesNotContain("cache_control", json, StringComparison.Ordinal);
+
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal("Frozen. Session. Volatile.", doc.RootElement.GetProperty("system").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("tools").GetArrayLength());
+    }
+
+    [Fact]
+    public void BuildChatRequestBody_WithPromptCacheEnabled_KeepsTheFourBreakpoints()
+    {
+        string json = SerializeChatRequest(disablePromptCache: false);
+
+        // Frozen system block, session system block, last tool, conversation tail.
+        Assert.Equal(4, CountOccurrences(json, "\"cache_control\""));
+    }
+
     /// <summary>A benchmark grading seed: the grading instructions, the board block, then the question's body.</summary>
     private static (SegmentedPrompt Prompt, List<object> SeedHistory) GradingSeed()
     {

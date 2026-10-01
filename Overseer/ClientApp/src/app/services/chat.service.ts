@@ -34,6 +34,8 @@ export interface ChatSession {
   isGnollHackSession?: boolean;
   isPinned?: boolean;
   isConfidential?: boolean;
+  /** True when deleting the chat destroys it at once instead of moving it to Trash. */
+  immediatePurgeOnDelete?: boolean;
 }
 
 export interface TrashSession {
@@ -192,6 +194,12 @@ export interface ChatSessionsResponse {
   totalCount?: number;
   maxQuota?: number;
   maxPinned?: number;
+  /** Unpinned active chats a delete destroys at once instead of moving to Trash. */
+  immediatePurgeCount?: number;
+  /** Pinned active chats a delete destroys at once instead of moving to Trash. */
+  immediatePurgePinnedCount?: number;
+  /** How many confidential chats a search skipped; present only for a search. */
+  confidentialExcludedCount?: number;
 }
 
 export interface ChatSessionDetailResponse {

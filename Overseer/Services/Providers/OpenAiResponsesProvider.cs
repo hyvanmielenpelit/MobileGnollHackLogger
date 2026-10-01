@@ -103,7 +103,8 @@ public class OpenAiResponsesProvider : IAiProvider
         bool? parallelToolCalls = null,
         SegmentedPrompt? segmentedPrompt = null,
         string? promptCacheKey = null,
-        bool cacheConversationTail = true)
+        bool cacheConversationTail = true,
+        bool disablePromptCache = false)
     {
         // Extract system message
         string systemContent = "";
@@ -155,7 +156,7 @@ public class OpenAiResponsesProvider : IAiProvider
         };
 
         bool enablePromptCacheKey = _configuration?.GetValue<bool>("PromptCacheSettings:EnableOpenAiPromptCacheKey", true) ?? true;
-        if (enablePromptCacheKey && !string.IsNullOrEmpty(promptCacheKey))
+        if (enablePromptCacheKey && !disablePromptCache && !string.IsNullOrEmpty(promptCacheKey))
         {
             // Note: OpenAI prompt caching reduces latency and token cost for cached prefix tokens,
             // but cached input tokens still count against TPM (Tokens Per Minute) rate limits.

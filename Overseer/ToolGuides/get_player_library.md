@@ -1,4 +1,4 @@
-Access the player's library of manuals and catalogues discovered in their current game.
+Access the player's library of manuals and catalogues, as stored on the device across all their games, not only the current one.
 
 This tool has two modes:
 

@@ -20,6 +20,7 @@ import {
   CONFIDENTIALITY_POSTURES,
   confidentialModelGateRank,
   confidentialPersistenceRank,
+  savedChatConfidentialPersistence,
   stricterConfidentialModelGate,
   stricterConfidentialPersistence
 } from '../services/settings.service';
@@ -119,6 +120,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
   maxSessionQuota: number = 50;
   maxPinnedQuota: number = 5;
   trashCount: number = 0;
+  /** Active chats a delete destroys at once instead of moving to Trash, unpinned and pinned. */
+  immediatePurgeCount: number = 0;
+  immediatePurgePinnedCount: number = 0;
 
   includePinnedInBulkDelete = false;
   isBulkDeleting = false;
@@ -302,7 +306,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   /** Storage modes the floor still allows. A weaker one is not offered, because it could have no effect. */
   get persistenceOptions() {
-    const floorRank = confidentialPersistenceRank(this.confidentialFloor?.persistence);
+    const floorRank = confidentialPersistenceRank(savedChatConfidentialPersistence(this.confidentialFloor?.persistence));
     return CONFIDENTIAL_PERSISTENCE_OPTIONS.filter(o => confidentialPersistenceRank(o.value) >= floorRank);
   }
 
@@ -313,7 +317,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
   }
 
   get effectiveConfidentialPersistence(): ConfidentialPersistence {
-    return stricterConfidentialPersistence(this.confidentialPersistence, this.confidentialFloor?.persistence);
+    return stricterConfidentialPersistence(
+      savedChatConfidentialPersistence(this.confidentialPersistence),
+      savedChatConfidentialPersistence(this.confidentialFloor?.persistence));
   }
 
   get effectiveConfidentialModelGate(): ConfidentialModelGate {
@@ -351,7 +357,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
   // A floor already at its strictest leaves the user's control nothing to decide, so it is shown
   // disabled with a note rather than accepting a choice that would silently have no effect.
   get persistenceFixedByAdmin(): boolean {
-    return this.confidentialFloor?.persistence === 'Ephemeral';
+    return this.persistenceOptions.length <= 1;
   }
 
   get modelGateFixedByAdmin(): boolean {
@@ -1047,6 +1053,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
           this.pinnedSessionCount = res.body.pinnedCount ?? 0;
           this.maxSessionQuota = res.body.maxQuota ?? 50;
           this.maxPinnedQuota = res.body.maxPinned ?? 5;
+          this.immediatePurgeCount = res.body.immediatePurgeCount ?? 0;
+          this.immediatePurgePinnedCount = res.body.immediatePurgePinnedCount ?? 0;
           this.cdr.detectChanges();
         }
       },
@@ -1066,6 +1074,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
       return this.activeSessionCount;
     }
     return Math.max(0, this.activeSessionCount - this.pinnedSessionCount);
+  }
+
+  /** How many of the bulk delete's targets are destroyed at once instead of going to Trash. */
+  get bulkDeletePurgeCount(): number {
+    return this.immediatePurgeCount + (this.includePinnedInBulkDelete ? this.immediatePurgePinnedCount : 0);
   }
 
   openSettingsBulkDeleteDialog() {

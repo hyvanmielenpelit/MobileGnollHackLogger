@@ -75,6 +75,9 @@
             <div class="sidebar-spinner load-more-spinner"></div>
           </li>
         }
+        @if (!loadingSessions && sessionSearchQuery && confidentialExcludedCount > 0) {
+          <li class="search-excluded-note">{{ confidentialExcludedCount }} confidential chat{{ confidentialExcludedCount === 1 ? '' : 's' }} not searched.</li>
+        }
       </ul>
       <div class="sidebar-quota-bar" *ngIf="activeSessionCount !== undefined">
         <div class="quota-indicators">
@@ -431,7 +434,7 @@
                   {{ formatCost(msg.estimatedCost) }}@if (msg.isOperatorCost) {<span class="msg-cost-operator">(operator)</span>}
                 </div>
               }
-              @if (msg.role === 'assistant' && msg.id) {
+              @if (msg.role === 'assistant' && msg.id && !isConfidentialSession && !isEphemeralSession) {
                 <button class="report-btn" (click)="requestReportMessage(msg.id, i)" title="Report message">
                   @if (reportSuccessIndex === i) {
                     <span>✅</span>
@@ -859,11 +862,16 @@
 }
 
 <dialog #deleteConfirmDialog class="gh-dialog" closedby="any">
-  <h3>Move Conversation to Trash</h3>
-  <p>Are you sure you want to move this conversation to Trash? Chats in Trash are kept for 30 days before permanent deletion.</p>
+  @if (deleteTargetPurgesImmediately) {
+    <h3>Delete Confidential Chat</h3>
+    <p>This chat is destroyed at once. It does not go to Trash and cannot be restored.</p>
+  } @else {
+    <h3>Move Conversation to Trash</h3>
+    <p>Are you sure you want to move this conversation to Trash? Chats in Trash are kept for 30 days before permanent deletion.</p>
+  }
   <div class="dialog-actions">
     <button class="btn-gh btn-gh-cancel" (click)="deleteConfirmDialog.close()">Cancel</button>
-    <button class="btn-gh btn-gh-delete" (click)="confirmDelete()">Move to Trash</button>
+    <button class="btn-gh btn-gh-delete" (click)="confirmDelete()">{{ deleteTargetPurgesImmediately ? 'Delete chat' : 'Move to Trash' }}</button>
   </div>
 </dialog>
 
@@ -871,6 +879,9 @@
   <h3>Move Active Chats to Trash</h3>
   <p>Are you sure you want to move <strong>{{ bulkDeleteTargetCount }}</strong> active chat{{ bulkDeleteTargetCount === 1 ? '' : 's' }} to Trash?</p>
   <p class="text-muted" style="font-size: 0.9em; margin-top: 6px;">Soft-deleted chats remain in Trash for 30 days before permanent deletion.</p>
+  @if (bulkDeletePurgeCount > 0) {
+    <p class="bulk-delete-purge-note">{{ bulkDeletePurgeCount }} confidential chat{{ bulkDeletePurgeCount === 1 ? '' : 's' }} will be destroyed at once instead of going to Trash.</p>
+  }
   @if (pinnedSessionCount > 0) {
     <div class="margin-y-20 mt-10 mb-15">
       <label class="checkbox-label align-start">

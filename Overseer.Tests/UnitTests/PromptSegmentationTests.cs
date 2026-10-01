@@ -320,6 +320,27 @@ public class PromptSegmentationTests
     }
 
     [Fact]
+    public void OpenAiProvider_BuildChatRequestBody_OmitsPromptCacheKeyWhenPromptCacheIsDisabled()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            { "PromptCacheSettings:EnableOpenAiPromptCacheKey", "true" }
+        }).Build();
+        var provider = new OpenAiResponsesProvider(config);
+
+        var requestBody = provider.BuildChatRequestBody(
+            "gpt-4o",
+            new List<object> { provider.FormatMessage("user", "Hello", null) },
+            1024,
+            null,
+            new ToolsForRequest(),
+            promptCacheKey: "sample_cache_key_12345",
+            disablePromptCache: true);
+
+        Assert.False(requestBody.ContainsKey("prompt_cache_key"));
+    }
+
+    [Fact]
     public void OpenAiProvider_BuildChatRequestBody_FallsBackToTheSegmentedPromptForInstructions()
     {
         // This provider builds `instructions` from the history's system messages; Google and

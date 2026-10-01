@@ -874,6 +874,21 @@ a.msg-att-item:focus-visible { box-shadow: 0 0 0 2px var(--primary-color); borde
   cursor: default !important; /* Make it look like plain text, not clickable */
 }
 
+.search-excluded-note {
+  color: #888;
+  font-size: 12px;
+  font-style: italic;
+  justify-content: center !important; /* Override sidebar li flex space-between */
+  cursor: default !important;
+  background: transparent !important;
+}
+
+.bulk-delete-purge-note {
+  color: var(--danger-color, #ff6b6b);
+  font-size: 0.9em;
+  margin-block-start: 6px;
+}
+
 .thinking-placeholder {
   display: flex;
   align-items: center;

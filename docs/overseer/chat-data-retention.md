@@ -161,6 +161,15 @@ happened. A search that silently drops results is worse than one that finds noth
 predicates match on `Title` as well as message `Content`, so excluding the session covers
 both — and it has to, because in an encrypted session neither is searchable text.
 
+The one exception is in `GetSessions`: a confidential session whose snapshotted policy is
+`Plaintext` ("Stored readable") stays searchable, as its privacy badge says, and is not counted
+as excluded. The snapshot is JSON, so it is read in memory for the user's own confidential
+sessions; a missing or unreadable snapshot reads as the defaults and stays excluded.
+
+`GetSessions` also returns `immediatePurgeOnDelete` on every listed session, and
+`immediatePurgeCount` / `immediatePurgePinnedCount` for the whole account, so the single and bulk
+delete dialogs can say which chats are destroyed at once instead of going to the trash.
+
 ## 4. Maintenance Execution Logic
 
 ### 1. Daily Background Service (`DatabaseMaintenanceBackgroundService`)

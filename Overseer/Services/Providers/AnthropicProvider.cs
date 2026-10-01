@@ -88,13 +88,16 @@ public class AnthropicProvider : IAiProvider
         bool? parallelToolCalls = null,
         SegmentedPrompt? segmentedPrompt = null,
         string? promptCacheKey = null,
-        bool cacheConversationTail = true)
+        bool cacheConversationTail = true,
+        bool disablePromptCache = false)
     {
         var (systemContent, extraSystemContent, nonSystemMessages) = ExtractSystemAndNonSystemMessages(messageHistory);
 
         int defaultAnthropicTokens = _configuration.GetValue<int?>("DefaultMaxOutputTokens:Anthropic") ?? 8192;
         int effectiveMaxTokens = maxOutputTokens.HasValue ? maxOutputTokens.Value : defaultAnthropicTokens;
-        bool enableCacheControl = _configuration.GetValue<bool>("PromptCacheSettings:EnableAnthropicCacheControl", true);
+        // Gates all four cache_control breakpoints; a confidential or incognito turn sets none.
+        bool enableCacheControl = _configuration.GetValue<bool>("PromptCacheSettings:EnableAnthropicCacheControl", true)
+            && !disablePromptCache;
 
         var req = new Dictionary<string, object>
         {

@@ -84,17 +84,28 @@ public class SessionController : ControllerBase
                 session, _confidentialPolicyResolver.Resolve(confidentialSettings));
         }
 
+        /* Inserted under a fixed title when the session stores encrypted: the requested title is
+           enveloped after the first save, and its plaintext never reaches the database. */
+        bool encryptContent = Overseer.Services.Privacy.ConfidentialPolicyResolver.StoresEncrypted(session);
+        var startingTitle = session.Title;
+        if (encryptContent)
+            session.Title = ChatController.ConfidentialPlaceholderTitle;
+
         _dbContext.ChatSession.Add(session);
         await _dbContext.SaveChangesAsync();
 
         /* The DEK is created after the session has its identity value, because the id is the
            envelope's associated data: a key wrapped onto an unsaved session produces rows
            nothing can decrypt. */
-        if (session.IsConfidential)
+        if (encryptContent)
+        {
             _contentProtection.EnsureSessionKey(session);
+            session.Title = _contentProtection.Encrypt(session, startingTitle);
+            await _dbContext.SaveChangesAsync();
+        }
 
         string? Protect(string? value)
-            => session.IsConfidential ? _contentProtection.Encrypt(session, value) : value;
+            => encryptContent ? _contentProtection.Encrypt(session, value) : value;
 
         await _chatRetentionService.EnforceUserSessionQuotaAsync(user.Id);
 
@@ -149,7 +160,7 @@ public class SessionController : ControllerBase
                 string relPath = Path.Combine(session.Id.ToString(), fileName);
                 byte[] bytes = System.Text.Encoding.UTF8.GetBytes(text);
 
-                if (session.IsConfidential)
+                if (encryptContent)
                 {
                     relPath += Overseer.Services.Privacy.ContentProtectionService.EncryptedFileSuffix;
                     bytes = _contentProtection.EncryptFile(session, bytes);

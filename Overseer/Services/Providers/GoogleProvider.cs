@@ -116,8 +116,11 @@ public class GoogleProvider : IAiProvider
         bool? parallelToolCalls = null,
         SegmentedPrompt? segmentedPrompt = null,
         string? promptCacheKey = null,
-        bool cacheConversationTail = true)
+        bool cacheConversationTail = true,
+        bool disablePromptCache = false)
     {
+        // disablePromptCache has nothing to switch off here: no explicit Gemini cache is requested,
+        // and implicit caching cannot be disabled per request.
         var (systemParts, extraSystemParts, contents) = ExtractSystemAndContents(messageHistory);
 
         // Key insertion order is the serialization order, and it is the whole point of this

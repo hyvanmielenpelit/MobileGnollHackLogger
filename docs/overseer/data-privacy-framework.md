@@ -830,7 +830,7 @@ stricter of the two.**
 | Gate | Behaviour |
 |---|---|
 | `UserDecides` | The user marks which credentials are adequate. Unmarked ones are usable, and the badge reports what is actually known. **The default floor** |
-| `AskWhenUnclear` | As above, but a credential the user has not yet decided on prompts once. The answer persists, so it asks once per credential rather than once per turn |
+| `AskWhenUnclear` | As above, but a credential the user has not yet decided on prompts once. The answer persists, so it asks once per credential rather than once per turn. An operator-verified `ZeroRetention` or stronger credential is not asked about: nothing about it is unclear |
 | `VerifiedPostureOnly` | Only an operator-verified `ZeroRetention` or stronger passes. A self-declared posture never passes, and the refusal names why |
 
 **An explicit "no" from the user refuses the credential in every mode**, checked before the gate
@@ -1076,7 +1076,7 @@ floor, cannot retroactively weaken a promise already made about a session's cont
 
 | Value | Stricter is | Note |
 |---|---|---|
-| `Persistence` | `Ephemeral` > `Encrypted` > `Plaintext` | Higher |
+| `Persistence` | `Encrypted` > `Plaintext` | Higher. For a stored session a saved or floor `Ephemeral` resolves to `Encrypted`: Incognito is the never-stored mode, and the Settings page does not offer "Never stored" |
 | **`RetentionDays`** | **Smaller** | **The direction flips.** Fewer days is a stronger promise, so the resolver takes the *minimum*. Getting this backwards would let a user extend retention past the administrator's ceiling |
 | The four booleans | `true` | |
 | `ModelGate` | `VerifiedPostureOnly` > `AskWhenUnclear` > `UserDecides` | |
@@ -1085,6 +1085,13 @@ An unparseable `Persistence` resolves to `Encrypted` — the **default**, not th
 deliberately unlike the posture ladder, which resolves unrecognised values *down*: there,
 failing upward would over-promise; here, failing downward would silently produce a plaintext
 confidential session, which is the outcome the setting exists to prevent.
+
+**`Plaintext` ("Stored readable") is honored.** A session whose snapshot says `Plaintext` has its
+content, attachments and starting title written in clear, and it stays searchable — which is what
+its badge already says. The shipped floor (`Encrypted`) hides the option, so reaching it takes an
+administrator lowering the floor. Reads still decrypt, because `Decrypt` passes plaintext through
+and such a session can hold envelopes written before its policy was honored.
+`ConfidentialPolicyResolver.StoresEncrypted` is the one test every write path asks.
 
 Confidentiality Mode is available to **every user**. The resolver consults no group membership
 and does not read `UserGroups`. Restricting it later is a resolver change, not a schema change.
@@ -1118,8 +1125,8 @@ it wrong: a sub-agent handed a permissive tool set reopens the channel the mode 
 | Path | What it would have leaked | Now |
 |---|---|---|
 | **AI title generation** | The user's first message, to a *separately configured* model — often a different provider entirely | Suppressed. The session keeps its neutral title; manual rename already existed |
-| **Prompt caching** | Prompt prefixes retained provider-side, which is retention by another name | No cache key is generated |
-| **Message reporting** | The whole transcript **plus the reporter's name and address**, to an operator mailbox | Refused, with a message suggesting what to do instead |
+| **Prompt caching** | Prompt prefixes retained provider-side, which is retention by another name | No OpenAI `prompt_cache_key` and no Anthropic `cache_control` breakpoint on any request of the turn, sub-agent runs included (`AgentRunRequest.DisableProviderPromptCache`, inherited through `ToolExecutionContext`). Gemini's implicit caching is never requested and cannot be switched off per request |
+| **Message reporting** | The whole transcript **plus the reporter's name and address**, to an operator mailbox | Refused, with a message suggesting what to do instead. The chat window does not offer the Report button in a confidential or incognito chat |
 | **Benchmark import** | Session content into a shared benchmark board, linked by `SourceChatSessionId` | Refused |
 | **Debug events** | Attachment filenames — often the most descriptive line of a document — streamed to the client and buffered | Filenames redacted |
 | **Sentry, both ends** | Any crash carrying content in a message, stack frame or breadcrumb | Dropped server-side and client-side |
@@ -1185,6 +1192,13 @@ encryption is confidential-only rather than universal.
 `ChatMessageAttachment.ContentType` stays plaintext by the choice recorded in § 4 of the plan —
 it leaks one bit, image versus document, and encrypting it would add a decrypt to a hot
 in-memory filter.
+
+**The starting title is enveloped at creation.** A new confidential chat's title is the first 47
+characters of its first message, and the envelope's associated data needs the session id, which
+does not exist before the first save. So the row is inserted under the fixed title
+`Confidential chat`, and the real title is encrypted and saved immediately after — before the turn
+starts — so its plaintext never reaches the database. The game client's session endpoint does the
+same with the title it sends. A `Plaintext` session keeps its title in clear.
 
 Note that uploaded document text is *also* inside `Content`: `ChatService` appends the full text
 of every non-image attachment to the message body, so the document exists twice. Encrypting the

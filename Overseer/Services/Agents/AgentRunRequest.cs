@@ -29,6 +29,13 @@ public class AgentRunRequest
     /// requests whose only message is never re-sent.
     /// </summary>
     public bool CacheConversationTail { get; set; } = true;
+
+    /// <summary>
+    /// Whether the provider request carries no prompt-cache directives at all: no Anthropic
+    /// <c>cache_control</c> breakpoint and no OpenAI <c>prompt_cache_key</c>. Set for a
+    /// confidential or incognito session.
+    /// </summary>
+    public bool DisableProviderPromptCache { get; set; }
     public string? CredentialKey { get; set; }
     public TimeSpan? PermitWaitTimeout { get; set; }
     public List<object> SeedHistory { get; set; } = new();
