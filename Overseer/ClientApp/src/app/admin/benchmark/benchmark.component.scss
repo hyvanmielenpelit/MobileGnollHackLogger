@@ -857,19 +857,22 @@
   gap: 0.75rem;
 }
 
-/* The Runs heading, its info button, the status line and Refresh at the end of the row. The
-   status line wraps under the heading where the row is narrow. */
+/* The Runs heading, its info button, the status line and Refresh at the end of the row, all centered
+   on one line. The status line wraps under the heading where the row is narrow. */
 .rh-list-head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 8px;
+  align-items: center;
+  gap: 10px 8px;
+  padding-block-end: 6px;
   border-bottom: 1px solid var(--border-glass);
 
   .rh-list-title {
     margin: 0;
-    padding-block-end: 6px;
+    padding: 0;
     border-bottom: 0;
+    /* Trimmed to the caps, so centering lines the letters up with the (i) glyph. */
+    text-box: trim-both cap alphabetic;
 
     &:focus:not(:focus-visible) {
       outline: none;
@@ -877,26 +880,18 @@
 
     &:focus-visible {
       outline: 2px solid var(--primary-color);
-      outline-offset: 2px;
+      outline-offset: 4px;
       border-radius: 2px;
     }
-  }
-
-  app-info-tip {
-    align-self: center;
-    margin-block-end: 6px;
   }
 }
 
 .rh-list-status {
   margin-inline-start: auto;
-  padding-block-end: 6px;
 }
 
 .rh-refresh {
-  align-self: center;
   margin-inline-start: auto;
-  margin-block-end: 6px;
 }
 
 .rh-loading,

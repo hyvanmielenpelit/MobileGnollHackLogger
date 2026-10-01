@@ -5581,7 +5581,9 @@ incomplete*, *None*), *Changes* (*Instrument changed*, *Options changed*, *No ch
 (last 24 hours, 7 days or 30 days); each is listed only while the runs hold two values or more, or while
 it has a selection. The list's one polite live region is the status line in its head, *Showing 10 of
 75 runs* (*· filtered from N* while a filter is active). **Refresh** is a compact `.btn-ghost` at the end
-of the head.
+of the head. The (i) beside *Runs* opens a dialog, *About the run history*, explaining the two indexes,
+the cost pair, the five instrument hashes and what *Instrument changed* and *Options changed* compare
+against.
 
 **Load more.** Ten cards show at first, then **Show 10 more** and, while more than one batch remains,
 **Show all N**; either moves focus to the first new card's title. The count returns to ten when the

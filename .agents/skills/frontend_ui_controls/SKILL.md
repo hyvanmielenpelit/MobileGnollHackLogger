@@ -400,6 +400,11 @@ actions *group, a dialog control rather than a run action; the group is a two-co
 Downloads *and* Re-run *beside the icon-only* View game snapshot *and* Copy diagnostics*. No new button
 class.*
 
+*Changed 2026-10-01 (Run History head): the list head's Runs help moved from a click-mode info tip
+to a dialog-mode one titled About the run history (§4b), because its five `<dl>` entries overflowed
+the popup. The head is one `align-items: center` row and the heading's text box is trimmed to its
+caps. No new button class or glyph.*
+
 **Leave the icon off when the label is already the whole message:**
 
 | Buttons | Why no icon |
@@ -653,7 +658,8 @@ short list (a `<dl>` of options, say); a multi-step or interactive explanation s
 
 **Dialog mode: `trigger="dialog"`.** For an explanation longer than a click tip holds — several
 paragraphs, or a `<dl>` of long entries (the report writer advice in the AI Reports tab, the three
-disclosure levels in the PDF viewer and the Download Center).
+disclosure levels in the PDF viewer and the Download Center, and the Run History list head's *Runs*
+help).
 
 ```html
 <app-info-tip trigger="dialog" tipId="rrReportWriterHint" subject="Report writer"

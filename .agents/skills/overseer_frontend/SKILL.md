@@ -304,8 +304,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     `comparisonReportsReloadToken`. The panel duplicates none of the wizard's controls.
   - **The Run History tab** (`#bm-panel-history`) is a card list (`frontend_ui_controls` §8h), one
     full-width `article.rh-card` per run in a `ul.rh-card-list[role=list]` labelled by the `h4.gh-section-title`
-    *Runs* (`#rh-list-title`). The head holds a click-mode info tip (`rh-list-tip`: the indexes, the
-    cost pair, the five hashes and what *Instrument changed* / *Options changed* compare against), the
+    *Runs* (`#rh-list-title`). The head is one centered row (`align-items: center`, the heading's text
+    box trimmed to its caps). It holds a dialog-mode info tip (`rh-list-tip`, *About the run history*:
+    the indexes, the cost pair, the five hashes and what *Instrument changed* / *Options changed*
+    compare against), the
     polite status line `#rh-list-status` (*Showing 10 of 75 runs*, *· filtered from N*, and *· Only the
     newest 200 runs are loaded* when exactly 200 came back) and **Refresh** (`.btn-ghost`, *rotate*).
     The filter bar copies the Download Center's markup with `rh-` ids: `#rh-search` (*Search runs*, over

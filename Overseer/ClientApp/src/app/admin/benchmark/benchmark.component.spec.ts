@@ -9612,6 +9612,69 @@ describe('AdminBenchmarkComponent', () => {
       expect(historyStatus()).toBe('Showing 10 of 200 runs · Only the newest 200 runs are loaded');
     });
 
+    describe('list head', () => {
+      afterEach(() => {
+        for (const dialog of Array.from(document.querySelectorAll('dialog[open]')) as HTMLDialogElement[]) {
+          dialog.close();
+        }
+      });
+
+      function head(): HTMLElement {
+        return fixture.nativeElement.querySelector('.rh-list-head') as HTMLElement;
+      }
+
+      it('should center the Runs heading, its info button, the status line and Refresh on one line', () => {
+        openHistoryWith([buildHistoryRun({ id: 1 })]);
+
+        expect(getComputedStyle(head()).alignItems).toBe('center');
+        // One line is the 32 px Refresh and the 6 px padding; a wrapped head is 72 px or more.
+        expect(head().clientHeight).toBeLessThan(50);
+
+        const centerOf = (selector: string): number => {
+          const rect = (head().querySelector(selector) as HTMLElement).getBoundingClientRect();
+          return rect.top + rect.height / 2;
+        };
+        const button = centerOf('app-info-tip .gh-info-btn');
+        expect(Math.abs(centerOf('#rh-list-title') - button)).toBeLessThanOrEqual(1);
+        expect(Math.abs(centerOf('#rh-list-status') - button)).toBeLessThanOrEqual(1);
+        expect(Math.abs(centerOf('.rh-refresh') - button)).toBeLessThanOrEqual(1);
+      });
+
+      it('should open the Runs help in a modal dialog, not a popup', () => {
+        openHistoryWith([buildHistoryRun({ id: 1 })]);
+
+        const button = head().querySelector('app-info-tip button.gh-info-btn') as HTMLButtonElement;
+        expect(button.getAttribute('aria-label')).toBe('About Run history');
+        expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+        expect(button.hasAttribute('popovertarget')).toBeFalse();
+        expect(head().querySelector('.gh-info-popup')).toBeNull();
+
+        const dialog = head().querySelector('app-info-tip dialog.gh-info-dialog') as HTMLDialogElement;
+        expect(dialog.open).toBeFalse();
+
+        button.focus();
+        button.click();
+        expect(dialog.open).toBeTrue();
+        expect(dialog.matches(':modal')).toBeTrue();
+        const title = dialog.querySelector('h3') as HTMLElement;
+        expect(title.id).toBe('rh-list-tip-title');
+        expect(title.textContent?.trim()).toBe('About the run history');
+        expect(document.activeElement).toBe(title);
+
+        const body = dialog.querySelector('#rh-list-tip') as HTMLElement;
+        expect(body.classList).toContain('gh-info-dialog-body');
+        expect(Array.from(body.querySelectorAll('dt')).map(dt => dt.textContent?.trim())).toEqual([
+          'Intelligence', 'Speed', 'Cost', 'Instrument', 'Instrument changed, Options changed'
+        ]);
+
+        const close = dialog.querySelector('.dialog-header .btn-icon-action') as HTMLButtonElement;
+        expect(close.getAttribute('aria-label')).toBe('Close About the run history');
+        close.click();
+        expect(dialog.open).toBeFalse();
+        expect(document.activeElement).toBe(button);
+      });
+    });
+
     it('should tell no runs recorded apart from no runs matching the filters', () => {
       openHistoryWith([]);
       const panel = () => fixture.nativeElement.querySelector('#bm-panel-history') as HTMLElement;
