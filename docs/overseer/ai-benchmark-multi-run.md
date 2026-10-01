@@ -67,6 +67,14 @@ does not.
 > this reason and its cost figures are sound; re-running the analysis moves the group to Tier A. The
 > assertion's error reached Sentry as **OVERSEER-8**.
 
+**Groups stay single-suite.** The suite is a Fundamental key, so a group never mixes suites, and
+nothing in this document combines them. The cross-suite layer is the **battery**
+([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md)): a fixed set of suites with declared
+weights, run for one model one suite after another, whose per-suite figures are this document's
+statistics, reused unchanged, and whose Overall Index is their weighted composite. A battery run with
+two or more rounds also creates one ordinary group per suite, so each suite's replicate analysis stays
+available here.
+
 ---
 
 ## 3. Comparability: Which Runs May Be Averaged

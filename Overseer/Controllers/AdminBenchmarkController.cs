@@ -582,10 +582,21 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("Cannot delete this suite while a run series over it is in progress.");
         }
 
-        // These three foreign keys are ClientSetNull, which is NO ACTION in the database: EF clears
+        var activeBatteryDefinitions = await _dbContext.BenchmarkBatteryRuns
+            .Where(b => b.Status == BenchmarkRunSeriesStatus.Pending
+                        || b.Status == BenchmarkRunSeriesStatus.Running
+                        || b.Status == BenchmarkRunSeriesStatus.WaitingForCap)
+            .Select(b => b.DefinitionJson)
+            .ToListAsync();
+        if (activeBatteryDefinitions.Any(json => BatteryDefinitionContainsSuite(json, id)))
+        {
+            return Conflict("Cannot delete this suite while a battery run over it is in progress.");
+        }
+
+        // These foreign keys are ClientSetNull, which is NO ACTION in the database: EF clears
         // them only on rows it is already tracking, so they are loaded and cleared here. Without
-        // this the delete is rejected by the FK constraint as soon as any run, series or group
-        // referenced the suite.
+        // this the delete is rejected by the FK constraint as soon as any run, series, group or
+        // battery suite referenced the suite.
         var runs = await _dbContext.BenchmarkRuns.Where(r => r.BenchmarkSuiteId == id).ToListAsync();
         foreach (var run in runs) run.BenchmarkSuiteId = null;
 
@@ -595,10 +606,27 @@ public class AdminBenchmarkController : ControllerBase
         var groups = await _dbContext.BenchmarkRunGroups.Where(g => g.BenchmarkSuiteId == id).ToListAsync();
         foreach (var g in groups) g.BenchmarkSuiteId = null;
 
+        // A battery keeps the row with its suite name and is broken until it is edited.
+        var batterySuites = await _dbContext.BenchmarkBatterySuites.Where(b => b.BenchmarkSuiteId == id).ToListAsync();
+        foreach (var b in batterySuites) b.BenchmarkSuiteId = null;
+
         _dbContext.BenchmarkSuites.Remove(suite);
         await _dbContext.SaveChangesAsync();
 
         return Ok();
+    }
+
+    /// <summary>True when a battery run's definition snapshot lists the suite; false when the snapshot cannot be read.</summary>
+    private static bool BatteryDefinitionContainsSuite(string? definitionJson, long suiteId)
+    {
+        try
+        {
+            return BenchmarkBatteryDefinition.FromJson(definitionJson ?? string.Empty).Suites.Any(s => s.SuiteId == suiteId);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     [HttpPost("suites/{id}/duplicate")]
@@ -3725,6 +3753,8 @@ public class AdminBenchmarkController : ControllerBase
                 item.Summary.Status, item.Summary.TotalQuestionCount, item.AnswerRowCount);
         }
 
+        await FillBatteryMembershipsAsync(rows.Select(r => r.Summary).ToList());
+
         if (_modelPricingService != null)
         {
             foreach (var item in rows)
@@ -3804,6 +3834,51 @@ public class AdminBenchmarkController : ControllerBase
         return Ok(rows.Select(r => r.Summary).ToList());
     }
 
+    /// <summary>
+    /// Fills the battery fields of the summaries from each run's newest non-superseded battery
+    /// membership, in one query over the page's run ids.
+    /// </summary>
+    private async Task FillBatteryMembershipsAsync(IReadOnlyList<BenchmarkRunSummaryDto> summaries)
+    {
+        if (summaries.Count == 0) return;
+
+        var runIds = summaries.Select(s => s.Id).Distinct().ToList();
+
+        var memberships = await _dbContext.BenchmarkBatteryRunMembers
+            .AsNoTracking()
+            .Where(m => runIds.Contains(m.BenchmarkRunId) && !m.Superseded)
+            .Select(m => new
+            {
+                m.Id,
+                m.BenchmarkRunId,
+                m.BenchmarkBatteryRunId,
+                m.SuiteIndex,
+                m.AddedAtUtc,
+                m.BenchmarkBatteryRun.BatteryName,
+                m.BenchmarkBatteryRun.RequestedMemberCount,
+                m.BenchmarkBatteryRun.RunsPerSuite
+            })
+            .ToListAsync();
+
+        var newestByRun = memberships
+            .GroupBy(m => m.BenchmarkRunId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(m => m.AddedAtUtc).ThenByDescending(m => m.Id).First());
+
+        foreach (var summary in summaries)
+        {
+            if (!newestByRun.TryGetValue(summary.Id, out var membership)) continue;
+
+            summary.BatteryRunId = membership.BenchmarkBatteryRunId;
+            summary.BatteryName = membership.BatteryName;
+            summary.BatterySuitePosition = membership.SuiteIndex + 1;
+            summary.BatterySuiteCount = membership.RunsPerSuite > 0
+                ? membership.RequestedMemberCount / membership.RunsPerSuite
+                : null;
+        }
+    }
+
     [HttpPost("runs/{id}/rescore")]
     public async Task<IActionResult> RescoreRun(long id, [FromBody] RescoreRunRequest? request)
     {
@@ -3847,6 +3922,11 @@ public class AdminBenchmarkController : ControllerBase
         if (_runManager.CurrentRunId.HasValue)
         {
             return Conflict("A benchmark run is already in progress.");
+        }
+
+        if (_runManager.OrchestratorOwner is { } claimOwner)
+        {
+            return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
 
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
@@ -4006,6 +4086,11 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
+        if (_runManager.OrchestratorOwner is { } claimOwner)
+        {
+            return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
+        }
+
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
         if (!canSpend)
         {
@@ -4119,6 +4204,11 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
+        if (_runManager.OrchestratorOwner is { } claimOwner)
+        {
+            return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
+        }
+
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
         if (!canSpend)
         {
@@ -4215,6 +4305,11 @@ public class AdminBenchmarkController : ControllerBase
             return Conflict("A benchmark run is already in progress.");
         }
 
+        if (_runManager.OrchestratorOwner is { } claimOwner)
+        {
+            return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
+        }
+
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
         if (!canSpend)
         {
@@ -4285,6 +4380,11 @@ public class AdminBenchmarkController : ControllerBase
         if (_runManager.CurrentRunId.HasValue)
         {
             return Conflict("A benchmark run is already in progress.");
+        }
+
+        if (_runManager.OrchestratorOwner is { } claimOwner)
+        {
+            return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
 
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
@@ -4366,6 +4466,11 @@ public class AdminBenchmarkController : ControllerBase
         if (_runManager.CurrentRunId.HasValue)
         {
             return Conflict("A benchmark run is already in progress.");
+        }
+
+        if (_runManager.OrchestratorOwner is { } claimOwner)
+        {
+            return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
 
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
@@ -4472,6 +4577,11 @@ public class AdminBenchmarkController : ControllerBase
         if (_runManager.CurrentRunId.HasValue)
         {
             return Conflict("A benchmark run is already in progress.");
+        }
+
+        if (_runManager.OrchestratorOwner is { } claimOwner)
+        {
+            return Conflict(BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
 
         var (canSpend, denialReason) = await _complianceGuard.CanSpendAsync();
@@ -4921,7 +5031,9 @@ public class AdminBenchmarkController : ControllerBase
             // The ceiling on a series is the daily cap itself, not the current headroom: a series
             // launched from an empty window of exactly MaxRunsPerDay members passes, because the
             // guard tests the count *before* creating each run and the last member sees Max - 1.
-            MaxRunCountPerSeries = limits.MaxRunsPerDay
+            MaxRunCountPerSeries = limits.MaxRunsPerDay,
+
+            MaxMembersPerBattery = _complianceGuard.MaxBatteryMembers
         });
     }
 
@@ -5169,11 +5281,12 @@ public class AdminBenchmarkController : ControllerBase
         return costs.Incomplete ? null : costs.Total;
     }
 
-    private static string? DescribeStopReason(BenchmarkRunSeriesStopReason? reason) => reason switch
+    internal static string? DescribeStopReason(BenchmarkRunSeriesStopReason? reason) => reason switch
     {
         BenchmarkRunSeriesStopReason.MemberFailed => "A member run failed",
         BenchmarkRunSeriesStopReason.RunCapReached => "Run cap reached",
         BenchmarkRunSeriesStopReason.SpendDenied => "Spend guard denied the next run",
+        BenchmarkRunSeriesStopReason.InstrumentChanged => "A member is not comparable with the others",
         _ => null
     };
 

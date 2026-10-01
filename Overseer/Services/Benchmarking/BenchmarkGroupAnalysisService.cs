@@ -140,7 +140,7 @@ public class BenchmarkGroupAnalysisService
         }
 
         var options = BenchmarkGroupStatisticsOptions.FromComparability(loaded.Comparability);
-        var costs = await ResolveCostsAsync(loaded.Runs);
+        var costs = await ResolveCostsAsync(_pricingService, _logger, loaded.Runs);
 
         // The exam the members sat, from their own answers: the live suite may have changed since.
         var exam = BenchmarkRunExam.Build(loaded.Runs);
@@ -234,7 +234,7 @@ public class BenchmarkGroupAnalysisService
         }
 
         var options = BenchmarkGroupStatisticsOptions.FromComparability(loaded.Comparability);
-        var costs = await ResolveCostsAsync(loaded.Runs);
+        var costs = await ResolveCostsAsync(_pricingService, _logger, loaded.Runs);
 
         var exam = BenchmarkRunExam.Build(loaded.Runs);
         return BenchmarkGroupStatistics.Compute(
@@ -317,21 +317,24 @@ public class BenchmarkGroupAnalysisService
     /// already read on the individual runs. A run whose pricing cannot be resolved contributes nothing
     /// and is simply absent â€” an unknown cost is reported as unknown, never as zero.
     /// </summary>
-    private async Task<List<BenchmarkGroupRunCost>> ResolveCostsAsync(IReadOnlyList<BenchmarkRun> runs)
+    internal static async Task<List<BenchmarkGroupRunCost>> ResolveCostsAsync(
+        ModelPricingService? pricingService,
+        ILogger logger,
+        IReadOnlyList<BenchmarkRun> runs)
     {
         var costs = new List<BenchmarkGroupRunCost>();
-        if (_pricingService == null) return costs;
+        if (pricingService == null) return costs;
 
         foreach (var run in runs)
         {
             BenchmarkRunPricing pricing;
             try
             {
-                pricing = await _pricingService.ResolveForRunAsync(run);
+                pricing = await pricingService.ResolveForRunAsync(run);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Could not resolve pricing for benchmark run {RunId}; it is omitted from the group cost.", run.Id);
+                logger.LogWarning(ex, "Could not resolve pricing for benchmark run {RunId}; it is omitted from the group cost.", run.Id);
                 continue;
             }
 

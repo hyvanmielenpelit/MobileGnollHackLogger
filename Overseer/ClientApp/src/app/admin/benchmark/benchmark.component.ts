@@ -34,6 +34,13 @@ import {
   BenchmarkGameSnapshotDto,
   BenchmarkRunLimitsDto,
   BenchmarkRunSeriesDto,
+  BenchmarkBatteryDto,
+  BenchmarkBatteryRunDto,
+  BenchmarkBatteryResumeMode,
+  BenchmarkBatteryAttachDto,
+  BenchmarkBatteryReusePreviewDto,
+  BenchmarkBatteryReusePreviewSlotDto,
+  StartBenchmarkBatteryRunRequest,
   BenchmarkRunGroupDto,
   BenchmarkRunGroupTierPreviewDto,
   BenchmarkComparabilityResultDto,
@@ -57,6 +64,8 @@ import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-e
 import { SuiteHealthComponent, SuiteHealthTab } from './suite-health/suite-health.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
+import { BenchmarkBatteriesComponent } from './batteries/batteries.component';
+import { BatteryProgressDialogComponent } from './batteries/battery-progress-dialog.component';
 import { QuestionGenerationDialogComponent } from './question-generation/question-generation-dialog.component';
 import { SuiteDescriptionGenerationDialogComponent } from './description-generation/suite-description-generation-dialog.component';
 import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './cost-panel/benchmark-cost-panel.component';
@@ -395,6 +404,10 @@ interface BenchmarkRunSettings {
   /** Whether the candidate may cite source files and lines. Defaults to false when absent. */
   allowSourceCodeReferences: boolean | null;
   runCount: number | null;
+  /** Single suite or a battery of suites. Absent restores Single suite. */
+  targetKind: 'suite' | 'battery' | null;
+  /** The battery a battery run starts from; restored only while it is listed, unarchived and runnable. */
+  batteryId: number | null;
   /** Whether a run or series completion plays the chime. Defaults to true when absent. */
   completionSound: boolean | null;
   /** Whether a run or series completion also raises a desktop notification. Defaults to false when absent. */
@@ -408,6 +421,7 @@ interface BenchmarkRunSettings {
     CommonModule, DecimalPipe, FormsModule, CollapsibleMarkdownComponent, MarkdownEditorComponent,
     SuiteHealthComponent,
     SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent,
+    BenchmarkBatteriesComponent, BatteryProgressDialogComponent,
     QuestionGenerationDialogComponent, SuiteDescriptionGenerationDialogComponent,
     FilterFacetComponent, ModelComparisonComponent,
     ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent,
@@ -490,6 +504,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('suiteDescriptionEditor') suiteDescriptionEditor?: MarkdownEditorComponent;
   @ViewChild('snapshotViewer') snapshotViewer?: SnapshotViewerComponent;
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
+  @ViewChild('batteriesPanel') batteriesPanel?: BenchmarkBatteriesComponent;
   @ViewChild(QuestionGenerationDialogComponent) generationDialog?: QuestionGenerationDialogComponent;
   @ViewChild('importDefaultSuitesDialog') importDefaultSuitesDialog!: ElementRef<HTMLDialogElement>;
   @ViewChild('graderGuide') graderGuide?: BenchmarkGraderGuideComponent;
@@ -526,14 +541,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private pollTicker = inject(BenchmarkPollTickerService);
   private cdr = inject(ChangeDetectorRef);
 
-  activeSubTab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' | 'modelcomparison' = 'run';
+  activeSubTab: 'run' | 'history' | 'multirun' | 'multisuite' | 'suites' | 'profiles' | 'modelcomparison' = 'run';
 
   /**
    * Tab order, and the source of truth for arrow-key navigation indices. Multi-Run Analysis sits
    * immediately right of Run History because a group is built out of the runs listed there, so the
-   * two are read in that order. Scoring Profiles sits right of Manage Suites.
+   * two are read in that order, and Multi-Suite follows them. Scoring Profiles sits right of Manage
+   * Suites.
    */
-  readonly subTabs = ['run', 'history', 'multirun', 'suites', 'profiles', 'modelcomparison'] as const;
+  readonly subTabs = ['run', 'history', 'multirun', 'multisuite', 'suites', 'profiles', 'modelcomparison'] as const;
 
   /**
    * BenchmarkAnswerFlags bits that mean the graded text was corrupted in transport:
@@ -797,6 +813,57 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   seriesErrorMessage: string | null = null;
   resumingSeries = false;
+
+  // --- Multi-suite battery runs ---
+  //
+  // A battery run executes every suite of a battery for one model configuration, one member run at
+  // a time, Runs per Suite rounds over the suites. The launcher's Run Target chooses it; its banner,
+  // poller and Web Lock mirror the series ones, and it signals completion once for all its members.
+
+  /** What Start launches: one suite (a run or a series) or a battery. */
+  runTargetKind: 'suite' | 'battery' = 'suite';
+
+  /** Every battery GET batteries returned; the launcher offers only `runnableBatteries`. */
+  launcherBatteries: BenchmarkBatteryDto[] = [];
+  loadingBatteries = false;
+  selectedBatteryId: number | null = null;
+
+  activeBatteryRunId: number | null = null;
+  activeBatteryRun: BenchmarkBatteryRunDto | null = null;
+  private batteryPollTickerHandle: BenchmarkPollTickerHandle | null = null;
+  private batteryPollFailureCount = 0;
+  private batteryVisibilityChangeHandler: (() => void) | null = null;
+  private lastBatteryPollAttemptAtMs = 0;
+  /** The battery run whose poller is live; while set it owns the background lock, as a series does. */
+  private lockedBatteryRunId: number | null = null;
+  /** Battery runs the poller has observed live; a terminal poll chimes only for one of these. */
+  private batteriesSeenLive = new Set<number>();
+
+  /** The Battery Progress dialog's visibility. The dialog element itself belongs to that component. */
+  batteryDialogVisible = false;
+
+  /** A battery run opened from the Multi-Suite tab rather than the one this page drives. */
+  batteryDialogRunId: number | null = null;
+
+  /** Which battery run the progress dialog shows: an explicitly opened one, else the live one. */
+  get dialogBatteryRunId(): number | null {
+    return this.batteryDialogRunId ?? this.activeBatteryRunId;
+  }
+
+  batteryErrorMessage: string | null = null;
+  resumingBattery = false;
+
+  /** Closing the run progress dialog reopens the Battery Progress dialog it was opened from. */
+  returnToBatteryOnClose = false;
+
+  /** Reuse earlier runs at a battery start. A per-start decision, so never stored with the run settings. */
+  reuseEarlierRuns = false;
+  /** Which slots earlier runs would fill for the launcher's current battery request; null while none is known. */
+  reusePreview: BenchmarkBatteryReusePreviewDto | null = null;
+  reusePreviewLoading = false;
+  reusePreviewError: string | null = null;
+  /** The preview request in flight; a newer one unsubscribes it, which cancels the HTTP call. */
+  private reusePreviewSubscription: Subscription | null = null;
 
   // --- Completion sound ---
   //
@@ -1462,6 +1529,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     // running must reattach its banner exactly as a single run does.
     this.loadRunLimits();
     this.checkActiveRunSeries();
+    this.loadBatteries();
+    this.checkActiveBatteryRun();
   }
 
   /**
@@ -1514,7 +1583,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * loads live here rather than in the template so the tab row carries one
    * statement per handler.
    */
-  selectSubTab(tab: 'run' | 'history' | 'multirun' | 'suites' | 'profiles' | 'modelcomparison'): void {
+  selectSubTab(tab: 'run' | 'history' | 'multirun' | 'multisuite' | 'suites' | 'profiles' | 'modelcomparison'): void {
     this.activeSubTab = tab;
     if (tab === 'history') {
       this.loadHistory();
@@ -1540,7 +1609,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       // again from onComparisonSuiteChange as the scope narrows.
       this.loadComparabilityIndex();
     }
-    // 'multirun' loads nothing here: the panel is the MultiRunComponent's own, and it owns its
+    // 'multirun' and 'multisuite' load nothing here: each panel is its own component and owns its
     // fetches. Loading them from the host would give that data two owners.
   }
 
@@ -1978,6 +2047,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.stopDifficultyPolling();
     this.terminatingDifficultyJob = false;
     this.stopSeriesPolling();
+    this.stopBatteryPolling();
+    this.reusePreviewSubscription?.unsubscribe();
+    this.reusePreviewSubscription = null;
     this.comparisonSubscription?.unsubscribe();
     this.historyList.dispose();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
@@ -2242,27 +2314,33 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   selectTestedModel(config: SystemAiConfigDto | null) {
     if (!config) return;
     this.testedConfigId = config.id;
+    this.refreshReusePreview();
   }
 
   selectAssessorModel(config: SystemAiConfigDto | null) {
     if (!config) return;
     this.assessorConfigId = config.id;
+    this.refreshReusePreview();
   }
 
   selectSecondOpinionModel(config: SystemAiConfigDto | null) {
     this.secondOpinionConfigId = config?.id ?? null;
+    this.refreshReusePreview();
   }
 
   selectCoAssessorModel(config: SystemAiConfigDto | null) {
     this.coAssessorConfigId = config?.id ?? null;
+    this.refreshReusePreview();
   }
 
   selectClaimVerifierModel(config: SystemAiConfigDto | null) {
     this.claimVerifierConfigId = config?.id ?? null;
+    this.refreshReusePreview();
   }
 
   selectReportWriterModel(config: SystemAiConfigDto | null) {
     this.reportWriterConfigId = config?.id ?? null;
+    this.refreshReusePreview();
   }
 
   selectDifficultyAssessorModel(config: SystemAiConfigDto | null) {
@@ -3747,6 +3825,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         verboseMode: this.candidateVerboseMode,
         allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
         runCount: this.effectiveRunCount,
+        targetKind: this.runTargetKind,
+        batteryId: this.selectedBatteryId,
         completionSound: this.completionSound,
         completionNotification: this.completionNotification
       };
@@ -3787,6 +3867,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       verboseMode: typeof raw.verboseMode === 'boolean' ? raw.verboseMode : null,
       allowSourceCodeReferences: typeof raw.allowSourceCodeReferences === 'boolean' ? raw.allowSourceCodeReferences : null,
       runCount: num(raw.runCount),
+      targetKind: raw.targetKind === 'battery' || raw.targetKind === 'suite' ? raw.targetKind : null,
+      batteryId: num(raw.batteryId),
       completionSound: typeof raw.completionSound === 'boolean' ? raw.completionSound : null,
       completionNotification: typeof raw.completionNotification === 'boolean' ? raw.completionNotification : null
     };
@@ -3811,9 +3893,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const count = this.pendingRunSettings.runCount;
     if (count !== null && count >= 1) {
       const intCount = Math.floor(count);
-      this.runCount = (this.maxRunCountPerSeries != null && intCount > this.maxRunCountPerSeries)
-        ? this.maxRunCountPerSeries
-        : intCount;
+      const max = this.runCountTargetPending ? null : this.runCountMax;
+      this.runCount = (max != null && intCount > max) ? max : intCount;
     }
     const mode = this.pendingRunSettings.secondOpinionMode;
     if (mode !== null && this.secondOpinionModeOptions.some(o => o.value === mode)) {
@@ -3822,19 +3903,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * Which of the three list-backed fields have been applied. The loaders complete in whatever order their
+   * Which of the four list-backed fields have been applied. The loaders complete in whatever order their
    * requests return, and setDefaultModelSelections runs from ngOnInit before either has answered, so the
-   * stored blob can only be dropped once all three have had their turn — dropping it as soon as any one of
-   * them finishes would leave the others falling back to their defaults.
+   * stored blob can only be dropped once all four have had their turn — dropping it as soon as any one of
+   * them finishes would leave the others falling back to their defaults. The battery part is the Run
+   * Target and its battery, applied by loadBatteries.
    */
-  private runSettingsApplied = { suite: false, profile: false, configs: false };
+  private runSettingsApplied = { suite: false, profile: false, configs: false, battery: false };
 
-  /** Marks one part applied, and drops the stored blob once all three are. */
-  private markRunSettingsApplied(part: 'suite' | 'profile' | 'configs'): void {
+  /** Marks one part applied, and drops the stored blob once all four are. */
+  private markRunSettingsApplied(part: 'suite' | 'profile' | 'configs' | 'battery'): void {
     if (!this.pendingRunSettings) return;
     this.runSettingsApplied[part] = true;
     const done = this.runSettingsApplied;
-    if (done.suite && done.profile && done.configs) {
+    if (done.suite && done.profile && done.configs && done.battery) {
       // Cleared so a later ngOnChanges cannot resurrect a stale selection over one the operator has
       // since made by hand.
       this.pendingRunSettings = null;
@@ -3851,7 +3933,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private launchAcknowledgments = { assessor: false, reportWriter: false };
 
   startBenchmark(acknowledgeSameProvider: boolean = false, boardQuotesAcknowledged: boolean = false) {
-    if (!this.canStartRun || this.selectedSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
+    if (!this.canStartRun || this.launchSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
 
     this.armCompletionSignalsFromGesture();
 
@@ -3864,8 +3946,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.launchAcknowledgments = { assessor: false, reportWriter: false };
     }
 
-    // A same-provider acknowledgement follows a request that already passed this gate.
-    if (!acknowledgeSameProvider && !boardQuotesAcknowledged && this.selectedSuite?.gameSnapshotId != null) {
+    // A same-provider acknowledgement follows a request that already passed this gate. A battery
+    // run is not gated here: it spans several suites.
+    if (!this.isBatteryTarget && this.selectedSuiteId != null
+        && !acknowledgeSameProvider && !boardQuotesAcknowledged && this.selectedSuite?.gameSnapshotId != null) {
       this.checkBoardQuotesBeforeStart(this.selectedSuiteId);
       return;
     }
@@ -3923,39 +4007,28 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   private sendStartRequest(): void {
-    if (this.selectedSuiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
+    const suiteId = this.launchSuiteId;
+    if (suiteId == null || this.testedConfigId == null || this.assessorConfigId == null) return;
 
     this.startingRun = true;
     this.runErrorMessage = null;
     this.seriesErrorMessage = null;
+    this.batteryErrorMessage = null;
     // A new run replaces any re-run state a previous, now-superseded run left behind.
     this.rerunLaunchPending = false;
     this.rerunLaunchedAtMs = null;
     this.rerunScopeOrderIndexes = [];
 
-    const req: StartBenchmarkRunRequest = {
-      suiteId: this.selectedSuiteId,
-      testedModelConfigurationId: this.testedConfigId,
-      assessorModelConfigurationId: this.assessorConfigId,
-      secondOpinionAssessorModelConfigurationId: this.secondOpinionConfigId,
-      // Sent only when an assessor is selected: without one the mode is inert, and sending Off
-      // would be indistinguishable from "the operator chose Never".
-      secondOpinionMode: this.secondOpinionConfigId != null ? this.secondOpinionMode : null,
-      claimVerifierModelConfigurationId: this.claimVerifierConfigId,
-      reportWriterModelConfigurationId: this.reportWriterConfigId,
-      verboseMode: this.candidateVerboseMode,
-      allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
-      scoringProfileId: this.selectedScoringProfileId,
-      acknowledgeSameProvider: this.launchAcknowledgments.assessor,
-      // Only once acknowledged, so every other request carries the body it always has.
-      ...(this.launchAcknowledgments.reportWriter ? { acknowledgeSameProviderReportWriter: true } : {}),
-      // Only on a panel run, so a single-assessor request carries the body it always has.
-      ...(this.coAssessorConfigId != null ? { coAssessorModelConfigurationId: this.coAssessorConfigId } : {})
-    };
+    const req = this.buildRunRequest(suiteId, this.testedConfigId, this.assessorConfigId);
 
     // Before the request, not after it: the operator's choices are worth remembering whether or not the
     // server accepts the run.
     this.persistRunSettings();
+
+    if (this.isBatteryTarget) {
+      this.startBenchmarkBatteryRun(req);
+      return;
+    }
 
     // The one branch multi-run adds to the start path. At 1 the request is posted to the same
     // endpoint with the same body it has always carried — runCount and allowCapWait are not even
@@ -3996,6 +4069,29 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     });
   }
 
+  /** The launcher's run request: what a run or a series starts, and every battery member's template. */
+  private buildRunRequest(suiteId: number, testedConfigId: number, assessorConfigId: number): StartBenchmarkRunRequest {
+    return {
+      suiteId,
+      testedModelConfigurationId: testedConfigId,
+      assessorModelConfigurationId: assessorConfigId,
+      secondOpinionAssessorModelConfigurationId: this.secondOpinionConfigId,
+      // Sent only when an assessor is selected: without one the mode is inert, and sending Off
+      // would be indistinguishable from "the operator chose Never".
+      secondOpinionMode: this.secondOpinionConfigId != null ? this.secondOpinionMode : null,
+      claimVerifierModelConfigurationId: this.claimVerifierConfigId,
+      reportWriterModelConfigurationId: this.reportWriterConfigId,
+      verboseMode: this.candidateVerboseMode,
+      allowSourceCodeReferences: this.candidateAllowSourceCodeReferences,
+      scoringProfileId: this.selectedScoringProfileId,
+      acknowledgeSameProvider: this.launchAcknowledgments.assessor,
+      // Only once acknowledged, so every other request carries the body it always has.
+      ...(this.launchAcknowledgments.reportWriter ? { acknowledgeSameProviderReportWriter: true } : {}),
+      // Only on a panel run, so a single-assessor request carries the body it always has.
+      ...(this.coAssessorConfigId != null ? { coAssessorModelConfigurationId: this.coAssessorConfigId } : {})
+    };
+  }
+
   // --- Multi-run series execution ---
 
   /**
@@ -4006,8 +4102,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get effectiveRunCount(): number {
     const n = Math.floor(Number(this.runCount));
     if (!Number.isFinite(n) || n < 1) return 1;
-    const max = this.maxRunCountPerSeries;
+    const max = this.runCountMax;
     return max != null && n > max ? max : n;
+  }
+
+  /** The run count field's `max` for the current Run Target: runs per series, or runs per suite. */
+  get runCountMax(): number | null {
+    return this.isBatteryTarget ? this.maxRunsPerSuite : this.maxRunCountPerSeries;
   }
 
   /**
@@ -4019,17 +4120,21 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.runLimits?.maxRunCountPerSeries ?? null;
   }
 
-  /** True once the operator has asked for more than one run, which is what reveals the projections. */
+  /**
+   * True once the operator has asked for more than one run of a single suite, which is what reveals
+   * the series projection. A battery has a projection of its own.
+   */
   get isMultiRunRequested(): boolean {
-    return this.effectiveRunCount > 1;
+    return !this.isBatteryTarget && this.effectiveRunCount > 1;
   }
 
   loadRunLimits(): void {
     this.benchmarkService.getRunLimits().subscribe({
       next: (limits) => {
         this.runLimits = limits;
-        if (limits?.maxRunCountPerSeries != null && this.runCount > limits.maxRunCountPerSeries) {
-          this.runCount = limits.maxRunCountPerSeries;
+        this.clampRunCountToTarget();
+        if (this.reuseEarlierRuns) {
+          this.refreshReusePreview();
         }
         this.cdr.detectChanges();
       },
@@ -4064,7 +4169,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * model change says nothing useful about how long the next one takes.
    */
   private get completedRunsOfSelectedSuite(): BenchmarkRunSummaryDto[] {
-    const suiteId = this.selectedSuiteId;
+    return this.completedRunsOfSuite(this.selectedSuiteId);
+  }
+
+  /** Completed runs of one suite, newest first, capped at five; the basis of every projection. */
+  private completedRunsOfSuite(suiteId: number | null | undefined): BenchmarkRunSummaryDto[] {
     if (suiteId == null) return [];
     return this.historyRuns
       .filter(r => r.benchmarkSuiteId === suiteId)
@@ -4097,6 +4206,409 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get seriesExceedsDailyHeadroom(): boolean {
     const headroom = this.runLimits?.remainingDailyHeadroom;
     return headroom != null && this.effectiveRunCount > headroom;
+  }
+
+  // --- Run Target: battery ---
+
+  get isBatteryTarget(): boolean {
+    return this.runTargetKind === 'battery';
+  }
+
+  /** The batteries the launcher offers: not archived, no deleted suite and no validation error. */
+  get runnableBatteries(): BenchmarkBatteryDto[] {
+    return this.launcherBatteries.filter(b => AdminBenchmarkComponent.isRunnableBattery(b));
+  }
+
+  private static isRunnableBattery(battery: BenchmarkBatteryDto): boolean {
+    return !battery.isArchived
+      && (battery.brokenSuiteNames?.length ?? 0) === 0
+      && (battery.validationErrors?.length ?? 0) === 0;
+  }
+
+  get selectedBattery(): BenchmarkBatteryDto | undefined {
+    return this.selectedBatteryId == null
+      ? undefined
+      : this.runnableBatteries.find(b => b.id === this.selectedBatteryId);
+  }
+
+  /** The suite id the start request carries: the selected suite, or a battery's first suite, which the server replaces per member. */
+  private get launchSuiteId(): number | null {
+    if (!this.isBatteryTarget) return this.selectedSuiteId;
+    return this.selectedBattery?.suites.find(s => s.suiteId != null)?.suiteId ?? null;
+  }
+
+  /** The Run Target radios' change handler. */
+  setRunTarget(kind: 'suite' | 'battery'): void {
+    this.runTargetKind = kind;
+    if (kind === 'battery' && this.selectedBatteryId == null) {
+      this.selectedBatteryId = this.runnableBatteries[0]?.id ?? null;
+    }
+    this.clampRunCountToTarget();
+    this.refreshReusePreview();
+    this.cdr.detectChanges();
+  }
+
+  onSelectedBatteryChanged(): void {
+    this.clampRunCountToTarget();
+    this.refreshReusePreview();
+  }
+
+  // --- Run Target: reusing earlier runs ---
+
+  /** The Reuse earlier runs checkbox's change handler. */
+  onReuseEarlierRunsChange(checked: boolean): void {
+    this.reuseEarlierRuns = checked;
+    this.refreshReusePreview();
+  }
+
+  /** A launcher field that shapes the battery request changed: Runs per Suite, the profile, the response style. */
+  onReuseInputsChanged(): void {
+    this.refreshReusePreview();
+  }
+
+  /** The battery start the launcher would send now, without its attach list; null while a field it needs is unset. */
+  private buildBatteryStartRequest(): StartBenchmarkBatteryRunRequest | null {
+    const batteryId = this.selectedBattery?.id;
+    const suiteId = this.launchSuiteId;
+    if (batteryId == null || suiteId == null || this.testedConfigId == null || this.assessorConfigId == null) {
+      return null;
+    }
+    return {
+      batteryId,
+      runsPerSuite: this.effectiveRunCount,
+      allowCapWait: this.allowCapWait,
+      run: this.buildRunRequest(suiteId, this.testedConfigId, this.assessorConfigId)
+    };
+  }
+
+  /**
+   * Asks the server which earlier runs a start of the current battery request would reuse, or
+   * clears the preview when reuse is off or the request is incomplete. A newer request cancels the
+   * one in flight, so the projection never shows the preview of settings already changed.
+   */
+  private refreshReusePreview(): void {
+    this.reusePreviewSubscription?.unsubscribe();
+    this.reusePreviewSubscription = null;
+    this.reusePreview = null;
+    this.reusePreviewError = null;
+
+    const req = this.isBatteryTarget && this.reuseEarlierRuns ? this.buildBatteryStartRequest() : null;
+    if (!req) {
+      this.reusePreviewLoading = false;
+      return;
+    }
+
+    this.reusePreviewLoading = true;
+    this.reusePreviewSubscription = this.benchmarkService.previewBatteryReuse(req).subscribe({
+      next: (preview) => {
+        this.reusePreviewLoading = false;
+        this.reusePreview = preview;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.reusePreviewLoading = false;
+        this.reusePreviewError = AdminBenchmarkComponent.refusalText(err, 'The server could not preview the reuse.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /** The preview Start would act on: reuse is on and it was computed for the battery and round count shown. */
+  get activeReusePreview(): BenchmarkBatteryReusePreviewDto | null {
+    const preview = this.reusePreview;
+    if (!this.isBatteryTarget || !this.reuseEarlierRuns || !preview) return null;
+    return preview.batteryId === this.selectedBattery?.id && preview.runsPerSuite === this.effectiveRunCount
+      ? preview
+      : null;
+  }
+
+  /** The slots no earlier run fills, each with the reason. */
+  get reuseUnfilledSlots(): BenchmarkBatteryReusePreviewSlotDto[] {
+    return (this.activeReusePreview?.slots ?? []).filter(s => s.runId == null);
+  }
+
+  /** The battery projection's reuse line. */
+  get reuseProjectionText(): string {
+    if (this.reusePreviewLoading) {
+      return 'Checking which earlier runs can be reused…';
+    }
+    if (this.reusePreviewError) {
+      return `The reuse of earlier runs could not be previewed: ${this.reusePreviewError}`;
+    }
+    const preview = this.activeReusePreview;
+    if (!preview) {
+      return 'Choose the battery and the models to see which earlier runs can be reused.';
+    }
+    if (preview.reusedCount === 0) {
+      return `No earlier run qualifies; launching ${preview.launchCount}.`;
+    }
+    const ids = preview.attach.map(a => `#${a.runId}`).join(', ');
+    return `Reusing ${preview.reusedCount} earlier ${preview.reusedCount === 1 ? 'run' : 'runs'} (${ids}); `
+      + `launching ${preview.launchCount}.`;
+  }
+
+  /** The runs Start sends as `attach`: the active preview's choice, or none. */
+  private get reuseAttachList(): BenchmarkBatteryAttachDto[] {
+    return (this.activeReusePreview?.attach ?? []).map(a => ({ ...a }));
+  }
+
+  /** The launches the battery run plans: K × R, less the slots earlier runs fill. */
+  get batteryRunsToLaunch(): number {
+    const preview = this.activeReusePreview;
+    return preview ? preview.launchCount : this.batteryLaunchCount;
+  }
+
+  /**
+   * Loads the launcher's battery list, and applies the remembered Run Target once it has arrived.
+   * A remembered battery that is gone, archived or broken falls back to Single suite.
+   */
+  loadBatteries(): void {
+    this.loadingBatteries = true;
+    this.benchmarkService.getBatteries().subscribe({
+      next: (batteries) => {
+        this.launcherBatteries = batteries ?? [];
+        this.loadingBatteries = false;
+        const pending = this.pendingRunSettings;
+        const runnable = this.runnableBatteries;
+        if (pending && !this.runSettingsApplied.battery) {
+          const remembered = runnable.find(b => b.id === pending.batteryId);
+          if (pending.targetKind === 'battery' && remembered) {
+            this.runTargetKind = 'battery';
+            this.selectedBatteryId = remembered.id;
+          } else {
+            this.runTargetKind = 'suite';
+            this.selectedBatteryId = remembered?.id ?? runnable[0]?.id ?? null;
+          }
+        } else if (this.selectedBatteryId == null || !runnable.some(b => b.id === this.selectedBatteryId)) {
+          this.selectedBatteryId = runnable[0]?.id ?? null;
+        }
+        this.markRunSettingsApplied('battery');
+        this.clampRunCountToTarget();
+        this.refreshReusePreview();
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.loadingBatteries = false;
+        console.error('Failed to load benchmark batteries', err);
+        if (this.pendingRunSettings && !this.runSettingsApplied.battery) {
+          this.runTargetKind = 'suite';
+        }
+        this.markRunSettingsApplied('battery');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /**
+   * Runs per Suite's ceiling: one battery run may plan at most `maxMembersPerBattery` launches, so
+   * K suites allow floor(max / K) rounds. Null while the limit or the battery is unknown.
+   */
+  get maxRunsPerSuite(): number | null {
+    const max = this.runLimits?.maxMembersPerBattery;
+    const suiteCount = this.selectedBattery?.suites.length ?? 0;
+    if (max == null || suiteCount === 0) return null;
+    return Math.max(1, Math.floor(max / suiteCount));
+  }
+
+  /**
+   * True while a remembered Battery target waits for the battery list: the run count then belongs
+   * to Runs per Suite, so the single-suite ceiling must not lower it yet.
+   */
+  private get runCountTargetPending(): boolean {
+    return this.pendingRunSettings?.targetKind === 'battery' && !this.runSettingsApplied.battery;
+  }
+
+  /** Lowers the shared run count to the current target's ceiling. */
+  private clampRunCountToTarget(): void {
+    if (this.runCountTargetPending) return;
+    const max = this.runCountMax;
+    const n = Math.floor(Number(this.runCount));
+    if (max != null && Number.isFinite(n) && n > max) {
+      this.runCount = max;
+    }
+  }
+
+  /** K × R: the launches the battery run plans. */
+  get batteryLaunchCount(): number {
+    return (this.selectedBattery?.suites.length ?? 0) * this.effectiveRunCount;
+  }
+
+  /** The selected battery's suites with the declared scheme's normalized weights, for the select's info tip. */
+  get selectedBatteryWeightRows(): { name: string; percent: number | null }[] {
+    const battery = this.selectedBattery;
+    if (!battery) return [];
+    const declared = battery.weightPreviews?.find(p => p.declared);
+    return battery.suites.map((suite, i) => ({
+      name: suite.suiteName,
+      percent: declared && declared.weights.length === battery.suites.length ? declared.weights[i] * 100 : null
+    }));
+  }
+
+  get selectedBatterySchemeLabel(): string {
+    return this.selectedBattery?.weightingSchemeLabel ?? '';
+  }
+
+  /** The battery's suites whose questions are not all difficulty-assessed; the server refuses them. */
+  get selectedBatteryUnassessedSuites(): string[] {
+    return (this.selectedBattery?.suites ?? [])
+      .filter(s => !s.difficultyFullyAssessed)
+      .map(s => s.suiteName);
+  }
+
+  /**
+   * The projection's sum of each launched run's suite's recent mean run duration: each suite × R,
+   * or, with a reuse preview, the slots no earlier run fills. Null unless every such suite has a basis.
+   */
+  get projectedBatteryDurationLabel(): string | null {
+    const total = this.sumOverBatteryLaunches(id => this.meanRunDurationMsOf(id));
+    return total == null ? null : this.formatElapsed(total);
+  }
+
+  /** The same sum for money. */
+  get projectedBatteryCostLabel(): string | null {
+    const total = this.sumOverBatteryLaunches(id => this.meanRunCostOf(id));
+    return total == null ? null : this.formatCostAmount(total);
+  }
+
+  private sumOverBatteryLaunches(perSuite: (suiteId: number) => number | null): number | null {
+    const preview = this.activeReusePreview;
+    if (!preview) {
+      const total = this.sumOverBatterySuites(perSuite);
+      return total == null ? null : total * this.effectiveRunCount;
+    }
+    let total = 0;
+    for (const slot of preview.slots.filter(s => s.runId == null)) {
+      const value = perSuite(slot.suiteId);
+      if (value == null) return null;
+      total += value;
+    }
+    return total;
+  }
+
+  private sumOverBatterySuites(perSuite: (suiteId: number) => number | null): number | null {
+    const suites = this.selectedBattery?.suites ?? [];
+    if (suites.length === 0) return null;
+    let total = 0;
+    for (const suite of suites) {
+      const value = suite.suiteId == null ? null : perSuite(suite.suiteId);
+      if (value == null) return null;
+      total += value;
+    }
+    return total;
+  }
+
+  private meanRunDurationMsOf(suiteId: number): number | null {
+    const runs = this.completedRunsOfSuite(suiteId);
+    if (runs.length === 0) return null;
+    const total = runs.reduce((sum, r) => sum + (r.totalDurationMs || r.totalAnswerDurationMs || 0), 0);
+    return total > 0 ? Math.round(total / runs.length) : null;
+  }
+
+  private meanRunCostOf(suiteId: number): number | null {
+    const priced = this.completedRunsOfSuite(suiteId).filter(r => r.estimatedCost != null);
+    if (priced.length === 0) return null;
+    return priced.reduce((sum, r) => sum + (r.estimatedCost ?? 0), 0) / priced.length;
+  }
+
+  /** Whether the battery asks for more launches than the rolling 24-hour window still allows. */
+  get batteryExceedsDailyHeadroom(): boolean {
+    const headroom = this.runLimits?.remainingDailyHeadroom;
+    return headroom != null && this.batteryRunsToLaunch > headroom;
+  }
+
+  /** More launches than the daily cap itself: admitted only with Allow cap wait. */
+  get batteryExceedsDailyCap(): boolean {
+    const cap = this.runLimits?.maxRunsPerDay;
+    return cap != null && cap > 0 && this.batteryRunsToLaunch > cap;
+  }
+
+  /** The rolling 24-hour windows the launches need at the daily cap. */
+  get batteryDaySpan(): number | null {
+    const cap = this.runLimits?.maxRunsPerDay;
+    if (cap == null || cap <= 0 || this.batteryRunsToLaunch === 0) return null;
+    return Math.ceil(this.batteryRunsToLaunch / cap);
+  }
+
+  /** Why a battery run cannot start yet, or empty; also the Start hint in battery mode. */
+  get batteryLaunchRefusal(): string {
+    const battery = this.selectedBattery;
+    if (!battery) {
+      return this.runnableBatteries.length === 0
+        ? 'Create a battery on the Multi-Suite tab first.'
+        : 'Select a battery first.';
+    }
+    const unassessed = this.selectedBatteryUnassessedSuites;
+    if (unassessed.length > 0) {
+      return `Assess every question's difficulty in ${unassessed.join(', ')} first.`;
+    }
+    const maxMembers = this.runLimits?.maxMembersPerBattery;
+    if (maxMembers != null && battery.suites.length > maxMembers) {
+      return `This battery has ${battery.suites.length} suites; one battery run may plan at most ${maxMembers} runs.`;
+    }
+    if (this.batteryExceedsDailyCap && !this.allowCapWait) {
+      return `${this.batteryRunsToLaunch} runs exceed the daily cap of ${this.runLimits?.maxRunsPerDay}; select Wait when the run cap blocks the next run.`;
+    }
+    // Start sends the previewed runs, so with reuse on it waits for a preview of what it would send.
+    if (this.reuseEarlierRuns && !this.activeReusePreview && this.buildBatteryStartRequest() != null) {
+      return this.reusePreviewError
+        ? 'The reuse of earlier runs could not be previewed; clear Reuse earlier runs to start without it.'
+        : 'Checking which earlier runs can be reused…';
+    }
+    return '';
+  }
+
+  /** Starts the battery run with the launcher's run request as every member's template. */
+  private startBenchmarkBatteryRun(run: StartBenchmarkRunRequest): void {
+    const batteryId = this.selectedBatteryId;
+    if (batteryId == null) {
+      this.startingRun = false;
+      return;
+    }
+    const attach = this.reuseAttachList;
+    this.benchmarkService.startBatteryRun({
+      batteryId,
+      runsPerSuite: this.effectiveRunCount,
+      allowCapWait: this.allowCapWait,
+      run,
+      // Only when reusing, so every other start carries the body it always has.
+      ...(attach.length > 0 ? { attach } : {})
+    }).subscribe({
+      next: (res) => {
+        this.startingRun = false;
+        this.sameProviderDialog?.nativeElement.close();
+        this.sameProviderWarning = null;
+        this.lastRunPollError = null;
+        this.runQuestionsLoadError = null;
+        this.runDiagnosticsCopyFailed = false;
+        this.activeBatteryRunId = res.batteryRunId;
+        // Reuse is decided per start: the next start asks again.
+        this.reuseEarlierRuns = false;
+        this.refreshReusePreview();
+        this.startBatteryPolling(res.batteryRunId);
+        this.loadHistory();
+        this.loadAllFootprints();
+        this.loadRunLimits();
+        this.cdr.detectChanges();
+        this.openBatteryDialog();
+      },
+      error: (err) => {
+        this.startingRun = false;
+        if (this.isSameProviderPrompt(err, run)) {
+          this.showSameProviderDialog(err.error as SameProviderWarningDto);
+        } else {
+          this.runErrorMessage = AdminBenchmarkComponent.refusalText(err, 'Failed to start the battery run.');
+          // A refusal may name a reused run that stopped qualifying; the preview is judged again.
+          this.refreshReusePreview();
+        }
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  /** A refusal's text: a plain-string body, a body's `message`, else the fallback. */
+  private static refusalText(err: any, fallback: string): string {
+    if (typeof err?.error === 'string' && err.error) return err.error;
+    return err?.error?.message || fallback;
   }
 
   private startBenchmarkSeries(req: StartBenchmarkRunRequest): void {
@@ -4438,6 +4950,284 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return (this.activeSeries?.changedInstrumentHashes?.length ?? 0) > 0;
   }
 
+  // --- Battery run banner and polling ---
+
+  /**
+   * Reattaches the battery banner to a battery run already live or stopped when the page loads, as
+   * checkActiveRunSeries does for a series. The dialog stays closed.
+   */
+  checkActiveBatteryRun(): void {
+    this.benchmarkService.getActiveBatteryRun().subscribe({
+      next: (batteryRun) => {
+        if (batteryRun) {
+          this.activeBatteryRun = batteryRun;
+          this.activeBatteryRunId = batteryRun.id;
+          if (this.batteryIsLive) {
+            this.startBatteryPolling(batteryRun.id);
+          }
+          this.cdr.detectChanges();
+        }
+      },
+      error: (err) => console.error('Failed to check active benchmark battery run', err)
+    });
+  }
+
+  private startBatteryPolling(batteryRunId: number): void {
+    this.stopBatteryPolling();
+    this.batteryPollFailureCount = 0;
+    this.lockedBatteryRunId = batteryRunId;
+    this.backgroundActivity.acquireForBattery(batteryRunId);
+    this.lastBatteryPollAttemptAtMs = Date.now();
+    this.pollBatteryRun(batteryRunId);
+    this.batteryPollTickerHandle = this.pollTicker.start(AdminBenchmarkComponent.SERIES_POLL_INTERVAL_MS, () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        const hiddenPollDue = (this.completionSound || this.completionNotification)
+          && (Date.now() - this.lastBatteryPollAttemptAtMs) >= AdminBenchmarkComponent.HIDDEN_POLL_INTERVAL_MS;
+        if (!hiddenPollDue) {
+          return;
+        }
+      }
+      this.lastBatteryPollAttemptAtMs = Date.now();
+      this.pollBatteryRun(batteryRunId);
+    });
+
+    if (typeof document !== 'undefined') {
+      this.batteryVisibilityChangeHandler = () => {
+        if (!document.hidden) {
+          this.pollBatteryRun(batteryRunId);
+        }
+      };
+      document.addEventListener('visibilitychange', this.batteryVisibilityChangeHandler);
+    }
+  }
+
+  private stopBatteryPolling(): void {
+    if (this.batteryPollTickerHandle) {
+      this.batteryPollTickerHandle();
+      this.batteryPollTickerHandle = null;
+    }
+    if (this.batteryVisibilityChangeHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.batteryVisibilityChangeHandler);
+      this.batteryVisibilityChangeHandler = null;
+    }
+    if (this.lockedBatteryRunId !== null) {
+      this.lockedBatteryRunId = null;
+      this.backgroundActivity.release();
+      // A run poller still live after its battery run stopped keeps the tab's lock for itself.
+      if (this.pollTickerHandle && this.activeRunId != null) {
+        this.backgroundActivity.acquireForRun(this.activeRunId);
+      }
+    }
+  }
+
+  private pollBatteryRun(batteryRunId: number): void {
+    this.benchmarkService.getBatteryRun(batteryRunId).subscribe({
+      next: (batteryRun) => {
+        this.batteryPollFailureCount = 0;
+        this.activeBatteryRun = batteryRun;
+        // One signal per battery run watched live, at whatever end it reaches except a cancel. Its
+        // members' own completions are accounted for here, so none of them signals afterwards.
+        if (this.batteryIsLive) {
+          this.batteriesSeenLive.add(batteryRun.id);
+        } else if (this.batteriesSeenLive.has(batteryRun.id)) {
+          this.batteriesSeenLive.delete(batteryRun.id);
+          for (const member of batteryRun.members ?? []) {
+            this.runsSeenLive.delete(member.runId);
+          }
+          if (batteryRun.status !== 'Cancelled') {
+            this.signalCompletion(`battery:${batteryRun.id}`);
+          }
+        }
+        // The run banner and dialog follow the member in flight, as they do for a series.
+        const runningId = batteryRun.currentRunId;
+        if (runningId != null && runningId !== this.activeRunId) {
+          this.activeRunId = runningId;
+          this.startPolling(runningId);
+        }
+        if (!this.batteryIsLive) {
+          this.stopBatteryPolling();
+          this.loadHistory();
+          this.loadRunLimits();
+        }
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Failed to poll benchmark battery run', err);
+        this.batteryPollFailureCount++;
+        if (this.batteryPollFailureCount >= AdminBenchmarkComponent.MAX_CONSECUTIVE_POLL_FAILURES) {
+          this.stopBatteryPolling();
+        }
+      }
+    });
+  }
+
+  /** Pending, Running or WaitingForCap: still going to launch members. */
+  get batteryIsLive(): boolean {
+    const status = this.activeBatteryRun?.status;
+    return status === 'Pending' || status === 'Running' || status === 'WaitingForCap';
+  }
+
+  /** Terminal with nothing left to offer; Stopped and Completed with errors may still be continued. */
+  get batteryIsFinished(): boolean {
+    const status = this.activeBatteryRun?.status;
+    return status === 'Completed' || status === 'Cancelled' || status === 'Failed';
+  }
+
+  get batteryIsStopped(): boolean {
+    return this.activeBatteryRun?.status === 'Stopped';
+  }
+
+  get batteryIsWaitingForCap(): boolean {
+    return this.activeBatteryRun?.status === 'WaitingForCap';
+  }
+
+  /** Stopped because a member is not comparable with the others: only a re-run or a cancel is offered. */
+  get batteryStoppedOnInstrumentChange(): boolean {
+    return this.batteryIsStopped && this.activeBatteryRun?.stopReason === 'InstrumentChanged';
+  }
+
+  /** Continue is offered for a resumable battery run that did not stop on an instrument change. */
+  get batteryCanContinue(): boolean {
+    return !!this.activeBatteryRun?.resumable && !this.batteryIsLive && !this.batteryStoppedOnInstrumentChange;
+  }
+
+  /** The battery banner shows while the battery run is live, stopped or continuable, and its dialog is closed. */
+  get batteryBannerVisible(): boolean {
+    return this.activeBatteryRun != null && !this.batteryDialogVisible && !this.batteryIsFinished;
+  }
+
+  /** *Suite s of K · round r of R*, or the state that replaces it. */
+  get batteryProgressLabel(): string {
+    const batteryRun = this.activeBatteryRun;
+    if (!batteryRun) return '';
+    const suites = `${batteryRun.completedSuiteCount} of ${batteryRun.suiteCount} suites completed`;
+    switch (batteryRun.status) {
+      case 'WaitingForCap':
+        return `Waiting for run cap — ${suites}.`;
+      case 'Stopped':
+        return `Stopped — ${batteryRun.stopReasonText || batteryRun.stopReason || 'reason not recorded'}. ${suites}.`;
+      case 'Pending':
+      case 'Running':
+        return batteryRun.currentSuitePosition != null
+          ? `Suite ${batteryRun.currentSuitePosition} of ${batteryRun.suiteCount}`
+            + `${batteryRun.currentSuiteName ? ` (${batteryRun.currentSuiteName})` : ''}`
+            + ` · round ${batteryRun.currentRound ?? 1} of ${batteryRun.runsPerSuite}.`
+          : `Launching — ${suites}.`;
+      case 'CompletedWithErrors':
+        return `Completed with errors — ${suites}.`;
+      default:
+        return `${batteryRun.status} — ${suites}.`;
+    }
+  }
+
+  /** The Continue button's label, naming the stop reason. */
+  get batteryContinueLabel(): string {
+    const reason = this.activeBatteryRun?.stopReasonText || this.activeBatteryRun?.stopReason;
+    return reason ? `Continue (${reason})` : 'Continue';
+  }
+
+  /** Opens the Battery Progress dialog on the live battery run, or on one the Multi-Suite tab names. */
+  openBatteryDialog(batteryRunId?: number): void {
+    if (batteryRunId != null && batteryRunId !== this.activeBatteryRunId) {
+      this.batteryDialogRunId = batteryRunId;
+    }
+    this.batteryDialogVisible = true;
+    this.cdr.detectChanges();
+  }
+
+  onBatteryDialogClosed(): void {
+    this.returnToBatteryOnClose = false;
+    this.batteryDialogVisible = false;
+    this.batteryDialogRunId = null;
+    this.cdr.detectChanges();
+  }
+
+  /** The dialog continued or re-ran a battery run; this page's poller follows it again. */
+  onBatteryResumedFromDialog(batteryRunId: number): void {
+    this.activeBatteryRunId = batteryRunId;
+    this.batteryDialogRunId = null;
+    this.batteriesSeenLive.add(batteryRunId);
+    this.startBatteryPolling(batteryRunId);
+    this.cdr.detectChanges();
+  }
+
+  /** The dialog canceled a battery run; the banner learns it from the next poll. */
+  onBatteryCanceledFromDialog(batteryRunId: number): void {
+    if (batteryRunId === this.activeBatteryRunId) {
+      this.pollBatteryRun(batteryRunId);
+    }
+  }
+
+  /** The dialog attached a run, which may have finished the battery run; the banner reads it again. */
+  onBatteryMemberAttachedFromDialog(batteryRunId: number): void {
+    if (batteryRunId === this.activeBatteryRunId) {
+      this.pollBatteryRun(batteryRunId);
+    }
+  }
+
+  /** Hands a member over to the run progress dialog, closing the battery dialog: never two stacked. */
+  onOpenRunProgressFromBattery(runId: number): void {
+    this.batteryDialogVisible = false;
+    this.activeRunId = runId;
+    this.startPolling(runId);
+    this.openRunProgressDialog();
+    this.returnToBatteryOnClose = true;
+    this.cdr.detectChanges();
+  }
+
+  /** Shows a battery run's analysis on the Multi-Suite tab. */
+  onOpenBatteryAnalysis(batteryRunId: number): void {
+    this.batteryDialogVisible = false;
+    this.batteryDialogRunId = null;
+    this.selectSubTab('multisuite');
+    // The panel lives inside @if (activeSubTab === 'multisuite'); flushed before it is addressed.
+    this.cdr.detectChanges();
+    this.batteriesPanel?.showAnalysis(batteryRunId);
+  }
+
+  /** The Multi-Suite tab changed a battery; the launcher's list follows. */
+  onBatteriesChanged(): void {
+    this.loadBatteries();
+  }
+
+  cancelActiveBattery(): void {
+    const batteryRunId = this.activeBatteryRunId;
+    if (batteryRunId == null) return;
+    this.benchmarkService.cancelBatteryRun(batteryRunId).subscribe({
+      next: () => this.pollBatteryRun(batteryRunId),
+      error: (err) => {
+        console.error('Failed to cancel benchmark battery run', err);
+        this.batteryErrorMessage = AdminBenchmarkComponent.refusalText(err, 'Failed to cancel the battery run.');
+        this.pollBatteryRun(batteryRunId);
+      }
+    });
+  }
+
+  /**
+   * Continues a stopped battery run, or re-runs it under the current instrument after an instrument
+   * change, which supersedes its completed members.
+   */
+  resumeActiveBattery(mode: BenchmarkBatteryResumeMode = 'Continue'): void {
+    const batteryRunId = this.activeBatteryRunId;
+    if (batteryRunId == null) return;
+    this.armCompletionSignalsFromGesture();
+    this.resumingBattery = true;
+    this.batteryErrorMessage = null;
+    this.benchmarkService.resumeBatteryRun(batteryRunId, mode).subscribe({
+      next: () => {
+        this.resumingBattery = false;
+        this.startBatteryPolling(batteryRunId);
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.resumingBattery = false;
+        this.batteryErrorMessage = AdminBenchmarkComponent.refusalText(err, 'Failed to continue the battery run.');
+        this.pollBatteryRun(batteryRunId);
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
   closeSameProviderDialog() {
     this.sameProviderDialog?.nativeElement.close();
     this.sameProviderWarning = null;
@@ -4489,7 +5279,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.activeRunReportJob?.runId !== runId) {
       this.activeRunReportJob = null;
     }
-    if (this.lockedSeriesId === null) {
+    if (this.lockedSeriesId === null && this.lockedBatteryRunId === null) {
       this.backgroundActivity.acquireForRun(runId);
     }
     this.lastRunPollAttemptAtMs = Date.now();
@@ -4527,7 +5317,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       document.removeEventListener('visibilitychange', this.runVisibilityChangeHandler);
       this.runVisibilityChangeHandler = null;
     }
-    if (this.lockedSeriesId === null) {
+    if (this.lockedSeriesId === null && this.lockedBatteryRunId === null) {
       this.backgroundActivity.release();
     }
   }
@@ -4560,6 +5350,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.runsSeenLive.delete(run.id);
     const cancelledByOperator = this.operatorCancelledRunIds.delete(run.id);
     if (this.activeSeries != null && this.seriesIsLive) return;
+    if (this.activeBatteryRun != null && this.batteryIsLive) return;
     if (cancelledByOperator || this.runEndedByCancellation(run)) return;
     this.signalCompletion(`run:${run.id}`);
   }
@@ -4571,7 +5362,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   private runEndedByCancellation(run: BenchmarkRunDetailDto): boolean {
     if (this.formatStatus(run.status) === 'Canceled') return true;
     const series = this.activeSeries;
-    return series?.status === 'Cancelled' && series.members.some(m => m.runId === run.id);
+    if (series?.status === 'Cancelled' && series.members.some(m => m.runId === run.id)) return true;
+    const batteryRun = this.activeBatteryRun;
+    return batteryRun?.status === 'Cancelled' && (batteryRun.members ?? []).some(m => m.runId === run.id);
   }
 
   /**
@@ -4621,7 +5414,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  /** `Run #54 — <suite name> — <status>` or `Series #N — k of n runs — <status>`. */
+  /**
+   * `Run #54 — <suite name> — <status>`, `Series #N — k of n runs — <status>` or
+   * `Battery #N — <battery name> — k of K suites — <status>`.
+   */
   private completionNotificationBody(key: string): string | null {
     if (key.startsWith('run:')) {
       const run = this.activeRunDetail;
@@ -4632,6 +5428,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       const series = this.activeSeries;
       if (!series) return null;
       return `Series #${series.id} — ${series.completedRunCount} of ${series.requestedRunCount} runs — ${series.status}`;
+    }
+    if (key.startsWith('battery:')) {
+      const batteryRun = this.activeBatteryRun;
+      if (!batteryRun) return null;
+      return `Battery #${batteryRun.id} — ${batteryRun.batteryName} — `
+        + `${batteryRun.completedSuiteCount} of ${batteryRun.suiteCount} suites — ${batteryRun.status}`;
     }
     return null;
   }
@@ -6263,6 +7065,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   openRunProgressDialog(fromSeries = false): void {
     this.returnToSeriesOnClose = fromSeries;
+    this.returnToBatteryOnClose = false;
     this.isRunProgressDialogOpen = true;
     this.runDiagnosticsCopyFailed = false;
 
@@ -6296,12 +7099,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   closeRunProgressDialog(returnToSeries: boolean = this.returnToSeriesOnClose): void {
     const shouldReturn = returnToSeries;
+    const shouldReturnToBattery = this.returnToBatteryOnClose;
     this.returnToSeriesOnClose = false;
+    this.returnToBatteryOnClose = false;
     this.isRunProgressDialogOpen = false;
     this.stopRunElapsedTicker();
     this.runProgressDialog?.nativeElement.close();
     if (shouldReturn && this.activeSeriesId != null) {
       this.openMultiRunDialog();
+    } else if (shouldReturnToBattery && this.dialogBatteryRunId != null) {
+      this.openBatteryDialog();
     }
     this.cdr.detectChanges();
   }
@@ -6347,6 +7154,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   viewActiveRunDetail(): void {
     const runId = this.activeRunDetail?.id ?? this.activeRunId;
     if (runId == null) return;
+    this.returnToBatteryOnClose = false;
     this.closeRunProgressDialog(false);
     this.viewRunDetail(runId);
   }
@@ -6515,6 +7323,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return member
       ? `Series #${seriesId} · run ${member.index} of ${this.activeSeries!.requestedRunCount}`
       : `Series #${seriesId}`;
+  }
+
+  /** The Run History kicker's *Battery #id · suite s/K*, or null for a run outside any battery run. */
+  batteryBadgeLabelOf(run: BenchmarkRunSummaryDto): string | null {
+    if (run.batteryRunId == null) return null;
+    const position = run.batterySuitePosition != null && run.batterySuiteCount != null
+      ? ` · suite ${run.batterySuitePosition}/${run.batterySuiteCount}`
+      : '';
+    return `Battery #${run.batteryRunId}${position}`;
   }
 
   isRunSelected(runId: number): boolean {
@@ -9638,22 +10455,27 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get canStartRun(): boolean {
+    const target = this.isBatteryTarget
+      ? !this.batteryLaunchRefusal
+      : !!this.selectedSuiteId && !!this.selectedSuite?.difficultyFullyAssessed;
     return !this.startingRun &&
-      !!this.selectedSuiteId &&
+      target &&
       !!this.testedConfigId &&
       !!this.assessorConfigId &&
       !(this.activeRunDetail && this.formatStatus(this.activeRunDetail.status) === 'Running') &&
-      !!this.selectedSuite?.difficultyFullyAssessed &&
       !this.panelLaunchRefusal &&
       !this.reportWriterLaunchRefusal;
   }
 
   /** Names the first condition Start Benchmark is waiting on, for the button's aria-disabled hint. Empty once canStartRun is true. */
   get startBenchmarkHint(): string {
-    if (!this.selectedSuiteId) {
+    if (this.isBatteryTarget) {
+      if (this.batteryLaunchRefusal) {
+        return this.batteryLaunchRefusal;
+      }
+    } else if (!this.selectedSuiteId) {
       return 'Select a question suite first.';
-    }
-    if (!this.selectedSuite?.difficultyFullyAssessed) {
+    } else if (!this.selectedSuite?.difficultyFullyAssessed) {
       return "Assess every question's difficulty first.";
     }
     if (!this.testedConfigId || !this.assessorConfigId) {

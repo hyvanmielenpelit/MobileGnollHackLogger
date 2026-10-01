@@ -1842,6 +1842,17 @@ public class BenchmarkRunSummaryDto
     public decimal? EstimatedCandidateCost { get; set; }
 
     public bool PricingIncomplete { get; set; }
+
+    // The battery run this run is a member of: its newest non-superseded membership. All null for a
+    // run that belongs to no battery run.
+    public long? BatteryRunId { get; set; }
+    public string? BatteryName { get; set; }
+
+    /// <summary>1-based position of the run's suite in the battery definition.</summary>
+    public int? BatterySuitePosition { get; set; }
+
+    /// <summary>K, the number of suites in the battery run.</summary>
+    public int? BatterySuiteCount { get; set; }
 }
 
 // --- Benchmark Game Snapshot Models ---

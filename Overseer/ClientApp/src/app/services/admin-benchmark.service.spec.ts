@@ -3,14 +3,20 @@ import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import {
   AdminBenchmarkService,
+  BenchmarkBatteryAnalysisDto,
+  BenchmarkBatteryRunDto,
   BenchmarkBinaryFile,
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportPackPricingBasis,
   BenchmarkReportPackRequest,
   BenchmarkReportPeerNaming,
+  BenchmarkRunLimitsDto,
   BenchmarkRunReportJobDto,
+  BenchmarkRunSummaryDto,
   BenchmarkTextFile,
+  CreateBenchmarkBatteryRequest,
+  StartBenchmarkBatteryRunRequest,
   decodeBinaryErrorBody,
   fileNameFromContentDisposition,
   reportDisclosureParam,
@@ -533,6 +539,225 @@ describe('AdminBenchmarkService', () => {
       expect(fileNameFromContentDisposition('attachment; filename="with space.md"', 'x.md')).toBe('with space.md');
       expect(fileNameFromContentDisposition("attachment; filename*=UTF-8''a%20b.md", 'x.md')).toBe('a b.md');
       expect(fileNameFromContentDisposition("attachment; filename*=UTF-8''%E0%A4%A", 'x.md')).toBe('x.md');
+    });
+  });
+
+  describe('run summary and run limits', () => {
+    it('reads the battery membership of a run summary', () => {
+      let summary: BenchmarkRunSummaryDto | undefined;
+      service.getRuns(undefined, 200).subscribe(res => summary = res[0]);
+
+      httpMock.expectOne(request => request.url === '/api/admin/benchmark/runs')
+        .flush([{ id: 7, batteryRunId: 3, batteryName: 'Core', batterySuitePosition: 2, batterySuiteCount: 4 }]);
+
+      expect(summary?.batteryRunId).toBe(3);
+      expect(summary?.batteryName).toBe('Core');
+      expect(summary?.batterySuitePosition).toBe(2);
+      expect(summary?.batterySuiteCount).toBe(4);
+    });
+
+    it('reads the per-battery launch ceiling of the run limits', () => {
+      let limits: BenchmarkRunLimitsDto | undefined;
+      service.getRunLimits().subscribe(res => limits = res);
+
+      httpMock.expectOne('/api/admin/benchmark/runs/limits').flush({
+        maxRunsPerHour: 4, maxRunsPerDay: 20, runsInLastHour: 0, runsInLast24Hours: 0,
+        remainingDailyHeadroom: 20, maxRunCountPerSeries: 20, maxMembersPerBattery: 40
+      });
+
+      expect(limits?.maxMembersPerBattery).toBe(40);
+    });
+  });
+
+  describe('batteries', () => {
+    const root = '/api/admin/benchmark/batteries';
+    const createBody: CreateBenchmarkBatteryRequest = {
+      name: 'Core', description: null, weightingScheme: 'DifficultyMass', suiteIds: [1, 2], customWeights: null
+    };
+
+    it('lists batteries', () => {
+      service.getBatteries().subscribe();
+      const req = httpMock.expectOne(root);
+      expect(req.request.method).toBe('GET');
+      req.flush([]);
+    });
+
+    it('gets one battery', () => {
+      service.getBattery(5).subscribe();
+      const req = httpMock.expectOne(`${root}/5`);
+      expect(req.request.method).toBe('GET');
+      req.flush({ id: 5 });
+    });
+
+    it('creates a battery with the request as the body', () => {
+      service.createBattery(createBody).subscribe();
+      const req = httpMock.expectOne(root);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(createBody);
+      req.flush({ id: 5 });
+    });
+
+    it('updates a battery', () => {
+      service.updateBattery(5, createBody).subscribe();
+      const req = httpMock.expectOne(`${root}/5`);
+      expect(req.request.method).toBe('PUT');
+      expect(req.request.body).toEqual(createBody);
+      req.flush({ id: 5 });
+    });
+
+    it('deletes a battery', () => {
+      service.deleteBattery(5).subscribe();
+      const req = httpMock.expectOne(`${root}/5`);
+      expect(req.request.method).toBe('DELETE');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('archives a battery by default, and shows it again with archived false', () => {
+      service.archiveBattery(5).subscribe();
+      const archive = httpMock.expectOne(`${root}/5/archive`);
+      expect(archive.request.method).toBe('POST');
+      expect(archive.request.body).toEqual({ archived: true });
+      archive.flush({ id: 5 });
+
+      service.archiveBattery(5, false).subscribe();
+      const restore = httpMock.expectOne(`${root}/5/archive`);
+      expect(restore.request.body).toEqual({ archived: false });
+      restore.flush({ id: 5 });
+    });
+
+    it('lists battery runs, filtered by battery only when one is given', () => {
+      service.getBatteryRuns().subscribe();
+      const all = httpMock.expectOne(request => request.url === `${root}/runs`);
+      expect(all.request.method).toBe('GET');
+      expect(all.request.params.has('batteryId')).toBeFalse();
+      all.flush([]);
+
+      service.getBatteryRuns(5).subscribe();
+      const one = httpMock.expectOne(request => request.url === `${root}/runs`);
+      expect(one.request.params.get('batteryId')).toBe('5');
+      one.flush([]);
+    });
+
+    it('starts a battery run and returns its id', () => {
+      const body: StartBenchmarkBatteryRunRequest = {
+        batteryId: 5, runsPerSuite: 2, allowCapWait: true,
+        run: { suiteId: 1, testedModelConfigurationId: 10, assessorModelConfigurationId: 20 }
+      };
+      let id: number | undefined;
+      service.startBatteryRun(body).subscribe(res => id = res.batteryRunId);
+
+      const req = httpMock.expectOne(`${root}/runs`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(body);
+      req.flush({ batteryRunId: 9 }, { status: 202, statusText: 'Accepted' });
+
+      expect(id).toBe(9);
+    });
+
+    it('gets the active battery run, and surfaces 204 as null', () => {
+      let active: BenchmarkBatteryRunDto | null | undefined;
+      service.getActiveBatteryRun().subscribe(res => active = res);
+      const req = httpMock.expectOne(`${root}/runs/active`);
+      expect(req.request.method).toBe('GET');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(active).toBeNull();
+    });
+
+    it('gets one battery run', () => {
+      service.getBatteryRun(9).subscribe();
+      const req = httpMock.expectOne(`${root}/runs/9`);
+      expect(req.request.method).toBe('GET');
+      req.flush({ id: 9 });
+    });
+
+    it('cancels a battery run with an empty POST', () => {
+      service.cancelBatteryRun(9).subscribe();
+      const req = httpMock.expectOne(`${root}/runs/9/cancel`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({});
+      req.flush(null);
+    });
+
+    it('resumes a battery run in the given mode', () => {
+      service.resumeBatteryRun(9, 'RerunUnderCurrentInstrument').subscribe();
+      const req = httpMock.expectOne(`${root}/runs/9/resume`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ mode: 'RerunUnderCurrentInstrument' });
+      req.flush({ batteryRunId: 9 }, { status: 202, statusText: 'Accepted' });
+    });
+
+    it('previews the reuse of earlier runs with the start body', () => {
+      const body: StartBenchmarkBatteryRunRequest = {
+        batteryId: 5, runsPerSuite: 1, allowCapWait: false,
+        run: { suiteId: 1, testedModelConfigurationId: 10, assessorModelConfigurationId: 20 }
+      };
+      let reused: number | undefined;
+      service.previewBatteryReuse(body).subscribe(res => reused = res.reusedCount);
+
+      const req = httpMock.expectOne(`${root}/runs/reuse-preview`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(body);
+      req.flush({ batteryId: 5, suiteCount: 2, runsPerSuite: 1, reusedCount: 1, launchCount: 1, attach: [], slots: [] });
+
+      expect(reused).toBe(1);
+    });
+
+    it('attaches a run to one slot and returns the battery run', () => {
+      let id: number | undefined;
+      service.attachBatteryMember(9, { suiteIndex: 1, round: 2, runId: 44 }).subscribe(res => id = res.id);
+
+      const req = httpMock.expectOne(`${root}/runs/9/members`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ suiteIndex: 1, round: 2, runId: 44 });
+      req.flush({ id: 9 });
+
+      expect(id).toBe(9);
+    });
+
+    it('lists the attach candidates of one slot', () => {
+      service.getBatteryAttachCandidates(9, 1, 2).subscribe();
+
+      const req = httpMock.expectOne(request => request.url === `${root}/runs/9/members/candidates`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.params.get('suiteIndex')).toBe('1');
+      expect(req.request.params.get('round')).toBe('2');
+      req.flush([]);
+    });
+
+    it('computes an analysis, alone or against a baseline', () => {
+      service.analyseBatteryRun(9).subscribe();
+      const alone = httpMock.expectOne(`${root}/runs/9/analysis`);
+      expect(alone.request.method).toBe('POST');
+      expect(alone.request.body).toEqual({ compareWithBatteryRunId: null });
+      alone.flush({ id: 1 });
+
+      service.analyseBatteryRun(9, 4).subscribe();
+      const paired = httpMock.expectOne(`${root}/runs/9/analysis`);
+      expect(paired.request.body).toEqual({ compareWithBatteryRunId: 4 });
+      paired.flush({ id: 2 });
+    });
+
+    it('gets the latest analysis, and surfaces 204 as null', () => {
+      let analysis: BenchmarkBatteryAnalysisDto | null | undefined;
+      service.getBatteryAnalysis(9).subscribe(res => analysis = res);
+      const req = httpMock.expectOne(`${root}/runs/9/analysis`);
+      expect(req.request.method).toBe('GET');
+      req.flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(analysis).toBeNull();
+    });
+
+    it('builds the report URL', () => {
+      expect(service.getBatteryReportUrl(9)).toBe(`${root}/runs/9/report`);
+    });
+
+    it('gets the leaderboard of one definition hash', () => {
+      service.getBatteryLeaderboard('abc123').subscribe();
+      const req = httpMock.expectOne(request => request.url === `${root}/leaderboard`);
+      expect(req.request.method).toBe('GET');
+      expect(req.request.params.get('definitionSha256')).toBe('abc123');
+      req.flush({ definitionSha256: 'abc123', classes: [], incomplete: [] });
     });
   });
 });

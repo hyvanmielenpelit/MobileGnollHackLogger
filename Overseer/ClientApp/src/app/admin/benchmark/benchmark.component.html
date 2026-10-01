@@ -44,11 +44,24 @@
       type="button"
       role="tab"
       class="gh-tab"
+      id="bm-tab-multisuite"
+      aria-controls="bm-panel-multisuite"
+      [attr.aria-selected]="activeSubTab === 'multisuite'"
+      [attr.tabindex]="activeSubTab === 'multisuite' ? 0 : -1"
+      (keydown)="onTabKeydown($event, 3)"
+      (click)="selectSubTab('multisuite')">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+      Multi-Suite
+    </button>
+    <button
+      type="button"
+      role="tab"
+      class="gh-tab"
       id="bm-tab-suites"
       aria-controls="bm-panel-suites"
       [attr.aria-selected]="activeSubTab === 'suites'"
       [attr.tabindex]="activeSubTab === 'suites' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 3)"
+      (keydown)="onTabKeydown($event, 4)"
       (click)="selectSubTab('suites')">
       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
       Manage Suites
@@ -61,7 +74,7 @@
       aria-controls="bm-panel-profiles"
       [attr.aria-selected]="activeSubTab === 'profiles'"
       [attr.tabindex]="activeSubTab === 'profiles' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 4)"
+      (keydown)="onTabKeydown($event, 5)"
       (click)="selectSubTab('profiles')">
       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
       Scoring Profiles
@@ -74,7 +87,7 @@
       aria-controls="bm-panel-modelcomparison"
       [attr.aria-selected]="activeSubTab === 'modelcomparison'"
       [attr.tabindex]="activeSubTab === 'modelcomparison' ? 0 : -1"
-      (keydown)="onTabKeydown($event, 5)"
+      (keydown)="onTabKeydown($event, 6)"
       (click)="selectSubTab('modelcomparison')">
       <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
       Model Comparison
@@ -148,8 +161,65 @@
         </div>
       }
 
+      <!-- Active Battery Banner: one battery run across its suites, with the member in flight. -->
+      @if (batteryBannerVisible && activeBatteryRun) {
+        <div class="active-run-banner battery-banner">
+          <div class="banner-header">
+            @if (batteryIsLive) {
+              <div class="pulse-indicator" aria-hidden="true"></div>
+            }
+            <div>
+              <h4>Battery Run #{{ activeBatteryRun.id }} ({{ activeBatteryRun.batteryName }})</h4>
+              <p class="text-muted battery-progress-label">{{ batteryProgressLabel }}</p>
+              @if (completionSoundStatus) {
+                <p class="text-muted" role="status">{{ completionSoundStatus }}</p>
+              }
+            </div>
+          </div>
+          @if (batteryErrorMessage) {
+            <div class="alert alert-warning mb-10" role="alert" aria-live="polite">
+              <div class="alert-content">
+                <div class="alert-body">{{ batteryErrorMessage }}</div>
+              </div>
+            </div>
+          }
+          <div class="banner-progress" role="status">
+            @if (batteryIsWaitingForCap) {
+              <span class="series-state-chip state-waiting">Waiting for run cap</span>
+            }
+            @if (batteryIsStopped) {
+              <span class="series-state-chip state-stopped">Stopped</span>
+            }
+            @if (activeRunDetail && formatStatus(activeRunDetail.status) === 'Running') {
+              <span>Run #{{ activeRunDetail.id }}: answered {{ activeRunDetail.answers.length }} of {{ activeRunDetail.totalQuestionCount }}</span>
+            }
+            <button type="button" class="btn-gh battery-show-progress" (click)="openBatteryDialog()">
+              Show Battery Progress
+            </button>
+            @if (batteryCanContinue) {
+              <button type="button" class="btn-gh battery-continue" [disabled]="resumingBattery"
+                      (click)="resumeActiveBattery('Continue')">
+                {{ resumingBattery ? 'Continuing...' : batteryContinueLabel }}
+              </button>
+            }
+            @if (batteryStoppedOnInstrumentChange) {
+              <button type="button" class="btn-gh battery-rerun" [disabled]="resumingBattery"
+                      (click)="resumeActiveBattery('RerunUnderCurrentInstrument')">
+                {{ resumingBattery ? 'Starting over...' : 'Re-run under current instrument' }}
+              </button>
+            }
+            @if (batteryIsLive || batteryIsStopped) {
+              <button type="button" class="btn-gh btn-gh-delete battery-cancel" (click)="cancelActiveBattery()">
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                Cancel Battery
+              </button>
+            }
+          </div>
+        </div>
+      }
+
       <!-- Active Run Banner -->
-      @if (!activeSeries && activeRunDetail && formatStatus(activeRunDetail.status) === 'Running' && !isRunProgressDialogOpen) {
+      @if (!activeSeries && !batteryIsLive && activeRunDetail && formatStatus(activeRunDetail.status) === 'Running' && !isRunProgressDialogOpen) {
         <div class="active-run-banner">
           <div class="banner-header">
             <div class="pulse-indicator" aria-hidden="true"></div>
@@ -228,6 +298,85 @@
             <fieldset class="gh-fieldset setup-group setup-group-test">
               <legend>Test Setup</legend>
 
+              <fieldset class="gh-choice run-target-choice" role="radiogroup"
+                        aria-labelledby="runTargetLabel" aria-describedby="runTargetHint">
+                <legend>
+                  <span id="runTargetLabel">Run Target</span>
+                  <app-info-tip trigger="click" tipId="runTargetHint" subject="Run Target">
+                    <dl>
+                      <div>
+                        <dt><span class="gh-info-term">Single suite</span><span class="gh-info-badge">Default</span></dt>
+                        <dd>Runs one suite, once or as a series of replicate runs.</dd>
+                      </div>
+                      <div>
+                        <dt><span class="gh-info-term">Battery</span></dt>
+                        <dd>Runs every suite of a battery, one after another, and combines them into one Overall
+                          Index. Batteries are defined on the Multi-Suite tab.</dd>
+                      </div>
+                    </dl>
+                  </app-info-tip>
+                </legend>
+                <label class="gh-radio">
+                  <input type="radio" id="runTargetSuite" name="runTarget" value="suite"
+                         [checked]="runTargetKind === 'suite'" (change)="setRunTarget('suite')">
+                  <span>Single suite</span>
+                </label>
+                <label class="gh-radio">
+                  <input type="radio" id="runTargetBattery" name="runTarget" value="battery"
+                         [checked]="runTargetKind === 'battery'" (change)="setRunTarget('battery')">
+                  <span>Battery</span>
+                </label>
+              </fieldset>
+
+              @if (isBatteryTarget) {
+                <div class="form-group">
+                  <div class="label-with-action">
+                    <label for="batterySelect">Battery</label>
+                    <button type="button" class="link-subtle-btn" (click)="selectSubTab('multisuite')">Manage batteries →</button>
+                  </div>
+                  <div class="gh-field-row">
+                    <select id="batterySelect" class="gh-input" [(ngModel)]="selectedBatteryId" (ngModelChange)="onSelectedBatteryChanged()"
+                            aria-describedby="batteryHint">
+                      @if (runnableBatteries.length === 0) {
+                        <option [ngValue]="null" disabled>{{ loadingBatteries ? 'Loading batteries...' : 'No batteries available' }}</option>
+                      }
+                      @for (battery of runnableBatteries; track battery.id) {
+                        <option [ngValue]="battery.id">{{ battery.name }} ({{ battery.suites.length }} suites)</option>
+                      }
+                    </select>
+                    <app-info-tip trigger="click" tipId="batteryHint" subject="Battery">
+                      @if (selectedBattery) {
+                        <p>The suites run in this order. Their weights in the Overall Index ({{ selectedBatterySchemeLabel }}):</p>
+                        <dl>
+                          @for (row of selectedBatteryWeightRows; track $index) {
+                            <div>
+                              <dt><span class="gh-info-term">{{ row.name }}</span></dt>
+                              <dd>{{ row.percent != null ? (row.percent | number:'1.1-1') + '%' : 'Weight not defined' }}</dd>
+                            </div>
+                          }
+                        </dl>
+                      } @else {
+                        Runs every suite of a battery for one model and combines them into one Overall Index.
+                      }
+                    </app-info-tip>
+                  </div>
+                  @if (selectedBatteryUnassessedSuites.length > 0) {
+                    <div class="alert alert-warning mt-10" role="alert">
+                      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                      <div class="alert-content">
+                        <div class="alert-body">
+                          Every question must have an assessed difficulty before this battery can be run. Not yet assessed:
+                          {{ selectedBatteryUnassessedSuites.join(', ') }}.
+                        </div>
+                      </div>
+                    </div>
+                  }
+                </div>
+              } @else {
               <div class="form-group">
                 <div class="label-with-action">
                   <label for="suiteSelect">Benchmark Suite</label>
@@ -270,6 +419,7 @@
                   </div>
                 }
               </div>
+              }
 
               <div class="form-group">
                 <div class="label-with-action">
@@ -277,7 +427,7 @@
                   <button type="button" class="link-subtle-btn" (click)="selectSubTab('profiles')">Manage profiles →</button>
                 </div>
                 <div class="gh-field-row">
-                  <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId"
+                  <select id="profileSelect" class="gh-input" [(ngModel)]="selectedScoringProfileId" (ngModelChange)="onReuseInputsChanged()"
                           [attr.aria-describedby]="showProfileFitAdvisory ? 'profileHint profileFitHint' : 'profileHint'">
                     @for (profile of scoringProfiles; track profile.id) {
                       <option [ngValue]="profile.id">{{ formatProfileOption(profile) }}</option>
@@ -307,7 +457,7 @@
                 <label for="candidateResponseStyle">Response Style</label>
                 <div class="gh-field-row">
                   <select id="candidateResponseStyle" class="gh-input"
-                          [(ngModel)]="candidateVerboseMode"
+                          [(ngModel)]="candidateVerboseMode" (ngModelChange)="onReuseInputsChanged()"
                           [attr.aria-describedby]="candidateVerboseMode ? 'candidateResponseStyleHint candidateResponseStyleNote' : 'candidateResponseStyleHint'">
                     <option [ngValue]="false">Concise — production default</option>
                     <option [ngValue]="true">Detailed — diagnostic</option>
@@ -327,7 +477,7 @@
                 <label for="candidateSourceCodeReferences">Source Code References</label>
                 <div class="gh-field-row">
                   <select id="candidateSourceCodeReferences" class="gh-input"
-                          [(ngModel)]="candidateAllowSourceCodeReferences"
+                          [(ngModel)]="candidateAllowSourceCodeReferences" (ngModelChange)="onReuseInputsChanged()"
                           aria-describedby="candidateSourceCodeReferencesHint">
                     <option [ngValue]="false">Disallowed — production default</option>
                     <option [ngValue]="true">Allowed — answers cite source files and lines</option>
@@ -481,7 +631,7 @@
                     <label for="secondOpinionModeSelect">Coverage</label>
                     <div class="gh-field-row">
                       <select id="secondOpinionModeSelect" class="gh-input"
-                              [(ngModel)]="secondOpinionMode"
+                              [(ngModel)]="secondOpinionMode" (ngModelChange)="onReuseInputsChanged()"
                               [disabled]="secondOpinionModeDisabled"
                               [attr.aria-describedby]="secondOpinionModeDisabled ? 'secondOpinionModeTip secondOpinionModeHint' : 'secondOpinionModeTip'">
                         @for (option of secondOpinionModeOptions; track option.value) {
@@ -638,16 +788,28 @@
                   GET runs/limits and never to a literal, so raising the cap raises this field with it —
                   and a series can never become a way around the spend guard, which is the point of
                   coupling the two. The server re-checks against the same guard; this bound is a courtesy.
+                  For a battery the same field is Runs per Suite, bounded by maxMembersPerBattery over the
+                  battery's suite count.
                 -->
                 <div class="exec-runs">
                   <div class="form-group">
-                    <label for="runCountInput">Number of Runs</label>
+                    <label for="runCountInput">{{ isBatteryTarget ? 'Runs per Suite' : 'Number of Runs' }}</label>
                     <div class="gh-field-row">
                       <input id="runCountInput" type="number" class="gh-input run-count-input"
                              min="1"
-                             [attr.max]="maxRunCountPerSeries"
-                             [(ngModel)]="runCount"
+                             [attr.max]="runCountMax"
+                             [(ngModel)]="runCount" (ngModelChange)="onReuseInputsChanged()"
                              aria-describedby="runCountHint">
+                      @if (isBatteryTarget) {
+                        <app-info-tip trigger="click" tipId="runCountHint" subject="Runs per Suite">
+                          <p>Every suite of the battery runs this many times, round by round: all suites once, then all
+                            suites again. The battery has a result after the first round; more rounds narrow its interval.</p>
+                          @if (maxRunsPerSuite != null) {
+                            <p>Up to {{ maxRunsPerSuite }} for this battery, because one battery run plans at most
+                              {{ runLimits?.maxMembersPerBattery }} runs.</p>
+                          }
+                        </app-info-tip>
+                      } @else {
                       <app-info-tip trigger="click" tipId="runCountHint" subject="Number of Runs">
                         <p>Answers vary from run to run, so the scores of a single run include run-to-run noise.</p>
                         <dl>
@@ -672,10 +834,11 @@
                         <p>Cost and duration grow with each run; the Series Projection estimates both once two or more
                           runs are set.</p>
                       </app-info-tip>
+                      }
                     </div>
                   </div>
 
-                  @if (isMultiRunRequested) {
+                  @if (isMultiRunRequested || isBatteryTarget) {
                     <div class="form-group">
                       <div class="checkbox-with-tip">
                         <label class="checkbox-label" for="allowCapWaitInput">
@@ -684,7 +847,28 @@
                           <span>Wait when the run cap blocks the next run</span>
                         </label>
                         <app-info-tip trigger="click" tipId="allowCapWaitHint" subject="Wait at the run cap">
-                          Otherwise the series stops at the cap and can be continued; finished runs are always kept.
+                          Otherwise the {{ isBatteryTarget ? 'battery' : 'series' }} stops at the cap and can be continued; finished runs are always kept.
+                          @if (isBatteryTarget) {
+                            A battery larger than the daily cap needs this.
+                          }
+                        </app-info-tip>
+                      </div>
+                    </div>
+                  }
+
+                  @if (isBatteryTarget) {
+                    <div class="form-group">
+                      <div class="checkbox-with-tip">
+                        <label class="checkbox-label" for="reuseEarlierRunsInput">
+                          <input id="reuseEarlierRunsInput" type="checkbox" [checked]="reuseEarlierRuns"
+                                 aria-describedby="reuseEarlierRunsHint"
+                                 (change)="onReuseEarlierRunsChange($any($event.target).checked)">
+                          <span>Reuse earlier runs</span>
+                        </label>
+                        <app-info-tip trigger="click" tipId="reuseEarlierRunsHint" subject="Reuse earlier runs">
+                          Fills a slot with the newest earlier run of the same suite and model under test that still matches the
+                          current instrument and the other runs, so only the remaining slots are launched. The Battery Projection
+                          lists the runs reused. Chosen for each start; never remembered.
                         </app-info-tip>
                       </div>
                     </div>
@@ -706,8 +890,8 @@
                         </div>
                         <div>
                           <dt><span class="gh-info-term">Timing</span></dt>
-                          <dd>Alerts come from this page, so keep its tab open. A series alerts once, after its last
-                            run. In a background tab an alert can arrive up to a minute late.</dd>
+                          <dd>Alerts come from this page, so keep its tab open. A series or a battery alerts once,
+                            after its last run. In a background tab an alert can arrive up to a minute late.</dd>
                         </div>
                       </dl>
                     </app-info-tip>
@@ -772,6 +956,100 @@
                         <div class="alert-content">
                           <div class="alert-body">
                             This series asks for more runs than the rolling 24-hour window currently allows.
+                            @if (allowCapWait) {
+                              It will pause at the cap and continue when the window frees up.
+                            } @else {
+                              It will stop at the cap with <strong>Run cap reached</strong> recorded, keeping every
+                              completed run and offering a Continue button.
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    }
+                  </fieldset>
+                }
+
+                @if (isBatteryTarget && selectedBattery) {
+                  <fieldset class="series-projection-fieldset battery-projection" role="region" aria-labelledby="batteryProjectionLegend">
+                    <legend id="batteryProjectionLegend" class="series-projection-legend">
+                      <svg class="projection-legend-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                      </svg>
+                      <span>Battery Projection ({{ selectedBattery.suites.length }} suites × {{ effectiveRunCount }} = {{ batteryLaunchCount }} runs)</span>
+                    </legend>
+
+                    <div class="projection-grid" role="list">
+                      <div class="projection-row" role="listitem">
+                        <span class="projection-label">Projected wall time:</span>
+                        @if (projectedBatteryDurationLabel) {
+                          <span class="projection-value"><strong>{{ projectedBatteryDurationLabel }}</strong></span>
+                          @if (activeReusePreview) {
+                            <span class="projection-note text-muted">(each launched run at its suite's recent mean run duration)</span>
+                          } @else {
+                            <span class="projection-note text-muted">({{ effectiveRunCount }} × the sum of each suite's recent mean run duration)</span>
+                          }
+                        } @else {
+                          <span class="projection-empty text-muted">not every suite has a completed run to project from</span>
+                        }
+                      </div>
+
+                      <div class="projection-row" role="listitem">
+                        <span class="projection-label">Projected cost:</span>
+                        @if (projectedBatteryCostLabel) {
+                          <span class="projection-value"><strong>{{ projectedBatteryCostLabel }}</strong></span>
+                          @if (activeReusePreview) {
+                            <span class="projection-note text-muted">(each launched run at its suite's recent mean run cost)</span>
+                          } @else {
+                            <span class="projection-note text-muted">({{ effectiveRunCount }} × the sum of each suite's recent mean run cost)</span>
+                          }
+                        } @else {
+                          <span class="projection-empty text-muted">not every suite has a priced run to project from</span>
+                        }
+                      </div>
+
+                      @if (reuseEarlierRuns) {
+                        <div class="projection-row battery-reuse-row" role="listitem">
+                          <span class="projection-label">Earlier runs:</span>
+                          <span class="projection-value battery-reuse-summary" role="status" aria-live="polite">{{ reuseProjectionText }}</span>
+                        </div>
+                      }
+
+                      @if (runLimits) {
+                        <div class="projection-row" role="listitem">
+                          <span class="projection-label">Remaining daily headroom:</span>
+                          <span class="projection-value"><strong>{{ runLimits.remainingDailyHeadroom }}</strong> of {{ runLimits.maxRunsPerDay }}</span>
+                          <span class="projection-note text-muted">({{ runLimits.runsInLast24Hours }} run(s) in the last 24 hours, {{ runLimits.runsInLastHour }} in the last hour — both rolling windows, not calendar days)</span>
+                        </div>
+                      }
+                    </div>
+
+                    @if (reuseUnfilledSlots.length > 0) {
+                      <ul class="battery-reuse-reasons" aria-label="Slots no earlier run fills">
+                        @for (slot of reuseUnfilledSlots; track $index) {
+                          <li><span class="battery-reuse-slot">{{ slot.suiteName }}, round {{ slot.round }}:</span> {{ slot.reason }}</li>
+                        }
+                      </ul>
+                    }
+
+                    @if (batteryExceedsDailyCap) {
+                      <div class="alert alert-warning mt-10 battery-cap-warning" role="alert">
+                        <div class="alert-content">
+                          <div class="alert-body">
+                            {{ batteryRunsToLaunch }} runs exceed the daily cap of {{ runLimits?.maxRunsPerDay }}, so this battery
+                            spans at least {{ batteryDaySpan }} days.
+                            @if (allowCapWait) {
+                              It will pause at the cap and continue as the rolling window frees up.
+                            } @else {
+                              Select <strong>Wait when the run cap blocks the next run</strong> to start it.
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    } @else if (batteryExceedsDailyHeadroom) {
+                      <div class="alert alert-warning mt-10 battery-headroom-warning" role="alert">
+                        <div class="alert-content">
+                          <div class="alert-body">
+                            This battery asks for more runs than the rolling 24-hour window currently allows.
                             @if (allowCapWait) {
                               It will pause at the cap and continue when the window frees up.
                             } @else {
@@ -924,6 +1202,11 @@
                         <span class="rh-card-id">#{{ run.id }}</span>
                         <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                         <span class="status-badge" [class]="statusBadgeClass(run.status)">{{ formatStatusLabel(run.status) }}</span>
+                        @let batteryBadge = batteryBadgeLabelOf(run);
+                        @if (batteryBadge) {
+                          <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <span class="rh-battery-badge">{{ batteryBadge }}</span>
+                        }
                         @if ((run.degradedAnswerCount ?? 0) > 0) {
                           <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                           <span class="badge-degraded-count"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>{{ run.degradedAnswerCount }}<span class="visually-hidden">{{ run.degradedAnswerCount === 1 ? ' degraded answer' : ' degraded answers' }}</span></span>
@@ -1121,7 +1404,16 @@
     </div>
   }
 
-  <!-- TAB 4: MANAGE SUITES -->
+  <!-- TAB 4: MULTI-SUITE -->
+  @if (activeSubTab === 'multisuite') {
+    <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-multisuite" aria-labelledby="bm-tab-multisuite" tabindex="0">
+      <app-benchmark-batteries #batteriesPanel
+                               (openBatteryRun)="openBatteryDialog($event)"
+                               (batteriesChanged)="onBatteriesChanged()"></app-benchmark-batteries>
+    </div>
+  }
+
+  <!-- TAB 5: MANAGE SUITES -->
   @if (activeSubTab === 'suites') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-suites" aria-labelledby="bm-tab-suites" tabindex="0">
       @if (actionErrorMessage) {
@@ -1378,7 +1670,7 @@
     </div>
   }
 
-  <!-- TAB 5: SCORING PROFILES -->
+  <!-- TAB 6: SCORING PROFILES -->
   @if (activeSubTab === 'profiles') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-profiles" aria-labelledby="bm-tab-profiles" tabindex="0">
       <div class="suites-toolbar mb-20">
@@ -1473,7 +1765,7 @@
     </div>
   }
 
-  <!-- TAB 6: MODEL COMPARISON
+  <!-- TAB 7: MODEL COMPARISON
 
        Inside .benchmark-container, like the five panels above it. A sticky element only sticks
        while its parent's box is on screen, so a panel rendered after the container's closing tag
@@ -4408,7 +4700,7 @@
           }
         </p>
       </div>
-      <button type="button" class="btn-icon-action" [attr.aria-label]="returnToSeriesOnClose ? 'Return to series progress' : 'Close benchmark run progress'" (click)="closeRunProgressDialog()">
+      <button type="button" class="btn-icon-action" [attr.aria-label]="returnToSeriesOnClose ? 'Return to series progress' : returnToBatteryOnClose ? 'Return to battery progress' : 'Close benchmark run progress'" (click)="closeRunProgressDialog()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -4803,10 +5095,10 @@
     </div>
     <div class="dialog-footer">
       @if (!runIsTerminal) {
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ returnToSeriesOnClose ? 'Back to Series' : 'Run in Background' }}</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ returnToSeriesOnClose ? 'Back to Series' : returnToBatteryOnClose ? 'Back to Battery' : 'Run in Background' }}</button>
         <button type="button" class="btn-gh btn-gh-delete" (click)="cancelActiveRun()">Cancel Run</button>
       } @else {
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ returnToSeriesOnClose ? 'Back to Series' : 'Close' }}</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ returnToSeriesOnClose ? 'Back to Series' : returnToBatteryOnClose ? 'Back to Battery' : 'Close' }}</button>
         <button type="button" class="btn-gh" (click)="viewActiveRunDetail()">View Full Report</button>
         @if (runFailedAnswerCount > 0) {
           <button type="button" class="btn-gh" (click)="rerunFailedFromProgress()">
@@ -4827,6 +5119,17 @@
   (openRunProgress)="onOpenRunProgressFromSeries($event)"
   (openGroupAnalysis)="onOpenGroupAnalysisFromSeries($event)"
   (seriesResumed)="onSeriesResumedFromDialog($event)"></app-multi-run-progress-dialog>
+
+<!-- BATTERY PROGRESS DIALOG -->
+<app-battery-progress-dialog
+  [batteryRunId]="dialogBatteryRunId"
+  [visible]="batteryDialogVisible"
+  (closed)="onBatteryDialogClosed()"
+  (openRunProgress)="onOpenRunProgressFromBattery($event)"
+  (openAnalysis)="onOpenBatteryAnalysis($event)"
+  (batteryResumed)="onBatteryResumedFromDialog($event)"
+  (batteryCanceled)="onBatteryCanceledFromDialog($event)"
+  (memberAttached)="onBatteryMemberAttachedFromDialog($event)"></app-battery-progress-dialog>
 
 <!-- SNAPSHOT VIEWER COMPONENT -->
 <app-snapshot-viewer #snapshotViewer

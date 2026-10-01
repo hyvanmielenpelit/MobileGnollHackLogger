@@ -201,6 +201,8 @@ export interface SystemConfigDeletionCheckDto {
   benchmarkRunReferenceCount: number;
   /** Stopped series naming the configuration. Informational: resuming them will be refused. */
   stoppedSeriesCount: number;
+  /** Stopped battery runs naming the configuration. Informational: resuming them will be refused. */
+  stoppedBatteryRunCount: number;
   /** Removed with the configuration. */
   userAssignmentCount: number;
   /** Removed with the configuration. */

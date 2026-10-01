@@ -114,6 +114,67 @@ public class SystemConfigUsageGuardTests
         Assert.Equal(1, check.StoppedSeriesCount);
     }
 
+    private async Task AddBatteryRunAsync(BenchmarkRunSeriesStatus status)
+    {
+        _db.BenchmarkBatteryRuns.Add(new BenchmarkBatteryRun
+        {
+            BatteryName = "Core knowledge",
+            DefinitionJson = "{}",
+            DefinitionSha256 = new string('a', 64),
+            Status = status,
+            StartRequestJson = JsonSerializer.Serialize(new StartBenchmarkRunRequest
+            {
+                SuiteId = 1,
+                TestedModelConfigurationId = ConfigId,
+                AssessorModelConfigurationId = 2,
+                SecondOpinionAssessorModelConfigurationId = ConfigId
+            })
+        });
+        await _db.SaveChangesAsync();
+    }
+
+    [Theory]
+    [InlineData(BenchmarkRunSeriesStatus.Pending)]
+    [InlineData(BenchmarkRunSeriesStatus.Running)]
+    [InlineData(BenchmarkRunSeriesStatus.WaitingForCap)]
+    public async Task AnActiveBatteryRun_BlocksThroughItsStartRequest(BenchmarkRunSeriesStatus status)
+    {
+        await AddBatteryRunAsync(status);
+
+        var blocker = Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
+
+        Assert.Equal("battery", blocker.Kind);
+        Assert.StartsWith("Battery run #", blocker.Label);
+        Assert.Contains("'Core knowledge'", blocker.Label);
+        Assert.Equal(new[] { "model under test", "second reader or reference reader" }, blocker.Roles);
+    }
+
+    [Fact]
+    public async Task AStoppedBatteryRun_DoesNotBlock_AndIsCountedApartFromSeries()
+    {
+        await AddBatteryRunAsync(BenchmarkRunSeriesStatus.Stopped);
+        await AddSeriesAsync(BenchmarkRunSeriesStatus.Stopped);
+        var config = new SystemAiApiConfiguration { Id = ConfigId, DisplayName = "Candidate", Provider = "OpenAI", ModelId = "m" };
+
+        var check = await Guard().CheckDeletionAsync(config, TestContext.Current.CancellationToken);
+
+        Assert.True(check.CanDelete);
+        Assert.Equal(1, check.StoppedBatteryRunCount);
+        Assert.Equal(1, check.StoppedSeriesCount);
+    }
+
+    [Fact]
+    public async Task AFinishedBatteryRun_NeitherBlocksNorIsCounted()
+    {
+        await AddBatteryRunAsync(BenchmarkRunSeriesStatus.Completed);
+        var config = new SystemAiApiConfiguration { Id = ConfigId, DisplayName = "Candidate", Provider = "OpenAI", ModelId = "m" };
+
+        var check = await Guard().CheckDeletionAsync(config, TestContext.Current.CancellationToken);
+
+        Assert.True(check.CanDelete);
+        Assert.Equal(0, check.StoppedBatteryRunCount);
+    }
+
     [Fact]
     public async Task ADifficultyJob_BlocksWhileActive()
     {

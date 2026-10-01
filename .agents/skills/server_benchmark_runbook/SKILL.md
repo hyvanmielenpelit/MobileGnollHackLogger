@@ -395,7 +395,9 @@ to stop if the projection is more than about twice the estimate.
 | Launcher field | Set to | Versus run <R> |
 |---|---|---|
 | Model Under Test | <entry as the dropdown prints it, with its thinking-level badge> | same / CHANGED |
-| Benchmark Suite | <name as listed> (<n> questions) | same |
+| Run Target | Single suite / Battery | same |
+| Benchmark Suite | <name as listed> (<n> questions) — Single suite only | same |
+| Battery | <name as listed> (<K> suites), revision <r>: <suite 1>, <suite 2>, … in run order — Battery only | same / CHANGED |
 | Scoring Profile | <name> | same |
 | Response Style | Concise — production default | same |
 | Source Code References | Allowed / Disallowed — production default | same |
@@ -406,7 +408,10 @@ to stop if the projection is more than about twice the estimate.
 | Coverage | <option label>; in a panel run the fixed line "Every answer, blind — a third reading. Fixed in a panel run." | same |
 | Claim Verifier (optional) | ... or "None - no claim verification" | same |
 | Report Writer (optional) | <entry as the dropdown prints it> or "None — no AI-written reports" | same / CHANGED |
-| Number of Runs | 1 | |
+| Number of Runs | 1 — Single suite only | |
+| Runs per Suite | 1 — Battery only | |
+| Wait when the run cap blocks the next run | checked / unchecked — Battery, or Number of Runs ≥ 2 | |
+| Reuse earlier runs | checked / unchecked — Battery only; name the runs the projection should list | |
 
 - Not in the launcher, and must also match: thinking level, service tier, reasoning mode and
   parallel mode (from the System AI Config behind each dropdown entry: check the badges);
@@ -446,6 +451,23 @@ Rules for writing a card:
   the run is scored and grades nothing, so a card may set or change it without moving the predicted
   tier. The launcher refuses the model under test and any writer from its provider; the recommended
   writer is in the same § 3 table.
+- **A battery card** sets `Run Target` to *Battery* and fills the `Battery` row with the battery's
+  name, its revision (the editor's subtitle and the progress dialog's heading show it) and its suites
+  in run order, so the developer can tell a revised battery from the one the card meant; it lists
+  `Benchmark Suite` and `Number of Runs` as not applicable. `Runs per Suite` is the field
+  `Number of Runs` becomes, bounded by `floor(maxMembersPerBattery / K)`; one round already gives a
+  result, and a reproducibility figure needs three. A battery that plans more launches than the daily
+  cap needs *Wait when the run cap blocks the next run*. Battery mechanics:
+  `docs/overseer/ai-benchmark-multi-suite.md`.
+- **`Reuse earlier runs` is per start and never remembered.** A card that checks it names the earlier
+  runs the projection should report reusing (*Reusing n earlier runs (#ids); launching m.*) and says
+  what to do when it reports fewer: reuse needs all five instrument hashes unchanged since those runs,
+  so a moved wiki, source or knowledge-base clone disqualifies them. A card that wants fresh runs
+  leaves it unchecked.
+- **A battery card's estimate is summed over its suites**: for each suite, its analysed or recent
+  run's cost and duration, summed and multiplied by `Runs per Suite`, less the runs reused. Compare it
+  with the launcher's **Battery Projection**, which sums each suite's recent mean run duration and
+  cost the same way, and use the same stop rule as for the Series Projection (§ 4 *Cost and time*).
 - **Name each run R1, R2, …** and use those names everywhere — in Part A's `Needs`, in the chat
   message, and in the prompt of § 6 — so that "the baseline run" never has to be guessed.
 

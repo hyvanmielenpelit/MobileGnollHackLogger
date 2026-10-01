@@ -342,7 +342,20 @@ To find specific popups, look in the corresponding component's `.html` template:
     removed chip moves focus to the next chip, else the previous, else `#rh-search`; after a delete,
     focus goes to the card now at the deleted one's index, else the previous, else `#rh-list-title`.
     *No benchmark runs recorded yet…* and *No runs match these filters.* (with **Clear all filters**) are
-    separate empty states.
+    separate empty states. A member run of a battery carries *Battery #id · suite s/K*
+    (`.rh-battery-badge`) in its kicker.
+  - **The Multi-Suite tab** (`#bm-tab-multisuite` / `#bm-panel-multisuite`, `activeSubTab ===
+    'multisuite'`) is the fourth tab, after *Multi-Run Analysis*; the tab row passes positional indexes
+    to `onTabKeydown($event, n)`, so a tab inserted before the end moves the indexes and the spec's
+    tab-order pins after it. The panel is `app-benchmark-batteries` (`batteries/`, `bb-` classes and ids):
+    *Batteries* cards with **New Battery**, **Edit**, **Leaderboard**, **Archive** / **Restore**,
+    **Delete** (its own `bb-delete-dialog` confirmation) and *Show archived*; *Battery Runs*, a
+    `.gh-datatable` on `TableState` with battery and status filters; the *Analysis* panel with
+    **Download Report** and **Compute** / **Recompute**; the *Leaderboard*, one ranked table per
+    comparability class; and *Compare two results*. Interfaces mirroring the server's analysis records,
+    the scheme labels and the client-side weight preview are in `batteries/battery.models.ts`. The
+    launcher's battery mode, the battery banner (`.battery-banner`) and the documentation of the whole
+    feature are in `docs/overseer/ai-benchmark-multi-suite.md`.
 
   Not an exhaustive list of this component's dialogs, only the ones recorded here so far:
   - `#runProgressDialog`: the run progress dialog, **full-screen** (`gh-dialog-fullscreen`, no
@@ -657,6 +670,18 @@ To find specific popups, look in the corresponding component's `.html` template:
     grader models and the recommended settings. Opened from the launcher's Grading group and from
     the scoring profile form (a nested modal over the profile dialog); `open(section?)` scrolls to a
     section, and a `profile` input fills in that profile's trigger values.
+  - `app-battery-editor-dialog` (`batteries/battery-editor-dialog.component.*`, `bbe` ids, title
+    `#bbeTitle`): **New Battery** / **Edit Battery** — name, description, an `app-reorderable-list` of
+    checkable suites (list order is run order), the **Weighting** select defaulting to *Questions and
+    difficulty*, custom weights under *Custom*, and a live preview table computed in the browser from
+    the per-suite masses (the chosen scheme's weights, the others in muted columns, a warning per
+    unassessed suite).
+  - `app-battery-progress-dialog` (`batteries/battery-progress-dialog.component.*`, `bp` ids):
+    **full-screen** battery progress — a suite × round grid of status chips (`BATTERY_SLOT_STATE_LABELS`),
+    one polite live region (the stage line), per-member *Open run progress*, **Attach existing run** on
+    empty, superseded and index-withheld cells, and **Cancel Battery**, **Re-run under Current
+    Instrument**, **Continue** and **Open Analysis** in the footer. Opened from the battery banner's
+    **Show Battery Progress** and from the Battery Runs table.
 
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
   Run History → Cross-model comparison, step 1)** — single runs and analysis groups on two
@@ -1056,7 +1081,7 @@ When configuring or editing AI models in `AiModelFormComponent` (used across `/m
 
 In the AI Benchmark tab (`/admin` -> AI Benchmark), the settings in the **New Benchmark Run** card (`.setup-card`) must be remembered across page reloads and tab navigations using `localStorage` under the key `'overseer_admin_benchmark_run_settings'`.
 
-The card opens with a primary **Model Under Test** field (`.setup-primary-field`, a gold-accented panel outside every fieldset), followed by three fieldsets on a container-query grid (the `setup` container: one column below 50 rem, two up to 90 rem, three above): *Test Setup* holds Benchmark Suite, Scoring Profile and Response Style; *Grading* holds Assessor, Co-Assessor, Second Reader or Reference Reader (with its dependent Coverage) and Claim Verifier, plus the *How the graders work* button that opens the grader guide; *Execution* holds Number of Runs (its click tip lists when one run fits and when several do) and *Completion Alerts*: a `role="group"` captioned by `#completionSignalsCaption`, its (i) directly after the caption in `.exec-heading-row`, two `.checkbox-label` checkboxes and **Test sound**. Launcher field labels and group captions share one heading style (0.875 rem, 600), lighter checkbox text below them. Its five pickers are `app-model-picker`s named by `bm<X>ModelLabel` and described by `bm<X>ModelHint`. Each field's hint lives in a click-mode `app-info-tip` (`frontend_ui_controls` § 4b) at the right end of its control, keyed by the old hint id (`suiteHint`, `profileHint`, `bmTestedModelHint`, …), so every `aria-describedby` still resolves; only warnings, advisories, disabled-control reasons and the Start hint stay on screen. The field ids and the picker marker classes (`.tested-model-selector` and the like) are stable, and the specs rely on them.
+The card opens with a primary **Model Under Test** field (`.setup-primary-field`, a gold-accented panel outside every fieldset), followed by three fieldsets on a container-query grid (the `setup` container: one column below 50 rem, two up to 90 rem, three above): *Test Setup* holds the **Run Target** radio group (*Single suite* / *Battery*, a `role="radiogroup"` fieldset), then Benchmark Suite — or, for a battery, the **Battery** select `#batterySelect` — Scoring Profile and Response Style; *Grading* holds Assessor, Co-Assessor, Second Reader or Reference Reader (with its dependent Coverage) and Claim Verifier, plus the *How the graders work* button that opens the grader guide; *Execution* holds Number of Runs (its click tip lists when one run fits and when several do) and *Completion Alerts*: a `role="group"` captioned by `#completionSignalsCaption`, its (i) directly after the caption in `.exec-heading-row`, two `.checkbox-label` checkboxes and **Test sound**. Launcher field labels and group captions share one heading style (0.875 rem, 600), lighter checkbox text below them. Its five pickers are `app-model-picker`s named by `bm<X>ModelLabel` and described by `bm<X>ModelHint`. Each field's hint lives in a click-mode `app-info-tip` (`frontend_ui_controls` § 4b) at the right end of its control, keyed by the old hint id (`suiteHint`, `profileHint`, `bmTestedModelHint`, …), so every `aria-describedby` still resolves; only warnings, advisories, disabled-control reasons and the Start hint stay on screen. The field ids and the picker marker classes (`.tested-model-selector` and the like) are stable, and the specs rely on them.
 
 ### 1. Stored Setting Fields (`BenchmarkRunSettings`)
 Whenever modifying or extending the benchmark setup form, ensure the following fields are preserved in `BenchmarkRunSettings`:
@@ -1070,16 +1095,20 @@ Whenever modifying or extending the benchmark setup form, ensure the following f
 - **`claimVerifierConfigId`**: Claim verifier model configuration ID (or `null`).
 - **`reportWriterConfigId`**: Report writer model configuration ID (or `null` for *None — no AI-written reports*).
 - **`verboseMode`**: Candidate response style (`false` for concise / production default, `true` for detailed / diagnostic).
-- **`runCount`**: Number of runs (`1` for a single run, or `≥ 2` for a replicate multi-run series).
+- **`runCount`**: Number of runs (`1` for a single run, or `≥ 2` for a replicate multi-run series). In battery mode the same field is **Runs per Suite** and the same `runCount` holds it; there is no second field.
+- **`targetKind`**: The **Run Target** radio group (`runTargetKind`): `'suite'` (Single suite) or `'battery'`. Absent (a blob predating it) restores Single suite.
+- **`batteryId`**: The battery selected in `#batterySelect` (`selectedBatteryId`), restored only while that battery is listed, unarchived and runnable (no deleted suite, no validation error); otherwise the launcher falls back to Single suite.
 
 ### 2. Persistence Lifecycle & Invariants
 - **Persisted on Execution**: Settings are saved via `persistRunSettings()` when the operator initiates a run or multi-run series (`startBenchmark()`), capturing the exact configuration that was dispatched.
 - **Immediate vs. List-Backed Restorations**:
   - `restoreRunSettings()` reads from `localStorage` during `ngOnInit()`.
   - Fields not backed by asynchronous lists (`verboseMode`, `runCount`) restore immediately.
-  - Number of runs (`runCount`) must be validated to be a positive integer (`≥ 1`, floored). It is clamped against `maxRunCountPerSeries` both upon restoration (if limits are already available) and in `loadRunLimits()` when the server limits response arrives.
+  - Number of runs (`runCount`) must be validated to be a positive integer (`≥ 1`, floored). It is clamped against `maxRunCountPerSeries` both upon restoration (if limits are already available) and in `loadRunLimits()` when the server limits response arrives. In battery mode the bound is `floor(maxMembersPerBattery / K)` instead (`maxRunsPerSuite`), applied by `clampRunCountToTarget()` whenever the Run Target, the battery, the battery list or the limits change.
   - List-backed fields (`suiteId`, `scoringProfileId`, `testedConfigId`, `assessorConfigId`, etc.) are validated against their asynchronously loaded datasets before being applied. If a saved ID no longer exists or a configuration is disabled or lost its `Benchmark` role, it must fall back gracefully to the default rather than leaving a dangling ID.
+  - **Four list-backed parts.** `runSettingsApplied` tracks `suite`, `profile`, `configs` and `battery`, and `markRunSettingsApplied()` drops the pending blob only once **all four** have had their turn. The `battery` part is `targetKind` plus `batteryId`, applied by `loadBatteries()` when the battery list arrives (or fails, which restores Single suite). Dropping the blob after three parts would discard it before the batteries arrive, and the Run Target would never restore. A fifth list-backed field needs a fifth part.
 - **Safety Acknowledgments Excluded**: Transient safety gates (such as `acknowledgeSameProvider` and `acknowledgeSameProviderReportWriter`) must NEVER be persisted across sessions, ensuring the warning dialog cannot be silently bypassed. The launcher keeps the acknowledgments given in one start attempt only, by role, and a new attempt starts with none; the AI Reports tab's *Write Anyway* is likewise asked on every write.
+- **Reuse Excluded**: The battery launcher's **Reuse earlier runs** checkbox is deliberately **not** persisted and starts unchecked on every load. Reuse is a decision about one start: the runs it would attach depend on the instrument hashes at that moment, and a remembered check would quietly attach old runs to a later battery run.
 
 ## Angular Unit Testing
 

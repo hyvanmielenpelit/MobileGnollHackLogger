@@ -49,7 +49,7 @@ describe('BenchmarkBackgroundActivityService', () => {
     expect(service.isSupported()).toBeFalse();
   });
 
-  it('names the lock for a run and for a series distinctly', () => {
+  it('names the lock for a run, a series and a battery run distinctly', () => {
     const { requests } = installFakeLocks();
     service.acquireForRun(54);
     expect(requests[0].name).toBe('overseer-benchmark-live:run:54');
@@ -58,6 +58,10 @@ describe('BenchmarkBackgroundActivityService', () => {
     service.acquireForSeries(9);
     expect(requests[1].name).toBe('overseer-benchmark-live:series:9');
     expect(service.heldName).toBe('overseer-benchmark-live:series:9');
+
+    service.acquireForBattery(9);
+    expect(requests[2].name).toBe('overseer-benchmark-live:battery:9');
+    expect(service.heldName).toBe('overseer-benchmark-live:battery:9');
   });
 
   it('holds the lock until release() is called', async () => {

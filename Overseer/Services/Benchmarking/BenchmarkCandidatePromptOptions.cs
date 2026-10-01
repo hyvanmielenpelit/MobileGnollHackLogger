@@ -77,6 +77,14 @@ public sealed record BenchmarkCandidatePromptOptions
         return $"{ToCanonicalJson()}|parallelMode={(int)parallelMode}";
     }
 
+    /// <summary>
+    /// <see cref="ComparabilitySignature"/> with the board flag cleared: the part of the prompt
+    /// configuration every suite of one battery run must share, since only the board flag differs
+    /// between a board suite and a non-board suite by design.
+    /// </summary>
+    public string BatteryWideSignature(ParallelExecutionMode parallelMode)
+        => (this with { HasGameSnapshot = false }).ComparabilitySignature(parallelMode);
+
     public static BenchmarkCandidatePromptOptions FromJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json))

@@ -9,10 +9,11 @@ interface LockRequest {
 }
 
 /**
- * A best-effort Web Lock held for the duration of one watched live run or series, so this tab
- * can be recognised as doing background work while its poller keeps ticking in a hidden tab.
- * The lock name is unique per operation (`overseer-benchmark-live:run:<id>` or
- * `overseer-benchmark-live:series:<id>`), so two tabs watching different runs never queue
+ * A best-effort Web Lock held for the duration of one watched live run, series or battery run, so
+ * this tab can be recognised as doing background work while its poller keeps ticking in a hidden
+ * tab. The lock name is unique per operation (`overseer-benchmark-live:run:<id>`,
+ * `overseer-benchmark-live:series:<id>` or `overseer-benchmark-live:battery:<id>`), so two tabs
+ * watching different runs never queue
  * behind each other; two tabs watching the *same* run or series legitimately do.
  *
  * Scope, stated honestly: Chrome lists a held Web Lock among the conditions that exempt a tab
@@ -48,6 +49,11 @@ export class BenchmarkBackgroundActivityService {
   /** Acquires the lock for a watched series, first releasing whatever this instance held before. */
   acquireForSeries(seriesId: number): void {
     this.acquire(`overseer-benchmark-live:series:${seriesId}`);
+  }
+
+  /** Acquires the lock for a watched battery run, first releasing whatever this instance held before. */
+  acquireForBattery(batteryRunId: number): void {
+    this.acquire(`overseer-benchmark-live:battery:${batteryRunId}`);
   }
 
   /** Releases the currently held or requested lock, if any. Safe to call when nothing is held. */

@@ -10,7 +10,10 @@ import {
 } from './benchmark.component';
 import { MarkdownEditorComponent } from '../../shared/markdown-editor/markdown-editor.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
-import { AdminBenchmarkService, BenchmarkRunAnswerDto, BenchmarkRunReportDocumentsStatus } from '../../services/admin-benchmark.service';
+import {
+  AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryReusePreviewDto, BenchmarkBatteryRunDto, BenchmarkRunAnswerDto,
+  BenchmarkRunReportDocumentsStatus
+} from '../../services/admin-benchmark.service';
 import { SystemService } from '../../services/system.service';
 import { BenchmarkCompletionSoundService } from '../../services/benchmark-completion-sound.service';
 import { BenchmarkCompletionNotificationService } from '../../services/benchmark-completion-notification.service';
@@ -55,6 +58,46 @@ describe('AdminBenchmarkComponent', () => {
   beforeEach(clearStoredState);
 
   afterEach(clearStoredState);
+
+  /** A runnable two-suite battery, weighted 75 / 25 under its declared scheme. */
+  function buildBattery(overrides: Partial<BenchmarkBatteryDto> = {}): BenchmarkBatteryDto {
+    return {
+      id: 5, name: 'Core Battery', description: null, weightingScheme: 'DifficultyMass',
+      weightingSchemeLabel: 'Questions and difficulty', revision: 1, definitionSha256: 'def-abc', isArchived: false,
+      brokenSuiteNames: [], validationErrors: [], createdByUserName: 'admin',
+      createdAtUtc: '2026-10-01T00:00:00Z', modifiedAtUtc: '2026-10-01T00:00:00Z',
+      batteryRunCount: 0, hasActiveBatteryRun: false,
+      suites: [
+        {
+          index: 0, suiteId: 1, suiteName: 'Default Suite', deleted: false, customWeight: null,
+          questionCount: 15, assessedQuestionCount: 15, difficultyFullyAssessed: true, difficultyMass: 750
+        },
+        {
+          index: 1, suiteId: 2, suiteName: 'Second Suite', deleted: false, customWeight: null,
+          questionCount: 10, assessedQuestionCount: 10, difficultyFullyAssessed: true, difficultyMass: 250
+        }
+      ],
+      weightPreviews: [
+        { scheme: 'DifficultyMass', schemeLabel: 'Questions and difficulty', declared: true, weights: [0.75, 0.25] },
+        { scheme: 'Equal', schemeLabel: 'Equal', declared: false, weights: [0.5, 0.5] }
+      ],
+      ...overrides
+    };
+  }
+
+  /** Battery run 9 of battery 5, running suite 1 of 2 in round 1 of 1. */
+  function buildBatteryRun(overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkBatteryRunDto {
+    return {
+      id: 9, batteryId: 5, batteryName: 'Core Battery', definitionRevision: 1, definitionSha256: 'def-abc',
+      weightingScheme: 'DifficultyMass', suites: [], suiteCount: 2, runsPerSuite: 1, requestedMemberCount: 2,
+      completedMemberCount: 0, failedMemberCount: 0, completedSuiteCount: 0, status: 'Running',
+      stopReason: null, stopReasonText: null, allowCapWait: false, resumable: false, isDriving: true,
+      startedAtUtc: '2026-10-02T00:00:00Z', currentSuitePosition: 1, currentSuiteName: 'Default Suite',
+      currentRound: 1, currentRunId: null, slots: [], members: [],
+      analysisStale: false, analysisHasExcludedMembers: false,
+      ...overrides
+    };
+  }
 
   beforeEach(async () => {
     benchmarkServiceMock = jasmine.createSpyObj('AdminBenchmarkService', [
@@ -123,8 +166,37 @@ describe('AdminBenchmarkComponent', () => {
       'cancelRunReportJob',
       'estimateRunReports',
       'deleteRunReportDocument',
-      'reportDocumentPdfUrl'
+      'reportDocumentPdfUrl',
+      'getBatteries',
+      'getBattery',
+      'createBattery',
+      'updateBattery',
+      'deleteBattery',
+      'archiveBattery',
+      'getBatteryRuns',
+      'startBatteryRun',
+      'getActiveBatteryRun',
+      'getBatteryRun',
+      'cancelBatteryRun',
+      'resumeBatteryRun',
+      'analyseBatteryRun',
+      'getBatteryAnalysis',
+      'getBatteryReportUrl',
+      'getBatteryLeaderboard',
+      'previewBatteryReuse',
+      'attachBatteryMember',
+      'getBatteryAttachCandidates'
     ]);
+
+    // ngOnInit loads the launcher's batteries and reattaches a live battery run; the Multi-Suite tab
+    // and the Battery Progress dialog read the rest.
+    benchmarkServiceMock.getBatteries.and.returnValue(of([]));
+    benchmarkServiceMock.getActiveBatteryRun.and.returnValue(of(null));
+    benchmarkServiceMock.getBatteryRuns.and.returnValue(of([]));
+    benchmarkServiceMock.getBatteryRun.and.returnValue(of(buildBatteryRun()));
+    benchmarkServiceMock.getBatteryAnalysis.and.returnValue(of(null));
+    benchmarkServiceMock.getBatteryLeaderboard.and.returnValue(of({ definitionSha256: 'def-abc', classes: [], incomplete: [] }));
+    benchmarkServiceMock.getBatteryReportUrl.and.returnValue('/api/admin/benchmark/batteries/runs/9/report');
 
     benchmarkServiceMock.getActiveQuestionGeneration.and.returnValue(of(null));
     // The run report's AI Reports tab lists the run's AI-written reports whenever it loads a run,
@@ -1737,7 +1809,29 @@ describe('AdminBenchmarkComponent', () => {
     it('should expose the sub-navigation as a labelled tablist', () => {
       expect(tabList()).toBeTruthy();
       expect(tabList().getAttribute('aria-label')).toBe('Benchmark sections');
-      expect(tabs().length).toBe(6);
+      expect(tabs().length).toBe(7);
+    });
+
+    it('should place Multi-Suite fourth, right after Multi-Run Analysis', () => {
+      expect(tabs().map(t => t.id)).toEqual([
+        'bm-tab-run', 'bm-tab-history', 'bm-tab-multirun', 'bm-tab-multisuite',
+        'bm-tab-suites', 'bm-tab-profiles', 'bm-tab-modelcomparison'
+      ]);
+      const multiSuite = tabs()[3];
+      expect((multiSuite.textContent || '').trim()).toBe('Multi-Suite');
+      expect(multiSuite.getAttribute('aria-controls')).toBe('bm-panel-multisuite');
+      expect(component.subTabs[3]).toBe('multisuite');
+    });
+
+    it('should reach Multi-Suite with the arrow keys from both of its neighbors', () => {
+      tabs()[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(component.activeSubTab).toBe('multisuite');
+      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#bm-tab-multisuite'));
+
+      tabs()[4].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+      expect(component.activeSubTab).toBe('multisuite');
     });
 
     it('should mark exactly one tab selected, matching activeSubTab', () => {
@@ -1749,12 +1843,12 @@ describe('AdminBenchmarkComponent', () => {
     it('should give exactly one tab tabindex="0" and the rest tabindex="-1"', () => {
       const all = tabs();
       expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
-      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(5);
+      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(6);
     });
 
     it('should wrap forward from the last tab to the first with ArrowRight', () => {
       component.activeSubTab = 'modelcomparison';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 5);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 6);
       expect(component.activeSubTab).toBe('run');
     });
 
@@ -1769,7 +1863,7 @@ describe('AdminBenchmarkComponent', () => {
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 1);
       expect(component.activeSubTab).toBe('modelcomparison');
 
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 5);
+      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 6);
       expect(component.activeSubTab).toBe('run');
     });
 
@@ -1808,6 +1902,18 @@ describe('AdminBenchmarkComponent', () => {
       expect(panel.getAttribute('aria-labelledby')).toBe('bm-tab-multirun');
       // The panel is the MultiRunComponent's own; the host contributes no data loading of its own.
       expect(panel.querySelector('app-benchmark-multi-run')).toBeTruthy();
+    });
+
+    it('should render the Multi-Suite panel, and nothing else, on the multisuite tab', () => {
+      fixture.nativeElement.querySelector('#bm-tab-multisuite').click();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('[role="tabpanel"]');
+      expect(panel.id).toBe('bm-panel-multisuite');
+      expect(panel.getAttribute('aria-labelledby')).toBe('bm-tab-multisuite');
+      expect(panel.querySelector('app-benchmark-batteries')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('#bm-panel-run')).toBeNull();
+      expect(component.batteriesPanel).toBeTruthy();
     });
 
     it('should hand the selected suite to the Multi-Run Analysis panel', () => {
@@ -9392,6 +9498,791 @@ describe('AdminBenchmarkComponent', () => {
       component.multiRunDialogVisible = true;
 
       expect(component.seriesBannerVisible).toBeFalse();
+    });
+  });
+
+  describe('multi-suite battery runs', () => {
+    const card = (): HTMLElement => fixture.nativeElement.querySelector('.setup-card') as HTMLElement;
+    const query = <T extends Element = HTMLElement>(selector: string): T | null =>
+      fixture.nativeElement.querySelector(selector) as T | null;
+    const startButton = (): HTMLButtonElement =>
+      card().querySelector('.form-actions .btn-gh') as HTMLButtonElement;
+
+    /**
+     * Renders the Run tab with these batteries listed and the fixture's one configuration as both
+     * models. The suite's beforeEach has already run ngOnInit, so the lists are fetched again here.
+     */
+    function renderLauncher(batteries: BenchmarkBatteryDto[] = [buildBattery()]): void {
+      benchmarkServiceMock.getBatteries.and.returnValue(of(batteries));
+      component.loadRunLimits();
+      component.loadBatteries();
+      component.activeSubTab = 'run';
+      component.testedConfigId = 1;
+      component.assessorConfigId = 1;
+      fixture.detectChanges();
+    }
+
+    function chooseBattery(): void {
+      query<HTMLInputElement>('#runTargetBattery')!.click();
+      fixture.detectChanges();
+    }
+
+    function setRunCount(value: number): void {
+      const input = query<HTMLInputElement>('#runCountInput')!;
+      input.value = String(value);
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    function withLimits(overrides: Record<string, number>): void {
+      benchmarkServiceMock.getRunLimits.and.returnValue(of({
+        maxRunsPerHour: 4, maxRunsPerDay: 20, runsInLastHour: 0, runsInLast24Hours: 0,
+        remainingDailyHeadroom: 20, maxRunCountPerSeries: 20, maxMembersPerBattery: 40,
+        ...overrides
+      }));
+    }
+
+    afterEach(() => component.ngOnDestroy());
+
+    describe('Run Target', () => {
+      it('should put a Run Target radio group above Benchmark Suite in Test Setup, Single suite first and chosen', () => {
+        renderLauncher();
+
+        const group = card().querySelector('.setup-group-test fieldset[role="radiogroup"]') as HTMLFieldSetElement;
+        expect(group).toBeTruthy();
+        expect(query(`#${group.getAttribute('aria-labelledby')}`)!.textContent!.trim()).toBe('Run Target');
+        const radios = Array.from(group.querySelectorAll('input[type="radio"]')) as HTMLInputElement[];
+        expect(radios.map(r => r.id)).toEqual(['runTargetSuite', 'runTargetBattery']);
+        expect(radios.map(r => (r.closest('label')!.textContent || '').trim())).toEqual(['Single suite', 'Battery']);
+        expect(radios[0].checked).toBeTrue();
+
+        const suiteSelect = query('#suiteSelect')!;
+        expect(group.compareDocumentPosition(suiteSelect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(query('#batterySelect')).toBeNull();
+      });
+
+      it('should swap the suite select for the battery select and relabel the run count', () => {
+        renderLauncher();
+
+        chooseBattery();
+
+        expect(component.runTargetKind).toBe('battery');
+        expect(query('#suiteSelect')).toBeNull();
+        const select = query<HTMLSelectElement>('#batterySelect')!;
+        expect(select).toBeTruthy();
+        expect(component.selectedBatteryId).toBe(5);
+        expect((card().querySelector('label[for="runCountInput"]')!.textContent || '').trim()).toBe('Runs per Suite');
+
+        query<HTMLInputElement>('#runTargetSuite')!.click();
+        fixture.detectChanges();
+        expect(query('#suiteSelect')).toBeTruthy();
+        expect(query('#batterySelect')).toBeNull();
+        expect((card().querySelector('label[for="runCountInput"]')!.textContent || '').trim()).toBe('Number of Runs');
+      });
+
+      it('should list only runnable batteries, with the suites and declared weights in the select\'s info tip', () => {
+        renderLauncher([
+          buildBattery(),
+          buildBattery({ id: 6, name: 'Archived', isArchived: true }),
+          buildBattery({ id: 7, name: 'Broken', brokenSuiteNames: ['Deleted Suite'] }),
+          buildBattery({ id: 8, name: 'Invalid', validationErrors: ['A battery needs at least two suites.'] })
+        ]);
+
+        chooseBattery();
+
+        const options = Array.from(query<HTMLSelectElement>('#batterySelect')!.options).map(o => o.textContent!.trim());
+        expect(options).toEqual(['Core Battery (2 suites)']);
+        const tip = (query('#batteryHint')!.textContent || '').replace(/\s+/g, ' ');
+        expect(tip).toContain('Questions and difficulty');
+        expect(tip).toContain('Default Suite');
+        expect(tip).toContain('75.0%');
+        expect(tip).toContain('Second Suite');
+        expect(tip).toContain('25.0%');
+      });
+
+      it('should hold Start back and name the suites whose difficulty is not assessed', () => {
+        renderLauncher([buildBattery({
+          suites: [
+            buildBattery().suites[0],
+            { ...buildBattery().suites[1], difficultyFullyAssessed: false, assessedQuestionCount: 4 }
+          ]
+        })]);
+
+        chooseBattery();
+
+        expect(component.canStartRun).toBeFalse();
+        expect(startButton().getAttribute('aria-disabled')).toBe('true');
+        expect(component.startBenchmarkHint).toContain('Second Suite');
+        expect(card().querySelector('.alert-warning')!.textContent).toContain('Second Suite');
+      });
+    });
+
+    describe('Runs per Suite and the projection', () => {
+      it('should bound Runs per Suite by floor(maxMembersPerBattery / K), and the run count by the series cap otherwise', () => {
+        withLimits({ maxMembersPerBattery: 7 });
+        renderLauncher();
+        chooseBattery();
+
+        setRunCount(10);
+
+        expect(component.maxRunsPerSuite).toBe(3);
+        expect(component.effectiveRunCount).toBe(3);
+        expect(query('#runCountInput')!.getAttribute('max')).toBe('3');
+        expect(query('#batteryProjectionLegend')!.textContent).toContain('2 suites × 3 = 6 runs');
+
+        query<HTMLInputElement>('#runTargetSuite')!.click();
+        fixture.detectChanges();
+        expect(query('#runCountInput')!.getAttribute('max')).toBe('20');
+        expect(query('#batteryProjectionLegend')).toBeNull();
+      });
+
+      it('should require Allow cap wait for a battery larger than the daily cap, and say how many days it spans', () => {
+        withLimits({ maxRunsPerDay: 4, remainingDailyHeadroom: 4 });
+        renderLauncher();
+        chooseBattery();
+        setRunCount(3);
+
+        expect(component.batteryLaunchCount).toBe(6);
+        expect(component.canStartRun).toBeFalse();
+        expect(component.startBenchmarkHint).toContain('exceed the daily cap of 4');
+        const warning = (query('.battery-cap-warning')!.textContent || '').replace(/\s+/g, ' ');
+        expect(warning).toContain('spans at least 2 days');
+
+        query<HTMLInputElement>('#allowCapWaitInput')!.click();
+        fixture.detectChanges();
+
+        expect(component.allowCapWait).toBeTrue();
+        expect(component.canStartRun).toBeTrue();
+        expect(query('.battery-cap-warning')!.textContent).toContain('pause at the cap');
+      });
+    });
+
+    describe('starting and remembering', () => {
+      it('should start a battery run with the launcher\'s run request and remember the Run Target', () => {
+        renderLauncher();
+        chooseBattery();
+        setRunCount(2);
+        benchmarkServiceMock.startBatteryRun.and.returnValue(of({ batteryRunId: 9 }));
+
+        startButton().click();
+        fixture.detectChanges();
+
+        expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
+        expect(benchmarkServiceMock.startRunSeries).not.toHaveBeenCalled();
+        const body = benchmarkServiceMock.startBatteryRun.calls.mostRecent().args[0];
+        expect(body.batteryId).toBe(5);
+        expect(body.runsPerSuite).toBe(2);
+        expect(body.allowCapWait).toBeFalse();
+        expect(body.run.testedModelConfigurationId).toBe(1);
+        expect(body.run.assessorModelConfigurationId).toBe(1);
+        expect(body.run.acknowledgeSameProvider).toBeFalse();
+        expect(body.attach).toBeUndefined();
+        expect(benchmarkServiceMock.previewBatteryReuse).not.toHaveBeenCalled();
+
+        expect(component.activeBatteryRunId).toBe(9);
+        expect(component.batteryDialogVisible).toBeTrue();
+        expect(component.dialogBatteryRunId).toBe(9);
+
+        const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+        expect(stored.targetKind).toBe('battery');
+        expect(stored.batteryId).toBe(5);
+        expect(stored.runCount).toBe(2);
+      });
+
+      it('should restore a remembered battery only once the battery list arrives after the other lists', () => {
+        localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+          suiteId: 1, testedConfigId: 1, assessorConfigId: 1, scoringProfileId: 1,
+          targetKind: 'battery', batteryId: 5, runCount: 2
+        }));
+        const batteries = new Subject<BenchmarkBatteryDto[]>();
+        benchmarkServiceMock.getBatteries.and.returnValue(batteries);
+
+        const restored = TestBed.createComponent(AdminBenchmarkComponent);
+        restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+        restored.detectChanges();
+
+        // Suites, profiles and configurations have all applied; the blob waits for the fourth list.
+        const c = restored.componentInstance;
+        expect(c.runTargetKind).toBe('suite');
+        expect((c as any).pendingRunSettings).not.toBeNull();
+
+        batteries.next([buildBattery()]);
+        batteries.complete();
+        restored.detectChanges();
+
+        expect(c.runTargetKind).toBe('battery');
+        expect(c.selectedBatteryId).toBe(5);
+        expect(c.runCount).toBe(2);
+        expect(restored.nativeElement.querySelector('#batterySelect')).toBeTruthy();
+        expect((restored.nativeElement.querySelector('#runTargetBattery') as HTMLInputElement).checked).toBeTrue();
+        expect((c as any).pendingRunSettings).toBeNull();
+        c.ngOnDestroy();
+      });
+
+      it('should restore Runs per Suite above the single-suite cap when the battery bound allows it', () => {
+        withLimits({ maxRunCountPerSeries: 20, maxMembersPerBattery: 60 });
+        localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+          suiteId: 1, testedConfigId: 1, assessorConfigId: 1, scoringProfileId: 1,
+          targetKind: 'battery', batteryId: 5, runCount: 30
+        }));
+        const batteries = new Subject<BenchmarkBatteryDto[]>();
+        benchmarkServiceMock.getBatteries.and.returnValue(batteries);
+
+        const restored = TestBed.createComponent(AdminBenchmarkComponent);
+        restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+        restored.detectChanges();
+
+        const c = restored.componentInstance;
+        expect(c.runCount).toBe(30);
+
+        const battery = buildBattery();
+        batteries.next([battery]);
+        batteries.complete();
+        restored.detectChanges();
+
+        expect(c.runTargetKind).toBe('battery');
+        expect(c.runCountMax).toBe(Math.floor(60 / battery.suites.length));
+        expect(c.runCount).toBe(Math.min(30, Math.floor(60 / battery.suites.length)));
+        c.ngOnDestroy();
+      });
+
+      for (const [label, listed] of [
+        ['gone', [buildBattery({ id: 6, name: 'Other' })]],
+        ['archived', [buildBattery({ isArchived: true })]],
+        ['broken', [buildBattery({ brokenSuiteNames: ['Deleted Suite'] })]],
+        ['invalid', [buildBattery({ validationErrors: ['A battery needs at least two suites.'] })]]
+      ] as [string, BenchmarkBatteryDto[]][]) {
+        it(`should fall back to Single suite when the remembered battery is ${label}`, () => {
+          localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
+            suiteId: 1, testedConfigId: 1, assessorConfigId: 1, targetKind: 'battery', batteryId: 5
+          }));
+          benchmarkServiceMock.getBatteries.and.returnValue(of(listed));
+
+          const restored = TestBed.createComponent(AdminBenchmarkComponent);
+          restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+          restored.detectChanges();
+
+          expect(restored.componentInstance.runTargetKind).toBe('suite');
+          expect(restored.nativeElement.querySelector('#suiteSelect')).toBeTruthy();
+          expect(restored.componentInstance.selectedBattery?.id).not.toBe(5);
+          restored.componentInstance.ngOnDestroy();
+        });
+      }
+
+      it('should send a same-provider 409 through the acknowledgment dialog and resend the battery start', () => {
+        renderLauncher();
+        chooseBattery();
+        const showModal = spyOn(component.sameProviderDialog.nativeElement, 'showModal');
+        benchmarkServiceMock.startBatteryRun.and.returnValues(
+          throwError(() => ({
+            status: 409,
+            error: {
+              sameProvider: true, provider: 'Anthropic', testedModelDisplayName: 'Test Model',
+              assessorModelDisplayName: 'Test Model', message: 'The assessor shares the provider.', role: 'assessor'
+            }
+          })),
+          of({ batteryRunId: 9 })
+        );
+
+        startButton().click();
+        fixture.detectChanges();
+        expect(showModal).toHaveBeenCalledTimes(1);
+
+        const confirm = (Array.from(component.sameProviderDialog.nativeElement.querySelectorAll('button')) as HTMLButtonElement[])
+          .find(button => (button.textContent ?? '').includes('Acknowledge & Start Run'))!;
+        confirm.click();
+
+        const bodies = benchmarkServiceMock.startBatteryRun.calls.allArgs().map(args => args[0]);
+        expect(bodies.length).toBe(2);
+        expect(bodies[0].run.acknowledgeSameProvider).toBeFalse();
+        expect(bodies[1].run.acknowledgeSameProvider).toBeTrue();
+        expect(component.activeBatteryRunId).toBe(9);
+      });
+
+      it('should show a refused battery start\'s reason under the launcher', () => {
+        renderLauncher();
+        chooseBattery();
+        benchmarkServiceMock.startBatteryRun.and.returnValue(throwError(() => ({
+          status: 409, error: 'A benchmark run is already in progress.'
+        })));
+
+        startButton().click();
+        fixture.detectChanges();
+
+        expect(card().querySelector('.alert-danger')!.textContent).toContain('A benchmark run is already in progress.');
+        expect(component.activeBatteryRunId).toBeNull();
+      });
+
+      it('should show the 409 a single-run start receives while a battery runs', () => {
+        renderLauncher();
+        benchmarkServiceMock.startRun.and.returnValue(throwError(() => ({
+          status: 409, error: 'A battery is running; wait for it or cancel it.'
+        })));
+
+        startButton().click();
+        fixture.detectChanges();
+
+        expect(benchmarkServiceMock.startRun).toHaveBeenCalled();
+        expect(card().querySelector('.alert-danger')!.textContent)
+          .toContain('A battery is running; wait for it or cancel it.');
+      });
+
+      it('should surface the 409 a re-run receives while a battery runs inside the progress dialog', () => {
+        spyOn(component.runProgressDialog.nativeElement, 'showModal');
+        spyOn(component.runProgressDialog.nativeElement, 'close');
+        component.activeRunDetail = {
+          id: 37, benchmarkSuiteId: 1, suiteName: 'Suite X', testedModelDisplayNameUsed: 'Test Model',
+          testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'claude-3-5-sonnet', testedModelParallelExecutionModeUsed: 2,
+          assessorModelDisplayNameUsed: 'Test Assessor', assessorModelProviderUsed: 'Anthropic',
+          assessorModelIdUsed: 'claude-3-5-sonnet', startedByUserName: 'admin', status: 'CompletedWithErrors',
+          startedAtUtc: '2026-10-02T00:00:00Z', completedAtUtc: '2026-10-02T00:05:00Z', totalAnswerDurationMs: 0,
+          scoringProfileName: 'Default Intelligence Profile', scoringProfileId: 1, scoringMethodVersion: 2,
+          difficultyFallbackUsed: false, speedMeasurementDegraded: false, maxParallelQuestionsUsed: 1,
+          answeredQuestionCount: 0, totalQuestionCount: 3, assessmentParseFailed: false, totalInputTokens: 0,
+          totalOutputTokens: 0, totalCacheReadTokens: 0, totalCacheCreationTokens: 0, totalDurationMs: 0,
+          errorMessage: null, answers: []
+        } as any;
+        component.isRunProgressDialogOpen = true;
+        benchmarkServiceMock.rerunFailedQuestions.and.returnValue(throwError(() => ({
+          status: 409, error: 'A battery is running; wait for it or cancel it.'
+        })));
+
+        component.rerunFailedFromProgress();
+        fixture.detectChanges();
+
+        expect(component.runErrorMessage).toBe('A battery is running; wait for it or cancel it.');
+        expect(component.rerunLaunchPending).toBeFalse();
+        const alert = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-body .alert-danger') as HTMLElement;
+        expect(alert.textContent).toContain('A battery is running; wait for it or cancel it.');
+        component.closeRunProgressDialog();
+      });
+    });
+
+    describe('reusing earlier runs', () => {
+      /** Suite 1 of battery 5 reuses run 12; suite 2 has nothing that qualifies. */
+      function buildPreview(overrides: Partial<BenchmarkBatteryReusePreviewDto> = {}): BenchmarkBatteryReusePreviewDto {
+        return {
+          batteryId: 5, suiteCount: 2, runsPerSuite: 1, reusedCount: 1, launchCount: 1,
+          attach: [{ suiteIndex: 0, round: 1, runId: 12 }],
+          slots: [
+            {
+              suiteIndex: 0, suiteId: 1, suiteName: 'Default Suite', round: 1, runId: 12,
+              runStartedAtUtc: '2026-10-01T08:00:00Z', qualityIndex: 71, reason: null
+            },
+            {
+              suiteIndex: 1, suiteId: 2, suiteName: 'Second Suite', round: 1, runId: null,
+              reason: 'Run #13 has no usable result: index withheld.'
+            }
+          ],
+          ...overrides
+        };
+      }
+
+      const reuseBox = (): HTMLInputElement | null => query<HTMLInputElement>('#reuseEarlierRunsInput');
+
+      function checkReuse(): void {
+        reuseBox()!.click();
+        fixture.detectChanges();
+      }
+
+      const summary = (): string => (query('.battery-reuse-summary')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+      it('should offer Reuse earlier runs in battery mode only, unchecked, without asking the server', () => {
+        renderLauncher();
+        expect(reuseBox()).toBeNull();
+
+        chooseBattery();
+
+        expect(reuseBox()).not.toBeNull();
+        expect(reuseBox()!.checked).toBeFalse();
+        expect(component.reuseEarlierRuns).toBeFalse();
+        expect(query('.battery-reuse-row')).toBeNull();
+        expect(benchmarkServiceMock.previewBatteryReuse).not.toHaveBeenCalled();
+      });
+
+      it('should preview the reuse when checked and project the runs reused and launched', () => {
+        renderLauncher();
+        chooseBattery();
+        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview()));
+
+        checkReuse();
+
+        expect(benchmarkServiceMock.previewBatteryReuse).toHaveBeenCalledTimes(1);
+        const body = benchmarkServiceMock.previewBatteryReuse.calls.mostRecent().args[0];
+        expect(body.batteryId).toBe(5);
+        expect(body.runsPerSuite).toBe(1);
+        expect(body.run.testedModelConfigurationId).toBe(1);
+        expect(body.attach).toBeUndefined();
+
+        expect(summary()).toBe('Reusing 1 earlier run (#12); launching 1.');
+        const reasons = (query('.battery-reuse-reasons')!.textContent || '').replace(/\s+/g, ' ');
+        expect(reasons).toContain('Second Suite, round 1:');
+        expect(reasons).toContain('Run #13 has no usable result: index withheld.');
+        expect(component.batteryRunsToLaunch).toBe(1);
+        expect(component.canStartRun).toBeTrue();
+      });
+
+      it('should say when nothing qualifies, and why', () => {
+        renderLauncher();
+        chooseBattery();
+        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview({
+          reusedCount: 0, launchCount: 2, attach: [],
+          slots: [
+            { suiteIndex: 0, suiteId: 1, suiteName: 'Default Suite', round: 1, runId: null,
+              reason: 'No earlier run of \'Default Suite\' tested this configuration.' },
+            { suiteIndex: 1, suiteId: 2, suiteName: 'Second Suite', round: 1, runId: null,
+              reason: 'Run #13 ran under another instrument than the one recorded for \'Second Suite\': ToolGuidesSha256 differ.' }
+          ]
+        })));
+
+        checkReuse();
+
+        expect(summary()).toBe('No earlier run qualifies; launching 2.');
+        const reasons = (query('.battery-reuse-reasons')!.textContent || '').replace(/\s+/g, ' ');
+        expect(reasons).toContain('No earlier run of \'Default Suite\' tested this configuration.');
+        expect(reasons).toContain('ToolGuidesSha256 differ.');
+      });
+
+      it('should preview again on every change of battery, model, grader or Runs per Suite', () => {
+        renderLauncher([buildBattery(), buildBattery({ id: 6, name: 'Other Battery' })]);
+        chooseBattery();
+        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview()));
+        checkReuse();
+        expect(benchmarkServiceMock.previewBatteryReuse).toHaveBeenCalledTimes(1);
+
+        const select = query<HTMLSelectElement>('#batterySelect')!;
+        select.value = select.options[1].value;
+        select.dispatchEvent(new Event('change'));
+        fixture.detectChanges();
+        expect(benchmarkServiceMock.previewBatteryReuse.calls.mostRecent().args[0].batteryId).toBe(6);
+
+        component.selectTestedModel(component.systemConfigs[0]);
+        component.selectAssessorModel(component.systemConfigs[0]);
+        component.selectClaimVerifierModel(null);
+        expect(benchmarkServiceMock.previewBatteryReuse).toHaveBeenCalledTimes(5);
+
+        setRunCount(2);
+        expect(benchmarkServiceMock.previewBatteryReuse.calls.mostRecent().args[0].runsPerSuite).toBe(2);
+      });
+
+      it('should cancel a stale preview request when the settings change, and hold Start while one is pending', () => {
+        renderLauncher();
+        chooseBattery();
+        const first = new Subject<BenchmarkBatteryReusePreviewDto>();
+        const second = new Subject<BenchmarkBatteryReusePreviewDto>();
+        benchmarkServiceMock.previewBatteryReuse.and.returnValues(first, second);
+
+        checkReuse();
+        expect(first.observed).toBeTrue();
+        expect(summary()).toBe('Checking which earlier runs can be reused…');
+        expect(component.canStartRun).toBeFalse();
+        expect(component.startBenchmarkHint).toBe('Checking which earlier runs can be reused…');
+
+        setRunCount(2);
+        expect(first.observed).toBeFalse();
+        expect(second.observed).toBeTrue();
+
+        second.next(buildPreview({ runsPerSuite: 2, launchCount: 3, slots: [] }));
+        second.complete();
+        fixture.detectChanges();
+        expect(summary()).toBe('Reusing 1 earlier run (#12); launching 3.');
+        expect(component.canStartRun).toBeTrue();
+      });
+
+      it('should hold Start and say so when the preview fails', () => {
+        renderLauncher();
+        chooseBattery();
+        benchmarkServiceMock.previewBatteryReuse.and.returnValue(throwError(() => ({ status: 404, error: 'Battery not found.' })));
+
+        checkReuse();
+
+        expect(summary()).toBe('The reuse of earlier runs could not be previewed: Battery not found.');
+        expect(component.canStartRun).toBeFalse();
+        expect(component.startBenchmarkHint).toContain('clear Reuse earlier runs');
+
+        reuseBox()!.click();
+        fixture.detectChanges();
+        expect(component.canStartRun).toBeTrue();
+        expect(query('.battery-reuse-row')).toBeNull();
+      });
+
+      it('should send the previewed runs as attach on Start, and not remember the choice', () => {
+        renderLauncher();
+        chooseBattery();
+        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview()));
+        benchmarkServiceMock.startBatteryRun.and.returnValue(of({ batteryRunId: 9 }));
+        checkReuse();
+
+        startButton().click();
+        fixture.detectChanges();
+
+        const body = benchmarkServiceMock.startBatteryRun.calls.mostRecent().args[0];
+        expect(body.attach).toEqual([{ suiteIndex: 0, round: 1, runId: 12 }]);
+        expect(body.runsPerSuite).toBe(1);
+
+        // A per-start decision: cleared after the start and absent from the stored settings.
+        expect(component.reuseEarlierRuns).toBeFalse();
+        expect(reuseBox()!.checked).toBeFalse();
+        const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
+        expect(Object.keys(stored)).not.toContain('reuseEarlierRuns');
+        expect(Object.keys(stored)).not.toContain('attach');
+
+        const restored = TestBed.createComponent(AdminBenchmarkComponent);
+        restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
+        restored.detectChanges();
+        expect(restored.componentInstance.runTargetKind).toBe('battery');
+        expect(restored.componentInstance.reuseEarlierRuns).toBeFalse();
+        expect((restored.nativeElement.querySelector('#reuseEarlierRunsInput') as HTMLInputElement).checked).toBeFalse();
+        restored.componentInstance.ngOnDestroy();
+      });
+
+      it('should preview again after a start refused because a reused run stopped qualifying', () => {
+        renderLauncher();
+        chooseBattery();
+        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview()));
+        benchmarkServiceMock.startBatteryRun.and.returnValue(throwError(() => ({
+          status: 400, error: 'Run #12, chosen for suite \'Default Suite\', round 1, no longer qualifies.'
+        })));
+        checkReuse();
+
+        startButton().click();
+        fixture.detectChanges();
+
+        expect(card().querySelector('.alert-danger')!.textContent).toContain('no longer qualifies');
+        expect(benchmarkServiceMock.previewBatteryReuse).toHaveBeenCalledTimes(2);
+        expect(component.reuseEarlierRuns).toBeTrue();
+      });
+    });
+
+    describe('banner lifecycle', () => {
+      function attachBattery(overrides: Partial<BenchmarkBatteryRunDto>): void {
+        const batteryRun = buildBatteryRun(overrides);
+        benchmarkServiceMock.getActiveBatteryRun.and.returnValue(of(batteryRun));
+        benchmarkServiceMock.getBatteryRun.and.returnValue(of(batteryRun));
+        component.activeSubTab = 'run';
+        // What ngOnInit does on a page load, repeated after the suite's own first load.
+        component.checkActiveBatteryRun();
+        fixture.detectChanges();
+      }
+
+      const banner = (): HTMLElement | null => query('.battery-banner');
+      const bannerButton = (text: string): HTMLButtonElement | undefined =>
+        (Array.from(banner()?.querySelectorAll('button') ?? []) as HTMLButtonElement[])
+          .find(b => (b.textContent || '').includes(text));
+
+      it('should reattach the banner to a live battery run on load, naming the suite and round', () => {
+        attachBattery({ status: 'Running', currentSuitePosition: 2, currentSuiteName: 'Second Suite', currentRound: 1 });
+
+        expect(banner()).toBeTruthy();
+        expect(banner()!.textContent).toContain('Battery Run #9 (Core Battery)');
+        expect(banner()!.querySelector('.battery-progress-label')!.textContent!.trim())
+          .toBe('Suite 2 of 2 (Second Suite) · round 1 of 1.');
+        expect(bannerButton('Cancel Battery')).toBeTruthy();
+        expect(bannerButton('Continue')).toBeUndefined();
+      });
+
+      it('should hide the banner while its dialog is open and once the battery run completes', () => {
+        attachBattery({ status: 'Running' });
+
+        bannerButton('Show Battery Progress')!.click();
+        fixture.detectChanges();
+        expect(component.batteryDialogVisible).toBeTrue();
+        expect(component.dialogBatteryRunId).toBe(9);
+        expect(banner()).toBeNull();
+
+        component.onBatteryDialogClosed();
+        fixture.detectChanges();
+        expect(banner()).toBeTruthy();
+
+        benchmarkServiceMock.getBatteryRun.and.returnValue(of(buildBatteryRun({ status: 'Completed', completedSuiteCount: 2 })));
+        (component as any).pollBatteryRun(9);
+        fixture.detectChanges();
+        expect(banner()).toBeNull();
+        expect(component.activeBatteryRun).not.toBeNull();
+      });
+
+      it('should offer Continue for a stopped battery run and resume it', () => {
+        attachBattery({ status: 'Stopped', stopReason: 'MemberFailed', stopReasonText: 'A member run failed', resumable: true });
+        benchmarkServiceMock.resumeBatteryRun.and.returnValue(of({ batteryRunId: 9 }));
+
+        expect(bannerButton('Re-run under current instrument')).toBeUndefined();
+        const cont = bannerButton('Continue (A member run failed)')!;
+        expect(cont).toBeTruthy();
+        cont.click();
+
+        expect(benchmarkServiceMock.resumeBatteryRun).toHaveBeenCalledWith(9, 'Continue');
+      });
+
+      it('should offer only Re-run under current instrument and Cancel after an instrument change', () => {
+        attachBattery({
+          status: 'Stopped', stopReason: 'InstrumentChanged',
+          stopReasonText: 'A member is not comparable with the others', resumable: true
+        });
+        benchmarkServiceMock.resumeBatteryRun.and.returnValue(of({ batteryRunId: 9 }));
+        benchmarkServiceMock.cancelBatteryRun.and.returnValue(of(undefined));
+
+        expect(bannerButton('Continue')).toBeUndefined();
+        expect(bannerButton('Cancel Battery')).toBeTruthy();
+        bannerButton('Re-run under current instrument')!.click();
+
+        expect(benchmarkServiceMock.resumeBatteryRun).toHaveBeenCalledWith(9, 'RerunUnderCurrentInstrument');
+      });
+
+      it('should cancel the battery run from the banner', () => {
+        attachBattery({ status: 'Running' });
+        benchmarkServiceMock.cancelBatteryRun.and.returnValue(of(undefined));
+
+        bannerButton('Cancel Battery')!.click();
+
+        expect(benchmarkServiceMock.cancelBatteryRun).toHaveBeenCalledWith(9);
+      });
+
+      it('should hold the battery Web Lock while polling, and leave it with the battery when a member is polled', () => {
+        const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
+        const acquireBatterySpy = spyOn(lockService, 'acquireForBattery');
+        const acquireRunSpy = spyOn(lockService, 'acquireForRun');
+        const releaseSpy = spyOn(lockService, 'release');
+
+        (component as any).startBatteryPolling(9);
+        expect(acquireBatterySpy).toHaveBeenCalledOnceWith(9);
+
+        (component as any).startPolling(42);
+        (component as any).stopPolling();
+        expect(acquireRunSpy).not.toHaveBeenCalled();
+        expect(releaseSpy).not.toHaveBeenCalled();
+
+        (component as any).stopBatteryPolling();
+        expect(releaseSpy).toHaveBeenCalledTimes(1);
+      });
+
+      it('should hand a member from the battery dialog to the run progress dialog, and back', () => {
+        attachBattery({ status: 'Running' });
+        spyOn(component.runProgressDialog.nativeElement, 'showModal');
+        spyOn(component.runProgressDialog.nativeElement, 'close');
+        component.openBatteryDialog();
+
+        component.onOpenRunProgressFromBattery(42);
+        fixture.detectChanges();
+        expect(component.batteryDialogVisible).toBeFalse();
+        expect(component.activeRunId).toBe(42);
+        expect(component.returnToBatteryOnClose).toBeTrue();
+
+        component.closeRunProgressDialog();
+        expect(component.batteryDialogVisible).toBeTrue();
+        expect(component.returnToBatteryOnClose).toBeFalse();
+      });
+
+      it('should switch to the Multi-Suite tab and show the analysis the dialog asks for', () => {
+        attachBattery({ status: 'Completed' });
+        component.openBatteryDialog(9);
+
+        component.onOpenBatteryAnalysis(9);
+
+        expect(component.activeSubTab).toBe('multisuite');
+        expect(component.batteryDialogVisible).toBeFalse();
+        expect(component.batteriesPanel).toBeTruthy();
+      });
+    });
+
+    describe('completion signal', () => {
+      let playSpy: jasmine.Spy;
+      let notifySpy: jasmine.Spy;
+
+      function member(runId: number, suiteIndex: number): any {
+        return { memberId: runId, suiteIndex, round: 1, runId, runStatus: 'Completed', usable: true, superseded: false };
+      }
+
+      function pollBattery(overrides: Partial<BenchmarkBatteryRunDto>): void {
+        benchmarkServiceMock.getBatteryRun.and.returnValue(of(buildBatteryRun(overrides)));
+        (component as any).pollBatteryRun(9);
+      }
+
+      function pollRun(id: number, status: string): void {
+        benchmarkServiceMock.getRun.and.returnValue(of({
+          id, benchmarkSuiteId: 1, suiteName: 'Default Suite', testedModelDisplayNameUsed: 'Test Model',
+          testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'claude-3-5-sonnet',
+          assessorModelDisplayNameUsed: 'Test Assessor', assessorModelProviderUsed: 'Anthropic',
+          assessorModelIdUsed: 'claude-3-5-sonnet', startedByUserName: 'admin', status,
+          startedAtUtc: '2026-10-02T00:00:00Z', completedAtUtc: null, totalQuestionCount: 3, answers: []
+        } as any));
+        (component as any).pollRunDetail(id);
+      }
+
+      beforeEach(() => {
+        playSpy = spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').and.returnValue(Promise.resolve('played'));
+        const notificationService = TestBed.inject(BenchmarkCompletionNotificationService);
+        notifySpy = spyOn(notificationService, 'notify');
+        spyOn(notificationService, 'permission').and.returnValue('granted');
+        component.completionSound = true;
+        component.completionNotification = true;
+      });
+
+      it('should signal once for the battery run and never for a member', () => {
+        pollBattery({ status: 'Running', currentRunId: 41, members: [member(41, 0)] });
+        pollRun(41, 'Running');
+        pollRun(41, 'Completed');
+
+        pollBattery({ status: 'Running', currentRunId: 42, members: [member(41, 0), member(42, 1)] });
+        pollRun(42, 'Running');
+
+        pollBattery({ status: 'Completed', completedSuiteCount: 2, currentRunId: null, members: [member(41, 0), member(42, 1)] });
+        pollRun(42, 'Completed');
+        pollBattery({ status: 'Completed', completedSuiteCount: 2, currentRunId: null, members: [member(41, 0), member(42, 1)] });
+
+        expect(playSpy.calls.allArgs()).toEqual([['battery:9']]);
+        expect(notifySpy).toHaveBeenCalledOnceWith(
+          'battery:9', 'AI Benchmark', 'Battery #9 — Core Battery — 2 of 2 suites — Completed');
+      });
+
+      it('should signal a battery run that stops, but not one that is canceled', () => {
+        pollBattery({ status: 'Running' });
+        pollBattery({ status: 'Cancelled' });
+        expect(playSpy).not.toHaveBeenCalled();
+
+        // The dialog continues it; this page's poller sees it live again.
+        benchmarkServiceMock.getBatteryRun.and.returnValue(of(buildBatteryRun({ status: 'Running' })));
+        component.onBatteryResumedFromDialog(9);
+        pollBattery({ status: 'Stopped', stopReason: 'MemberFailed' });
+        expect(playSpy).toHaveBeenCalledOnceWith('battery:9');
+      });
+
+      it('should not signal a battery run first seen already finished', () => {
+        pollBattery({ status: 'Completed' });
+
+        expect(playSpy).not.toHaveBeenCalled();
+        expect(notifySpy).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should badge a Run History card with its battery run and suite position', () => {
+      benchmarkServiceMock.getRuns.and.returnValue(of([
+        {
+          id: 2, benchmarkSuiteId: 1, suiteName: 'Default Suite', testedModelDisplayNameUsed: 'Model A',
+          testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'model-a', assessorModelDisplayNameUsed: 'Model B',
+          status: 'Completed', startedAtUtc: '2026-10-02T00:00:00Z', totalAnswerDurationMs: 1000, totalDurationMs: 1000,
+          speedMeasurementDegraded: false, answeredQuestionCount: 5, totalQuestionCount: 5, unansweredQuestionCount: 0,
+          candidateSystemPromptSha256: 'sha-a', toolGuidesSha256: 'guide-a', knowledgeBaseHeadSha: 'kb-a',
+          wikiHeadSha: 'wiki-a', sourceCodeHeadSha: 'src-a',
+          batteryRunId: 9, batteryName: 'Core Battery', batterySuitePosition: 2, batterySuiteCount: 3
+        },
+        {
+          id: 1, benchmarkSuiteId: 1, suiteName: 'Default Suite', testedModelDisplayNameUsed: 'Model A',
+          testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'model-a', assessorModelDisplayNameUsed: 'Model B',
+          status: 'Completed', startedAtUtc: '2026-10-01T00:00:00Z', totalAnswerDurationMs: 1000, totalDurationMs: 1000,
+          speedMeasurementDegraded: false, answeredQuestionCount: 5, totalQuestionCount: 5, unansweredQuestionCount: 0,
+          candidateSystemPromptSha256: 'sha-a', toolGuidesSha256: 'guide-a', knowledgeBaseHeadSha: 'kb-a',
+          wikiHeadSha: 'wiki-a', sourceCodeHeadSha: 'src-a'
+        }
+      ]));
+      fixture.detectChanges();
+
+      (fixture.nativeElement.querySelector('#bm-tab-history') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const kicker = (id: number) =>
+        fixture.nativeElement.querySelector(`article.rh-card[data-run-id="${id}"] .rh-card-kicker`) as HTMLElement;
+      expect(kicker(2).querySelector('.rh-battery-badge')!.textContent!.trim()).toBe('Battery #9 · suite 2/3');
+      expect(kicker(1).querySelector('.rh-battery-badge')).toBeNull();
     });
   });
 

@@ -1,0 +1,306 @@
+<!-- BATTERY RUN PROGRESS: header / scrolling body / footer, as the multi-run progress dialog. -->
+<dialog #batteryProgressDialog class="gh-dialog gh-dialog-fullscreen battery-progress-dialog"
+        aria-labelledby="bpDialogTitle"
+        (cancel)="onCancel($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 id="bpDialogTitle">Battery Run #{{ batteryRun?.id ?? batteryRunId }}</h3>
+        @if (batteryRun; as run) {
+          <p class="dialog-subtitle">
+            {{ run.batteryName }}
+            @if (run.testedModelLabel) { · {{ run.testedModelLabel }} }
+            · {{ run.suiteCount }} {{ run.suiteCount === 1 ? 'suite' : 'suites' }}
+            × {{ run.runsPerSuite }} {{ run.runsPerSuite === 1 ? 'round' : 'rounds' }}
+          </p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action"
+              aria-label="Close battery run progress"
+              interestfor="bp-tip-close"
+              style="anchor-name: --bp-tip-close"
+              (click)="requestClose()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="bp-tip-close" style="position-anchor: --bp-tip-close">Close</div>
+    </div>
+
+    <div class="dialog-body">
+      <h4 #batteryProgressHeading tabindex="-1" class="progress-heading bp-heading">
+        @if (batteryRun; as run) {
+          {{ run.batteryName }} — revision {{ run.definitionRevision }}
+        } @else {
+          Loading battery run…
+        }
+      </h4>
+
+      <div class="job-progress-block">
+        <label class="progress-label" for="bpProgressBar">Slots with a usable result</label>
+        @if ((batteryRun?.requestedMemberCount ?? 0) > 0) {
+          <progress id="bpProgressBar" class="job-progress"
+                    [value]="batteryRun?.completedMemberCount ?? 0"
+                    [max]="batteryRun?.requestedMemberCount ?? 1"></progress>
+        } @else {
+          <progress id="bpProgressBar" class="job-progress"></progress>
+        }
+        <!-- The dialog's only live region. -->
+        <p class="progress-status bp-stage-line" role="status" aria-live="polite">{{ stageLine }}</p>
+      </div>
+
+      @if (batteryRun; as run) {
+        @if (run.status === 'Stopped' || run.status === 'WaitingForCap') {
+          <div class="bp-state-block" [class.state-stopped]="run.status === 'Stopped'"
+               [class.state-waiting]="run.status === 'WaitingForCap'">
+            <p class="bp-state-name">{{ statusLabel(run.status) }}</p>
+            <p class="bp-state-detail">
+              @if (run.status === 'WaitingForCap') {
+                The daily run cap is reached. The battery run retries by itself and continues when a run may start.
+              } @else if (stoppedOnInstrument) {
+                {{ run.stopReasonText || 'A member is not comparable with the others.' }}
+                Re-run under the current instrument supersedes the completed members and starts over, or cancel the battery run.
+              } @else {
+                {{ run.stopReasonText || run.stopReason }}
+              }
+            </p>
+          </div>
+        }
+
+        <dl class="run-stat-strip">
+          <div class="run-stat">
+            <dt>Status</dt>
+            <dd>{{ statusLabel(run.status) }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Elapsed</dt>
+            <dd>{{ elapsedLabel }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Suites complete</dt>
+            <dd>{{ run.completedSuiteCount }} / {{ run.suiteCount }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Usable slots</dt>
+            <dd>{{ run.completedMemberCount }} / {{ run.requestedMemberCount }}</dd>
+          </div>
+          <div class="run-stat">
+            <dt>Failed</dt>
+            <dd>{{ run.failedMemberCount }}</dd>
+          </div>
+        </dl>
+
+        <div class="bp-grid-wrap">
+          <table class="bp-grid">
+            <caption>Members by suite and round</caption>
+            <thead>
+              <tr>
+                <th scope="col">Suite</th>
+                @for (round of rounds; track round) {
+                  <th scope="col">Round {{ round }}</th>
+                }
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of grid; track row.suiteIndex) {
+                <tr>
+                  <th scope="row" class="bp-suite">
+                    <span class="bp-suite-index" aria-hidden="true">{{ row.suiteIndex + 1 }}</span>
+                    {{ row.suiteName }}
+                  </th>
+                  @for (cell of row.cells; track cell.slot.round) {
+                    <td class="bp-cell" [attr.data-state]="cell.state"
+                        [class.is-current]="run.currentSuiteIndex === row.suiteIndex && run.currentRound === cell.slot.round">
+                      <div class="bp-cell-head">
+                        <span [class]="chipClass(cell.state)">{{ slotLabels[cell.state] }}</span>
+                        @if (cell.slot.member; as member) {
+                          <button type="button" class="action-btn bp-open-run"
+                                  [attr.aria-label]="'Open run progress for run ' + member.runId + ', ' + row.suiteName + ' round ' + cell.slot.round"
+                                  [attr.interestfor]="'bp-tip-open-' + member.runId"
+                                  [attr.style]="'anchor-name: --bp-tip-open-' + member.runId"
+                                  (click)="openMemberRunProgress(member)">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                                 viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                              <polyline points="15 3 21 3 21 9"></polyline>
+                              <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'bp-tip-open-' + member.runId"
+                               [attr.style]="'position-anchor: --bp-tip-open-' + member.runId">Open run progress</div>
+                        }
+                      </div>
+                      @if (cell.slot.member; as member) {
+                        <p class="bp-cell-meta">
+                          Run #{{ member.runId }}
+                          @if (member.origin === 'Attached') { · attached }
+                          @if (member.qualityIndex != null) { · Index {{ member.qualityIndex }} }
+                        </p>
+                        @if (cell.state === 'running') {
+                          <p class="bp-cell-meta">{{ member.answeredQuestionCount }} of {{ member.totalQuestionCount }} questions answered</p>
+                        }
+                        @if (cell.state === 'indexWithheld') {
+                          <p class="bp-cell-hint">{{ indexWithheldHint }}</p>
+                        }
+                        @if (cell.state === 'instrumentChanged' && member.guardFailure) {
+                          <p class="bp-cell-hint">{{ member.guardFailure }}</p>
+                        }
+                        @if (cell.state === 'failed' && member.unusableReason) {
+                          <p class="bp-cell-hint">{{ member.unusableReason }}</p>
+                        }
+                      }
+                      @if (cell.superseded.length > 0) {
+                        <p class="bp-cell-meta bp-superseded">
+                          Superseded:
+                          @for (old of cell.superseded; track old.memberId; let last = $last) {
+                            #{{ old.runId }}{{ last ? '' : ', ' }}
+                          }
+                        </p>
+                      }
+                      @if (canAttachTo(cell)) {
+                        <button type="button" class="btn-ghost bp-attach"
+                                [attr.aria-label]="'Attach existing run to ' + row.suiteName + ', round ' + cell.slot.round"
+                                [attr.aria-expanded]="isAttachOpenFor(row, cell)"
+                                (click)="openAttach(row, cell, $event)">Attach existing run</button>
+                      }
+                    </td>
+                  }
+                </tr>
+              } @empty {
+                <tr>
+                  <td [attr.colspan]="rounds.length + 1" class="bp-empty">This battery run has no suites.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (attachSlot; as target) {
+          <section class="bp-attach-panel" aria-labelledby="bpAttachTitle">
+            <div class="bp-attach-head">
+              <h5 #attachPanelHeading id="bpAttachTitle" tabindex="-1">
+                Attach an existing run: {{ target.suiteName }}, round {{ target.round }}
+              </h5>
+              <button type="button" class="btn-icon-action"
+                      aria-label="Close the runs to attach"
+                      interestfor="bp-tip-attach-close"
+                      style="anchor-name: --bp-tip-attach-close"
+                      (click)="closeAttach()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" id="bp-tip-attach-close" style="position-anchor: --bp-tip-attach-close">Close</div>
+            </div>
+            <p class="bp-attach-intro">
+              Runs of this suite by the model under test, newest first. A run qualifies when it finished with an index,
+              matches the instrument recorded for this suite and combines with the battery run's other runs.
+            </p>
+
+            @if (attachCandidatesLoading) {
+              <p class="bp-attach-status">Loading runs…</p>
+            } @else if (attachCandidates.length > 0) {
+              <div class="bp-attach-table-wrap">
+                <table class="bp-attach-table">
+                  <caption class="visually-hidden">Runs that may be attached</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Run</th>
+                      <th scope="col">Started</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Index</th>
+                      <th scope="col">Eligibility</th>
+                      <th scope="col"><span class="visually-hidden">Action</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (candidate of attachCandidates; track candidate.runId) {
+                      <tr [class.is-ineligible]="!candidate.eligible">
+                        <th scope="row">#{{ candidate.runId }}</th>
+                        <td>{{ candidateStartedLabel(candidate) }}</td>
+                        <td>{{ candidate.runStatus }}</td>
+                        <td>{{ candidate.qualityIndex ?? '—' }}</td>
+                        <td class="bp-attach-eligibility">
+                          @if (candidate.eligible) { Eligible } @else { {{ candidate.reason }} }
+                        </td>
+                        <td>
+                          @if (candidate.eligible) {
+                            <button type="button" class="btn-ghost bp-attach-choose"
+                                    [attr.aria-label]="'Attach run ' + candidate.runId"
+                                    [disabled]="attachInFlightRunId != null"
+                                    (click)="attachCandidate(candidate)">
+                              {{ attachInFlightRunId === candidate.runId ? 'Attaching…' : 'Attach' }}
+                            </button>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else if (!attachError) {
+              <p class="bp-attach-status">No run of this suite has tested this battery run's model configuration.</p>
+            }
+
+            @if (attachError) {
+              <div class="alert alert-danger mt-15 bp-attach-error" role="alert">{{ attachError }}</div>
+            }
+          </section>
+        }
+
+        @if (run.errorMessage) {
+          <div class="alert alert-danger mt-15" role="alert">{{ run.errorMessage }}</div>
+        }
+      }
+
+      @if (loadError) {
+        <p class="gh-field-error mt-15" id="bpLoadError">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+          {{ loadError }}
+        </p>
+      }
+      @if (actionError) {
+        <div class="alert alert-danger mt-15 bp-action-error" role="alert">{{ actionError }}</div>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      @if (isLive) {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Run in Background</button>
+      } @else {
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
+      }
+      @if (canCancel) {
+        <button type="button" class="btn-gh btn-gh-delete bp-cancel-battery" [disabled]="cancelInFlight"
+                (click)="cancelBattery()">Cancel Battery</button>
+      }
+      @if (canRerun) {
+        <button type="button" class="btn-gh bp-rerun" [disabled]="resumeInFlight"
+                (click)="resume('RerunUnderCurrentInstrument')">Re-run under Current Instrument</button>
+      }
+      @if (canContinue) {
+        <button type="button" class="btn-gh bp-continue" [disabled]="resumeInFlight" (click)="resume('Continue')">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          Continue
+        </button>
+      }
+      @if (canOpenAnalysis) {
+        <button type="button" class="btn-gh bp-open-analysis" (click)="showAnalysis()">Open Analysis</button>
+      }
+    </div>
+  </div>
+</dialog>

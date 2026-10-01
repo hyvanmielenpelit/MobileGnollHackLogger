@@ -1,0 +1,122 @@
+@use '../benchmark-dialog-frame' as frame;
+
+.gh-dialog.battery-editor-dialog {
+  @include frame.frame(72rem, $max-height: 92dvh);
+}
+
+.dialog-header h3:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
+}
+
+.dialog-body {
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  container: bbe-body / inline-size;
+}
+
+.bbe-optional {
+  font-weight: 400;
+  color: #999;
+}
+
+.bbe-description {
+  --autosize-min: 3rem;
+  --autosize-max: 10rem;
+}
+
+.bbe-revision-note,
+.bbe-deleted {
+  margin: 0 0 16px;
+}
+
+.bbe-hint {
+  margin: 0 0 8px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+/* One column below 56 rem of dialog body, the suite list beside the weighting above it. */
+.bbe-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+
+@container bbe-body (min-width: 56rem) {
+  .bbe-columns {
+    grid-template-columns: minmax(16rem, 2fr) minmax(0, 3fr);
+    align-items: start;
+  }
+}
+
+.bbe-suites,
+.bbe-weighting {
+  min-inline-size: 0;
+}
+
+.bbe-preview-wrap {
+  overflow-x: auto;
+  margin-bottom: 8px;
+}
+
+.bbe-preview {
+  width: 100%;
+
+  caption {
+    caption-side: top;
+    text-align: start;
+    padding: 0 0 6px;
+    font-size: var(--text-secondary);
+    color: #aaa;
+  }
+
+  th[scope='row'] {
+    font-weight: 600;
+    text-align: start;
+  }
+
+  .bbe-num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .bbe-chosen {
+    font-weight: 700;
+    color: var(--primary-color);
+  }
+
+  .bbe-muted {
+    color: #8a8a8a;
+  }
+
+  .bbe-custom-input {
+    inline-size: 6rem;
+    text-align: end;
+  }
+
+  .bbe-loading {
+    color: #999;
+    font-style: italic;
+  }
+}
+
+.bbe-warning {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 4px 0 0;
+  font-weight: 400;
+  font-size: var(--text-secondary);
+  color: #fbbf24;
+
+  svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+}
+
+.bbe-save-error {
+  margin-top: 16px;
+}

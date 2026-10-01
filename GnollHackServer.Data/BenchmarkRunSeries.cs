@@ -18,7 +18,14 @@ public enum BenchmarkRunSeriesStopReason
     RunCapReached = 2,
 
     /// <summary>The compliance guard denied the spend for a reason other than the run cap.</summary>
-    SpendDenied = 3
+    SpendDenied = 3,
+
+    /// <summary>
+    /// A member is not comparable with the battery's other members, or its instrument fingerprint
+    /// differs from the one recorded for its suite at start. Set by battery runs only; a series never
+    /// sets it.
+    /// </summary>
+    InstrumentChanged = 4
 }
 
 public enum BenchmarkRunSeriesStatus

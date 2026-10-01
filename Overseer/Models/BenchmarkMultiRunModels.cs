@@ -40,6 +40,9 @@ public class BenchmarkRunLimitsDto
 
     /// <summary>The largest `RunCount` the server will currently accept: `MaxRunsPerDay`.</summary>
     public int MaxRunCountPerSeries { get; set; }
+
+    /// <summary>The most launches one battery run may plan (suites × runs per suite): `Benchmark:Battery:MaxMembers`.</summary>
+    public int MaxMembersPerBattery { get; set; }
 }
 
 public class BenchmarkRunSeriesMemberDto

@@ -294,6 +294,7 @@ builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportChar
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 Overseer.Services.Benchmarking.Pdf.BenchmarkPdfResources.EnsureRegistered();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysisService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryAnalysisService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparabilityIndexService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunLauncher>();
@@ -301,6 +302,8 @@ builder.Services.AddScoped<Overseer.Services.SystemConfigUsageGuard>();
 // Singleton: it drives a series across many requests and outlives every one of them, creating its
 // own scope per member.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkSeriesOrchestrator>();
+// Singleton for the same reason: it drives a battery run across many requests.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkBatteryOrchestrator>();
 // Singleton: caches the parsed default-suite files per write time, and takes the DbContext and the
 // compliance guard per call rather than capturing scoped services.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.DefaultSuiteCatalogService>();
@@ -532,6 +535,17 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         await seriesOrchestrator.ReconcileOrphanedSeriesAsync(db);
     }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-series reconciliation failed."); }
+
+    // A battery run left Running, WaitingForCap or Pending has no live orchestrator either.
+    try
+    {
+        var batteryOrchestrator = app.Services
+            .GetRequiredService<Overseer.Services.Benchmarking.BenchmarkBatteryOrchestrator>();
+        var db = benchmarkCleanupScope.ServiceProvider
+            .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        await batteryOrchestrator.ReconcileOrphanedAsync(db);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark orphaned-battery reconciliation failed."); }
 
     // No run-completion document job survives a restart: a run left Pending or Writing is failed, and
     // the run report dialog's Write Reports writes what is missing.

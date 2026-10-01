@@ -49,6 +49,11 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkRunGroup> BenchmarkRunGroups { get; set; } = null!;
         public DbSet<BenchmarkRunGroupMember> BenchmarkRunGroupMembers { get; set; } = null!;
         public DbSet<BenchmarkGroupAnalysis> BenchmarkGroupAnalyses { get; set; } = null!;
+        public DbSet<BenchmarkBattery> BenchmarkBatteries { get; set; } = null!;
+        public DbSet<BenchmarkBatterySuite> BenchmarkBatterySuites { get; set; } = null!;
+        public DbSet<BenchmarkBatteryRun> BenchmarkBatteryRuns { get; set; } = null!;
+        public DbSet<BenchmarkBatteryRunMember> BenchmarkBatteryRunMembers { get; set; } = null!;
+        public DbSet<BenchmarkBatteryAnalysis> BenchmarkBatteryAnalyses { get; set; } = null!;
         public DbSet<SystemAiConfigurationSnapshot> SystemAiConfigurationSnapshots { get; set; } = null!;
         public DbSet<BenchmarkRunBoardSnapshot> BenchmarkRunBoardSnapshots { get; set; } = null!;
         public DbSet<BenchmarkReportDocument> BenchmarkReportDocuments { get; set; } = null!;
@@ -450,6 +455,108 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<BenchmarkGroupAnalysis>()
                 .HasIndex(a => new { a.BenchmarkRunGroupId, a.ComputedAtUtc });
+
+            // --- Multi-suite: batteries, battery runs and their analyses ---
+
+            modelBuilder.Entity<BenchmarkBattery>()
+                .HasIndex(b => b.Name)
+                .IsUnique();
+
+            modelBuilder.Entity<BenchmarkBattery>()
+                .Property(b => b.WeightingScheme)
+                .HasDefaultValue(BenchmarkBatteryWeightingScheme.DifficultyMass);
+
+            modelBuilder.Entity<BenchmarkBattery>()
+                .HasOne(b => b.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(b => b.CreatedByUserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkBatterySuite>()
+                .HasOne(s => s.BenchmarkBattery)
+                .WithMany(b => b.Suites)
+                .HasForeignKey(s => s.BenchmarkBatteryId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // The row outlives its suite, keeping the name, so a broken battery can say what is gone.
+            modelBuilder.Entity<BenchmarkBatterySuite>()
+                .HasOne(s => s.BenchmarkSuite)
+                .WithMany()
+                .HasForeignKey(s => s.BenchmarkSuiteId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            // Filtered to non-null suite ids by the SQL Server convention, so two deleted suites of one
+            // battery do not collide.
+            modelBuilder.Entity<BenchmarkBatterySuite>()
+                .HasIndex(s => new { s.BenchmarkBatteryId, s.BenchmarkSuiteId })
+                .IsUnique();
+
+            // A battery run keeps its definition snapshot when the battery is deleted.
+            modelBuilder.Entity<BenchmarkBatteryRun>()
+                .HasOne(r => r.BenchmarkBattery)
+                .WithMany()
+                .HasForeignKey(r => r.BenchmarkBatteryId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkBatteryRun>()
+                .HasOne(r => r.StartedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.StartedByUserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkBatteryRun>()
+                .HasIndex(r => r.StartedAtUtc);
+
+            modelBuilder.Entity<BenchmarkBatteryRun>()
+                .HasIndex(r => r.Status);
+
+            modelBuilder.Entity<BenchmarkBatteryRunMember>()
+                .HasOne(m => m.BenchmarkBatteryRun)
+                .WithMany(r => r.Members)
+                .HasForeignKey(m => m.BenchmarkBatteryRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Deleting a member run frees its slot.
+            modelBuilder.Entity<BenchmarkBatteryRunMember>()
+                .HasOne(m => m.BenchmarkRun)
+                .WithMany()
+                .HasForeignKey(m => m.BenchmarkRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // One live member per slot. SQL Server only; the orchestrator enforces it in code as well.
+            modelBuilder.Entity<BenchmarkBatteryRunMember>()
+                .HasIndex(m => new { m.BenchmarkBatteryRunId, m.SuiteIndex, m.Round })
+                .IsUnique()
+                .HasFilter("[Superseded] = 0");
+
+            modelBuilder.Entity<BenchmarkBatteryRunMember>()
+                .HasIndex(m => new { m.BenchmarkBatteryRunId, m.BenchmarkRunId })
+                .IsUnique();
+
+            modelBuilder.Entity<BenchmarkBatteryRunMember>()
+                .HasIndex(m => m.BenchmarkRunId);
+
+            modelBuilder.Entity<BenchmarkBatteryAnalysis>()
+                .HasOne(a => a.BenchmarkBatteryRun)
+                .WithMany()
+                .HasForeignKey(a => a.BenchmarkBatteryRunId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<BenchmarkBatteryAnalysis>()
+                .HasOne(a => a.ComputedByUser)
+                .WithMany()
+                .HasForeignKey(a => a.ComputedByUserId)
+                .HasPrincipalKey(u => u.Id)
+                .OnDelete(DeleteBehavior.ClientSetNull);
+
+            modelBuilder.Entity<BenchmarkBatteryAnalysis>()
+                .HasIndex(a => new { a.BenchmarkBatteryRunId, a.ComputedAtUtc });
+
+            // The leaderboard reads by definition hash.
+            modelBuilder.Entity<BenchmarkBatteryAnalysis>()
+                .HasIndex(a => new { a.DefinitionSha256, a.ComputedAtUtc });
 
             // --- Report-pack documents ---
 

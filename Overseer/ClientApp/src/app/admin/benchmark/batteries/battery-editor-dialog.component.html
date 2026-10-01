@@ -1,0 +1,193 @@
+<dialog #editorDialog class="gh-dialog battery-editor-dialog" aria-labelledby="bbeTitle"
+        (cancel)="onCancel($event)">
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 #editorHeading id="bbeTitle" tabindex="-1">{{ editing ? 'Edit Battery' : 'New Battery' }}</h3>
+        @if (editing) {
+          <p class="dialog-subtitle">{{ editing.name }} · revision {{ editing.revision }}</p>
+        }
+      </div>
+      <button type="button" class="btn-icon-action"
+              aria-label="Close battery editor"
+              interestfor="bbe-tip-close"
+              style="anchor-name: --bbe-tip-close"
+              [disabled]="saving"
+              (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="bbe-tip-close" style="position-anchor: --bbe-tip-close">Close</div>
+    </div>
+
+    <div class="dialog-body">
+      @if (editing) {
+        <p class="bbe-revision-note alert alert-info" id="bbeRevisionNote">
+          Changing the suites, their order, the weighting or the weights creates revision {{ editing.revision + 1 }}.
+          Existing battery runs keep the definition they ran under, and their results do not change.
+        </p>
+      }
+
+      <div class="form-group">
+        <label for="bbeName">Name</label>
+        <input id="bbeName" type="text" class="gh-input" maxlength="128" autocomplete="off"
+               [value]="name" (input)="onNameInput($event)"
+               [attr.aria-invalid]="attemptedSave && nameError ? 'true' : null"
+               [attr.aria-describedby]="attemptedSave && nameError ? 'bbeNameError' : null">
+        @if (attemptedSave && nameError) {
+          <p class="gh-field-error" id="bbeNameError">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            {{ nameError }}
+          </p>
+        }
+      </div>
+
+      <div class="form-group">
+        <label for="bbeDescription">Description <span class="bbe-optional">(optional)</span></label>
+        <textarea id="bbeDescription" class="gh-input gh-textarea-autosize bbe-description" rows="2"
+                  [value]="description" (input)="onDescriptionInput($event)"></textarea>
+      </div>
+
+      @if (deletedSuiteNames.length > 0) {
+        <div class="alert alert-warning bbe-deleted" role="note">
+          Deleted {{ deletedSuiteNames.length === 1 ? 'suite' : 'suites' }}
+          {{ deletedSuiteNames.join(', ') }} will be removed from the battery when you save.
+        </div>
+      }
+
+      <div class="bbe-columns">
+        <section class="bbe-suites" aria-labelledby="bbeSuitesTitle">
+          <h4 class="gh-section-title" id="bbeSuitesTitle">Suites</h4>
+          <p class="bbe-hint" id="bbeSuitesHint">Select the suites; the order of the selected ones is the order they run in.</p>
+          <app-reorderable-list [items]="items" [checkable]="true" idPrefix="bbe-suites"
+                                listLabel="Suites in run order" itemNoun="suite"
+                                (orderChange)="onOrderChange($event)"
+                                (checkedChange)="onCheckedChange($event)"></app-reorderable-list>
+          @if (rows.length === 0) {
+            <p class="bbe-hint">There are no suites yet. Create a suite in Manage Suites first.</p>
+          }
+          @if (attemptedSave && suiteCountError) {
+            <p class="gh-field-error" id="bbeSuiteCountError">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              {{ suiteCountError }}
+            </p>
+          }
+        </section>
+
+        <section class="bbe-weighting" aria-labelledby="bbeWeightingTitle">
+          <h4 class="gh-section-title" id="bbeWeightingTitle">Weighting</h4>
+          <div class="form-group">
+            <label for="bbeScheme">Weighting</label>
+            <div class="gh-field-row">
+              <select id="bbeScheme" class="gh-input" aria-describedby="bbeSchemeHint" (change)="onSchemeChange($event)">
+                @for (option of schemeOptions; track option.value) {
+                  <option [value]="option.value" [selected]="option.value === scheme">{{ option.label }}</option>
+                }
+              </select>
+              <app-info-tip trigger="click" tipId="bbeSchemeHint" subject="Weighting">
+                <p>Questions and difficulty (the default): each suite weighs the sum of its questions'
+                  difficulties, so more questions and harder questions both count for more; the Overall
+                  Index then equals one difficulty-weighted index over every question.</p>
+                <dl>
+                  <div><dt><span class="gh-info-term">Questions only</span></dt><dd>Each suite weighs its number of questions, whatever their difficulty.</dd></div>
+                  <div><dt><span class="gh-info-term">Equal per suite</span></dt><dd>Every suite weighs the same.</dd></div>
+                  <div><dt><span class="gh-info-term">Custom</span></dt><dd>Your own positive weights, normalized to sum to 100 %.</dd></div>
+                </dl>
+                <p>Whatever you choose, the analysis also reports the Overall Index under the other automatic schemes as a sensitivity check.</p>
+              </app-info-tip>
+            </div>
+          </div>
+
+          <div class="bbe-preview-wrap">
+            <table class="gh-table bbe-preview">
+              <caption>Weight preview from the suites' current questions</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Suite</th>
+                  <th scope="col" class="bbe-num">Questions</th>
+                  <th scope="col" class="bbe-num">Difficulty mass</th>
+                  @if (scheme === 'Custom') {
+                    <th scope="col" class="bbe-num">Custom weight</th>
+                  }
+                  <th scope="col" class="bbe-num bbe-chosen">{{ schemeLabel }}</th>
+                  @for (option of otherSchemes; track option.value) {
+                    <th scope="col" class="bbe-num bbe-muted">{{ option.label }}</th>
+                  }
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of previewRows; track row.suiteId) {
+                  <tr [attr.data-suite-id]="row.suiteId">
+                    <th scope="row">
+                      {{ row.name }}
+                      @if (isUnassessed(row)) {
+                        <p class="bbe-warning">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+                          Difficulties not assessed for {{ row.questionCount - row.assessedQuestionCount }} of {{ row.questionCount }} questions:
+                          each counts as 50 here, and the launcher refuses this suite until it is assessed.
+                        </p>
+                      }
+                      @if (row.massError) {
+                        <p class="gh-field-error">{{ row.massError }}</p>
+                      }
+                    </th>
+                    <td class="bbe-num">{{ row.questionCount }}</td>
+                    <td class="bbe-num">
+                      @if (row.difficultyMass != null) {
+                        {{ formatNumber(row.difficultyMass, 0) }}
+                      } @else if (!row.massError) {
+                        <span class="bbe-loading">Loading…</span>
+                      } @else {
+                        —
+                      }
+                    </td>
+                    @if (scheme === 'Custom') {
+                      <td class="bbe-num">
+                        <label class="visually-hidden" [attr.for]="'bbe-custom-' + row.suiteId">Custom weight for {{ row.name }}</label>
+                        <input type="number" class="gh-input bbe-custom-input" min="0" step="any"
+                               [id]="'bbe-custom-' + row.suiteId"
+                               [value]="row.customWeight ?? ''"
+                               (input)="onCustomWeightInput(row.suiteId, $event)">
+                      </td>
+                    }
+                    <td class="bbe-num bbe-chosen">{{ formatPercent(row.weights[scheme]) }}</td>
+                    @for (option of otherSchemes; track option.value) {
+                      <td class="bbe-num bbe-muted">{{ formatPercent(row.weights[option.value]) }}</td>
+                    }
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td [attr.colspan]="4 + otherSchemes.length + (scheme === 'Custom' ? 1 : 0)" class="bbe-hint">
+                      Select suites to see their weights.
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (customWeightError && (attemptedSave || previewRows.length > 0)) {
+            <p class="gh-field-error" id="bbeCustomError">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              {{ customWeightError }}
+            </p>
+          }
+          <p class="bbe-hint">The analysis records the weights it actually used, from the questions the runs answered.</p>
+        </section>
+      </div>
+
+      @if (saveError) {
+        <div class="alert alert-danger bbe-save-error" role="alert">{{ saveError }}</div>
+      }
+    </div>
+
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel" [disabled]="saving" (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh bbe-save" [disabled]="saving" (click)="save()">
+        {{ saving ? 'Saving…' : (editing ? 'Save Battery' : 'Create Battery') }}
+      </button>
+    </div>
+  </div>
+</dialog>

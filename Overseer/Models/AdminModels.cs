@@ -425,6 +425,9 @@ public class SystemConfigDeletionCheckDto
     /// <summary>Stopped series naming the configuration. Informational: resuming them will be refused.</summary>
     public int StoppedSeriesCount { get; set; }
 
+    /// <summary>Stopped battery runs naming the configuration. Informational: resuming them will be refused.</summary>
+    public int StoppedBatteryRunCount { get; set; }
+
     /// <summary>Removed with the configuration.</summary>
     public int UserAssignmentCount { get; set; }
 

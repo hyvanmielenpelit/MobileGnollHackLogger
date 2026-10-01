@@ -947,13 +947,13 @@ describe('AdminComponent', () => {
 
     const blockedCheck = (blockers: SystemConfigBlockerDto[] = [blocker()]): SystemConfigDeletionCheckDto => ({
       configId: 42, displayName: "Prod GPT-5", canDelete: false, blockers,
-      benchmarkRunReferenceCount: 3, stoppedSeriesCount: 0,
+      benchmarkRunReferenceCount: 3, stoppedSeriesCount: 0, stoppedBatteryRunCount: 0,
       userAssignmentCount: 2, groupAssignmentCount: 1, confidentialTrustCount: 0
     });
 
     const deletableCheck = (overrides: Partial<SystemConfigDeletionCheckDto> = {}): SystemConfigDeletionCheckDto => ({
       configId: 42, displayName: "Prod GPT-5", canDelete: true, blockers: [],
-      benchmarkRunReferenceCount: 5, stoppedSeriesCount: 2,
+      benchmarkRunReferenceCount: 5, stoppedSeriesCount: 2, stoppedBatteryRunCount: 0,
       userAssignmentCount: 3, groupAssignmentCount: 1, confidentialTrustCount: 4,
       ...overrides
     });
@@ -1035,7 +1035,23 @@ describe('AdminComponent', () => {
       const list = dialogEl().querySelector('#delete-config-desc')!;
       expect(list.textContent).not.toContain('confidentiality');
       expect(list.textContent).not.toContain('stopped benchmark series');
+      expect(list.textContent).not.toContain('stopped battery run');
     });
+
+    for (const [count, line] of [
+      [3, '3 stopped battery runs name this configuration and can no longer be resumed.'],
+      [1, '1 stopped battery run names this configuration and can no longer be resumed.']
+    ] as const) {
+      it(`names ${count} stopped battery run(s) that can no longer be resumed`, () => {
+        spyOn(adminService, 'getSystemConfigDeletionCheck')
+          .and.returnValue(of(deletableCheck({ stoppedBatteryRunCount: count })));
+
+        rowDeleteButton().click();
+        fixture.detectChanges();
+
+        expect(dialogEl().querySelector('#delete-config-desc')!.textContent).toContain(line);
+      });
+    }
 
     it('opens in the error state when the pre-check itself fails', () => {
       spyOn(adminService, 'getSystemConfigDeletionCheck')

@@ -83,17 +83,17 @@ public class BenchmarkSeriesOrchestrator
     /// window is the one that realistically blocks a series, and it is 60 minutes wide, so polling
     /// faster than this buys nothing but database queries.
     /// </summary>
-    private static readonly TimeSpan CapRetryInterval = TimeSpan.FromMinutes(2);
+    internal static readonly TimeSpan CapRetryInterval = TimeSpan.FromMinutes(2);
 
     /// <summary>
     /// Total time a series may sit waiting on the cap before it gives up and stops (resumably). A
     /// series that has waited this long is one an operator should decide about, not one that should
     /// keep a background task alive indefinitely.
     /// </summary>
-    private static readonly TimeSpan CapWaitBudget = TimeSpan.FromHours(26);
+    internal static readonly TimeSpan CapWaitBudget = TimeSpan.FromHours(26);
 
     /// <summary>How often to check whether the in-flight member has reached a terminal state.</summary>
-    private static readonly TimeSpan MemberPollInterval = TimeSpan.FromSeconds(5);
+    internal static readonly TimeSpan MemberPollInterval = TimeSpan.FromSeconds(5);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly BenchmarkRunManager _runManager;
@@ -148,6 +148,13 @@ public class BenchmarkSeriesOrchestrator
         {
             return BenchmarkSeriesStartResult.Fail(
                 BenchmarkSeriesStartOutcome.Conflict, "A benchmark run series is already in progress.");
+        }
+
+        // Refused without taking the claim; it is taken only once the row exists.
+        if (_runManager.OrchestratorOwner is { } claimOwner)
+        {
+            return BenchmarkSeriesStartResult.Fail(
+                BenchmarkSeriesStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
 
         using var scope = _scopeFactory.CreateScope();
@@ -230,6 +237,18 @@ public class BenchmarkSeriesOrchestrator
         db.BenchmarkRunSeries.Add(series);
         await db.SaveChangesAsync(ct);
 
+        // The owner token needs the row id, so the claim follows the save; a claim lost to a race
+        // removes the row again and refuses the start.
+        if (!_runManager.TryClaimOrchestrator(BenchmarkRunManager.SeriesOwner(series.Id)))
+        {
+            db.BenchmarkRunSeries.Remove(series);
+            await db.SaveChangesAsync(CancellationToken.None);
+
+            return BenchmarkSeriesStartResult.Fail(
+                BenchmarkSeriesStartOutcome.Conflict,
+                BenchmarkRunManager.ClaimConflictMessage(_runManager.OrchestratorOwner));
+        }
+
         BeginDriving(series.Id);
         return BenchmarkSeriesStartResult.Ok(series.Id);
     }
@@ -274,6 +293,13 @@ public class BenchmarkSeriesOrchestrator
         {
             return BenchmarkSeriesStartResult.Fail(
                 BenchmarkSeriesStartOutcome.Conflict, "Another benchmark run series is already in progress.");
+        }
+
+        string owner = BenchmarkRunManager.SeriesOwner(seriesId);
+        if (_runManager.OrchestratorOwner is { } claimOwner && claimOwner != owner)
+        {
+            return BenchmarkSeriesStartResult.Fail(
+                BenchmarkSeriesStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(claimOwner));
         }
 
         using var scope = _scopeFactory.CreateScope();
@@ -379,7 +405,24 @@ public class BenchmarkSeriesOrchestrator
         series.StopReason = null;
         series.ErrorMessage = null;
         series.LastProgressAtUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
+
+        // A claim this series already holds belongs to its live drive loop, which releases it.
+        bool claimAlreadyHeld = _runManager.OrchestratorOwner == owner;
+        if (!_runManager.TryClaimOrchestrator(owner))
+        {
+            return BenchmarkSeriesStartResult.Fail(
+                BenchmarkSeriesStartOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(_runManager.OrchestratorOwner));
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch
+        {
+            if (!claimAlreadyHeld) _runManager.ReleaseOrchestrator(owner);
+            throw;
+        }
 
         BeginDriving(series.Id);
         return BenchmarkSeriesStartResult.Ok(series.Id);
@@ -571,6 +614,8 @@ public class BenchmarkSeriesOrchestrator
                 {
                     removed.Dispose();
                 }
+
+                _runManager.ReleaseOrchestrator(BenchmarkRunManager.SeriesOwner(seriesId));
             }
         });
     }
@@ -844,7 +889,7 @@ public class BenchmarkSeriesOrchestrator
         CancellationToken ct)
     {
         // Untracked: only ids and the display name are used, and the stub answer graph below must
-        // not be mistaken for new answers by the two SaveChanges calls at the end of this method.
+        // not be mistaken for new answers by the two SaveChanges calls of CreateReplicateGroupAsync.
         var members = await db.BenchmarkRuns
             .AsNoTracking()
             .Where(r => r.RunSeriesId == series.Id
@@ -854,6 +899,45 @@ public class BenchmarkSeriesOrchestrator
             .OrderBy(r => r.RunSeriesIndex)
             .ToListAsync(ct);
 
+        return await CreateReplicateGroupAsync(
+            db,
+            _logger,
+            members,
+            series.BenchmarkSuiteId,
+            series.SuiteName,
+            series.StartedAtUtc,
+            series.StartedByUserId,
+            series.Id,
+            series.InstrumentChangeAcknowledged,
+            series.InstrumentChangeAcknowledged
+                ? "Auto-created from a series that was resumed over an acknowledged instrument change. " +
+                  "Marked cross-condition: these members did not all answer under the same instrument."
+                : "Auto-created from a completed benchmark run series.",
+            ct);
+    }
+
+    /// <summary>
+    /// Creates an analysis group over <paramref name="members"/>, the successful runs of one suite
+    /// launched from one request, with its tier resolved from the runs and persisted. Shared by the
+    /// series and the battery orchestrator.
+    /// </summary>
+    /// <param name="members">Untracked runs; they receive answer stubs here.</param>
+    /// <param name="createdFromSeriesId">The series the group comes from; null for a battery.</param>
+    /// <param name="instrumentChangeAcknowledged">Caps the tier at cross-condition.</param>
+    /// <returns>The new group's id, or null when there were fewer than two members.</returns>
+    internal static async Task<long?> CreateReplicateGroupAsync(
+        ApplicationDbContext db,
+        ILogger logger,
+        IReadOnlyList<BenchmarkRun> members,
+        long? suiteId,
+        string suiteName,
+        DateTime startedAtUtc,
+        string? userId,
+        long? createdFromSeriesId,
+        bool instrumentChangeAcknowledged,
+        string notes,
+        CancellationToken ct)
+    {
         // One run is not a replicate set, and a group of one supports no statistic multi-run adds.
         if (members.Count < 2) return null;
 
@@ -862,7 +946,7 @@ public class BenchmarkSeriesOrchestrator
         var comparability = BenchmarkComparabilityKey.Resolve(members);
         var tier = (BenchmarkRunGroupTier)(int)comparability.Tier;
 
-        if (series.InstrumentChangeAcknowledged)
+        if (instrumentChangeAcknowledged)
         {
             // The operator was told the instrument moved and continued anyway. Tier C is the honest
             // description of what came out, and it is enforced here rather than left to the resolver:
@@ -874,22 +958,32 @@ public class BenchmarkSeriesOrchestrator
         }
         else if (tier != BenchmarkRunGroupTier.Replicate)
         {
-            _logger.LogError(
-                "Benchmark run series {SeriesId} produced a group that resolved {Tier}, not Tier A, " +
-                "without an acknowledged instrument change. Differing keys: {Keys}. A series launches " +
-                "every member from one identical request, so either something outside the request " +
-                "moved between members — a model pricing or catalog edit is the usual one — or this " +
-                "is a harness defect. The differing keys above say which.",
-                series.Id, tier, string.Join(", ", comparability.Differences.Select(d => d.Describe())));
+            if (createdFromSeriesId.HasValue)
+            {
+                logger.LogError(
+                    "Benchmark run series {SeriesId} produced a group that resolved {Tier}, not Tier A, " +
+                    "without an acknowledged instrument change. Differing keys: {Keys}. A series launches " +
+                    "every member from one identical request, so either something outside the request " +
+                    "moved between members — a model pricing or catalog edit is the usual one — or this " +
+                    "is a harness defect. The differing keys above say which.",
+                    createdFromSeriesId.Value, tier, string.Join(", ", comparability.Differences.Select(d => d.Describe())));
+            }
+            else
+            {
+                logger.LogError(
+                    "An auto-created replicate group for suite '{SuiteName}' resolved {Tier}, not Tier A. " +
+                    "Differing keys: {Keys}. ({Notes})",
+                    suiteName, tier, string.Join(", ", comparability.Differences.Select(d => d.Describe())), notes);
+            }
         }
 
         string modelName = members[0].TestedModelSnapshot.Label() ?? "Unknown model";
-        string name = $"{series.SuiteName} · {modelName} · {series.StartedAtUtc:yyyy-MM-dd} · R={members.Count}";
+        string name = $"{suiteName} · {modelName} · {startedAtUtc:yyyy-MM-dd} · R={members.Count}";
 
         var group = new BenchmarkRunGroup
         {
             Name = name.Length > 256 ? name.Substring(0, 256) : name,
-            BenchmarkSuiteId = series.BenchmarkSuiteId,
+            BenchmarkSuiteId = suiteId,
             Tier = tier,
             ComparabilityKeyHash = comparability.ComparabilityKeyHash,
             ComparabilityKeyVersion = BenchmarkComparabilityKey.DefinitionVersion,
@@ -905,12 +999,9 @@ public class BenchmarkSeriesOrchestrator
                 explanation = comparability.Explanation
             }),
             CrossCondition = tier == BenchmarkRunGroupTier.CrossCondition,
-            Notes = series.InstrumentChangeAcknowledged
-                ? "Auto-created from a series that was resumed over an acknowledged instrument change. " +
-                  "Marked cross-condition: these members did not all answer under the same instrument."
-                : "Auto-created from a completed benchmark run series.",
-            CreatedFromSeriesId = series.Id,
-            CreatedByUserId = series.StartedByUserId,
+            Notes = notes,
+            CreatedFromSeriesId = createdFromSeriesId,
+            CreatedByUserId = userId,
             CreatedAtUtc = DateTime.UtcNow,
             ModifiedAtUtc = DateTime.UtcNow
         };
@@ -940,9 +1031,9 @@ public class BenchmarkSeriesOrchestrator
     /// <para><b>Only for untracked runs</b>: the stubs have no key, so attaching them to a tracked
     /// run makes the next <c>SaveChanges</c> insert them as new answers.</para>
     /// </summary>
-    private static async Task HydrateItemRevisionsAsync(
+    internal static async Task HydrateItemRevisionsAsync(
         ApplicationDbContext db,
-        List<BenchmarkRun> members,
+        IReadOnlyList<BenchmarkRun> members,
         CancellationToken ct)
     {
         var runIds = members.Select(r => r.Id).ToList();

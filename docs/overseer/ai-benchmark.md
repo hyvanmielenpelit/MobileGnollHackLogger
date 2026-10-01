@@ -25,7 +25,27 @@ The benchmark framework consists of:
 - **Provider Error Isolation**: Distinguishes between genuine model errors (wrong answers, hallucinations) and transient API infrastructure failures (HTTP 429 rate limits, 503 service unavailable, 529 overload). Provider errors are excluded from scores and denominators.
 - **Configurable Scoring Profiles**: Entities defining weights, level-to-score mappings, critical error ceilings, speed target latencies, decay factors, and maximum parallel questions.
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
+- **Multi-Suite Batteries**: A battery is a named, fixed set of two or more suites with declared weights. A battery run tests one model on every suite of the battery, one suite after another, *R* times each, and combines the per-suite results into an **Overall Intelligence Index** with an uncertainty interval, a suite profile, weighting-sensitivity figures, speed and cost composites, a leaderboard per comparability class and a paired comparison of two results. See [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
 - **Report Packs and the Download Center**: For one Model Comparison entry, a separately chosen writer model writes an Executive Summary, a Report for AI Researchers and Developers and an Internal Improvement Brief from computed figures; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. Their PDF and Word copies can carry the comparison's own charts, drawn in the browser from the wizard's chart settings and stored beside the document. The Model Comparison wizard's step 3, *Reports*, writes them, and its step 4, *Documents*, lists, views, charts, downloads and deletes the documents of the comparison that is open; the Model Comparison launcher, under its **Open Comparison Wizard** button, sums up every comparison document as **Comparison reports** and opens them in the Download Center. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
+
+### Run Target: One Suite or a Battery
+
+The launcher's *Test Setup* fieldset opens with **Run Target**, a radio group:
+
+- **Single suite** (the default) — the *Benchmark Suite* select, and *Number of Runs*: one run, or a
+  series of replicate runs of that suite ([`ai-benchmark-multi-run.md`](ai-benchmark-multi-run.md)).
+- **Battery** — the suite select is replaced by a **Battery** select listing the batteries that can run
+  (not archived, no deleted suite, no validation error), whose info tip shows the suites in run order
+  and their weights; *Number of Runs* becomes **Runs per Suite**, bounded by
+  `floor(maxMembersPerBattery / K)`; *Wait when the run cap blocks the next run* is offered, and is
+  required when the battery plans more launches than the daily cap; the series projection becomes a
+  **Battery Projection** summed over the suites; and **Reuse earlier runs** can fill slots from
+  eligible earlier runs instead of launching them.
+
+*Start* then starts a battery run (`POST /api/admin/benchmark/batteries/runs`) instead of a run or a
+series, and a battery banner follows it. Run Target and the battery are remembered across reloads; the
+reuse choice is not. Batteries are defined on the **Multi-Suite** tab. Everything about batteries is in
+[`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
 
 ### Run Progress Dialog
 
@@ -5881,6 +5901,64 @@ $$t = \frac{S_\text{abstain} - S_\text{wrong}}{S_\text{right} - S_\text{wrong}}$
   resume are refused on them once the constant moves (`IsCurrentScoringMethod`), as intended. Rescore
   stays allowed, and `LastMethodRescoreCanApply` stays 10.
 
+### Multi-Suite Batteries (2026-10-02) — No Version Bump
+
+*Nothing is graded or keyed differently: `HarnessVersion`, `ScoringMethodVersion` and
+`BenchmarkComparabilityKey.DefinitionVersion` do not move, and existing runs, series and groups are
+unchanged. One EF Core migration, `AddBenchmarkBatteries`.*
+
+Until now every run, series and group measured **one** suite, and the suite id is a Fundamental
+comparability key, so there was no figure across suites. A **battery** is a named set of two or more
+suites with declared weights; a **battery run** runs one model on every suite of it, one suite after
+another, *R* rounds of each in round-robin order, and combines the results into an **Overall
+Intelligence Index**. The design, the execution rules and the full statistical method are in
+[`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md). In short:
+
+- **Weights are declared before any result exists.** The default, *Questions and difficulty*, weighs
+  a suite by the sum of its questions' difficulty weights, which makes the Overall Index equal to one
+  difficulty-weighted index over every question of every suite. *Questions only*, *Equal per suite*
+  and *Custom* are available, and the other automatic schemes are always reported as sensitivity
+  figures.
+- **No partial headline.** A member counts only when its run finished with an index; a suite with no
+  such member leaves the battery run *Incomplete (k of K suites)*, with per-suite figures and no
+  Overall Index. A member whose index was withheld for a provider failure does not stop the battery,
+  which ends *Completed with errors* and names the run to repair.
+- **Two guards after every member.** Its five instrument hashes against those recorded for its suite
+  at start, and the composite's own comparability verdict over every usable member so far. A failure
+  stops the battery run with the new stop reason **`InstrumentChanged`**
+  (`BenchmarkRunSeriesStopReason` = 4, *A member is not comparable with the others*); it can then be
+  re-run under the current instrument or canceled, not continued.
+- **Uncertainty** combines the suites' item-sampling errors in quadrature on Welch–Satterthwaite
+  degrees of freedom, and a per-round reproducibility component from *R* ≥ 3 rounds. Two results of
+  the same definition are compared with a stratified sign-flip randomization test; a leaderboard ranks
+  results only within one comparability class.
+- **Attaching earlier runs.** A run that matches a slot's suite, configuration, scoring method and
+  recorded instrument hashes can fill it instead of a new launch, at start (*Reuse earlier runs*) or
+  later from the progress dialog.
+
+New: the **Multi-Suite** tab (fourth, after *Multi-Run Analysis*; *Manage Suites*, *Scoring Profiles*
+and *Model Comparison* move one place right), the launcher's **Run Target** (§ 1), a battery banner and
+progress dialog, a *Battery #id · suite s/K* badge on member runs in Run History, the endpoints under
+`/api/admin/benchmark/batteries` (§ 6), `maxMembersPerBattery` on `GET runs/limits`, and the
+configuration key `Benchmark:Battery:MaxMembers` (default 60), the most launches one battery run may
+plan. Deleting a suite is refused while an active battery run contains it; deleting a system AI
+configuration is refused while an active battery run names it, and the delete dialog counts the
+stopped battery runs that do.
+
+**Two behavior changes outside batteries.** Series and batteries now share one **orchestrator claim**
+on `BenchmarkRunManager` (owner `series:<id>` or `battery:<id>`). A series start takes it right after
+its row is saved — a start that loses the claim to a race deletes its row again and answers 409 — and
+the series' drive task releases it when it ends. While a series or a battery is live:
+
+1. **A single run is refused** (`POST runs`, 409, *"A benchmark series is running; wait for it or cancel
+   it."* or *"A battery is running; wait for it or cancel it."*). Before, a single run could slip in
+   between two members of a series and make the next member's launch fail.
+2. **The seven in-place re-runs are refused** with the same 409 before they touch any row: re-assess
+   answer, calibrate, re-run answer, re-run synthesis, retry failed assessments, retry claim
+   verification and re-run failed questions. They take the same run gate, and could do the same.
+
+A stopped series or battery holds no claim, so repairs work while it is stopped.
+
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
 - **Not-attempted floor** (scoring method 13): when `notAttempted` is true, `criticalError` is false and
@@ -7189,7 +7267,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `DELETE /api/admin/benchmark/suites/{id}/runs`: Bulk delete all stored benchmark runs for a suite.
 
 #### Multi-Run: Limits, Series, Groups and Analysis
-- `GET /api/admin/benchmark/runs/limits`: The caps and the live **rolling-window** counts — `maxRunsPerHour`, `maxRunsPerDay`, `runsInLastHour`, `runsInLast24Hours`, `remainingDailyHeadroom` (never negative) and `maxRunCountPerSeries`. The Number of runs field binds its `max` to this rather than to a literal, so raising the configured cap raises the field with it.
+- `GET /api/admin/benchmark/runs/limits`: The caps and the live **rolling-window** counts — `maxRunsPerHour`, `maxRunsPerDay`, `runsInLastHour`, `runsInLast24Hours`, `remainingDailyHeadroom` (never negative), `maxRunCountPerSeries` and `maxMembersPerBattery` (`Benchmark:Battery:MaxMembers`). The Number of runs field binds its `max` to this rather than to a literal, so raising the configured cap raises the field with it; in battery mode it is Runs per Suite and binds to `floor(maxMembersPerBattery / K)`.
 - `POST /api/admin/benchmark/runs/series`: Start a series of `RunCount` identical runs. `POST .../runs` with `runCount > 1` routes here too, so the two cannot diverge.
 - `GET /api/admin/benchmark/runs/series/{id}`: Series status, stop reason, per-member rows, and **both** the member-1 and current instrument hashes — which is what makes a refused resume self-explaining.
 - `GET /api/admin/benchmark/runs/series/active`: The series being driven, or the most recent resumable one; 204 when there is none.
@@ -7201,6 +7279,19 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `POST /api/admin/benchmark/runs/groups/{id}/analysis`: Compute and persist the statistics; an optional `compareWithGroupId` adds the paired comparison. Refuses a Tier C set: such a set is two conditions, and a pooled index over it would describe neither.
 - `GET /api/admin/benchmark/runs/groups/{id}/analysis`: The most recent stored analysis, or 204.
 - `GET /api/admin/benchmark/runs/groups/{id}/report`: Download the multi-run Markdown report, built from the **persisted** analysis so it stays reproducible after a run is deleted.
+
+#### Multi-Suite Batteries
+All under `/api/admin/benchmark/batteries`; the full table, with bodies and status codes, is [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 5.
+- `GET …/batteries`, `POST …/batteries`, `GET`/`PUT`/`DELETE …/batteries/{id}`: Battery definitions. An edit to the scheme, suites, order or weights increments `Revision`; the definition hash ignores the order. Delete answers 409 while one of the battery's runs is active.
+- `POST …/batteries/{id}/archive`: Hide a battery from the launcher, or show it again with `{ "archived": false }`.
+- `GET …/batteries/runs` (`?batteryId=&take=`), `GET …/batteries/runs/{id}`, `GET …/batteries/runs/active` (204 when none): Battery runs with their suite × round member grid.
+- `POST …/batteries/runs`: Start a battery run. 202 `{ batteryRunId }`; 409 for a conflict or an unacknowledged same-provider grader; 404 for an unknown battery; 429 at the spend guard; 400 for an invalid request or more launches than `Benchmark:Battery:MaxMembers` (or than the daily cap without *Allow cap wait*).
+- `POST …/batteries/runs/{id}/cancel`: Cancel; 400 for a battery run already Completed, Cancelled or Failed. `POST …/batteries/runs/{id}/resume` with `{ mode: "Continue" | "RerunUnderCurrentInstrument" }`; 409 with the moved hashes when the instrument changed.
+- `POST …/batteries/runs/reuse-preview`, `POST …/batteries/runs/{id}/members`, `GET …/batteries/runs/{id}/members/candidates?suiteIndex=&round=`: Preview which earlier runs a start would reuse, attach a run to a slot, and list the candidates for one slot.
+- `POST …/batteries/runs/{id}/analysis` (optional `{ compareWithBatteryRunId }`), `GET …/batteries/runs/{id}/analysis` (204 when none), `GET …/batteries/runs/{id}/report`: The composite analysis, the paired comparison, and the Markdown report from the persisted analysis.
+- `GET …/batteries/leaderboard?definitionSha256=`: The latest analysis of every battery run of one definition, ranked within each comparability class.
+
+> While a series or a battery is running it holds the orchestrator claim, and `POST runs`, `reassess`, `calibrate`, `answers/{answerId}/rerun`, `rerun-synthesis`, `retry-failed-assessments`, `retry-claim-verification` and `rerun-failed` all answer **409** with *"A benchmark series is running; wait for it or cancel it."* or *"A battery is running; wait for it or cancel it."*
 
 #### Rubric Gap Author
 - `POST /api/admin/benchmark/rubric-gap-author`, `GET .../{jobId}`, `GET .../active`, `POST .../{jobId}/cancel`: An AI job that **drafts** proposed rubric additions from verified claim clusters, using read-only tools to confirm each citation. It writes nothing.

@@ -361,6 +361,7 @@ public class BenchmarkRunLauncher
     /// <param name="seriesId">Set when this run is a member of a series; null for a standalone run.</param>
     /// <param name="seriesIndex">1-based member position. Null for a standalone run.</param>
     /// <param name="ct">Cancels the validation and the creation, not the run itself.</param>
+    /// <param name="batteryMember">Set when this run fills a battery slot; saved with the run.</param>
     /// <summary>
     /// Runs every validation <see cref="CreateAndLaunchRunAsync"/> performs, and creates nothing.
     ///
@@ -383,7 +384,8 @@ public class BenchmarkRunLauncher
         string? userId,
         long? seriesId = null,
         int? seriesIndex = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        BenchmarkBatteryRunMember? batteryMember = null)
     {
         if (_runManager.CurrentRunId.HasValue)
         {
@@ -391,6 +393,29 @@ public class BenchmarkRunLauncher
                 BenchmarkRunLaunchOutcome.Conflict, "A benchmark run is already in progress.");
         }
 
+        string? orchestratorOwner = OrchestratorOwnerFor(seriesId, batteryMember);
+        if (_runManager.OrchestratorOwner is { } claimOwner && claimOwner != orchestratorOwner)
+        {
+            return BenchmarkRunLaunchResult.Fail(
+                BenchmarkRunLaunchOutcome.Conflict, BenchmarkRunManager.ClaimConflictMessage(claimOwner));
+        }
+
+        // One live member per slot; the filtered unique index that also says so is SQL Server only.
+        if (batteryMember != null)
+        {
+            bool slotOccupied = await _dbContext.BenchmarkBatteryRunMembers.AnyAsync(m =>
+                m.BenchmarkBatteryRunId == batteryMember.BenchmarkBatteryRunId
+                && m.SuiteIndex == batteryMember.SuiteIndex
+                && m.Round == batteryMember.Round
+                && !m.Superseded, ct);
+            if (slotOccupied)
+            {
+                return BenchmarkRunLaunchResult.Fail(
+                    BenchmarkRunLaunchOutcome.Conflict,
+                    $"Suite {batteryMember.SuiteIndex + 1}, round {batteryMember.Round} of battery run " +
+                    $"#{batteryMember.BenchmarkBatteryRunId} already has a member.");
+            }
+        }
 
         var (failure, validated) = await ValidateAsync(request, ct);
         if (failure != null) return failure;
@@ -475,20 +500,36 @@ public class BenchmarkRunLauncher
         };
 
         _dbContext.BenchmarkRuns.Add(run);
+
+        // Saved with the run, so a run is never visible without its battery membership.
+        if (batteryMember != null)
+        {
+            batteryMember.BenchmarkRun = run;
+            _dbContext.BenchmarkBatteryRunMembers.Add(batteryMember);
+        }
+
         await _dbContext.SaveChangesAsync(ct);
 
         var cts = new CancellationTokenSource();
-        if (!_runManager.TryStart(run.Id, cts, out _))
+        if (!_runManager.TryStart(run.Id, cts, out _, orchestratorOwner))
         {
-            // Lost the race between the CurrentRunId check above and here. The row is already
-            // written, so mark it failed rather than leaving a Running row nothing will advance.
+            // Lost the race between the checks above and here. The row is already written, so mark
+            // it failed rather than leaving a Running row nothing will advance, and free its slot.
             run.Status = BenchmarkRunStatus.Failed;
             run.ErrorMessage = "A benchmark run was already in progress when this run was launched.";
             run.CompletedAtUtc = DateTime.UtcNow;
+            if (batteryMember != null)
+            {
+                batteryMember.Superseded = true;
+            }
             await _dbContext.SaveChangesAsync(ct);
 
+            string? raceOwner = _runManager.OrchestratorOwner;
             return BenchmarkRunLaunchResult.Fail(
-                BenchmarkRunLaunchOutcome.Conflict, "A benchmark run is already in progress.");
+                BenchmarkRunLaunchOutcome.Conflict,
+                raceOwner != null && raceOwner != orchestratorOwner
+                    ? BenchmarkRunManager.ClaimConflictMessage(raceOwner)
+                    : "A benchmark run is already in progress.");
         }
 
         // Deliberately not awaited and deliberately not bound to ct: ct scopes the *launch*, and the
@@ -523,6 +564,17 @@ public class BenchmarkRunLauncher
     /// </summary>
     internal static (bool VerboseMode, bool AllowSourceCodeReferences) ResolvePromptSwitches(StartBenchmarkRunRequest request)
         => (request.VerboseMode ?? false, request.AllowSourceCodeReferences ?? false);
+
+    /// <summary>
+    /// The orchestrator claim a launch runs under: the series' for a series member, the battery
+    /// run's for a battery member, else none.
+    /// </summary>
+    internal static string? OrchestratorOwnerFor(long? seriesId, BenchmarkBatteryRunMember? batteryMember)
+        => seriesId.HasValue
+            ? BenchmarkRunManager.SeriesOwner(seriesId.Value)
+            : batteryMember != null
+                ? BenchmarkRunManager.BatteryOwner(batteryMember.BenchmarkBatteryRunId)
+                : null;
 
     /// <summary>
     /// The rates written here are the <i>resolved</i> card — a scheduled change has already been folded

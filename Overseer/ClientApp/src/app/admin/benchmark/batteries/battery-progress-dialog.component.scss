@@ -1,0 +1,296 @@
+/* Battery run progress dialog: layout and component-local presentation only. The dialog frame
+ * (.gh-dialog-fullscreen), the buttons, .job-status-chip, .run-stat-strip, .job-progress-block and
+ * .gh-tooltip come from styles.scss. */
+
+.battery-progress-dialog {
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .dialog-header {
+    flex-shrink: 0;
+    gap: 12px;
+    margin: 0;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-glass);
+  }
+
+  .dialog-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+
+    h3 {
+      margin: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .dialog-subtitle {
+      margin: 0;
+      font-size: var(--text-secondary);
+      color: #aaa;
+    }
+  }
+
+  .dialog-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 16px 24px 20px;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    flex-shrink: 0;
+    padding: 14px 24px;
+    border-top: 1px solid var(--border-glass);
+    background: rgba(16, 16, 16, 0.98);
+
+    .btn-gh {
+      white-space: nowrap;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .dialog-header,
+    .dialog-body,
+    .dialog-footer {
+      padding-inline: 16px;
+    }
+  }
+}
+
+.bp-heading:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
+}
+
+.bp-state-block {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+
+  .bp-state-name {
+    margin: 0 0 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .bp-state-detail {
+    margin: 0;
+    font-size: var(--text-secondary);
+    color: #ccc;
+  }
+
+  &.state-waiting {
+    border-color: rgba(251, 191, 36, 0.4);
+    background: rgba(251, 191, 36, 0.08);
+
+    .bp-state-name { color: #fbbf24; }
+  }
+
+  &.state-stopped {
+    border-color: rgba(248, 81, 73, 0.4);
+    background: rgba(248, 81, 73, 0.08);
+
+    .bp-state-name { color: #ff7b72; }
+  }
+}
+
+/* --- Member grid ------------------------------------------------------------------------- */
+
+.bp-grid-wrap {
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.bp-grid {
+  width: 100%;
+  border-collapse: collapse;
+
+  caption {
+    caption-side: top;
+    text-align: start;
+    padding: 8px 10px;
+    font-size: var(--text-secondary);
+    color: #aaa;
+  }
+
+  th,
+  td {
+    padding: 8px 10px;
+    text-align: start;
+    vertical-align: top;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  thead th {
+    font-size: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #999;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child > * {
+    border-bottom: none;
+  }
+
+  .bp-suite {
+    min-inline-size: 12rem;
+    font-weight: 600;
+  }
+
+  .bp-suite-index {
+    display: inline-block;
+    min-inline-size: 1.5em;
+    color: #888;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bp-cell {
+    min-inline-size: 13rem;
+
+    &.is-current {
+      background: rgba(212, 160, 23, 0.07);
+    }
+  }
+
+  .bp-cell-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .bp-cell-meta {
+    margin: 4px 0 0;
+    font-size: var(--text-secondary);
+    color: #bbb;
+  }
+
+  .bp-cell-hint {
+    margin: 4px 0 0;
+    font-size: var(--text-secondary);
+    color: #e8d9a8;
+    max-inline-size: 22rem;
+  }
+
+  .bp-superseded {
+    color: #999;
+  }
+
+  .bp-empty {
+    color: #999;
+    font-style: italic;
+  }
+}
+
+.bp-grid .bp-attach {
+  margin-top: 8px;
+}
+
+/* --- Attach panel ------------------------------------------------------------------------ */
+
+.bp-attach-panel {
+  margin-top: 16px;
+  padding: 12px 14px 14px;
+  border: 1px solid rgba(212, 160, 23, 0.3);
+  border-radius: 6px;
+  background: rgba(212, 160, 23, 0.04);
+
+  .bp-attach-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    h5 {
+      margin: 0;
+      font-size: var(--text-body);
+      font-weight: 700;
+      overflow-wrap: anywhere;
+
+      &:focus-visible {
+        outline: 2px solid var(--primary-color);
+        outline-offset: 3px;
+      }
+    }
+  }
+
+  .bp-attach-intro,
+  .bp-attach-status {
+    margin: 6px 0 0;
+    font-size: var(--text-secondary);
+    color: #bbb;
+  }
+
+  .bp-attach-table-wrap {
+    margin-top: 10px;
+    overflow-x: auto;
+  }
+
+  .bp-attach-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-secondary);
+
+    th,
+    td {
+      padding: 6px 8px;
+      text-align: start;
+      vertical-align: top;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    thead th {
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #999;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tbody th {
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+
+    .bp-attach-eligibility {
+      max-inline-size: 28rem;
+    }
+
+    tr.is-ineligible .bp-attach-eligibility {
+      color: #e8d9a8;
+    }
+  }
+}
+
+/* Instrument changed: a stop, not a provider fault, so neither the red of Failed nor the amber
+   of Index withheld. The word on the chip carries the meaning. */
+.job-status-chip.bp-chip-instrument {
+  background: rgba(163, 113, 247, 0.15);
+  color: #c9a7ff;
+  border: 1px solid rgba(163, 113, 247, 0.35);
+}
+
+.mt-15 {
+  margin-top: 15px;
+}

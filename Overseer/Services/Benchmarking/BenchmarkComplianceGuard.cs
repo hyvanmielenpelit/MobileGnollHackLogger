@@ -43,6 +43,10 @@ public class BenchmarkComplianceGuard
     public int MaxRunsPerHour =>
         _configuration.GetValue<int>("Benchmark:Compliance:MaxRunsPerHour", 5);
 
+    /// <summary>The most launches one battery run may plan (suites × runs per suite).</summary>
+    public int MaxBatteryMembers =>
+        _configuration.GetValue<int>("Benchmark:Battery:MaxMembers", 60);
+
     public string GetPurposeStatement()
     {
         var configured = _configuration["Benchmark:Compliance:PurposeStatement"];

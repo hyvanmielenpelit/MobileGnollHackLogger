@@ -1279,6 +1279,9 @@
       @if (deleteConfigCheck.stoppedSeriesCount > 0) {
         <li>{{ deleteConfigCheck.stoppedSeriesCount }} stopped benchmark series name this configuration and can no longer be resumed.</li>
       }
+      @if (deleteConfigCheck.stoppedBatteryRunCount > 0) {
+        <li>{{ deleteConfigCheck.stoppedBatteryRunCount }} {{ deleteConfigCheck.stoppedBatteryRunCount === 1 ? 'stopped battery run names' : 'stopped battery runs name' }} this configuration and can no longer be resumed.</li>
+      }
       <li>Usage and error logs are kept.</li>
     </ul>
     @if (deleteConfigActionError) {

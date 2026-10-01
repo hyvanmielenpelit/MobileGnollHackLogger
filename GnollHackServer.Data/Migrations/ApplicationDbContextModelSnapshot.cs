@@ -298,6 +298,289 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("BenchmarkAssessorCalibrations");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBattery", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("DefinitionSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("ModifiedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Revision")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WeightingScheme")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("Name")
+                        .IsUnique();
+
+                    b.ToTable("BenchmarkBatteries");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatteryAnalysis", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("BenchmarkBatteryRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ComparabilityClassSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long?>("ComparedWithBatteryRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ComparisonJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("Complete")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("ComputedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ComputedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("DefinitionSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("HarnessVersion")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("MemberRunIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("ResultJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ScoringMethodVersion")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ComputedByUserId");
+
+                    b.HasIndex("BenchmarkBatteryRunId", "ComputedAtUtc");
+
+                    b.HasIndex("DefinitionSha256", "ComputedAtUtc");
+
+                    b.ToTable("BenchmarkBatteryAnalyses");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatteryRun", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("AllowCapWait")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("AutoCreatedGroupIdsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("BatteryName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<long?>("BenchmarkBatteryId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("CompletedMemberCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DefinitionJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("DefinitionSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<int>("FailedMemberCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LastProgressAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RequestedMemberCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RunsPerSuite")
+                        .HasColumnType("int");
+
+                    b.Property<string>("StartRequestJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("StartedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("StopReason")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SuiteFingerprintsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BenchmarkBatteryId");
+
+                    b.HasIndex("StartedAtUtc");
+
+                    b.HasIndex("StartedByUserId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("BenchmarkBatteryRuns");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatteryRunMember", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTime>("AddedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long>("BenchmarkBatteryRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("BenchmarkRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("GuardFailure")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<int>("Origin")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Round")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SuiteIndex")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("Superseded")
+                        .HasColumnType("bit");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BenchmarkRunId");
+
+                    b.HasIndex("BenchmarkBatteryRunId", "BenchmarkRunId")
+                        .IsUnique();
+
+                    b.HasIndex("BenchmarkBatteryRunId", "SuiteIndex", "Round")
+                        .IsUnique()
+                        .HasFilter("[Superseded] = 0");
+
+                    b.ToTable("BenchmarkBatteryRunMembers");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatterySuite", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("BenchmarkBatteryId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("BenchmarkSuiteId")
+                        .HasColumnType("bigint");
+
+                    b.Property<double?>("CustomWeight")
+                        .HasColumnType("float");
+
+                    b.Property<int>("OrderIndex")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SuiteName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BenchmarkSuiteId");
+
+                    b.HasIndex("BenchmarkBatteryId", "BenchmarkSuiteId")
+                        .IsUnique()
+                        .HasFilter("[BenchmarkSuiteId] IS NOT NULL");
+
+                    b.ToTable("BenchmarkBatterySuites");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkGameSnapshot", b =>
                 {
                     b.Property<long>("Id")
@@ -4123,6 +4406,83 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("BenchmarkRun");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBattery", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId");
+
+                    b.Navigation("CreatedByUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatteryAnalysis", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkBatteryRun", "BenchmarkBatteryRun")
+                        .WithMany()
+                        .HasForeignKey("BenchmarkBatteryRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "ComputedByUser")
+                        .WithMany()
+                        .HasForeignKey("ComputedByUserId");
+
+                    b.Navigation("BenchmarkBatteryRun");
+
+                    b.Navigation("ComputedByUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatteryRun", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkBattery", "BenchmarkBattery")
+                        .WithMany()
+                        .HasForeignKey("BenchmarkBatteryId");
+
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "StartedByUser")
+                        .WithMany()
+                        .HasForeignKey("StartedByUserId");
+
+                    b.Navigation("BenchmarkBattery");
+
+                    b.Navigation("StartedByUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatteryRunMember", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkBatteryRun", "BenchmarkBatteryRun")
+                        .WithMany("Members")
+                        .HasForeignKey("BenchmarkBatteryRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkRun", "BenchmarkRun")
+                        .WithMany()
+                        .HasForeignKey("BenchmarkRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BenchmarkBatteryRun");
+
+                    b.Navigation("BenchmarkRun");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatterySuite", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkBattery", "BenchmarkBattery")
+                        .WithMany("Suites")
+                        .HasForeignKey("BenchmarkBatteryId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkSuite", "BenchmarkSuite")
+                        .WithMany()
+                        .HasForeignKey("BenchmarkSuiteId");
+
+                    b.Navigation("BenchmarkBattery");
+
+                    b.Navigation("BenchmarkSuite");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkGameSnapshot", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.ChatSession", null)
@@ -4620,6 +4980,16 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("AspNetUser");
 
                     b.Navigation("SystemAiApiConfiguration");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBattery", b =>
+                {
+                    b.Navigation("Suites");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBatteryRun", b =>
+                {
+                    b.Navigation("Members");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkReportDocument", b =>

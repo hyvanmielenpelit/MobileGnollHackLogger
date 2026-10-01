@@ -10,7 +10,7 @@ namespace Overseer.Services;
 /// Decides whether a system AI configuration may be deleted now. History never blocks a delete:
 /// benchmark history records its own settings snapshots and only an attribution id. What blocks is
 /// something calling the model at this moment — a running benchmark run, a run whose AI-written
-/// reports are queued or being written, an active series, or a benchmark job in flight — because a
+/// reports are queued or being written, an active series or battery run, or a benchmark job in flight — because a
 /// delete would stop its calls partway through.
 /// </summary>
 public class SystemConfigUsageGuard
@@ -112,6 +112,19 @@ public class SystemConfigUsageGuard
             });
         }
 
+        foreach (var (batteryRun, request) in await LoadBatteryRunsNamingAsync(configId, ActiveSeriesStatuses, ct))
+        {
+            blockers.Add(new SystemConfigBlockerDto
+            {
+                Kind = "battery",
+                Id = batteryRun.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                Label = $"Battery run #{batteryRun.Id} of '{batteryRun.BatteryName}'",
+                Roles = Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId,
+                    request.SecondOpinionAssessorModelConfigurationId, request.ClaimVerifierModelConfigurationId),
+                StartedAtUtc = batteryRun.StartedAtUtc
+            });
+        }
+
         var difficulty = _difficultyJobs.Current;
         if (difficulty != null && difficulty.Status == BenchmarkDifficultyJobStatus.Running && difficulty.AssessorConfigId == configId)
         {
@@ -165,6 +178,7 @@ public class SystemConfigUsageGuard
                 || r.ClaimVerifierModelConfigurationId == id, ct);
 
         var stopped = await LoadSeriesNamingAsync(id, new[] { BenchmarkRunSeriesStatus.Stopped }, ct);
+        var stoppedBatteryRuns = await LoadBatteryRunsNamingAsync(id, new[] { BenchmarkRunSeriesStatus.Stopped }, ct);
 
         return new SystemConfigDeletionCheckDto
         {
@@ -174,6 +188,7 @@ public class SystemConfigUsageGuard
             Blockers = blockers,
             BenchmarkRunReferenceCount = runReferences,
             StoppedSeriesCount = stopped.Count,
+            StoppedBatteryRunCount = stoppedBatteryRuns.Count,
             UserAssignmentCount = await _db.UserSystemAiApiConfigurations.CountAsync(a => a.SystemAiApiConfigurationId == id, ct),
             GroupAssignmentCount = await _db.GroupSystemAiApiConfigurations.CountAsync(a => a.SystemAiApiConfigurationId == id, ct),
             ConfidentialTrustCount = await _db.UserSystemModelConfidentialTrusts.CountAsync(t => t.SystemAiApiConfigurationId == id, ct)
@@ -206,6 +221,38 @@ public class SystemConfigUsageGuard
                     request.SecondOpinionAssessorModelConfigurationId, request.ClaimVerifierModelConfigurationId).Count > 0)
             {
                 naming.Add((s, request));
+            }
+        }
+
+        return naming;
+    }
+
+    /// <summary>Battery runs in one of <paramref name="statuses"/> whose stored start request names the configuration.</summary>
+    private async Task<List<(BenchmarkBatteryRun BatteryRun, StartBenchmarkRunRequest Request)>> LoadBatteryRunsNamingAsync(
+        long configId, BenchmarkRunSeriesStatus[] statuses, CancellationToken ct)
+    {
+        var batteryRuns = await _db.BenchmarkBatteryRuns
+            .AsNoTracking()
+            .Where(b => statuses.Contains(b.Status))
+            .ToListAsync(ct);
+
+        var naming = new List<(BenchmarkBatteryRun, StartBenchmarkRunRequest)>();
+        foreach (var b in batteryRuns)
+        {
+            StartBenchmarkRunRequest? request;
+            try
+            {
+                request = JsonSerializer.Deserialize<StartBenchmarkRunRequest>(b.StartRequestJson);
+            }
+            catch (JsonException)
+            {
+                continue;
+            }
+
+            if (request != null && Roles(configId, request.TestedModelConfigurationId, request.AssessorModelConfigurationId,
+                    request.SecondOpinionAssessorModelConfigurationId, request.ClaimVerifierModelConfigurationId).Count > 0)
+            {
+                naming.Add((b, request));
             }
         }
 

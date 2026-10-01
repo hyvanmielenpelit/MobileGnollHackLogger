@@ -1,0 +1,377 @@
+/* Multi-Suite sub-tab: layout and component-local presentation only. Buttons, .gh-tag,
+ * .gh-datatable, .gh-section-title, .gh-field-error and the tooltips come from styles.scss. */
+
+:host {
+  display: block;
+}
+
+.bb {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.bb-section {
+  min-inline-size: 0;
+}
+
+.bb-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+
+  .gh-section-title {
+    margin: 0;
+  }
+}
+
+.bb-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.bb-analysis .gh-section-title:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
+}
+
+.bb-battery-error,
+.bb-analysis-error,
+.bb-recompute-callout {
+  margin-bottom: 12px;
+}
+
+/* --- Battery cards ----------------------------------------------------------------------- */
+
+.bb-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 12px;
+}
+
+.bb-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  block-size: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+
+  &.is-archived {
+    opacity: 0.75;
+  }
+}
+
+.bb-card-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.bb-card-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.bb-card-description {
+  margin: 0;
+  color: #ccc;
+  white-space: pre-wrap;
+}
+
+.bb-card-suites {
+  margin: 0;
+  padding-inline-start: 1.5rem;
+
+  li {
+    margin: 2px 0;
+  }
+
+  li.is-deleted .bb-suite-name {
+    text-decoration: line-through;
+    color: #999;
+  }
+}
+
+.bb-suite-name {
+  font-weight: 600;
+}
+
+.bb-suite-meta {
+  margin-inline-start: 6px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.bb-warn-text {
+  color: #fbbf24;
+}
+
+.bb-card-errors {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bb-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+
+.bb-tag-active {
+  color: var(--primary-color);
+}
+
+/* --- Tables ------------------------------------------------------------------------------ */
+
+.bb-runs-scroll,
+.bb-table-scroll {
+  margin-block: 8px;
+}
+
+.bb-num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bb-run-battery {
+  display: block;
+  font-weight: 600;
+}
+
+.bb-run-meta {
+  display: block;
+  font-size: var(--text-secondary);
+  font-weight: 400;
+  color: #aaa;
+}
+
+.bb-actions {
+  white-space: nowrap;
+  text-align: end;
+}
+
+tr.is-selected > * {
+  background: rgba(212, 160, 23, 0.08);
+}
+
+tr.is-incomplete > * {
+  color: #aaa;
+}
+
+.bb-weights {
+  font-size: var(--text-secondary);
+  color: #bbb;
+}
+
+.bb-tag-declared {
+  color: var(--primary-color);
+}
+
+.bb-tag-stale {
+  margin-inline-start: 6px;
+}
+
+.bb-row-note {
+  display: block;
+  font-size: var(--text-secondary);
+  font-weight: 400;
+  color: #aaa;
+}
+
+/* --- Analysis ------------------------------------------------------------------------------ */
+
+.bb-analysis-meta,
+.bb-class-meta {
+  margin: 0 0 12px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.bb-headline {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(212, 160, 23, 0.35);
+  border-inline-start: 4px solid var(--primary-color);
+  border-radius: 6px;
+  background: rgba(212, 160, 23, 0.06);
+
+  &.is-incomplete {
+    border-color: rgba(255, 255, 255, 0.15);
+    border-inline-start-color: #888;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.bb-headline-label {
+  font-size: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #aaa;
+}
+
+.bb-headline-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+
+  &.bb-incomplete {
+    font-size: 1.25rem;
+    color: #ddd;
+  }
+}
+
+.bb-headline-interval {
+  color: #ccc;
+}
+
+.bb-sub-title {
+  margin: 18px 0 8px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--title-color, #e0ba6d);
+}
+
+.bb-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+
+  > div {
+    display: contents;
+  }
+
+  dt {
+    color: #aaa;
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.bb-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 0 24px;
+}
+
+.bb-panel {
+  min-inline-size: 0;
+}
+
+.bb-note {
+  margin: 4px 0 8px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.bb-withheld {
+  color: #aaa;
+  font-size: var(--text-secondary);
+}
+
+.bb-degraded {
+  margin: 6px 0 0;
+  font-size: var(--text-secondary);
+  color: #fbbf24;
+}
+
+.bb-caveats,
+.bb-excluded {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+
+  li {
+    margin: 4px 0;
+  }
+}
+
+.bb-excluded-what {
+  font-weight: 600;
+}
+
+/* --- Leaderboard and Compare --------------------------------------------------------------- */
+
+.bb-hash {
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
+  color: #999;
+}
+
+.bb-class + .bb-class {
+  margin-top: 8px;
+}
+
+.bb-compare {
+  margin-top: 20px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-glass);
+}
+
+.bb-compare-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-inline-size: min(100%, 18rem);
+    flex: 1 1 18rem;
+  }
+
+  label {
+    font-weight: 600;
+  }
+}
+
+.bb-compare-refusal {
+  margin-top: 12px;
+}
+
+.bb-compare-headline {
+  margin-top: 12px;
+}
+
+/* --- Delete confirmation ------------------------------------------------------------------- */
+
+.bb-delete-dialog {
+  max-width: min(520px, 94vw);
+
+  p {
+    line-height: 1.5;
+    color: #ccc;
+  }
+}

@@ -26,6 +26,13 @@ export type {
   BenchmarkModelComparisonPricingBasis
 } from '../admin/benchmark/model-comparison/model-comparison.models';
 
+// The battery statistics records are declared beside the views that render them; type-only, so
+// erased at runtime.
+import type {
+  BenchmarkBatteryComparison,
+  BenchmarkBatteryStatisticsResult
+} from '../admin/benchmark/batteries/battery.models';
+
 /**
  * How the second-opinion assessor is used. Off is equivalent to selecting no second-opinion
  * assessor at all; All is the only setting that measures grader agreement rather than sampling
@@ -1870,6 +1877,13 @@ export interface BenchmarkRunSummaryDto {
   /** The candidate model's own share of estimatedCost — the figure the history table's primary cost line shows. */
   estimatedCandidateCost?: number | null;
   pricingIncomplete?: boolean;
+  /** The battery run this run is a member of (its newest non-superseded membership); null for none. */
+  batteryRunId?: number | null;
+  batteryName?: string | null;
+  /** 1-based position of the run's suite in the battery definition. */
+  batterySuitePosition?: number | null;
+  /** K, the number of suites in the battery run. */
+  batterySuiteCount?: number | null;
 }
 
 // =========================================================================================
@@ -1893,6 +1907,11 @@ export interface BenchmarkRunLimitsDto {
   remainingDailyHeadroom: number;
   /** The ceiling for the Number of runs field. Equals maxRunsPerDay, not the current headroom. */
   maxRunCountPerSeries: number;
+  /**
+   * The most launches one battery run may plan (suites × runs per suite). Absent from a server
+   * without batteries, which leaves Runs per Suite bounded by the server alone.
+   */
+  maxMembersPerBattery?: number;
 }
 
 export type BenchmarkRunSeriesStatus =
@@ -1976,6 +1995,343 @@ export interface BenchmarkInstrumentChangedDto {
   seriesId?: number | null;
   changedHashes: string[];
   message: string;
+}
+
+// =========================================================================================
+// Multi-suite batteries: definitions, battery runs, analyses and the leaderboard
+// =========================================================================================
+
+/** How a battery weighs its suites in the Overall Index. */
+export type BenchmarkBatteryWeightingScheme = 'DifficultyMass' | 'ItemCount' | 'Equal' | 'Custom';
+
+/** How a stopped battery run is resumed. */
+export type BenchmarkBatteryResumeMode = 'Continue' | 'RerunUnderCurrentInstrument';
+
+/** One suite of a battery, with its current exam size and difficulty readiness. */
+export interface BenchmarkBatterySuiteDto {
+  /** 0-based position in run order. */
+  index: number;
+  /** Null when the suite has been deleted. */
+  suiteId?: number | null;
+  suiteName: string;
+  deleted: boolean;
+  customWeight?: number | null;
+  questionCount: number;
+  assessedQuestionCount: number;
+  /** Every question has an assessed difficulty; the launcher refuses the suite otherwise. */
+  difficultyFullyAssessed: boolean;
+  /** The sum of the current questions' difficulty weights, an unassessed question weighing 50. */
+  difficultyMass: number;
+}
+
+/** The normalized suite weights one scheme would give, in suite order. */
+export interface BenchmarkBatteryWeightPreviewDto {
+  scheme: BenchmarkBatteryWeightingScheme;
+  schemeLabel: string;
+  /** The battery's own scheme; the others are sensitivity alternatives. */
+  declared: boolean;
+  /** One weight per suite, summing to 1; empty when the weights are undefined. */
+  weights: number[];
+}
+
+export interface BenchmarkBatteryDto {
+  id: number;
+  name: string;
+  description?: string | null;
+  weightingScheme: BenchmarkBatteryWeightingScheme;
+  weightingSchemeLabel: string;
+  revision: number;
+  definitionSha256: string;
+  isArchived: boolean;
+  /** The names of the suites that have been deleted; the battery cannot run until it is edited. */
+  brokenSuiteNames: string[];
+  /** Every problem that keeps the battery from running; empty when it can run. */
+  validationErrors: string[];
+  createdByUserName?: string | null;
+  createdAtUtc: string;
+  modifiedAtUtc: string;
+  batteryRunCount: number;
+  /** A battery run of this battery is Pending, Running or WaitingForCap; delete is refused. */
+  hasActiveBatteryRun: boolean;
+  suites: BenchmarkBatterySuiteDto[];
+  /** One preview per scheme, the declared one marked. */
+  weightPreviews: BenchmarkBatteryWeightPreviewDto[];
+}
+
+/** Creates a battery. The suites are listed in run order. */
+export interface CreateBenchmarkBatteryRequest {
+  name: string;
+  description?: string | null;
+  weightingScheme: BenchmarkBatteryWeightingScheme;
+  /** At least two, none twice. */
+  suiteIds: number[];
+  /** One weight per entry of `suiteIds`; read only under the Custom scheme. */
+  customWeights?: (number | null)[] | null;
+}
+
+/** A change to the suites, their order, the weights or the scheme creates a new revision. */
+export type UpdateBenchmarkBatteryRequest = CreateBenchmarkBatteryRequest;
+
+/** An existing run placed in one (suite, round) slot of a battery run. */
+export interface BenchmarkBatteryAttachDto {
+  /** 0-based position of the suite in the battery definition. */
+  suiteIndex: number;
+  /** 1-based replicate round. */
+  round: number;
+  runId: number;
+}
+
+/** Starts a battery run: every suite of the battery, one after another, for one model configuration. */
+export interface StartBenchmarkBatteryRunRequest {
+  batteryId: number;
+  /** Replicate rounds; every suite runs once per round, in round-robin order. */
+  runsPerSuite: number;
+  /** Pauses at the run cap rather than stopping; also admits a battery larger than the daily cap. */
+  allowCapWait: boolean;
+  /** The request every member is launched from. Its suite id and run count are ignored. */
+  run: StartBenchmarkRunRequest;
+  /** Earlier runs to place in slots; the server judges them again and refuses the start if one no longer qualifies. */
+  attach?: BenchmarkBatteryAttachDto[] | null;
+}
+
+/** One slot of the reuse preview: the earlier run a start would attach, or why none qualifies. */
+export interface BenchmarkBatteryReusePreviewSlotDto {
+  /** 0-based position of the suite in the battery definition. */
+  suiteIndex: number;
+  suiteId: number;
+  suiteName: string;
+  /** 1-based replicate round. */
+  round: number;
+  /** The newest eligible run; null when none qualifies and the slot would be launched. */
+  runId?: number | null;
+  runStartedAtUtc?: string | null;
+  qualityIndex?: number | null;
+  /** When no run qualifies: why the newest candidate was refused, or that there is none. */
+  reason?: string | null;
+}
+
+/** Which slots of a battery run not yet started earlier runs would fill. Creates and spends nothing. */
+export interface BenchmarkBatteryReusePreviewDto {
+  batteryId: number;
+  suiteCount: number;
+  runsPerSuite: number;
+  /** Slots an earlier run would fill. */
+  reusedCount: number;
+  /** Slots the battery run would launch. */
+  launchCount: number;
+  /** The runs to send as the start's `attach`, in planner order. */
+  attach: BenchmarkBatteryAttachDto[];
+  /** Every slot in planner order: round 1 for every suite, then round 2. */
+  slots: BenchmarkBatteryReusePreviewSlotDto[];
+}
+
+/** A run that may, or may not, be attached to one slot of a battery run. */
+export interface BenchmarkBatteryAttachCandidateDto {
+  runId: number;
+  /** The run's status as text. */
+  runStatus: string;
+  qualityIndex?: number | null;
+  startedAtUtc: string;
+  completedAtUtc?: string | null;
+  testedModelLabel?: string | null;
+  harnessVersion?: string | null;
+  scoringMethodVersion: number;
+  eligible: boolean;
+  /** Why the run may not be attached; null when it may. */
+  reason?: string | null;
+}
+
+/** One suite of a battery run's definition snapshot. */
+export interface BenchmarkBatteryRunSuiteDto {
+  index: number;
+  suiteId: number;
+  suiteName: string;
+  customWeight?: number | null;
+}
+
+/** One run in one (suite, round) slot of a battery run. */
+export interface BenchmarkBatteryMemberDto {
+  memberId: number;
+  /** 0-based position of the suite in the definition snapshot. */
+  suiteIndex: number;
+  /** 1-based replicate round. */
+  round: number;
+  runId: number;
+  /** The run's status as text; `Deleted` when the run is gone. */
+  runStatus: string;
+  qualityIndex?: number | null;
+  speedIndex?: number | null;
+  /** `Launched` or `Attached`. */
+  origin: string;
+  superseded: boolean;
+  /** The member may enter a statistic. */
+  usable: boolean;
+  /** Why the member is not usable, in a few words; null when it is. */
+  unusableReason?: string | null;
+  guardFailure?: string | null;
+  addedAtUtc: string;
+  runStartedAtUtc?: string | null;
+  runCompletedAtUtc?: string | null;
+  answeredQuestionCount: number;
+  totalQuestionCount: number;
+}
+
+/** One (suite, round) cell of the K × R grid. */
+export interface BenchmarkBatterySlotDto {
+  suiteIndex: number;
+  round: number;
+  /** The non-superseded member in this slot; null while the slot is empty. */
+  member?: BenchmarkBatteryMemberDto | null;
+}
+
+export interface BenchmarkBatteryRunDto {
+  id: number;
+  /** Null when the battery has been deleted; the run keeps its own snapshot. */
+  batteryId?: number | null;
+  batteryName: string;
+  definitionRevision: number;
+  definitionSha256: string;
+  weightingScheme: BenchmarkBatteryWeightingScheme;
+  suites: BenchmarkBatteryRunSuiteDto[];
+  /** K, the number of suites. */
+  suiteCount: number;
+  /** R, the number of replicate rounds. */
+  runsPerSuite: number;
+  /** K × R. */
+  requestedMemberCount: number;
+  /** Slots holding a usable member. */
+  completedMemberCount: number;
+  failedMemberCount: number;
+  /** Suites with at least one usable member; the Overall Index needs all K. */
+  completedSuiteCount: number;
+  status: BenchmarkRunSeriesStatus;
+  /** `MemberFailed`, `RunCapReached`, `SpendDenied` or `InstrumentChanged`; null unless stopped. */
+  stopReason?: string | null;
+  stopReasonText?: string | null;
+  allowCapWait: boolean;
+  /** Stopped, or Completed with errors while a slot holds no usable member. */
+  resumable: boolean;
+  /** This server process is driving the battery run now. */
+  isDriving: boolean;
+  startedAtUtc: string;
+  completedAtUtc?: string | null;
+  lastProgressAtUtc?: string | null;
+  errorMessage?: string | null;
+  startedByUserName?: string | null;
+  testedModelConfigurationId?: number | null;
+  testedModelLabel?: string | null;
+  /** The running member's slot, else the next one to launch while live; null when neither applies. */
+  currentSuiteIndex?: number | null;
+  /** 1-based, for "Suite s of K". */
+  currentSuitePosition?: number | null;
+  currentSuiteName?: string | null;
+  currentRound?: number | null;
+  /** The member run in flight, if any. */
+  currentRunId?: number | null;
+  /** The K × R slots in launch order: round 1 for every suite, then round 2. */
+  slots: BenchmarkBatterySlotDto[];
+  /** Every member row, superseded ones included. */
+  members: BenchmarkBatteryMemberDto[];
+  latestAnalysisId?: number | null;
+  latestAnalysisAtUtc?: string | null;
+  latestAnalysisComplete?: boolean | null;
+  overallIndex?: number | null;
+  overallIndexHalfWidth?: number | null;
+  overallIndexLower?: number | null;
+  overallIndexUpper?: number | null;
+  overallSpeedIndex?: number | null;
+  totalCost?: number | null;
+  /** The usable members changed since the latest analysis. */
+  analysisStale: boolean;
+  /** The latest analysis lists an excluded member, so a recompute may change it. */
+  analysisHasExcludedMembers: boolean;
+}
+
+/** Computes a battery analysis, optionally paired against a baseline battery run. */
+export interface BenchmarkBatteryCompareRequest {
+  compareWithBatteryRunId?: number | null;
+}
+
+/** A member left out of an analysis, with its reason. */
+export interface BenchmarkBatteryExcludedMemberDto {
+  suiteIndex: number;
+  round: number;
+  runId: number;
+  reason: string;
+}
+
+export interface BenchmarkBatteryAnalysisDto {
+  id: number;
+  batteryRunId: number;
+  batteryName: string;
+  computedAtUtc: string;
+  /** The usable member run ids the result was computed over. */
+  memberRunIds: number[];
+  runCount: number;
+  definitionSha256: string;
+  /** Null when the battery run was incomplete. */
+  comparabilityClassSha256?: string | null;
+  complete: boolean;
+  harnessVersion?: string | null;
+  scoringMethodVersion: number;
+  /** The usable member runs differ from the ones the result was computed over. */
+  stale: boolean;
+  comparedWithBatteryRunId?: number | null;
+  comparedWithBatteryName?: string | null;
+  result: BenchmarkBatteryStatisticsResult | null;
+  comparison: BenchmarkBatteryComparison | null;
+  excludedMembers: BenchmarkBatteryExcludedMemberDto[];
+}
+
+/** The latest analysis of one battery run, as a leaderboard row. */
+export interface BenchmarkBatteryLeaderboardRowDto {
+  batteryRunId: number;
+  batteryId?: number | null;
+  batteryName: string;
+  definitionRevision: number;
+  analysisId: number;
+  computedAtUtc: string;
+  testedModelConfigurationId?: number | null;
+  testedModelLabel?: string | null;
+  status: BenchmarkRunSeriesStatus;
+  runsPerSuite: number;
+  suiteCount: number;
+  completedSuiteCount: number;
+  complete: boolean;
+  comparabilityClassSha256?: string | null;
+  harnessVersion?: string | null;
+  scoringMethodVersion: number;
+  overallIndex?: number | null;
+  overallIndexHalfWidth?: number | null;
+  overallIndexLower?: number | null;
+  overallIndexUpper?: number | null;
+  overallSpeedIndex?: number | null;
+  totalCost?: number | null;
+  passCost?: number | null;
+}
+
+/** The battery runs whose results may stand in one ranked list. */
+export interface BenchmarkBatteryLeaderboardClassDto {
+  comparabilityClassSha256: string;
+  /** What distinguishes this class, ready to render as its heading. */
+  label: string;
+  harnessVersion?: string | null;
+  scoringMethodVersion: number;
+  /** The must-match keys on which this class differs from another class; empty when it is the only one. */
+  distinguishingKeys: string[];
+  /** Sorted by Overall Index, highest first. */
+  rows: BenchmarkBatteryLeaderboardRowDto[];
+}
+
+export interface BenchmarkBatteryLeaderboardDto {
+  definitionSha256: string;
+  /** The current battery carrying this hash, when there is one. */
+  batteryId?: number | null;
+  batteryName?: string | null;
+  /** One ranked list per comparability class; results of different classes are never ranked together. */
+  classes: BenchmarkBatteryLeaderboardClassDto[];
+  /** Battery runs whose latest analysis is incomplete, unranked, newest first. */
+  incomplete: BenchmarkBatteryLeaderboardRowDto[];
 }
 
 /**
@@ -2577,6 +2933,9 @@ export function fileNameFromContentDisposition(header: string | null | undefined
   return fallback;
 }
 
+/** The root of the battery endpoints (`AdminBenchmarkBatteriesController`). */
+const BATTERIES_ENDPOINT = '/api/admin/benchmark/batteries';
+
 @Injectable({
   providedIn: 'root'
 })
@@ -3062,6 +3421,115 @@ export class AdminBenchmarkService {
   /** Beside getRunReportUrl, and used the same way: window.open, not an XHR. */
   getGroupReportUrl(groupId: number): string {
     return `/api/admin/benchmark/runs/groups/${groupId}/report`;
+  }
+
+  // Multi-suite batteries
+
+  getBatteries(): Observable<BenchmarkBatteryDto[]> {
+    return this.http.get<BenchmarkBatteryDto[]>(BATTERIES_ENDPOINT);
+  }
+
+  getBattery(id: number): Observable<BenchmarkBatteryDto> {
+    return this.http.get<BenchmarkBatteryDto>(`${BATTERIES_ENDPOINT}/${id}`);
+  }
+
+  createBattery(req: CreateBenchmarkBatteryRequest): Observable<BenchmarkBatteryDto> {
+    return this.http.post<BenchmarkBatteryDto>(BATTERIES_ENDPOINT, req);
+  }
+
+  updateBattery(id: number, req: UpdateBenchmarkBatteryRequest): Observable<BenchmarkBatteryDto> {
+    return this.http.put<BenchmarkBatteryDto>(`${BATTERIES_ENDPOINT}/${id}`, req);
+  }
+
+  deleteBattery(id: number): Observable<void> {
+    return this.http.delete<void>(`${BATTERIES_ENDPOINT}/${id}`);
+  }
+
+  /** Hides a battery from the launcher, or shows it again with `archived` false. */
+  archiveBattery(id: number, archived = true): Observable<BenchmarkBatteryDto> {
+    return this.http.post<BenchmarkBatteryDto>(`${BATTERIES_ENDPOINT}/${id}/archive`, { archived });
+  }
+
+  /** Battery runs, newest first; only those of one battery when `batteryId` is given. */
+  getBatteryRuns(batteryId?: number): Observable<BenchmarkBatteryRunDto[]> {
+    let params = new HttpParams();
+    if (batteryId != null) {
+      params = params.set('batteryId', String(batteryId));
+    }
+    return this.http.get<BenchmarkBatteryRunDto[]>(`${BATTERIES_ENDPOINT}/runs`, { params });
+  }
+
+  /**
+   * Answers 202 with the new id. A refusal arrives as an error: 409 for a conflict, a same-provider
+   * warning body or an `instrumentChanged` body; 429 when spend is denied; 400 for an invalid request.
+   */
+  startBatteryRun(req: StartBenchmarkBatteryRunRequest): Observable<{ batteryRunId: number }> {
+    return this.http.post<{ batteryRunId: number }>(`${BATTERIES_ENDPOINT}/runs`, req);
+  }
+
+  /** The driven battery run, else the newest live or stopped one; a 204 arrives as null. */
+  getActiveBatteryRun(): Observable<BenchmarkBatteryRunDto | null> {
+    return this.http.get<BenchmarkBatteryRunDto | null>(`${BATTERIES_ENDPOINT}/runs/active`);
+  }
+
+  getBatteryRun(id: number): Observable<BenchmarkBatteryRunDto> {
+    return this.http.get<BenchmarkBatteryRunDto>(`${BATTERIES_ENDPOINT}/runs/${id}`);
+  }
+
+  cancelBatteryRun(id: number): Observable<void> {
+    return this.http.post<void>(`${BATTERIES_ENDPOINT}/runs/${id}/cancel`, {});
+  }
+
+  /** Refusals map as `startBatteryRun`'s do. */
+  resumeBatteryRun(id: number, mode: BenchmarkBatteryResumeMode): Observable<{ batteryRunId: number }> {
+    return this.http.post<{ batteryRunId: number }>(`${BATTERIES_ENDPOINT}/runs/${id}/resume`, { mode });
+  }
+
+  /**
+   * Which slots earlier runs would fill for this start body, judged against the fingerprints a start
+   * would record now. 404 for an unknown battery, 400 for a body that cannot be judged.
+   */
+  previewBatteryReuse(req: StartBenchmarkBatteryRunRequest): Observable<BenchmarkBatteryReusePreviewDto> {
+    return this.http.post<BenchmarkBatteryReusePreviewDto>(`${BATTERIES_ENDPOINT}/runs/reuse-preview`, req);
+  }
+
+  /**
+   * Attaches an earlier run to one slot and answers with the updated battery run. 409 while it is
+   * running or in a state that takes no run; 400 with the reason when the run or the slot does not qualify.
+   */
+  attachBatteryMember(batteryRunId: number, body: BenchmarkBatteryAttachDto): Observable<BenchmarkBatteryRunDto> {
+    return this.http.post<BenchmarkBatteryRunDto>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/members`, body);
+  }
+
+  /** The runs of one slot's suite and tested configuration, newest first, each with whether it may be attached. */
+  getBatteryAttachCandidates(
+    batteryRunId: number, suiteIndex: number, round: number
+  ): Observable<BenchmarkBatteryAttachCandidateDto[]> {
+    const params = new HttpParams().set('suiteIndex', String(suiteIndex)).set('round', String(round));
+    return this.http.get<BenchmarkBatteryAttachCandidateDto[]>(
+      `${BATTERIES_ENDPOINT}/runs/${batteryRunId}/members/candidates`, { params });
+  }
+
+  /** Computes and stores an analysis, paired against a baseline battery run when one is given. */
+  analyseBatteryRun(id: number, compareWithBatteryRunId?: number | null): Observable<BenchmarkBatteryAnalysisDto> {
+    const req: BenchmarkBatteryCompareRequest = { compareWithBatteryRunId: compareWithBatteryRunId ?? null };
+    return this.http.post<BenchmarkBatteryAnalysisDto>(`${BATTERIES_ENDPOINT}/runs/${id}/analysis`, req);
+  }
+
+  /** The latest stored analysis; a 204 arrives as null. */
+  getBatteryAnalysis(id: number): Observable<BenchmarkBatteryAnalysisDto | null> {
+    return this.http.get<BenchmarkBatteryAnalysisDto | null>(`${BATTERIES_ENDPOINT}/runs/${id}/analysis`);
+  }
+
+  /** The Markdown report, used like getRunReportUrl: window.open, not an XHR. */
+  getBatteryReportUrl(id: number): string {
+    return `${BATTERIES_ENDPOINT}/runs/${id}/report`;
+  }
+
+  /** The latest analysis of every battery run with this definition hash, grouped by comparability class. */
+  getBatteryLeaderboard(definitionSha256: string): Observable<BenchmarkBatteryLeaderboardDto> {
+    const params = new HttpParams().set('definitionSha256', definitionSha256);
+    return this.http.get<BenchmarkBatteryLeaderboardDto>(`${BATTERIES_ENDPOINT}/leaderboard`, { params });
   }
 
   /**

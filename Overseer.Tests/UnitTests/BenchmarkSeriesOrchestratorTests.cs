@@ -714,4 +714,111 @@ public class BenchmarkSeriesOrchestratorTests
         Assert.False(comparability.CostAggregatesDegraded);
         Assert.True(BenchmarkComparabilityKey.IsPoolable(comparability.Tier));
     }
+
+    // --- The orchestrator claim ---------------------------------------------------------------
+
+    [Fact]
+    public async Task StartSeries_IsRefused_WhileABatteryHoldsTheClaim_AndWritesNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+
+        var runManager = new BenchmarkRunManager();
+        Assert.True(runManager.TryClaimOrchestrator(BenchmarkRunManager.BatteryOwner(5)));
+
+        var orchestrator = CreateOrchestrator(factory, runManager);
+        var result = await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 2), "user", ct);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Conflict, result.Outcome);
+        Assert.Equal("A battery is running; wait for it or cancel it.", result.Error);
+        Assert.Equal(BenchmarkRunManager.BatteryOwner(5), runManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(dbName);
+        Assert.Empty(await readback.BenchmarkRunSeries.ToListAsync(ct));
+    }
+
+    [Fact]
+    public async Task Resume_IsRefused_WhileABatteryHoldsTheClaim()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+        var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Stopped);
+
+        var runManager = new BenchmarkRunManager();
+        Assert.True(runManager.TryClaimOrchestrator(BenchmarkRunManager.BatteryOwner(5)));
+
+        var orchestrator = CreateOrchestrator(factory, runManager);
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Conflict, result.Outcome);
+        Assert.Equal(BenchmarkRunManager.BatteryOwner(5), runManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(dbName);
+        Assert.Equal(BenchmarkRunSeriesStatus.Stopped, (await readback.BenchmarkRunSeries.SingleAsync(s => s.Id == series.Id, ct)).Status);
+    }
+
+    /// <summary>
+    /// A claim that outlived a refused start would block every run until the service restarts, so
+    /// every refusal path must return with no claim held.
+    /// </summary>
+    [Fact]
+    public async Task RefusedStartsAndResumes_LeaveNoClaimBehind()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig(maxRunsPerDay: 3, maxRunsPerHour: 3);
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+        var cancelled = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Cancelled);
+        var done = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Stopped, requested: 2, completed: 2);
+
+        var runManager = new BenchmarkRunManager();
+        var orchestrator = CreateOrchestrator(factory, runManager);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Invalid,
+            (await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 0), "user", ct)).Outcome);
+        Assert.Equal(BenchmarkSeriesStartOutcome.Invalid,
+            (await orchestrator.StartSeriesAsync(Request(suite.Id, runCount: 4), "user", ct)).Outcome);
+        Assert.Equal(BenchmarkSeriesStartOutcome.NotFound,
+            (await orchestrator.StartSeriesAsync(Request(4242, runCount: 2), "user", ct)).Outcome);
+
+        var sameProvider = Request(suite.Id, runCount: 2);
+        sameProvider.AssessorModelConfigurationId = 1;
+        Assert.NotEqual(BenchmarkSeriesStartOutcome.Started,
+            (await orchestrator.StartSeriesAsync(sameProvider, "user", ct)).Outcome);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Invalid,
+            (await orchestrator.ResumeSeriesAsync(cancelled.Id, acknowledgeInstrumentChange: false, ct)).Outcome);
+        Assert.Equal(BenchmarkSeriesStartOutcome.Invalid,
+            (await orchestrator.ResumeSeriesAsync(done.Id, acknowledgeInstrumentChange: false, ct)).Outcome);
+        Assert.Equal(BenchmarkSeriesStartOutcome.NotFound,
+            (await orchestrator.ResumeSeriesAsync(4242, acknowledgeInstrumentChange: false, ct)).Outcome);
+
+        Assert.Null(runManager.OrchestratorOwner);
+    }
+
+    [Fact]
+    public async Task Resume_IsAccepted_WhenTheSeriesItselfHoldsTheClaim()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+        var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Stopped);
+
+        var runManager = new BenchmarkRunManager();
+        Assert.True(runManager.TryClaimOrchestrator(BenchmarkRunManager.SeriesOwner(series.Id)));
+
+        var orchestrator = CreateOrchestrator(factory, runManager);
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
+
+        Assert.Equal(BenchmarkSeriesStartOutcome.Started, result.Outcome);
+    }
 }

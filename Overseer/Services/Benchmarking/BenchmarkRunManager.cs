@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 
@@ -73,8 +74,81 @@ public class BenchmarkRunState
 
 public class BenchmarkRunManager
 {
+    /// <summary>Owner-token prefix of a series orchestrator claim: <c>series:{seriesId}</c>.</summary>
+    public const string SeriesOwnerPrefix = "series:";
+
+    /// <summary>Owner-token prefix of a battery orchestrator claim: <c>battery:{batteryRunId}</c>.</summary>
+    public const string BatteryOwnerPrefix = "battery:";
+
     private readonly object _lock = new();
     private BenchmarkRunState? _currentRun;
+
+    /// <summary>
+    /// The orchestrator that owns the run gate between its members, or null. While it is held,
+    /// <see cref="TryStart"/> admits only runs launched for that owner.
+    /// </summary>
+    private string? _orchestratorOwner;
+
+    public static string SeriesOwner(long seriesId) => SeriesOwnerPrefix + seriesId.ToString(CultureInfo.InvariantCulture);
+
+    public static string BatteryOwner(long batteryRunId) => BatteryOwnerPrefix + batteryRunId.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The refusal shown when a claim held by <paramref name="owner"/> blocks a launch. A null owner
+    /// (a claim already released again) names neither kind.
+    /// </summary>
+    public static string ClaimConflictMessage(string? owner)
+    {
+        if (owner == null) return "A benchmark series or battery is running; wait for it or cancel it.";
+
+        return owner.StartsWith(BatteryOwnerPrefix, StringComparison.Ordinal)
+            ? "A battery is running; wait for it or cancel it."
+            : "A benchmark series is running; wait for it or cancel it.";
+    }
+
+    /// <summary>The owner of the orchestrator claim, or null when none is held.</summary>
+    public string? OrchestratorOwner
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _orchestratorOwner;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes the orchestrator claim for <paramref name="owner"/>. Succeeds when no claim is held or
+    /// the same owner already holds it.
+    /// </summary>
+    public bool TryClaimOrchestrator(string owner)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(owner);
+
+        lock (_lock)
+        {
+            if (_orchestratorOwner == null || string.Equals(_orchestratorOwner, owner, StringComparison.Ordinal))
+            {
+                _orchestratorOwner = owner;
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>Releases the claim when <paramref name="owner"/> holds it; a no-op for any other owner.</summary>
+    public void ReleaseOrchestrator(string owner)
+    {
+        lock (_lock)
+        {
+            if (string.Equals(_orchestratorOwner, owner, StringComparison.Ordinal))
+            {
+                _orchestratorOwner = null;
+            }
+        }
+    }
 
     public long? CurrentRunId
     {
@@ -91,13 +165,25 @@ public class BenchmarkRunManager
         }
     }
 
-    public bool TryStart(long runId, CancellationTokenSource cts, out BenchmarkRunState state)
+    /// <summary>
+    /// Registers <paramref name="runId"/> as the one run in flight. Refused while another run is in
+    /// flight, and while an orchestrator claim is held by anyone other than
+    /// <paramref name="orchestratorOwner"/>; on a claim refusal <paramref name="state"/> is the
+    /// current run's state, or null when there is none.
+    /// </summary>
+    public bool TryStart(long runId, CancellationTokenSource cts, out BenchmarkRunState state, string? orchestratorOwner = null)
     {
         lock (_lock)
         {
             if (_currentRun != null && !_currentRun.IsCompleted)
             {
                 state = _currentRun;
+                return false;
+            }
+
+            if (_orchestratorOwner != null && !string.Equals(_orchestratorOwner, orchestratorOwner, StringComparison.Ordinal))
+            {
+                state = _currentRun!;
                 return false;
             }
 

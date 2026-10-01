@@ -1,7 +1,6 @@
 namespace Overseer.Tests.UnitTests;
 
 using System.Collections.Generic;
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
@@ -555,19 +554,15 @@ public class BenchmarkPerRoleCostTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         await using var db = new ApplicationDbContext(options);
-        var service = new BenchmarkGroupAnalysisService(
-            db, NullLogger<BenchmarkGroupAnalysisService>.Instance, new FixedPricingService(db, Pricing()));
-
         var single = BenchmarkModelSnapshots.Attach(new BenchmarkRun { Id = 1 });
         BenchmarkRunFinalizer.ApplyTotals(single, GradedAnswers());
         var panel = BenchmarkModelSnapshots.Attach(new BenchmarkRun { Id = 2, CoAssessorModelConfigurationId = 9 });
         BenchmarkRunFinalizer.ApplyTotals(panel, GradedAnswers());
 
-        // The cost resolution is private and reached by reflection, as the service offers no other seam.
-        var resolveCosts = typeof(BenchmarkGroupAnalysisService)
-            .GetMethod("ResolveCostsAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        var costs = await (Task<List<BenchmarkGroupRunCost>>)resolveCosts.Invoke(
-            service, new object[] { new List<BenchmarkRun> { single, panel } })!;
+        var costs = await BenchmarkGroupAnalysisService.ResolveCostsAsync(
+            new FixedPricingService(db, Pricing()),
+            NullLogger<BenchmarkGroupAnalysisService>.Instance,
+            new List<BenchmarkRun> { single, panel });
 
         var singleRoles = costs.Single(c => c.RunId == 1).CostByRole;
         var panelRoles = costs.Single(c => c.RunId == 2).CostByRole;
