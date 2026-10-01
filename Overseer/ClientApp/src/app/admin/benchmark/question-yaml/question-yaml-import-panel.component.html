@@ -122,7 +122,7 @@
       @if (suiteSnapshot) {
         <div class="import-snapshot">
           @if (!expectation) {
-            <label class="gh-checkbox" [attr.for]="idPrefix + '-attach-snapshot'">
+            <label class="checkbox-label" [attr.for]="idPrefix + '-attach-snapshot'">
               <input [id]="idPrefix + '-attach-snapshot'" type="checkbox" [checked]="attachSnapshot"
                      (change)="onAttachSnapshotChange($any($event.target).checked)">
               <span>Attach the game snapshot from this file</span>

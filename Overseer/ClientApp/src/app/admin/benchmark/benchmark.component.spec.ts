@@ -5132,6 +5132,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('replicate set');
       expect(text).toContain('run-to-run noise');
       expect(text).toContain('20');
+      expect(text).toContain('One run');
+      expect(text).toContain('Two or more runs');
 
       // The regression this wording exists to prevent: "exactly as before" described the
       // pre-multi-run implementation, which tells an operator nothing about the field.
@@ -5171,6 +5173,52 @@ describe('AdminBenchmarkComponent', () => {
         expect(control.parentElement!.classList).withContext(id).toContain('gh-field-row');
         expect(control.nextElementSibling).withContext(id).toBe(tip);
       }
+    });
+
+    it('themes every launcher checkbox with the global checkbox-label', () => {
+      component.runCount = 2;
+      fixture.detectChanges();
+
+      expect(card().querySelectorAll('.gh-checkbox').length).toBe(0);
+      for (const id of ['allowCapWaitInput', 'completionSoundInput', 'completionNotificationInput']) {
+        const label = card().querySelector(`label[for="${id}"]`) as HTMLElement;
+        expect(label).withContext(id).toBeTruthy();
+        expect(label.classList).withContext(id).toContain('checkbox-label');
+      }
+      expect(getComputedStyle(card().querySelector('#completionSoundInput')!).width).toBe('20px');
+    });
+
+    it('puts the Completion Alerts (i) right after its caption', () => {
+      fixture.detectChanges();
+
+      const caption = card().querySelector('#completionSignalsCaption') as HTMLElement;
+      const tip = caption.nextElementSibling as HTMLElement;
+      expect(tip.tagName.toLowerCase()).toBe('app-info-tip');
+      expect(caption.parentElement!.classList).not.toContain('gh-field-row');
+
+      const button = tip.querySelector('button') as HTMLElement;
+      expect(button.getBoundingClientRect().left - caption.getBoundingClientRect().right).toBeLessThanOrEqual(12);
+    });
+
+    it('explains completion alerts in plain terms', () => {
+      fixture.detectChanges();
+
+      const hint = card().querySelector('#completionSignalsHint') as HTMLElement;
+      const text = (hint.textContent ?? '').replace(/\s+/g, ' ');
+      expect(text).toContain('Test sound');
+      expect(text).toContain('permission');
+      expect(text).toContain('up to a minute');
+      expect(text).not.toContain('Armed');
+    });
+
+    it('gives Execution headings one style, heavier than option text', () => {
+      fixture.detectChanges();
+
+      const runCountWeight = getComputedStyle(card().querySelector('label[for="runCountInput"]')!).fontWeight;
+      const captionWeight = getComputedStyle(card().querySelector('#completionSignalsCaption')!).fontWeight;
+      expect(runCountWeight).toBe('600');
+      expect(captionWeight).toBe(runCountWeight);
+      expect(getComputedStyle(card().querySelector('label[for="completionSoundInput"]')!).fontWeight).toBe('400');
     });
 
     it('should show no compliance box and no fieldset purpose lines', () => {

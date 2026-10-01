@@ -648,13 +648,28 @@
                              [(ngModel)]="runCount"
                              aria-describedby="runCountHint">
                       <app-info-tip trigger="click" tipId="runCountHint" subject="Number of Runs">
-                        @if (maxRunCountPerSeries != null) {
-                          Two or more (up to {{ maxRunCountPerSeries }}) run one at a time as a replicate
-                          set, which shows run-to-run noise.
-                        } @else {
-                          Two or more run one at a time as a replicate set, which shows run-to-run noise;
-                          the daily run cap limits the count.
-                        }
+                        <p>Answers vary from run to run, so the scores of a single run include run-to-run noise.</p>
+                        <dl>
+                          <div>
+                            <dt><span class="gh-info-term">One run</span><span class="gh-info-badge">Default</span></dt>
+                            <dd>For a first look at a model, a check that a change works, or the lowest cost. Treat a small
+                              difference between two single runs with caution: it may be noise.</dd>
+                          </div>
+                          <div>
+                            <dt><span class="gh-info-term">Two or more runs</span></dt>
+                            <dd>
+                              @if (maxRunCountPerSeries != null) {
+                                Up to {{ maxRunCountPerSeries }}, run one at a time as a replicate set.
+                              } @else {
+                                Run one at a time as a replicate set; the daily run cap limits the count.
+                              }
+                              Multi-Run Analysis reports their mean and, from three runs, a reproducibility interval. Use
+                              it when the difference you are looking for is small, such as between two close models.
+                            </dd>
+                          </div>
+                        </dl>
+                        <p>Cost and duration grow with each run; the Series Projection estimates both once two or more
+                          runs are set.</p>
                       </app-info-tip>
                     </div>
                   </div>
@@ -662,7 +677,7 @@
                   @if (isMultiRunRequested) {
                     <div class="form-group">
                       <div class="checkbox-with-tip">
-                        <label class="gh-checkbox" for="allowCapWaitInput">
+                        <label class="checkbox-label" for="allowCapWaitInput">
                           <input id="allowCapWaitInput" type="checkbox" [(ngModel)]="allowCapWait"
                                  aria-describedby="allowCapWaitHint">
                           <span>Wait when the run cap blocks the next run</span>
@@ -676,18 +691,32 @@
                 </div>
 
                 <div class="form-group completion-signals" role="group" aria-labelledby="completionSignalsCaption">
-                  <div class="gh-field-row">
-                    <span class="field-caption" id="completionSignalsCaption">When the run finishes</span>
-                    <app-info-tip trigger="click" tipId="completionSignalsHint" subject="Completion signals">
-                      Armed at Start; a background tab can signal up to a minute late.
+                  <div class="exec-heading-row">
+                    <span class="field-caption" id="completionSignalsCaption">Completion Alerts</span>
+                    <app-info-tip trigger="click" tipId="completionSignalsHint" subject="Completion Alerts">
+                      <dl>
+                        <div>
+                          <dt><span class="gh-info-term">Sound</span></dt>
+                          <dd>Plays a short chime. If the browser blocks audio, press Test sound once to allow it.</dd>
+                        </div>
+                        <div>
+                          <dt><span class="gh-info-term">Desktop notification</span></dt>
+                          <dd>Names the run and its final status. The browser asks for permission when you select it.</dd>
+                        </div>
+                        <div>
+                          <dt><span class="gh-info-term">Timing</span></dt>
+                          <dd>Alerts come from this page, so keep its tab open. A series alerts once, after its last
+                            run. In a background tab an alert can arrive up to a minute late.</dd>
+                        </div>
+                      </dl>
                     </app-info-tip>
                   </div>
-                  <label class="gh-checkbox" for="completionSoundInput">
+                  <label class="checkbox-label" for="completionSoundInput">
                     <input id="completionSoundInput" type="checkbox" [(ngModel)]="completionSound"
                            aria-describedby="completionSignalsHint">
-                    <span>Play a sound when done</span>
+                    <span>Play a sound</span>
                   </label>
-                  <label class="gh-checkbox" for="completionNotificationInput">
+                  <label class="checkbox-label" for="completionNotificationInput">
                     <input id="completionNotificationInput" type="checkbox" [checked]="completionNotification"
                            aria-describedby="completionSignalsHint"
                            (change)="onCompletionNotificationChange($any($event.target).checked)">

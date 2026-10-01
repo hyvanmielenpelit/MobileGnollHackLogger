@@ -650,7 +650,9 @@ short list (a `<dl>` of options, say); a multi-step or interactive explanation s
   polyfill does not set it. On open the component calls `refreshAnchorPositioning()`.
 - **`.gh-field-row`** (global) puts the (i) at the right end of a select, a picker or an input:
   a flex row whose first child takes the remaining width. Do not wrap a checkbox label in it —
-  the label would stretch, and with it the checkbox's click target.
+  the label would stretch, and with it the checkbox's click target. Nor a group caption: the caption
+  would stretch and push the (i) to the far edge. A caption's (i) follows its text in a plain flex row
+  (`.exec-heading-row` in the benchmark launcher).
 - **Visible text stays visible.** A warning, an advisory, the reason a control is disabled, or a
   note that changes the decision (a condition that currently holds) is not moved into the popup.
 - **The popup caps its height** at `min(32rem, 100dvh - 32px)` and scrolls, so no click tip leaves the
