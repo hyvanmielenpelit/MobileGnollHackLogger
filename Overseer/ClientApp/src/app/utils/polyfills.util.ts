@@ -45,3 +45,17 @@ export function ensureOverlayPolyfills(): void {
 export function refreshAnchorPositioning(): void {
   anchorPolyfill?.().catch(err => console.warn('Anchor positioning refresh failed', err));
 }
+
+/** Set on <html> when anchor positioning and position-area are native; never alongside the polyfill. */
+export const NATIVE_ANCHOR_CLASS = 'gh-anchor-native';
+
+/**
+ * Marks the document for the native-only placement rules (`.gh-anchor-native` in styles.scss and
+ * config-filter.component.scss). The anchor-positioning polyfill ignores `@supports`, so those rules
+ * are gated on this class instead, which it never matches.
+ */
+export function markNativeAnchorPositioning(root: HTMLElement = document.documentElement): void {
+  if ('anchorName' in root.style && CSS.supports('position-area', 'block-end')) {
+    root.classList.add(NATIVE_ANCHOR_CLASS);
+  }
+}

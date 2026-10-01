@@ -37,6 +37,20 @@
   z-index: 1000;
 }
 
+/* Native-only placement above the phone breakpoint, where the panel is a bottom sheet instead; see
+   --gh-popover-below-fit in styles.scss for the fallback chain. Fixed, so the viewport is the
+   containing block whatever the document's scroll position. */
+@media (min-width: 601px) {
+  :host-context(.gh-anchor-native) .config-filter-panel {
+    position: fixed;
+    inset: auto;
+    #{'position-area'}: block-end span-inline-start;
+    margin: 8px 0 0;
+    #{'position-try-fallbacks'}: flip-block, flip-inline, flip-block flip-inline,
+      --gh-popover-below-fit, --gh-popover-above-fit;
+  }
+}
+
 /* MANDATORY: the polyfill cannot define :popover-open and applies a class instead.
    A browser that does not understand :popover-open discards the whole rule, so the
    two must be combined with :is(). */
@@ -180,6 +194,7 @@
     left: 0 !important;
     max-width: none !important;
     width: 100%;
+    min-width: 0;
     max-height: 80svh;
     overflow-y: auto;
     border-radius: 16px 16px 0 0;

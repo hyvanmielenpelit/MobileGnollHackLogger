@@ -5,10 +5,13 @@ import { AppComponent } from './app/app.component';
 import * as Sentry from '@sentry/angular';
 import packageJson from '../package.json';
 import { sentryBeforeSend } from './app/utils/sentry-filter.util';
+import { markNativeAnchorPositioning } from './app/utils/polyfills.util';
 
 if (!("popover" in HTMLElement.prototype)) {
   import("@oddbird/popover-polyfill");
 }
+
+markNativeAnchorPositioning();
 
 const sentryFetchWithCredentials = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   return fetch(input, { ...init, credentials: 'include' });

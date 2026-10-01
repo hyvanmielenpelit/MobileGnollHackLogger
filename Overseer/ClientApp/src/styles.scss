@@ -470,7 +470,8 @@ a:hover {
 }
 
 /* The popup of `app-info-tip trigger="click"`: popover="auto", right-aligned under its
-   (i) button, which sits at the right end of the control it explains. */
+   (i) button, which sits at the right end of the control it explains. Natively it also takes the
+   corner and viewport-wide fallbacks below, under .gh-anchor-native. */
 .gh-info-popup {
   /* Scoped palette: body text, secondary text and the hairline rule between entries. */
   --info-popup-text: #e4e4e7;
@@ -501,6 +502,36 @@ a:hover {
   line-height: 1.55;
   white-space: normal;
   text-align: start;
+}
+
+/* Native-only placement, gated on .gh-anchor-native (markNativeAnchorPositioning()) because the
+   polyfill ignores @supports. A popover keeps its natural size and alignment while it fits, tries
+   the opposite side and the other alignment, and otherwise goes on the roomier side, anywhere across
+   the viewport width, capped to the free space. Chrome tries at most five fallbacks. Used by
+   .gh-info-popup, .gh-action-popover, .gh-facet-popover and the config filter panel. */
+@position-try --gh-popover-below-fit {
+  #{'position-area'}: block-end span-all;
+  margin: 6px 16px;
+  max-height: calc(100% - 12px);
+  /* At least the space above, so this option fails whenever the space above is larger. Where
+     calc-size() exists the minimum is no more than the content height, so a short popover is not
+     stretched. */
+  min-height: calc(50dvh - anchor-size(height) / 2 - 12px);
+  min-height: calc-size(max-content, min(size, 50dvh - anchor-size(height) / 2 - 12px));
+}
+
+@position-try --gh-popover-above-fit {
+  #{'position-area'}: block-start span-all;
+  margin: 6px 16px;
+  max-height: calc(100% - 12px);
+}
+
+.gh-anchor-native .gh-info-popup {
+  inset: auto;
+  #{'position-area'}: block-end span-inline-start;
+  margin: 6px 0 0;
+  #{'position-try-fallbacks'}: flip-block, flip-inline, flip-block flip-inline,
+    --gh-popover-below-fit, --gh-popover-above-fit;
 }
 
 .gh-info-popup-title {
@@ -565,6 +596,14 @@ a:hover {
 
   /* Grouped pairs (<div><dt/><dd/></div>) are separated by a hairline rule. */
   dl > div + div {
+    margin-block-start: 10px;
+    padding-block-start: 10px;
+    border-block-start: 1px solid var(--info-popup-rule);
+  }
+
+  /* An intro paragraph and a closing note are set off from a grouped list by the same rule. */
+  p + dl > div:first-child,
+  dl:has(> div) + p {
     margin-block-start: 10px;
     padding-block-start: 10px;
     border-block-start: 1px solid var(--info-popup-rule);
@@ -722,6 +761,8 @@ a:hover {
    no implicit anchors:
      trigger  [attr.style]="'anchor-name: --x'"
      panel    [attr.style]="'position-anchor: --x'"
+   Natively it also takes the corner and viewport-wide fallbacks, under
+   .gh-anchor-native (see --gh-popover-below-fit).
    An unavailable item stays focusable with aria-disabled="true" and says why
    on a second line, .gh-action-popover-item-reason.
    ========================================================================== */
@@ -757,6 +798,15 @@ a:hover {
     gap: 2px;
     animation: gh-action-popover-in 0.14s ease-out;
   }
+}
+
+/* Native-only placement: see --gh-popover-below-fit. */
+.gh-anchor-native .gh-action-popover {
+  inset: auto;
+  #{'position-area'}: block-end span-inline-start;
+  margin: 6px 0 0;
+  #{'position-try-fallbacks'}: flip-block, flip-inline, flip-block flip-inline,
+    --gh-popover-below-fit, --gh-popover-above-fit;
 }
 
 @keyframes gh-action-popover-in {
@@ -2748,6 +2798,15 @@ label.checkbox-label,
     gap: 6px;
     animation: gh-action-popover-in 0.14s ease-out;
   }
+}
+
+/* Native-only placement: see --gh-popover-below-fit. */
+.gh-anchor-native .gh-facet-popover {
+  inset: auto;
+  #{'position-area'}: block-end span-inline-end;
+  margin: 6px 0 0;
+  #{'position-try-fallbacks'}: flip-block, flip-inline, flip-block flip-inline,
+    --gh-popover-below-fit, --gh-popover-above-fit;
 }
 
 .gh-facet-search {

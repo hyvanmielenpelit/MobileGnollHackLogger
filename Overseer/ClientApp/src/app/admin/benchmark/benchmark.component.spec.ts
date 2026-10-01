@@ -5175,6 +5175,16 @@ describe('AdminBenchmarkComponent', () => {
       }
     });
 
+    it('sets the Number of Runs intro and closing note off from its entries', () => {
+      fixture.detectChanges();
+
+      const hint = card().querySelector('#runCountHint') as HTMLElement;
+      const ruleOf = (selector: string) => getComputedStyle(hint.querySelector(selector)!).borderTopStyle;
+      expect(ruleOf('dl > div:first-child')).toBe('solid');
+      expect(ruleOf('dl + p')).toBe('solid');
+      expect(ruleOf('p')).toBe('none');
+    });
+
     it('themes every launcher checkbox with the global checkbox-label', () => {
       component.runCount = 2;
       fixture.detectChanges();

@@ -638,11 +638,13 @@ short list (a `<dl>` of options, say); a multi-step or interactive explanation s
 - **The popup is `popover="auto"`**, non-modal and light-dismiss: Escape, a click outside it, or a
   second click on the button closes it. It has **no close button, no `role`** (focus stays on the
   button and nothing inside is interactive, so `dialog` would promise behavior it lacks) **and no
-  `interestfor`**. It is `.gh-info-popup`, right-aligned under the button, titled by the subject.
+  `interestfor`**. It is `.gh-info-popup`, right-aligned under the button (natively, where that
+  does not fit, it takes the §4f fallback chain), titled by the subject.
 - **A list of options is a `<dl>` with each pair grouped in a `<div>`**, the label in a
   `<span class="gh-info-term">`; the global styles draw a hairline between groups. A term
   that needs a status marker (*Recommended*) gets a `<span class="gh-info-badge">` after the
-  label inside its `<dt>` — a word, never a color alone.
+  label inside its `<dt>` — a word, never a color alone. An intro paragraph before the list and a
+  closing note after it get the same hairline.
 - **The ids**: `{tipId}` is still the element holding the text, so the control's
   `aria-describedby` contract above is unchanged; the popup is `{tipId}-popup`, labelled by its
   title `{tipId}-title`, which is outside the description.
@@ -655,8 +657,9 @@ short list (a `<dl>` of options, say); a multi-step or interactive explanation s
   (`.exec-heading-row` in the benchmark launcher).
 - **Visible text stays visible.** A warning, an advisory, the reason a control is disabled, or a
   note that changes the decision (a condition that currently holds) is not moved into the popup.
-- **The popup caps its height** at `min(32rem, 100dvh - 32px)` and scrolls, so no click tip leaves the
-  screen; content that needs the scroll is a sign it belongs in dialog mode.
+- **The popup caps its height** at `min(32rem, 100dvh - 32px)` and scrolls; natively the §4f chain
+  keeps it inside the viewport, capped to the free space. Content that needs the scroll is a sign it
+  belongs in dialog mode.
 
 **Dialog mode: `trigger="dialog"`.** For an explanation longer than a click tip holds — several
 paragraphs, or a `<dl>` of long entries (the report writer advice in the AI Reports tab, the three
@@ -854,7 +857,12 @@ visible buttons or icon buttons (§4); a single action stays a button.
 - **Escape** closes only the popover: its handler calls `stopPropagation()`, as the reorderable
   list's Move menu does (§4c), so the `<dialog>` it sits in does not close on the same key.
 - **Positioning.** Explicit anchor names on **both** trigger and panel via `[attr.style]` (§4.2
-  items 3–4), with a `flip-block` position-try fallback so a trigger near the bottom opens upward.
+  items 3–4), with `flip-block, flip-inline` fallbacks; natively (`.gh-anchor-native`, set by
+  `markNativeAnchorPositioning()` because the polyfill ignores `@supports`) the panel also tries the
+  opposite corner and, as a last resort, goes on the roomier side anywhere across the viewport width,
+  with 16 px gutters, capped to the free height, and scrolls (`--gh-popover-below-fit` /
+  `--gh-popover-above-fit` in `styles.scss`). Chrome tries at most five fallbacks. The click-mode
+  info popup (§4b) uses the same chain.
   Call `ensureOverlayPolyfills()`; without anchor positioning the panel still works, centered.
 - **Disabled items are `aria-disabled="true"`** with an inert handler and the reason on a second
   line inside the item — never `disabled`, and never silently absent, so the user learns why an
@@ -1455,7 +1463,7 @@ rows where the array identity alone would not show it.
   search narrows the options shown; options it hides keep their selection.
 - Focus goes to the option search, else the first option, on open, and back to the trigger on close.
   **Escape** closes the popover only (`preventDefault()` and `stopPropagation()`), as §4f requires.
-- Explicit anchor names on both ends by `[attr.style]`, a `flip-block` fallback, a capped scrolling
+- Explicit anchor names on both ends by `[attr.style]`, the §4f fallback chain, a capped scrolling
   height, `ensureOverlayPolyfills()` and `refreshAnchorPositioning()` on open — the §4.2 and §4f rules.
 - **Counts are memoized** — by `CardListState.facets(rows)`, on its revision, the rows array's identity
   and `memoDeps`; the host calls `invalidate()` whenever a row's selection or the package changes. A
@@ -1534,7 +1542,8 @@ Diff this against your markup before calling button, tab or table work finished.
       `role="menu"`.
 - [ ] The trigger's `aria-expanded` follows the `toggle` event; focus goes to the first enabled item
       on open and back to the trigger on close; Escape closes only the popover (`stopPropagation`).
-- [ ] Explicit anchor names on both ends, a `flip-block` fallback, and `ensureOverlayPolyfills()`.
+- [ ] Explicit anchor names on both ends, the §4f fallback chain (a new anchored panel gets a
+      `.gh-anchor-native` rule), and `ensureOverlayPolyfills()`.
 - [ ] Unavailable items are `aria-disabled` with their reason on a second line, never removed.
 - [ ] A cluster of a few Tab-stop buttons is `role="group"` with an `aria-label`; `role="toolbar"`
       only with arrow-key roving focus.
