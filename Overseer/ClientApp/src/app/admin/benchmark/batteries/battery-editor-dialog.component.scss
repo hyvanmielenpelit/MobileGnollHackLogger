@@ -51,7 +51,7 @@
 }
 
 /* A field's width suggests its expected length: Name fits its 128 characters, Description keeps a
-   readable measure. */
+   readable measure. Beside the suites and weighting columns, the fields follow those columns. */
 .bbe-details {
   display: grid;
   gap: 0 20px;
@@ -108,8 +108,21 @@
     grid-area: notes;
   }
 
+  /* Name over the suites, Description over the weighting. */
   .bbe-details {
     grid-area: details;
+    grid-template-columns: subgrid;
+    column-gap: normal;
+  }
+
+  /* Each field reserves the scrollbar gutter and end padding of the column below it, so its edges
+     meet that column's content. The padding, offset by the margin, leaves room for the focus glow
+     inside the clip. */
+  .bbe-layout .bbe-details .form-group {
+    overflow: hidden;
+    scrollbar-gutter: stable;
+    margin: -6px;
+    padding: 6px 10px 6px 6px;
   }
 
   .bbe-suites {
