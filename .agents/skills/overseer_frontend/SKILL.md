@@ -671,11 +671,20 @@ To find specific popups, look in the corresponding component's `.html` template:
     the scoring profile form (a nested modal over the profile dialog); `open(section?)` scrolls to a
     section, and a `profile` input fills in that profile's trigger values.
   - `app-battery-editor-dialog` (`batteries/battery-editor-dialog.component.*`, `bbe` ids, title
-    `#bbeTitle`): **New Battery** / **Edit Battery** — name, description, an `app-reorderable-list` of
-    checkable suites (list order is run order), the **Weighting** select defaulting to *Questions and
-    difficulty*, custom weights under *Custom*, and a live preview table computed in the browser from
-    the per-suite masses (the chosen scheme's weights, the others in muted columns, a warning per
-    unassessed suite).
+    `#bbeTitle`): **New Battery** / **Edit Battery** — an 88 rem **full-height** frame. A details row
+    (name ≤ 26 rem beside description ≤ 44 rem from 48 rem of body, stacked below), then two columns
+    from 56 rem of body (`bbe-body` container) that **scroll independently**: an
+    `app-reorderable-list` of checkable suites (list order is run order) with an *N of M selected*
+    count, and the weighting. **Weighting** is a `fieldset.gh-choice` radio group named `bbeScheme`
+    (ids `bbeScheme-{value}`, legend visually hidden, the info tip beside the section `h4`) defaulting
+    to *Questions and difficulty*; the custom-weight error sits directly under it. The live preview,
+    computed in the browser from the per-suite masses, is a `ul.bbe-weight-list` of
+    `article.bbe-weight-card`s in run order: a kicker *Suite n of N*, an `h5`, the unassessed warning
+    (and an amber inline-start border), a `dl.bbe-weight-metrics` (questions, difficulty mass, the
+    custom weight under *Custom*, the chosen weight), a `.bbe-weight-bar` share bar and
+    `.bbe-weight-others` under a hairline. The `bbe-weights` container moves the metrics under the
+    head below 40 rem and to one column below 26 rem. Below 56 rem of body everything is one column
+    and the body scrolls.
   - `app-battery-progress-dialog` (`batteries/battery-progress-dialog.component.*`, `bp` ids):
     **full-screen** battery progress — a suite × round grid of status chips (`BATTERY_SLOT_STATE_LABELS`),
     one polite live region (the stage line), per-member *Open run progress*, **Attach existing run** on

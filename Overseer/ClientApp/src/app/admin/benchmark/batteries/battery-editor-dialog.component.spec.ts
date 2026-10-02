@@ -86,15 +86,20 @@ describe('BatteryEditorDialogComponent', () => {
   }
 
   function chooseScheme(value: string): void {
-    const select = el().querySelector('#bbeScheme') as HTMLSelectElement;
-    select.value = value;
-    select.dispatchEvent(new Event('change'));
+    const radio = el().querySelector(`input[name="bbeScheme"][value="${value}"]`) as HTMLInputElement;
+    expect(radio).withContext(`radio for ${value}`).not.toBeNull();
+    radio.click();
     fixture.detectChanges();
   }
 
-  function chosenColumn(): string[] {
-    return Array.from(el().querySelectorAll('.bbe-preview tbody td.bbe-chosen'))
-      .map(td => (td.textContent ?? '').trim());
+  function chosenWeights(): string[] {
+    return Array.from(el().querySelectorAll('.bbe-weight-card .bbe-weight-value'))
+      .map(dd => (dd.textContent ?? '').trim());
+  }
+
+  function texts(selector: string): string[] {
+    return Array.from(el().querySelectorAll(selector))
+      .map(node => (node.textContent ?? '').replace(/\s+/g, ' ').trim());
   }
 
   function typeName(value: string): void {
@@ -141,9 +146,10 @@ describe('BatteryEditorDialogComponent', () => {
     fixture.detectChanges();
 
     expect(el().querySelector('#bbeTitle')?.textContent?.trim()).toBe('New Battery');
-    expect((el().querySelector('#bbeScheme') as HTMLSelectElement).value).toBe('DifficultyMass');
+    expect((el().querySelector('input[name="bbeScheme"]:checked') as HTMLInputElement).value).toBe('DifficultyMass');
     expect(el().querySelectorAll('.rl-list input[type="checkbox"]:checked').length).toBe(0);
-    expect(el().querySelector('.bbe-preview tbody')?.textContent).toContain('Select suites to see their weights.');
+    expect(el().querySelector('.bbe-weight-empty')?.textContent).toContain('Select suites to see their weights.');
+    expect(el().querySelector('.bbe-weight-list')).toBeNull();
     expect(el().querySelector('#bbeRevisionNote')).toBeNull();
   });
 
@@ -156,15 +162,15 @@ describe('BatteryEditorDialogComponent', () => {
     expect(service.getQuestions).toHaveBeenCalledWith(11);
     expect(service.getQuestions).toHaveBeenCalledWith(12);
     // List order is by name, so Board Reading (250 / 350) precedes Gameplay Help (100 / 350).
-    expect(chosenColumn()).toEqual(['71.4 %', '28.6 %']);
-    const muted = Array.from(el().querySelectorAll('.bbe-preview tbody tr:first-child td.bbe-muted'))
-      .map(td => (td.textContent ?? '').trim());
+    expect(chosenWeights()).toEqual(['71.4 %', '28.6 %']);
     // Questions only (4 / 6), then Equal per suite.
-    expect(muted).toEqual(['66.7 %', '50.0 %']);
+    expect(texts('.bbe-weight-card .bbe-weight-others dd').slice(0, 2)).toEqual(['66.7 %', '50.0 %']);
 
     chooseScheme('Equal');
-    expect(chosenColumn()).toEqual(['50.0 %', '50.0 %']);
-    expect(el().querySelector('.bbe-preview thead .bbe-chosen')?.textContent?.trim()).toBe('Equal per suite');
+    expect(chosenWeights()).toEqual(['50.0 %', '50.0 %']);
+    const checked = el().querySelector('input[name="bbeScheme"]:checked') as HTMLInputElement;
+    expect(checked.closest('label')?.textContent?.trim()).toBe('Equal per suite');
+    expect(texts('.bbe-weight-card .bbe-metric-weight dt')[0]).toContain('under Equal per suite');
   });
 
   it('warns about a suite whose difficulties are not assessed', () => {
@@ -172,9 +178,54 @@ describe('BatteryEditorDialogComponent', () => {
     fixture.detectChanges();
     checkSuite('Board Reading');
 
-    const warning = el().querySelector('.bbe-preview .bbe-warning')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    const warning = el().querySelector('.bbe-weight-card .bbe-warning')?.textContent?.replace(/\s+/g, ' ') ?? '';
     expect(warning).toContain('Difficulties not assessed for 1 of 4 questions');
     expect(warning).toContain('the launcher refuses this suite');
+  });
+
+  it('shows one card per checked suite, in run order', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+    checkSuite('Gameplay Help');
+    checkSuite('Board Reading');
+
+    expect(texts('.bbe-weight-title')).toEqual(['Board Reading', 'Gameplay Help']);
+    expect(texts('.bbe-weight-kicker')).toEqual(['Suite 1 of 2', 'Suite 2 of 2']);
+    const cards = Array.from(el().querySelectorAll('article.bbe-weight-card'));
+    expect(cards.length).toBe(2);
+    for (const card of cards) {
+      const title = card.querySelector('h5.bbe-weight-title') as HTMLElement;
+      expect(title.id).toBeTruthy();
+      expect(card.getAttribute('aria-labelledby')).toBe(title.id);
+    }
+  });
+
+  it('fills the share bar to the chosen weight', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+    checkSuite('Gameplay Help');
+    checkSuite('Board Reading');
+
+    const bar = () => el().querySelector('.bbe-weight-card .bbe-weight-bar span') as HTMLElement;
+    expect(bar().style.inlineSize).toMatch(/^71\.4/);
+
+    chooseScheme('Equal');
+    expect(bar().style.inlineSize).toBe('50%');
+  });
+
+  it('labels each custom weight input with its suite and marks an unassessed suite', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+    checkSuite('Gameplay Help');
+    checkSuite('Board Reading');
+    chooseScheme('Custom');
+
+    const label = el().querySelector('label[for="bbe-custom-12"]');
+    expect(label?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Custom weight for Board Reading');
+    const board = el().querySelector('.bbe-weight-card[data-suite-id="12"]') as HTMLElement;
+    const gameplay = el().querySelector('.bbe-weight-card[data-suite-id="11"]') as HTMLElement;
+    expect(board.classList).toContain('is-unassessed');
+    expect(gameplay.classList).not.toContain('is-unassessed');
   });
 
   it('shows custom weight inputs only under Custom', () => {
@@ -188,12 +239,12 @@ describe('BatteryEditorDialogComponent', () => {
     const inputs = el().querySelectorAll('.bbe-custom-input') as NodeListOf<HTMLInputElement>;
     expect(inputs.length).toBe(2);
     expect(inputs[0].value).toBe('1');
-    expect(chosenColumn()).toEqual(['50.0 %', '50.0 %']);
+    expect(chosenWeights()).toEqual(['50.0 %', '50.0 %']);
 
     inputs[0].value = '3';
     inputs[0].dispatchEvent(new Event('input'));
     fixture.detectChanges();
-    expect(chosenColumn()).toEqual(['75.0 %', '25.0 %']);
+    expect(chosenWeights()).toEqual(['75.0 %', '25.0 %']);
 
     chooseScheme('ItemCount');
     expect(el().querySelectorAll('.bbe-custom-input').length).toBe(0);
@@ -237,7 +288,7 @@ describe('BatteryEditorDialogComponent', () => {
     expect(el().querySelector('#bbeTitle')?.textContent?.trim()).toBe('Edit Battery');
     expect(el().querySelector('#bbeRevisionNote')?.textContent).toContain('creates revision 3');
     expect(service.getQuestions).not.toHaveBeenCalled();
-    expect(chosenColumn()).toEqual(['71.4 %', '28.6 %']);
+    expect(chosenWeights()).toEqual(['71.4 %', '28.6 %']);
 
     clickSave();
     expect(service.updateBattery).toHaveBeenCalledTimes(1);

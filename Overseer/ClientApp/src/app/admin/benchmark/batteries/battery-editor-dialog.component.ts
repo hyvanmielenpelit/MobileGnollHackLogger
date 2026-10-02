@@ -218,7 +218,7 @@ export class BatteryEditorDialogComponent implements OnInit, OnDestroy {
   }
 
   onSchemeChange(event: Event): void {
-    this.scheme = (event.target as HTMLSelectElement).value as BatteryWeightingSchemeKey;
+    this.scheme = (event.target as HTMLInputElement | HTMLSelectElement).value as BatteryWeightingSchemeKey;
     if (this.scheme === 'Custom') {
       for (const row of this.rows) {
         if (row.checked && row.customWeight == null) {
@@ -296,6 +296,17 @@ export class BatteryEditorDialogComponent implements OnInit, OnDestroy {
 
   isUnassessed(row: { fullyAssessed: boolean; questionCount: number }): boolean {
     return !row.fullyAssessed && row.questionCount > 0;
+  }
+
+  /** The radio input id of a weighting option. */
+  schemeOptionId(value: BatteryWeightingSchemeKey): string {
+    return 'bbeScheme-' + value;
+  }
+
+  /** The chosen scheme's weight of a preview row as a bar width in percent, 0 while undefined. */
+  weightPercent(row: BatteryPreviewRow): number {
+    const weight = row.weights[this.scheme];
+    return weight != null && Number.isFinite(weight) ? Math.min(100, Math.max(0, weight * 100)) : 0;
   }
 
   /** Rebuilds the list items and the preview, and loads the masses the preview still lacks. */

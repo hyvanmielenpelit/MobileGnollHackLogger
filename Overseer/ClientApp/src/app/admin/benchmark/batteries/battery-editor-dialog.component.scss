@@ -1,7 +1,7 @@
 @use '../benchmark-dialog-frame' as frame;
 
 .gh-dialog.battery-editor-dialog {
-  @include frame.frame(72rem, $max-height: 92dvh);
+  @include frame.frame(88rem, $full-height: true);
 }
 
 .dialog-header h3:focus-visible {
@@ -10,9 +10,19 @@
 }
 
 .dialog-body {
+  display: flex;
+  flex-direction: column;
   font-size: var(--text-body);
   line-height: var(--leading-body);
   container: bbe-body / inline-size;
+}
+
+/* One column below 56 rem of dialog body: notes, details, suites, weighting, error. The body scrolls. */
+.bbe-layout {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
 }
 
 .bbe-optional {
@@ -22,12 +32,16 @@
 
 .bbe-description {
   --autosize-min: 3rem;
-  --autosize-max: 10rem;
+  --autosize-max: 6rem;
 }
 
 .bbe-revision-note,
 .bbe-deleted {
   margin: 0 0 16px;
+}
+
+.bbe-notes > :last-child {
+  margin-bottom: 0;
 }
 
 .bbe-hint {
@@ -36,16 +50,26 @@
   color: #aaa;
 }
 
-/* One column below 56 rem of dialog body, the suite list beside the weighting above it. */
-.bbe-columns {
+/* A field's width suggests its expected length: Name fits its 128 characters, Description keeps a
+   readable measure. */
+.bbe-details {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 20px;
+  gap: 0 20px;
 }
 
-@container bbe-body (min-width: 56rem) {
-  .bbe-columns {
-    grid-template-columns: minmax(16rem, 2fr) minmax(0, 3fr);
+/* Outranks the frame's .form-group margin; the grid spaces the fields. */
+.bbe-layout .bbe-details .form-group {
+  margin-bottom: 0;
+}
+
+.bbe-save-error {
+  margin: 0;
+}
+
+@container bbe-body (min-width: 48rem) {
+  .bbe-details {
+    grid-template-columns: minmax(14rem, 26rem) minmax(0, 44rem);
+    justify-content: start;
     align-items: start;
   }
 }
@@ -55,50 +79,322 @@
   min-inline-size: 0;
 }
 
-.bbe-preview-wrap {
-  overflow-x: auto;
-  margin-bottom: 8px;
+/* The suite list beside the weighting, each column scrolling on its own inside the full-height body. */
+@container bbe-body (min-width: 56rem) {
+  .bbe-layout {
+    flex: 1 1 0;
+    min-block-size: 0;
+    grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "notes notes"
+      "details details"
+      "suites weighting"
+      "error error";
+    gap: 0 1.5rem;
+  }
+
+  /* Margins rather than row gaps, so the rows of absent notes or error take no room. */
+  .bbe-notes,
+  .bbe-details {
+    margin-block-end: 20px;
+  }
+
+  .bbe-save-error {
+    margin-block-start: 20px;
+  }
+
+  .bbe-notes {
+    grid-area: notes;
+  }
+
+  .bbe-details {
+    grid-area: details;
+  }
+
+  .bbe-suites {
+    grid-area: suites;
+  }
+
+  .bbe-weighting {
+    grid-area: weighting;
+  }
+
+  .bbe-save-error {
+    grid-area: error;
+  }
+
+  .bbe-suites,
+  .bbe-weighting {
+    min-block-size: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-inline-end: 4px;
+  }
 }
 
-.bbe-preview {
-  width: 100%;
+.bbe-weighting:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 
-  caption {
-    caption-side: top;
-    text-align: start;
-    padding: 0 0 6px;
-    font-size: var(--text-secondary);
-    color: #aaa;
+.bbe-weighting:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* The section title's rule runs under the whole row, beneath the title and what sits beside it. */
+.bbe-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--border-glass);
+
+  .gh-section-title {
+    margin: 0;
+    padding: 0;
+    border-bottom: 0;
   }
 
-  th[scope='row'] {
+  app-info-tip {
+    align-self: center;
+  }
+}
+
+.bbe-suites-count {
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  color: #a1a1aa;
+}
+
+.bbe-scheme {
+  margin-block-end: 12px;
+}
+
+.bbe-preview-caption {
+  margin: 12px 0 6px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+/* One card per selected suite, in run order. */
+.bbe-weight-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  container: bbe-weights / inline-size;
+}
+
+.bbe-weight-item {
+  min-inline-size: 0;
+}
+
+/* Head beside the metrics, the share bar under both, the other weightings under a hairline. The
+   metric columns have a fixed width, so they line up down the list. */
+.bbe-weight-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "head metrics"
+    "bar bar"
+    "others others";
+  gap: 0.75rem 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+
+  &.is-unassessed {
+    border-inline-start: 3px solid #fbbf24;
+  }
+}
+
+.bbe-weight-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-inline-size: 0;
+
+  .gh-field-error {
+    margin: 0;
+  }
+}
+
+.bbe-weight-kicker {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #888;
+}
+
+.bbe-weight-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f4f4f5;
+  overflow-wrap: anywhere;
+}
+
+.bbe-weight-metrics {
+  grid-area: metrics;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 7.5rem;
+  align-content: center;
+  gap: 0.75rem 1rem;
+  margin: 0;
+  padding-inline-start: 1.5rem;
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.08);
+
+  dt {
+    font-size: 0.6875rem;
     font-weight: 600;
-    text-align: start;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: end;
+    color: #888;
+
+    label {
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+    }
   }
 
-  .bbe-num {
-    text-align: end;
+  dd {
+    margin: 0.25rem 0 0;
+    font-size: var(--text-body);
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .bbe-chosen {
-    font-weight: 700;
-    color: var(--primary-color);
-  }
-
-  .bbe-muted {
-    color: #8a8a8a;
-  }
-
-  .bbe-custom-input {
-    inline-size: 6rem;
     text-align: end;
   }
+}
 
-  .bbe-loading {
-    color: #999;
-    font-style: italic;
+.bbe-metric {
+  min-inline-size: 0;
+}
+
+.bbe-weight-value {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.bbe-custom-input {
+  inline-size: 100%;
+  text-align: end;
+}
+
+.bbe-loading {
+  color: #999;
+  font-style: italic;
+}
+
+/* Length is never the only carrier: the percentage beside it says the same. */
+.bbe-weight-bar {
+  grid-area: bar;
+  block-size: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+
+  span {
+    display: block;
+    block-size: 100%;
+    background: var(--primary-color);
+  }
+}
+
+.bbe-weight-others {
+  grid-area: others;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  padding-block-start: 0.625rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  dl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+    margin: 0;
+
+    > div {
+      display: flex;
+      gap: 6px;
+    }
+  }
+
+  dt {
+    font-weight: 400;
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    color: #d4d4d8;
+  }
+}
+
+.bbe-weight-others-label {
+  font-weight: 600;
+}
+
+.bbe-weight-empty {
+  margin: 0 0 8px;
+  padding: 2rem 1rem;
+  border: 1px dashed var(--border-glass);
+  border-radius: 10px;
+  text-align: center;
+  color: #999;
+}
+
+/* A narrow card list: the metrics move under the head and wrap. */
+@container bbe-weights (inline-size < 40rem) {
+  .bbe-weight-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "metrics"
+      "bar"
+      "others";
+  }
+
+  .bbe-weight-metrics {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+    padding-inline-start: 0;
+    border-inline-start: 0;
+    padding-block-start: 0.5rem;
+    border-block-start: 1px solid rgba(255, 255, 255, 0.08);
+
+    dt,
+    dd {
+      text-align: start;
+    }
+  }
+}
+
+/* A phone: one metric per row. */
+@container bbe-weights (inline-size < 26rem) {
+  .bbe-weight-metrics {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -117,6 +413,8 @@
   }
 }
 
-.bbe-save-error {
-  margin-top: 16px;
+@media (prefers-reduced-motion: reduce) {
+  .bbe-weight-card {
+    transition: none;
+  }
 }

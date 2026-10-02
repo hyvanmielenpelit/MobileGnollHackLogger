@@ -388,10 +388,11 @@ The fourth benchmark tab, after *Multi-Run Analysis*:
 
 **New Battery** / **Edit**: name, optional description, a reorderable list of every suite with a
 checkbox each (checked suites, in list order, are the battery and its run order), and **Weighting**,
-defaulting to *Questions and difficulty*. Under *Custom*, a weight input per suite. A live preview
-table shows per checked suite its questions, difficulty mass, its weight under the chosen scheme and,
-in muted columns, its weight under the others; it is computed in the browser from the per-suite masses
-the server sends, so it needs no round trip. A suite whose difficulties are not all assessed is warned
+a radio group defaulting to *Questions and difficulty*. Under *Custom*, a weight input per suite. A
+live preview shows one weight card per checked suite, in run order: *Suite n of N*, the suite's name,
+its questions and difficulty mass, its weight under the chosen scheme with a share bar, and, under a
+hairline, its weight under the other automatic schemes. The preview is computed in the browser from
+the per-suite masses the server sends, so it needs no round trip. A suite whose difficulties are not all assessed is warned
 about: its preview uses the fallback weight 50 per unassessed question, and the launcher will refuse
 it. Editing an existing battery creates a new revision; existing results keep theirs.
 

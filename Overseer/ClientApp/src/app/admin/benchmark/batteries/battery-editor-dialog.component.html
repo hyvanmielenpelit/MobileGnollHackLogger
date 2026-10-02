@@ -24,43 +24,53 @@
     </div>
 
     <div class="dialog-body">
-      @if (editing) {
-        <p class="bbe-revision-note alert alert-info" id="bbeRevisionNote">
-          Changing the suites, their order, the weighting or the weights creates revision {{ editing.revision + 1 }}.
-          Existing battery runs keep the definition they ran under, and their results do not change.
-        </p>
-      }
+      <div class="bbe-layout">
+        @if (editing || deletedSuiteNames.length > 0) {
+          <div class="bbe-notes">
+            @if (editing) {
+              <p class="bbe-revision-note alert alert-info" id="bbeRevisionNote">
+                Changing the suites, their order, the weighting or the weights creates revision {{ editing.revision + 1 }}.
+                Existing battery runs keep the definition they ran under, and their results do not change.
+              </p>
+            }
 
-      <div class="form-group">
-        <label for="bbeName">Name</label>
-        <input id="bbeName" type="text" class="gh-input" maxlength="128" autocomplete="off"
-               [value]="name" (input)="onNameInput($event)"
-               [attr.aria-invalid]="attemptedSave && nameError ? 'true' : null"
-               [attr.aria-describedby]="attemptedSave && nameError ? 'bbeNameError' : null">
-        @if (attemptedSave && nameError) {
-          <p class="gh-field-error" id="bbeNameError">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-            {{ nameError }}
-          </p>
+            @if (deletedSuiteNames.length > 0) {
+              <div class="alert alert-warning bbe-deleted" role="note">
+                Deleted {{ deletedSuiteNames.length === 1 ? 'suite' : 'suites' }}
+                {{ deletedSuiteNames.join(', ') }} will be removed from the battery when you save.
+              </div>
+            }
+          </div>
         }
-      </div>
 
-      <div class="form-group">
-        <label for="bbeDescription">Description <span class="bbe-optional">(optional)</span></label>
-        <textarea id="bbeDescription" class="gh-input gh-textarea-autosize bbe-description" rows="2"
-                  [value]="description" (input)="onDescriptionInput($event)"></textarea>
-      </div>
+        <!-- Name and description side by side from 48 rem of body, stacked below. -->
+        <div class="bbe-details">
+          <div class="form-group">
+            <label for="bbeName">Name</label>
+            <input id="bbeName" type="text" class="gh-input" maxlength="128" autocomplete="off"
+                   [value]="name" (input)="onNameInput($event)"
+                   [attr.aria-invalid]="attemptedSave && nameError ? 'true' : null"
+                   [attr.aria-describedby]="attemptedSave && nameError ? 'bbeNameError' : null">
+            @if (attemptedSave && nameError) {
+              <p class="gh-field-error" id="bbeNameError">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                {{ nameError }}
+              </p>
+            }
+          </div>
 
-      @if (deletedSuiteNames.length > 0) {
-        <div class="alert alert-warning bbe-deleted" role="note">
-          Deleted {{ deletedSuiteNames.length === 1 ? 'suite' : 'suites' }}
-          {{ deletedSuiteNames.join(', ') }} will be removed from the battery when you save.
+          <div class="form-group">
+            <label for="bbeDescription">Description <span class="bbe-optional">(optional)</span></label>
+            <textarea id="bbeDescription" class="gh-input gh-textarea-autosize bbe-description" rows="2"
+                      [value]="description" (input)="onDescriptionInput($event)"></textarea>
+          </div>
         </div>
-      }
 
-      <div class="bbe-columns">
         <section class="bbe-suites" aria-labelledby="bbeSuitesTitle">
-          <h4 class="gh-section-title" id="bbeSuitesTitle">Suites</h4>
+          <div class="bbe-section-head">
+            <h4 class="gh-section-title" id="bbeSuitesTitle">Suites</h4>
+            <span class="bbe-suites-count">{{ checkedRows.length }} of {{ rows.length }} selected</span>
+          </div>
           <p class="bbe-hint" id="bbeSuitesHint">Select the suites; the order of the selected ones is the order they run in.</p>
           <app-reorderable-list [items]="items" [checkable]="true" idPrefix="bbe-suites"
                                 listLabel="Suites in run order" itemNoun="suite"
@@ -77,52 +87,51 @@
           }
         </section>
 
-        <section class="bbe-weighting" aria-labelledby="bbeWeightingTitle">
-          <h4 class="gh-section-title" id="bbeWeightingTitle">Weighting</h4>
-          <div class="form-group">
-            <label for="bbeScheme">Weighting</label>
-            <div class="gh-field-row">
-              <select id="bbeScheme" class="gh-input" aria-describedby="bbeSchemeHint" (change)="onSchemeChange($event)">
-                @for (option of schemeOptions; track option.value) {
-                  <option [value]="option.value" [selected]="option.value === scheme">{{ option.label }}</option>
-                }
-              </select>
-              <app-info-tip trigger="click" tipId="bbeSchemeHint" subject="Weighting">
-                <p>Questions and difficulty (the default): each suite weighs the sum of its questions'
-                  difficulties, so more questions and harder questions both count for more; the Overall
-                  Index then equals one difficulty-weighted index over every question.</p>
-                <dl>
-                  <div><dt><span class="gh-info-term">Questions only</span></dt><dd>Each suite weighs its number of questions, whatever their difficulty.</dd></div>
-                  <div><dt><span class="gh-info-term">Equal per suite</span></dt><dd>Every suite weighs the same.</dd></div>
-                  <div><dt><span class="gh-info-term">Custom</span></dt><dd>Your own positive weights, normalized to sum to 100 %.</dd></div>
-                </dl>
-                <p>Whatever you choose, the analysis also reports the Overall Index under the other automatic schemes as a sensitivity check.</p>
-              </app-info-tip>
-            </div>
+        <!-- Focusable so the scrolling card area is reachable by keyboard. -->
+        <section class="bbe-weighting" aria-labelledby="bbeWeightingTitle" tabindex="0">
+          <div class="bbe-section-head">
+            <h4 class="gh-section-title" id="bbeWeightingTitle">Weighting</h4>
+            <app-info-tip trigger="click" tipId="bbeSchemeHint" subject="Weighting">
+              <p>Questions and difficulty (the default): each suite weighs the sum of its questions'
+                difficulties, so more questions and harder questions both count for more; the Overall
+                Index then equals one difficulty-weighted index over every question.</p>
+              <dl>
+                <div><dt><span class="gh-info-term">Questions only</span></dt><dd>Each suite weighs its number of questions, whatever their difficulty.</dd></div>
+                <div><dt><span class="gh-info-term">Equal per suite</span></dt><dd>Every suite weighs the same.</dd></div>
+                <div><dt><span class="gh-info-term">Custom</span></dt><dd>Your own positive weights, normalized to sum to 100 %.</dd></div>
+              </dl>
+              <p>Whatever you choose, the analysis also reports the Overall Index under the other automatic schemes as a sensitivity check.</p>
+            </app-info-tip>
           </div>
 
-          <div class="bbe-preview-wrap">
-            <table class="gh-table bbe-preview">
-              <caption>Weight preview from the suites' current questions</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Suite</th>
-                  <th scope="col" class="bbe-num">Questions</th>
-                  <th scope="col" class="bbe-num">Difficulty mass</th>
-                  @if (scheme === 'Custom') {
-                    <th scope="col" class="bbe-num">Custom weight</th>
-                  }
-                  <th scope="col" class="bbe-num bbe-chosen">{{ schemeLabel }}</th>
-                  @for (option of otherSchemes; track option.value) {
-                    <th scope="col" class="bbe-num bbe-muted">{{ option.label }}</th>
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of previewRows; track row.suiteId) {
-                  <tr [attr.data-suite-id]="row.suiteId">
-                    <th scope="row">
-                      {{ row.name }}
+          <fieldset class="gh-choice bbe-scheme" aria-describedby="bbeSchemeHint">
+            <legend class="visually-hidden">Weighting</legend>
+            @for (option of schemeOptions; track option.value) {
+              <label class="gh-radio" [attr.for]="schemeOptionId(option.value)">
+                <input type="radio" name="bbeScheme" [id]="schemeOptionId(option.value)" [value]="option.value"
+                       [checked]="option.value === scheme" (change)="onSchemeChange($event)">
+                {{ option.label }}
+              </label>
+            }
+          </fieldset>
+          @if (customWeightError && (attemptedSave || previewRows.length > 0)) {
+            <p class="gh-field-error" id="bbeCustomError">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              {{ customWeightError }}
+            </p>
+          }
+
+          <p class="bbe-preview-caption" id="bbePreviewCaption">Weight preview from the suites' current questions</p>
+          @if (previewRows.length > 0) {
+            <ul class="bbe-weight-list" role="list" aria-labelledby="bbePreviewCaption">
+              @for (row of previewRows; track row.suiteId; let i = $index) {
+                <li class="bbe-weight-item">
+                  <article class="bbe-weight-card" [class.is-unassessed]="isUnassessed(row)"
+                           [attr.data-suite-id]="row.suiteId"
+                           [attr.aria-labelledby]="'bbe-weight-' + row.suiteId + '-title'">
+                    <div class="bbe-weight-head">
+                      <p class="bbe-weight-kicker">Suite {{ i + 1 }} of {{ previewRows.length }}</p>
+                      <h5 class="bbe-weight-title" [id]="'bbe-weight-' + row.suiteId + '-title'">{{ row.name }}</h5>
                       @if (isUnassessed(row)) {
                         <p class="bbe-warning">
                           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
@@ -133,54 +142,63 @@
                       @if (row.massError) {
                         <p class="gh-field-error">{{ row.massError }}</p>
                       }
-                    </th>
-                    <td class="bbe-num">{{ row.questionCount }}</td>
-                    <td class="bbe-num">
-                      @if (row.difficultyMass != null) {
-                        {{ formatNumber(row.difficultyMass, 0) }}
-                      } @else if (!row.massError) {
-                        <span class="bbe-loading">Loading…</span>
-                      } @else {
-                        —
+                    </div>
+                    <dl class="bbe-weight-metrics">
+                      <div class="bbe-metric">
+                        <dt>Questions</dt>
+                        <dd>{{ row.questionCount }}</dd>
+                      </div>
+                      <div class="bbe-metric">
+                        <dt>Difficulty mass</dt>
+                        <dd>
+                          @if (row.difficultyMass != null) {
+                            {{ formatNumber(row.difficultyMass, 0) }}
+                          } @else if (!row.massError) {
+                            <span class="bbe-loading">Loading…</span>
+                          } @else {
+                            —
+                          }
+                        </dd>
+                      </div>
+                      @if (scheme === 'Custom') {
+                        <div class="bbe-metric">
+                          <dt><label [attr.for]="'bbe-custom-' + row.suiteId">Custom weight<span class="visually-hidden"> for {{ row.name }}</span></label></dt>
+                          <dd>
+                            <input type="number" class="gh-input bbe-custom-input" min="0" step="any" inputmode="decimal"
+                                   [id]="'bbe-custom-' + row.suiteId"
+                                   [value]="row.customWeight ?? ''"
+                                   (input)="onCustomWeightInput(row.suiteId, $event)">
+                          </dd>
+                        </div>
                       }
-                    </td>
-                    @if (scheme === 'Custom') {
-                      <td class="bbe-num">
-                        <label class="visually-hidden" [attr.for]="'bbe-custom-' + row.suiteId">Custom weight for {{ row.name }}</label>
-                        <input type="number" class="gh-input bbe-custom-input" min="0" step="any"
-                               [id]="'bbe-custom-' + row.suiteId"
-                               [value]="row.customWeight ?? ''"
-                               (input)="onCustomWeightInput(row.suiteId, $event)">
-                      </td>
-                    }
-                    <td class="bbe-num bbe-chosen">{{ formatPercent(row.weights[scheme]) }}</td>
-                    @for (option of otherSchemes; track option.value) {
-                      <td class="bbe-num bbe-muted">{{ formatPercent(row.weights[option.value]) }}</td>
-                    }
-                  </tr>
-                } @empty {
-                  <tr>
-                    <td [attr.colspan]="4 + otherSchemes.length + (scheme === 'Custom' ? 1 : 0)" class="bbe-hint">
-                      Select suites to see their weights.
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-          @if (customWeightError && (attemptedSave || previewRows.length > 0)) {
-            <p class="gh-field-error" id="bbeCustomError">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-              {{ customWeightError }}
-            </p>
+                      <div class="bbe-metric bbe-metric-weight">
+                        <dt>Weight<span class="visually-hidden"> under {{ schemeLabel }}</span></dt>
+                        <dd class="bbe-weight-value">{{ formatPercent(row.weights[scheme]) }}</dd>
+                      </div>
+                    </dl>
+                    <div class="bbe-weight-bar" aria-hidden="true"><span [style.inline-size.%]="weightPercent(row)"></span></div>
+                    <div class="bbe-weight-others">
+                      <span class="bbe-weight-others-label">Other weightings</span>
+                      <dl>
+                        @for (option of otherSchemes; track option.value) {
+                          <div><dt>{{ option.label }}</dt><dd>{{ formatPercent(row.weights[option.value]) }}</dd></div>
+                        }
+                      </dl>
+                    </div>
+                  </article>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="bbe-weight-empty">Select suites to see their weights.</p>
           }
           <p class="bbe-hint">The analysis records the weights it actually used, from the questions the runs answered.</p>
         </section>
-      </div>
 
-      @if (saveError) {
-        <div class="alert alert-danger bbe-save-error" role="alert">{{ saveError }}</div>
-      }
+        @if (saveError) {
+          <div class="alert alert-danger bbe-save-error" role="alert">{{ saveError }}</div>
+        }
+      </div>
     </div>
 
     <div class="dialog-footer">
