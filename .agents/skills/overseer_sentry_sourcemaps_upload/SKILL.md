@@ -40,10 +40,14 @@ Check `Overseer/ClientApp/angular.json` under `projects.ClientApp.architect.buil
 - `"hidden": true` (ensures `//# sourceMappingURL=` is omitted so DevTools will not publicly fetch source maps)
 
 ### 3. MSBuild Exclusion (`Overseer/Overseer.csproj`)
-Verify that the `PublishAngular` target in `Overseer/Overseer.csproj` excludes `.map` files:
+Verify that `Overseer/Overseer.csproj` excludes `.map` files in **both** places: the project-level item group, and the `PublishAngular` target:
+```xml
+<Content Remove="wwwroot\**\*.map" />
+```
 ```xml
 <DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />
 ```
+Both are needed: the Web SDK publishes every `wwwroot` file it discovered as a static web asset when the project was evaluated, so the `DistFiles` exclusion alone does not stop maps that already existed then; the `DistFiles` exclusion covers maps that `ng build` creates during the publish.
 
 ---
 
@@ -59,23 +63,44 @@ Read the target version number:
 
 ---
 
-## Step 3: Verify Build Artifacts & Ensure Debug IDs Injected
+## Step 3: Verify That `wwwroot` Is the Published Build
 
-Check if `Overseer/wwwroot` contains production bundle files (`.js` and `.map`):
-- If `Overseer/wwwroot` already contains files (e.g., generated during `dotnet publish` or a previous production build), do **NOT** rebuild with `ng build` to avoid changing bundle hashes and invalidating published binaries.
-- Ensure Debug IDs are injected:
-  - **Working Directory:** `Overseer/ClientApp`
-  - **Command:**
-    ```bash
-    npx sentry-cli sourcemaps inject ../wwwroot
-    ```
-- *(If `Overseer/wwwroot` is empty or missing, run `npx ng build --configuration production` followed by `npx sentry-cli sourcemaps inject ../wwwroot`).*
+The maps are uploaded from `Overseer/wwwroot`, and they are only correct if `wwwroot` still holds exactly the build in the publish output that was, or will be, deployed. The publish output contains no maps of its own.
+
+- The publish output is `Overseer/bin/Release/net10.0/publish/` (the `PublishUrl` of `Overseer/Properties/PublishProfiles/FolderProfile.pubxml`, and also the output of `dotnet publish Overseer -c Release`). If the user published elsewhere, use their path.
+- **Never run `ng build`, `npm run build` or `sentry-cli sourcemaps inject` in this skill.** A rebuild makes `wwwroot` describe a build that was not published. If the publish output is missing, **STOP** and tell the user to publish first (`docs/overseer/release-checklist.md` § 4).
+- Run this check from the repository root (PowerShell 5.1):
+
+  ```powershell
+  $repo = (git rev-parse --show-toplevel) -replace '/', '\'
+  $src  = Join-Path $repo 'Overseer\wwwroot'
+  $pub  = Join-Path $repo 'Overseer\bin\Release\net10.0\publish\wwwroot'
+  if (-not (Test-Path -LiteralPath $pub)) { throw "publish output not found: $pub" }
+  $stop = @(); $warn = @()
+  $maps = @(Get-ChildItem $pub -Recurse -File | Where-Object { $_.Name -match '\.map(\.br|\.gz)?$' })
+  if ($maps.Count -gt 0) { $warn += "publish output contains $($maps.Count) source map file(s)" }
+  foreach ($f in Get-ChildItem $pub -Recurse -File | Where-Object { $_.Extension -notin '.br', '.gz', '.map' }) {
+    $rel = $f.FullName.Substring($pub.Length); $s = $src + $rel
+    if (-not (Test-Path -LiteralPath $s)) { $stop += "missing from wwwroot: $rel"; continue }
+    if ((Get-FileHash -LiteralPath $f.FullName).Hash -ne (Get-FileHash -LiteralPath $s).Hash) { $stop += "differs: $rel" }
+    elseif ($f.Extension -eq '.js' -and (Test-Path -LiteralPath "$s.map") -and
+            -not (Select-String -LiteralPath $f.FullName -Pattern '//# debugId=' -Quiet)) { $stop += "no Debug ID: $rel" }
+  }
+  foreach ($e in Get-ChildItem $src -Recurse -File -Include *.js) {
+    if (-not (Test-Path -LiteralPath ($pub + $e.FullName.Substring($src.Length)))) { $stop += "not published: $($e.FullName.Substring($src.Length))" }
+  }
+  'STOP: ' + $stop.Count; $stop; 'WARN: ' + $warn.Count; $warn
+  ```
+
+  If the user published elsewhere, set `$pub` to that folder's `wwwroot` as a full long path (not an 8.3 short path such as `TOMMIG~1`, which breaks the relative-path arithmetic).
+- **Any `STOP` line:** do not upload. `differs`, `missing` or `not published` mean `wwwroot` was rebuilt after the publish. Tell the user to republish and deploy that publish, then run the skill again. `no Debug ID` means the publish's `sentry-cli sourcemaps inject` step failed (it runs with `IgnoreExitCode="true"`), so the deployed bundles cannot be matched by Sentry. Tell the user to fix `sentry-cli` (usually `Overseer/.sentryclirc`) and republish.
+- **A `WARN` line** (maps in the publish output) does not block the upload, but tell the user that this publish exposes the client source and must not be deployed. Point them at Step 1.3.
 
 ---
 
 ## Step 4: Upload Source Maps to Sentry
 
-Upload the source maps and bundle assets from `wwwroot` to Sentry under the specified release version:
+Upload the source maps and bundle assets from `wwwroot` to Sentry under the specified release version. Run it only after Step 3 reported zero `STOP` lines.
 
 - **Working Directory:** `Overseer/ClientApp`
 - **Command:**
@@ -94,4 +119,4 @@ Upload the source maps and bundle assets from `wwwroot` to Sentry under the spec
    - Number of source maps / bundle files uploaded
 2. Confirm to the user that:
    - Source maps have been successfully uploaded to Sentry for release `<version>`.
-   - Production source maps remain hidden (`hidden: true`) and are excluded from the `dotnet publish` deployment payload by MSBuild.
+   - What Step 3 actually checked: the main bundle's Debug ID (from its trailing `//# debugId=` comment), that `wwwroot` matched the publish output file for file, and the number of map files found in the publish output (expected 0).

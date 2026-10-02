@@ -110,7 +110,13 @@ The Sentry DSN is considered a sensitive secret in Overseer to prevent unauthent
 
 - `angular.json` sets `sourceMap: { hidden: true }`.
 - `sentry-cli` injects Debug IDs and uploads hidden source maps to Sentry during release workflows.
-- `Overseer.csproj` MSBuild target excludes `.map` files from public publication:
-  ```xml
-  <DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />
-  ```
+- `Overseer.csproj` keeps `.map` files out of the publish output with two mechanisms, and both are needed:
+  - A project-level `Content Remove` keeps the maps out of the Web SDK's static web assets, and therefore out of the publish output and its `.br`/`.gz` copies. Without it, every map present in `wwwroot` when the project is evaluated is published, whatever `PublishAngular` excludes:
+    ```xml
+    <Content Remove="wwwroot\**\*.map" />
+    ```
+  - The `PublishAngular` target's `DistFiles` exclusion keeps out the maps that `ng build` creates during the publish, after evaluation:
+    ```xml
+    <DistFiles Include="wwwroot\**" Exclude="wwwroot\**\*.map" />
+    ```
+- The upload reads `Overseer/wwwroot`, so it is valid only while `wwwroot` matches the publish output file for file; see `overseer_sentry_sourcemaps_upload` Step 3.

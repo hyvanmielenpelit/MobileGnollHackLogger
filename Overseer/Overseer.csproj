@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -8,7 +8,7 @@
     <SpaProxyServerUrl>https://localhost:44447</SpaProxyServerUrl>
     <SpaProxyLaunchCommand>npm start</SpaProxyLaunchCommand>
     <UserSecretsId>e5696576-54da-4b91-af38-1aae06a0dd05</UserSecretsId>
-    <Version>1.1.2</Version>
+    <Version>1.2.0</Version>
     <TypeScriptCompileBlocked>true</TypeScriptCompileBlocked>
     <TypeScriptToolsVersion>Latest</TypeScriptToolsVersion>
   </PropertyGroup>
@@ -18,7 +18,7 @@
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00016" />
-    <PackageReference Include="Sentry.AspNetCore" Version="6.11.1" />
+    <PackageReference Include="Sentry.AspNetCore" Version="6.12.0" />
   </ItemGroup>
 
   <!-- Document ingestion and local retrieval. Pinned deliberately rather than floated: a
@@ -61,6 +61,11 @@
   <Target Name="SyncAngularVersion" BeforeTargets="Build" Condition="'$(Version)' != ''">
     <Exec WorkingDirectory="ClientApp" Command="npm version $(Version) --no-git-tag-version --allow-same-version" IgnoreExitCode="true" />
   </Target>
+
+  <!-- Hidden Angular source maps are uploaded to Sentry from wwwroot and never published. -->
+  <ItemGroup>
+    <Content Remove="wwwroot\**\*.map" />
+  </ItemGroup>
 
   <Target Name="PublishAngular" BeforeTargets="ComputeFilesToPublish">
     <Exec WorkingDirectory="ClientApp" Command="npm ci" />

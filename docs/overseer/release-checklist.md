@@ -57,7 +57,13 @@ This command automatically:
 - Compiles the ASP.NET Core backend.
 - Builds the Angular SPA with production optimization (`ng build --configuration production`).
 - Injects Sentry Debug IDs into the generated `.js` and `.map` files in `Overseer/wwwroot/`.
-- Copies the deployment payload into `Overseer/bin/Release/net10.0/publish/` (with `.map` files excluded).
+- Copies the deployment payload into `Overseer/bin/Release/net10.0/publish/`. The publish output contains no `.map` files (nor `.map.br` / `.map.gz` copies); the maps stay in `Overseer/wwwroot/` for § 6.
+
+Check that no source map was published. The count must be `0`; otherwise do not deploy (see [sentry-sourcemaps.md](sentry-sourcemaps.md) § 4):
+
+```powershell
+@(Get-ChildItem Overseer\bin\Release\net10.0\publish\wwwroot -Recurse -File -Filter *.map*).Count
+```
 
 ---
 
@@ -86,6 +92,9 @@ This command automatically:
 ---
 
 ## 6. Upload Sourcemaps to Sentry
+
+> [!CAUTION]
+> Between the publish that went to the test server and this upload, do **not** run `npm run build`, `npm run watch` or `ng build`. They overwrite `Overseer/wwwroot/`, and the uploaded maps would no longer match the deployed bundles. The skill (Option A) checks this and stops. Option B users should republish if in doubt.
 
 Upload the source maps from `Overseer/wwwroot/` to Sentry under the new release version.
 

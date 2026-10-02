@@ -12,7 +12,7 @@ To invoke the skill, use any of the following prompts:
 - *"Upload sourcemaps for Overseer to Sentry"*
 - *"Upload Sentry sourcemaps for Overseer"*
 
-The skill verifies prerequisites (including `.sentryclirc` and `angular.json`), determines the release version from `Overseer.csproj` or `package.json`, ensures Debug IDs are injected via `sentry-cli`, and uploads the sourcemaps to Sentry.
+The skill verifies prerequisites (including `.sentryclirc` and `angular.json`), determines the release version from `Overseer.csproj` or `package.json`, checks that `Overseer/wwwroot` matches the publish output and carries the Debug IDs, and uploads the sourcemaps to Sentry.
 
 ---
 
@@ -80,7 +80,16 @@ The **best practice** in an ASP.NET Core SPA is to use MSBuild to inject Debug I
 
 ### MSBuild Target Integration in `Overseer.csproj`
 
-In `Overseer/Overseer.csproj`, the `<PublishAngular>` target is configured as follows:
+In `Overseer/Overseer.csproj`, a project-level item group removes the maps from the `Content` items:
+
+```xml
+<!-- Hidden Angular source maps are uploaded to Sentry from wwwroot and never published. -->
+<ItemGroup>
+  <Content Remove="wwwroot\**\*.map" />
+</ItemGroup>
+```
+
+and the `<PublishAngular>` target is configured as follows:
 
 ```xml
 <Target Name="PublishAngular" BeforeTargets="ComputeFilesToPublish">
@@ -98,19 +107,21 @@ In `Overseer/Overseer.csproj`, the `<PublishAngular>` target is configured as fo
 </Target>
 ```
 
-### Why this is foolproof:
+### How it works:
 When you run `dotnet publish Overseer -c Release`:
 1. MSBuild runs `ng build --configuration production` (generating minified `.js` and hidden `.map` files in `Overseer/wwwroot/`).
 2. MSBuild runs `sentry-cli sourcemaps inject ../wwwroot`, injecting unique Debug IDs into both the `.js` bundles and `.map` files.
-3. MSBuild copies all files to `bin/Release/net10.0/publish/` **except** `.map` files (`Exclude="wwwroot\**\*.map"`).
-4. The deployed `.js` files contain the Debug IDs needed by Sentry, while the `.map` files are never exposed publicly.
-5. You upload sourcemaps from the local `Overseer/wwwroot/` directory to Sentry using `overseer_sentry_sourcemaps_upload` or `sentry-cli`.
+3. MSBuild copies all files to `bin/Release/net10.0/publish/` **except** `.map` files, which are excluded by **both** mechanisms above. One is not enough: the Web SDK discovers every file in `wwwroot` as a static web asset when the project is evaluated, before `PublishAngular` runs, and publishes those assets (with `.br`/`.gz` copies) regardless of the `DistFiles` exclusion. `Content Remove` keeps maps that already exist then out of that list; the `DistFiles` exclusion keeps out the maps `ng build` creates during the publish.
+4. The deployed `.js` files contain the Debug IDs needed by Sentry, while the `.map` files are not deployed. `hidden: true` alone would not protect them: the site serves every file in its `wwwroot`, so a deployed map would be downloadable by anyone who requests it.
+5. You upload sourcemaps from the local `Overseer/wwwroot/` directory to Sentry using `overseer_sentry_sourcemaps_upload` or `sentry-cli`. The upload is valid only while `Overseer/wwwroot` still matches the publish output file for file; any later client build overwrites it.
 
 ---
 
 ## 5. Manual CLI Upload
 
 To upload sourcemaps manually without using the AI skill:
+
+> **Do not rebuild the client between publishing and uploading.** `npm run build`, `npm run watch` and `ng build` overwrite `Overseer/wwwroot`, and the uploaded maps would then describe a build that is not deployed. The `overseer_sentry_sourcemaps_upload` skill's Step 3 has the check that `wwwroot` matches the publish output; if in doubt, republish.
 
 ```bash
 cd Overseer/ClientApp
