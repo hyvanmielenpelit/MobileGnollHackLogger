@@ -1,3 +1,4 @@
+import type { Mock, MockedObject } from "vitest";
 import { ComponentFixture, TestBed, discardPeriodicTasks, fakeAsync, flush, tick } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -90,27 +91,33 @@ function estimateDto(overrides: Partial<BenchmarkRunReportEstimateDto> = {}): Be
 describe('RunAiReportsComponent', () => {
   let fixture: ComponentFixture<RunAiReportsComponent>;
   let component: RunAiReportsComponent;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
-  let writingOpen: jasmine.Spy<(context: RunReportWritingContext) => void>;
-  let viewerOpen: jasmine.Spy<(request: PdfViewerRequest) => void>;
+  let service: MockedObject<AdminBenchmarkService>;
+  let writingOpen: Mock;
+  let viewerOpen: Mock;
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj('AdminBenchmarkService', [
-      'listReportDocuments', 'writeRunReportDocuments', 'getReportDocumentPdf', 'reportDocumentPdfUrl',
-      'getRunReportJob', 'cancelRunReportJob', 'getRun', 'estimateRunReports', 'deleteRunReportDocument'
-    ]);
-    service.listReportDocuments.and.returnValue(of([]));
-    service.getRunReportJob.and.returnValue(of(null));
-    service.getRun.and.returnValue(of(reportRun()));
-    service.estimateRunReports.and.returnValue(of(estimateDto()));
-    service.deleteRunReportDocument.and.returnValue(of(undefined));
-    service.getReportDocumentPdf.and.returnValue(of({ bytes: new Uint8Array([37, 80, 68, 70]), fileName: null }));
-    service.reportDocumentPdfUrl.and.callFake((id: number, disclosure: number, peers: number, paper: string, inline?: boolean) =>
-      `/pdf/${id}/${disclosure}/${peers}/${paper}/${inline ? 'inline' : 'attachment'}`);
+    service = {
+      listReportDocuments: vi.fn().mockName("AdminBenchmarkService.listReportDocuments"),
+      writeRunReportDocuments: vi.fn().mockName("AdminBenchmarkService.writeRunReportDocuments"),
+      getReportDocumentPdf: vi.fn().mockName("AdminBenchmarkService.getReportDocumentPdf"),
+      reportDocumentPdfUrl: vi.fn().mockName("AdminBenchmarkService.reportDocumentPdfUrl"),
+      getRunReportJob: vi.fn().mockName("AdminBenchmarkService.getRunReportJob"),
+      cancelRunReportJob: vi.fn().mockName("AdminBenchmarkService.cancelRunReportJob"),
+      getRun: vi.fn().mockName("AdminBenchmarkService.getRun"),
+      estimateRunReports: vi.fn().mockName("AdminBenchmarkService.estimateRunReports"),
+      deleteRunReportDocument: vi.fn().mockName("AdminBenchmarkService.deleteRunReportDocument")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    service.listReportDocuments.mockReturnValue(of([]));
+    service.getRunReportJob.mockReturnValue(of(null));
+    service.getRun.mockReturnValue(of(reportRun()));
+    service.estimateRunReports.mockReturnValue(of(estimateDto()));
+    service.deleteRunReportDocument.mockReturnValue(of(undefined));
+    service.getReportDocumentPdf.mockReturnValue(of({ bytes: new Uint8Array([37, 80, 68, 70]), fileName: null }));
+    service.reportDocumentPdfUrl.mockImplementation((id: number, disclosure: number, peers: number, paper: string, inline?: boolean) => `/pdf/${id}/${disclosure}/${peers}/${paper}/${inline ? 'inline' : 'attachment'}`);
 
     // Neither hosted dialog really opens: the progress dialog would poll, the viewer would load pdf.js.
-    writingOpen = spyOn(RunReportWritingDialogComponent.prototype, 'open');
-    viewerOpen = spyOn(PdfViewerDialogComponent.prototype, 'open');
+    writingOpen = vi.spyOn(RunReportWritingDialogComponent.prototype, 'open').mockReturnValue(undefined);
+    viewerOpen = vi.spyOn(PdfViewerDialogComponent.prototype, 'open').mockReturnValue(undefined);
 
     await TestBed.configureTestingModule({
       imports: [RunAiReportsComponent],
@@ -204,7 +211,7 @@ describe('RunAiReportsComponent', () => {
       expect(row.querySelector('button')).toBeNull();
     }
     expect(section().querySelector('#rrReportWriterModelLabel')?.textContent?.trim()).toBe('Report writer');
-    expect(writeButton().disabled).toBeTrue();
+    expect(writeButton().disabled).toBe(true);
     expect(section().querySelector('#rrReportWriterBlocked')).toBeNull();
     expect(section().textContent).not.toContain('Choose a report writer.');
     expect(section().querySelector('.rr-ai-download-notice')).toBeNull();
@@ -212,7 +219,7 @@ describe('RunAiReportsComponent', () => {
 
   it('should show only the names until the document list answers', () => {
     const pending = new Subject<any>();
-    service.listReportDocuments.and.returnValue(pending.asObservable());
+    service.listReportDocuments.mockReturnValue(pending.asObservable());
     setUp();
     load(reportRun({ assessmentJson: '{}' }));
 
@@ -229,7 +236,7 @@ describe('RunAiReportsComponent', () => {
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
 
     expect(component.writerConfigId).toBe(1);
-    expect(writeButton().disabled).toBeFalse();
+    expect(writeButton().disabled).toBe(false);
   });
 
   it('should preselect the launcher\'s writer when the run has none and it qualifies', () => {
@@ -237,14 +244,14 @@ describe('RunAiReportsComponent', () => {
     load(reportRun({ assessmentJson: '{}' }));
 
     expect(component.writerConfigId).toBe(1);
-    expect(writeButton().disabled).toBeFalse();
+    expect(writeButton().disabled).toBe(false);
   });
 
   it('should leave the writer empty when the launcher\'s writer would be warned about or refused for the run\'s candidate', () => {
     setUp(9);
     load(reportRun({ assessmentJson: '{}' }));
     expect(component.writerConfigId).toBeNull();
-    expect(writeButton().disabled).toBeTrue();
+    expect(writeButton().disabled).toBe(true);
     expect(section().querySelector('#rrReportWriterBlocked')).toBeNull();
 
     setUp(10);
@@ -254,25 +261,27 @@ describe('RunAiReportsComponent', () => {
   });
 
   it('should write the missing reports with the chosen writer, then follow the job until they are written', fakeAsync(() => {
-    service.writeRunReportDocuments.and.returnValue(of({ runId: 55, status: 1 }));
+    service.writeRunReportDocuments.mockReturnValue(of({ runId: 55, status: 1 }));
     setUp();
     const changes: RunReportStatusChange[] = [];
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
     component.reportStatusChange.subscribe(change => changes.push(change));
 
-    expect(writeButton().disabled).toBeFalse();
+    expect(writeButton().disabled).toBe(false);
     writeButton().click();
     fixture.detectChanges();
 
-    expect(service.writeRunReportDocuments).toHaveBeenCalledOnceWith(55, { writerModelConfigurationId: 1, audiences: [1, 2] });
+    expect(service.writeRunReportDocuments).toHaveBeenCalledTimes(1);
+
+    expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [1, 2] });
     expect(status()).toBe('Waiting for the report writer');
-    expect(writeButton().disabled).toBeTrue();
+    expect(writeButton().disabled).toBe(true);
     expect(section().querySelector('#rrReportWriterBlocked')).toBeNull();
     expect(section().querySelector('.rr-ai-show-progress')).not.toBeNull();
     expect(changes.map(change => change.status)).toEqual([1]);
 
-    service.getRunReportJob.and.returnValue(of(jobView(3)));
-    service.listReportDocuments.and.returnValue(of([
+    service.getRunReportJob.mockReturnValue(of(jobView(3)));
+    service.listReportDocuments.mockReturnValue(of([
       aiDoc(71, 1),
       aiDoc(72, 2),
       // A Report Pack document about the same run is not one of its AI-written reports.
@@ -293,7 +302,7 @@ describe('RunAiReportsComponent', () => {
   }));
 
   it('should list stored reports with their writer and date, each with a View and a Delete button named for it', () => {
-    service.listReportDocuments.and.returnValue(of([
+    service.listReportDocuments.mockReturnValue(of([
       aiDoc(72, 2, {
         runChangedSinceGeneration: true, createdAtUtc: '2026-09-28T11:00:00Z', writerDisplayName: 'Writer B',
         status: 'CompletedWithWarnings', durationMs: 72000, costUsd: 0.08, sameProviderAcknowledged: true
@@ -325,8 +334,8 @@ describe('RunAiReportsComponent', () => {
     for (const button of deletes) {
       expect(button.classList).toContain('action-btn');
       expect(button.classList).toContain('action-btn-danger');
-      expect(button.hasAttribute('title')).toBeFalse();
-      expect(button.hasAttribute('aria-disabled')).toBeFalse();
+      expect(button.hasAttribute('title')).toBe(false);
+      expect(button.hasAttribute('aria-disabled')).toBe(false);
       const tip = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor')) as HTMLElement;
       expect(tip.getAttribute('popover')).toBe('hint');
       expect(tip.textContent?.trim()).toBe('Delete');
@@ -340,7 +349,7 @@ describe('RunAiReportsComponent', () => {
   });
 
   it('should offer Write Reports for the one report that is missing', () => {
-    service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
     setUp();
     load(reportRun({ assessmentJson: '{}', reportDocumentsStatus: 5, reportDocumentsMessage: 'The writer returned no usable text.' }));
 
@@ -353,14 +362,14 @@ describe('RunAiReportsComponent', () => {
     expect(write).not.toBeNull();
     expect(section().querySelector('.rr-ai-doc-list')!.compareDocumentPosition(write) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(checkbox(1)).toBeNull();
-    expect(checkbox(2).checked).toBeTrue();
+    expect(checkbox(2).checked).toBe(true);
     expect(write.querySelector('.rr-ai-written-hint')?.textContent?.trim())
       .toBe('Executive Summary is already written. Delete it to write it again.');
   });
 
   it('should open a report in the PDF viewer at its fullest allowed disclosure with peers named', () => {
-    service.listReportDocuments.and.returnValue(of([aiDoc(71, 1, { allowedDisclosures: [2, 1] })]));
-    const windowOpen = spyOn(window, 'open');
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1, { allowedDisclosures: [2, 1] })]));
+    const windowOpen = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
     setUp();
     load(reportRun({ assessmentJson: '{}' }));
 
@@ -368,7 +377,7 @@ describe('RunAiReportsComponent', () => {
 
     expect(windowOpen).not.toHaveBeenCalled();
     expect(viewerOpen).toHaveBeenCalledTimes(1);
-    const request = viewerOpen.calls.mostRecent().args[0];
+    const request = vi.mocked(viewerOpen).mock.lastCall![0];
     const paper = rememberedPdfPaper();
     expect(request.title).toBe('Executive Summary');
     expect(request.subtitle).toBe('Run #55 · by Test Model on 2026-09-28 10:15 UTC');
@@ -377,25 +386,25 @@ describe('RunAiReportsComponent', () => {
     expect(request.fallbackFileName).toBe('run-55_executive-summary.pdf');
 
     request.load('detailed').subscribe();
-    expect(service.getReportDocumentPdf.calls.mostRecent().args).toEqual([71, 2, 1, paper]);
+    expect(vi.mocked(service.getReportDocumentPdf).mock.lastCall).toEqual([71, 2, 1, paper]);
     request.load('summary').subscribe();
-    expect(service.getReportDocumentPdf.calls.mostRecent().args).toEqual([71, 1, 1, paper]);
+    expect(vi.mocked(service.getReportDocumentPdf).mock.lastCall).toEqual([71, 1, 1, paper]);
     request.load(null).subscribe();
-    expect(service.getReportDocumentPdf.calls.mostRecent().args).toEqual([71, 2, 1, paper]);
+    expect(vi.mocked(service.getReportDocumentPdf).mock.lastCall).toEqual([71, 2, 1, paper]);
     expect(request.tabUrl!('summary')).toBe(`/pdf/71/1/1/${paper}/inline`);
-    expect(service.reportDocumentPdfUrl.calls.mostRecent().args).toEqual([71, 1, 1, paper, true]);
+    expect(vi.mocked(service.reportDocumentPdfUrl).mock.lastCall).toEqual([71, 1, 1, paper, true]);
     expect(request.variantsInfo).toEqual(reportDisclosureInfo(1));
     expect(request.variantsInfo?.title).toBe('What Summary and Full contain');
   });
 
   it('should explain the researcher report\'s three levels with its own text', () => {
-    service.listReportDocuments.and.returnValue(of([aiDoc(72, 2, { allowedDisclosures: [1, 2, 3] })]));
+    service.listReportDocuments.mockReturnValue(of([aiDoc(72, 2, { allowedDisclosures: [1, 2, 3] })]));
     setUp();
     load(reportRun({ assessmentJson: '{}' }));
 
     (section().querySelector('button.rr-ai-doc-view') as HTMLButtonElement).click();
 
-    const request = viewerOpen.calls.mostRecent().args[0];
+    const request = vi.mocked(viewerOpen).mock.lastCall![0];
     expect(request.variantsInfo).toEqual(reportDisclosureInfo(2));
     expect(request.variantsInfo?.title).toBe('What Summary, Detailed and Full contain');
   });
@@ -408,14 +417,14 @@ describe('RunAiReportsComponent', () => {
     expect(blocked.textContent?.trim()).toBe('The model under test cannot write its own reports.');
     expect(blocked.classList).toContain('gh-field-error');
     expect(blocked.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
-    expect(writeButton().disabled).toBeTrue();
+    expect(writeButton().disabled).toBe(true);
     expect(section().querySelector('.rr-report-writer-model-selector .selector-trigger')?.getAttribute('aria-describedby'))
       .toBe('rrReportWriterBlocked');
     expect(section().querySelector('.rr-ai-writer-warning')).toBeNull();
   });
 
   it('should show the server\'s refusal of Write Reports inline', () => {
-    service.writeRunReportDocuments.and.returnValue(throwError(() => ({
+    service.writeRunReportDocuments.mockReturnValue(throwError(() => ({
       status: 400, error: { error: 'The model under test cannot write its own reports.' }
     })));
     setUp();
@@ -429,7 +438,7 @@ describe('RunAiReportsComponent', () => {
     expect(alert.classList).toContain('alert-danger');
     expect(alert.querySelector('svg.alert-icon')).not.toBeNull();
     expect(status()).toBe('');
-    expect(writeButton().disabled).toBeFalse();
+    expect(writeButton().disabled).toBe(false);
     expect(writingOpen).not.toHaveBeenCalled();
   });
 
@@ -455,13 +464,13 @@ describe('RunAiReportsComponent', () => {
     load(reportRun({ assessmentJson: '{}', reportDocumentsStatus: 2 }));
     expect(service.listReportDocuments).toHaveBeenCalledTimes(1);
 
-    service.getRunReportJob.and.returnValue(of(jobView(2)));
+    service.getRunReportJob.mockReturnValue(of(jobView(2)));
     tick(RUN_REPORT_DOCUMENTS_POLL_MS);
     expect(service.getRunReportJob).toHaveBeenCalledWith(55);
     expect(service.listReportDocuments).toHaveBeenCalledTimes(1);
 
-    service.getRunReportJob.and.returnValue(of(null));
-    service.getRun.and.returnValue(of(reportRun({ reportDocumentsStatus: 6, reportDocumentsMessage: 'No writer.' })));
+    service.getRunReportJob.mockReturnValue(of(null));
+    service.getRun.mockReturnValue(of(reportRun({ reportDocumentsStatus: 6, reportDocumentsMessage: 'No writer.' })));
     tick(RUN_REPORT_DOCUMENTS_POLL_MS);
     fixture.detectChanges();
     expect(service.getRun).toHaveBeenCalledWith(55);
@@ -508,15 +517,15 @@ describe('RunAiReportsComponent', () => {
   });
 
   it('should check every missing document, send the checked ones, and name the button by their count', () => {
-    service.writeRunReportDocuments.and.returnValue(of({ runId: 55, status: 1 }));
+    service.writeRunReportDocuments.mockReturnValue(of({ runId: 55, status: 1 }));
     setUp();
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
 
     const legend = section().querySelector('.rr-ai-write > legend')?.textContent?.trim();
     expect(legend).toBe('Write missing reports');
     expect(section().querySelector('.rr-ai-audiences > legend')?.textContent?.trim()).toBe('Documents');
-    expect(checkbox(1).checked).toBeTrue();
-    expect(checkbox(2).checked).toBeTrue();
+    expect(checkbox(1).checked).toBe(true);
+    expect(checkbox(2).checked).toBe(true);
     expect(checkbox(1).closest('label')?.classList).toContain('checkbox-label');
     expect(writeButton().textContent?.trim()).toBe('Write Reports');
     expect(writeButton().querySelector('svg.btn-icon')?.getAttribute('aria-hidden')).toBe('true');
@@ -524,16 +533,17 @@ describe('RunAiReportsComponent', () => {
     checkbox(1).click();
     fixture.detectChanges();
     expect(writeButton().textContent?.trim()).toBe('Write Report');
-    expect(writeButton().disabled).toBeFalse();
+    expect(writeButton().disabled).toBe(false);
 
     checkbox(2).click();
     fixture.detectChanges();
-    expect(writeButton().disabled).toBeTrue();
+    expect(writeButton().disabled).toBe(true);
 
     checkbox(2).click();
     fixture.detectChanges();
     writeButton().click();
-    expect(service.writeRunReportDocuments).toHaveBeenCalledOnceWith(55, { writerModelConfigurationId: 1, audiences: [2] });
+    expect(service.writeRunReportDocuments).toHaveBeenCalledTimes(1);
+    expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [2] });
   });
 
   it('should keep the document choice across a poll', fakeAsync(() => {
@@ -542,20 +552,20 @@ describe('RunAiReportsComponent', () => {
     checkbox(1).click();
     fixture.detectChanges();
 
-    service.getRunReportJob.and.returnValue(of(jobView(5, { message: 'Timed out.' })));
+    service.getRunReportJob.mockReturnValue(of(jobView(5, { message: 'Timed out.' })));
     tick(RUN_REPORT_DOCUMENTS_POLL_MS);
     fixture.detectChanges();
 
     expect(service.listReportDocuments).toHaveBeenCalledTimes(2);
-    expect(checkbox(1).checked).toBeFalse();
-    expect(checkbox(2).checked).toBeTrue();
+    expect(checkbox(1).checked).toBe(false);
+    expect(checkbox(2).checked).toBe(true);
     flush();
     discardPeriodicTasks();
   }));
 
   it('should estimate the cost once the choice rests, saying so while it waits', fakeAsync(() => {
     const pending = new Subject<BenchmarkRunReportEstimateDto>();
-    service.estimateRunReports.and.returnValue(pending.asObservable());
+    service.estimateRunReports.mockReturnValue(pending.asObservable());
     setUp();
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
 
@@ -576,13 +586,14 @@ describe('RunAiReportsComponent', () => {
     checkbox(2).click();
     fixture.detectChanges();
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
-    expect(service.estimateRunReports).toHaveBeenCalledOnceWith(55, { writerModelConfigurationId: 1, audiences: [1, 2] });
+    expect(service.estimateRunReports).toHaveBeenCalledTimes(1);
+    expect(service.estimateRunReports).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [1, 2] });
     expect(estimateLine()).toBe('Estimating…');
 
     pending.next(estimateDto());
     fixture.detectChanges();
     const ready = section().querySelector('#rrWriteEstimate') as HTMLElement;
-    expect(ready.hasAttribute('aria-busy')).toBeFalse();
+    expect(ready.hasAttribute('aria-busy')).toBe(false);
     expect(ready.classList).not.toContain('is-muted');
     expect(ready.classList).not.toContain('is-empty');
     expect(ready.querySelector('.gh-estimate-label')?.textContent?.trim()).toBe('Estimated cost');
@@ -597,7 +608,7 @@ describe('RunAiReportsComponent', () => {
   }));
 
   it('should show the estimate of one document without a breakdown', fakeAsync(() => {
-    service.estimateRunReports.and.returnValue(of(estimateDto({
+    service.estimateRunReports.mockReturnValue(of(estimateDto({
       estimates: [{ audience: 2, promptChars: 3000, estimatedInputTokens: 2700, estimatedOutputTokens: 7000, estimatedCostUsd: 0.14 }],
       estimatedTotalCostUsd: 0.14
     })));
@@ -625,7 +636,7 @@ describe('RunAiReportsComponent', () => {
   });
 
   it('should say when the writer has no price card, and when the estimate failed without blocking the write', fakeAsync(() => {
-    service.estimateRunReports.and.returnValue(of(estimateDto({ estimatedTotalCostUsd: null })));
+    service.estimateRunReports.mockReturnValue(of(estimateDto({ estimatedTotalCostUsd: null })));
     setUp();
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
@@ -635,27 +646,27 @@ describe('RunAiReportsComponent', () => {
     expect(section().querySelector('.gh-estimate-panel .gh-estimate-total')).toBeNull();
     expect(section().querySelector('.gh-estimate-panel')?.classList).toContain('is-muted');
 
-    service.estimateRunReports.and.returnValue(throwError(() => ({ status: 500 })));
+    service.estimateRunReports.mockReturnValue(throwError(() => ({ status: 500 })));
     checkbox(1).click();
     fixture.detectChanges();
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
     fixture.detectChanges();
     expect(estimateLine()).toBe('The cost could not be estimated.');
     expect(section().querySelector('.gh-estimate-panel')?.classList).toContain('is-muted');
-    expect(writeButton().disabled).toBeFalse();
+    expect(writeButton().disabled).toBe(false);
     flush();
     discardPeriodicTasks();
   }));
 
   it('should show the estimate\'s refusal and hold Write Reports back', fakeAsync(() => {
-    service.estimateRunReports.and.returnValue(of(estimateDto({ refusal: 'The writer cannot be used for this run.' })));
+    service.estimateRunReports.mockReturnValue(of(estimateDto({ refusal: 'The writer cannot be used for this run.' })));
     setUp();
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
     fixture.detectChanges();
 
     expect(section().querySelector('#rrReportWriterBlocked')?.textContent?.trim()).toBe('The writer cannot be used for this run.');
-    expect(writeButton().disabled).toBeTrue();
+    expect(writeButton().disabled).toBe(true);
     flush();
     discardPeriodicTasks();
   }));
@@ -689,17 +700,16 @@ describe('RunAiReportsComponent', () => {
     expect(infoButton.getAttribute('aria-label')).toBe('About Report writer');
     expect(infoButton.getAttribute('aria-haspopup')).toBe('dialog');
     expect(section().querySelector('.gh-info-popup')).toBeNull();
-    expect(section().querySelector('.rr-report-writer-model-selector .selector-trigger')?.hasAttribute('aria-describedby'))
-      .toBeFalse();
+    expect(section().querySelector('.rr-report-writer-model-selector .selector-trigger')?.hasAttribute('aria-describedby')).toBe(false);
 
     infoButton.click();
     fixture.detectChanges();
     const infoDialog = section().querySelector('dialog.gh-info-dialog') as HTMLDialogElement;
-    expect(infoDialog.open).toBeTrue();
+    expect(infoDialog.open).toBe(true);
     expect(infoDialog.getAttribute('aria-labelledby')).toBe('rrReportWriterHint-title');
     expect(section().querySelector('#rrReportWriterHint-title')?.textContent?.trim()).toBe('Choosing a report writer');
     expect(document.activeElement).toBe(section().querySelector('#rrReportWriterHint-title'));
-    expect(infoDialog.contains(section().querySelector('#rrReportWriterHint'))).toBeTrue();
+    expect(infoDialog.contains(section().querySelector('#rrReportWriterHint'))).toBe(true);
 
     // Escape and the close button end at the info dialog; the run report dialog never hears of it.
     const reached: string[] = [];
@@ -711,7 +721,7 @@ describe('RunAiReportsComponent', () => {
   });
 
   it('should warn about a writer from the candidate\'s provider and write only after the confirmation', () => {
-    service.writeRunReportDocuments.and.returnValue(of({ runId: 55, status: 1 }));
+    service.writeRunReportDocuments.mockReturnValue(of({ runId: 55, status: 1 }));
     setUp();
     load(reportRun({ assessmentJson: '{}' }));
     component.selectWriter(CONFIGS[2]);
@@ -724,18 +734,18 @@ describe('RunAiReportsComponent', () => {
     expect(alert.textContent?.trim()).toBe(warning);
     expect(section().querySelector('.rr-report-writer-model-selector .selector-trigger')?.getAttribute('aria-describedby'))
       .toBe('rrReportWriterWarning');
-    expect(writeButton().disabled).toBeFalse();
+    expect(writeButton().disabled).toBe(false);
 
     writeButton().click();
     fixture.detectChanges();
     const confirm = dialog('.rr-ai-same-provider-dialog');
-    expect(confirm.open).toBeTrue();
+    expect(confirm.open).toBe(true);
     expect(confirm.querySelector('h3')?.textContent?.trim()).toBe('Same-Provider Report Writer');
     expect(confirm.querySelector('.rr-ai-same-provider-text')?.textContent?.trim()).toBe(warning);
     expect(service.writeRunReportDocuments).not.toHaveBeenCalled();
 
     buttonIn(confirm, 'Cancel').click();
-    expect(confirm.open).toBeFalse();
+    expect(confirm.open).toBe(false);
     expect(document.activeElement).toBe(writeButton());
     expect(service.writeRunReportDocuments).not.toHaveBeenCalled();
 
@@ -745,23 +755,21 @@ describe('RunAiReportsComponent', () => {
     expect(anyway.classList).toContain('btn-gh');
     expect(anyway.querySelector('svg.btn-icon')).not.toBeNull();
     anyway.click();
-    expect(service.writeRunReportDocuments).toHaveBeenCalledOnceWith(55, {
+    expect(service.writeRunReportDocuments).toHaveBeenCalledTimes(1);
+    expect(service.writeRunReportDocuments).toHaveBeenCalledWith(55, {
       writerModelConfigurationId: 9, audiences: [1, 2], acknowledgeSameProvider: true
     });
-    expect(confirm.open).toBeFalse();
+    expect(confirm.open).toBe(false);
   });
 
   it('should ask for the confirmation when the server answers 409 with a same-provider warning', () => {
-    service.writeRunReportDocuments.and.returnValues(
-      throwError(() => ({
+    service.writeRunReportDocuments.mockReturnValueOnce(throwError(() => ({
         status: 409,
         error: {
           sameProvider: true, provider: 'Google', testedModelDisplayName: 'Test Model',
           assessorModelDisplayName: 'Other Writer', message: 'Same provider.', role: 'reportWriter'
         }
-      })),
-      of({ runId: 55, status: 1 })
-    );
+    }))).mockReturnValueOnce(of({ runId: 55, status: 1 }));
     setUp();
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 8 }));
 
@@ -769,20 +777,20 @@ describe('RunAiReportsComponent', () => {
     fixture.detectChanges();
 
     const confirm = dialog('.rr-ai-same-provider-dialog');
-    expect(confirm.open).toBeTrue();
+    expect(confirm.open).toBe(true);
     expect(confirm.querySelector('.rr-ai-same-provider-text')?.textContent?.trim())
       .toBe('Other Writer is from Google, the provider of the model under test. Its reports may describe that model more favorably.');
     expect(section().querySelector('[role="alert"]')).toBeNull();
 
     buttonIn(confirm, 'Write Anyway').click();
-    const calls = service.writeRunReportDocuments.calls.allArgs();
+    const calls = vi.mocked(service.writeRunReportDocuments).mock.calls;
     expect(calls.length).toBe(2);
     expect(calls[0][1].acknowledgeSameProvider).toBeUndefined();
-    expect(calls[1][1].acknowledgeSameProvider).toBeTrue();
+    expect(calls[1][1].acknowledgeSameProvider).toBe(true);
   });
 
   it('should open the progress dialog at once after a successful write, with the estimate', fakeAsync(() => {
-    service.writeRunReportDocuments.and.returnValue(of({ runId: 55, status: 1 }));
+    service.writeRunReportDocuments.mockReturnValue(of({ runId: 55, status: 1 }));
     setUp();
     load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
     tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
@@ -791,7 +799,7 @@ describe('RunAiReportsComponent', () => {
     writeButton().click();
 
     expect(writingOpen).toHaveBeenCalledTimes(1);
-    const context = writingOpen.calls.mostRecent().args[0];
+    const context = vi.mocked(writingOpen).mock.lastCall![0];
     expect(context.runId).toBe(55);
     expect(context.runLabel).toBe('Default Suite · Test Model');
     expect(context.estimateUsd).toBe(0.18);
@@ -811,8 +819,8 @@ describe('RunAiReportsComponent', () => {
     show.click();
 
     expect(writingOpen).toHaveBeenCalledTimes(1);
-    expect(writingOpen.calls.mostRecent().args[0].runId).toBe(55);
-    expect(writingOpen.calls.mostRecent().args[0].estimateUsd).toBeNull();
+    expect(vi.mocked(writingOpen).mock.lastCall![0].runId).toBe(55);
+    expect(vi.mocked(writingOpen).mock.lastCall![0].estimateUsd).toBeNull();
 
     load(reportRun({ id: 56, assessmentJson: '{}', reportDocumentsStatus: 3 }));
     expect(section().querySelector('.rr-ai-show-progress')).toBeNull();
@@ -823,7 +831,7 @@ describe('RunAiReportsComponent', () => {
     load(reportRun({ assessmentJson: '{}', reportDocumentsStatus: 2 }));
     const changes: RunReportStatusChange[] = [];
     component.reportStatusChange.subscribe(change => changes.push(change));
-    service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
 
     component.writingDialog!.finished.emit(jobView(3));
     fixture.detectChanges();
@@ -833,11 +841,11 @@ describe('RunAiReportsComponent', () => {
 
     component.writingDialog!.viewRequested.emit(71);
     expect(viewerOpen).toHaveBeenCalledTimes(1);
-    expect(viewerOpen.calls.mostRecent().args[0].title).toBe('Executive Summary');
+    expect(vi.mocked(viewerOpen).mock.lastCall![0].title).toBe('Executive Summary');
   });
 
   it('should point to the Download Center once a document is written, and hand the button to the host', () => {
-    service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
     setUp();
     load(reportRun({ assessmentJson: '{}' }));
     const requested: HTMLElement[] = [];
@@ -846,7 +854,7 @@ describe('RunAiReportsComponent', () => {
     const notice = section().querySelector('.rr-ai-download-notice') as HTMLElement;
     expect(notice.classList).toContain('alert');
     expect(notice.classList).toContain('alert-info');
-    expect(notice.hasAttribute('role')).toBeFalse();
+    expect(notice.hasAttribute('role')).toBe(false);
     expect(notice.querySelector('.alert-heading')?.textContent?.trim()).toBe('Downloads');
     expect((notice.querySelector('.alert-body')?.textContent ?? '').replace(/\s+/g, ' ').trim()).toBe(
       'These reports, and the rest of this run, can be downloaded from the Download Center as PDF, Word or Markdown, ' +
@@ -868,30 +876,30 @@ describe('RunAiReportsComponent', () => {
     }
 
     it('should refuse while a job is in progress, saying why', () => {
-      service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
       setUp();
       load(reportRun({ assessmentJson: '{}', reportDocumentsStatus: 2 }));
 
       const button = deleteButton(1);
       expect(button.getAttribute('aria-disabled')).toBe('true');
-      expect(button.disabled).toBeFalse();
+      expect(button.disabled).toBe(false);
       const tip = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor')) as HTMLElement;
       expect(tip.textContent?.trim()).toBe('Wait for the writing to finish, or cancel it');
 
       button.click();
-      expect(dialog('.rr-ai-delete-dialog').open).toBeFalse();
+      expect(dialog('.rr-ai-delete-dialog').open).toBe(false);
       expect(service.deleteRunReportDocument).not.toHaveBeenCalled();
     });
 
     it('should ask first, and keep the document on Keep It', () => {
-      service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
       setUp();
       load(reportRun({ assessmentJson: '{}' }));
 
       deleteButton(1).click();
       fixture.detectChanges();
       const confirm = dialog('.rr-ai-delete-dialog');
-      expect(confirm.open).toBeTrue();
+      expect(confirm.open).toBe(true);
       expect(confirm.querySelector('h3')?.textContent?.trim()).toBe('Delete the Executive Summary?');
       expect((confirm.querySelector('.rr-ai-delete-text')?.textContent ?? '').replace(/\s+/g, ' ').trim()).toBe(
         'Written by Test Model on 2026-09-28 10:15 UTC. The document is removed permanently; ' +
@@ -903,12 +911,12 @@ describe('RunAiReportsComponent', () => {
       expect(remove.querySelector('svg.btn-icon')).not.toBeNull();
 
       keep.click();
-      expect(confirm.open).toBeFalse();
+      expect(confirm.open).toBe(false);
       expect(service.deleteRunReportDocument).not.toHaveBeenCalled();
     });
 
     it('should stop its own close and cancel events at the component', () => {
-      service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
       setUp();
       load(reportRun({ assessmentJson: '{}' }));
       const reached: string[] = [];
@@ -926,30 +934,32 @@ describe('RunAiReportsComponent', () => {
     });
 
     it('should delete, announce it, clear a picker holding the deleted document\'s writer and focus that document\'s checkbox', () => {
-      service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
       setUp();
       load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
       expect(component.writerConfigId).toBe(1);
 
       deleteButton(1).click();
       fixture.detectChanges();
-      service.listReportDocuments.and.returnValue(of([]));
+      service.listReportDocuments.mockReturnValue(of([]));
       buttonIn(dialog('.rr-ai-delete-dialog'), 'Delete').click();
       fixture.detectChanges();
 
-      expect(service.deleteRunReportDocument).toHaveBeenCalledOnceWith(55, 71);
-      expect(dialog('.rr-ai-delete-dialog').open).toBeFalse();
+      expect(service.deleteRunReportDocument).toHaveBeenCalledTimes(1);
+
+      expect(service.deleteRunReportDocument).toHaveBeenCalledWith(55, 71);
+      expect(dialog('.rr-ai-delete-dialog').open).toBe(false);
       expect(status()).toBe('The Executive Summary was deleted.');
       expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Not written']);
       expect(component.writerConfigId).toBeNull();
       expect(section().querySelector('.rr-ai-writer-note')?.textContent?.trim())
         .toBe('Choose a report writer. The deleted document was written by Test Model.');
-      expect(checkbox(1).checked).toBeTrue();
+      expect(checkbox(1).checked).toBe(true);
       expect(document.activeElement).toBe(checkbox(1));
     });
 
     it('should keep a picker holding another writer', () => {
-      service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
+      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
       setUp();
       load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 8 }));
 
@@ -963,8 +973,8 @@ describe('RunAiReportsComponent', () => {
     });
 
     it('should keep the confirmation open with the failure inside it', () => {
-      service.listReportDocuments.and.returnValue(of([aiDoc(71, 1)]));
-      service.deleteRunReportDocument.and.returnValue(throwError(() => ({
+      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
+      service.deleteRunReportDocument.mockReturnValue(throwError(() => ({
         status: 409, error: { error: 'The reports are being written.' }
       })));
       setUp();
@@ -976,7 +986,7 @@ describe('RunAiReportsComponent', () => {
       buttonIn(confirm, 'Delete').click();
       fixture.detectChanges();
 
-      expect(confirm.open).toBeTrue();
+      expect(confirm.open).toBe(true);
       const alert = confirm.querySelector('.alert.alert-danger[role="alert"]') as HTMLElement;
       expect(alert.textContent?.trim()).toBe('The Executive Summary could not be deleted: The reports are being written.');
       expect(status()).toBe('');

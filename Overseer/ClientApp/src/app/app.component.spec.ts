@@ -28,8 +28,8 @@ describe('AppComponent', () => {
     const bridge = TestBed.inject(ClientBridgeService);
     const router = TestBed.inject(Router);
 
-    spyOn(bridge, 'isEmbedded').and.returnValue(true);
-    const notifySpy = spyOn(bridge, 'notifyUrlChanged');
+    vi.spyOn(bridge, 'isEmbedded').mockReturnValue(true);
+    const notifySpy = vi.spyOn(bridge, 'notifyUrlChanged').mockReturnValue(undefined);
 
     fixture.detectChanges();
     await router.navigateByUrl('/');

@@ -148,18 +148,18 @@ describe('ReorderableListComponent', () => {
       expect(handle.getAttribute('aria-label')).toBe('Move Gamma');
       expect(handle.getAttribute('aria-expanded')).toBe('false');
       expect(handle.getAttribute('aria-controls')).toBe('t-move-menu');
-      expect(handle.hasAttribute('aria-hidden')).toBeFalse();
+      expect(handle.hasAttribute('aria-hidden')).toBe(false);
       expect(handle.querySelector('svg')!.getAttribute('aria-hidden')).toBe('true');
       expect(handle.querySelectorAll('circle').length).toBe(6);
       expect(handle.getAttribute('interestfor')).toBe('t-c_7c_x-handle-tip');
-      expect(handle.hasAttribute('title')).toBeFalse();
+      expect(handle.hasAttribute('title')).toBe(false);
       expect(byId('t-c_7c_x-handle-tip').getAttribute('popover')).toBe('hint');
       expect(byId('t-c_7c_x-handle-tip').textContent!.trim()).toBe('Drag, or press for move options');
     });
 
     it('has no per-row move buttons', () => {
       for (const row of rows()) {
-        expect(row.querySelectorAll('button').length).withContext(row.textContent!).toBe(1);
+        expect(row.querySelectorAll('button').length, row.textContent!).toBe(1);
       }
       expect(el.querySelector('.rl-moves, .rl-move')).toBeNull();
       expect(el.querySelector('#t-a-up, #t-a-down')).toBeNull();
@@ -169,7 +169,7 @@ describe('ReorderableListComponent', () => {
       expect(el.querySelectorAll('.rl-move-menu').length).toBe(1);
       expect(menu().getAttribute('popover')).toBe('auto');
       expect(menu().getAttribute('role')).toBe('group');
-      expect(menuOpen()).toBeFalse();
+      expect(menuOpen()).toBe(false);
       expect(Array.from(menu().querySelectorAll('button')).map(b => b.textContent!.trim()))
         .toEqual(['Move to top', 'Move up', 'Move down', 'Move to bottom']);
     });
@@ -192,7 +192,7 @@ describe('ReorderableListComponent', () => {
 
     it('opens for the pressed row, names the group and focuses the first enabled option', () => {
       press('t-c_7c_x-handle');
-      expect(menuOpen()).toBeTrue();
+      expect(menuOpen()).toBe(true);
       expect(byId('t-c_7c_x-handle').getAttribute('aria-expanded')).toBe('true');
       expect(byId('t-a-handle').getAttribute('aria-expanded')).toBe('false');
       expect(menu().getAttribute('aria-label')).toBe('Move Gamma');
@@ -203,15 +203,15 @@ describe('ReorderableListComponent', () => {
       press('t-a-handle');
       expect(byId('t-move-top').getAttribute('aria-disabled')).toBe('true');
       expect(byId('t-move-up').getAttribute('aria-disabled')).toBe('true');
-      expect(byId('t-move-down').hasAttribute('aria-disabled')).toBeFalse();
-      expect(byId<HTMLButtonElement>('t-move-top').disabled).toBeFalse();
+      expect(byId('t-move-down').hasAttribute('aria-disabled')).toBe(false);
+      expect(byId<HTMLButtonElement>('t-move-top').disabled).toBe(false);
       expect(document.activeElement?.id).toBe('t-move-down');
     });
 
     it('closes when its own handle is pressed again', () => {
       press('t-b-handle');
       press('t-b-handle');
-      expect(menuOpen()).toBeFalse();
+      expect(menuOpen()).toBe(false);
       expect(byId('t-b-handle').getAttribute('aria-expanded')).toBe('false');
     });
 
@@ -220,12 +220,12 @@ describe('ReorderableListComponent', () => {
       press('t-move-down');
       expect(hostComponent.orders).toEqual([['b', 'a', 'c|x', 'd']]);
       expect(rowLabels()).toEqual(['Beta', 'Alpha', 'Gamma', 'Delta']);
-      expect(menuOpen()).toBeTrue();
+      expect(menuOpen()).toBe(true);
       expect(document.activeElement?.id).toBe('t-move-down');
 
       press('t-move-up');
       expect(hostComponent.orders[1]).toEqual(['a', 'b', 'c|x', 'd']);
-      expect(menuOpen()).toBeTrue();
+      expect(menuOpen()).toBe(true);
     });
 
     it('moves focus to the opposite option when the row reaches an end', () => {
@@ -247,13 +247,13 @@ describe('ReorderableListComponent', () => {
       press('t-c_7c_x-handle');
       press('t-move-top');
       expect(hostComponent.orders).toEqual([['c|x', 'a', 'b', 'd']]);
-      expect(menuOpen()).toBeFalse();
+      expect(menuOpen()).toBe(false);
       expect(document.activeElement?.id).toBe('t-c_7c_x-handle');
 
       press('t-a-handle');
       press('t-move-bottom');
       expect(hostComponent.orders[1]).toEqual(['c|x', 'b', 'd', 'a']);
-      expect(menuOpen()).toBeFalse();
+      expect(menuOpen()).toBe(false);
       expect(document.activeElement?.id).toBe('t-a-handle');
     });
 
@@ -263,7 +263,7 @@ describe('ReorderableListComponent', () => {
       press('t-move-up');
       expect(hostComponent.orders).toEqual([]);
       expect(status()).toBe('');
-      expect(menuOpen()).toBeTrue();
+      expect(menuOpen()).toBe(true);
 
       press('t-d-handle');
       press('t-move-bottom');
@@ -277,8 +277,8 @@ describe('ReorderableListComponent', () => {
       const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
       document.activeElement!.dispatchEvent(escape);
       fixture.detectChanges();
-      expect(escape.defaultPrevented).toBeTrue();
-      expect(menuOpen()).toBeFalse();
+      expect(escape.defaultPrevented).toBe(true);
+      expect(menuOpen()).toBe(false);
       expect(document.activeElement?.id).toBe('t-b-handle');
 
       await nextTask();
@@ -290,7 +290,7 @@ describe('ReorderableListComponent', () => {
       menu().hidePopover();
       await nextTask();
       expect(byId('t-b-handle').getAttribute('aria-expanded')).toBe('false');
-      expect(menu().hasAttribute('aria-label')).toBeFalse();
+      expect(menu().hasAttribute('aria-label')).toBe(false);
     });
 
     it('announces each committed move politely', () => {
@@ -324,23 +324,23 @@ describe('ReorderableListComponent', () => {
       expect(box.closest('label')!.classList).toContain('checkbox-label');
       expect(box.getAttribute('aria-label')).toBe('Beta');
       expect(box.getAttribute('aria-describedby')).toBe('t-b-tags');
-      expect(box.checked).toBeFalse();
+      expect(box.checked).toBe(false);
 
       box.click();
       fixture.detectChanges();
       expect(hostComponent.checks).toEqual([{ key: 'b', checked: true }]);
-      expect(byId<HTMLInputElement>('t-b-check').checked).toBeTrue();
+      expect(byId<HTMLInputElement>('t-b-check').checked).toBe(true);
       expect(status()).toBe('');
     });
 
     it('shows the input state until the host passes a change back', () => {
       update({ checkable: true });
-      spyOn(hostComponent, 'onChecked').and.callFake(change => hostComponent.checks.push(change));
+      vi.spyOn(hostComponent, 'onChecked').mockImplementation(change => hostComponent.checks.push(change));
       const box = byId<HTMLInputElement>('t-a-check');
       box.click();
       fixture.detectChanges();
       expect(hostComponent.checks).toEqual([{ key: 'a', checked: true }]);
-      expect(box.checked).toBeFalse();
+      expect(box.checked).toBe(false);
     });
 
     it('renders a locked item checked and disabled, with its reason in an info tip', () => {
@@ -349,8 +349,8 @@ describe('ReorderableListComponent', () => {
         items: [{ key: 'a', label: 'Alpha', locked: true, lockedReason: 'The model column is always shown.' }, ...ITEMS.slice(1)]
       });
       const box = byId<HTMLInputElement>('t-a-check');
-      expect(box.checked).toBeTrue();
-      expect(box.disabled).toBeTrue();
+      expect(box.checked).toBe(true);
+      expect(box.disabled).toBe(true);
       expect(box.getAttribute('aria-describedby')).toBe('t-a-lock-tip');
       expect(byId('t-a-lock-tip').textContent!.trim()).toBe('The model column is always shown.');
       expect(rows()[0].querySelector('app-info-tip button')!.getAttribute('aria-label')).toBe('About Alpha');
@@ -358,7 +358,7 @@ describe('ReorderableListComponent', () => {
       box.click();
       fixture.detectChanges();
       expect(hostComponent.checks).toEqual([]);
-      expect(byId<HTMLButtonElement>('t-a-handle').disabled).toBeFalse();
+      expect(byId<HTMLButtonElement>('t-a-handle').disabled).toBe(false);
     });
   });
 
@@ -380,7 +380,8 @@ describe('ReorderableListComponent', () => {
 
   describe('pointer drag', () => {
     beforeEach(() => {
-      spyOn(Element.prototype, 'setPointerCapture').and.stub();
+      vi.spyOn(Element.prototype, 'setPointerCapture').mockImplementation(() => {
+      });
     });
 
     it('emits one reordered orderChange on drop and none mid-drag', () => {
@@ -389,7 +390,7 @@ describe('ReorderableListComponent', () => {
       const handle = grip(alpha);
 
       const down = pointer('pointerdown', handle, startY);
-      expect(down.defaultPrevented).toBeTrue();
+      expect(down.defaultPrevented).toBe(true);
       expect(Element.prototype.setPointerCapture).toHaveBeenCalledWith(7);
       expect(document.activeElement).toBe(handle);
       expect(el.querySelector('ol')!.classList).not.toContain('is-sorting');
@@ -407,7 +408,7 @@ describe('ReorderableListComponent', () => {
       expect(hostComponent.orders).toEqual([['b', 'c|x', 'a', 'd']]);
       expect(rowLabels()).toEqual(['Beta', 'Gamma', 'Alpha', 'Delta']);
       expect(status()).toBe('Alpha moved to position 3 of 4.');
-      expect(rows().every(row => row.style.transform === '')).toBeTrue();
+      expect(rows().every(row => row.style.transform === '')).toBe(true);
       expect(el.querySelector('ol')!.classList).not.toContain('is-sorting');
       expect(el.querySelector('.is-dragging')).toBeNull();
     });
@@ -434,8 +435,8 @@ describe('ReorderableListComponent', () => {
 
       const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
       document.dispatchEvent(escape);
-      expect(escape.defaultPrevented).toBeTrue();
-      expect(rows().every(row => row.style.transform === '')).toBeTrue();
+      expect(escape.defaultPrevented).toBe(true);
+      expect(rows().every(row => row.style.transform === '')).toBe(true);
       expect(alpha.classList).not.toContain('is-dragging');
 
       pointer('pointerup', handle, center(gamma) + 1);
@@ -454,7 +455,7 @@ describe('ReorderableListComponent', () => {
       pointer('pointerup', handle, center(gamma) + 1);
       fixture.detectChanges();
       expect(hostComponent.orders).toEqual([]);
-      expect(rows().every(row => row.style.transform === '')).toBeTrue();
+      expect(rows().every(row => row.style.transform === '')).toBe(true);
     });
 
     it('emits nothing when the row is dropped where it started', () => {
@@ -470,7 +471,7 @@ describe('ReorderableListComponent', () => {
     it('ignores a press that is not on a grip', () => {
       const [alpha] = rows();
       const down = pointer('pointerdown', alpha.querySelector<HTMLElement>('.rl-label')!, center(alpha));
-      expect(down.defaultPrevented).toBeFalse();
+      expect(down.defaultPrevented).toBe(false);
       expect(el.querySelector('ol')!.classList).not.toContain('is-sorting');
     });
 
@@ -492,7 +493,7 @@ describe('ReorderableListComponent', () => {
         handle.click();
         fixture.detectChanges();
         expect(hostComponent.orders).toEqual([]);
-        expect(menuOpen()).toBeTrue();
+        expect(menuOpen()).toBe(true);
         expect(handle.getAttribute('aria-expanded')).toBe('true');
       });
 
@@ -505,7 +506,7 @@ describe('ReorderableListComponent', () => {
         handle.click();
         fixture.detectChanges();
         expect(hostComponent.orders).toEqual([['b', 'c|x', 'a', 'd']]);
-        expect(menuOpen()).toBeFalse();
+        expect(menuOpen()).toBe(false);
       });
 
       it('a drag put back with Escape does not open the menu on release either', () => {
@@ -518,7 +519,7 @@ describe('ReorderableListComponent', () => {
         handle.click();
         fixture.detectChanges();
         expect(hostComponent.orders).toEqual([]);
-        expect(menuOpen()).toBeFalse();
+        expect(menuOpen()).toBe(false);
       });
 
       it('a keyboard press on the handle after a drag still opens the menu', async () => {
@@ -530,19 +531,19 @@ describe('ReorderableListComponent', () => {
         // No click followed the drop; the next task forgets the suppression.
         await nextTask();
         press('t-b-handle');
-        expect(menuOpen()).toBeTrue();
+        expect(menuOpen()).toBe(true);
       });
 
       it('starting a drag closes an open menu', () => {
         press('t-a-handle');
-        expect(menuOpen()).toBeTrue();
+        expect(menuOpen()).toBe(true);
         const [alpha, , gamma] = rows();
         const handle = grip(alpha);
         pointer('pointerdown', handle, center(alpha));
-        expect(menuOpen()).toBeTrue();
+        expect(menuOpen()).toBe(true);
         pointer('pointermove', handle, center(gamma) + 1);
         fixture.detectChanges();
-        expect(menuOpen()).toBeFalse();
+        expect(menuOpen()).toBe(false);
         expect(handle.getAttribute('aria-expanded')).toBe('false');
         pointer('pointerup', handle, center(gamma) + 1);
         fixture.detectChanges();

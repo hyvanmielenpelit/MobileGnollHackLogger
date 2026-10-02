@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { TestBed, fakeAsync, flush, tick } from '@angular/core/testing';
 
 import { BenchmarkCompletionSoundService } from './benchmark-completion-sound.service';
@@ -20,7 +21,7 @@ class FakeAudioElement {
     return node;
   }
 
-  load(): void { /* no-op: nothing here reads network state */ }
+  load(): void { }
 
   play(): Promise<void> {
     this.playCallCount++;
@@ -31,11 +32,11 @@ class FakeAudioElement {
 describe('BenchmarkCompletionSoundService', () => {
   let service: BenchmarkCompletionSoundService;
   let fakeAudio: FakeAudioElement;
-  let audioSpy: jasmine.Spy;
+  let audioSpy: Mock;
 
   beforeEach(() => {
     fakeAudio = new FakeAudioElement();
-    audioSpy = spyOn(window as any, 'Audio').and.returnValue(fakeAudio);
+    audioSpy = vi.spyOn(window as any, 'Audio').mockImplementation(function () { return fakeAudio; } as any) as unknown as Mock;
     TestBed.configureTestingModule({});
     service = TestBed.inject(BenchmarkCompletionSoundService);
   });
@@ -53,8 +54,8 @@ describe('BenchmarkCompletionSoundService', () => {
     expect(fakeAudio.preload).toBe('auto');
     expect(fakeAudio.volume).toBe(0.6);
     expect(fakeAudio.appendedSources).toEqual([
-      { src: jasmine.stringMatching(/AIBenchmarkingComplete\.opus$/), type: 'audio/ogg; codecs=opus' } as any,
-      { src: jasmine.stringMatching(/AIBenchmarkingComplete\.m4a$/), type: 'audio/mp4; codecs="mp4a.40.2"' } as any
+      { src: expect.stringMatching(/AIBenchmarkingComplete\.opus$/), type: 'audio/ogg; codecs=opus' } as any,
+      { src: expect.stringMatching(/AIBenchmarkingComplete\.m4a$/), type: 'audio/mp4; codecs="mp4a.40.2"' } as any
     ]);
   });
 
@@ -141,13 +142,13 @@ describe('BenchmarkCompletionSoundService', () => {
 
   describe('arm', () => {
     let fakeCtx: FakeAudioContext;
-    let ctorSpy: jasmine.Spy;
-    let fetchSpy: jasmine.Spy;
+    let ctorSpy: Mock;
+    let fetchSpy: Mock;
 
     beforeEach(() => {
       fakeCtx = new FakeAudioContext();
-      ctorSpy = spyOn(window as any, 'AudioContext').and.returnValue(fakeCtx);
-      fetchSpy = spyOn(window, 'fetch');
+      ctorSpy = vi.spyOn(window as any, 'AudioContext').mockImplementation(function () { return fakeCtx; } as any) as unknown as Mock;
+      fetchSpy = vi.spyOn(window, 'fetch').mockReturnValue(undefined as any);
     });
 
     function okResponse(): Response {
@@ -156,12 +157,12 @@ describe('BenchmarkCompletionSoundService', () => {
 
     it('starts the silent buffer synchronously, before a delayed fetch resolves', async () => {
       let resolveFetch!: (value: Response) => void;
-      fetchSpy.and.returnValue(new Promise<Response>(resolve => { resolveFetch = resolve; }));
+      fetchSpy.mockReturnValue(new Promise<Response>(resolve => { resolveFetch = resolve; }));
 
       const armPromise = service.arm();
 
       expect(fakeCtx.createdBufferSources.length).toBe(1);
-      expect(fakeCtx.createdBufferSources[0].started).toBeTrue();
+      expect(fakeCtx.createdBufferSources[0].started).toBe(true);
       expect(fakeCtx.resumeCalls).toBe(1);
 
       resolveFetch(okResponse());
@@ -169,18 +170,17 @@ describe('BenchmarkCompletionSoundService', () => {
     });
 
     it('decodes the Opus source when its fetch succeeds', async () => {
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      fetchSpy.mockResolvedValue(okResponse());
 
       await service.arm();
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);
-      expect(fetchSpy.calls.argsFor(0)[0]).toMatch(/AIBenchmarkingComplete\.opus$/);
+      expect(vi.mocked(fetchSpy).mock.calls[0][0]).toMatch(/AIBenchmarkingComplete\.opus$/);
       expect(fakeCtx.decodeAudioDataCalls.length).toBe(1);
     });
 
     it('falls back to the AAC source when the Opus fetch fails', async () => {
-      fetchSpy.and.callFake((url: string) =>
-        String(url).includes('.opus') ? Promise.reject(new Error('network down')) : Promise.resolve(okResponse()));
+      fetchSpy.mockImplementation((url: string) => String(url).includes('.opus') ? Promise.reject(new Error('network down')) : Promise.resolve(okResponse()));
 
       await service.arm();
 
@@ -189,7 +189,7 @@ describe('BenchmarkCompletionSoundService', () => {
     });
 
     it('falls back to the AAC source when the Opus decode fails', async () => {
-      fetchSpy.and.callFake(() => Promise.resolve(okResponse()));
+      fetchSpy.mockImplementation(() => Promise.resolve(okResponse()));
       let decodeCalls = 0;
       fakeCtx.decodeAudioData = (buf: ArrayBuffer) => {
         decodeCalls++;
@@ -204,7 +204,7 @@ describe('BenchmarkCompletionSoundService', () => {
     });
 
     it('shares one in-flight arm() across concurrent callers', async () => {
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      fetchSpy.mockResolvedValue(okResponse());
 
       await Promise.all([service.arm(), service.arm()]);
 
@@ -213,7 +213,7 @@ describe('BenchmarkCompletionSoundService', () => {
     });
 
     it('is a no-op on a second, later arm() once armed', async () => {
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      fetchSpy.mockResolvedValue(okResponse());
 
       await service.arm();
       await service.arm();
@@ -223,27 +223,29 @@ describe('BenchmarkCompletionSoundService', () => {
     });
 
     it('retries a fully failed arm on the next call', async () => {
-      fetchSpy.and.returnValue(Promise.reject(new Error('network down')));
+      fetchSpy.mockRejectedValue(new Error('network down'));
 
       await service.arm();
       expect(fetchSpy).toHaveBeenCalledTimes(2);
 
-      fetchSpy.calls.reset();
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      fetchSpy.mockClear();
+      fetchSpy.mockResolvedValue(okResponse());
       await service.arm();
 
       expect(fetchSpy).toHaveBeenCalledTimes(1);
     });
 
     it('never rejects, even when AudioContext throws on construction', async () => {
-      ctorSpy.and.throwError('no audio hardware');
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      ctorSpy.mockImplementation(function () {
+        throw new Error('no audio hardware');
+      });
+      fetchSpy.mockResolvedValue(okResponse());
 
-      await expectAsync(service.arm()).toBeResolved();
+      await expect(service.arm()).resolves.not.toThrow();
     });
 
     it('on a visible tab, tries the element first and never touches the armed buffer when the element succeeds', async () => {
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      fetchSpy.mockResolvedValue(okResponse());
       await service.arm();
       const buffersBeforePlay = fakeCtx.createdBufferSources.length;
       const resumesBeforePlay = fakeCtx.resumeCalls;
@@ -258,31 +260,31 @@ describe('BenchmarkCompletionSoundService', () => {
     });
 
     it('falls back to the armed buffer when the element is blocked on a visible tab', async () => {
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      fetchSpy.mockResolvedValue(okResponse());
       await service.arm();
       fakeAudio.playResult = new DOMException('autoplay refused', 'NotAllowedError');
 
       const outcome = await service.play('run:1');
 
       expect(outcome).toBe('played');
-      expect(fakeCtx.createdBufferSources.some(s => s.started)).toBeTrue();
+      expect(fakeCtx.createdBufferSources.some(s => s.started)).toBe(true);
     });
 
     it('plays through the decoded buffer first on a hidden tab, never touching the fallback element', async () => {
-      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+      fetchSpy.mockResolvedValue(okResponse());
 
       await service.arm();
       const outcome = await service.play('run:1');
 
       expect(outcome).toBe('played');
-      expect(fakeCtx.createdBufferSources.some(s => s.started)).toBeTrue();
+      expect(fakeCtx.createdBufferSources.some(s => s.started)).toBe(true);
       expect(fakeAudio.playCallCount).toBe(0);
     });
 
     it('resumes a suspended context before playing the buffer on a hidden tab', async () => {
-      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
-      fetchSpy.and.returnValue(Promise.resolve(okResponse()));
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+      fetchSpy.mockResolvedValue(okResponse());
       await service.arm();
       fakeCtx.state = 'suspended';
       fakeCtx.resumeCalls = 0;
@@ -299,7 +301,7 @@ describe('BenchmarkCompletionSoundService', () => {
     beforeEach(() => {
       fakeCtx = new FakeAudioContext();
       fakeCtx.state = 'suspended';
-      spyOn(window as any, 'AudioContext').and.returnValue(fakeCtx);
+      vi.spyOn(window as any, 'AudioContext').mockImplementation(function () { return fakeCtx; } as any);
     });
 
     it('falls through to the element within 1000 ms when ctx.resume() never settles', fakeAsync(() => {
@@ -309,7 +311,7 @@ describe('BenchmarkCompletionSoundService', () => {
       fakeAudio.playResult = new DOMException('autoplay refused', 'NotAllowedError');
       (service as any).audioContext = fakeCtx;
       (service as any).decodedBuffer = {} as AudioBuffer;
-      fakeCtx.resume = () => new Promise<void>(() => { /* never settles */ });
+      fakeCtx.resume = () => new Promise<void>(() => { });
 
       let outcome: string | undefined;
       service.play('run:1').then(o => { outcome = o; });
@@ -328,15 +330,15 @@ describe('BenchmarkCompletionSoundService', () => {
   describe('the clock-liveness check', () => {
     let fakeCtx1: FakeAudioContext;
     let fakeCtx2: FakeAudioContext;
-    let ctorSpy: jasmine.Spy;
+    let ctorSpy: Mock;
 
     beforeEach(() => {
-      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
       fakeCtx1 = new FakeAudioContext();
       fakeCtx2 = new FakeAudioContext();
       // fakeCtx1 is wired in directly, bypassing construction, so the constructor spy is only
       // ever consulted for the rebuild — the single call every test here expects.
-      ctorSpy = spyOn(window as any, 'AudioContext').and.returnValue(fakeCtx2);
+      ctorSpy = vi.spyOn(window as any, 'AudioContext').mockImplementation(function () { return fakeCtx2; } as any) as unknown as Mock;
       (service as any).audioContext = fakeCtx1;
       (service as any).decodedBuffer = {} as AudioBuffer;
     });
@@ -348,9 +350,9 @@ describe('BenchmarkCompletionSoundService', () => {
 
       expect(outcome).toBe('played');
       expect(fakeCtx1.closeCalls).toBe(1);
-      expect(fakeCtx1.createdBufferSources[0].stopped).toBeTrue();
+      expect(fakeCtx1.createdBufferSources[0].stopped).toBe(true);
       expect(ctorSpy).toHaveBeenCalledTimes(1);
-      expect(fakeCtx2.createdBufferSources.some(s => s.started)).toBeTrue();
+      expect(fakeCtx2.createdBufferSources.some(s => s.started)).toBe(true);
       expect(fakeAudio.playCallCount).toBe(0);
     });
 
@@ -361,27 +363,28 @@ describe('BenchmarkCompletionSoundService', () => {
       const outcome = await service.play('run:1');
 
       expect(outcome).toBe('played');
-      expect(fakeCtx1.createdBufferSources[0].stopped).toBeTrue();
-      expect(fakeCtx2.createdBufferSources[0].stopped).toBeTrue();
+      expect(fakeCtx1.createdBufferSources[0].stopped).toBe(true);
+      expect(fakeCtx2.createdBufferSources[0].stopped).toBe(true);
       expect(fakeAudio.playCallCount).toBe(1);
     });
   });
 
   describe('the hidden-tab deferred path', () => {
     it('resolves "deferred" after the timeout in a hidden tab, with no unhandled rejection, and marks the key played on a late fulfilment', async () => {
-      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
       let rejectPlay!: (err: unknown) => void;
       const pending = new Promise<void>((_resolve, reject) => { rejectPlay = reject; });
       fakeAudio.play = () => { fakeAudio.playCallCount++; return pending; };
 
-      jasmine.clock().install();
+      vi.useFakeTimers();
       try {
         const outcomePromise = service.play('run:1');
-        jasmine.clock().tick(2001);
+        vi.advanceTimersByTime(2001);
         const outcome = await outcomePromise;
         expect(outcome).toBe('deferred');
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
 
       // The original promise settling late must not throw an unhandled rejection, and a
@@ -394,19 +397,20 @@ describe('BenchmarkCompletionSoundService', () => {
     });
 
     it('marks the key played once a deferred play() later fulfils, so a retry cannot double-chime', async () => {
-      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
       let resolvePlay!: () => void;
       const pending = new Promise<void>(resolve => { resolvePlay = resolve; });
       fakeAudio.play = () => { fakeAudio.playCallCount++; return pending; };
 
-      jasmine.clock().install();
+      vi.useFakeTimers();
       let outcome: string;
       try {
         const outcomePromise = service.play('run:1');
-        jasmine.clock().tick(2001);
+        vi.advanceTimersByTime(2001);
         outcome = await outcomePromise;
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
       expect(outcome).toBe('deferred');
 
@@ -435,7 +439,7 @@ describe('BenchmarkCompletionSoundService', () => {
       expect(attempts[0].key).toBe('run:1');
       expect(attempts[0].path).toBe('element');
       expect(attempts[0].outcome).toBe('played');
-      expect(attempts[0].hidden).toBeFalse();
+      expect(attempts[0].hidden).toBe(false);
     });
 
     it('records an attempt for prime(), keyed "test"', async () => {

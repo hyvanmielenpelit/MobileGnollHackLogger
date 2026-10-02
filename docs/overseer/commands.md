@@ -8,8 +8,10 @@ This guide provides a comprehensive reference of all command-line operations use
 
 | Action | Working Directory | Command |
 | :--- | :--- | :--- |
-| **Run Entire App (Backend + SPA Proxy)** | `Overseer/` | `dotnet run` |
+| **Run Entire App (serves the last client build)** | `Overseer/` | `dotnet run` |
 | **Run Frontend Unit Tests (Headless)** | `Overseer/ClientApp/` | `npm run test:headless` |
+| **Run Frontend Specs for One Area (watch)** | `Overseer/ClientApp/` | `npx ng test --include=src/app/<area>` |
+| **Find Slow Frontend Specs** | `Overseer/ClientApp/` | `npm run test:profile` |
 | **Run Backend Unit & Integration Tests** | `Overseer.Tests/` | `dotnet test --filter-not-trait "Category=UsesExternalApi"` |
 | **Build Frontend (Production)** | `Overseer/ClientApp/` | `npm run build` |
 | **Build Backend** | `Overseer/` | `dotnet build` |
@@ -33,11 +35,16 @@ npm ci
 
 ### Running the Frontend
 ```bash
-# Start standalone Angular development server on port 44447
+# Serve the development build over HTTPS on port 44447 with the ASP.NET Core development
+# certificate, proxying /api and /chathub (WebSockets included) to the Overseer host
 npm start
-# or:
-npx ng serve --port 44447
 ```
+
+This is optional. The launch profiles do not start it: the host serves the last `npm run build`
+from `Overseer/wwwroot` (see § 3 *Running*). Start the Overseer host first, then `npm start`, and
+open `https://localhost:44447` for source maps and hot module replacement. The first run exports
+the development certificate as PEM to `%APPDATA%\ASP.NET\https\` (outside the repository);
+`serve-https.js` does that and passes any extra arguments on to `ng serve`.
 
 ### Building the Frontend
 ```bash
@@ -55,27 +62,69 @@ npx ng build --watch --configuration development
 > [!IMPORTANT]
 > **Static Assets Rule**: `Overseer/wwwroot/` is a build output directory wiped on every build. Never edit files in `wwwroot/` directly. Place static assets and images in `Overseer/ClientApp/public/` instead.
 
-### Frontend Unit Testing (Karma & Jasmine)
+### Frontend Unit Testing (Vitest)
+
+The specs run with [Vitest](https://vitest.dev/) in browser mode, in headless Chromium driven by
+Playwright, through Angular's `@angular/build:unit-test` builder. `angular.json` sets the browser,
+`src/test-setup.ts` loads zone.js's Vitest patch (for `fakeAsync`) and restores spies after every
+test, and `vitest-base.config.ts` holds the little the builder does not configure itself.
+
+Once per machine, download Playwright's Chromium (into `%LOCALAPPDATA%\ms-playwright`, outside the
+repository):
+
 ```bash
-# Run entire test suite once in Headless Chrome (Recommended for CI & AI agents)
-npm run test:headless
-# or:
-npx ng test --no-watch --browsers=ChromeHeadless
-# or:
-npm test -- --no-watch --browsers=ChromeHeadless
-
-# Run a specific test file (Headless)
-npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch --browsers=ChromeHeadless
-npx ng test --include="src/app/chat/markdown.pipe.spec.ts" --no-watch --browsers=ChromeHeadless
-
-# Interactive watch mode with browser GUI (for local browser debugging)
-npm test
-# or:
-npx ng test
+npx playwright install chromium
 ```
 
-> [!TIP]
-> **Headless Execution**: Always use `npm run test:headless` or `--browsers=ChromeHeadless` during automated runs to prevent popup browser windows from disrupting your workflow.
+```bash
+# Run the entire suite once (Recommended for CI & AI agents)
+npm run test:headless
+# or:
+npx ng test --no-watch
+
+# Run one file, a directory or a glob once
+npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch
+npx ng test --include="src/app/admin/benchmark" --no-watch
+```
+
+**While iterating (humans only)**, run one area in watch mode: Vitest re-runs the affected tests
+on every save, and Ctrl+C stops it. A single file takes seconds rather than a full run.
+
+```bash
+npx ng test --include=src/app/admin/benchmark
+# narrowed to test names matching a regular expression:
+npx ng test --include=src/app/admin/benchmark --filter="diagnostics"
+```
+
+> [!IMPORTANT]
+> **Agents use `npm run test:headless` or `--no-watch`.** Plain `npm test` or `ng test` in an
+> interactive terminal starts watch mode, and the command never returns.
+
+### Profiling the Specs
+```bash
+# List every test with its duration; tests above 200 ms are marked as slow
+npm run test:profile
+```
+
+The 200 ms threshold is `slowTestThreshold` in `vitest-base.config.ts`. Files run in parallel, so
+the largest file sets the floor of a full run. As measured on 2026-10-02, two files hold most of
+the execution time: `benchmark.component.spec.ts` (about 720 specs, each creating the whole
+`AdminBenchmarkComponent`) and `model-comparison.component.spec.ts` (about 290 specs).
+
+> [!NOTE]
+> **Do not turn chart animation off to speed specs up.** Forcing `prefers-reduced-motion` made the
+> model-comparison specs slower (49 s → 75 s): with animation on, Chart.js draws in a later
+> animation frame that usually never runs before the spec ends; with it off, every chart is drawn
+> synchronously inside the spec.
+
+### Why the Same Run Is Sometimes 2–3× Slower
+
+On the development laptop the same spec file, with the same test order, took 116–120 s in one
+hour and 46–48 s an hour later. That swing is the laptop's power and scheduling state (which cores
+Windows gives the browser), not the code. **Compare timings only back to back**, with nothing else
+running. For the fastest runs, plug the laptop in and set the Windows power mode to *Best
+performance* while the suite runs — a setting for the developer to choose, not one an agent
+changes.
 
 ### Sentry Sourcemaps & Debug IDs
 ```bash
@@ -104,12 +153,17 @@ dotnet clean
 
 ### Running
 ```bash
-# Run Overseer (launches ASP.NET Core and SPA proxy via npm start)
+# Run Overseer with the first launch profile (http)
 dotnet run
 
 # Run with specific launch profile
 dotnet run --launch-profile https
 ```
+
+Both profiles (`http` on 5277, `https` on 7214) serve the Angular client from `Overseer/wwwroot`
+as last built by `npm run build`; starting the host never rebuilds it. The SPA proxy package is
+referenced in `Overseer.csproj` but not activated by any profile. If the browser does not trust
+the development certificate, run `dotnet dev-certs https --trust` once.
 
 ### Publishing
 ```bash

@@ -79,7 +79,7 @@ describe('ReportChartPickerComponent', () => {
 
     const boxes = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
     expect(boxes.length).toBe(7);
-    expect(boxes.every(box => box.id.startsWith(`rcp-${ExecutiveSummary}-`))).toBeTrue();
+    expect(boxes.every(box => box.id.startsWith(`rcp-${ExecutiveSummary}-`))).toBe(true);
     expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(7);
     const titles = Array.from(panel.querySelectorAll('.rcp-figure-title')).map(title => text(title));
     expect(titles).toEqual(REPORT_CHART_FIGURES.map(figure => figure.title));
@@ -158,14 +158,14 @@ describe('ReportChartPickerComponent', () => {
     tab(TechnicalReport).focus();
     for (const [key, expected] of steps) {
       const event = press(document.activeElement as HTMLElement, key);
-      expect(event.defaultPrevented).withContext(key).toBeTrue();
-      expect(selectedTab()).withContext(key).toBe(String(expected));
-      expect(document.activeElement).withContext(key).toBe(tab(expected));
-      expect(q('[role="tabpanel"]')!.id).withContext(key).toBe(`rcp-panel-${expected}`);
+      expect(event.defaultPrevented, key).toBe(true);
+      expect(selectedTab(), key).toBe(String(expected));
+      expect(document.activeElement, key).toBe(tab(expected));
+      expect(q('[role="tabpanel"]')!.id, key).toBe(`rcp-panel-${expected}`);
     }
 
     const other = press(tab(TechnicalReport), 'Enter');
-    expect(other.defaultPrevented).toBeFalse();
+    expect(other.defaultPrevented).toBe(false);
     expect(selectedTab()).toBe(String(TechnicalReport));
     expect(emitted).toEqual([]);
   });
@@ -191,13 +191,13 @@ describe('ReportChartPickerComponent', () => {
     expect(text(briefTab.querySelector('.rcp-tab-count'))).toBe('—');
     expect(text(briefTab.querySelector('.visually-hidden'))).toBe(', not checked under Documents');
     expect(selectedTab()).toBe(String(ExecutiveSummary));
-    expect(cell(ExecutiveSummary, 'p1a-quality').hasAttribute('aria-disabled')).toBeFalse();
-    expect(button('all', ExecutiveSummary).hasAttribute('aria-disabled')).toBeFalse();
+    expect(cell(ExecutiveSummary, 'p1a-quality').hasAttribute('aria-disabled')).toBe(false);
+    expect(button('all', ExecutiveSummary).hasAttribute('aria-disabled')).toBe(false);
     expect(q(`#rcp-col-${ExecutiveSummary}-reason`)).toBeNull();
 
     select(InternalBrief);
     const brief = cell(InternalBrief, 'p1a-quality');
-    expect(brief.disabled).toBeFalse();
+    expect(brief.disabled).toBe(false);
     expect(brief.getAttribute('aria-disabled')).toBe('true');
     const reason = q(`#rcp-col-${InternalBrief}-reason`)!;
     expect(text(reason)).toBe('Not checked under Documents');
@@ -210,7 +210,7 @@ describe('ReportChartPickerComponent', () => {
     button('none', InternalBrief).click();
     button('all', InternalBrief).click();
     fixture.detectChanges();
-    expect(brief.checked).toBeTrue();
+    expect(brief.checked).toBe(true);
     expect(emitted).toEqual([]);
   });
 
@@ -229,7 +229,7 @@ describe('ReportChartPickerComponent', () => {
 
     const profile = cell(TechnicalReport, 'p2-profile');
     expect(profile.getAttribute('aria-disabled')).toBe('true');
-    expect(profile.checked).toBeFalse();
+    expect(profile.checked).toBe(false);
     expect(text(q('#rcp-row-p2-profile-reason'))).toBe('needs three or more models');
     expect(profile.getAttribute('aria-describedby')).toContain('rcp-row-p2-profile-reason');
     expect(text(q('#rcp-row-s3-speed-cost-reason'))).toBe('no cost measured');
@@ -237,7 +237,7 @@ describe('ReportChartPickerComponent', () => {
 
     profile.click();
     fixture.detectChanges();
-    expect(profile.checked).toBeFalse();
+    expect(profile.checked).toBe(false);
     expect(emitted).toEqual([]);
 
     // All takes only the figures the comparison can draw.
@@ -254,11 +254,11 @@ describe('ReportChartPickerComponent', () => {
     expect(q('[role="tab"]')).toBeNull();
     const panel = q('.rcp-doc-panel')!;
     expect(panel.getAttribute('role')).toBe('group');
-    expect(panel.hasAttribute('tabindex')).toBeFalse();
+    expect(panel.hasAttribute('tabindex')).toBe(false);
     const title = q(`#${panel.getAttribute('aria-labelledby')}`)!;
     expect(text(title)).toBe('Internal Improvement Brief');
     expect(panel.querySelectorAll('input[type="checkbox"]').length).toBe(7);
-    expect(cell(InternalBrief, 'p1a-quality').checked).toBeTrue();
+    expect(cell(InternalBrief, 'p1a-quality').checked).toBe(true);
   });
 
   it('falls back when the active document leaves', () => {
@@ -279,8 +279,8 @@ describe('ReportChartPickerComponent', () => {
   });
 
   it('never touches localStorage; the host stores the selection', () => {
-    const setItem = spyOn(localStorage, 'setItem').and.callThrough();
-    const getItem = spyOn(localStorage, 'getItem').and.callThrough();
+    const setItem = vi.spyOn(localStorage, 'setItem');
+    const getItem = vi.spyOn(localStorage, 'getItem');
     cell(ExecutiveSummary, 'p1c-cost').click();
     select(InternalBrief);
     button('none', InternalBrief).click();

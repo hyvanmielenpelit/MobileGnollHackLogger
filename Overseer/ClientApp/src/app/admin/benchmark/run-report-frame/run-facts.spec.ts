@@ -91,11 +91,11 @@ describe('run facts', () => {
       const rows = buildRunFacts(run({ testedModelServiceTierUsed: 'flex', testedModelEndpoint: 'custom (key; fingerprint ab12)' }), { gaps: [] });
       const tested = row(rows, 'model')!.item;
       const assessor = row(rows, 'assessor')!.item;
-      expect(tested.kind === 'models' && tested.models[0]).toEqual(jasmine.objectContaining({ serviceTier: 'flex', customEndpoint: true }));
-      expect(assessor.kind === 'models' && assessor.models[0]).toEqual(jasmine.objectContaining({ serviceTier: null, customEndpoint: false }));
+      expect(tested.kind === 'models' && tested.models[0]).toEqual(expect.objectContaining({ serviceTier: 'flex', customEndpoint: true }));
+      expect(assessor.kind === 'models' && assessor.models[0]).toEqual(expect.objectContaining({ serviceTier: null, customEndpoint: false }));
 
       const official = row(buildRunFacts(run(), { gaps: [] }), 'model')!.item;
-      expect(official.kind === 'models' && official.models[0].customEndpoint).toBeFalse();
+      expect(official.kind === 'models' && official.models[0].customEndpoint).toBe(false);
     });
 
     it('falls back from the display name to the model id, then to not recorded', () => {
@@ -176,7 +176,7 @@ describe('run facts', () => {
 
     it('hides the reasoning badge for default and standard, in any case', () => {
       for (const mode of ['default', 'Standard', 'STANDARD']) {
-        expect(runFactBadges(model({ reasoningMode: mode })).map(b => b.kind)).withContext(mode).toEqual(['provider']);
+        expect(runFactBadges(model({ reasoningMode: mode })).map(b => b.kind), mode).toEqual(['provider']);
       }
       expect(runFactBadges(model({ reasoningMode: 'max' })).map(b => [b.kind, b.text])).toEqual([['reasoning', 'max'], ['provider', 'OpenAI']]);
     });

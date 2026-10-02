@@ -299,7 +299,7 @@ describe('conditionDetailFor', () => {
   it('reports a self-inconsistent source with the keys its own members disagree on', () => {
     const detail = conditionDetailFor(buildIndex(), 'group:9', [])!;
 
-    expect(detail.selfInconsistent).toBeTrue();
+    expect(detail.selfInconsistent).toBe(true);
     expect(detail.selfInconsistentKeys).toEqual(['BenchmarkSuiteId', 'CandidateModelId']);
     // Such a source is not in any condition, so it differs from the reference on nothing named.
     expect(detail.rows).toEqual([]);
@@ -352,10 +352,10 @@ describe('buildConditionLegend', () => {
     const legend = buildConditionLegend(index);
 
     expect(legend.reference?.condition.ordinal).toBe(1);
-    expect(legend.reference?.isReference).toBeTrue();
+    expect(legend.reference?.isReference).toBe(true);
     // Newest first; the undated condition last; the two equal dates in ordinal order.
     expect(legend.others.map(item => item.condition.ordinal)).toEqual([4, 2, 5, 3]);
-    expect(legend.others.every(item => !item.isReference)).toBeTrue();
+    expect(legend.others.every(item => !item.isReference)).toBe(true);
   });
 
   it('falls back to the first condition when none has ordinal 1', () => {
@@ -564,7 +564,7 @@ describe('questionCoverageNotes', () => {
       buildComparisonEntry('b', { itemCount: 18, examItemCount: 18 })
     ]);
     expect(notes).toEqual([]);
-    expect(notes.some(note => note.tone === 'info')).toBeFalse();
+    expect(notes.some(note => note.tone === 'info')).toBe(false);
   });
 
   it('warns once per entry with unscored questions, naming the entry', () => {
@@ -610,7 +610,7 @@ describe('normalizeThinkingLevel', () => {
     expect(normalizeThinkingLevel(' xhigh ')).toBe('xhigh');
     expect(normalizeThinkingLevel('XHigh')).toBe('xHigh');
     for (const value of [null, undefined, '', '   ']) {
-      expect(normalizeThinkingLevel(value)).withContext(String(value)).toBeNull();
+      expect(normalizeThinkingLevel(value), String(value)).toBeNull();
     }
   });
 });
@@ -620,19 +620,19 @@ describe('isGeneratedGroupName', () => {
   const model = 'GPT-5.6 Luna';
 
   it("is true for the series orchestrator's name and for the multi-run tab's default", () => {
-    expect(isGeneratedGroupName(`${suite} · ${model} · 2026-09-07 · R=3`, suite, model)).toBeTrue();
-    expect(isGeneratedGroupName(`${suite} · R=3`, suite, model)).toBeTrue();
+    expect(isGeneratedGroupName(`${suite} · ${model} · 2026-09-07 · R=3`, suite, model)).toBe(true);
+    expect(isGeneratedGroupName(`${suite} · R=3`, suite, model)).toBe(true);
   });
 
   it('is false for a renamed group and for an empty name', () => {
-    expect(isGeneratedGroupName('Luna baseline after the prompt fix', suite, model)).toBeFalse();
-    expect(isGeneratedGroupName(`${suite} · ${model} · baseline · R=3`, suite, model)).toBeFalse();
-    expect(isGeneratedGroupName('', suite, model)).toBeFalse();
-    expect(isGeneratedGroupName('   ', suite, model)).toBeFalse();
+    expect(isGeneratedGroupName('Luna baseline after the prompt fix', suite, model)).toBe(false);
+    expect(isGeneratedGroupName(`${suite} · ${model} · baseline · R=3`, suite, model)).toBe(false);
+    expect(isGeneratedGroupName('', suite, model)).toBe(false);
+    expect(isGeneratedGroupName('   ', suite, model)).toBe(false);
   });
 
   it('is false when the suite in the name is not the suite passed in', () => {
-    expect(isGeneratedGroupName(`Old Suite Name · ${model} · 2026-09-07 · R=3`, suite, model)).toBeFalse();
+    expect(isGeneratedGroupName(`Old Suite Name · ${model} · 2026-09-07 · R=3`, suite, model)).toBe(false);
   });
 });
 
@@ -655,8 +655,8 @@ describe('toChartEntries labels', () => {
   it('adds no parentheses without a thinking level', () => {
     for (const thinkingLevel of [null, '  ']) {
       const entry = chartEntry({ modelDisplayName: 'GPT-5.6 Luna', thinkingLevel });
-      expect(entry.label).withContext(String(thinkingLevel)).toBe('GPT-5.6 Luna');
-      expect(entry.thinkingLevel).withContext(String(thinkingLevel)).toBeNull();
+      expect(entry.label, String(thinkingLevel)).toBe('GPT-5.6 Luna');
+      expect(entry.thinkingLevel, String(thinkingLevel)).toBeNull();
     }
   });
 
@@ -679,7 +679,7 @@ describe('toChartEntries candidate run cost', () => {
       buildComparisonEntry('unpriced', {})
     ]));
     expect(priced.candidateCostPerRunUsd).toBe(0.18);
-    expect(Number.isNaN(unpriced.candidateCostPerRunUsd)).toBeTrue();
+    expect(Number.isNaN(unpriced.candidateCostPerRunUsd)).toBe(true);
   });
 });
 
@@ -701,9 +701,9 @@ describe('toChartEntries total run cost', () => {
     ]));
     expect(total.totalRunCostUsd).toBe(0.92);
     expect(total.totalRunCostSdUsd).toBe(0.04);
-    expect(Number.isNaN(noTotal.totalRunCostUsd)).toBeTrue();
+    expect(Number.isNaN(noTotal.totalRunCostUsd)).toBe(true);
     expect(noTotal.totalRunCostSdUsd).toBeNull();
-    expect(Number.isNaN(noCost.totalRunCostUsd)).toBeTrue();
+    expect(Number.isNaN(noCost.totalRunCostUsd)).toBe(true);
     expect(noCost.totalRunCostSdUsd).toBeNull();
   });
 });

@@ -46,8 +46,8 @@ describe('report-charts', () => {
         'Intelligence against speed', 'Intelligence against cost', 'Speed against cost'
       ]);
       expect(REPORT_CHART_FIGURES.map(figure => figure.minModels)).toEqual([2, 2, 2, 3, 2, 2, 2]);
-      expect(isReportChartFigureKey('p2-profile')).toBeTrue();
-      expect(isReportChartFigureKey('p9-nothing')).toBeFalse();
+      expect(isReportChartFigureKey('p2-profile')).toBe(true);
+      expect(isReportChartFigureKey('p9-nothing')).toBe(false);
     });
 
     it('places each figure in the section the server draws it in', () => {
@@ -116,8 +116,12 @@ describe('report-charts', () => {
     });
 
     it('survives storage that throws', () => {
-      spyOn(localStorage, 'getItem').and.throwError('denied');
-      spyOn(localStorage, 'setItem').and.throwError('denied');
+      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
+      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
       expect(() => storeChartSelection(DEFAULT_CHART_SELECTION)).not.toThrow();
       expect(readStoredChartSelection()).toEqual(DEFAULT_CHART_SELECTION);
     });
@@ -214,12 +218,11 @@ describe('report-charts', () => {
         [InternalBrief]: ['p1b-speed']
       };
 
-      const running = publisher.publish([target(11, ExecutiveSummary), target(12, InternalBrief, {})], selection, compose, HASH,
-        p => progress.push(p));
-      expect(publisher.running).toBeTrue();
+      const running = publisher.publish([target(11, ExecutiveSummary), target(12, InternalBrief, {})], selection, compose, HASH, p => progress.push(p));
+      expect(publisher.running).toBe(true);
       const result = await running;
 
-      expect(publisher.running).toBeFalse();
+      expect(publisher.running).toBe(false);
       expect(composed).toEqual([
         'p1a-quality/named', 'p1a-quality/anonymized', 's2-quality-cost/named', 's2-quality-cost/anonymized',
         'p1b-speed/named'
@@ -249,8 +252,8 @@ describe('report-charts', () => {
       expect(last.total).toBe(7);
       expect(last.done).toBe(7);
       expect(last.documentId).toBeNull();
-      expect(progress.some(p => p.documentId === 11 && p.step.startsWith('Drawing Intelligence (anonymized)'))).toBeTrue();
-      expect(progress.every((p, i) => i === 0 || p.done >= progress[i - 1].done)).toBeTrue();
+      expect(progress.some(p => p.documentId === 11 && p.step.startsWith('Drawing Intelligence (anonymized)'))).toBe(true);
+      expect(progress.every((p, i) => i === 0 || p.done >= progress[i - 1].done)).toBe(true);
     });
 
     it('skips a document whose selection is empty, uploading nothing for it', async () => {
@@ -269,9 +272,9 @@ describe('report-charts', () => {
         { [ExecutiveSummary]: ['p1a-quality'] }, compose, HASH);
 
       expect(puts.map(put => put.id)).toEqual([11]);
-      expect(result.canceled).toBeTrue();
+      expect(result.canceled).toBe(true);
       expect(result.published).toEqual([{ documentId: 11, chartCount: 2 }]);
-      expect(publisher.running).toBeFalse();
+      expect(publisher.running).toBe(false);
     });
 
     it('leaves out a figure the composer rejects, and fails a document none of whose figures could be drawn', async () => {
@@ -284,7 +287,7 @@ describe('report-charts', () => {
 
       expect(puts.map(put => put.id)).toEqual([11]);
       expect(puts[0].charts.map(chart => chart.figureKey)).toEqual(['p1a-quality']);
-      expect(progress.some(p => p.step.includes('Could not draw Speed (named)') && p.step.includes('cannot draw p1b-speed'))).toBeTrue();
+      expect(progress.some(p => p.step.includes('Could not draw Speed (named)') && p.step.includes('cannot draw p1b-speed'))).toBe(true);
       expect(result.published).toEqual([{ documentId: 11, chartCount: 1 }]);
       expect(result.failed.length).toBe(1);
       expect(result.failed[0].documentId).toBe(12);
@@ -317,7 +320,7 @@ describe('report-charts', () => {
       expect(result.storageNotConfigured).toBe(message);
       expect(result.failed).toEqual([]);
       expect(result.published).toEqual([]);
-      expect(result.canceled).toBeFalse();
+      expect(result.canceled).toBe(false);
       expect(progress.filter(p => p.step === message).length).toBe(1);
     });
 
@@ -337,8 +340,7 @@ describe('report-charts', () => {
     it('refuses a second publish while one runs', async () => {
       const publisher = new ReportChartPublisher(service);
       const first = publisher.publish([target(11, ExecutiveSummary)], { [ExecutiveSummary]: ['p1a-quality'] }, compose, HASH);
-      await expectAsync(publisher.publish([target(12, ExecutiveSummary)], { [ExecutiveSummary]: ['p1a-quality'] }, compose, HASH))
-        .toBeRejectedWithError(/already running/);
+      await expect(publisher.publish([target(12, ExecutiveSummary)], { [ExecutiveSummary]: ['p1a-quality'] }, compose, HASH)).rejects.toThrowError(/already running/);
       await first;
     });
   });

@@ -238,9 +238,9 @@ describe('ReportPackPanelComponent', () => {
     // Subject, Documents, Charts, Report writer, the estimate, Generate: in that order.
     const order = ['#rp-subject', '.rp-documents-choice', '.rp-charts-choice', '.rp-writer-selector', '#rp-estimate', '.rp-generate']
       .map(selector => sidebar.querySelector(selector));
-    expect(order.every(element => element !== null)).toBeTrue();
+    expect(order.every(element => element !== null)).toBe(true);
     for (let i = 1; i < order.length; i++) {
-      expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING).withContext(`${i}`).toBeTruthy();
+      expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING, `${i}`).toBeTruthy();
     }
 
     const heading = q('h4.gh-section-title#rp-heading')!;
@@ -311,9 +311,9 @@ describe('ReportPackPanelComponent', () => {
     const names = Array.from(host.querySelectorAll('.rp-audience-name')).map(name => (name.textContent ?? '').trim());
     expect(names).toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
 
-    expect(q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!.checked).toBeTrue();
-    expect(q<HTMLInputElement>(`#rp-audience-${TechnicalReport}`)!.checked).toBeTrue();
-    expect(q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.checked).toBeFalse();
+    expect(q<HTMLInputElement>(`#rp-audience-${ExecutiveSummary}`)!.checked).toBe(true);
+    expect(q<HTMLInputElement>(`#rp-audience-${TechnicalReport}`)!.checked).toBe(true);
+    expect(q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.checked).toBe(false);
     expect(component.selectedAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
   });
 
@@ -322,7 +322,7 @@ describe('ReportPackPanelComponent', () => {
 
     expect(component.writers.map(writer => writer.id)).toEqual([7, 8]);
     expect(component.writerId).toBeNull();
-    expect(generateButton().disabled).toBeTrue();
+    expect(generateButton().disabled).toBe(true);
     expect(text('#rp-generate-blocked')).toBe('Choose a report writer.');
     expect(http.match(PREVIEW_URL).length).toBe(0);
   });
@@ -348,7 +348,7 @@ describe('ReportPackPanelComponent', () => {
     expect(line.textContent).toContain(refusal);
     expect(line.compareDocumentPosition(generateButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(q('.rp-writer-selector .selector-trigger')!.getAttribute('aria-describedby')).toContain('rp-writer-refusal');
-    expect(generateButton().disabled).toBeTrue();
+    expect(generateButton().disabled).toBe(true);
     expect(text('#rp-generate-blocked')).toBe('This writer is refused for this subject. Choose another writer.');
 
     generateButton().click();
@@ -437,7 +437,7 @@ describe('ReportPackPanelComponent', () => {
     expect(parts).toEqual([['Executive Summary', '$0.05'], ['Report for AI Researchers and Developers', '$0.07']]);
     expect(text('#rp-estimate .gh-estimate-note')).toContain('For Gemini Flash against 1 peer.');
     expect(generateButton().getAttribute('aria-describedby')).toBe('rp-estimate');
-    expect(generateButton().disabled).toBeFalse();
+    expect(generateButton().disabled).toBe(false);
     fixture.destroy();
   }));
 
@@ -457,7 +457,7 @@ describe('ReportPackPanelComponent', () => {
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
     http.expectOne(PREVIEW_URL).flush(previewDto({ estimates: [previewDto().estimates[0]], estimatedTotalCostUsd: 0.05 }));
     fixture.detectChanges();
-    expect(panel.hasAttribute('aria-busy')).toBeFalse();
+    expect(panel.hasAttribute('aria-busy')).toBe(false);
     expect(panel.querySelector('.gh-estimate-parts')).toBeNull();
     fixture.destroy();
   }));
@@ -474,7 +474,7 @@ describe('ReportPackPanelComponent', () => {
     select.value = 'run:2';
     select.dispatchEvent(new Event('change'));
     fixture.detectChanges();
-    expect(generateButton().disabled).toBeTrue();
+    expect(generateButton().disabled).toBe(true);
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS - 1);
     http.expectNone(PREVIEW_URL);
     tick(1);
@@ -497,7 +497,7 @@ describe('ReportPackPanelComponent', () => {
     }
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
     http.expectNone(PREVIEW_URL);
-    expect(generateButton().disabled).toBeTrue();
+    expect(generateButton().disabled).toBe(true);
     expect(text('#rp-generate-blocked')).toBe('Choose at least one document.');
     fixture.destroy();
   }));
@@ -516,35 +516,35 @@ describe('ReportPackPanelComponent', () => {
     expect(alert.textContent).toContain(warning);
     expect(q('#rp-acknowledge')).toBeNull();
     expect(q('.rp-same-provider input[type="checkbox"]')).toBeNull();
-    expect(generateButton().disabled).toBeFalse();
+    expect(generateButton().disabled).toBe(false);
 
     // Cancel: nothing is sent, and focus returns to Generate.
     generateButton().click();
     fixture.detectChanges();
-    expect(confirmDialog().open).toBeTrue();
+    expect(confirmDialog().open).toBe(true);
     expect(text('#rp-same-provider-title')).toBe('Same-Provider Report Writer');
     expect(text('.rp-same-provider-confirm-text')).toBe(warning);
     http.expectNone(START_URL);
     q<HTMLButtonElement>('.rp-same-provider-cancel')!.click();
     fixture.detectChanges();
-    expect(confirmDialog().open).toBeFalse();
+    expect(confirmDialog().open).toBe(false);
     expect(document.activeElement).toBe(generateButton());
     http.expectNone(START_URL);
 
     // Asked again, never remembered; Write Anyway sends the acknowledgment.
     generateButton().click();
     fixture.detectChanges();
-    expect(confirmDialog().open).toBeTrue();
+    expect(confirmDialog().open).toBe(true);
     const confirm = q<HTMLButtonElement>('.rp-same-provider-confirm')!;
     expect(confirm.textContent!.trim()).toBe('Write Anyway');
     expect(confirm.querySelector('svg.btn-icon')).not.toBeNull();
     confirm.click();
     fixture.detectChanges();
-    expect(confirmDialog().open).toBeFalse();
+    expect(confirmDialog().open).toBe(false);
 
     const start = http.expectOne(START_URL);
     expect(start.request.method).toBe('POST');
-    expect(start.request.body.acknowledgeSameProvider).toBeTrue();
+    expect(start.request.body.acknowledgeSameProvider).toBe(true);
     expect(start.request.body.writerModelConfigurationId).toBe(7);
     expect(JSON.parse(localStorage.getItem(REPORT_PACK_STORAGE_KEY)!)).toEqual({ writerConfigId: 7 });
 
@@ -561,13 +561,11 @@ describe('ReportPackPanelComponent', () => {
     generateButton().click();
     const message = 'The writer and the subject are both from Anthropic. Acknowledge the warning to continue.';
     const first = http.expectOne(START_URL);
-    expect(first.request.body.acknowledgeSameProvider).toBeFalse();
-    first.flush(
-      { sameProvider: true, provider: 'Anthropic', testedModelDisplayName: 'Gemini Flash', assessorModelDisplayName: 'Claude Opus writer', message },
-      { status: 409, statusText: 'Conflict' });
+    expect(first.request.body.acknowledgeSameProvider).toBe(false);
+    first.flush({ sameProvider: true, provider: 'Anthropic', testedModelDisplayName: 'Gemini Flash', assessorModelDisplayName: 'Claude Opus writer', message }, { status: 409, statusText: 'Conflict' });
     fixture.detectChanges();
 
-    expect(confirmDialog().open).toBeTrue();
+    expect(confirmDialog().open).toBe(true);
     expect(text('.rp-same-provider-confirm-text')).toBe(message);
     expect(text('.rp-same-provider')).toContain(message);
     expect(q('.rp-start-error')).toBeNull();
@@ -575,7 +573,7 @@ describe('ReportPackPanelComponent', () => {
     q<HTMLButtonElement>('.rp-same-provider-confirm')!.click();
     fixture.detectChanges();
     const second = http.expectOne(START_URL);
-    expect(second.request.body.acknowledgeSameProvider).toBeTrue();
+    expect(second.request.body.acknowledgeSameProvider).toBe(true);
     second.flush({ jobId: 'job-1' });
     http.expectOne(jobUrl('job-1')).flush(jobDto());
     fixture.detectChanges();
@@ -618,7 +616,7 @@ describe('ReportPackPanelComponent', () => {
     expect(text('.rp-start-error')).toContain('Another report pack is being written, for GPT Sol group');
     expect(text('.rp-start-error')).toContain('its progress is shown here.');
     expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
-    expect(generateButton().disabled).toBeTrue();
+    expect(generateButton().disabled).toBe(true);
 
     tick(REPORT_PACK_POLL_MS);
     http.expectOne(jobUrl('job-9')).flush(jobDto({ id: 'job-9', status: 'Completed', completedAtUtc: '2026-09-28T10:01:00Z' }));
@@ -638,7 +636,7 @@ describe('ReportPackPanelComponent', () => {
     const alert = q('.rp-start-error')!;
     expect(alert.getAttribute('role')).toBe('alert');
     expect(alert.textContent!.trim()).toBe(message);
-    expect(generateButton().disabled).toBeFalse();
+    expect(generateButton().disabled).toBe(false);
     fixture.destroy();
   }));
 
@@ -654,7 +652,7 @@ describe('ReportPackPanelComponent', () => {
     expect(line.getAttribute('role')).toBe('status');
     expect(line.textContent!.trim()).toBe('');
     expect(text('.rp-idle-note')).toContain('step 4, Documents');
-    expect(component.jobRunning).toBeFalse();
+    expect(component.jobRunning).toBe(false);
   });
 
   it('polls a started job with a stage rail, a stat strip and a row per document, then summarizes it above the strip', fakeAsync(() => {
@@ -671,7 +669,7 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
     // Before the first reading, the rail stands at Queued.
     expect(text('.rp-job-rail .run-stage.is-current .run-stage-name')).toBe('Queued');
-    expect(component.jobRunning).toBeTrue();
+    expect(component.jobRunning).toBe(true);
 
     http.expectOne(jobUrl('job-1')).flush(jobDto());
     fixture.detectChanges();
@@ -683,7 +681,7 @@ describe('ReportPackPanelComponent', () => {
     expect(q('.rp-job-status')!.getAttribute('role')).toBe('status');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 0 of 2 finished.');
     expect(q('.rp-job-log')).not.toBeNull();
-    expect(generateButton().disabled).toBeTrue();
+    expect(generateButton().disabled).toBe(true);
 
     const stages = Array.from(host.querySelectorAll('.rp-job-rail .run-stage'));
     expect(q('.rp-job-rail')!.classList).toContain('run-stage-rail');
@@ -741,7 +739,7 @@ describe('ReportPackPanelComponent', () => {
     expect(q('.rp-cancel-job')).toBeNull();
     expect(finished.map(job => job.id)).toEqual(['job-1']);
     expect(busy).toEqual([true, false]);
-    expect(component.jobRunning).toBeFalse();
+    expect(component.jobRunning).toBe(false);
     tick(REPORT_PACK_POLL_MS * 3);
     http.expectNone(jobUrl('job-1'));
 
@@ -775,7 +773,7 @@ describe('ReportPackPanelComponent', () => {
     expect(text('.rp-job-status')).toBe('Report pack for Gemini Flash: Canceled.');
     expect(text('.rp-job-summary')).toBe('Canceled: 0 of 2 documents written, 30 s, Unknown');
     expect(q('.rp-cancel-job')).toBeNull();
-    expect(generateButton().disabled).toBeFalse();
+    expect(generateButton().disabled).toBe(false);
     fixture.destroy();
   }));
 
@@ -938,7 +936,7 @@ describe('ReportPackPanelComponent', () => {
   // -------------------------------------------------------------------------------------------
 
   it('copies the diagnostics from an icon-only button with a tooltip, and says so', fakeAsync(() => {
-    const copy = spyOn(reportPackIo, 'copy').and.returnValue(Promise.resolve(true));
+    const copy = vi.spyOn(reportPackIo, 'copy').mockResolvedValue(true);
     openPanel({ activeJob: jobDto({ id: 'job-5' }) });
 
     expect(text('.rp-job-log > summary')).toBe('Log and diagnostics');
@@ -946,7 +944,7 @@ describe('ReportPackPanelComponent', () => {
     expect(button.classList).toContain('action-btn');
     expect(button.getAttribute('aria-label')).toBe('Copy the report pack diagnostics for Gemini Flash');
     expect(button.getAttribute('interestfor')).toBe('rp-copy-diagnostics-tip');
-    expect(button.hasAttribute('title')).toBeFalse();
+    expect(button.hasAttribute('title')).toBe(false);
     expect(text('#rp-copy-diagnostics-tip')).toBe('Copy diagnostics');
     expect(q('#rp-copy-diagnostics-tip')!.getAttribute('popover')).toBe('hint');
 
@@ -954,7 +952,7 @@ describe('ReportPackPanelComponent', () => {
     flushMicrotasks();
     fixture.detectChanges();
     expect(copy).toHaveBeenCalledTimes(1);
-    const copied = copy.calls.mostRecent().args[0];
+    const copied = vi.mocked(copy).mock.lastCall![0];
     expect(copied).toContain('Overseer Report Pack diagnostics');
     expect(copied).toContain('Job id: job-5');
     expect(copied).not.toContain('user-secret-id');
@@ -967,7 +965,7 @@ describe('ReportPackPanelComponent', () => {
   }));
 
   it('shows an inline error when the clipboard refuses the diagnostics', fakeAsync(() => {
-    spyOn(reportPackIo, 'copy').and.returnValue(Promise.resolve(false));
+    vi.spyOn(reportPackIo, 'copy').mockResolvedValue(false);
     openPanel({ activeJob: jobDto({ id: 'job-5' }) });
 
     q<HTMLButtonElement>('.rp-copy-diagnostics')!.click();
@@ -981,7 +979,7 @@ describe('ReportPackPanelComponent', () => {
   }));
 
   it('downloads the diagnostics as a text file named for the subject', fakeAsync(() => {
-    const download = spyOn(reportPackIo, 'download');
+    const download = vi.spyOn(reportPackIo, 'download').mockReturnValue(undefined);
     openPanel({ activeJob: jobDto({ id: 'job-5' }) });
 
     const button = q<HTMLButtonElement>('.rp-download-diagnostics')!;
@@ -990,7 +988,7 @@ describe('ReportPackPanelComponent', () => {
     button.click();
 
     expect(download).toHaveBeenCalledTimes(1);
-    const [fileName, body] = download.calls.mostRecent().args;
+    const [fileName, body] = vi.mocked(download).mock.lastCall!;
     expect(fileName).toMatch(/^report-pack_gemini-flash_diagnostics_\d{8}-\d{6}\.txt$/);
     expect(body).toContain('== Documents ==');
     expect(body).toContain('Polls: ');
@@ -1061,7 +1059,7 @@ describe('ReportPackPanelComponent', () => {
     q<HTMLInputElement>(`#rp-audience-${InternalBrief}`)!.click();
     fixture.detectChanges();
     expect(picker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
-    expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.hasAttribute('aria-disabled')).toBeFalse();
+    expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.hasAttribute('aria-disabled')).toBe(false);
 
     q<HTMLButtonElement>(`#rp-charts-tab-${ExecutiveSummary}`)!.click();
     fixture.detectChanges();
@@ -1084,7 +1082,7 @@ describe('ReportPackPanelComponent', () => {
     const missing = q('.rp-chart-storage-missing')!;
     expect(missing.classList).toContain('alert-warning');
     expect(missing.textContent!.trim()).toBe('Chart storage is not configured; documents will be written without charts.');
-    expect(q('fieldset.rp-charts-choice')!.contains(missing)).toBeTrue();
+    expect(q('fieldset.rp-charts-choice')!.contains(missing)).toBe(true);
   });
 
   it('lists a figure the comparison cannot draw with the reason', () => {

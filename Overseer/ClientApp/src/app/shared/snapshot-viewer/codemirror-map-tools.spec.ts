@@ -18,8 +18,8 @@ describe('codemirror-map-tools', () => {
     setup = await import('./codemirror-setup');
   });
 
-  /* Fixed at the window's top left, so neither window scroll nor the Jasmine HTML reporter above it
-     in the body can push the editor out of the window; CodeMirror skips measuring an editor it
+  /* Fixed at the window's top left, so neither window scroll nor other content above it
+     in the test page's body can push the editor out of the window; CodeMirror skips measuring an editor it
      cannot see, and its hit tests then run against estimated line heights. */
   beforeEach(() => {
     parent = document.createElement('div');
@@ -56,7 +56,7 @@ describe('codemirror-map-tools', () => {
     expect(lineElement(TENS_RULER).classList).toContain('cm-map-ruler');
     expect(lineElement(UNITS_RULER).classList).toContain('cm-map-ruler');
     for (let n = FIRST_ROW; n <= FIRST_ROW + 20; n++) {
-      expect(lineElement(n).classList).withContext(`line ${n}`).toContain('cm-map-row');
+      expect(lineElement(n).classList, `line ${n}`).toContain('cm-map-row');
     }
     expect(parent.querySelectorAll('.cm-map-row').length).toBe(21);
     expect(lineElement(3).classList).not.toContain('cm-map-row');
@@ -85,7 +85,7 @@ describe('codemirror-map-tools', () => {
     const coords = view.coordsAtPos(heroPos, 1)!;
     const x = coords.left + view.defaultCharacterWidth / 2;
     const y = (coords.top + coords.bottom) / 2;
-    expect(coords.bottom).withContext('hero cell inside the window').toBeLessThanOrEqual(window.innerHeight);
+    expect(coords.bottom, 'hero cell inside the window').toBeLessThanOrEqual(window.innerHeight);
 
     view.contentDOM.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, bubbles: true }));
     expect(last()?.text).toBe('<10,13>  \'@\'');

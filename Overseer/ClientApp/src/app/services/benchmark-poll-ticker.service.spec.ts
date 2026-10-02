@@ -50,7 +50,7 @@ describe('BenchmarkPollTickerService', () => {
     });
 
     it('starts a worker with the same-origin script and posts a start message with the interval', () => {
-      const onTick = jasmine.createSpy('onTick');
+      const onTick = vi.fn().mockName('onTick');
       service.start(2000, onTick);
 
       expect(FakeWorker.instances.length).toBe(1);
@@ -59,7 +59,7 @@ describe('BenchmarkPollTickerService', () => {
     });
 
     it('reports mode "worker" while the worker keeps delivering ticks', () => {
-      const onTick = jasmine.createSpy('onTick');
+      const onTick = vi.fn().mockName('onTick');
       const handle = service.start(2000, onTick);
 
       expect(handle.mode).toBe('worker');
@@ -69,13 +69,13 @@ describe('BenchmarkPollTickerService', () => {
     });
 
     it('does not call onTick after the handle is disposed', () => {
-      const onTick = jasmine.createSpy('onTick');
+      const onTick = vi.fn().mockName('onTick');
       const handle = service.start(2000, onTick);
       const worker = FakeWorker.instances[0];
 
       handle();
 
-      expect(worker.postedMessages).toContain({ type: 'stop' } as any);
+      expect(worker.postedMessages).toContainEqual({ type: 'stop' } as any);
       expect(worker.terminateCalls).toBe(1);
 
       worker.tick();
@@ -83,9 +83,9 @@ describe('BenchmarkPollTickerService', () => {
     });
 
     it('falls back to a timer and keeps ticking when the worker reports an error after starting', () => {
-      jasmine.clock().install();
+      vi.useFakeTimers();
       try {
-        const onTick = jasmine.createSpy('onTick');
+        const onTick = vi.fn().mockName('onTick');
         const handle = service.start(1000, onTick);
         const worker = FakeWorker.instances[0];
 
@@ -94,14 +94,15 @@ describe('BenchmarkPollTickerService', () => {
         expect(handle.mode).toBe('timer');
         expect(worker.terminateCalls).toBe(1);
 
-        jasmine.clock().tick(1000);
+        vi.advanceTimersByTime(1000);
         expect(onTick).toHaveBeenCalledTimes(1);
 
         handle();
-        jasmine.clock().tick(1000);
+        vi.advanceTimersByTime(1000);
         expect(onTick).toHaveBeenCalledTimes(1);
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
     });
   });
@@ -116,20 +117,21 @@ describe('BenchmarkPollTickerService', () => {
     });
 
     it('falls back to a timer and reports mode "timer"', () => {
-      jasmine.clock().install();
+      vi.useFakeTimers();
       try {
-        const onTick = jasmine.createSpy('onTick');
+        const onTick = vi.fn().mockName('onTick');
         const handle = service.start(1500, onTick);
 
         expect(handle.mode).toBe('timer');
-        jasmine.clock().tick(1500);
+        vi.advanceTimersByTime(1500);
         expect(onTick).toHaveBeenCalledTimes(1);
 
         handle();
-        jasmine.clock().tick(1500);
+        vi.advanceTimersByTime(1500);
         expect(onTick).toHaveBeenCalledTimes(1);
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
     });
   });
@@ -140,28 +142,29 @@ describe('BenchmarkPollTickerService', () => {
     });
 
     it('uses a timer directly, without attempting to construct a worker', () => {
-      jasmine.clock().install();
+      vi.useFakeTimers();
       try {
-        const onTick = jasmine.createSpy('onTick');
+        const onTick = vi.fn().mockName('onTick');
         const handle = service.start(2000, onTick);
 
         expect(handle.mode).toBe('timer');
-        jasmine.clock().tick(2000);
+        vi.advanceTimersByTime(2000);
         expect(onTick).toHaveBeenCalledTimes(1);
 
         handle();
-        jasmine.clock().tick(2000);
+        vi.advanceTimersByTime(2000);
         expect(onTick).toHaveBeenCalledTimes(1);
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
     });
   });
 
   it('gives the run poller and the series poller independent handles', () => {
     (window as any).Worker = FakeWorker;
-    const onTickA = jasmine.createSpy('onTickA');
-    const onTickB = jasmine.createSpy('onTickB');
+    const onTickA = vi.fn().mockName('onTickA');
+    const onTickB = vi.fn().mockName('onTickB');
 
     const handleA = service.start(2000, onTickA);
     const handleB = service.start(5000, onTickB);

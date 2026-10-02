@@ -197,7 +197,7 @@ describe('buildRunReportWritingDiagnostics', () => {
       '== Writer ==', '== Timing ==', '== Queue ==', '== Documents ==', '== Totals ==', '== Client polling ==',
       '== Job log =='];
     const positions = sections.map(section => text.indexOf(section));
-    expect(positions.every(position => position >= 0)).toBeTrue();
+    expect(positions.every(position => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
   });
 

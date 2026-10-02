@@ -92,7 +92,7 @@ describe('report-pack-diagnostics', () => {
     const text = buildReportPackDiagnostics(input());
 
     expect(text).not.toContain('\r');
-    expect(text.endsWith('\n')).toBeTrue();
+    expect(text.endsWith('\n')).toBe(true);
     const lines = text.split('\n');
     expect(lines[0]).toBe('Overseer Report Pack diagnostics');
     expect(lines).toContain('Captured: 2026-09-28 10:01:12 UTC');

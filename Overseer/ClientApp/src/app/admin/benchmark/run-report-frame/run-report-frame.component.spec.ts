@@ -54,7 +54,7 @@ describe('RunReportFrameComponent', () => {
   it('renders the two columns by default, with no single body and no tab row', () => {
     expect(q('.rrf-columns')).not.toBeNull();
     expect(host.querySelector('.rrf-single')).toBeNull();
-    expect(q('app-run-report-frame').classList.contains('rrf-layout-single')).toBeFalse();
+    expect(q('app-run-report-frame').classList.contains('rrf-layout-single')).toBe(false);
     expect(getComputedStyle(q('.rrf-tabs')).display).toBe('none');
   });
 
@@ -69,7 +69,7 @@ describe('RunReportFrameComponent', () => {
   });
 
   it('marks the body busy only while busy', () => {
-    expect(q('.rrf-body').hasAttribute('aria-busy')).toBeFalse();
+    expect(q('.rrf-body').hasAttribute('aria-busy')).toBe(false);
 
     fixture.componentInstance.busy = true;
     fixture.detectChanges();
@@ -142,7 +142,7 @@ describe('RunReportFrameComponent in single layout', () => {
     expect(q('.rrf-body > .rrf-single > .t-body').textContent).toBe('Body content');
     expect(host.querySelector('.rrf-columns')).toBeNull();
     expect(host.querySelector('.rrf-main, .rrf-aside')).toBeNull();
-    expect(q('app-run-report-frame').classList.contains('rrf-layout-single')).toBeTrue();
+    expect(q('app-run-report-frame').classList.contains('rrf-layout-single')).toBe(true);
   });
 
   it('puts the tab row under the header, inside the top block', () => {
@@ -158,9 +158,9 @@ describe('RunReportFrameComponent in single layout', () => {
       fixture.componentInstance.width = width;
       fixture.detectChanges();
 
-      expect(getComputedStyle(q('.rrf-top')).display).withContext(`${width}`).toBe('block');
-      expect(getComputedStyle(q('app-run-report-frame')).overflowY).withContext(`${width}`).toBe('hidden');
-      expect(getComputedStyle(q('.rrf-body')).overflowY).withContext(`${width}`).toBe('auto');
+      expect(getComputedStyle(q('.rrf-top')).display, `${width}`).toBe('block');
+      expect(getComputedStyle(q('app-run-report-frame')).overflowY, `${width}`).toBe('hidden');
+      expect(getComputedStyle(q('.rrf-body')).overflowY, `${width}`).toBe('auto');
     }
   });
 
@@ -169,7 +169,7 @@ describe('RunReportFrameComponent in single layout', () => {
       fixture.componentInstance.width = width;
       fixture.detectChanges();
 
-      expect(getComputedStyle(q('.rrf-header')).alignItems).withContext(`${width}`).toBe('flex-start');
+      expect(getComputedStyle(q('.rrf-header')).alignItems, `${width}`).toBe('flex-start');
     }
   });
 
@@ -252,9 +252,9 @@ describe('RunReportFrameComponent in sidebar layout', () => {
     expect(columns[1]).toBe('12px');
     for (const selector of ['.rrf-sidebar', '.rrf-main']) {
       const style = getComputedStyle(q(selector));
-      expect(style.overflowY).withContext(selector).toBe('auto');
-      expect(style.overscrollBehaviorY).withContext(selector).toBe('contain');
-      expect(style.scrollbarGutter).withContext(selector).toBe('stable');
+      expect(style.overflowY, selector).toBe('auto');
+      expect(style.overscrollBehaviorY, selector).toBe('contain');
+      expect(style.scrollbarGutter, selector).toBe('stable');
     }
 
     const resizer = q('app-pane-resizer.rrf-resizer');
@@ -268,7 +268,7 @@ describe('RunReportFrameComponent in sidebar layout', () => {
   it('keeps the header centered', () => {
     for (const width of [1200, 700]) {
       setWidth(width);
-      expect(getComputedStyle(q('.rrf-header')).alignItems).withContext(`${width}`).toBe('center');
+      expect(getComputedStyle(q('.rrf-header')).alignItems, `${width}`).toBe('center');
     }
   });
 

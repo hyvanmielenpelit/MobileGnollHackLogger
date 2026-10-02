@@ -41,18 +41,18 @@ describe('BenchmarkGraderGuideComponent', () => {
 
   it('shows the dialog modally on open()', () => {
     component.open();
-    expect(dialog().open).toBeTrue();
-    expect(dialog().matches(':modal')).toBeTrue();
+    expect(dialog().open).toBe(true);
+    expect(dialog().matches(':modal')).toBe(true);
   });
 
   it('brings the named section heading into view, and carries all seven section ids', () => {
     for (const id of SECTIONS) {
-      expect(host.querySelector(`#graderGuide-${id}`)).withContext(id).not.toBeNull();
+      expect(host.querySelector(`#graderGuide-${id}`), id).not.toBeNull();
     }
     const heading = host.querySelector<HTMLElement>('#graderGuide-coverage')!;
-    const scroll = spyOn(heading, 'scrollIntoView');
+    const scroll = vi.spyOn(heading, 'scrollIntoView').mockReturnValue(undefined);
     component.open('coverage');
-    expect(dialog().open).toBeTrue();
+    expect(dialog().open).toBe(true);
     expect(scroll).toHaveBeenCalled();
   });
 
@@ -80,7 +80,7 @@ describe('BenchmarkGraderGuideComponent', () => {
     const close = host.querySelector<HTMLButtonElement>('button[aria-label="Close grader guide"]');
     expect(close).not.toBeNull();
     close!.click();
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
   });
 
   it('prints the profile threshold, delta, sample and blind values', () => {
@@ -111,7 +111,7 @@ describe('BenchmarkGraderGuideComponent', () => {
     expect(tables.length).toBe(4);
     for (const table of tables) {
       const headers = table.querySelectorAll('thead th[scope="col"]');
-      expect(headers.length).withContext(table.getAttribute('aria-labelledby') ?? '').toBeGreaterThan(1);
+      expect(headers.length, table.getAttribute('aria-labelledby') ?? '').toBeGreaterThan(1);
     }
   });
 });

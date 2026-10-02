@@ -15,7 +15,7 @@ describe('ExportSizeSectionComponent', () => {
 
   function control<T extends HTMLElement>(id: string): T {
     const element = host().querySelector<T>(`#${id}`);
-    expect(element).withContext(id).not.toBeNull();
+    expect(element, id).not.toBeNull();
     return element!;
   }
 

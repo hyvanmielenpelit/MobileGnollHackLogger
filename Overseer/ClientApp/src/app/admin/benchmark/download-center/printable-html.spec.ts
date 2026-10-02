@@ -29,7 +29,7 @@ describe('printable-html', () => {
   });
 
   it('is unaffected by the chat pipe configuring the global marked and DOMPurify', () => {
-    expect(MARKDOWN_IMAGE_DEFANG_HOOKS_INSTALLED).toBeTrue();
+    expect(MARKDOWN_IMAGE_DEFANG_HOOKS_INSTALLED).toBe(true);
     // The global instance renders inline math once the pipe is loaded; the converter must not.
     expect(marked.parse('Inline $x+y$ math.', { async: false }) as string).toContain('katex');
 
@@ -87,7 +87,7 @@ describe('printable-html', () => {
   it('builds a self-contained printable page with an escaped title', () => {
     const page = markdownToPrintableHtml(report, 'Model <X> & "friends"');
 
-    expect(page.startsWith('<!DOCTYPE html>\n<html lang="en">')).toBeTrue();
+    expect(page.startsWith('<!DOCTYPE html>\n<html lang="en">')).toBe(true);
     expect(page).toContain('<meta charset="utf-8">');
     expect(page).toContain('<title>Model &lt;X&gt; &amp; &quot;friends&quot;</title>');
     expect(page).toContain('@page { size: A4;');

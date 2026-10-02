@@ -205,7 +205,7 @@ describe('BenchmarkSynthesisPanelComponent', () => {
       tabs()[0].dispatchEvent(event);
       fixture.detectChanges();
 
-      expect(event.defaultPrevented).toBeFalse();
+      expect(event.defaultPrevented).toBe(false);
       expect(tabs()[0].getAttribute('aria-selected')).toBe('true');
     });
 

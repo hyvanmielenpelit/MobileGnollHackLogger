@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { of, throwError } from 'rxjs';
@@ -9,7 +10,7 @@ describe('SnapshotSuiteWizardComponent', () => {
   let fixture: ComponentFixture<SnapshotSuiteWizardComponent>;
   let component: SnapshotSuiteWizardComponent;
   let host: HTMLElement;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
+  let service: MockedObject<AdminBenchmarkService>;
 
   const base: BenchmarkSuiteDto = {
     id: 0, name: '', description: null, createdAtUtc: '', modifiedAtUtc: null,
@@ -22,9 +23,15 @@ describe('SnapshotSuiteWizardComponent', () => {
 
   beforeEach(async () => {
     localStorage.removeItem(WIZARD_STORAGE_KEY);
-    service = jasmine.createSpyObj('AdminBenchmarkService', ['getQuestions', 'importQuestions', 'importSuite', 'matchSnapshot', 'updateSuite']);
-    service.getQuestions.and.returnValue(of([]));
-    service.matchSnapshot.and.returnValue(of<MatchSnapshotResult>({
+    service = {
+      getQuestions: vi.fn().mockName("AdminBenchmarkService.getQuestions"),
+      importQuestions: vi.fn().mockName("AdminBenchmarkService.importQuestions"),
+      importSuite: vi.fn().mockName("AdminBenchmarkService.importSuite"),
+      matchSnapshot: vi.fn().mockName("AdminBenchmarkService.matchSnapshot"),
+      updateSuite: vi.fn().mockName("AdminBenchmarkService.updateSuite")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    service.getQuestions.mockReturnValue(of([]));
+    service.matchSnapshot.mockReturnValue(of<MatchSnapshotResult>({
       sha256: 'a'.repeat(64), charCount: 10, truncated: false, isHtml: false,
       match: { id: 12, name: 'B2', suiteId: 2, suiteName: 'Zed Empty' }
     }));
@@ -74,7 +81,7 @@ describe('SnapshotSuiteWizardComponent', () => {
 
   it('opens on the source step with no route chosen, and refuses to go on', () => {
     component.open();
-    expect(component.dialog.nativeElement.open).toBeTrue();
+    expect(component.dialog.nativeElement.open).toBe(true);
     expect(host.querySelector('.gh-steps li[aria-current="step"]')!.textContent).toContain('Source');
     expect(host.querySelectorAll<HTMLInputElement>('input[name="snapshot-wizard-route"]:checked').length).toBe(0);
     expect(forward().getAttribute('aria-disabled')).toBe('true');
@@ -104,7 +111,7 @@ describe('SnapshotSuiteWizardComponent', () => {
   });
 
   it('walks route A to the prompt, downloading the suite and remembering each step', async () => {
-    const download = jasmine.createSpy('downloadSuite');
+    const download = vi.fn().mockName('downloadSuite');
     component.downloadSuite.subscribe(download);
     component.open();
     click(host.querySelector<HTMLInputElement>('#snapshot-wizard-route-suite')!);
@@ -145,11 +152,11 @@ describe('SnapshotSuiteWizardComponent', () => {
   });
 
   it('imports route A in the wizard and hands the suite on for assessment', async () => {
-    const imported = jasmine.createSpy('imported');
-    const assess = jasmine.createSpy('assess');
+    const imported = vi.fn().mockName('imported');
+    const assess = vi.fn().mockName('assess');
     component.imported.subscribe(imported);
     component.assessRequested.subscribe(assess);
-    service.importQuestions.and.returnValue(of({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] }));
+    service.importQuestions.mockReturnValue(of({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] }));
 
     await toPromptStep();
     click(host.querySelector<HTMLButtonElement>('#snapshot-wizard-builder-generate')!);
@@ -207,7 +214,7 @@ describe('SnapshotSuiteWizardComponent', () => {
 
     click(forward());
     expect(localStorage.getItem(WIZARD_STORAGE_KEY)).toBeNull();
-    expect(component.dialog.nativeElement.open).toBeFalse();
+    expect(component.dialog.nativeElement.open).toBe(false);
   });
 
   it('offers to resume, and lands a resume inside the import on the upload step', async () => {
@@ -304,9 +311,9 @@ describe('SnapshotSuiteWizardComponent', () => {
     component.applying = true;
     const event = new Event('cancel', { cancelable: true });
     component.onCancel(event);
-    expect(event.defaultPrevented).toBeTrue();
+    expect(event.defaultPrevented).toBe(true);
     component.close();
-    expect(component.dialog.nativeElement.open).toBeTrue();
+    expect(component.dialog.nativeElement.open).toBe(true);
   });
 
   it('has no duplicate element ids on any early step', async () => {
@@ -411,9 +418,9 @@ describe('SnapshotSuiteWizardComponent', () => {
     });
 
     it('seeds step 7 from the file, in split, and applies the description with the fresh name', async () => {
-      const updated = jasmine.createSpy('suiteUpdated');
+      const updated = vi.fn().mockName('suiteUpdated');
       component.suiteUpdated.subscribe(updated);
-      service.updateSuite.and.returnValue(of(undefined));
+      service.updateSuite.mockReturnValue(of(undefined));
       resumeAt(stateAt(7));
       await settle();
 
@@ -422,7 +429,7 @@ describe('SnapshotSuiteWizardComponent', () => {
       expect(editor().initialMode).toBe('split');
       expect(host.querySelector('.wizard-describe')!.textContent).toContain('From suite.suggested_description in agent-new-questions-zed-empty.yaml.');
       expect(host.querySelector('.wizard-no-suggestion')).toBeNull();
-      expect(host.querySelector('.wizard-panel')!.hasAttribute('hidden')).toBeTrue();
+      expect(host.querySelector('.wizard-panel')!.hasAttribute('hidden')).toBe(true);
       expect(host.querySelector('.wizard-current-description')!.textContent).toContain('Old text.');
       expect(applyButton().textContent!.trim()).toBe('Apply Suggested Description');
       expect(applyButton().getAttribute('aria-disabled')).toBeNull();
@@ -449,14 +456,15 @@ describe('SnapshotSuiteWizardComponent', () => {
       expect(applyButton().getAttribute('aria-disabled')).toBe('true');
     });
 
-    it('shows a failed save inline and keeps the draft', () => {
-      service.updateSuite.and.returnValue(throwError(() => ({ error: 'A suite with this name already exists.' })));
+    it('shows a failed save inline and keeps the draft', async () => {
+      service.updateSuite.mockReturnValue(throwError(() => ({ error: 'A suite with this name already exists.' })));
       resumeAt(stateAt(7));
+      await settle();
       typeDescription('Draft kept.');
       click(applyButton());
       expect(host.querySelector('.wizard-describe .error-message[role="alert"]')!.textContent).toContain('A suite with this name already exists.');
       expect(textarea().value).toBe('Draft kept.');
-      expect(component.descriptionApplied).toBeFalse();
+      expect(component.descriptionApplied).toBe(false);
     });
 
     it('says the file included no suggested description, and describes the empty editor with it', () => {
@@ -519,7 +527,7 @@ describe('SnapshotSuiteWizardComponent', () => {
     });
 
     it('carries the suggestion and the uploaded file name from the import panel', () => {
-      service.importQuestions.and.returnValue(of({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] }));
+      service.importQuestions.mockReturnValue(of({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] }));
       resumeAt(stateAt(6));
       const panel = component.panel!;
       panel.suggestedDescription = 'From the panel.';

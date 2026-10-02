@@ -42,9 +42,9 @@ describe('KeyFigureCardActionsComponent', () => {
     expect(download.getAttribute('aria-label')).toBe('Download Reference Reader Agreement of run 72 as a PNG image');
     for (const button of buttons()) {
       expect(button.getAttribute('type')).toBe('button');
-      expect(button.classList.contains('action-btn')).toBeTrue();
-      expect(button.hasAttribute('title')).toBeFalse();
-      expect(button.hasAttribute('disabled')).toBeFalse();
+      expect(button.classList.contains('action-btn')).toBe(true);
+      expect(button.hasAttribute('title')).toBe(false);
+      expect(button.hasAttribute('disabled')).toBe(false);
       expect(button.textContent?.trim()).toBe('');
       expect(button.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     }
@@ -61,7 +61,7 @@ describe('KeyFigureCardActionsComponent', () => {
       expect(button.getAttribute('style')).toContain(`anchor-name: --${id}`);
       const tip = host.querySelector(`#${id}`) as HTMLElement;
       expect(tip.getAttribute('popover')).toBe('hint');
-      expect(tip.classList.contains('gh-tooltip')).toBeTrue();
+      expect(tip.classList.contains('gh-tooltip')).toBe(true);
       expect(tip.getAttribute('style')).toContain(`position-anchor: --${id}`);
       expect(tip.textContent?.trim()).toBe(text);
     });
@@ -86,14 +86,14 @@ describe('KeyFigureCardActionsComponent', () => {
 
     for (const button of buttons()) {
       expect(button.getAttribute('aria-disabled')).toBe('true');
-      expect(button.disabled).toBeFalse();
+      expect(button.disabled).toBe(false);
       button.click();
     }
     expect(fixture.componentInstance.requests).toEqual([]);
 
     fixture.componentInstance.busy = false;
     fixture.detectChanges();
-    expect(buttons().every(button => !button.hasAttribute('aria-disabled'))).toBeTrue();
+    expect(buttons().every(button => !button.hasAttribute('aria-disabled'))).toBe(true);
   });
 
   it('is hidden by opacity only, so both buttons stay in the tab order', () => {
@@ -102,6 +102,6 @@ describe('KeyFigureCardActionsComponent', () => {
     expect(style.position).toBe('absolute');
     expect(style.display).toBe('flex');
     expect(style.visibility).toBe('visible');
-    expect(buttons().every(button => button.tabIndex === 0)).toBeTrue();
+    expect(buttons().every(button => button.tabIndex === 0)).toBe(true);
   });
 });

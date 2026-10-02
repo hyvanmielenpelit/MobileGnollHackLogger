@@ -189,7 +189,7 @@ describe('TableState', () => {
       state.setFilter('status', 'Failed');
       state.setFilter('status', '');
 
-      expect(state.hasActiveFilters).toBeFalse();
+      expect(state.hasActiveFilters).toBe(false);
       expect(state.filteredCount(rows)).toBe(3);
     });
 
@@ -221,15 +221,15 @@ describe('TableState', () => {
 
     it('reports active filters and clears them all at once', () => {
       const state = stateFor();
-      expect(state.hasActiveFilters).toBeFalse();
+      expect(state.hasActiveFilters).toBe(false);
 
       state.setFilter('name', 'suite');
       state.setFilter('status', 'Failed');
-      expect(state.hasActiveFilters).toBeTrue();
+      expect(state.hasActiveFilters).toBe(true);
 
       state.clearFilters();
 
-      expect(state.hasActiveFilters).toBeFalse();
+      expect(state.hasActiveFilters).toBe(false);
       expect(state.filters['name']).toBeUndefined();
       expect(state.page).toBe(1);
       expect(state.filteredCount(rows)).toBe(3);
@@ -240,8 +240,8 @@ describe('TableState', () => {
       state.setFilter('name', 'no such suite');
 
       expect(state.filteredCount(rows)).toBe(0);
-      expect(state.noMatches(rows)).toBeTrue();
-      expect(state.noMatches([])).toBeFalse();
+      expect(state.noMatches(rows)).toBe(true);
+      expect(state.noMatches([])).toBe(false);
     });
   });
 
@@ -307,13 +307,13 @@ describe('TableState', () => {
       const state = stateFor();
       state.pageSize = 10;
 
-      expect(state.hasPrevious(many)).toBeFalse();
-      expect(state.hasNext(many)).toBeTrue();
+      expect(state.hasPrevious(many)).toBe(false);
+      expect(state.hasNext(many)).toBe(true);
 
       state.setPage(3, many);
 
-      expect(state.hasPrevious(many)).toBeTrue();
-      expect(state.hasNext(many)).toBeFalse();
+      expect(state.hasPrevious(many)).toBe(true);
+      expect(state.hasNext(many)).toBe(false);
     });
 
     it('refuses a page outside the range', () => {
@@ -376,14 +376,13 @@ describe('TableState', () => {
           const slots = state.pageNumbers(rows);
           const context = `total=${total} candidate=${candidate} current=${current}`;
 
-          expect(slots.length).withContext(context).toBeLessThanOrEqual(MAX_PAGE_SLOTS);
-          expect(slots).withContext(context).toContain(1);
-          expect(slots).withContext(context).toContain(total);
-          expect(slots).withContext(context).toContain(current);
+          expect(slots.length, context).toBeLessThanOrEqual(MAX_PAGE_SLOTS);
+          expect(slots, context).toContain(1);
+          expect(slots, context).toContain(total);
+          expect(slots, context).toContain(current);
 
           for (let i = 1; i < slots.length; i++) {
-            expect(slots[i] === PAGE_ELLIPSIS && slots[i - 1] === PAGE_ELLIPSIS)
-              .withContext(context).toBeFalse();
+            expect(slots[i] === PAGE_ELLIPSIS && slots[i - 1] === PAGE_ELLIPSIS, context).toBe(false);
           }
         }
       }
@@ -437,8 +436,8 @@ describe('TableState', () => {
 
       expect(state.view(pageRows).map(r => r.id)).toEqual(['#9', '#8', '#7']);
       expect(state.viewAll(pageRows).map(r => r.id)).toEqual(['#9', '#8', '#7']);
-      expect(state.hasActiveFilters).toBeFalse();
-      expect(state.noMatches(pageRows)).toBeFalse();
+      expect(state.hasActiveFilters).toBe(false);
+      expect(state.noMatches(pageRows)).toBe(false);
     });
 
     it('derives the page arithmetic from the remote total', () => {
@@ -451,12 +450,12 @@ describe('TableState', () => {
       expect(state.rangeStart(pageRows)).toBe(11);
       expect(state.rangeEnd(pageRows)).toBe(20);
       expect(state.pageNumbers(pageRows)).toEqual([1, 2, 3, 4, 5]);
-      expect(state.hasPrevious(pageRows)).toBeTrue();
-      expect(state.hasNext(pageRows)).toBeTrue();
+      expect(state.hasPrevious(pageRows)).toBe(true);
+      expect(state.hasNext(pageRows)).toBe(true);
 
       state.setPage(5, pageRows);
       expect(state.rangeEnd(pageRows)).toBe(47);
-      expect(state.hasNext(pageRows)).toBeFalse();
+      expect(state.hasNext(pageRows)).toBe(false);
     });
 
     it('clamps the page when the remote total shrinks', () => {
@@ -528,7 +527,7 @@ describe('TableState', () => {
       state.setFilterValues('type', ['SUMMARY']);
 
       expect(state.viewAll(docs).map(d => d.id)).toEqual(['a', 'c']);
-      expect(state.hasActiveFilters).toBeTrue();
+      expect(state.hasActiveFilters).toBe(true);
     });
 
     it('ORs the selected values of one column and ANDs the columns', () => {
@@ -563,18 +562,18 @@ describe('TableState', () => {
 
       state.setFilterValues('type', []);
       expect(state.filterValues('type')).toEqual([]);
-      expect('type' in state.valueFilters).toBeFalse();
-      expect(state.hasActiveFilters).toBeFalse();
+      expect('type' in state.valueFilters).toBe(false);
+      expect(state.hasActiveFilters).toBe(false);
     });
 
     it('leaves a custom column inactive while its value is blank, and passes it the trimmed value', () => {
       const state = docState();
       state.setFilter('search', '   ');
-      expect(state.hasActiveFilters).toBeFalse();
+      expect(state.hasActiveFilters).toBe(false);
       expect(state.viewAll(docs).length).toBe(4);
 
       state.setFilter('search', '  BRIEF ');
-      expect(state.hasActiveFilters).toBeTrue();
+      expect(state.hasActiveFilters).toBe(true);
       expect(state.viewAll(docs).map(d => d.id)).toEqual(['b']);
     });
 
@@ -585,7 +584,7 @@ describe('TableState', () => {
 
       state.clearFilters();
 
-      expect(state.hasActiveFilters).toBeFalse();
+      expect(state.hasActiveFilters).toBe(false);
       expect(state.filters).toEqual({});
       expect(state.valueFilters).toEqual({});
       expect(state.viewAll(docs).length).toBe(4);

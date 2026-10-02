@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
@@ -18,7 +19,7 @@ import { SystemAiConfigDto } from '../../../services/admin.service';
 describe('QuestionGenerationDialogComponent', () => {
   let component: QuestionGenerationDialogComponent;
   let fixture: ComponentFixture<QuestionGenerationDialogComponent>;
-  let serviceMock: jasmine.SpyObj<AdminBenchmarkService>;
+  let serviceMock: MockedObject<AdminBenchmarkService>;
 
   const MODEL_ID = 7;
 
@@ -153,33 +154,39 @@ describe('QuestionGenerationDialogComponent', () => {
 
   function click(selector: string): void {
     const element = query<HTMLElement>(selector);
-    expect(element).withContext(selector).toBeTruthy();
+    expect(element, selector).toBeTruthy();
     element!.click();
     fixture.detectChanges();
   }
 
   /** Starts a generation whose first poll answers with `job`. */
   function startWith(job: QuestionGenerationJobDto): void {
-    serviceMock.getQuestionGeneration.and.returnValue(of(job));
+    serviceMock.getQuestionGeneration.mockReturnValue(of(job));
     click('.qg-start-btn');
   }
 
   beforeEach(async () => {
-    serviceMock = jasmine.createSpyObj('AdminBenchmarkService', [
-      'getQuestions', 'startQuestionGeneration', 'getQuestionGeneration', 'getActiveQuestionGeneration',
-      'cancelQuestionGeneration', 'retryQuestionGeneration', 'regenerateQuestions', 'reviewQuestion'
-    ]);
-    serviceMock.getQuestions.and.returnValue(of([
+    serviceMock = {
+      getQuestions: vi.fn().mockName("AdminBenchmarkService.getQuestions"),
+      startQuestionGeneration: vi.fn().mockName("AdminBenchmarkService.startQuestionGeneration"),
+      getQuestionGeneration: vi.fn().mockName("AdminBenchmarkService.getQuestionGeneration"),
+      getActiveQuestionGeneration: vi.fn().mockName("AdminBenchmarkService.getActiveQuestionGeneration"),
+      cancelQuestionGeneration: vi.fn().mockName("AdminBenchmarkService.cancelQuestionGeneration"),
+      retryQuestionGeneration: vi.fn().mockName("AdminBenchmarkService.retryQuestionGeneration"),
+      regenerateQuestions: vi.fn().mockName("AdminBenchmarkService.regenerateQuestions"),
+      reviewQuestion: vi.fn().mockName("AdminBenchmarkService.reviewQuestion")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    serviceMock.getQuestions.mockReturnValue(of([
       buildQuestion(),
       buildQuestion({ id: 102, orderIndex: 2, questionText: 'Which wand should I engrave-test first?', difficulty: 2 })
     ]));
-    serviceMock.getActiveQuestionGeneration.and.returnValue(of(null));
-    serviceMock.startQuestionGeneration.and.returnValue(of({ jobId: 'job-1' }));
-    serviceMock.getQuestionGeneration.and.returnValue(of(buildJob()));
-    serviceMock.cancelQuestionGeneration.and.returnValue(of({ cancelled: true }));
-    serviceMock.retryQuestionGeneration.and.returnValue(of({ jobId: 'job-2' }));
-    serviceMock.regenerateQuestions.and.returnValue(of({ jobId: 'job-3' }));
-    serviceMock.reviewQuestion.and.callFake((id: number, reviewed: boolean) => of(buildQuestion({
+    serviceMock.getActiveQuestionGeneration.mockReturnValue(of(null));
+    serviceMock.startQuestionGeneration.mockReturnValue(of({ jobId: 'job-1' }));
+    serviceMock.getQuestionGeneration.mockReturnValue(of(buildJob()));
+    serviceMock.cancelQuestionGeneration.mockReturnValue(of({ cancelled: true }));
+    serviceMock.retryQuestionGeneration.mockReturnValue(of({ jobId: 'job-2' }));
+    serviceMock.regenerateQuestions.mockReturnValue(of({ jobId: 'job-3' }));
+    serviceMock.reviewQuestion.mockImplementation((id: number, reviewed: boolean) => of(buildQuestion({
       id, isReviewed: reviewed, reviewedAtRevision: reviewed ? 1 : null
     })));
 
@@ -202,7 +209,7 @@ describe('QuestionGenerationDialogComponent', () => {
     open();
 
     const dialog = query<HTMLDialogElement>('dialog.question-generation-dialog')!;
-    expect(dialog.open).toBeTrue();
+    expect(dialog.open).toBe(true);
     expect(serviceMock.getQuestions).toHaveBeenCalledWith(5);
     expect(queryAll('.question-list-item').length).toBe(2);
     expect(queryAll('app-collapsible-markdown').length).toBe(2);
@@ -214,7 +221,7 @@ describe('QuestionGenerationDialogComponent', () => {
 
     const textarea = query<HTMLTextAreaElement>('#qg-instructions');
     expect(textarea).toBeTruthy();
-    expect(textarea!.classList.contains('gh-textarea-autosize')).toBeTrue();
+    expect(textarea!.classList.contains('gh-textarea-autosize')).toBe(true);
   });
 
   it('should show band outcomes and retry the failed and partial bands with the current setup', () => {
@@ -232,7 +239,7 @@ describe('QuestionGenerationDialogComponent', () => {
     expect(progress.max).toBe(18);
 
     const fieldset = query<HTMLFieldSetElement>('fieldset.qg-setup')!;
-    expect(fieldset.disabled).toBeFalse();
+    expect(fieldset.disabled).toBe(false);
 
     click('.qg-retry-failed-btn');
 
@@ -252,7 +259,7 @@ describe('QuestionGenerationDialogComponent', () => {
       items: [buildItem({ status: 'Generating' }), buildItem({ difficulty: 2, difficultyName: 'Intermediate' })]
     }));
 
-    expect(query<HTMLFieldSetElement>('fieldset.qg-setup')!.disabled).toBeTrue();
+    expect(query<HTMLFieldSetElement>('fieldset.qg-setup')!.disabled).toBe(true);
     expect(query('.qg-retry-failed-btn')).toBeNull();
     expect(query('.progress-status')!.textContent).toContain('Generating Simple questions (item 1 of 2)');
     expect(query('#qgDialogTitle')!.textContent).toContain('Generating Benchmark Questions');
@@ -268,36 +275,37 @@ describe('QuestionGenerationDialogComponent', () => {
   });
 
   it('should copy diagnostics with the job id and the raw excerpt, and reset the status after two seconds', async () => {
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       open();
       startWith(mixedOutcomeJob());
-      const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
 
       click('.diagnostics-toolbar .action-btn');
       await fixture.whenStable();
       fixture.detectChanges();
 
       expect(writeText).toHaveBeenCalledTimes(1);
-      const copied = writeText.calls.mostRecent().args[0] as string;
+      const copied = vi.mocked(writeText).mock.lastCall![0] as string;
       expect(copied).toContain('Job ID: job-1');
       expect(copied).toContain('Excerpt: HTTP 401 Unauthorized');
       expect(copied).toContain('--- INSTRUCTIONS ---');
       expect(query('.diagnostics-copy-status')!.textContent).toContain('copied');
 
-      jasmine.clock().tick(2000);
+      vi.advanceTimersByTime(2000);
       fixture.detectChanges();
 
       expect(query('.diagnostics-copy-status')!.textContent!.trim()).toBe('');
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
   it('should report a rejected clipboard write in the dialog error', async () => {
     open();
     startWith(mixedOutcomeJob());
-    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
 
     click('.diagnostics-toolbar .action-btn');
     await fixture.whenStable();
@@ -315,7 +323,7 @@ describe('QuestionGenerationDialogComponent', () => {
       log: [{ timestampUtc: '2026-09-16T08:00:01Z', message: 'Unexpected failure: bad key', severity: 'error' }]
     }));
 
-    expect(query<HTMLDetailsElement>('details.job-diagnostics')!.open).toBeTrue();
+    expect(query<HTMLDetailsElement>('details.job-diagnostics')!.open).toBe(true);
     expect(query('#qgDialogTitle')!.textContent).toContain('Question Generation Failed');
     expect(query('.progress-status')!.textContent).toContain('Failed: Unexpected failure: bad key');
   });
@@ -325,7 +333,7 @@ describe('QuestionGenerationDialogComponent', () => {
 
     click('button[aria-label="Regenerate rubric for question 1"]');
 
-    expect(serviceMock.regenerateQuestions).toHaveBeenCalledWith(jasmine.objectContaining({
+    expect(serviceMock.regenerateQuestions).toHaveBeenCalledWith(expect.objectContaining({
       suiteId: 5,
       questionIds: [101],
       scope: 'Rubric',
@@ -348,25 +356,22 @@ describe('QuestionGenerationDialogComponent', () => {
 
     expect(serviceMock.regenerateQuestions).not.toHaveBeenCalled();
     const confirm = query<HTMLDialogElement>('dialog.qg-confirm-dialog')!;
-    expect(confirm.open).toBeTrue();
+    expect(confirm.open).toBe(true);
     expect(confirm.textContent).toContain('2 question(s) will be replaced in place');
 
     click('.qg-confirm-action');
 
-    expect(confirm.open).toBeFalse();
-    expect(serviceMock.regenerateQuestions).toHaveBeenCalledWith(jasmine.objectContaining({
+    expect(confirm.open).toBe(false);
+    expect(serviceMock.regenerateQuestions).toHaveBeenCalledWith(expect.objectContaining({
       questionIds: [101, 102],
       scope: 'Question'
     }));
   });
 
   it('should reload questions, mark new ones and notify the host when an item completes', () => {
-    serviceMock.getQuestions.and.returnValues(
-      of([buildQuestion(), buildQuestion({ id: 102, orderIndex: 2 })]),
-      of([buildQuestion(), buildQuestion({ id: 102, orderIndex: 2 }), buildQuestion({ id: 103, orderIndex: 3 })])
-    );
+    serviceMock.getQuestions.mockReturnValueOnce(of([buildQuestion(), buildQuestion({ id: 102, orderIndex: 2 })])).mockReturnValueOnce(of([buildQuestion(), buildQuestion({ id: 102, orderIndex: 2 }), buildQuestion({ id: 103, orderIndex: 3 })]));
     open();
-    const notified = spyOn(component.questionsChanged, 'emit');
+    const notified = vi.spyOn(component.questionsChanged, 'emit').mockReturnValue(undefined);
 
     startWith(buildJob({
       status: 'Running',
@@ -388,7 +393,7 @@ describe('QuestionGenerationDialogComponent', () => {
 
   it('should report changed questions on close after a review toggle', () => {
     open();
-    const closed = spyOn(component.closed, 'emit');
+    const closed = vi.spyOn(component.closed, 'emit').mockReturnValue(undefined);
 
     click('.btn-review-toggle');
     expect(serviceMock.reviewQuestion).toHaveBeenCalledWith(101, true);
@@ -396,7 +401,7 @@ describe('QuestionGenerationDialogComponent', () => {
     click('.dialog-footer .btn-gh-cancel');
 
     expect(closed).toHaveBeenCalledWith({ questionsChanged: true });
-    expect(query<HTMLDialogElement>('dialog.question-generation-dialog')!.open).toBeFalse();
+    expect(query<HTMLDialogElement>('dialog.question-generation-dialog')!.open).toBe(false);
   });
 
   it('should place the start and retry buttons in the dialog footer', () => {

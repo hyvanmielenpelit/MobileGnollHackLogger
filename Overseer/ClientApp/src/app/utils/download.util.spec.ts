@@ -20,14 +20,14 @@ describe('download.util', () => {
 
   describe('downloadTextFile', () => {
     it('clicks a download anchor and revokes the object URL', fakeAsync(() => {
-      const create = spyOn(URL, 'createObjectURL').and.returnValue('blob:test-url');
-      const revoke = spyOn(URL, 'revokeObjectURL');
-      const click = spyOn(HTMLAnchorElement.prototype, 'click');
+      const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-url');
+      const revoke = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockReturnValue(undefined);
 
       downloadTextFile('questions.yaml', 'format: x\n');
 
       expect(create).toHaveBeenCalledTimes(1);
-      const blob = create.calls.mostRecent().args[0] as Blob;
+      const blob = vi.mocked(create).mock.lastCall![0] as Blob;
       expect(blob.type).toBe('application/yaml;charset=utf-8');
       expect(click).toHaveBeenCalledTimes(1);
       expect(revoke).not.toHaveBeenCalled();

@@ -204,10 +204,10 @@ describe('RunFactsComponent', () => {
       expect(list.flexWrap).toBe('wrap');
       for (const key of keys) {
         const pair = fact(key);
-        expect(getComputedStyle(pair).flexDirection).withContext(key).toBe('column');
+        expect(getComputedStyle(pair).flexDirection, key).toBe('column');
         const term = (pair.querySelector('dt') as HTMLElement).getBoundingClientRect();
         const value = (pair.querySelector('dd') as HTMLElement).getBoundingClientRect();
-        expect(term.bottom).withContext(key).toBeLessThanOrEqual(value.top);
+        expect(term.bottom, key).toBeLessThanOrEqual(value.top);
       }
       const tops = keys.map(key => fact(key).getBoundingClientRect().top);
       for (const top of tops) {

@@ -276,7 +276,7 @@ describe('AdminBenchmarkService', () => {
       expect(req.request.method).toBe('POST');
       req.flush({ cancelled: true });
 
-      expect(cancelled).toBeTrue();
+      expect(cancelled).toBe(true);
     });
   });
 
@@ -287,8 +287,8 @@ describe('AdminBenchmarkService', () => {
       const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
       expect(req.request.method).toBe('GET');
       expect(req.request.params.get('runId')).toBe('42');
-      expect(req.request.params.has('suiteId')).toBeFalse();
-      expect(req.request.params.has('take')).toBeFalse();
+      expect(req.request.params.has('suiteId')).toBe(false);
+      expect(req.request.params.has('take')).toBe(false);
       req.flush([]);
     });
 
@@ -298,7 +298,7 @@ describe('AdminBenchmarkService', () => {
       const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
       expect(req.request.params.get('suiteId')).toBe('5');
       expect(req.request.params.get('take')).toBe('20');
-      expect(req.request.params.has('runId')).toBeFalse();
+      expect(req.request.params.has('runId')).toBe(false);
       req.flush([]);
     });
 
@@ -629,7 +629,7 @@ describe('AdminBenchmarkService', () => {
       service.getBatteryRuns().subscribe();
       const all = httpMock.expectOne(request => request.url === `${root}/runs`);
       expect(all.request.method).toBe('GET');
-      expect(all.request.params.has('batteryId')).toBeFalse();
+      expect(all.request.params.has('batteryId')).toBe(false);
       all.flush([]);
 
       service.getBatteryRuns(5).subscribe();

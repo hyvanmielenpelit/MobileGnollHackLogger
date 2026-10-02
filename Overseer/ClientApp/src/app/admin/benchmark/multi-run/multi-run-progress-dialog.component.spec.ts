@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { MultiRunProgressDialogComponent } from './multi-run-progress-dialog.component';
@@ -25,8 +26,8 @@ import {
 describe('MultiRunProgressDialogComponent', () => {
   let component: MultiRunProgressDialogComponent;
   let fixture: ComponentFixture<MultiRunProgressDialogComponent>;
-  let serviceMock: jasmine.SpyObj<AdminBenchmarkService>;
-  let systemServiceMock: jasmine.SpyObj<SystemService>;
+  let serviceMock: MockedObject<AdminBenchmarkService>;
+  let systemServiceMock: MockedObject<SystemService>;
 
   function buildMember(overrides: Partial<BenchmarkRunSeriesMemberDto> = {}): BenchmarkRunSeriesMemberDto {
     return {
@@ -148,7 +149,7 @@ describe('MultiRunProgressDialogComponent', () => {
 
   /** Opens the dialog on a series, which is what starts polling and focuses the heading. */
   function open(series: BenchmarkRunSeriesDto): void {
-    serviceMock.getRunSeries.and.returnValue(of(series));
+    serviceMock.getRunSeries.mockReturnValue(of(series));
     fixture.componentRef.setInput('seriesId', series.id);
     fixture.componentRef.setInput('visible', true);
     fixture.detectChanges();
@@ -164,15 +165,24 @@ describe('MultiRunProgressDialogComponent', () => {
   }
 
   beforeEach(async () => {
-    serviceMock = jasmine.createSpyObj('AdminBenchmarkService', [
-      'getRunSeries', 'getRunLimits', 'getRun', 'getRunGroupAnalysis', 'analyseRunGroup',
-      'previewRunGroupTier', 'cancelRunSeries', 'resumeRunSeries', 'getGroupReportUrl'
-    ]);
-    systemServiceMock = jasmine.createSpyObj('SystemService', ['getVersion']);
+    serviceMock = {
+      getRunSeries: vi.fn().mockName("AdminBenchmarkService.getRunSeries"),
+      getRunLimits: vi.fn().mockName("AdminBenchmarkService.getRunLimits"),
+      getRun: vi.fn().mockName("AdminBenchmarkService.getRun"),
+      getRunGroupAnalysis: vi.fn().mockName("AdminBenchmarkService.getRunGroupAnalysis"),
+      analyseRunGroup: vi.fn().mockName("AdminBenchmarkService.analyseRunGroup"),
+      previewRunGroupTier: vi.fn().mockName("AdminBenchmarkService.previewRunGroupTier"),
+      cancelRunSeries: vi.fn().mockName("AdminBenchmarkService.cancelRunSeries"),
+      resumeRunSeries: vi.fn().mockName("AdminBenchmarkService.resumeRunSeries"),
+      getGroupReportUrl: vi.fn().mockName("AdminBenchmarkService.getGroupReportUrl")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    systemServiceMock = {
+      getVersion: vi.fn().mockName("SystemService.getVersion")
+    } as unknown as MockedObject<SystemService>;
 
-    systemServiceMock.getVersion.and.returnValue(of('1.4.2'));
-    serviceMock.getRunSeries.and.returnValue(of(buildSeries()));
-    serviceMock.getRunLimits.and.returnValue(of({
+    systemServiceMock.getVersion.mockReturnValue(of('1.4.2'));
+    serviceMock.getRunSeries.mockReturnValue(of(buildSeries()));
+    serviceMock.getRunLimits.mockReturnValue(of({
       maxRunsPerHour: 4,
       maxRunsPerDay: 20,
       runsInLastHour: 1,
@@ -180,15 +190,15 @@ describe('MultiRunProgressDialogComponent', () => {
       remainingDailyHeadroom: 14,
       maxRunCountPerSeries: 20
     }));
-    serviceMock.getRun.and.returnValue(of({ id: 41, answers: [] } as any));
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(null));
-    serviceMock.analyseRunGroup.and.returnValue(of(buildAnalysis()));
-    serviceMock.previewRunGroupTier.and.returnValue(of({
+    serviceMock.getRun.mockReturnValue(of({ id: 41, answers: [] } as any));
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(null));
+    serviceMock.analyseRunGroup.mockReturnValue(of(buildAnalysis()));
+    serviceMock.previewRunGroupTier.mockReturnValue(of({
       accepted: true, group: null, comparability: buildComparability()
     } as any));
-    serviceMock.cancelRunSeries.and.returnValue(of(void 0 as any));
-    serviceMock.resumeRunSeries.and.returnValue(of(void 0 as any));
-    serviceMock.getGroupReportUrl.and.callFake((id: number) => `/api/admin/benchmark/runs/groups/${id}/report`);
+    serviceMock.cancelRunSeries.mockReturnValue(of(void 0 as any));
+    serviceMock.resumeRunSeries.mockReturnValue(of(void 0 as any));
+    serviceMock.getGroupReportUrl.mockImplementation((id: number) => `/api/admin/benchmark/runs/groups/${id}/report`);
 
     await TestBed.configureTestingModule({
       imports: [MultiRunProgressDialogComponent],
@@ -250,14 +260,14 @@ describe('MultiRunProgressDialogComponent', () => {
   });
 
   it('should stay on analysing when the analysis has been requested but not returned', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(null));
-    serviceMock.analyseRunGroup.and.returnValue(of(null as any));
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(null));
+    serviceMock.analyseRunGroup.mockReturnValue(of(null as any));
     open(buildSeries({
       status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
       members: [buildMember(), buildMember({ index: 2, runId: 42 })]
     }));
 
-    expect(component.analysisPending).toBeTrue();
+    expect(component.analysisPending).toBe(true);
     expect(component.stage).toBe('analysing');
     expect(component.stageIndex).toBe(2);
   });
@@ -268,7 +278,7 @@ describe('MultiRunProgressDialogComponent', () => {
     open(buildSeries({ status: 'WaitingForCap' }));
 
     expect(component.stage).toBe('waitingForCap');
-    expect(component.isNamedPause).toBeTrue();
+    expect(component.isNamedPause).toBe(true);
     // Still on step 2: the series is between runs, not past them.
     expect(component.stageIndex).toBe(1);
     expect(text('.series-state-name')).toContain('Waiting for run cap');
@@ -283,7 +293,7 @@ describe('MultiRunProgressDialogComponent', () => {
     }));
 
     expect(component.stage).toBe('stopped');
-    expect(component.isNamedPause).toBeTrue();
+    expect(component.isNamedPause).toBe(true);
     expect(text('.series-state-name')).toContain('Stopped');
     expect(text('.series-state-detail')).toContain('Run 42 failed during assessment.');
     expect(text('.series-state-detail')).toContain('Completed runs are kept');
@@ -294,7 +304,7 @@ describe('MultiRunProgressDialogComponent', () => {
   it('should offer Run in Background and Cancel Series while the series is live', () => {
     open(buildSeries());
 
-    expect(component.seriesIsLive).toBeTrue();
+    expect(component.seriesIsLive).toBe(true);
     expect(footerText()).toContain('Run in Background');
     expect(footerText()).toContain('Cancel Series');
     expect(footerText()).not.toContain('Continue');
@@ -306,7 +316,7 @@ describe('MultiRunProgressDialogComponent', () => {
       stopReasonText: 'The daily run cap was reached.', resumable: true
     }));
 
-    expect(component.canContinue).toBeTrue();
+    expect(component.canContinue).toBe(true);
     expect(component.continueLabel).toContain('The daily run cap was reached.');
     expect(footerText()).toContain('The daily run cap was reached.');
     // A halted series is not live, so cancelling it is not offered.
@@ -317,14 +327,14 @@ describe('MultiRunProgressDialogComponent', () => {
   it('should not offer Continue for a cancelled series', () => {
     open(buildSeries({ status: 'Cancelled', resumable: false }));
 
-    expect(component.canContinue).toBeFalse();
+    expect(component.canContinue).toBe(false);
     expect(footerText()).not.toContain('Continue');
   });
 
   it('should keep View Report unavailable, with a reason, until an analysis exists', () => {
     open(buildSeries());
 
-    expect(component.canViewReport).toBeFalse();
+    expect(component.canViewReport).toBe(false);
     expect(component.viewReportTooltip).toContain('No analysis group exists');
     const button = fixture.nativeElement.querySelector('.view-report-btn') as HTMLElement;
     expect(button.getAttribute('aria-disabled')).toBe('true');
@@ -336,7 +346,7 @@ describe('MultiRunProgressDialogComponent', () => {
       members: [buildMember(), buildMember({ index: 2, runId: 42 })]
     }));
 
-    expect(component.canViewReport).toBeTrue();
+    expect(component.canViewReport).toBe(true);
     const button = fixture.nativeElement.querySelector('.view-report-btn') as HTMLElement;
     expect(button.getAttribute('aria-disabled')).toBeNull();
   });
@@ -346,13 +356,13 @@ describe('MultiRunProgressDialogComponent', () => {
       status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
       members: [buildMember(), buildMember({ index: 2, runId: 42 })]
     }));
-    const handoff = spyOn(component.openGroupAnalysis, 'emit');
+    const handoff = vi.spyOn(component.openGroupAnalysis, 'emit').mockReturnValue(undefined);
 
     component.viewGroupReport();
 
     expect(handoff).toHaveBeenCalledWith(9);
     const dialog = fixture.nativeElement.querySelector('dialog') as HTMLDialogElement;
-    expect(dialog.open).toBeFalse();
+    expect(dialog.open).toBe(false);
   });
 
   // --- Dialog lifecycle -----------------------------------------------------------------------
@@ -361,30 +371,30 @@ describe('MultiRunProgressDialogComponent', () => {
     open(buildSeries());
 
     const dialog = fixture.nativeElement.querySelector('dialog') as HTMLDialogElement;
-    expect(dialog.open).toBeTrue();
+    expect(dialog.open).toBe(true);
     expect(document.activeElement).toBe(fixture.nativeElement.querySelector('.progress-heading'));
   });
 
   it('should ask the host to close when the dialog is cancelled with Escape', () => {
     open(buildSeries());
-    const closed = spyOn(component.closed, 'emit');
+    const closed = vi.spyOn(component.closed, 'emit').mockReturnValue(undefined);
 
     const dialog = fixture.nativeElement.querySelector('dialog') as HTMLDialogElement;
     dialog.dispatchEvent(new Event('cancel'));
 
     expect(closed).toHaveBeenCalled();
-    expect(dialog.open).toBeFalse();
+    expect(dialog.open).toBe(false);
   });
 
   it('should hand off to the single-run dialog rather than stacking two modals', () => {
     open(buildSeries());
-    const closed = spyOn(component.closed, 'emit');
-    const handoff = spyOn(component.openRunProgress, 'emit');
+    const closed = vi.spyOn(component.closed, 'emit').mockReturnValue(undefined);
+    const handoff = vi.spyOn(component.openRunProgress, 'emit').mockReturnValue(undefined);
 
     component.openMemberRunProgress(buildMember({ index: 2, runId: 42, status: 'Running' }));
 
     const dialog = fixture.nativeElement.querySelector('dialog') as HTMLDialogElement;
-    expect(dialog.open).toBeFalse();
+    expect(dialog.open).toBe(false);
     expect(closed).toHaveBeenCalled();
     expect(handoff).toHaveBeenCalledWith(42);
   });
@@ -421,14 +431,14 @@ describe('MultiRunProgressDialogComponent', () => {
   });
 
   it('should say so plainly when no series detail has arrived yet', () => {
-    const consoleError = spyOn(console, 'error');
-    serviceMock.getRunSeries.and.returnValue(throwError(() => ({ status: 500 })));
+    const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
+    serviceMock.getRunSeries.mockReturnValue(throwError(() => ({ status: 500 })));
     fixture.componentRef.setInput('seriesId', 3);
     fixture.componentRef.setInput('visible', true);
     fixture.detectChanges();
 
     expect(component.seriesDiagnosticsText).toContain('No series detail received yet');
-    expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', jasmine.any(Object));
+    expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', expect.any(Object));
   });
 
   // --- Group analysis diagnostics --------------------------------------------------------------
@@ -464,7 +474,7 @@ describe('MultiRunProgressDialogComponent', () => {
         criticalErrorRate: 0, unstable: true, insufficientRuns: false,
         scores: [80, 52, 63], runIds: [41, 42, 43] }
     ];
-    serviceMock.analyseRunGroup.and.returnValue(of(analysis));
+    serviceMock.analyseRunGroup.mockReturnValue(of(analysis));
     open(buildSeries({
       status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
       members: [buildMember(), buildMember({ index: 2, runId: 42 }), buildMember({ index: 3, runId: 43 })]
@@ -482,7 +492,7 @@ describe('MultiRunProgressDialogComponent', () => {
         criticalErrorRate: 0, unstable: true, insufficientRuns: false,
         scores: [80, 52], runIds: [41, 42, 43] }
     ];
-    serviceMock.analyseRunGroup.and.returnValue(of(analysis));
+    serviceMock.analyseRunGroup.mockReturnValue(of(analysis));
     open(buildSeries({
       status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
       members: [buildMember(), buildMember({ index: 2, runId: 42 }), buildMember({ index: 3, runId: 43 })]
@@ -503,7 +513,7 @@ describe('MultiRunProgressDialogComponent', () => {
       pairedItemCount: 15, unpairedItemCount: 1, revisionMismatchedItemCount: 2,
       meanDifference: 1.5
     };
-    serviceMock.analyseRunGroup.and.returnValue(of(analysis));
+    serviceMock.analyseRunGroup.mockReturnValue(of(analysis));
     open(buildSeries({
       status: 'Completed', completedRunCount: 3, autoCreatedGroupId: 9,
       members: [buildMember(), buildMember({ index: 2, runId: 42 }), buildMember({ index: 3, runId: 43 })]
@@ -518,7 +528,7 @@ describe('MultiRunProgressDialogComponent', () => {
   // --- Model roster ---------------------------------------------------------------------------
 
   it('should give every roster badge a spoken prefix and no title attribute', () => {
-    serviceMock.getRun.and.returnValue(of({
+    serviceMock.getRun.mockReturnValue(of({
       id: 41,
       answers: [],
       testedModelDisplayNameUsed: 'Gemini 3.7 Flash',
@@ -552,7 +562,7 @@ describe('MultiRunProgressDialogComponent', () => {
   });
 
   it("should give a panel series' reference reader its own coverage", () => {
-    serviceMock.getRun.and.returnValue(of({
+    serviceMock.getRun.mockReturnValue(of({
       id: 41,
       answers: [],
       isPanelRun: true,
@@ -581,23 +591,23 @@ describe('MultiRunProgressDialogComponent', () => {
 
   it('should surface a clipboard rejection rather than throwing it away', async () => {
     open(buildSeries());
-    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
 
     await component.copySeriesDiagnostics();
 
-    expect(component.seriesDiagnosticsCopyFailed).toBeTrue();
-    expect(component.copiedSeriesDiagnostics).toBeFalse();
+    expect(component.seriesDiagnosticsCopyFailed).toBe(true);
+    expect(component.copiedSeriesDiagnostics).toBe(false);
     expect(component.seriesDiagnosticsCopyStatus).toContain('Could not copy');
   });
 
   it('should report a successful copy in the status line', async () => {
     open(buildSeries());
-    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
 
     await component.copySeriesDiagnostics();
 
-    expect(component.copiedSeriesDiagnostics).toBeTrue();
-    expect(component.seriesDiagnosticsCopyFailed).toBeFalse();
+    expect(component.copiedSeriesDiagnostics).toBe(true);
+    expect(component.seriesDiagnosticsCopyFailed).toBe(false);
     expect(component.seriesDiagnosticsCopyStatus).toContain('copied');
   });
 
@@ -606,7 +616,7 @@ describe('MultiRunProgressDialogComponent', () => {
   describe('continueSeries', () => {
     it('arms the completion sound under this click before the resume request is sent', () => {
       const soundService = TestBed.inject(BenchmarkCompletionSoundService);
-      const armSpy = spyOn(soundService, 'arm').and.returnValue(Promise.resolve());
+      const armSpy = vi.spyOn(soundService, 'arm').mockResolvedValue(undefined);
       open(buildSeries({ status: 'Stopped', stopReason: 'MemberFailed', resumable: true }));
 
       component.continueSeries();
@@ -616,7 +626,7 @@ describe('MultiRunProgressDialogComponent', () => {
 
     it('emits seriesResumed with the series id once the resume succeeds', () => {
       open(buildSeries({ id: 7, status: 'Stopped', stopReason: 'MemberFailed', resumable: true }));
-      const resumedSpy = jasmine.createSpy('seriesResumed');
+      const resumedSpy = vi.fn().mockName('seriesResumed');
       component.seriesResumed.subscribe(resumedSpy);
 
       component.continueSeries();
@@ -627,8 +637,8 @@ describe('MultiRunProgressDialogComponent', () => {
 
     it('does not emit seriesResumed when the resume is refused', () => {
       open(buildSeries({ id: 7, status: 'Stopped', stopReason: 'MemberFailed', resumable: true }));
-      serviceMock.resumeRunSeries.and.returnValue(throwError(() => ({ status: 500, error: 'boom' })));
-      const resumedSpy = jasmine.createSpy('seriesResumed');
+      serviceMock.resumeRunSeries.mockReturnValue(throwError(() => ({ status: 500, error: 'boom' })));
+      const resumedSpy = vi.fn().mockName('seriesResumed');
       component.seriesResumed.subscribe(resumedSpy);
 
       component.continueSeries();

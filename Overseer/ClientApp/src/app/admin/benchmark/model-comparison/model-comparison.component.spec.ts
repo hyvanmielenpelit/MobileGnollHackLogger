@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ChangeDetectorRef, Component, DebugElement, EventEmitter, Input, Output, inject } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -352,7 +353,7 @@ describe('ModelComparisonComponent', () => {
     STORED_KEYS.forEach(key => localStorage.removeItem(key));
     // No logo loads unless a spec supplies one, so every layout is measured without it.
     resetFigureLogoCache();
-    spyOn(figureLogoIo, 'loadImage').and.resolveTo(null);
+    vi.spyOn(figureLogoIo, 'loadImage').mockResolvedValue(null);
     alerts = new BehaviorSubject<SystemAlert[]>([]);
     await TestBed.configureTestingModule({
       imports: [ModelComparisonComponent],
@@ -397,7 +398,7 @@ describe('ModelComparisonComponent', () => {
     renderTable(buildDto(comparableSet(4)));
 
     const table = fixture.debugElement.query(By.css('#mc-fig-panel-table table.mc-table'));
-    expect(table).withContext('the table is a tabpanel of its own').toBeTruthy();
+    expect(table, 'the table is a tabpanel of its own').toBeTruthy();
     expect(fixture.debugElement.queryAll(By.css('app-table-pager')).length).toBe(2);
     expect(fixture.debugElement.queryAll(By.css('table.mc-table tbody tr')).length).toBe(4);
 
@@ -405,7 +406,7 @@ describe('ModelComparisonComponent', () => {
     const toggles = fixture.debugElement
       .queryAll(By.css('button'))
       .map(element => (element.nativeElement as HTMLElement).getAttribute('aria-label') ?? '');
-    expect(toggles.some(label => /show table|hide table/i.test(label))).toBeFalse();
+    expect(toggles.some(label => /show table|hide table/i.test(label))).toBe(false);
   });
 
   it('keeps both table pagers outside the horizontal scroll wrapper', () => {
@@ -426,7 +427,7 @@ describe('ModelComparisonComponent', () => {
     expect(headers[4]).toContain('Speed Index');
     expect(headers[5]).toContain('Timings');
     // No TTFT column of its own: the exported table still carries both percentiles.
-    expect(headers.some(header => header.includes('TTFT'))).toBeFalse();
+    expect(headers.some(header => header.includes('TTFT'))).toBe(false);
 
     // The body row's Model cell is a <th scope="row">, so the <td> list starts at R.
     const row = fixture.debugElement.query(By.css('table.mc-table tbody tr'));
@@ -466,7 +467,7 @@ describe('ModelComparisonComponent', () => {
     const row = fixture.debugElement.queryAll(By.css('table.mc-table tbody tr'))
       .map(candidate => candidate.nativeElement as HTMLElement)
       .find(candidate => candidate.querySelector('.mc-source')?.textContent?.trim() === source);
-    expect(row).withContext(`the row of ${source}`).toBeTruthy();
+    expect(row, `the row of ${source}`).toBeTruthy();
     return row!;
   }
 
@@ -518,7 +519,7 @@ describe('ModelComparisonComponent', () => {
     expect(label).toContain('Pareto frontier: Model 3 (medium). Faded: ');
     expect(label).toContain('Model 1 (medium)');
     expect(label).toContain('Model 2 (medium)');
-    expect(label.endsWith('Values for every entry are in the comparison table below.')).toBeTrue();
+    expect(label.endsWith('Values for every entry are in the comparison table below.')).toBe(true);
   });
 
   it('keeps an excluded entry in the table even though no figure can draw it', () => {
@@ -557,7 +558,7 @@ describe('ModelComparisonComponent', () => {
       'Fewer than two models were measured the same way, so there is nothing to chart. The table lists every model and why.');
     for (const view of ['all', 'single']) {
       const tab = fixture.debugElement.query(By.css(`#mc-fig-tab-${view}`)).nativeElement as HTMLButtonElement;
-      expect(tab.getAttribute('aria-disabled')).withContext(view).toBe('true');
+      expect(tab.getAttribute('aria-disabled'), view).toBe('true');
     }
 
     // Step 2 opens on the Interactive table over a set no chart can draw, so the excluded entries
@@ -621,39 +622,39 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 2);
 
     // Color means provider, so the names on the marks identify the models; no legend repeats them.
-    expect(component.scatterDirectLabels).toBeTrue();
+    expect(component.scatterDirectLabels).toBe(true);
     expect(scatterLegendDisplays()).toEqual([false, false, false]);
-    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeTrue();
-    expect(scatterBlocks()!.every(b => typeof b.name === 'string')).toBeTrue();
+    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBe(true);
+    expect(scatterBlocks()!.every(b => typeof b.name === 'string')).toBe(true);
 
     const toggle = scatterToggle(0);
-    expect(toggle).withContext('the toggle sits in the Charts tab, under Trade-offs').toBeTruthy();
+    expect(toggle, 'the toggle sits in the Charts tab, under Trade-offs').toBeTruthy();
     tick(toggle, false);
 
-    expect(component.scatterDirectLabels).toBeFalse();
+    expect(component.scatterDirectLabels).toBe(false);
     expect(scatterLegendDisplays()).toEqual([true, true, true]);
     // Neither toggle on: no plugin at all, and the legend names the marks.
-    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBeFalse();
+    expect(scatterPluginIds().every(ids => ids.includes(directLabelPlugin.id))).toBe(false);
 
     tick(toggle, true);
 
     expect(scatterLegendDisplays()).toEqual([false, false, false]);
-    expect(scatterBlocks()!.every(b => typeof b.name === 'string')).toBeTrue();
+    expect(scatterBlocks()!.every(b => typeof b.name === 'string')).toBe(true);
   });
 
   it('labels the marks with names only by default, and adds their values when asked', () => {
     render(buildDto(comparableSet(3)), 2);
 
-    expect(component.scatterInlineValues).toBeFalse();
+    expect(component.scatterInlineValues).toBe(false);
     const blocks = scatterBlocks()!;
     expect(blocks.length).toBe(3);
-    expect(blocks.every(b => b.values.length === 0)).toBeTrue();
+    expect(blocks.every(b => b.values.length === 0)).toBe(true);
     expect(typeof blocks[0].name).toBe('string');
     expect(blocks[0].hue).toBeTruthy();
 
     tick(scatterToggle(1), true);
 
-    expect(component.scatterInlineValues).toBeTrue();
+    expect(component.scatterInlineValues).toBe(true);
     expect(scatterBlocks()![0].values.length).toBe(2);
     expect(scatterLegendDisplays()).toEqual([false, false, false]);
   });
@@ -694,8 +695,8 @@ describe('ModelComparisonComponent', () => {
       component.effectiveOrientation === 'vertical' ? 'Better toward the top' : 'Better toward the right');
 
     for (const card of [...scatters, ...component.panelCards]) {
-      expect(card.chrome.direction).withContext(card.id).toBeDefined();
-      expect(card.chrome.badges.some(badge => badge.text.includes('Better'))).withContext(card.id).toBeFalse();
+      expect(card.chrome.direction, card.id).toBeDefined();
+      expect(card.chrome.badges.some(badge => badge.text.includes('Better')), card.id).toBe(false);
     }
   });
 
@@ -704,24 +705,25 @@ describe('ModelComparisonComponent', () => {
     const directions = (): number => component.exportableCards.filter(card => card.chrome.direction).length;
     expect(directions()).toBe(6);
 
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       component.onFigureStyleChange({
         ...DEFAULT_FIGURE_STYLE,
         bar: { ...DEFAULT_FIGURE_STYLE.bar, hiddenBadges: ['direction'] },
         scatter: { ...DEFAULT_FIGURE_STYLE.scatter, hiddenBadges: ['direction'] }
       });
-      jasmine.clock().tick(150);
+      vi.advanceTimersByTime(150);
       fixture.detectChanges();
       expect(directions()).toBe(0);
       for (const card of [...component.panelCards, ...component.scatterCards]) {
-        expect(card.chrome.direction).withContext(card.id).toBeUndefined();
+        expect(card.chrome.direction, card.id).toBeUndefined();
         const label = (fixture.debugElement.query(By.css(`canvas[data-figure-id="${card.id}"]`))
           .nativeElement as HTMLCanvasElement).getAttribute('aria-label') ?? '';
-        expect(label).withContext(card.id).not.toContain('Better toward');
+        expect(label, card.id).not.toContain('Better toward');
       }
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
@@ -729,9 +731,9 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 2);
 
     for (const card of component.exportableCards) {
-      expect(card.plugins.map(plugin => plugin.id)).withContext(card.id).not.toContain('overseerDirectionMarker');
+      expect(card.plugins.map(plugin => plugin.id), card.id).not.toContain('overseerDirectionMarker');
       // The All tab paints a figure onto the tile canvas carrying this id, which no rebuild changes.
-      expect(fixture.debugElement.queryAll(By.css(`canvas[data-figure-id="${card.id}"]`)).length).withContext(card.id).toBe(1);
+      expect(fixture.debugElement.queryAll(By.css(`canvas[data-figure-id="${card.id}"]`)).length, card.id).toBe(1);
     }
     expect(component.profileCard!.chrome.direction).toBeUndefined();
   });
@@ -769,7 +771,7 @@ describe('ModelComparisonComponent', () => {
     expect(modelDatasets(figures.speedCost)).toBe(3);
     // One profile tile per model, each drawing its own line, the Ideal line and the other two.
     expect(figures.profile.tiles.length).toBe(3);
-    expect(figures.profile.tiles.every(tile => tile.data.datasets.length === 4)).toBeTrue();
+    expect(figures.profile.tiles.every(tile => tile.data.datasets.length === 4)).toBe(true);
     expect(textOf('.mc-notices')).toContain('Model 2');
   });
 
@@ -839,14 +841,14 @@ describe('ModelComparisonComponent', () => {
     const option = fixture.debugElement.query(By.css('#mc-side-panel-data #mc-cost-measure-totalRun'))
       .nativeElement as HTMLInputElement;
     expect(option.type).toBe('radio');
-    expect(option.disabled).toBeFalse();
+    expect(option.disabled).toBe(false);
     expect(option.parentElement!.textContent).not.toContain('not available');
     expect(textOf('#mc-cost-measure-hint')).toContain('what one benchmark run of this model costs');
 
     chooseRadio('mc-cost-measure-totalRun');
 
     expect(component.costMeasure).toBe('totalRun');
-    expect(option.checked).toBeTrue();
+    expect(option.checked).toBe(true);
   });
 
   it('disables the total-run cost measure with the reason in the hint when one entry has no total', () => {
@@ -854,9 +856,9 @@ describe('ModelComparisonComponent', () => {
 
     const option = fixture.debugElement.query(By.css('#mc-side-panel-data #mc-cost-measure-totalRun'))
       .nativeElement as HTMLInputElement;
-    expect(option.disabled).toBeTrue();
+    expect(option.disabled).toBe(true);
     expect(option.parentElement!.textContent).toContain('not available');
-    expect(component.totalRunCostAvailable).toBeFalse();
+    expect(component.totalRunCostAvailable).toBe(false);
     expect(textOf('#mc-cost-measure-hint')).toContain(`Model 2: ${PRE_HARNESS_15}`);
   });
 
@@ -869,8 +871,7 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
 
     expect(component.costMeasure).toBe('candidateSuite');
-    expect((fixture.debugElement.query(By.css('#mc-cost-measure-candidateSuite')).nativeElement as HTMLInputElement).checked)
-      .toBeTrue();
+    expect((fixture.debugElement.query(By.css('#mc-cost-measure-candidateSuite')).nativeElement as HTMLInputElement).checked).toBe(true);
   });
 
   // -------------------------------------------------------------------------------------------
@@ -880,7 +881,7 @@ describe('ModelComparisonComponent', () => {
   /** Chooses one option of a Data tab radio group through the real radio. */
   function chooseRadio(id: string): void {
     const radio = fixture.debugElement.query(By.css(`#${id}`));
-    expect(radio).withContext(id).toBeTruthy();
+    expect(radio, id).toBeTruthy();
     (radio.nativeElement as HTMLInputElement).click();
     fixture.detectChanges();
   }
@@ -900,8 +901,8 @@ describe('ModelComparisonComponent', () => {
     expect(panel.querySelectorAll('input[type="radio"][name="mc-cost-measure"]').length).toBe(2);
     expect(panel.querySelectorAll('input[type="radio"][name="mc-sort-key"]').length).toBe(5);
     expect(panel.querySelectorAll('input[type="radio"][name="mc-sort-direction"]').length).toBe(2);
-    expect((panel.querySelector('#mc-speed-measure-meanModelTime') as HTMLInputElement).checked).toBeTrue();
-    expect((panel.querySelector('#mc-sort-key-intelligenceIndex') as HTMLInputElement).checked).toBeTrue();
+    expect((panel.querySelector('#mc-speed-measure-meanModelTime') as HTMLInputElement).checked).toBe(true);
+    expect((panel.querySelector('#mc-sort-key-intelligenceIndex') as HTMLInputElement).checked).toBe(true);
     // Each radio group is a borderless fieldset with its own legend, and the hints are attached.
     expect(panel.querySelectorAll('fieldset.gh-choice').length).toBe(4);
     expect(panel.querySelector('#mc-speed-measure-hint')).toBeTruthy();
@@ -967,9 +968,9 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.queryAll(By.css('.mc-models-table tbody tr')).length).toBe(3);
     expect(fixture.debugElement.queryAll(By.css('.mc-models-table input[type="checkbox"][id^="mc-show-"]')).length)
       .toBe(3);
-    expect([showBox('run:1'), showBox('run:2')].every(box => box.checked && !box.disabled)).toBeTrue();
-    expect(showBox('run:9').disabled).toBeTrue();
-    expect(showBox('run:9').checked).toBeFalse();
+    expect([showBox('run:1'), showBox('run:2')].every(box => box.checked && !box.disabled)).toBe(true);
+    expect(showBox('run:9').disabled).toBe(true);
+    expect(showBox('run:9').checked).toBe(false);
 
     // The accessible name contains the visible label, so the two never contradict each other.
     const name = component.modelRows.find(row => row.key === 'run:1')!.name;
@@ -981,7 +982,7 @@ describe('ModelComparisonComponent', () => {
     clickShow('run:2');
 
     expect(component.includedKeys).toEqual(['run:1']);
-    expect(showBox('run:2').checked).toBeFalse();
+    expect(showBox('run:2').checked).toBe(false);
     expect(component.figures?.selection.plotted.length).toBe(1);
   });
 
@@ -997,13 +998,13 @@ describe('ModelComparisonComponent', () => {
 
     clickShow('run:1');
     expect(component.includedKeys.length).toBe(MAX_PLOTTED_ENTRIES);
-    expect(component.isIncluded('run:1')).toBeFalse();
+    expect(component.isIncluded('run:1')).toBe(false);
     expect(fixture.debugElement.queryAll(By.css('.mc-models-tag')).length).toBe(0);
 
     // The seeded state has to stay reachable, so re-ticking at the cap is honoured.
     clickShow('run:1');
     expect(component.includedKeys.length).toBe(MAX_PLOTTED_ENTRIES + 1);
-    expect(component.isIncluded('run:1')).toBeTrue();
+    expect(component.isIncluded('run:1')).toBe(true);
   });
 
   // -------------------------------------------------------------------------------------------
@@ -1014,7 +1015,7 @@ describe('ModelComparisonComponent', () => {
     const entries = comparableSet(3).map(entry => ({ ...entry, runCount: 1 }));
     render(buildDto(entries));
 
-    expect(component.allSingleRun).toBeTrue();
+    expect(component.allSingleRun).toBe(true);
     component.openAbout();
     fixture.detectChanges();
     expect(textOf('.alert-heading')).toContain('Each model has only one run');
@@ -1072,7 +1073,7 @@ describe('ModelComparisonComponent', () => {
 
     const detail = fixture.debugElement.query(By.css('.mc-about-measure details.gh-disclosure'))
       .nativeElement as HTMLDetailsElement;
-    expect(detail.open).toBeFalse();
+    expect(detail.open).toBe(false);
     expect(detail.querySelector('summary')?.textContent?.trim()).toBe('Why');
     expect(detail.textContent).toContain('A ratio of two noisy estimators');
   });
@@ -1111,7 +1112,7 @@ describe('ModelComparisonComponent', () => {
     expect(textOf('.mc-about-count')).toContain('2');
 
     const dialog = fixture.debugElement.query(By.css('dialog.mc-about-dialog')).nativeElement as HTMLDialogElement;
-    const showModal = spyOn(dialog, 'showModal').and.callThrough();
+    const showModal = vi.spyOn(dialog, 'showModal');
     // The body renders only while the dialog is open.
     expect(fixture.debugElement.query(By.css('.mc-about-summary'))).toBeNull();
 
@@ -1235,16 +1236,16 @@ describe('ModelComparisonComponent', () => {
 
     it('reaches steps 3 and 4 once a comparison exists, and step 3 only with a measured model, saying why', () => {
       render(null, 1);
-      expect(component.isStepReachable(3)).toBeFalse();
-      expect(component.isStepReachable(4)).toBeFalse();
+      expect(component.isStepReachable(3)).toBe(false);
+      expect(component.isStepReachable(4)).toBe(false);
       expect(component.stepBlockedReason(4)).toBe('Compare the selected sources first.');
 
       render(buildDto([
         buildExcludedEntry('run:8', ['ScoringMethodVersion']),
         buildExcludedEntry('run:9', ['CandidatePromptOptions'])
       ]), 2);
-      expect(component.isStepReachable(3)).toBeFalse();
-      expect(component.isStepReachable(4)).toBeTrue();
+      expect(component.isStepReachable(3)).toBe(false);
+      expect(component.isStepReachable(4)).toBe(true);
       const tab3 = fixture.debugElement.query(By.css('#mc-step-tab-3')).nativeElement as HTMLElement;
       expect(tab3.getAttribute('aria-disabled')).toBe('true');
       expect(textOf(`#${tab3.getAttribute('aria-describedby')}`)).toContain('measured differently');
@@ -1317,8 +1318,8 @@ describe('ModelComparisonComponent', () => {
       fixture.detectChanges();
       const step3 = fixture.debugElement.query(By.css('#mc-step-panel-3')).nativeElement as HTMLElement;
       const step4 = fixture.debugElement.query(By.css('#mc-step-panel-4')).nativeElement as HTMLElement;
-      expect(step3.hidden).toBeTrue();
-      expect(step4.hidden).toBeTrue();
+      expect(step3.hidden).toBe(true);
+      expect(step4.hidden).toBe(true);
       expect(getComputedStyle(step3).display).toBe('none');
 
       component.goToStep(3);
@@ -1333,8 +1334,8 @@ describe('ModelComparisonComponent', () => {
       expect(documentsPanel()).toBe(documents);
       expect(documents.table.page).toBe(2);
       expect(documents.selectedCount).toBe(1);
-      expect(documents.isIncluded(kept)).toBeTrue();
-      expect(step4.hidden).toBeFalse();
+      expect(documents.isIncluded(kept)).toBe(true);
+      expect(step4.hidden).toBe(false);
     });
 
     it('hands step 3 the comparison, the chart selection, the figures it can draw and the advisory', () => {
@@ -1362,7 +1363,7 @@ describe('ModelComparisonComponent', () => {
       expect(panel.chartsAvailable).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 'p2-profile', 's1-quality-speed', 's2-quality-cost', 's3-speed-cost']);
       // The default theme is dark, which prints badly: the advisory says so.
       expect(panel.chartAdvisory).toContain('dark theme');
-      expect(panel.chartStorageMissing).toBeFalse();
+      expect(panel.chartStorageMissing).toBe(false);
 
       render(buildDto(comparableSet(2)), 3);
       expect(reportPanel()!.chartsAvailable).not.toContain('p2-profile');
@@ -1390,18 +1391,17 @@ describe('ModelComparisonComponent', () => {
 
     it('marks chart storage missing from the system alert', () => {
       render(buildDto(comparableSet(3)), 3);
-      expect(reportPanel()!.chartStorageMissing).toBeFalse();
+      expect(reportPanel()!.chartStorageMissing).toBe(false);
 
       alerts.next([{ id: 'report-charts-location-missing', type: 'warning', message: 'Chart storage is not configured.' }]);
       fixture.detectChanges();
 
-      expect(component.chartStorageMissing).toBeTrue();
-      expect(reportPanel()!.chartStorageMissing).toBeTrue();
+      expect(component.chartStorageMissing).toBe(true);
+      expect(reportPanel()!.chartStorageMissing).toBe(true);
     });
 
     it('charts a written document with the selection for its type, and reports the result to step 3', async () => {
-      const publish = spyOn(ReportChartPublisher.prototype, 'publish')
-        .and.resolveTo(publishResult({ published: [{ documentId: 41, chartCount: 4 }] }));
+      const publish = vi.spyOn(ReportChartPublisher.prototype, 'publish').mockResolvedValue(publishResult({ published: [{ documentId: 41, chartCount: 4 }] }));
       render(buildDto(comparableSet(3)), 3);
       const token = component.documentsReloadToken;
 
@@ -1413,7 +1413,7 @@ describe('ModelComparisonComponent', () => {
       await until(() => component.chartStatus[41]?.state === 'done');
 
       expect(publish).toHaveBeenCalledTimes(1);
-      const [targets, selection, composer, hash] = publish.calls.mostRecent().args;
+      const [targets, selection, composer, hash] = vi.mocked(publish).mock.lastCall!;
       expect(targets).toEqual([{
         documentId: 41,
         audience: BenchmarkReportAudience.ExecutiveSummary,
@@ -1431,7 +1431,7 @@ describe('ModelComparisonComponent', () => {
     });
 
     it('draws nothing for a written document whose type has no chart chosen', () => {
-      const publish = spyOn(ReportChartPublisher.prototype, 'publish').and.resolveTo(publishResult());
+      const publish = vi.spyOn(ReportChartPublisher.prototype, 'publish').mockResolvedValue(publishResult());
       render(buildDto(comparableSet(3)), 3);
       reportPanel()!.chartSelectionChange.emit({ ...DEFAULT_CHART_SELECTION, [BenchmarkReportAudience.ExecutiveSummary]: [] });
       expect(JSON.parse(localStorage.getItem(REPORT_CHART_STORAGE_KEY)!)).toBeTruthy();
@@ -1446,8 +1446,7 @@ describe('ModelComparisonComponent', () => {
     });
 
     it('stops at chart storage that is not configured, and says so', async () => {
-      spyOn(ReportChartPublisher.prototype, 'publish')
-        .and.resolveTo(publishResult({ storageNotConfigured: 'Chart storage is not configured.' }));
+      vi.spyOn(ReportChartPublisher.prototype, 'publish').mockResolvedValue(publishResult({ storageNotConfigured: 'Chart storage is not configured.' }));
       render(buildDto(comparableSet(3)), 3);
 
       reportPanel()!.chartRetryRequested.emit({
@@ -1457,8 +1456,8 @@ describe('ModelComparisonComponent', () => {
       await until(() => component.chartStatus[41]?.state === 'failed');
 
       expect(component.chartStatus[41]).toEqual({ state: 'failed', message: 'Chart storage is not configured.' });
-      expect(component.chartStorageMissing).toBeTrue();
-      expect(component.documentChartActions!.storageMissing).toBeTrue();
+      expect(component.chartStorageMissing).toBe(true);
+      expect(component.documentChartActions!.storageMissing).toBe(true);
     });
 
     it('opens step 4 and lists its documents again when step 3 asks for them or its job finishes', () => {
@@ -1474,7 +1473,7 @@ describe('ModelComparisonComponent', () => {
       expect(component.documentsReloadToken).toBe(token + 2);
       flushDocuments([reportDocument(21)]);
       const panel = documentsPanel()!;
-      expect(panel.context).toEqual(jasmine.objectContaining({ kind: 'library', preselect: 'all' }));
+      expect(panel.context).toEqual(expect.objectContaining({ kind: 'library', preselect: 'all' }));
       expect(panel.chartActions).toBe(component.documentChartActions);
       expect(panel.rows.map(row => row.key)).toContain('doc:21');
     });
@@ -1484,11 +1483,11 @@ describe('ModelComparisonComponent', () => {
       const actions = component.documentChartActions!;
 
       expect(actions.pricingBasis).toBe('Current');
-      expect(actions.comparisonKeyMatches(reportDocument(1))).toBeTrue();
-      expect(actions.comparisonKeyMatches(reportDocument(1, { comparisonKey: null }))).toBeFalse();
-      expect(actions.comparisonKeyMatches(reportDocument(1, { subjectKey: 'run:7' }))).toBeFalse();
-      expect(actions.comparisonKeyMatches(reportDocument(1, { comparisonEntryCount: 4 }))).toBeFalse();
-      expect(actions.comparisonKeyMatches(reportDocument(1, { peerLetters: { 'run:5': 'A' } }))).toBeFalse();
+      expect(actions.comparisonKeyMatches(reportDocument(1))).toBe(true);
+      expect(actions.comparisonKeyMatches(reportDocument(1, { comparisonKey: null }))).toBe(false);
+      expect(actions.comparisonKeyMatches(reportDocument(1, { subjectKey: 'run:7' }))).toBe(false);
+      expect(actions.comparisonKeyMatches(reportDocument(1, { comparisonEntryCount: 4 }))).toBe(false);
+      expect(actions.comparisonKeyMatches(reportDocument(1, { peerLetters: { 'run:5': 'A' } }))).toBe(false);
     });
 
     describe('document charts', () => {
@@ -1528,7 +1527,7 @@ describe('ModelComparisonComponent', () => {
         expect(chart.png.type).toBe('image/png');
         expect(chart.png.size).toBeGreaterThan(0);
         expect(chart.caption).toContain('Drawn from the comparison computed 2026-09-07 12:00 UTC.');
-        expect(chart.altText.startsWith(`${chart.title}. `)).toBeTrue();
+        expect(chart.altText.startsWith(`${chart.title}. `)).toBe(true);
         expect(chart.altText).toContain('Claude Harbor (medium): Intelligence Index 53.0 ± 6.4');
         expect(chart.altText).toContain('Gemini Orchard (medium)');
       });
@@ -1545,15 +1544,15 @@ describe('ModelComparisonComponent', () => {
         expect(chart.altText).toContain('Model A (medium)');
         expect(chart.altText).toContain('Model B (medium)');
         for (const peer of ['Claude Harbor', 'GPT Lantern', 'claude-harbor', 'gpt-lantern']) {
-          expect(chart.altText).withContext(peer).not.toContain(peer);
-          expect(chart.caption).withContext(peer).not.toContain(peer);
+          expect(chart.altText, peer).not.toContain(peer);
+          expect(chart.caption, peer).not.toContain(peer);
         }
       });
 
       it('refuses a figure the comparison plots too few models for', async () => {
         render(buildDto(namedSet().slice(0, 2)), 2);
 
-        await expectAsync(component.composeReportChart('p2-profile', { kind: 'named' })).toBeRejectedWithError(/too few models/);
+        await expect(component.composeReportChart('p2-profile', { kind: 'named' })).rejects.toThrowError(/too few models/);
       });
     });
   });
@@ -1590,7 +1589,7 @@ describe('ModelComparisonComponent', () => {
     // The row is still in the Models table, unplotted, and its Highlight box is disabled.
     const box = fixture.debugElement.query(By.css(`#mc-emph-${component.domKey('run:1')}`))
       .nativeElement as HTMLInputElement;
-    expect(box.disabled).toBeTrue();
+    expect(box.disabled).toBe(true);
 
     component.toggleEmphasis('run:1');
     expect(component.emphasisKeys).toEqual([]);
@@ -1598,13 +1597,13 @@ describe('ModelComparisonComponent', () => {
 
   it('turns the chart views off when unticked down to one model, and back on when re-ticked', () => {
     render(buildDto(comparableSet(3)), 2);
-    expect(component.showFigures).toBeTrue();
+    expect(component.showFigures).toBe(true);
 
     component.toggleEntry('run:2');
     component.toggleEntry('run:3');
     fixture.detectChanges();
 
-    expect(component.showFigures).toBeFalse();
+    expect(component.showFigures).toBe(false);
     expect(textOf('#mc-fig-unavailable')).toContain('Charts need at least two models. Check more under Data → Models.');
     expect(component.effectiveFigureTab).toBe('table');
     expect(fixture.debugElement.query(By.css('.mc-models-table'))).toBeTruthy();
@@ -1612,7 +1611,7 @@ describe('ModelComparisonComponent', () => {
     component.toggleEntry('run:2');
     fixture.detectChanges();
 
-    expect(component.showFigures).toBeTrue();
+    expect(component.showFigures).toBe(true);
   });
 
   it('keeps includedKeys, emphasisKeys and the table page on a same-keys refetch, and reseeds them on a new key set', () => {
@@ -1647,8 +1646,8 @@ describe('ModelComparisonComponent', () => {
     component.toggleEntry('run:2');
     fixture.detectChanges();
 
-    expect(component.setFigureNotes.some(note => /Strict comparability/.test(note.text))).toBeFalse();
-    expect(component.setNotices.some(notice => /Strict comparability/.test(notice))).toBeFalse();
+    expect(component.setFigureNotes.some(note => /Strict comparability/.test(note.text))).toBe(false);
+    expect(component.setNotices.some(notice => /Strict comparability/.test(notice))).toBe(false);
   });
 
   it('names Speed Index saturation in the speed hint only where an entry is saturated', () => {
@@ -1720,8 +1719,8 @@ describe('ModelComparisonComponent', () => {
       // The tile itself is the keyboard stop and opens on Enter, so Open is not a second one; Copy
       // and Download are tab stops, the only keyboard route to them here.
       expect((tile.nativeElement as HTMLElement).getAttribute('tabindex')).toBe('0');
-      expect(actions[0].hasAttribute('tabindex')).toBeFalse();
-      expect(actions[1].hasAttribute('tabindex')).toBeFalse();
+      expect(actions[0].hasAttribute('tabindex')).toBe(false);
+      expect(actions[1].hasAttribute('tabindex')).toBe(false);
       expect(actions[2].getAttribute('tabindex')).toBe('-1');
     }
 
@@ -1740,9 +1739,9 @@ describe('ModelComparisonComponent', () => {
 
   it('copies and downloads one figure from its tile without opening it in Single', async () => {
     render(buildDto(comparableSet(3)), 2);
-    const copy = spyOn(component, 'copyFigure').and.returnValue(Promise.resolve());
-    const download = spyOn(component, 'downloadFigure').and.returnValue(Promise.resolve());
-    const open = spyOn(component, 'openInSingle').and.callThrough();
+    const copy = vi.spyOn(component, 'copyFigure').mockResolvedValue();
+    const download = vi.spyOn(component, 'downloadFigure').mockResolvedValue();
+    const open = vi.spyOn(component, 'openInSingle');
 
     const tile = fixture.debugElement.queryAll(By.css('.mc-all-tile'))[1];
     const cardId = (tile.nativeElement as HTMLElement).getAttribute('data-figure-id');
@@ -1752,9 +1751,9 @@ describe('ModelComparisonComponent', () => {
     copyButton.click();
     downloadButton.click();
     expect(copy).toHaveBeenCalledTimes(1);
-    expect(copy.calls.mostRecent().args[0].id).toBe(cardId!);
+    expect(vi.mocked(copy).mock.lastCall![0].id).toBe(cardId!);
     expect(download).toHaveBeenCalledTimes(1);
-    expect(download.calls.mostRecent().args[0].id).toBe(cardId!);
+    expect(vi.mocked(download).mock.lastCall![0].id).toBe(cardId!);
 
     // Enter on a button is the button's own; the tile opens only on an Enter aimed at itself.
     for (const button of [copyButton, downloadButton]) {
@@ -1775,8 +1774,7 @@ describe('ModelComparisonComponent', () => {
   it('offers a WebP quality for the figures only while WebP is the chosen format', async () => {
     render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
-    expect(component.figureTab).withContext('no Single view is needed to reach the export settings')
-      .toBe('all');
+    expect(component.figureTab, 'no Single view is needed to reach the export settings').toBe('all');
 
     const format = fixture.debugElement.query(By.css('#mc-export-format'))
       .nativeElement as HTMLSelectElement;
@@ -1814,9 +1812,9 @@ describe('ModelComparisonComponent', () => {
       for (const view of ['all', 'single']) {
         const tab = fixture.debugElement.query(By.css(`#mc-fig-tab-${view}`)).nativeElement as HTMLButtonElement;
         // aria-disabled, never disabled: the tab stays focusable and names the reason.
-        expect(tab.getAttribute('aria-disabled')).withContext(view).toBe('true');
-        expect(tab.hasAttribute('disabled')).withContext(view).toBeFalse();
-        expect(tab.getAttribute('aria-describedby')).withContext(view).toBe('mc-fig-unavailable');
+        expect(tab.getAttribute('aria-disabled'), view).toBe('true');
+        expect(tab.hasAttribute('disabled'), view).toBe(false);
+        expect(tab.getAttribute('aria-describedby'), view).toBe('mc-fig-unavailable');
       }
       // The table views keep working.
       expect(fixture.debugElement.query(By.css('#mc-fig-tab-table')).nativeElement.getAttribute('aria-disabled')).toBeNull();
@@ -1845,11 +1843,11 @@ describe('ModelComparisonComponent', () => {
   it('renders no workspace without a comparison: step 2 refuses to open', () => {
     render(null);
     expect(component.shape).toBe('empty');
-    expect(component.isStepReachable(2)).toBeFalse();
+    expect(component.isStepReachable(2)).toBe(false);
     for (const selector of ['.mc-fig-workspace', '#mc-fig-sidebar', '.mc-fig-bar', '.mc-all-tile']) {
-      expect(fixture.debugElement.query(By.css(selector))).withContext(selector).toBeNull();
+      expect(fixture.debugElement.query(By.css(selector)), selector).toBeNull();
     }
-    expect(component.canExport).toBeFalse();
+    expect(component.canExport).toBe(false);
   });
 
   it('opens the table when a refetch leaves a chart view over an unchartable set, and returns to it after', () => {
@@ -1860,7 +1858,7 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
 
     expect(component.step).toBe(2);
-    expect(component.figureTab).withContext('the chosen view is kept').toBe('all');
+    expect(component.figureTab, 'the chosen view is kept').toBe('all');
     expect(component.effectiveFigureTab).toBe('table');
     expect(fixture.debugElement.query(By.css('.mc-all-tile'))).toBeNull();
     expect(textOf('#mc-fig-unavailable')).toContain('Fewer than two models were measured the same way');
@@ -1905,11 +1903,11 @@ describe('ModelComparisonComponent', () => {
     expect(boxes.filter(box => !box.disabled).length).toBe(3);
     const excludedBox = fixture.debugElement.query(By.css(`#mc-emph-${component.domKey('run:9')}`))
       .nativeElement as HTMLInputElement;
-    expect(excludedBox.disabled).toBeTrue();
+    expect(excludedBox.disabled).toBe(true);
     // The state is in words as well as in the box, and never in the gold alone.
     expect(textOf('.mc-models-status')).toContain('3 of 3 shown');
     expect(textOf('.mc-models-status')).toContain('0 highlighted');
-    expect(clearHighlightsButton().disabled).toBeTrue();
+    expect(clearHighlightsButton().disabled).toBe(true);
 
     fixture.debugElement.query(By.css(`#mc-emph-${component.domKey('run:1')}`))
       .triggerEventHandler('change', { target: {} });
@@ -1917,14 +1915,14 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.emphasisKeys.length).toBe(1);
     expect(textOf('.mc-models-status')).toContain('1 highlighted');
-    expect(clearHighlightsButton().disabled).toBeFalse();
+    expect(clearHighlightsButton().disabled).toBe(false);
 
     clearHighlightsButton().click();
     fixture.detectChanges();
 
     expect(component.emphasisKeys).toEqual([]);
     expect(textOf('.mc-models-status')).toContain('0 highlighted');
-    expect(clearHighlightsButton().disabled).toBeTrue();
+    expect(clearHighlightsButton().disabled).toBe(true);
   });
 
   it('carries no highlight control in the table cell, where its effect cannot be seen', () => {
@@ -1956,18 +1954,18 @@ describe('ModelComparisonComponent', () => {
     render(null);
     expect(component.step).toBe(1);
     expect(component.nextLabel).toBe('Compare');
-    expect(component.canGoNext).toBeFalse();
+    expect(component.canGoNext).toBe(false);
     expect(textOf('.mc-wizard-blocked')).toContain('at least one run or analysis group');
 
     fixture.componentRef.setInput('selectedRunCount', component.maxSources + 1);
     fixture.detectChanges();
-    expect(component.canGoNext).toBeFalse();
+    expect(component.canGoNext).toBe(false);
     expect(textOf('.mc-wizard-blocked')).toContain(`at most ${component.maxSources}`);
     expect(textOf('.mc-wizard-blocked')).toContain('slow query');
 
     fixture.componentRef.setInput('selectedRunCount', 2);
     fixture.detectChanges();
-    expect(component.canGoNext).toBeTrue();
+    expect(component.canGoNext).toBe(true);
     expect(component.nextBlockedReason).toBe('');
     expect(fixture.debugElement.query(By.css('.mc-wizard-blocked'))).toBeNull();
   });
@@ -2180,7 +2178,7 @@ describe('ModelComparisonComponent', () => {
     band({ runs: 3, notices: [indexFailure, crossCondition, stillComputing] });
 
     const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
-    expect(strip.hasAttribute('aria-live')).toBeFalse();
+    expect(strip.hasAttribute('aria-live')).toBe(false);
 
     const list = fixture.debugElement.query(By.css('.mc-wizard-notices')).nativeElement as HTMLElement;
     expect(list.getAttribute('aria-live')).toBe('polite');
@@ -2211,7 +2209,7 @@ describe('ModelComparisonComponent', () => {
     // Severity is carried by shape as well as by hue: three distinct glyphs, none of them decorative
     // to a screen reader.
     const glyphs = alerts.map(alert => alert.querySelector('svg.alert-icon'));
-    expect(glyphs.every(glyph => glyph?.getAttribute('aria-hidden') === 'true')).toBeTrue();
+    expect(glyphs.every(glyph => glyph?.getAttribute('aria-hidden') === 'true')).toBe(true);
     expect(new Set(glyphs.map(glyph => glyph?.innerHTML)).size).toBe(3);
   });
 
@@ -2317,7 +2315,7 @@ describe('ModelComparisonComponent', () => {
     fixture.componentRef.setInput('loading', true);
     fixture.detectChanges();
 
-    expect(component.comparing).toBeTrue();
+    expect(component.comparing).toBe(true);
     expect(component.nextLabel).toBe('Comparing…');
 
     const next = nextButton();
@@ -2326,7 +2324,7 @@ describe('ModelComparisonComponent', () => {
     expect(next.getAttribute('aria-busy')).toBe('true');
     // aria-disabled, never disabled: the reason has to stay reachable by keyboard.
     expect(next.getAttribute('aria-disabled')).toBe('true');
-    expect(next.hasAttribute('disabled')).toBeFalse();
+    expect(next.hasAttribute('disabled')).toBe(false);
 
     // The busy state is in the footer, where the click was; nothing is inserted above the tabs.
     expect(fixture.debugElement.query(By.css('.mc-wizard-loading'))).toBeNull();
@@ -2345,9 +2343,9 @@ describe('ModelComparisonComponent', () => {
 
     fixture.componentRef.setInput('loading', false);
     fixture.detectChanges();
-    expect(component.comparing).toBeFalse();
+    expect(component.comparing).toBe(false);
     expect(component.nextLabel).toBe('Compare');
-    expect(next.hasAttribute('aria-busy')).toBeFalse();
+    expect(next.hasAttribute('aria-busy')).toBe(false);
   });
 
   it('labels the footer Next rather than Comparing while step 2 refetches', () => {
@@ -2356,15 +2354,15 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
 
     // A Prices or Recompute refetch loads too, and Next on step 2 is not blocked by it.
-    expect(component.comparing).toBeFalse();
+    expect(component.comparing).toBe(false);
     expect(component.nextLabel).toBe('Next');
-    expect(component.canGoNext).toBeTrue();
+    expect(component.canGoNext).toBe(true);
     expect(nextButton().querySelector('.gh-spinner-small')).toBeNull();
   });
 
   describe('while a comparison is loading', () => {
     afterEach(() => {
-      jasmine.clock().uninstall();
+      vi.useRealTimers();
     });
 
     /** Step 1 with a valid selection, Compare pressed and the request in flight. */
@@ -2432,23 +2430,23 @@ describe('ModelComparisonComponent', () => {
     });
 
     it('says after 15 seconds that the comparison is slow, and how to leave it', () => {
-      jasmine.clock().install();
+      vi.useFakeTimers();
       comparingOnStep1();
 
-      jasmine.clock().tick(14_999);
+      vi.advanceTimersByTime(14_999);
       fixture.detectChanges();
-      expect(component.slowLoading).toBeFalse();
+      expect(component.slowLoading).toBe(false);
       expect(textOf('#mc-next-blocked')).not.toContain('longer than usual');
 
-      jasmine.clock().tick(1);
+      vi.advanceTimersByTime(1);
       fixture.detectChanges();
-      expect(component.slowLoading).toBeTrue();
+      expect(component.slowLoading).toBe(true);
       expect(textOf('#mc-next-blocked')).toContain('longer than usual');
       expect(textOf('#mc-next-blocked')).toContain('close the wizard');
 
       fixture.componentRef.setInput('loading', false);
       fixture.detectChanges();
-      expect(component.slowLoading).toBeFalse();
+      expect(component.slowLoading).toBe(false);
     });
 
     it('shows a spinner-bearing refetch line on step 2, where Next carries no spinner', () => {
@@ -2472,7 +2470,7 @@ describe('ModelComparisonComponent', () => {
 
       const close = fixture.debugElement.query(By.css('[aria-label="Close cross-model comparison"]'))
         .nativeElement as HTMLButtonElement;
-      expect(close.disabled).toBeFalse();
+      expect(close.disabled).toBe(false);
 
       const closed: number[] = [];
       component.closeRequested.subscribe(() => closed.push(1));
@@ -2483,9 +2481,8 @@ describe('ModelComparisonComponent', () => {
     it('puts no blocking layer over the wizard, on step 1 or on a step-2 refetch', () => {
       const expectNoBlockingLayer = (where: string): void => {
         const root = fixture.nativeElement as HTMLElement;
-        expect(root.querySelectorAll('[inert]').length).withContext(`${where}: inert`).toBe(0);
-        expect(root.querySelectorAll('[class*="overlay"], [class*="scrim"], [class*="backdrop"]').length)
-          .withContext(`${where}: overlay`).toBe(0);
+        expect(root.querySelectorAll('[inert]').length, `${where}: inert`).toBe(0);
+        expect(root.querySelectorAll('[class*="overlay"], [class*="scrim"], [class*="backdrop"]').length, `${where}: overlay`).toBe(0);
       };
 
       comparingOnStep1();
@@ -2540,8 +2537,8 @@ describe('ModelComparisonComponent', () => {
 
     // The table is the artefact that says what could not be compared, so its step opens here.
     expect(component.step).toBe(2);
-    expect(component.isStepReachable(2)).toBeTrue();
-    expect(component.canGoNext).toBeTrue();
+    expect(component.isStepReachable(2)).toBe(true);
+    expect(component.canGoNext).toBe(true);
     expect(component.nextBlockedReason).toBe('');
     expect(nextButton().getAttribute('aria-disabled')).toBe('false');
 
@@ -2553,12 +2550,12 @@ describe('ModelComparisonComponent', () => {
   it('reaches step 2 whenever a comparison exists, and not without one', () => {
     render(null);
 
-    expect(component.isStepReachable(2)).toBeFalse();
+    expect(component.isStepReachable(2)).toBe(false);
 
     render(buildDto(comparableSet(3)));
-    expect(component.isStepReachable(2)).toBeTrue();
+    expect(component.isStepReachable(2)).toBe(true);
     // Step 2 gates on nothing but the payload: the table behind it always has rows.
-    expect(component.canGoNext).toBeTrue();
+    expect(component.canGoNext).toBe(true);
     expect(component.nextBlockedReason).toBe('');
   });
 
@@ -2634,8 +2631,8 @@ describe('ModelComparisonComponent', () => {
     const close = fixture.debugElement.query(By.css('.mc-wizard-header .btn-icon-action'))
       .nativeElement as HTMLButtonElement;
     const next = nextButton();
-    expect(close.disabled).toBeTrue();
-    expect(next.disabled).toBeTrue();
+    expect(close.disabled).toBe(true);
+    expect(next.disabled).toBe(true);
     // The wizard's two are the only close controls: no preview dialog carries a third. The About
     // dialog's own close stays live, since closing it leaves the export alone.
     const wizardCloses = fixture.debugElement.queryAll(By.css('.btn-icon-action'))
@@ -2645,8 +2642,8 @@ describe('ModelComparisonComponent', () => {
 
     component.exporting = false;
     refresh();
-    expect(close.disabled).toBeFalse();
-    expect(next.disabled).toBeFalse();
+    expect(close.disabled).toBe(false);
+    expect(next.disabled).toBe(false);
   });
 
   // -------------------------------------------------------------------------------------------
@@ -2667,7 +2664,7 @@ describe('ModelComparisonComponent', () => {
       const eye = fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-all-open'))
         .map(button => button.nativeElement as HTMLButtonElement)
         .find(button => button.getAttribute('aria-label') === `Open ${card.title} in Single view`);
-      expect(eye).withContext(`the eye button of ${card.title}`).toBeTruthy();
+      expect(eye, `the eye button of ${card.title}`).toBeTruthy();
       eye!.click();
     } else {
       singleTabButton().click();
@@ -2757,7 +2754,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.customResolutionError).toContain('height');
     expect(component.customResolutionError).toContain(`${FIGURE_EXPORT_MAX_DIMENSION}`);
-    expect(component.canExport).toBeFalse();
+    expect(component.canExport).toBe(false);
     expect(chartSizeText()).toContain(component.customResolutionError);
     // The All tab has no tile to size under it, and says why instead.
     expect(fixture.debugElement.query(By.css('.mc-all-tile'))).toBeNull();
@@ -2766,7 +2763,7 @@ describe('ModelComparisonComponent', () => {
     component.onCustomHeightChange(1080);
     refresh();
     expect(component.customResolutionError).toBe('');
-    expect(component.canExport).toBeTrue();
+    expect(component.canExport).toBe(true);
   });
 
   it('opens the density on the reader’s own display, and says which option that is', () => {
@@ -2776,7 +2773,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.figureSize.densitySelection).toBe(2);
     expect(component.exportDensity).toBe(2);
-    expect(component.isCustomDensity).toBeFalse();
+    expect(component.isCustomDensity).toBe(false);
     expect(textOf('#mc-export-density')).toContain('200% (this display)');
     // Only the reader's own step is marked, or the note would name nothing.
     expect(textOf('#mc-export-density')).not.toContain('100% (this display)');
@@ -2850,7 +2847,7 @@ describe('ModelComparisonComponent', () => {
     expect(sizes).not.toContain('fit');
     expect(sizes).toContain('custom');
     // Every size composes at its own box, so the text size is never disabled.
-    expect(styleControl('mc-export-text-scale').disabled).toBeFalse();
+    expect(styleControl('mc-export-text-scale').disabled).toBe(false);
   });
 
   it('reads a stored On-screen size as Full HD, and keeps every other stored field', () => {
@@ -2873,14 +2870,14 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.customDensityError).toContain(`${FIGURE_EXPORT_MAX_DENSITY_PERCENT}`);
     expect(component.exportSizeError).toBe(component.customDensityError);
-    expect(component.canExport).toBeFalse();
+    expect(component.canExport).toBe(false);
     expect(chartSizeText()).toContain('800');
 
     component.onCustomDensityChange(150);
     refresh();
     expect(component.customDensityError).toBe('');
     expect(component.exportDensity).toBe(1.5);
-    expect(component.canExport).toBeTrue();
+    expect(component.canExport).toBe(true);
   });
 
   it('puts the Single chart\'s Copy and Download on the zoom line as icon buttons with tooltips', () => {
@@ -2895,7 +2892,7 @@ describe('ModelComparisonComponent', () => {
     expect(download.classList).not.toContain('btn-gh');
     expect(download.textContent?.trim()).toBe('');
     expect(download.getAttribute('aria-label')).toBe(`Download ${component.previewCard!.title}`);
-    expect(download.hasAttribute('title')).toBeFalse();
+    expect(download.hasAttribute('title')).toBe(false);
     const tipId = download.getAttribute('interestfor')!;
     expect(tipId).toBe('mc-tip-fig-download');
     expect(download.getAttribute('style') ?? '').toMatch(/anchor-name:\s*--mc-tip-fig-download/);
@@ -2919,13 +2916,13 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.exportSizeError).toContain('24000 × 24000');
     expect(component.exportSizeError).toContain('16384');
-    expect(component.canExport).toBeFalse();
+    expect(component.canExport).toBe(false);
     // Copy and Download: aria-disabled, so each stays focusable and its reason reachable.
     const controls = fixture.debugElement.queryAll(By.css('.mc-preview-export button'))
       .map(button => button.nativeElement as HTMLButtonElement);
     expect(controls.length).toBe(2);
-    expect(controls.every(button => button.getAttribute('aria-disabled') === 'true')).toBeTrue();
-    expect(controls.every(button => !button.disabled)).toBeTrue();
+    expect(controls.every(button => button.getAttribute('aria-disabled') === 'true')).toBe(true);
+    expect(controls.every(button => !button.disabled)).toBe(true);
     expect(component.downloadAllTooltip).toBe(component.exportSizeError);
     expect(component.downloadFigureTooltip).toBe(component.exportSizeError);
 
@@ -2936,18 +2933,18 @@ describe('ModelComparisonComponent', () => {
       .map(button => button.nativeElement as HTMLButtonElement);
     // The size error replaces the tiles, so only Download all charts is left to refuse.
     expect(allControls.length).toBeGreaterThanOrEqual(1);
-    expect(allControls.every(button => button.getAttribute('aria-disabled') === 'true')).toBeTrue();
-    expect(allControls.every(button => !button.disabled)).toBeTrue();
+    expect(allControls.every(button => button.getAttribute('aria-disabled') === 'true')).toBe(true);
+    expect(allControls.every(button => !button.disabled)).toBe(true);
 
     component.onExportDensityChange(2);
     refresh();
     expect(component.exportSizeError).toBe('');
-    expect(component.canExport).toBeTrue();
+    expect(component.canExport).toBe(true);
     const enabled = fixture.debugElement
       .queryAll(By.css('.mc-all-download-all, .mc-all-tile .mc-all-copy, .mc-all-tile .mc-all-download'))
       .map(button => button.nativeElement as HTMLButtonElement);
     expect(enabled.length).toBe(1 + 7 * 2);
-    expect(enabled.every(button => button.getAttribute('aria-disabled') === null)).toBeTrue();
+    expect(enabled.every(button => button.getAttribute('aria-disabled') === null)).toBe(true);
   });
 
   it('copies the figure composed at the figure size, as a PNG, without a chart on the page', async () => {
@@ -2977,7 +2974,7 @@ describe('ModelComparisonComponent', () => {
     openSingle(cards[2]);
     expect(component.figureTab).toBe('single');
     expect(component.previewCardId).toBe(cards[2].id);
-    expect(component.previewActive).toBeTrue();
+    expect(component.previewActive).toBe(true);
     expect(singleTabButton().getAttribute('aria-selected')).toBe('true');
     // A screen reader lands on "Figure, <title>".
     expect(document.activeElement?.id).toBe('mc-preview-figure');
@@ -3007,7 +3004,7 @@ describe('ModelComparisonComponent', () => {
 
   function styleControl(id: string): HTMLInputElement {
     const element = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(`#${id}`);
-    expect(element).withContext(id).not.toBeNull();
+    expect(element, id).not.toBeNull();
     return element!;
   }
 
@@ -3040,13 +3037,14 @@ describe('ModelComparisonComponent', () => {
 
   /** Runs `act` with a fake clock and lets the style debounce fire. */
   function withStyleDebounce(act: () => void): void {
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       act();
-      jasmine.clock().tick(200);
+      vi.advanceTimersByTime(200);
       refresh();
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   }
 
@@ -3060,36 +3058,35 @@ describe('ModelComparisonComponent', () => {
     expect(valued.checked).toBe(component.scatterInlineValues);
 
     setChecked(named, false);
-    expect(component.scatterDirectLabels).toBeFalse();
-    expect(styleControl('mc-style-scatter-directLabels').checked).toBeFalse();
+    expect(component.scatterDirectLabels).toBe(false);
+    expect(styleControl('mc-style-scatter-directLabels').checked).toBe(false);
     expect(scatterLegendDisplays()).toEqual([true, true, true]);
 
     setChecked(styleControl('mc-style-scatter-inlineValues'), true);
-    expect(component.scatterInlineValues).toBeTrue();
-    expect(styleControl('mc-style-scatter-inlineValues').checked).toBeTrue();
-    expect(scatterBlocks()!.every(b => b.values.length === 2)).toBeTrue();
+    expect(component.scatterInlineValues).toBe(true);
+    expect(styleControl('mc-style-scatter-inlineValues').checked).toBe(true);
+    expect(scatterBlocks()!.every(b => b.values.length === 2)).toBe(true);
   });
 
   it('fills single-run bars from the Charts tab, persists it, and keeps no second copy of the control', () => {
     render(buildDto(comparableSet(3).map(entry => ({ ...entry, runCount: 1 }))), 2);
 
-    const fills = (): unknown[] =>
-      (component.panelCards[0].data.datasets[0] as unknown as Record<string, unknown[]>)['backgroundColor'];
-    expect(fills().every(fill => fill === 'transparent')).toBeTrue();
+    const fills = (): unknown[] => (component.panelCards[0].data.datasets[0] as unknown as Record<string, unknown[]>)['backgroundColor'];
+    expect(fills().every(fill => fill === 'transparent')).toBe(true);
     expect(fixture.debugElement.query(By.css('#mc-bar-filled'))).toBeNull();
 
     openStyleFamily('bar');
     const styleToggle = (): HTMLInputElement => styleControl('mc-style-bar-filledBars');
-    expect(styleToggle().checked).toBeFalse();
+    expect(styleToggle().checked).toBe(false);
 
     withStyleDebounce(() => setChecked(styleToggle(), true));
-    expect(component.figureStyle.bar.filledBars).toBeTrue();
-    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!).bar.filledBars).toBeTrue();
-    expect(fills().some(fill => fill === 'transparent')).toBeFalse();
+    expect(component.figureStyle.bar.filledBars).toBe(true);
+    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!).bar.filledBars).toBe(true);
+    expect(fills().some(fill => fill === 'transparent')).toBe(false);
 
     withStyleDebounce(() => setChecked(styleToggle(), false));
-    expect(styleToggle().checked).toBeFalse();
-    expect(fills().every(fill => fill === 'transparent')).toBeTrue();
+    expect(styleToggle().checked).toBe(false);
+    expect(fills().every(fill => fill === 'transparent')).toBe(true);
   });
 
   it('re-composes the preview when a trade-off toggle is changed in the Charts tab', () => {
@@ -3097,21 +3094,22 @@ describe('ModelComparisonComponent', () => {
 
     // The clock is installed before the dialog is opened, so the composition the open itself
     // schedules is a fake timer this test drains rather than a real one outliving it.
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       openStyleTab(component.scatterCards[0]);
-      const renderPreview = spyOn(
-        component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
-      ).and.returnValue(Promise.resolve());
-      jasmine.clock().tick(200);
-      renderPreview.calls.reset();
+      const renderPreview = vi.spyOn(component as unknown as {
+        renderPreview(): Promise<void>;
+      }, 'renderPreview').mockResolvedValue();
+      vi.advanceTimersByTime(200);
+      renderPreview.mockClear();
 
       setChecked(styleControl('mc-style-scatter-inlineValues'), true);
       expect(renderPreview).not.toHaveBeenCalled();
-      jasmine.clock().tick(200);
+      vi.advanceTimersByTime(200);
       expect(renderPreview).toHaveBeenCalled();
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
@@ -3165,9 +3163,9 @@ describe('ModelComparisonComponent', () => {
     press(1, 'Home');
     expect(selected()).toBe(ids[0]);
     press(0, 'ArrowLeft');
-    expect(selected()).withContext('Left wraps to the last tab').toBe(ids[last]);
+    expect(selected(), 'Left wraps to the last tab').toBe(ids[last]);
     press(last, 'ArrowRight');
-    expect(selected()).withContext('Right wraps to the first tab').toBe(ids[0]);
+    expect(selected(), 'Right wraps to the first tab').toBe(ids[0]);
     press(0, 'End');
     expect(selected()).toBe(ids[last]);
     expect(document.activeElement).toBe(tabs()[last]);
@@ -3181,7 +3179,7 @@ describe('ModelComparisonComponent', () => {
     // Only the selected section's panel is rendered.
     expect(fixture.debugElement.query(By.css('#mc-side-panel-download'))).not.toBeNull();
     for (const tab of ['data', 'theme', 'charts', 'table']) {
-      expect(fixture.debugElement.query(By.css(`#mc-side-panel-${tab}`))).withContext(tab).toBeNull();
+      expect(fixture.debugElement.query(By.css(`#mc-side-panel-${tab}`)), tab).toBeNull();
     }
   });
 
@@ -3193,10 +3191,8 @@ describe('ModelComparisonComponent', () => {
       .map(tab => tab.nativeElement as HTMLElement);
     expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual([null, null, null, null]);
 
-    expectTabContract('.mc-fig-tabs', 'Comparison views', 'mc-fig-tab-', 'mc-fig-panel-',
-      ['All charts', 'Single chart', 'Interactive table', 'Table preview'], () => component.figureTab,
-      ['all', 'single', 'table', 'tablePreview']);
-    expect(component.previewActive).toBeTrue();
+    expectTabContract('.mc-fig-tabs', 'Comparison views', 'mc-fig-tab-', 'mc-fig-panel-', ['All charts', 'Single chart', 'Interactive table', 'Table preview'], () => component.figureTab, ['all', 'single', 'table', 'tablePreview']);
+    expect(component.previewActive).toBe(true);
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview'))).not.toBeNull();
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-all'))).toBeNull();
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-table'))).toBeNull();
@@ -3225,8 +3221,8 @@ describe('ModelComparisonComponent', () => {
     openStyleTab(component.panelCards[0]);
 
     const has = (selector: string): boolean => fixture.debugElement.query(By.css(selector)) !== null;
-    expect(has('#mc-style-bar-heading')).toBeTrue();
-    expect(has('#mc-style-scatter-heading')).toBeFalse();
+    expect(has('#mc-style-bar-heading')).toBe(true);
+    expect(has('#mc-style-scatter-heading')).toBe(false);
     expect(textOf('#mc-side-panel-charts')).not.toContain('Every change here applies');
 
     // Switching figure keeps the tab, and the set follows the figure's kind.
@@ -3234,27 +3230,27 @@ describe('ModelComparisonComponent', () => {
     refresh();
     expect(component.sidebarTab).toBe('charts');
     expect(component.styleFamily).toBe('scatter');
-    expect(has('#mc-style-scatter-heading')).toBeTrue();
-    expect(has('#mc-style-bar-heading')).toBeFalse();
+    expect(has('#mc-style-scatter-heading')).toBe(true);
+    expect(has('#mc-style-bar-heading')).toBe(false);
 
     component.selectPreviewCard(component.profileCard!.id);
     refresh();
-    expect(has('#mc-style-bar-heading')).toBeFalse();
-    expect(has('#mc-style-scatter-heading')).toBeFalse();
-    expect(has('#mc-style-profile-heading')).toBeTrue();
+    expect(has('#mc-style-bar-heading')).toBe(false);
+    expect(has('#mc-style-scatter-heading')).toBe(false);
+    expect(has('#mc-style-profile-heading')).toBe(true);
   });
 
   it('stores a style change at once, persists it, and rebuilds the figures after the debounce', () => {
     render(buildDto(comparableSet(3)), 2);
 
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       openStyleTab(component.panelCards[0]);
-      const renderPreview = spyOn(
-        component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
-      ).and.returnValue(Promise.resolve());
-      jasmine.clock().tick(200);
-      renderPreview.calls.reset();
+      const renderPreview = vi.spyOn(component as unknown as {
+        renderPreview(): Promise<void>;
+      }, 'renderPreview').mockResolvedValue();
+      vi.advanceTimersByTime(200);
+      renderPreview.mockClear();
 
       const barPercentage = (): unknown =>
         (component.panelCards[0].data.datasets[0] as unknown as Record<string, unknown>)['barPercentage'];
@@ -3268,20 +3264,21 @@ describe('ModelComparisonComponent', () => {
       // Not yet: a drag rebuilds once it pauses.
       expect(barPercentage()).toBeCloseTo(0.72, 9);
 
-      jasmine.clock().tick(150);
+      vi.advanceTimersByTime(150);
       expect(barPercentage()).toBeCloseTo(0.9, 9);
       expect(renderPreview).not.toHaveBeenCalled();
-      jasmine.clock().tick(150);
+      vi.advanceTimersByTime(150);
       expect(renderPreview).toHaveBeenCalled();
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
   it('drops a hidden badge from the bar cards after the debounce, and persists it', () => {
     render(buildDto(comparableSet(3)), 2);
 
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       const kinds = (): (string | undefined)[] => component.panelCards[0].chrome.badges.map(badge => badge.kind);
       const before = kinds();
@@ -3296,11 +3293,12 @@ describe('ModelComparisonComponent', () => {
       expect(stored.version).toBe(1);
       expect(stored.bar.hiddenBadges).toEqual(['questions']);
 
-      jasmine.clock().tick(150);
+      vi.advanceTimersByTime(150);
       expect(kinds()).toEqual(before.filter(kind => kind !== 'questions'));
-      expect(component.scatterCards[0].chrome.badges.some(badge => badge.kind === 'questions')).toBeTrue();
-    } finally {
-      jasmine.clock().uninstall();
+      expect(component.scatterCards[0].chrome.badges.some(badge => badge.kind === 'questions')).toBe(true);
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
@@ -3330,43 +3328,46 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 2);
     const cards = [...component.panelCards, component.profileCard!, ...component.scatterCards];
     for (const card of cards) {
-      expect(drawnChrome(card).footer.suite).withContext(card.id).toBe('GnollHack Player Assistance Benchmark Suite');
-      expect(drawnChrome(card).footer.computedAt).withContext(card.id).not.toBe('');
+      expect(drawnChrome(card).footer.suite, card.id).toBe('GnollHack Player Assistance Benchmark Suite');
+      expect(drawnChrome(card).footer.computedAt, card.id).not.toBe('');
     }
 
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       changeFamilyStyle('profile', { footer: false });
       expect(drawnChrome(component.profileCard!).footer).toEqual({ suite: '', computedAt: '' });
       for (const card of component.panelCards) {
-        expect(drawnChrome(card).footer.suite).withContext(card.id).not.toBe('');
+        expect(drawnChrome(card).footer.suite, card.id).not.toBe('');
       }
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
   it('draws each family at its own caption sizes, and re-composes the All tiles once a style change pauses', async () => {
     render(buildDto(comparableSet(3)), 2);
     await settleAllTab();
-    expect(component.allActive).toBeTrue();
-    const schedule = spyOn(
-      component as unknown as { scheduleAllCompose(): void }, 'scheduleAllCompose').and.callThrough();
+    expect(component.allActive).toBe(true);
+    const schedule = vi.spyOn(component as unknown as {
+      scheduleAllCompose(): void;
+    }, 'scheduleAllCompose');
 
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       changeFamilyStyle('bar', { titleSizePx: 30, badgeTextSizePx: 14, footerTextSizePx: 16 });
       // Not yet: a drag re-composes once it pauses.
       expect(schedule).not.toHaveBeenCalled();
-      jasmine.clock().tick(150);
+      vi.advanceTimersByTime(150);
       expect(schedule).toHaveBeenCalled();
 
       for (const card of component.panelCards) {
-        expect(drawnChrome(card).textSizes).withContext(card.id).toEqual({ titlePx: 30, badgePx: 14, footerPx: 16 });
+        expect(drawnChrome(card).textSizes, card.id).toEqual({ titlePx: 30, badgePx: 14, footerPx: 16 });
       }
       expect(drawnChrome(component.scatterCards[0]).textSizes).toEqual({ titlePx: 18, badgePx: 11, footerPx: 12 });
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
@@ -3375,7 +3376,7 @@ describe('ModelComparisonComponent', () => {
     openStyleTab(component.panelCards[0]);
 
     const noteToggle = styleControl('mc-style-bar-hiddenIntervalsNote');
-    expect(noteToggle.disabled).toBeTrue();
+    expect(noteToggle.disabled).toBe(true);
     expect(drawnNotes('panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
 
     withStyleDebounce(() => setChecked(styleControl('mc-style-bar-intervals'), false));
@@ -3384,7 +3385,7 @@ describe('ModelComparisonComponent', () => {
     expect(drawnNotes('panels', 1)).not.toContain(HIDDEN_INTERVALS_NOTE);
     expect(component.panelCards[0].plugins).not.toContain(errorBarPlugin);
 
-    expect(styleControl('mc-style-bar-hiddenIntervalsNote').disabled).toBeFalse();
+    expect(styleControl('mc-style-bar-hiddenIntervalsNote').disabled).toBe(false);
     withStyleDebounce(() => setChecked(styleControl('mc-style-bar-hiddenIntervalsNote'), false));
     expect(drawnNotes('panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
   });
@@ -3414,7 +3415,7 @@ describe('ModelComparisonComponent', () => {
     const hasLine = (card: ComparisonFigureCard): boolean =>
       card.data.datasets.some(dataset => dataset.label === 'Pareto frontier');
     const index = component.scatterCards.findIndex(hasLine);
-    expect(index).withContext('a scatter with a drawn frontier').toBeGreaterThanOrEqual(0);
+    expect(index, 'a scatter with a drawn frontier').toBeGreaterThanOrEqual(0);
     const card = (): ComparisonFigureCard => component.scatterCards[index];
     const highlight = card().chrome.highlight;
     expect(card().chrome.key.map(item => item.glyph)).toContain('frontier');
@@ -3422,7 +3423,7 @@ describe('ModelComparisonComponent', () => {
     openStyleTab(card());
     withStyleDebounce(() => setChecked(styleControl('mc-style-scatter-frontierLine'), false));
 
-    expect(component.scatterCards.some(hasLine)).toBeFalse();
+    expect(component.scatterCards.some(hasLine)).toBe(false);
     expect(card().chrome.key.map(item => item.glyph)).not.toContain('frontier');
     expect(card().chrome.highlight).toBe(highlight);
   });
@@ -3431,12 +3432,12 @@ describe('ModelComparisonComponent', () => {
     // A fully scored 18-question exam, whatever the suite holds now.
     render(buildDto(comparableSet(2)), 2);
 
-    expect(component.setFigureNotes.some(note => note.tone === 'info' && /left out/.test(note.text))).toBeFalse();
-    expect(component.setFigureNotes.some(note => /revised/.test(note.text))).toBeFalse();
+    expect(component.setFigureNotes.some(note => note.tone === 'info' && /left out/.test(note.text))).toBe(false);
+    expect(component.setFigureNotes.some(note => /revised/.test(note.text))).toBe(false);
 
     const s1 = component.scatterCards[0];
     expect(s1.chrome.badges.find(badge => badge.kind === 'questions')?.text).toBe('18 questions');
-    expect(exportNotesOf(s1).some(text => /revised/.test(text))).toBeFalse();
+    expect(exportNotesOf(s1).some(text => /revised/.test(text))).toBe(false);
   });
 
   it('states the scored questions against the exam in the badge when some went unscored', () => {
@@ -3457,7 +3458,7 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(entries), 2);
 
     const warning = 'Gemini 2.5 Flash (medium): 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.';
-    expect(component.setFigureNotes).toContain({ text: warning, tone: 'warning' });
+    expect(component.setFigureNotes).toContainEqual({ text: warning, tone: 'warning' });
 
     component.toggleEntry('run:3');
     expect(component.setFigureNotes.map(note => note.text)).not.toContain(warning);
@@ -3472,7 +3473,7 @@ describe('ModelComparisonComponent', () => {
 
     openStyleTab(speed());
     const toggle = styleControl('mc-style-bar-meanTimeNoIntervalNote');
-    expect(toggle.disabled).toBeFalse();
+    expect(toggle.disabled).toBe(false);
     withStyleDebounce(() => setChecked(toggle, false));
 
     expect(drawnNotes('panels', 1)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
@@ -3561,7 +3562,7 @@ describe('ModelComparisonComponent', () => {
     const minLabel = (): string => component.profileAxes!.axes[0].minLabel;
     expect(minLabel()).toMatch(/^\d+$/);
 
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       component.onFigureStyleChange({
         ...component.figureStyle,
@@ -3570,15 +3571,16 @@ describe('ModelComparisonComponent', () => {
       expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_STORAGE_KEY)!).numbers.intelligenceIndex).toBe(2);
       expect(minLabel()).toMatch(/^\d+$/);
 
-      jasmine.clock().tick(150);
+      vi.advanceTimersByTime(150);
       refresh();
       expect(minLabel()).toMatch(/^\d+\.\d{2}$/);
       // One entry per model: its values, in the new decimals, and its weakest axis.
       expect(textOf('.mc-axis-ends')).toContain(`intelligence ${minLabel()}`);
       expect(fixture.debugElement.queryAll(By.css('.mc-axis-ends li')).length).toBe(3);
       expect(textOf('.mc-axis-ends')).toContain('weakest axis:');
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
@@ -3616,7 +3618,7 @@ describe('ModelComparisonComponent', () => {
 
     // Full HD, where the size opens: the text size applies to it as to every other size.
     expect(component.figureSize.resolutionId).toBe('fullhd');
-    expect(styleControl('mc-export-text-scale').disabled).toBeFalse();
+    expect(styleControl('mc-export-text-scale').disabled).toBe(false);
     expect(component.exportDimensionsLabel).toContain('laid out at 960 × 540');
 
     component.onExportResolutionChange('square1080');
@@ -3646,8 +3648,9 @@ describe('ModelComparisonComponent', () => {
       `Notice ${index}: ` +
       'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '
         .repeat(6);
-    spyOn(component as unknown as { exportChrome(card: ComparisonFigureCard): unknown }, 'exportChrome')
-      .and.returnValue({
+    vi.spyOn(component as unknown as {
+      exportChrome(card: ComparisonFigureCard): unknown;
+    }, 'exportChrome').mockReturnValue({
         chrome: {
           ...card.chrome,
           notes: [1, 2, 3, 4, 5, 6].map(index => ({ text: notice(index), tone: 'warning' as const }))
@@ -3668,7 +3671,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewRefusal).toContain('1280 × 720 px');
     expect(textOf('#mc-side-panel-download .mc-export-error')).toContain('1280 × 720 px');
     expect(component.previewCanvas!.nativeElement.width).toBe(0);
-    expect(component.previewBusy).toBeFalse();
+    expect(component.previewBusy).toBe(false);
   });
 
   /**
@@ -3718,7 +3721,7 @@ describe('ModelComparisonComponent', () => {
   it('rasterises the export at the density the stage affords', async () => {
     render(buildDto(comparableSet(3)), 2);
     // A fixture's element is never laid out, so the stage's geometry is given rather than measured.
-    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    vi.spyOn(component, 'measureStage').mockReturnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openSingle();
 
     // A density above the stage's own only raises the cap on the preview; the stage still decides.
@@ -3735,7 +3738,7 @@ describe('ModelComparisonComponent', () => {
 
   it('fits a portrait target to the stage’s height, in the target’s own ratio', async () => {
     render(buildDto(comparableSet(3)), 2);
-    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    vi.spyOn(component, 'measureStage').mockReturnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openSingle();
 
     component.onExportDensityChange(1);
@@ -3768,9 +3771,9 @@ describe('ModelComparisonComponent', () => {
   }
 
   function expectNoOverflow(viewport: HTMLElement): void {
-    expect(viewport.scrollHeight).withContext('vertical overflow').toBeLessThanOrEqual(viewport.clientHeight);
-    expect(viewport.scrollWidth).withContext('horizontal overflow').toBeLessThanOrEqual(viewport.clientWidth);
-    expect(viewport.classList.contains('is-pannable')).withContext('pannable at Fit to screen').toBeFalse();
+    expect(viewport.scrollHeight, 'vertical overflow').toBeLessThanOrEqual(viewport.clientHeight);
+    expect(viewport.scrollWidth, 'horizontal overflow').toBeLessThanOrEqual(viewport.clientWidth);
+    expect(viewport.classList.contains('is-pannable'), 'pannable at Fit to screen').toBe(false);
   }
 
   it('fits a tall chart to the stage’s height at Fit to screen without a scrollbar', async () => {
@@ -3843,7 +3846,7 @@ describe('ModelComparisonComponent', () => {
   /** Full HD at 100 % density on an 800 × 600 stage at DPR 2: the screen fit is 5/6. */
   async function openFullHdPreview(): Promise<void> {
     render(buildDto(comparableSet(3)), 2);
-    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    vi.spyOn(component, 'measureStage').mockReturnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openSingle();
     component.onExportDensityChange(1);
     component.onExportResolutionChange('fullhd');
@@ -3853,7 +3856,7 @@ describe('ModelComparisonComponent', () => {
   /** A custom 800 × 600 at 100 % density on the same stage: the screen fit is 2. */
   async function openCustomPreview(): Promise<void> {
     render(buildDto(comparableSet(3)), 2);
-    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    vi.spyOn(component, 'measureStage').mockReturnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     openSingle();
     component.onExportDensityChange(1);
     component.onExportResolutionChange('custom');
@@ -3894,8 +3897,9 @@ describe('ModelComparisonComponent', () => {
     clickAndRefresh(zoomButton('Zoom the preview in'));
     await composePreview();
 
-    const schedule = spyOn(
-      component as unknown as { schedulePreview(): void }, 'schedulePreview').and.callThrough();
+    const schedule = vi.spyOn(component as unknown as {
+      schedulePreview(): void;
+    }, 'schedulePreview');
     clickAndRefresh(zoomButton('Zoom the preview in'));
     expect(component.previewZoomValue).toBe(1.5);
     expect(stageCanvas().classList).not.toContain('is-pixelated');
@@ -3987,7 +3991,7 @@ describe('ModelComparisonComponent', () => {
       return event;
     };
 
-    expect(press('+').defaultPrevented).toBeTrue();
+    expect(press('+').defaultPrevented).toBe(true);
     expect(component.previewZoomValue).toBe(1);
     press('=');
     expect(component.previewZoomValue).toBe(1.5);
@@ -3999,10 +4003,10 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewView).toBe(1);
 
     const withCtrl = press('+', { ctrlKey: true });
-    expect(withCtrl.defaultPrevented).toBeFalse();
+    expect(withCtrl.defaultPrevented).toBe(false);
     expect(component.previewZoomValue).toBe(1);
     const arrow = press('ArrowDown');
-    expect(arrow.defaultPrevented).toBeFalse();
+    expect(arrow.defaultPrevented).toBe(false);
   });
 
   it('marks zoom in unavailable at 800 %, and refuses it there', async () => {
@@ -4012,7 +4016,7 @@ describe('ModelComparisonComponent', () => {
 
     const zoomIn = zoomButton('Zoom the preview in');
     expect(zoomIn.getAttribute('aria-disabled')).toBe('true');
-    expect(zoomIn.disabled).toBeFalse();
+    expect(zoomIn.disabled).toBe(false);
     expect(zoomButton('Zoom the preview out').getAttribute('aria-disabled')).toBeNull();
     clickAndRefresh(zoomIn);
 
@@ -4055,14 +4059,16 @@ describe('ModelComparisonComponent', () => {
 
   /** The stage the fake observer watches, and the viewport the pan and wheel listeners are on. */
   function watchedStage(observers: RecordingResizeObserver[]): {
-    watching: RecordingResizeObserver[]; viewport: HTMLElement; removed: jasmine.Spy;
+    watching: RecordingResizeObserver[];
+    viewport: HTMLElement;
+    removed: Mock;
   } {
     const stage = fixture.debugElement.query(By.css('.mc-preview-stage')).nativeElement as HTMLElement;
     const viewport = previewViewport();
     return {
       watching: observers.filter(observer => observer.observed.includes(stage)),
       viewport,
-      removed: spyOn(viewport, 'removeEventListener').and.callThrough()
+      removed: vi.spyOn(viewport, 'removeEventListener')
     };
   }
 
@@ -4077,20 +4083,20 @@ describe('ModelComparisonComponent', () => {
     refresh();
 
     expect(watching[0].disconnected).toBe(1);
-    expect(component.previewActive).toBeFalse();
-    expect(removed).toHaveBeenCalledWith('wheel', jasmine.any(Function), jasmine.anything());
+    expect(component.previewActive).toBe(false);
+    expect(removed).toHaveBeenCalledWith('wheel', expect.any(Function), expect.anything());
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-single'))).toBeNull();
 
     const viewport = fixture.debugElement.query(By.css('.mc-all-viewport')).nativeElement as HTMLElement;
     const watchingAll = observers.filter(observer => observer.observed.includes(viewport));
     expect(watchingAll.length).toBe(1);
-    expect(component.allActive).toBeTrue();
+    expect(component.allActive).toBe(true);
 
     // Back to Single: the All viewport's observer goes with it.
     singleTabButton().click();
     refresh();
     expect(watchingAll[0].disconnected).toBe(1);
-    expect(component.allActive).toBeFalse();
+    expect(component.allActive).toBe(false);
   });
 
   it('stops watching the stage on leaving step 2, and on destroy', async () => {
@@ -4102,8 +4108,8 @@ describe('ModelComparisonComponent', () => {
     component.goToStep(1);
     fixture.detectChanges();
     expect(first.watching[0].disconnected).toBe(1);
-    expect(first.removed).toHaveBeenCalledWith('pointerdown', jasmine.any(Function), undefined);
-    expect(component.figureTab).withContext('kept, so returning shows the Single tab again').toBe('single');
+    expect(first.removed).toHaveBeenCalledWith('pointerdown', expect.any(Function), undefined);
+    expect(component.figureTab, 'kept, so returning shows the Single tab again').toBe('single');
 
     component.goToStep(2);
     fixture.detectChanges();
@@ -4127,11 +4133,11 @@ describe('ModelComparisonComponent', () => {
     fixture.componentRef.setInput('comparison', buildDto(comparableSet(1)));
     fixture.detectChanges();
 
-    expect(viewport.isConnected).toBeFalse();
-    expect(component.previewActive).toBeFalse();
+    expect(viewport.isConnected).toBe(false);
+    expect(component.previewActive).toBe(false);
     expect(watching[0].disconnected).toBe(1);
-    expect(removed).toHaveBeenCalledWith('wheel', jasmine.any(Function), jasmine.anything());
-    expect(removed).toHaveBeenCalledWith('pointerdown', jasmine.any(Function), undefined);
+    expect(removed).toHaveBeenCalledWith('wheel', expect.any(Function), expect.anything());
+    expect(removed).toHaveBeenCalledWith('pointerdown', expect.any(Function), undefined);
   });
 
   it('carries the export size and format in the Download all charts tooltip, and a size error instead of it', () => {
@@ -4172,24 +4178,21 @@ describe('ModelComparisonComponent', () => {
 
     // Icon-only, so aria-label is the accessible name — and seven of them must not share one.
     const names = opens().map(button => button.getAttribute('aria-label') ?? '');
-    expect(names.every(name => name.startsWith('Open ') && name.endsWith(' in Single view')))
-      .toBeTrue();
+    expect(names.every(name => name.startsWith('Open ') && name.endsWith(' in Single view'))).toBe(true);
     expect(new Set(names).size).toBe(7);
-    expect(opens().every(button => button.querySelector('path')?.getAttribute('d')?.startsWith('M1 12s4-8')))
-      .withContext('the eye glyph').toBeTrue();
-    expect(opens().every(button => !button.disabled && button.getAttribute('aria-disabled') === null))
-      .toBeTrue();
-    expect(opens().every(button => button.textContent?.trim() === '')).toBeTrue();
+    expect(opens().every(button => button.querySelector('path')?.getAttribute('d')?.startsWith('M1 12s4-8')), 'the eye glyph').toBe(true);
+    expect(opens().every(button => !button.disabled && button.getAttribute('aria-disabled') === null)).toBe(true);
+    expect(opens().every(button => button.textContent?.trim() === '')).toBe(true);
 
     // The Single tab is where a size error is shown and fixed, so it stays reachable under one,
     // though the All tab has no tile to size.
     component.onExportResolutionChange('custom');
     component.onCustomWidthChange(10);
     refresh();
-    expect(component.canExport).toBeFalse();
+    expect(component.canExport).toBe(false);
     expect(opens().length).toBe(0);
     const single = singleTabButton();
-    expect(single.disabled).toBeFalse();
+    expect(single.disabled).toBe(false);
     expect(single.getAttribute('aria-disabled')).toBeNull();
   });
 
@@ -4202,14 +4205,21 @@ describe('ModelComparisonComponent', () => {
    * blob that was written and the anchor names the file it was written under, which between them
    * are everything a download can be asserted on without a real file system.
    */
-  function captureSaves(): { blobs: Blob[]; names: string[] } {
-    const saved: { blobs: Blob[]; names: string[] } = { blobs: [], names: [] };
-    spyOn(URL, 'createObjectURL').and.callFake((source: Blob | MediaSource) => {
+  function captureSaves(): {
+    blobs: Blob[];
+    names: string[];
+  } {
+    const saved: {
+      blobs: Blob[];
+      names: string[];
+    } = { blobs: [], names: [] };
+    vi.spyOn(URL, 'createObjectURL').mockImplementation((source: Blob | MediaSource) => {
       saved.blobs.push(source as Blob);
       return 'blob:model-comparison-test';
     });
-    spyOn(URL, 'revokeObjectURL').and.stub();
-    spyOn(HTMLAnchorElement.prototype, 'click').and.callFake(function (this: HTMLAnchorElement) {
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
       saved.names.push(this.download);
     });
     return saved;
@@ -4226,9 +4236,9 @@ describe('ModelComparisonComponent', () => {
 
   /** A stand-in for the dynamically imported spreadsheet writer, which the specs never really run. */
   function stubXlsxWriter(): void {
-    spyOn(xlsxWriterModule, 'load').and.returnValue(Promise.resolve({
+    vi.spyOn(xlsxWriterModule, 'load').mockResolvedValue({
       default: () => ({ toBlob: () => Promise.resolve(new Blob(['xlsx-bytes'])) })
-    } as any));
+    } as any);
   }
 
   /**
@@ -4237,15 +4247,18 @@ describe('ModelComparisonComponent', () => {
    * The recorder holds the entry names of every archive it was asked to pack, which is what a
    * batch export can be asserted on without decoding one.
    */
-  function stubZipWriter(): { names: string[][]; load: jasmine.Spy } {
+  function stubZipWriter(): {
+    names: string[][];
+    load: Mock;
+  } {
     const names: string[][] = [];
-    const load = spyOn(zipWriterModule, 'load').and.returnValue(Promise.resolve({
+    const load = vi.spyOn(zipWriterModule, 'load').mockResolvedValue({
       zipSync: (data: Record<string, unknown>) => {
         names.push(Object.keys(data));
         // An empty archive's end-of-central-directory record: a valid zip, and nothing in it.
         return new Uint8Array([0x50, 0x4b, 0x05, 0x06]);
       }
-    } as any));
+    } as any);
     return { names, load };
   }
 
@@ -4272,7 +4285,7 @@ describe('ModelComparisonComponent', () => {
     const button = fixture.debugElement.queryAll(By.css('table.mc-table thead th .gh-th-sort'))
       .map(candidate => candidate.nativeElement as HTMLButtonElement)
       .find(candidate => candidate.textContent?.trim() === label);
-    expect(button).withContext(`the ${label} header`).toBeTruthy();
+    expect(button, `the ${label} header`).toBeTruthy();
     return button!;
   }
 
@@ -4334,7 +4347,7 @@ describe('ModelComparisonComponent', () => {
     expect(download.textContent?.trim()).toBe('');
     for (const button of [copy, download]) {
       expect(button.getAttribute('type')).toBe('button');
-      expect(button.hasAttribute('title')).toBeFalse();
+      expect(button.hasAttribute('title')).toBe(false);
       const tipId = button.getAttribute('interestfor');
       expect(tipId).toBeTruthy();
       expect(button.getAttribute('style') ?? '').toMatch(new RegExp(`anchor-name:\\s*--${tipId}`));
@@ -4405,7 +4418,7 @@ describe('ModelComparisonComponent', () => {
     };
     for (const format of Object.keys(names) as TableFileFormat[]) {
       chooseTableFormat(format);
-      expect(tableActions().copy.getAttribute('aria-label')).withContext(format).toBe(names[format]);
+      expect(tableActions().copy.getAttribute('aria-label'), format).toBe(names[format]);
     }
     component.onExportFormatChange('webp');
     refresh();
@@ -4419,7 +4432,7 @@ describe('ModelComparisonComponent', () => {
     const { copy, download } = tableActions();
     for (const button of [copy, download]) {
       expect(button.getAttribute('aria-disabled')).toBe('true');
-      expect(button.disabled).toBeFalse();
+      expect(button.disabled).toBe(false);
     }
     expect(component.downloadTableTooltip).toContain('Nothing to export');
 
@@ -4431,8 +4444,8 @@ describe('ModelComparisonComponent', () => {
 
   it('downloads in one click, through one write path, with no column dialog', async () => {
     renderTable(buildDto(comparableSet(3)));
-    const download = spyOn(component, 'downloadTable').and.returnValue(Promise.resolve());
-    const copy = spyOn(component, 'copyTable').and.returnValue(Promise.resolve());
+    const download = vi.spyOn(component, 'downloadTable').mockResolvedValue();
+    const copy = vi.spyOn(component, 'copyTable').mockResolvedValue();
 
     tableActions().download.click();
     tableActions().copy.click();
@@ -4455,12 +4468,12 @@ describe('ModelComparisonComponent', () => {
     expect(saved.blobs.length).toBe(6);
     expect(saved.names.map(name => name.split('.').pop()))
       .toEqual(['xlsx', 'csv', 'tsv', 'md', 'json', 'html']);
-    expect(saved.names.every(name => /^model-comparison_table_\d{8}_\d{6}\./.test(name))).toBeTrue();
-    expect(saved.blobs.every(blob => blob.size > 0)).toBeTrue();
+    expect(saved.names.every(name => /^model-comparison_table_\d{8}_\d{6}\./.test(name))).toBe(true);
+    expect(saved.blobs.every(blob => blob.size > 0)).toBe(true);
     expect(component.exportStatus).toContain('4 entries');
     expect(component.exportStatus)
       .toContain('current order (model order: Intelligence Index, descending), filters applied, all pages');
-    expect(component.exporting).toBeFalse();
+    expect(component.exporting).toBe(false);
   });
 
   it('writes a data format split into parts, and a reading format combined as on screen', async () => {
@@ -4500,7 +4513,7 @@ describe('ModelComparisonComponent', () => {
     expect(saved.names[0]).toMatch(/\.png$/);
     // A browser with no WebP encoder answers with a PNG, and the file is then named .png.
     expect(saved.names[1]).toMatch(/\.(webp|png)$/);
-    expect(saved.blobs.every(blob => blob.size > 0)).toBeTrue();
+    expect(saved.blobs.every(blob => blob.size > 0)).toBe(true);
     expect(component.exportStatus).toMatch(/ at \d+ × \d+ px\./);
   });
 
@@ -4513,7 +4526,7 @@ describe('ModelComparisonComponent', () => {
     refresh();
 
     expect(component.tableImageRefusal).toMatch(/need at least \d+ px/);
-    expect(component.canExportTable).toBeFalse();
+    expect(component.canExportTable).toBe(false);
     const { copy, download } = tableActions();
     expect(copy.getAttribute('aria-disabled')).toBe('true');
     expect(download.getAttribute('aria-disabled')).toBe('true');
@@ -4526,7 +4539,7 @@ describe('ModelComparisonComponent', () => {
 
     // Any other format writes whatever the image size says.
     chooseTableFormat('csv');
-    expect(component.canExportTable).toBeTrue();
+    expect(component.canExportTable).toBe(true);
   });
 
   it('copies cells with an HTML fallback for Excel, a formatted table for HTML, and text for Markdown', async () => {
@@ -4555,20 +4568,20 @@ describe('ModelComparisonComponent', () => {
     // CSV and TSV paste without the byte-order mark their files carry.
     chooseTableFormat('csv');
     await component.copyTable();
-    expect((await (await written[3].getType('text/plain')).text()).startsWith('﻿')).toBeFalse();
-    expect(component.exporting).toBeFalse();
+    expect((await (await written[3].getType('text/plain')).text()).startsWith('﻿')).toBe(false);
+    expect(component.exporting).toBe(false);
   });
 
   it('falls back to writeText for a text payload where only it exists', async () => {
     renderTable(buildDto(comparableSet(3)));
-    const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+    const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
     withClipboard({ writeText });
 
     chooseTableFormat('md');
     await component.copyTable();
 
     expect(writeText).toHaveBeenCalledTimes(1);
-    expect(writeText.calls.mostRecent().args[0] as string).toContain('| Model |');
+    expect(vi.mocked(writeText).mock.lastCall![0] as string).toContain('| Model |');
     expect(component.exportStatus).toContain('Copied 3 entries as Markdown');
   });
 
@@ -4787,12 +4800,12 @@ describe('ModelComparisonComponent', () => {
 
   it('copies Markdown with the diagnostics block when they apply, and without it when they do not', async () => {
     renderTable(buildDto(comparableSet(3), { panelDiagnostics: panelDiagnostics() }));
-    const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+    const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
     withClipboard({ writeText });
 
     chooseTableFormat('md');
     await component.copyTable();
-    const applied = writeText.calls.mostRecent().args[0] as string;
+    const applied = vi.mocked(writeText).mock.lastCall![0] as string;
     expect(applied).toContain('| Model |');
     expect(applied).toContain('\n## Assessor Panel Diagnostics\n');
     expect(applied).toContain('| GPT-5 | OpenAI | 72 (#1) | 66 (#2) | 69 (#1) | 68 (#1) |');
@@ -4801,7 +4814,7 @@ describe('ModelComparisonComponent', () => {
     fixture.componentRef.setInput('comparison', buildDto(comparableSet(3), { panelDiagnostics: notApplicableDiagnostics() }));
     fixture.detectChanges();
     await component.copyTable();
-    expect(writeText.calls.mostRecent().args[0] as string).not.toContain('Assessor Panel Diagnostics');
+    expect(vi.mocked(writeText).mock.lastCall![0] as string).not.toContain('Assessor Panel Diagnostics');
   });
 
   it('copies the table image as a PNG, WebP chosen or not', async () => {
@@ -4829,14 +4842,14 @@ describe('ModelComparisonComponent', () => {
       writeText: () => Promise.reject(new Error('Document is not focused.'))
     });
 
-    await expectAsync(component.copyTable()).toBeResolved();
+    await expect(component.copyTable()).resolves.not.toThrow();
     expect(component.exportStatus).toBe('The clipboard write was refused.');
 
     withClipboard(undefined);
     await component.copyTable();
     expect(component.exportStatus).toContain('cannot copy text to the clipboard');
     expect(component.exportStatus).toContain('download the table instead');
-    expect(component.exporting).toBeFalse();
+    expect(component.exporting).toBe(false);
   });
 
   it('exports every filtered row across all pages, not the visible page', async () => {
@@ -4939,7 +4952,7 @@ describe('ModelComparisonComponent', () => {
     refresh();
     const info = /^Fit the table: (\d+) × (\d+) px at this text size — the whole table with its (\d+) shown columns and 3 rows\.$/
       .exec(component.tableFitInfo);
-    expect(info).withContext(component.tableFitInfo).not.toBeNull();
+    expect(info, component.tableFitInfo).not.toBeNull();
     expect(info![3]).toBe('9');
     expect(textOf('#mc-table-image-fit-info')).toBe(component.tableFitInfo);
 
@@ -5060,7 +5073,7 @@ describe('ModelComparisonComponent', () => {
     const direction = fixture.debugElement.queryAll(By.css('#mc-side-panel-data fieldset.gh-choice'))
       .map(group => group.nativeElement as HTMLFieldSetElement)
       .find(group => group.querySelector('legend')?.textContent?.trim() === 'Direction')!;
-    expect(direction.disabled).toBeTrue();
+    expect(direction.disabled).toBe(true);
     expect(textOf('#mc-sort-direction-hint')).toContain('A custom order has no direction.');
     const list = fixture.debugElement.query(By.css('#mc-side-panel-data app-reorderable-list'));
     expect(list).toBeTruthy();
@@ -5083,17 +5096,19 @@ describe('ModelComparisonComponent', () => {
     headerButton('Model').click();
     refresh();
     expect(component.entryTable.sortColumn).toBe('model');
-    const rebuild = spyOn(component as unknown as { rebuild(): void }, 'rebuild').and.callThrough();
+    const rebuild = vi.spyOn(component as unknown as {
+      rebuild(): void;
+    }, 'rebuild');
 
     // The Custom list is in the table views' Data tab too; a row moves through its handle's Move menu.
     const handle = fixture.debugElement.queryAll(By.css('#mc-side-panel-data app-reorderable-list button'))
       .map(button => button.nativeElement as HTMLButtonElement)
       .find(button => button.getAttribute('aria-label') === 'Move Model 3');
-    expect(handle).withContext('Move Model 3').toBeTruthy();
+    expect(handle, 'Move Model 3').toBeTruthy();
     handle!.click();
     refresh();
     const moveDown = fixture.nativeElement.querySelector('#mc-side-panel-data #mc-custom-order-move-down') as HTMLButtonElement | null;
-    expect(moveDown).withContext('mc-custom-order-move-down').toBeTruthy();
+    expect(moveDown, 'mc-custom-order-move-down').toBeTruthy();
     moveDown!.click();
     refresh();
 
@@ -5334,13 +5349,13 @@ describe('ModelComparisonComponent', () => {
     const entries = comparableSet(2);
     entries[1] = { ...entries[1], cost: { ...entries[1].cost!, scheduledChangeEffectiveFrom: '2026-10-01' } };
     renderTable(buildDto(entries));
-    expect(component.columnEmptyKeys.has('scheduledChange')).toBeFalse();
-    expect(component.columnEmptyKeys.has('differsOn')).toBeTrue();
+    expect(component.columnEmptyKeys.has('scheduledChange')).toBe(false);
+    expect(component.columnEmptyKeys.has('differsOn')).toBe(true);
 
     // Model 1 alone has no scheduled change.
     component.entryTable.setFilter('label', 'Model 1');
     component.onTableChanged();
-    expect(component.columnEmptyKeys.has('scheduledChange')).toBeTrue();
+    expect(component.columnEmptyKeys.has('scheduledChange')).toBe(true);
 
     openSidebarTab('table');
     const panel = fixture.debugElement.query(By.css('app-table-settings-panel'));
@@ -5374,9 +5389,9 @@ describe('ModelComparisonComponent', () => {
     for (const shared of ['data', 'theme', 'download'] as FigureSidebarTab[]) {
       openSidebarTab(shared);
       showView('table');
-      expect(component.effectiveSidebarTab).withContext(shared).toBe(shared);
+      expect(component.effectiveSidebarTab, shared).toBe(shared);
       showView('all');
-      expect(component.effectiveSidebarTab).withContext(shared).toBe(shared);
+      expect(component.effectiveSidebarTab, shared).toBe(shared);
     }
   });
 
@@ -5421,7 +5436,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.previewView).toBe(2);
 
     showView('tablePreview');
-    expect(component.previewView).withContext('it opens at Fit to screen').toBe('fitScreen');
+    expect(component.previewView, 'it opens at Fit to screen').toBe('fitScreen');
     expect(textOf('#mc-fig-panel-tablePreview .mc-preview-label')).toBe('Comparison table');
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview .mc-preview-export'))).toBeNull();
     // The row is label, zoom, then the table's own export group at its end.
@@ -5432,8 +5447,8 @@ describe('ModelComparisonComponent', () => {
         : child.classList.contains('mc-table-export') ? 'export' : child.tagName))
       .toEqual(['label', 'zoom', 'export']);
     expect(fixture.debugElement.query(By.css('#mc-preview-figure'))).toBeNull();
-    // Karma lays the stage out at no size, so the fit is given one, as the Single chart specs do.
-    spyOn(component, 'measureStage').and.returnValue({ width: 800, height: 600, devicePixelRatio: 2 });
+    // The test page lays the stage out at no size, so the fit is given one, as the Single chart specs do.
+    vi.spyOn(component, 'measureStage').mockReturnValue({ width: 800, height: 600, devicePixelRatio: 2 });
     await composePreview();
 
     expect(component.tablePreviewPixels).toMatch(/^\d+ × \d+ px$/);
@@ -5507,7 +5522,7 @@ describe('ModelComparisonComponent', () => {
 
   it('copies one figure to the clipboard and names the card in the status', async () => {
     render(buildDto(comparableSet(3)), 2);
-    const write = jasmine.createSpy('write').and.returnValue(Promise.resolve());
+    const write = vi.fn().mockName('write').mockResolvedValue(undefined);
     withClipboard({ write });
     const card = component.panelCards[0];
 
@@ -5515,7 +5530,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(write).toHaveBeenCalledTimes(1);
     expect(component.exportStatus).toBe(`Copied ${card.title} to the clipboard.`);
-    expect(component.exporting).toBeFalse();
+    expect(component.exporting).toBe(false);
   });
 
   it('reports a refused figure copy, and an absent clipboard API, as inline text', async () => {
@@ -5529,7 +5544,7 @@ describe('ModelComparisonComponent', () => {
     await component.copyFigure(component.panelCards[0]);
     expect(component.exportStatus).toContain('cannot copy images to the clipboard');
     expect(component.exportStatus).toContain('download the figure instead');
-    expect(component.exporting).toBeFalse();
+    expect(component.exporting).toBe(false);
   });
 
   // -------------------------------------------------------------------------------------------
@@ -5552,8 +5567,8 @@ describe('ModelComparisonComponent', () => {
     const stamp = /_(\d{8}_\d{6})\.zip$/.exec(saved.names[0])![1];
     expect(zip.names.length).toBe(1);
     expect(zip.names[0].length).toBe(component.exportableCards.length);
-    expect(zip.names[0].every(name => /^model-comparison_.+\.(png|webp)$/.test(name))).toBeTrue();
-    expect(zip.names[0].every(name => name.includes(stamp))).toBeTrue();
+    expect(zip.names[0].every(name => /^model-comparison_.+\.(png|webp)$/.test(name))).toBe(true);
+    expect(zip.names[0].every(name => name.includes(stamp))).toBe(true);
   });
 
   it('composes a figure export from the suite and the computation time, and nothing else in the footer', () => {
@@ -5620,7 +5635,7 @@ describe('ModelComparisonComponent', () => {
       logoImage = document.createElement('canvas');
       logoImage.width = 8;
       logoImage.height = 8;
-      (figureLogoIo.loadImage as jasmine.Spy).and.resolveTo(logoImage);
+      (figureLogoIo.loadImage as Mock).mockResolvedValue(logoImage);
     });
 
     it('draws the wide logo at 48 px into every chart and the table image by default', async () => {
@@ -5629,8 +5644,8 @@ describe('ModelComparisonComponent', () => {
 
       const chart = access().exportChrome(component.panelCards[0]).logo!;
       expect(chart.image).toBe(logoImage);
-      expect(chart).toEqual(jasmine.objectContaining({ heightPx: 48, aspectRatio: 3248 / 850 }));
-      expect(access().tableImageOptions().logo).toEqual(jasmine.objectContaining({ heightPx: 48, aspectRatio: 3248 / 850 }));
+      expect(chart).toEqual(expect.objectContaining({ heightPx: 48, aspectRatio: 3248 / 850 }));
+      expect(access().tableImageOptions().logo).toEqual(expect.objectContaining({ heightPx: 48, aspectRatio: 3248 / 850 }));
       expect(figureLogoIo.loadImage).toHaveBeenCalledWith('/img/gnollbench/gnollbench-wide-v3-h850.webp');
     });
 
@@ -5643,8 +5658,8 @@ describe('ModelComparisonComponent', () => {
       await access().prepareFigureComposition();
 
       expect(access().exportChrome(component.panelCards[0]).logo)
-        .toEqual(jasmine.objectContaining({ heightPx: 64, aspectRatio: 1 }));
-      expect(access().tableImageOptions().logo).toEqual(jasmine.objectContaining({ heightPx: 64, aspectRatio: 1 }));
+        .toEqual(expect.objectContaining({ heightPx: 64, aspectRatio: 1 }));
+      expect(access().tableImageOptions().logo).toEqual(expect.objectContaining({ heightPx: 64, aspectRatio: 1 }));
       expect(figureLogoIo.loadImage).toHaveBeenCalledWith('/img/gnollbench/gnollbench-logo-v3-843.webp');
     });
 
@@ -5654,7 +5669,7 @@ describe('ModelComparisonComponent', () => {
         ...component.figureStyle,
         appearance: { ...component.figureStyle.appearance, logo: false }
       }));
-      (figureLogoIo.loadImage as jasmine.Spy).calls.reset();
+      (figureLogoIo.loadImage as Mock).mockClear();
       await access().prepareFigureComposition();
 
       expect(access().exportChrome(component.panelCards[0]).logo).toBeNull();
@@ -5663,7 +5678,7 @@ describe('ModelComparisonComponent', () => {
     });
 
     it('draws no logo where it failed to load', async () => {
-      (figureLogoIo.loadImage as jasmine.Spy).and.resolveTo(null);
+      (figureLogoIo.loadImage as Mock).mockResolvedValue(null);
       render(buildDto(comparableSet(3)), 2);
       await access().prepareFigureComposition();
 
@@ -5695,7 +5710,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.exportNotice?.kind).toBe('success');
     expect(component.exportNotice?.message).toContain('saved to model-comparison_figures_');
-    expect(component.exporting).toBeFalse();
+    expect(component.exporting).toBe(false);
   });
 
   it('announces a wholly refused batch as an error, and writes nothing', async () => {
@@ -5709,8 +5724,9 @@ describe('ModelComparisonComponent', () => {
       `Notice ${index}: ` +
       'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '
         .repeat(6);
-    spyOn(component as unknown as { exportChrome(card: ComparisonFigureCard): unknown }, 'exportChrome')
-      .and.returnValue({
+    vi.spyOn(component as unknown as {
+      exportChrome(card: ComparisonFigureCard): unknown;
+    }, 'exportChrome').mockReturnValue({
         chrome: {
           title: 'Figure', badges: [], detail: '', key: [], highlight: '',
           notes: [1, 2, 3, 4, 5, 6].map(index => ({ text: notice(index), tone: 'warning' as const }))
@@ -5748,12 +5764,12 @@ describe('ModelComparisonComponent', () => {
 
     for (const name of ['Fit to screen', 'Actual pixels, 100 percent', 'Reset view']) {
       const button = zoomButton(name);
-      expect(button.textContent!.trim()).withContext(name).toBe('');
+      expect(button.textContent!.trim(), name).toBe('');
       expect(button.classList).toContain('action-btn');
       const tipId = button.getAttribute('interestfor');
-      expect(tipId).withContext(name).toBeTruthy();
+      expect(tipId, name).toBeTruthy();
       const tip = (fixture.nativeElement as HTMLElement).querySelector(`#${tipId}`);
-      expect(tip?.getAttribute('popover')).withContext(name).toBe('hint');
+      expect(tip?.getAttribute('popover'), name).toBe('hint');
       expect(button.getAttribute('style')).toContain(`anchor-name: --${tipId}`);
       expect(tip?.getAttribute('style')).toContain(`position-anchor: --${tipId}`);
     }
@@ -5761,8 +5777,8 @@ describe('ModelComparisonComponent', () => {
     // Every icon-only button in the workspace has a name and a tooltip, and none uses `title`.
     const step = fixture.debugElement.query(By.css('#mc-step-panel-2')).nativeElement as HTMLElement;
     for (const button of Array.from(step.querySelectorAll<HTMLButtonElement>('button.action-btn'))) {
-      expect(button.getAttribute('aria-label')).withContext(button.outerHTML).toBeTruthy();
-      expect(button.getAttribute('interestfor')).withContext(button.outerHTML).toBeTruthy();
+      expect(button.getAttribute('aria-label'), button.outerHTML).toBeTruthy();
+      expect(button.getAttribute('interestfor'), button.outerHTML).toBeTruthy();
       expect(button.getAttribute('type')).toBe('button');
     }
     expect(step.querySelectorAll('[title]').length).toBe(0);
@@ -5859,7 +5875,7 @@ describe('ModelComparisonComponent', () => {
     expect(toggle.getAttribute('aria-label')).toBe('Comparison settings');
     expect(toggle.getAttribute('aria-controls')).toBe('mc-fig-sidebar');
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    expect(sidebar().hidden).toBeFalse();
+    expect(sidebar().hidden).toBe(false);
     expect(textOf('#mc-tip-sidebar')).toContain('Hide settings');
 
     toggle.click();
@@ -5868,7 +5884,7 @@ describe('ModelComparisonComponent', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     // The name stays constant; the state is aria-expanded's.
     expect(toggle.getAttribute('aria-label')).toBe('Comparison settings');
-    expect(sidebar().hidden).toBeTrue();
+    expect(sidebar().hidden).toBe(true);
     expect(getComputedStyle(sidebar()).display).toBe('none');
     expect(fixture.debugElement.query(By.css('.mc-fig-workspace.is-collapsed'))).not.toBeNull();
     expect(textOf('#mc-tip-sidebar')).toContain('Show settings');
@@ -5879,20 +5895,24 @@ describe('ModelComparisonComponent', () => {
 
     // One collapsed state for every view: the table views have the same sidebar.
     showView('table');
-    expect(sidebar().hidden).toBeTrue();
+    expect(sidebar().hidden).toBe(true);
 
     const second = secondInstance();
-    expect(second.componentInstance.sidebarCollapsed).toBeTrue();
-    expect((second.nativeElement as HTMLElement).querySelector('#mc-fig-sidebar')?.hasAttribute('hidden')).toBeTrue();
+    expect(second.componentInstance.sidebarCollapsed).toBe(true);
+    expect((second.nativeElement as HTMLElement).querySelector('#mc-fig-sidebar')?.hasAttribute('hidden')).toBe(true);
     second.destroy();
   });
 
   it('keeps the sidebar defaults when storage throws', () => {
-    spyOn(Storage.prototype, 'getItem').and.throwError('blocked');
-    spyOn(Storage.prototype, 'setItem').and.throwError('blocked');
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
 
     const blocked = TestBed.createComponent(ModelComparisonComponent);
-    expect(blocked.componentInstance.sidebarCollapsed).toBeFalse();
+    expect(blocked.componentInstance.sidebarCollapsed).toBe(false);
     expect(blocked.componentInstance.sidebarTab).toBe('data');
     expect(blocked.componentInstance.tableColumns).toEqual(DEFAULT_TABLE_COLUMNS);
     expect(blocked.componentInstance.tableFormat).toBe('xlsx');
@@ -5900,7 +5920,7 @@ describe('ModelComparisonComponent', () => {
     expect(() => blocked.componentInstance.selectSidebarTab('charts')).not.toThrow();
     expect(() => blocked.componentInstance.onTableFormatChange('md')).not.toThrow();
     expect(() => blocked.componentInstance.onTableColumnsChange(DEFAULT_TABLE_COLUMNS)).not.toThrow();
-    expect(blocked.componentInstance.sidebarCollapsed).toBeTrue();
+    expect(blocked.componentInstance.sidebarCollapsed).toBe(true);
     expect(blocked.componentInstance.sidebarTab).toBe('charts');
     blocked.destroy();
   });
@@ -5923,7 +5943,7 @@ describe('ModelComparisonComponent', () => {
     localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, JSON.stringify({ version: 1, collapsed: 'yes', tab: 'layout' }));
     second = secondInstance();
     expect(second.componentInstance.sidebarTab).toBe('data');
-    expect(second.componentInstance.sidebarCollapsed).toBeFalse();
+    expect(second.componentInstance.sidebarCollapsed).toBe(false);
     second.destroy();
 
     localStorage.setItem(FIGURE_SIDEBAR_STORAGE_KEY, '{not json');
@@ -5949,10 +5969,10 @@ describe('ModelComparisonComponent', () => {
     const panel = fixture.debugElement.query(By.css('#mc-side-panel-download')).nativeElement as HTMLElement;
     const size = panel.querySelector<HTMLDetailsElement>('#mc-export-section')!;
     expect(size).not.toBeNull();
-    expect(size.open).withContext('open by default').toBeTrue();
+    expect(size.open, 'open by default').toBe(true);
     expect(size.querySelector('summary .gh-disclosure-summary-title')?.textContent?.trim()).toBe('Chart size');
     for (const id of ['mc-export-resolution', 'mc-export-density', 'mc-export-text-scale']) {
-      expect(size.querySelector(`#${id}`)).withContext(id).not.toBeNull();
+      expect(size.querySelector(`#${id}`), id).not.toBeNull();
     }
     expect(textOf('#mc-export-text-scale-hint'))
       .toContain('Scales the caption, notes and chart text together without changing the pixel size.');
@@ -5966,7 +5986,7 @@ describe('ModelComparisonComponent', () => {
     expect(panel.querySelector('#mc-side-download-all')).toBeNull();
     const downloadButtons = Array.from(panel.querySelectorAll('button'))
       .filter(button => /download|copy/i.test(`${button.getAttribute('aria-label') ?? ''} ${button.textContent ?? ''}`));
-    expect(downloadButtons.length).withContext('no download or copy buttons').toBe(0);
+    expect(downloadButtons.length, 'no download or copy buttons').toBe(0);
     expect(panel.querySelector('.mc-download-hint')?.textContent?.trim())
       .toBe('Download a chart from its tile or from Single chart, or all of them at once from All charts.');
     // The table's formats belong to the table views.
@@ -5987,12 +6007,12 @@ describe('ModelComparisonComponent', () => {
     section.open = false;
     section.dispatchEvent(new Event('toggle'));
     refresh();
-    expect(component.figureSizeOpen).toBeFalse();
-    expect(storedSidebar().figureSizeOpen).toBeFalse();
+    expect(component.figureSizeOpen).toBe(false);
+    expect(storedSidebar().figureSizeOpen).toBe(false);
     expect(storedSidebar().tab).toBe('download');
 
     const second = secondInstance();
-    expect(second.componentInstance.figureSizeOpen).toBeFalse();
+    expect(second.componentInstance.figureSizeOpen).toBe(false);
     second.destroy();
   });
 
@@ -6069,7 +6089,7 @@ describe('ModelComparisonComponent', () => {
     const stepRow = box('.mc-wizard-tabbar');
     for (const selector of ['#mc-about-trigger', '.mc-recompute']) {
       const button = box(selector);
-      expect(Math.abs(button.top + button.height / 2 - centreOf(stepRow))).withContext(selector).toBeLessThanOrEqual(1);
+      expect(Math.abs(button.top + button.height / 2 - centreOf(stepRow)), selector).toBeLessThanOrEqual(1);
     }
   });
 
@@ -6106,9 +6126,9 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 2);
     for (const selector of ['#mc-about-trigger', '.mc-recompute']) {
       const button = fixture.debugElement.query(By.css(selector)).nativeElement as HTMLElement;
-      expect(button.closest('.mc-wizard-tabbar .mc-wizard-meta')).withContext(selector).not.toBeNull();
-      expect(button.closest('.mc-fig-bar')).withContext(selector).toBeNull();
-      expect(button.closest('[role="tablist"]')).withContext(selector).toBeNull();
+      expect(button.closest('.mc-wizard-tabbar .mc-wizard-meta'), selector).not.toBeNull();
+      expect(button.closest('.mc-fig-bar'), selector).toBeNull();
+      expect(button.closest('[role="tablist"]'), selector).toBeNull();
     }
     const bar = fixture.debugElement.query(By.css('.mc-fig-bar')).nativeElement as HTMLElement;
     expect(Array.from(bar.children).map(child => child.classList.contains('mc-fig-sidebar-toggle') ? 'toggle'
@@ -6198,78 +6218,79 @@ describe('ModelComparisonComponent', () => {
     const toolbar = element('#mc-fig-panel-table .mc-table-toolbar');
     const tableContentTop = toolbar.getBoundingClientRect().top + parseFloat(getComputedStyle(toolbar).paddingTop);
     expect(getComputedStyle(element('#mc-fig-panel-table')).paddingTop).toBe('0px');
-    expect(Math.abs(tableContentTop - barBottom() - 16)).withContext('Interactive table').toBeLessThanOrEqual(1);
+    expect(Math.abs(tableContentTop - barBottom() - 16), 'Interactive table').toBeLessThanOrEqual(1);
 
     showView('tablePreview');
     const previewTop = element('#mc-fig-panel-tablePreview .mc-preview-toolbar').getBoundingClientRect().top;
-    expect(Math.abs(previewTop - barBottom() - 16)).withContext('Table preview').toBeLessThanOrEqual(1);
+    expect(Math.abs(previewTop - barBottom() - 16), 'Table preview').toBeLessThanOrEqual(1);
   });
 
   it('renders no chart directive on step 2, and exports without reading a page canvas', async () => {
     render(buildDto(comparableSet(3)), 2);
     const directives = (): number => fixture.debugElement.queryAll(By.directive(BaseChartDirective)).length;
-    expect(directives()).withContext('the All tab').toBe(0);
+    expect(directives(), 'the All tab').toBe(0);
     expect(fixture.debugElement.queryAll(By.css('canvas[baseChart], canvas[basechart]')).length).toBe(0);
 
     openSingle(component.panelCards[0]);
-    expect(directives()).withContext('the Single tab').toBe(0);
+    expect(directives(), 'the Single tab').toBe(0);
     // Nothing is kept rendered and hidden behind the Single tab any more.
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-all'))).toBeNull();
     expect(fixture.debugElement.query(By.css('.mc-fig-panel[inert], .mc-fig-panel.is-inactive'))).toBeNull();
 
     captureSaves();
-    const exportOne = spyOn(
-      component as unknown as { exportOneFigure(card: ComparisonFigureCard, ...rest: unknown[]): Promise<unknown> },
-      'exportOneFigure'
-    ).and.returnValue(Promise.resolve({ result: null, refusal: null, pixels: '' }));
+    const exportOne = vi.spyOn(component as unknown as {
+      exportOneFigure(card: ComparisonFigureCard, ...rest: unknown[]): Promise<unknown>;
+    }, 'exportOneFigure').mockResolvedValue({ result: null, refusal: null, pixels: '' });
     await component.downloadPreviewedFigure();
 
     expect(exportOne).toHaveBeenCalledTimes(1);
-    const args = exportOne.calls.mostRecent().args;
+    const args = vi.mocked(exportOne).mock.lastCall!;
     expect((args[0] as ComparisonFigureCard).id).toBe(component.panelCards[0].id);
-    expect(args.some(arg => arg instanceof HTMLCanvasElement)).toBeFalse();
+    expect(args.some(arg => arg instanceof HTMLCanvasElement)).toBe(false);
   });
 
   it('re-composes the Single stage on a highlight toggle while it is shown, and not on the All tab', () => {
     render(buildDto(comparableSet(3)), 2);
-    const renderPreview = spyOn(
-      component as unknown as { renderPreview(): Promise<void> }, 'renderPreview'
-    ).and.returnValue(Promise.resolve());
+    const renderPreview = vi.spyOn(component as unknown as {
+      renderPreview(): Promise<void>;
+    }, 'renderPreview').mockResolvedValue();
     const box = (): DebugElement => fixture.debugElement.queryAll(By.css('.mc-models-table input[id^="mc-emph-"]'))[0];
 
-    jasmine.clock().install();
+    vi.useFakeTimers();
     try {
       box().triggerEventHandler('change', { target: box().nativeElement });
       fixture.detectChanges();
-      jasmine.clock().tick(200);
+      vi.advanceTimersByTime(200);
       expect(renderPreview).not.toHaveBeenCalled();
 
       openSingle();
-      jasmine.clock().tick(200);
-      renderPreview.calls.reset();
+      vi.advanceTimersByTime(200);
+      renderPreview.mockClear();
 
       box().triggerEventHandler('change', { target: box().nativeElement });
       fixture.detectChanges();
       expect(renderPreview).not.toHaveBeenCalled();
-      jasmine.clock().tick(200);
+      vi.advanceTimersByTime(200);
       expect(renderPreview).toHaveBeenCalledTimes(1);
-    } finally {
-      jasmine.clock().uninstall();
+    }
+    finally {
+      vi.useRealTimers();
     }
   });
 
   it('lights a hover highlight on the All tab, none on the Single tab, and still clears one', async () => {
     render(buildDto(comparableSet(3)), 2);
     await settleAllTab();
-    const schedule = spyOn(
-      component as unknown as { scheduleAllCompose(): void }, 'scheduleAllCompose').and.callThrough();
+    const schedule = vi.spyOn(component as unknown as {
+      scheduleAllCompose(): void;
+    }, 'scheduleAllCompose');
     component.setHighlight('run:1');
     expect(component.highlightedKey).toBe('run:1');
     // The tiles re-compose with the model lit.
     expect(schedule).toHaveBeenCalled();
 
     openSingle();
-    expect(component.highlightedKey).withContext('entering the Single tab clears it').toBeNull();
+    expect(component.highlightedKey, 'entering the Single tab clears it').toBeNull();
 
     component.setHighlight('run:2');
     expect(component.highlightedKey).toBeNull();
@@ -6322,7 +6343,7 @@ describe('ModelComparisonComponent', () => {
 
   /** A 1200 × 900 viewport at DPR 2, with Full HD at 100 % density: Fit height is 868 × 2 / 1080. */
   async function openFittedAll(): Promise<void> {
-    spyOn(component, 'measureAllViewport').and.returnValue({ width: 1200, height: 900, devicePixelRatio: 2 });
+    vi.spyOn(component, 'measureAllViewport').mockReturnValue({ width: 1200, height: 900, devicePixelRatio: 2 });
     component.onExportDensityChange(1);
     render(buildDto(comparableSet(3)), 2);
     await settleAllTab();
@@ -6331,7 +6352,7 @@ describe('ModelComparisonComponent', () => {
   it('opens the All tab at Fit height: one figure’s full height in the visible height', async () => {
     await openFittedAll();
 
-    expect(component.allActive).toBeTrue();
+    expect(component.allActive).toBe(true);
     expect(component.allView).toBe('fitHeight');
     const fit = fitHeightZoom(900, 1080, 2, 16);
     expect(component.allZoomValue).toBeCloseTo(fit, 9);
@@ -6356,7 +6377,7 @@ describe('ModelComparisonComponent', () => {
     };
 
     const tile = tileOf(component.panelCards[0]);
-    expect(press(tile, '+').defaultPrevented).toBeTrue();
+    expect(press(tile, '+').defaultPrevented).toBe(true);
     expect(component.allView).toBeGreaterThan(fit);
     const zoomedIn = component.allZoomValue;
     press(allPanel(), '=');
@@ -6367,10 +6388,10 @@ describe('ModelComparisonComponent', () => {
     expect(component.allView).toBe('fitHeight');
 
     const withCtrl = press(allPanel(), '+', { ctrlKey: true });
-    expect(withCtrl.defaultPrevented).toBeFalse();
+    expect(withCtrl.defaultPrevented).toBe(false);
     expect(component.allView).toBe('fitHeight');
     const slider = fixture.debugElement.query(By.css('#mc-all-zoom')).nativeElement as HTMLInputElement;
-    expect(press(slider, '-').defaultPrevented).withContext('the slider keeps its own keys').toBeFalse();
+    expect(press(slider, '-').defaultPrevented, 'the slider keeps its own keys').toBe(false);
     expect(component.allView).toBe('fitHeight');
   });
 
@@ -6398,24 +6419,25 @@ describe('ModelComparisonComponent', () => {
 
     for (const name of ['Zoom all figures out', 'Zoom all figures in', 'Fit height']) {
       const tipId = button(name).getAttribute('interestfor');
-      expect(tipId).withContext(name).toBeTruthy();
+      expect(tipId, name).toBeTruthy();
       expect((fixture.nativeElement as HTMLElement).querySelector(`#${tipId}`)?.getAttribute('popover')).toBe('hint');
-      expect(button(name).hasAttribute('title')).toBeFalse();
+      expect(button(name).hasAttribute('title')).toBe(false);
     }
   });
 
   it('keeps the reader’s zoom across a viewport resize, and re-fits while they have not zoomed', async () => {
     await openFittedAll();
-    const measure = component.measureAllViewport as jasmine.Spy;
-    const refreshGeometry = (): void =>
-      (component as unknown as { refreshAllGeometry(): void }).refreshAllGeometry();
+    const measure = component.measureAllViewport as Mock;
+    const refreshGeometry = (): void => (component as unknown as {
+      refreshAllGeometry(): void;
+    }).refreshAllGeometry();
 
-    measure.and.returnValue({ width: 1200, height: 600, devicePixelRatio: 2 });
+    measure.mockReturnValue({ width: 1200, height: 600, devicePixelRatio: 2 });
     refreshGeometry();
     expect(component.allZoomValue).toBeCloseTo(fitHeightZoom(600, 1080, 2, 16), 9);
 
     component.setAllView(1);
-    measure.and.returnValue({ width: 1200, height: 1000, devicePixelRatio: 2 });
+    measure.mockReturnValue({ width: 1200, height: 1000, devicePixelRatio: 2 });
     refreshGeometry();
     expect(component.allZoomValue).toBe(1);
   });
@@ -6460,8 +6482,8 @@ describe('ModelComparisonComponent', () => {
     for (const card of component.exportableCards) {
       const canvas = tileOf(card).querySelector('canvas')!;
       // The displayed size at the display's density, never more than the export itself.
-      expect(canvas.width).withContext(card.id).toBe(Math.round(1920 * Math.min(1, zoom)));
-      expect(canvas.height).withContext(card.id).toBe(Math.round(1080 * Math.min(1, zoom)));
+      expect(canvas.width, card.id).toBe(Math.round(1920 * Math.min(1, zoom)));
+      expect(canvas.height, card.id).toBe(Math.round(1080 * Math.min(1, zoom)));
     }
     expect(component.allTileRefusals).toEqual({});
   });
@@ -6470,8 +6492,9 @@ describe('ModelComparisonComponent', () => {
     withoutIntersectionObserver();
     await openFittedAll();
     await composeAllTiles();
-    const schedule = spyOn(
-      component as unknown as { scheduleAllCompose(): void }, 'scheduleAllCompose').and.callThrough();
+    const schedule = vi.spyOn(component as unknown as {
+      scheduleAllCompose(): void;
+    }, 'scheduleAllCompose');
 
     openSidebarTab('download');
     const select = fixture.debugElement.query(By.css('#mc-export-resolution')).nativeElement as HTMLSelectElement;
@@ -6496,10 +6519,10 @@ describe('ModelComparisonComponent', () => {
     withoutIntersectionObserver();
     await openFittedAll();
     const card = component.panelCards[0];
-    const notice = (index: number): string =>
-      `Notice ${index}: ` + 'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '.repeat(6);
-    spyOn(component as unknown as { exportChrome(card: ComparisonFigureCard): unknown }, 'exportChrome')
-      .and.returnValue({
+    const notice = (index: number): string => `Notice ${index}: ` + 'the speed axis is degraded for this entry, so its bar is drawn from a partial sample. '.repeat(6);
+    vi.spyOn(component as unknown as {
+      exportChrome(card: ComparisonFigureCard): unknown;
+    }, 'exportChrome').mockReturnValue({
         chrome: { ...card.chrome, notes: [1, 2, 3, 4, 5, 6].map(index => ({ text: notice(index), tone: 'warning' as const })) },
         footer: { suite: 'Suite A', computedAt: '3 Sep 2026' }
       });
@@ -6519,7 +6542,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.allTilesPerRow).toBe(1);
     const tiles = fixture.debugElement.queryAll(By.css('.mc-all-tile')).map(tile => tile.nativeElement as HTMLElement);
     expect(tiles[0].classList).not.toContain('is-deferred');
-    expect(tiles.slice(1).every(tile => tile.classList.contains('is-deferred'))).toBeTrue();
+    expect(tiles.slice(1).every(tile => tile.classList.contains('is-deferred'))).toBe(true);
     expect(tiles[1].style.getPropertyValue('contain-intrinsic-size')).toContain(`${Math.round(component.allTileCssHeight)}px`);
   });
 
@@ -6531,25 +6554,25 @@ describe('ModelComparisonComponent', () => {
     expect(internals.allComposeTimer).not.toBeNull();
 
     openSingle();
-    expect(component.allActive).toBeFalse();
+    expect(component.allActive).toBe(false);
     expect(internals.allComposeTimer).toBeNull();
     expect(internals.allResizeObserver).toBeNull();
     expect(internals.allIntersectionObserver).toBeNull();
 
     component.selectFigureTab('all');
     refresh();
-    expect(component.allActive).toBeTrue();
+    expect(component.allActive).toBe(true);
     component.goToStep(1);
     fixture.detectChanges();
-    expect(component.allActive).toBeFalse();
+    expect(component.allActive).toBe(false);
     expect(internals.allComposeTimer).toBeNull();
 
     component.goToStep(2);
     fixture.detectChanges();
     await settleAllTab();
-    expect(component.allActive).toBeTrue();
+    expect(component.allActive).toBe(true);
     fixture.destroy();
-    expect(component.allActive).toBeFalse();
+    expect(component.allActive).toBe(false);
     expect(internals.allResizeObserver).toBeNull();
   });
 
@@ -6569,7 +6592,7 @@ describe('ModelComparisonComponent', () => {
     expect(fixture.debugElement.query(By.css('#mc-style-scatter-heading'))).not.toBeNull();
 
     openSingle(component.panelCards[1]);
-    expect(component.styleFamily).withContext('follows the figure on the stage').toBe('bar');
+    expect(component.styleFamily, 'follows the figure on the stage').toBe('bar');
     component.selectPreviewCard(component.scatterCards[0].id);
     expect(component.styleFamily).toBe('scatter');
 
@@ -6600,7 +6623,7 @@ describe('ModelComparisonComponent', () => {
         expect(tab.getAttribute('tabindex')).toBe(index === selected ? '0' : '-1');
       });
       const panels = fixture.debugElement.queryAll(By.css('.mc-style-family-panel'));
-      expect(panels.length).withContext('only the selected family\'s panel exists').toBe(1);
+      expect(panels.length, 'only the selected family\'s panel exists').toBe(1);
       const panel = panels[0].nativeElement as HTMLElement;
       expect(panel.getAttribute('role')).toBe('tabpanel');
       expect(panel.id).toBe(`mc-style-family-panel-${kinds[selected]}`);
@@ -6624,12 +6647,12 @@ describe('ModelComparisonComponent', () => {
     expect(document.activeElement).toBe(tabs()[0]);
 
     press(0, 'ArrowLeft');
-    expect(component.styleFamily).withContext('Left wraps to the last tab').toBe('scatter');
+    expect(component.styleFamily, 'Left wraps to the last tab').toBe('scatter');
     expectSelected(2);
     expect(document.activeElement).toBe(tabs()[2]);
 
     press(2, 'ArrowRight');
-    expect(component.styleFamily).withContext('Right wraps to the first tab').toBe('bar');
+    expect(component.styleFamily, 'Right wraps to the first tab').toBe('bar');
     expect(document.activeElement).toBe(tabs()[0]);
 
     press(0, 'End');
@@ -6657,7 +6680,7 @@ describe('ModelComparisonComponent', () => {
       .filter(element => !element.closest('app-figure-style-panel'))
       .filter(element => (element.textContent ?? '').includes(text));
     for (const text of ['Filled bars in the Intelligence', 'Label models inside', 'Show values in', 'Figure preview…']) {
-      expect(outsidePanel(text).length).withContext(text).toBe(0);
+      expect(outsidePanel(text).length, text).toBe(0);
     }
     expect(fixture.debugElement.query(By.css('dialog.mc-preview-dialog'))).toBeNull();
     // Each export control exists once.
@@ -6668,11 +6691,13 @@ describe('ModelComparisonComponent', () => {
   it('returns to the Single tab after a step away, and watches the stage again', async () => {
     render(buildDto(comparableSet(3)), 2);
     openSingle();
-    const observe = spyOn(component as unknown as { observeStage(): void }, 'observeStage').and.callThrough();
+    const observe = vi.spyOn(component as unknown as {
+      observeStage(): void;
+    }, 'observeStage');
 
     component.goToStep(1);
     fixture.detectChanges();
-    expect(component.previewActive).toBeFalse();
+    expect(component.previewActive).toBe(false);
     expect(fixture.debugElement.query(By.css('.mc-preview-stage'))).toBeNull();
 
     component.goToStep(2);
@@ -6683,7 +6708,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.figureTab).toBe('single');
     expect(singleTabButton().getAttribute('aria-selected')).toBe('true');
-    expect(component.previewActive).toBeTrue();
+    expect(component.previewActive).toBe(true);
     expect(observe).toHaveBeenCalledTimes(1);
   });
 
@@ -7053,17 +7078,17 @@ describe('model-comparison adapter', () => {
       excludedMeasures: []
     });
 
-    expect(entry.excluded).toBeTrue();
+    expect(entry.excluded).toBe(true);
     expect(entry.excludedReasonKeys).toEqual(['ScoringMethodVersion']);
     // NaN, never 0: a zero cost would plot as a bar on the baseline and read as "free".
-    expect(Number.isNaN(entry.intelligenceIndex)).toBeTrue();
-    expect(Number.isNaN(entry.ttftP50Ms)).toBeTrue();
-    expect(Number.isNaN(entry.modelTimeMeanMs)).toBeTrue();
-    expect(Number.isNaN(entry.totalModelTimeMs)).toBeTrue();
-    expect(Number.isNaN(entry.candidateCostPerQuestionUsd)).toBeTrue();
-    expect(Number.isNaN(entry.candidateCostPerRunUsd)).toBeTrue();
+    expect(Number.isNaN(entry.intelligenceIndex)).toBe(true);
+    expect(Number.isNaN(entry.ttftP50Ms)).toBe(true);
+    expect(Number.isNaN(entry.modelTimeMeanMs)).toBe(true);
+    expect(Number.isNaN(entry.totalModelTimeMs)).toBe(true);
+    expect(Number.isNaN(entry.candidateCostPerQuestionUsd)).toBe(true);
+    expect(Number.isNaN(entry.candidateCostPerRunUsd)).toBe(true);
     // No cost object, so no run total: NaN, like every other absent measure.
-    expect(Number.isNaN(entry.totalRunCostUsd)).toBeTrue();
+    expect(Number.isNaN(entry.totalRunCostUsd)).toBe(true);
     expect(entry.totalRunCostSdUsd).toBeNull();
     expect(entry.candidateCostPerQuestionSdUsd).toBeNull();
     expect(entry.speedIndexSd).toBeNull();
@@ -7110,7 +7135,7 @@ describe('model-comparison adapter', () => {
 
     expect(withTotal.totalRunCostUsd).toBe(0.9876);
     expect(withTotal.totalRunCostSdUsd).toBe(0.0432);
-    expect(Number.isNaN(withoutTotal.totalRunCostUsd)).toBeTrue();
+    expect(Number.isNaN(withoutTotal.totalRunCostUsd)).toBe(true);
     expect(withoutTotal.totalRunCostSdUsd).toBeNull();
   });
 

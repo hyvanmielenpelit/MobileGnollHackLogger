@@ -58,7 +58,7 @@ describe('figure-style', () => {
       betterBadgePlacement: 'fit'
     });
     expect(DEFAULT_FIGURE_STYLE.profile).toEqual({ ...chromeDefaults, hiddenBadges: [] });
-    expect('betterBadgePlacement' in DEFAULT_FIGURE_STYLE.profile).toBeFalse();
+    expect('betterBadgePlacement' in DEFAULT_FIGURE_STYLE.profile).toBe(false);
     expect(DEFAULT_FIGURE_STYLE.appearance).toEqual({
       theme: 'dark',
       background: 'theme',
@@ -98,19 +98,19 @@ describe('figure-style', () => {
   it('keeps every default inside its control range', () => {
     for (const control of BAR_RANGE_CONTROLS) {
       const value = DEFAULT_FIGURE_STYLE.bar[control.key] as number;
-      expect(value).withContext(control.key).toBeGreaterThanOrEqual(control.min);
-      expect(value).withContext(control.key).toBeLessThanOrEqual(control.max);
+      expect(value, control.key).toBeGreaterThanOrEqual(control.min);
+      expect(value, control.key).toBeLessThanOrEqual(control.max);
     }
     for (const control of SCATTER_RANGE_CONTROLS) {
       const value = DEFAULT_FIGURE_STYLE.scatter[control.key];
-      expect(value).withContext(control.key).toBeGreaterThanOrEqual(control.min);
-      expect(value).withContext(control.key).toBeLessThanOrEqual(control.max);
+      expect(value, control.key).toBeGreaterThanOrEqual(control.min);
+      expect(value, control.key).toBeLessThanOrEqual(control.max);
     }
     for (const control of CHROME_RANGE_CONTROLS) {
       for (const family of ['bar', 'scatter', 'profile'] as const) {
         const value = DEFAULT_FIGURE_STYLE[family][control.key];
-        expect(value).withContext(`${family} ${control.key}`).toBeGreaterThanOrEqual(control.min);
-        expect(value).withContext(`${family} ${control.key}`).toBeLessThanOrEqual(control.max);
+        expect(value, `${family} ${control.key}`).toBeGreaterThanOrEqual(control.min);
+        expect(value, `${family} ${control.key}`).toBeLessThanOrEqual(control.max);
       }
     }
   });
@@ -122,8 +122,8 @@ describe('figure-style', () => {
       .filter(control => textKeys.includes(control.key));
     expect(controls.length).toBe(9);
     for (const control of controls) {
-      expect(control.max).withContext(control.key).toBe(MAX_TEXT_SIZE_PX);
-      expect(control.min).withContext(control.key).toBe(8);
+      expect(control.max, control.key).toBe(MAX_TEXT_SIZE_PX);
+      expect(control.min, control.key).toBe(8);
     }
     expect(MAX_TEXT_SIZE_PX).toBe(48);
 
@@ -134,13 +134,13 @@ describe('figure-style', () => {
       profile: { titleSizePx: 60, badgeTextSizePx: 60, footerTextSizePx: 60 }
     });
     for (const key of ['titleSizePx', 'badgeTextSizePx', 'footerTextSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'valueLabelSizePx'] as const) {
-      expect(style.bar[key]).withContext(`bar ${key}`).toBe(48);
+      expect(style.bar[key], `bar ${key}`).toBe(48);
     }
     for (const key of ['titleSizePx', 'badgeTextSizePx', 'footerTextSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'labelTextSizePx'] as const) {
-      expect(style.scatter[key]).withContext(`scatter ${key}`).toBe(48);
+      expect(style.scatter[key], `scatter ${key}`).toBe(48);
     }
     for (const key of ['titleSizePx', 'badgeTextSizePx', 'footerTextSizePx'] as const) {
-      expect(style.profile[key]).withContext(`profile ${key}`).toBe(48);
+      expect(style.profile[key], `profile ${key}`).toBe(48);
     }
   });
 
@@ -151,12 +151,12 @@ describe('figure-style', () => {
       profile: { footerTextSizePx: 9, footer: 'no' }
     });
     expect(style.bar.titleSizePx).toBe(24);
-    expect(style.bar.footer).toBeFalse();
+    expect(style.bar.footer).toBe(false);
     expect(style.scatter.titleSizePx).toBe(18);
     expect(style.scatter.badgeTextSizePx).toBe(14);
-    expect(style.scatter.footer).toBeTrue();
+    expect(style.scatter.footer).toBe(true);
     expect(style.profile.footerTextSizePx).toBe(9);
-    expect(style.profile.footer).toBeTrue();
+    expect(style.profile.footer).toBe(true);
   });
 
   it('reads a style stored without axis title sizes as the axis value size + 1, clamped', () => {
@@ -186,8 +186,8 @@ describe('figure-style', () => {
 
   it('accepts anything without throwing and falls back to the default', () => {
     for (const value of [null, undefined, 'style', 42, [], [1, 2], true, {}]) {
-      expect(() => normalizeFigureStyle(value)).withContext(JSON.stringify(value) ?? 'undefined').not.toThrow();
-      expect(normalizeFigureStyle(value)).withContext(JSON.stringify(value) ?? 'undefined').toEqual(DEFAULT_FIGURE_STYLE);
+      expect(() => normalizeFigureStyle(value), JSON.stringify(value) ?? 'undefined').not.toThrow();
+      expect(normalizeFigureStyle(value), JSON.stringify(value) ?? 'undefined').toEqual(DEFAULT_FIGURE_STYLE);
     }
     expect(normalizeFigureStyle({ bar: 'x', scatter: [] })).toEqual(DEFAULT_FIGURE_STYLE);
   });
@@ -220,7 +220,7 @@ describe('figure-style', () => {
     expect(style.bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10, gridlines: false });
     expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 9, frontierIntervalsNote: false });
     expect(Object.keys(style)).toEqual(['bar', 'scatter', 'profile', 'numbers', 'appearance', 'table']);
-    expect('colour' in style.bar).toBeFalse();
+    expect('colour' in style.bar).toBe(false);
   });
 
   it('keeps No limit on the bar width', () => {
@@ -233,7 +233,7 @@ describe('figure-style', () => {
       bar: { intervals: false, hiddenIntervalsNote: false, meanTimeNoIntervalNote: false },
       scatter: { intervals: false, hiddenIntervalsNote: false, frontierIntervalsNote: false, frontierLine: false }
     };
-    expect(normalizeFigureStyle(everyCheckboxOff).bar.intervals).toBeFalse();
+    expect(normalizeFigureStyle(everyCheckboxOff).bar.intervals).toBe(false);
 
     const fields: readonly [('bar' | 'scatter'), string][] = [
       ['bar', 'intervals'],
@@ -248,18 +248,18 @@ describe('figure-style', () => {
       const stored = JSON.parse(JSON.stringify(everyCheckboxOff)) as Record<string, Record<string, unknown>>;
       delete stored[family][key];
       const style = normalizeFigureStyle(stored) as unknown as Record<string, Record<string, unknown>>;
-      expect(style[family][key]).withContext(`${family}.${key}`).toBeTrue();
+      expect(style[family][key], `${family}.${key}`).toBe(true);
     }
 
     // A style stored before the mean-time switch existed.
     const older = normalizeFigureStyle({ version: 1, bar: { intervals: false, hiddenIntervalsNote: false } });
-    expect(older.bar.meanTimeNoIntervalNote).toBeTrue();
-    expect(older.bar.intervals).toBeFalse();
+    expect(older.bar.meanTimeNoIntervalNote).toBe(true);
+    expect(older.bar.intervals).toBe(false);
   });
 
   it('reads a stored style without filledBars as outlined, and keeps it when set', () => {
-    expect(normalizeFigureStyle({ version: 1, bar: {} }).bar.filledBars).toBeFalse();
-    expect(normalizeFigureStyle({ version: 1, bar: { filledBars: true } }).bar.filledBars).toBeTrue();
+    expect(normalizeFigureStyle({ version: 1, bar: {} }).bar.filledBars).toBe(false);
+    expect(normalizeFigureStyle({ version: 1, bar: { filledBars: true } }).bar.filledBars).toBe(true);
   });
 
   it('accepts only real booleans for a checkbox', () => {
@@ -267,12 +267,12 @@ describe('figure-style', () => {
       bar: { intervals: 'false', valueLabels: 0, filledBars: 'true' },
       scatter: { frontierIntervalsNote: 'false', frontierLine: 'false', gridlines: null }
     });
-    expect(style.bar.intervals).toBeTrue();
-    expect(style.bar.valueLabels).toBeTrue();
-    expect(style.bar.filledBars).toBeFalse();
-    expect(style.scatter.frontierIntervalsNote).toBeTrue();
-    expect(style.scatter.frontierLine).toBeTrue();
-    expect(style.scatter.gridlines).toBeTrue();
+    expect(style.bar.intervals).toBe(true);
+    expect(style.bar.valueLabels).toBe(true);
+    expect(style.bar.filledBars).toBe(false);
+    expect(style.scatter.frontierIntervalsNote).toBe(true);
+    expect(style.scatter.frontierLine).toBe(true);
+    expect(style.scatter.gridlines).toBe(true);
   });
 
   it('drops a stored dominatedShading quietly, and loads the rest of the style', () => {
@@ -280,31 +280,30 @@ describe('figure-style', () => {
       version: 1,
       scatter: { dominatedShading: false, markRadiusPx: 8, frontierWidthPx: 3 }
     });
-    expect('dominatedShading' in style.scatter).toBeFalse();
+    expect('dominatedShading' in style.scatter).toBe(false);
     expect(style.scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, markRadiusPx: 8, frontierWidthPx: 3 });
   });
 
   it('keeps the n = 1 marker when set and reads anything but a boolean as shown', () => {
-    expect(normalizeFigureStyle({ bar: { singleRunMarker: false } }).bar.singleRunMarker).toBeFalse();
+    expect(normalizeFigureStyle({ bar: { singleRunMarker: false } }).bar.singleRunMarker).toBe(false);
     for (const value of ['false', 0, null, undefined]) {
-      expect(normalizeFigureStyle({ bar: { singleRunMarker: value } }).bar.singleRunMarker)
-        .withContext(String(value)).toBeTrue();
+      expect(normalizeFigureStyle({ bar: { singleRunMarker: value } }).bar.singleRunMarker, String(value)).toBe(true);
     }
   });
 
   it('keeps the thinking level break per family when set and reads anything but a boolean as off', () => {
     const style = normalizeFigureStyle({ bar: { thinkingLevelBreak: true }, scatter: { thinkingLevelBreak: true } });
-    expect(style.bar.thinkingLevelBreak).toBeTrue();
-    expect(style.scatter.thinkingLevelBreak).toBeTrue();
-    expect(normalizeFigureStyle({ bar: { thinkingLevelBreak: true } }).scatter.thinkingLevelBreak).toBeFalse();
+    expect(style.bar.thinkingLevelBreak).toBe(true);
+    expect(style.scatter.thinkingLevelBreak).toBe(true);
+    expect(normalizeFigureStyle({ bar: { thinkingLevelBreak: true } }).scatter.thinkingLevelBreak).toBe(false);
     for (const value of ['true', 1, null, undefined]) {
       const repaired = normalizeFigureStyle({ bar: { thinkingLevelBreak: value }, scatter: { thinkingLevelBreak: value } });
-      expect(repaired.bar.thinkingLevelBreak).withContext(String(value)).toBeFalse();
-      expect(repaired.scatter.thinkingLevelBreak).withContext(String(value)).toBeFalse();
+      expect(repaired.bar.thinkingLevelBreak, String(value)).toBe(false);
+      expect(repaired.scatter.thinkingLevelBreak, String(value)).toBe(false);
     }
     const stored = normalizeFigureStyle({ bar: { gapPercent: 10 }, scatter: { markRadiusPx: 9 } });
-    expect(stored.bar.thinkingLevelBreak).toBeFalse();
-    expect(stored.scatter.thinkingLevelBreak).toBeFalse();
+    expect(stored.bar.thinkingLevelBreak).toBe(false);
+    expect(stored.scatter.thinkingLevelBreak).toBe(false);
   });
 
   it('keeps known badge kinds once each, in control order, and drops the rest', () => {
@@ -320,15 +319,15 @@ describe('figure-style', () => {
 
     for (const value of ['runs', 3, {}, null, true]) {
       const repaired = normalizeFigureStyle({ bar: { hiddenBadges: value }, scatter: { hiddenBadges: value }, profile: { hiddenBadges: value } });
-      expect(repaired.bar.hiddenBadges).withContext(JSON.stringify(value)).toEqual([]);
-      expect(repaired.scatter.hiddenBadges).withContext(JSON.stringify(value)).toEqual([]);
-      expect(repaired.profile.hiddenBadges).withContext(JSON.stringify(value)).toEqual([]);
+      expect(repaired.bar.hiddenBadges, JSON.stringify(value)).toEqual([]);
+      expect(repaired.scatter.hiddenBadges, JSON.stringify(value)).toEqual([]);
+      expect(repaired.profile.hiddenBadges, JSON.stringify(value)).toEqual([]);
     }
   });
 
   it('falls back to the default profile when it is missing or malformed', () => {
     for (const value of [undefined, null, 'profile', [], 42]) {
-      expect(normalizeFigureStyle({ profile: value }).profile).withContext(String(value)).toEqual(DEFAULT_FIGURE_STYLE.profile);
+      expect(normalizeFigureStyle({ profile: value }).profile, String(value)).toEqual(DEFAULT_FIGURE_STYLE.profile);
     }
     expect(normalizeFigureStyle({ profile: { hiddenBadges: ['runs'], extra: 1 } }).profile)
       .toEqual({ ...DEFAULT_FIGURE_STYLE.profile, hiddenBadges: ['runs'] });
@@ -337,7 +336,7 @@ describe('figure-style', () => {
   it('reads a version-1 style stored before the badge and marker fields existed with them at their defaults', () => {
     const style = normalizeFigureStyle({ version: 1, bar: { gapPercent: 10 } });
     expect(style.bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, gapPercent: 10 });
-    expect(style.bar.singleRunMarker).toBeTrue();
+    expect(style.bar.singleRunMarker).toBe(true);
     expect(style.bar.hiddenBadges).toEqual([]);
     expect(style.scatter.hiddenBadges).toEqual([]);
     expect(style.profile).toEqual(DEFAULT_FIGURE_STYLE.profile);
@@ -356,8 +355,7 @@ describe('figure-style', () => {
       expect(normalizeFigureStyle({ bar: { axisTitleBreak: value } }).bar.axisTitleBreak).toBe(value);
     }
     for (const value of ['sometimes', 1, null, true, ['always']]) {
-      expect(normalizeFigureStyle({ bar: { axisTitleBreak: value } }).bar.axisTitleBreak)
-        .withContext(JSON.stringify(value)).toBe('auto');
+      expect(normalizeFigureStyle({ bar: { axisTitleBreak: value } }).bar.axisTitleBreak, JSON.stringify(value)).toBe('auto');
     }
   });
 
@@ -365,11 +363,11 @@ describe('figure-style', () => {
     const kept = normalizeFigureStyle({ bar: { betterBadgePlacement: 'always' }, scatter: { betterBadgePlacement: 'always' } });
     expect(kept.bar.betterBadgePlacement).toBe('always');
     expect(kept.scatter.betterBadgePlacement).toBe('always');
-    expect('betterBadgePlacement' in kept.profile).toBeFalse();
+    expect('betterBadgePlacement' in kept.profile).toBe(false);
     for (const value of ['sometimes', 1, null, true, ['always'], undefined]) {
       const repaired = normalizeFigureStyle({ bar: { betterBadgePlacement: value }, scatter: { betterBadgePlacement: value } });
-      expect(repaired.bar.betterBadgePlacement).withContext(JSON.stringify(value) ?? 'undefined').toBe('fit');
-      expect(repaired.scatter.betterBadgePlacement).withContext(JSON.stringify(value) ?? 'undefined').toBe('fit');
+      expect(repaired.bar.betterBadgePlacement, JSON.stringify(value) ?? 'undefined').toBe('fit');
+      expect(repaired.scatter.betterBadgePlacement, JSON.stringify(value) ?? 'undefined').toBe('fit');
     }
   });
 
@@ -407,10 +405,10 @@ describe('figure-style', () => {
       totalRunCost: 4,
       costPerQuestion: 4
     });
-    expect('colour' in style.numbers).toBeFalse();
+    expect('colour' in style.numbers).toBe(false);
 
     for (const value of [null, [], [1, 2], 'numbers', 7, true]) {
-      expect(normalizeFigureStyle({ numbers: value }).numbers).withContext(JSON.stringify(value)).toEqual(DEFAULT_FIGURE_STYLE.numbers);
+      expect(normalizeFigureStyle({ numbers: value }).numbers, JSON.stringify(value)).toEqual(DEFAULT_FIGURE_STYLE.numbers);
     }
   });
 
@@ -431,9 +429,9 @@ describe('figure-style', () => {
     expect(style.appearance).toEqual(DEFAULT_FIGURE_STYLE.appearance);
     expect(style.table).toEqual(DEFAULT_FIGURE_STYLE.table);
     expect(style.bar.axisTitleWeight).toBe(400);
-    expect(style.bar.plotFrame).toBeFalse();
+    expect(style.bar.plotFrame).toBe(false);
     expect(style.scatter.axisTitleWeight).toBe(400);
-    expect(style.scatter.plotFrame).toBeFalse();
+    expect(style.scatter.plotFrame).toBe(false);
   });
 
   it('keeps valid appearance fields and repairs the rest one by one', () => {
@@ -470,7 +468,7 @@ describe('figure-style', () => {
       borderWidthPx: 8,
       borderRadiusPx: 12
     });
-    expect('extra' in style.appearance).toBeFalse();
+    expect('extra' in style.appearance).toBe(false);
     expect(style.table).toEqual({ rowShading: 'none', rowRules: false });
 
     const invalid = normalizeFigureStyle({
@@ -478,7 +476,7 @@ describe('figure-style', () => {
     });
     expect(invalid.appearance).toEqual({ ...DEFAULT_FIGURE_STYLE.appearance, borderRadiusPx: 0 });
     for (const value of [null, [], 'dark', 3]) {
-      expect(normalizeFigureStyle({ appearance: value }).appearance).withContext(String(value)).toEqual(DEFAULT_FIGURE_STYLE.appearance);
+      expect(normalizeFigureStyle({ appearance: value }).appearance, String(value)).toEqual(DEFAULT_FIGURE_STYLE.appearance);
     }
   });
 
@@ -487,7 +485,7 @@ describe('figure-style', () => {
     expect(kept.appearance).toEqual({ ...DEFAULT_FIGURE_STYLE.appearance, logo: false, logoVariant: 'square', logoHeightPx: 72 });
 
     const repaired = normalizeFigureStyle({ appearance: { logo: 'yes', logoVariant: 'huge', logoHeightPx: 200 } });
-    expect(repaired.appearance.logo).toBeTrue();
+    expect(repaired.appearance.logo).toBe(true);
     expect(repaired.appearance.logoVariant).toBe('wide');
     expect(repaired.appearance.logoHeightPx).toBe(96);
     expect(normalizeFigureStyle({ appearance: { logoHeightPx: 12.6 } }).appearance.logoHeightPx).toBe(16);
@@ -497,7 +495,7 @@ describe('figure-style', () => {
 
   it('reads a stored appearance without the logo fields at their defaults', () => {
     const style = normalizeFigureStyle({ appearance: { theme: 'light', border: true } });
-    expect(style.appearance.logo).toBeTrue();
+    expect(style.appearance.logo).toBe(true);
     expect(style.appearance.logoVariant).toBe('wide');
     expect(style.appearance.logoHeightPx).toBe(48);
   });
@@ -513,15 +511,15 @@ describe('figure-style', () => {
     ];
     for (const { table, shading } of cases) {
       const style = normalizeFigureStyle({ table });
-      expect(style.table.rowShading).withContext(JSON.stringify(table)).toBe(shading);
-      expect('rowBands' in style.table).withContext(JSON.stringify(table)).toBeFalse();
+      expect(style.table.rowShading, JSON.stringify(table)).toBe(shading);
+      expect('rowBands' in style.table, JSON.stringify(table)).toBe(false);
     }
   });
 
   it('accepts only the four font weights for the axis titles', () => {
     const style = normalizeFigureStyle({ bar: { axisTitleWeight: 600, plotFrame: true }, scatter: { axisTitleWeight: 300 } });
     expect(style.bar.axisTitleWeight).toBe(600);
-    expect(style.bar.plotFrame).toBeTrue();
+    expect(style.bar.plotFrame).toBe(true);
     expect(style.scatter.axisTitleWeight).toBe(400);
   });
 });

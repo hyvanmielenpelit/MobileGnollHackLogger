@@ -86,7 +86,7 @@ const TOLERANCE = 0.5;
 const WITHIN_HALF_PX = 0;
 
 /**
- * The CSS the Karma page has loaded (styles.scss and the live components' styles), for an iframe.
+ * The CSS the test page has loaded (styles.scss and the live components' styles), for an iframe.
  * Web fonts and imports are left out, so that both measurements of a case lay out with the same
  * fallback fonts; animations are switched off, so that an opening slide is not read as placement.
  */
@@ -128,7 +128,7 @@ function spotPosition(spot: Spot, w: number, h: number, tw: number, th: number):
  */
 function measure(source: HTMLElement, w: number, h: number, spot: Spot, options: MeasureOptions): Measurement {
   const css = collectCss();
-  expect(css).withContext('the global stylesheet is loaded').toContain('.gh-action-popover');
+  expect(css, 'the global stylesheet is loaded').toContain('.gh-action-popover');
 
   const iframe = document.createElement('iframe');
   iframe.style.cssText = `position: fixed; left: 0; top: 0; width: ${w}px; height: ${h}px; border: 0`;
@@ -146,8 +146,8 @@ function measure(source: HTMLElement, w: number, h: number, spot: Spot, options:
 
     const trigger = doc.querySelector<HTMLElement>('[data-geo="trigger"], #geo-facet-trigger, #config-filter-trigger')!;
     popover = doc.querySelector<HTMLElement>('[popover]')!;
-    expect(trigger).withContext('trigger').toBeTruthy();
-    expect(popover).withContext('popover').toBeTruthy();
+    expect(trigger, 'trigger').toBeTruthy();
+    expect(popover, 'popover').toBeTruthy();
 
     const style = trigger.style;
     if (options.triggerWidth !== undefined) {
@@ -240,13 +240,12 @@ describe('Anchored popover placement', () => {
       for (const spot of spots) {
         it(`keeps the ${kind} popover inside a ${w}×${h} viewport with its trigger ${spot}`, () => {
           const native = measure(sources[kind](), w, h, spot, { native: true });
-          expect(isInside(native)).withContext(`native box ${boxText(native.popover)}`).toBeTrue();
+          expect(isInside(native), `native box ${boxText(native.popover)}`).toBe(true);
 
           const today = measure(sources[kind](), w, h, spot, { native: false });
           if (isInside(today)) {
             for (const side of ['left', 'top', 'right', 'bottom'] as const) {
-              expect(native.popover[side]).withContext(`${side}, unchanged where it fits today`)
-                .toBeCloseTo(today.popover[side], WITHIN_HALF_PX);
+              expect(native.popover[side], `${side}, unchanged where it fits today`).toBeCloseTo(today.popover[side], WITHIN_HALF_PX);
             }
           }
         });
@@ -257,20 +256,20 @@ describe('Anchored popover placement', () => {
   it('keeps the ordinary placement when there is room', () => {
     // The info popup is about 410 px tall, more than the room below a trigger at mid-height.
     const info = measure(sources.info(), 1280, 800, 'upper-middle', { native: true });
-    expect(info.popover.top).withContext('info top').toBeCloseTo(info.trigger.bottom + 6, WITHIN_HALF_PX);
-    expect(info.popover.right).withContext('info right').toBeCloseTo(info.trigger.right, WITHIN_HALF_PX);
+    expect(info.popover.top, 'info top').toBeCloseTo(info.trigger.bottom + 6, WITHIN_HALF_PX);
+    expect(info.popover.right, 'info right').toBeCloseTo(info.trigger.right, WITHIN_HALF_PX);
 
     const action = measure(sources.action(), 1280, 800, 'middle', { native: true });
-    expect(action.popover.top).withContext('action top').toBeCloseTo(action.trigger.bottom + 6, WITHIN_HALF_PX);
-    expect(action.popover.right).withContext('action right').toBeCloseTo(action.trigger.right, WITHIN_HALF_PX);
+    expect(action.popover.top, 'action top').toBeCloseTo(action.trigger.bottom + 6, WITHIN_HALF_PX);
+    expect(action.popover.right, 'action right').toBeCloseTo(action.trigger.right, WITHIN_HALF_PX);
 
     const facet = measure(sources.facet(), 1280, 800, 'middle', { native: true });
-    expect(facet.popover.top).withContext('facet top').toBeCloseTo(facet.trigger.bottom + 6, WITHIN_HALF_PX);
-    expect(facet.popover.left).withContext('facet left').toBeCloseTo(facet.trigger.left, WITHIN_HALF_PX);
+    expect(facet.popover.top, 'facet top').toBeCloseTo(facet.trigger.bottom + 6, WITHIN_HALF_PX);
+    expect(facet.popover.left, 'facet left').toBeCloseTo(facet.trigger.left, WITHIN_HALF_PX);
 
     const config = measure(sources.config(), 1280, 800, 'middle', { native: true });
-    expect(config.popover.top).withContext('config top').toBeCloseTo(config.trigger.bottom + 8, WITHIN_HALF_PX);
-    expect(config.popover.right).withContext('config right').toBeCloseTo(config.trigger.right, WITHIN_HALF_PX);
+    expect(config.popover.top, 'config top').toBeCloseTo(config.trigger.bottom + 8, WITHIN_HALF_PX);
+    expect(config.popover.right, 'config right').toBeCloseTo(config.trigger.right, WITHIN_HALF_PX);
   });
 
   it('spans a 375 px phone with the config filter sheet', () => {
@@ -283,25 +282,24 @@ describe('Anchored popover placement', () => {
     for (const kind of ['action', 'facet'] as const) {
       const native = measure(sources[kind](), 375, 700, 'middle', { native: true, triggerWidth: 40 });
       const today = measure(sources[kind](), 375, 700, 'middle', { native: false, triggerWidth: 40 });
-      expect(isInside(native)).withContext(`${kind} native box ${boxText(native.popover)}`).toBeTrue();
-      expect(native.popover.width).withContext(`${kind} width, so that the heights compare`)
-        .toBeCloseTo(today.popover.width, WITHIN_HALF_PX);
-      expect(native.popover.height).withContext(`${kind} height`).toBeCloseTo(today.popover.height, WITHIN_HALF_PX);
+      expect(isInside(native), `${kind} native box ${boxText(native.popover)}`).toBe(true);
+      expect(native.popover.width, `${kind} width, so that the heights compare`).toBeCloseTo(today.popover.width, WITHIN_HALF_PX);
+      expect(native.popover.height, `${kind} height`).toBeCloseTo(today.popover.height, WITHIN_HALF_PX);
     }
   });
 
   it('keeps the config filter inside a scrolled document', () => {
     const config = measure(sources.config(), 1000, 655, 'bottom-left', { native: true, scrolled: true });
-    expect(isInside(config)).withContext(`box ${boxText(config.popover)}`).toBeTrue();
+    expect(isInside(config), `box ${boxText(config.popover)}`).toBe(true);
   });
 
   it('marks the document only when anchor positioning is native', () => {
     const root = document.createElement('html');
     markNativeAnchorPositioning(root);
-    expect(root.classList.contains(NATIVE_ANCHOR_CLASS)).toBeTrue();
+    expect(root.classList.contains(NATIVE_ANCHOR_CLASS)).toBe(true);
 
     const classList = document.createElement('div').classList;
     markNativeAnchorPositioning({ style: {}, classList } as unknown as HTMLElement);
-    expect(classList.contains(NATIVE_ANCHOR_CLASS)).toBeFalse();
+    expect(classList.contains(NATIVE_ANCHOR_CLASS)).toBe(false);
   });
 });

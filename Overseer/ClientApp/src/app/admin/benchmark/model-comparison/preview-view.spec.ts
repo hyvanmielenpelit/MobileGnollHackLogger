@@ -130,10 +130,10 @@ describe('preview-view', () => {
     it('clamps at both ends', () => {
       expect(nextPreviewZoomStop(8, fit, range)).toBe(8);
       expect(previousPreviewZoomStop(0.1, fit, range)).toBe(0.1);
-      expect(canZoomPreviewIn(8, range)).toBeFalse();
-      expect(canZoomPreviewIn(6, range)).toBeTrue();
-      expect(canZoomPreviewOut(0.1, range)).toBeFalse();
-      expect(canZoomPreviewOut(0.125, range)).toBeTrue();
+      expect(canZoomPreviewIn(8, range)).toBe(false);
+      expect(canZoomPreviewIn(6, range)).toBe(true);
+      expect(canZoomPreviewOut(0.1, range)).toBe(false);
+      expect(canZoomPreviewOut(0.125, range)).toBe(true);
     });
 
     it('reaches a screen fit below the fixed floor', () => {
@@ -223,7 +223,7 @@ describe('preview-view', () => {
 
     it('caps a raster past the budget', () => {
       const raster = previewRasterZoom(4, 8000, 8000);
-      expect(raster.capped).toBeTrue();
+      expect(raster.capped).toBe(true);
       expect(8000 * 8000 * raster.zoom * raster.zoom).toBeCloseTo(PREVIEW_MAX_RASTER_PIXELS, 0);
     });
   });

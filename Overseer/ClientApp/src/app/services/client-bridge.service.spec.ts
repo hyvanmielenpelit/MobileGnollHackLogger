@@ -47,7 +47,7 @@ describe('ClientBridgeService', () => {
     resetGlobals();
 
     expect(service.getPlatform()).toBeNull();
-    expect(service.isEmbedded()).toBeFalse();
+    expect(service.isEmbedded()).toBe(false);
   });
 
   it('should detect WebView2 platform', () => {
@@ -56,21 +56,21 @@ describe('ClientBridgeService', () => {
       (window as any).chrome = {};
     }
     (window as any).chrome.webview = {
-      postMessage: jasmine.createSpy('postMessage')
+      postMessage: vi.fn().mockName('postMessage')
     };
 
     expect(service.getPlatform()).toBe('webview2');
-    expect(service.isEmbedded()).toBeTrue();
+    expect(service.isEmbedded()).toBe(true);
   });
 
   it('should detect Android WebView platform', () => {
     resetGlobals();
     (window as any).GnollHackBridge = {
-      onWebMessage: jasmine.createSpy('onWebMessage')
+      onWebMessage: vi.fn().mockName('onWebMessage')
     };
 
     expect(service.getPlatform()).toBe('android');
-    expect(service.isEmbedded()).toBeTrue();
+    expect(service.isEmbedded()).toBe(true);
   });
 
   it('should detect iOS WKWebView platform', () => {
@@ -78,13 +78,13 @@ describe('ClientBridgeService', () => {
     (window as any).webkit = {
       messageHandlers: {
         gnollhackBridge: {
-          postMessage: jasmine.createSpy('postMessage')
+          postMessage: vi.fn().mockName('postMessage')
         }
       }
     };
 
     expect(service.getPlatform()).toBe('ios');
-    expect(service.isEmbedded()).toBeTrue();
+    expect(service.isEmbedded()).toBe(true);
   });
 
   it('should post raw object message to WebView2', () => {
@@ -92,7 +92,7 @@ describe('ClientBridgeService', () => {
     if (!(window as any).chrome) {
       (window as any).chrome = {};
     }
-    const postMessageSpy = jasmine.createSpy('postMessage');
+    const postMessageSpy = vi.fn().mockName('postMessage');
     (window as any).chrome.webview = { postMessage: postMessageSpy };
 
     const payload = { type: 'test', data: 123 };
@@ -103,7 +103,7 @@ describe('ClientBridgeService', () => {
 
   it('should post stringified message to Android', () => {
     resetGlobals();
-    const onWebMessageSpy = jasmine.createSpy('onWebMessage');
+    const onWebMessageSpy = vi.fn().mockName('onWebMessage');
     (window as any).GnollHackBridge = { onWebMessage: onWebMessageSpy };
 
     const payload = { type: 'test', data: 123 };
@@ -114,7 +114,7 @@ describe('ClientBridgeService', () => {
 
   it('should post stringified message to iOS', () => {
     resetGlobals();
-    const postMessageSpy = jasmine.createSpy('postMessage');
+    const postMessageSpy = vi.fn().mockName('postMessage');
     (window as any).webkit = {
       messageHandlers: {
         gnollhackBridge: {
@@ -130,7 +130,7 @@ describe('ClientBridgeService', () => {
   });
 
   it('should format notifySessionChanged correctly for numeric and string IDs and null', () => {
-    const postMessageSpy = spyOn(service, 'postMessage');
+    const postMessageSpy = vi.spyOn(service, 'postMessage').mockReturnValue(undefined);
 
     service.notifySessionChanged(123);
     expect(postMessageSpy).toHaveBeenCalledWith({
@@ -160,18 +160,18 @@ describe('ClientBridgeService', () => {
   /* The default is "game on" so a GnollHack build predating the isGameOn field keeps the
      snapshot controls it has today. */
   it('should report isGameOn true until the host says otherwise', () => {
-    expect(service.isGameOn()).toBeTrue();
+    expect(service.isGameOn()).toBe(true);
   });
 
   it('should report isGameOn false only after the host reports no running game', () => {
     service.setHostGameOn(false);
-    expect(service.isGameOn()).toBeFalse();
+    expect(service.isGameOn()).toBe(false);
 
     service.setHostGameOn(true);
-    expect(service.isGameOn()).toBeTrue();
+    expect(service.isGameOn()).toBe(true);
 
     service.setHostGameOn(null);
-    expect(service.isGameOn()).toBeTrue();
+    expect(service.isGameOn()).toBe(true);
   });
 
   it('should remember no GnollHack version until one is reported', () => {
@@ -196,7 +196,7 @@ describe('ClientBridgeService', () => {
   });
 
   it('should format notifyUrlChanged correctly', () => {
-    const postMessageSpy = spyOn(service, 'postMessage');
+    const postMessageSpy = vi.spyOn(service, 'postMessage').mockReturnValue(undefined);
 
     service.notifyUrlChanged('/chat?sessionId=123');
     expect(postMessageSpy).toHaveBeenCalledWith({

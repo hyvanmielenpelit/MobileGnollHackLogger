@@ -92,14 +92,14 @@ describe('PaneResizerComponent', () => {
   describe('keyboard', () => {
     it('ArrowRight increases the value by step and commits once', () => {
       const event = keydown('ArrowRight');
-      expect(event.defaultPrevented).toBeTrue();
+      expect(event.defaultPrevented).toBe(true);
       expect(hostComponent.changes).toEqual([256]);
       expect(hostComponent.commits).toEqual([256]);
     });
 
     it('ArrowLeft decreases the value by step', () => {
       const event = keydown('ArrowLeft');
-      expect(event.defaultPrevented).toBeTrue();
+      expect(event.defaultPrevented).toBe(true);
       expect(hostComponent.changes).toEqual([224]);
       expect(hostComponent.commits).toEqual([224]);
     });
@@ -138,7 +138,7 @@ describe('PaneResizerComponent', () => {
 
     it('leaves an unhandled key untouched', () => {
       const event = keydown('Tab');
-      expect(event.defaultPrevented).toBeFalse();
+      expect(event.defaultPrevented).toBe(false);
       expect(hostComponent.changes).toEqual([]);
       expect(hostComponent.commits).toEqual([]);
     });
@@ -146,9 +146,10 @@ describe('PaneResizerComponent', () => {
 
   describe('pointer drag', () => {
     beforeEach(() => {
-      spyOn(Element.prototype, 'setPointerCapture').and.stub();
+      vi.spyOn(Element.prototype, 'setPointerCapture').mockImplementation(() => {
+      });
       // Makes the rAF-throttled live emit synchronous and deterministic for the test.
-      spyOn(window, 'requestAnimationFrame').and.callFake((callback: FrameRequestCallback) => {
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback: FrameRequestCallback) => {
         callback(0);
         return 1;
       });
@@ -156,7 +157,7 @@ describe('PaneResizerComponent', () => {
 
     it('emits a clamped value while dragging and commits once on release', () => {
       const down = pointer('pointerdown', 100);
-      expect(down.defaultPrevented).toBeTrue();
+      expect(down.defaultPrevented).toBe(true);
       expect(Element.prototype.setPointerCapture).toHaveBeenCalledWith(9);
       expect(separator().classList).toContain('is-dragging');
 
@@ -199,7 +200,7 @@ describe('PaneResizerComponent', () => {
       });
       separator().dispatchEvent(event);
       fixture.detectChanges();
-      expect(event.defaultPrevented).toBeFalse();
+      expect(event.defaultPrevented).toBe(false);
       expect(separator().classList).not.toContain('is-dragging');
     });
 
@@ -221,9 +222,10 @@ describe('PaneResizerComponent', () => {
   });
 
   it('ngOnDestroy cancels a pending animation frame', () => {
-    spyOn(Element.prototype, 'setPointerCapture').and.stub();
-    spyOn(window, 'requestAnimationFrame').and.returnValue(42);
-    spyOn(window, 'cancelAnimationFrame');
+    vi.spyOn(Element.prototype, 'setPointerCapture').mockImplementation(() => {
+    });
+    vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(42);
+    vi.spyOn(window, 'cancelAnimationFrame').mockReturnValue(undefined);
 
     pointer('pointerdown', 100);
     pointer('pointermove', 140);

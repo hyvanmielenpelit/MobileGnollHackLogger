@@ -1,3 +1,4 @@
+import type { Mock, MockedObject } from "vitest";
 import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks, flush } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
@@ -28,8 +29,8 @@ import { ReportDocumentsLauncherComponent } from './report-pack/report-documents
 describe('AdminBenchmarkComponent', () => {
   let component: AdminBenchmarkComponent;
   let fixture: ComponentFixture<AdminBenchmarkComponent>;
-  let benchmarkServiceMock: jasmine.SpyObj<AdminBenchmarkService>;
-  let systemServiceMock: jasmine.SpyObj<SystemService>;
+  let benchmarkServiceMock: MockedObject<AdminBenchmarkService>;
+  let systemServiceMock: MockedObject<SystemService>;
 
   /** The key AdminBenchmarkComponent remembers the last run setup under. */
   const RUN_SETTINGS_KEY = 'overseer_admin_benchmark_run_settings';
@@ -100,124 +101,124 @@ describe('AdminBenchmarkComponent', () => {
   }
 
   beforeEach(async () => {
-    benchmarkServiceMock = jasmine.createSpyObj('AdminBenchmarkService', [
-      'getSuites',
-      'getRuns',
-      'getQuestions',
-      'getScoringProfiles',
-      'createScoringProfile',
-      'updateScoringProfile',
-      'startRun',
-      'getRun',
-      'getActiveRun',
-      'cancelRun',
-      'rerunFailedQuestions',
-      'deleteRun',
-      'createSuite',
-      'updateSuite',
-      'deleteSuite',
-      'duplicateSuite',
-      'getDefaultSuiteCatalog',
-      'importDefaultSuites',
-      'getSuiteRunsFootprint',
-      'deleteSuiteRuns',
-      'reorderQuestions',
-      'startDifficultyAssessment',
-      'getDifficultyAssessment',
-      'getActiveDifficultyAssessment',
-      'cancelDifficultyAssessment',
-      'reassessAnswer',
-      'reassessPanelAnswer',
-      'rerunAnswer',
-      'rerunFinalSynthesis',
-      'retryFailedAssessments',
-      'rescoreRun',
-      'trialReassessAnswer',
-      'calibrateAssessor',
-      'getCalibrations',
-      'getLastAssessor',
-      'retryClaimVerification',
-      'getRunLimits',
-      'startRunSeries',
-      'getRunSeries',
-      'getActiveRunSeries',
-      'cancelRunSeries',
-      'resumeRunSeries',
-      'getRunGroups',
-      'createRunGroup',
-      'updateRunGroup',
-      'previewRunGroupTier',
-      'getRunReportUrl',
-      'getToolCallLogUrl',
-      'compareModels',
-      'getComparabilityIndex',
-      'importQuestions',
-      'importSuite',
-      'uploadSuiteSnapshot',
-      'deleteSnapshot',
-      'getSnapshot',
-      'getRunBoard',
-      'getActiveQuestionGeneration',
-      'getBoardFactsCheck',
-      'listReportDocuments',
-      'writeRunReportDocuments',
-      'getReportDocumentPdf',
-      'getRunReportJob',
-      'cancelRunReportJob',
-      'estimateRunReports',
-      'deleteRunReportDocument',
-      'reportDocumentPdfUrl',
-      'getBatteries',
-      'getBattery',
-      'createBattery',
-      'updateBattery',
-      'deleteBattery',
-      'archiveBattery',
-      'getBatteryRuns',
-      'startBatteryRun',
-      'getActiveBatteryRun',
-      'getBatteryRun',
-      'cancelBatteryRun',
-      'resumeBatteryRun',
-      'analyseBatteryRun',
-      'getBatteryAnalysis',
-      'getBatteryReportUrl',
-      'getBatteryLeaderboard',
-      'previewBatteryReuse',
-      'attachBatteryMember',
-      'getBatteryAttachCandidates'
-    ]);
+    benchmarkServiceMock = {
+      getSuites: vi.fn().mockName("AdminBenchmarkService.getSuites"),
+      getRuns: vi.fn().mockName("AdminBenchmarkService.getRuns"),
+      getQuestions: vi.fn().mockName("AdminBenchmarkService.getQuestions"),
+      getScoringProfiles: vi.fn().mockName("AdminBenchmarkService.getScoringProfiles"),
+      createScoringProfile: vi.fn().mockName("AdminBenchmarkService.createScoringProfile"),
+      updateScoringProfile: vi.fn().mockName("AdminBenchmarkService.updateScoringProfile"),
+      startRun: vi.fn().mockName("AdminBenchmarkService.startRun"),
+      getRun: vi.fn().mockName("AdminBenchmarkService.getRun"),
+      getActiveRun: vi.fn().mockName("AdminBenchmarkService.getActiveRun"),
+      cancelRun: vi.fn().mockName("AdminBenchmarkService.cancelRun"),
+      rerunFailedQuestions: vi.fn().mockName("AdminBenchmarkService.rerunFailedQuestions"),
+      deleteRun: vi.fn().mockName("AdminBenchmarkService.deleteRun"),
+      createSuite: vi.fn().mockName("AdminBenchmarkService.createSuite"),
+      updateSuite: vi.fn().mockName("AdminBenchmarkService.updateSuite"),
+      deleteSuite: vi.fn().mockName("AdminBenchmarkService.deleteSuite"),
+      duplicateSuite: vi.fn().mockName("AdminBenchmarkService.duplicateSuite"),
+      getDefaultSuiteCatalog: vi.fn().mockName("AdminBenchmarkService.getDefaultSuiteCatalog"),
+      importDefaultSuites: vi.fn().mockName("AdminBenchmarkService.importDefaultSuites"),
+      getSuiteRunsFootprint: vi.fn().mockName("AdminBenchmarkService.getSuiteRunsFootprint"),
+      deleteSuiteRuns: vi.fn().mockName("AdminBenchmarkService.deleteSuiteRuns"),
+      reorderQuestions: vi.fn().mockName("AdminBenchmarkService.reorderQuestions"),
+      startDifficultyAssessment: vi.fn().mockName("AdminBenchmarkService.startDifficultyAssessment"),
+      getDifficultyAssessment: vi.fn().mockName("AdminBenchmarkService.getDifficultyAssessment"),
+      getActiveDifficultyAssessment: vi.fn().mockName("AdminBenchmarkService.getActiveDifficultyAssessment"),
+      cancelDifficultyAssessment: vi.fn().mockName("AdminBenchmarkService.cancelDifficultyAssessment"),
+      reassessAnswer: vi.fn().mockName("AdminBenchmarkService.reassessAnswer"),
+      reassessPanelAnswer: vi.fn().mockName("AdminBenchmarkService.reassessPanelAnswer"),
+      rerunAnswer: vi.fn().mockName("AdminBenchmarkService.rerunAnswer"),
+      rerunFinalSynthesis: vi.fn().mockName("AdminBenchmarkService.rerunFinalSynthesis"),
+      retryFailedAssessments: vi.fn().mockName("AdminBenchmarkService.retryFailedAssessments"),
+      rescoreRun: vi.fn().mockName("AdminBenchmarkService.rescoreRun"),
+      trialReassessAnswer: vi.fn().mockName("AdminBenchmarkService.trialReassessAnswer"),
+      calibrateAssessor: vi.fn().mockName("AdminBenchmarkService.calibrateAssessor"),
+      getCalibrations: vi.fn().mockName("AdminBenchmarkService.getCalibrations"),
+      getLastAssessor: vi.fn().mockName("AdminBenchmarkService.getLastAssessor"),
+      retryClaimVerification: vi.fn().mockName("AdminBenchmarkService.retryClaimVerification"),
+      getRunLimits: vi.fn().mockName("AdminBenchmarkService.getRunLimits"),
+      startRunSeries: vi.fn().mockName("AdminBenchmarkService.startRunSeries"),
+      getRunSeries: vi.fn().mockName("AdminBenchmarkService.getRunSeries"),
+      getActiveRunSeries: vi.fn().mockName("AdminBenchmarkService.getActiveRunSeries"),
+      cancelRunSeries: vi.fn().mockName("AdminBenchmarkService.cancelRunSeries"),
+      resumeRunSeries: vi.fn().mockName("AdminBenchmarkService.resumeRunSeries"),
+      getRunGroups: vi.fn().mockName("AdminBenchmarkService.getRunGroups"),
+      createRunGroup: vi.fn().mockName("AdminBenchmarkService.createRunGroup"),
+      updateRunGroup: vi.fn().mockName("AdminBenchmarkService.updateRunGroup"),
+      previewRunGroupTier: vi.fn().mockName("AdminBenchmarkService.previewRunGroupTier"),
+      getRunReportUrl: vi.fn().mockName("AdminBenchmarkService.getRunReportUrl"),
+      getToolCallLogUrl: vi.fn().mockName("AdminBenchmarkService.getToolCallLogUrl"),
+      compareModels: vi.fn().mockName("AdminBenchmarkService.compareModels"),
+      getComparabilityIndex: vi.fn().mockName("AdminBenchmarkService.getComparabilityIndex"),
+      importQuestions: vi.fn().mockName("AdminBenchmarkService.importQuestions"),
+      importSuite: vi.fn().mockName("AdminBenchmarkService.importSuite"),
+      uploadSuiteSnapshot: vi.fn().mockName("AdminBenchmarkService.uploadSuiteSnapshot"),
+      deleteSnapshot: vi.fn().mockName("AdminBenchmarkService.deleteSnapshot"),
+      getSnapshot: vi.fn().mockName("AdminBenchmarkService.getSnapshot"),
+      getRunBoard: vi.fn().mockName("AdminBenchmarkService.getRunBoard"),
+      getActiveQuestionGeneration: vi.fn().mockName("AdminBenchmarkService.getActiveQuestionGeneration"),
+      getBoardFactsCheck: vi.fn().mockName("AdminBenchmarkService.getBoardFactsCheck"),
+      listReportDocuments: vi.fn().mockName("AdminBenchmarkService.listReportDocuments"),
+      writeRunReportDocuments: vi.fn().mockName("AdminBenchmarkService.writeRunReportDocuments"),
+      getReportDocumentPdf: vi.fn().mockName("AdminBenchmarkService.getReportDocumentPdf"),
+      getRunReportJob: vi.fn().mockName("AdminBenchmarkService.getRunReportJob"),
+      cancelRunReportJob: vi.fn().mockName("AdminBenchmarkService.cancelRunReportJob"),
+      estimateRunReports: vi.fn().mockName("AdminBenchmarkService.estimateRunReports"),
+      deleteRunReportDocument: vi.fn().mockName("AdminBenchmarkService.deleteRunReportDocument"),
+      reportDocumentPdfUrl: vi.fn().mockName("AdminBenchmarkService.reportDocumentPdfUrl"),
+      getBatteries: vi.fn().mockName("AdminBenchmarkService.getBatteries"),
+      getBattery: vi.fn().mockName("AdminBenchmarkService.getBattery"),
+      createBattery: vi.fn().mockName("AdminBenchmarkService.createBattery"),
+      updateBattery: vi.fn().mockName("AdminBenchmarkService.updateBattery"),
+      deleteBattery: vi.fn().mockName("AdminBenchmarkService.deleteBattery"),
+      archiveBattery: vi.fn().mockName("AdminBenchmarkService.archiveBattery"),
+      getBatteryRuns: vi.fn().mockName("AdminBenchmarkService.getBatteryRuns"),
+      startBatteryRun: vi.fn().mockName("AdminBenchmarkService.startBatteryRun"),
+      getActiveBatteryRun: vi.fn().mockName("AdminBenchmarkService.getActiveBatteryRun"),
+      getBatteryRun: vi.fn().mockName("AdminBenchmarkService.getBatteryRun"),
+      cancelBatteryRun: vi.fn().mockName("AdminBenchmarkService.cancelBatteryRun"),
+      resumeBatteryRun: vi.fn().mockName("AdminBenchmarkService.resumeBatteryRun"),
+      analyseBatteryRun: vi.fn().mockName("AdminBenchmarkService.analyseBatteryRun"),
+      getBatteryAnalysis: vi.fn().mockName("AdminBenchmarkService.getBatteryAnalysis"),
+      getBatteryReportUrl: vi.fn().mockName("AdminBenchmarkService.getBatteryReportUrl"),
+      getBatteryLeaderboard: vi.fn().mockName("AdminBenchmarkService.getBatteryLeaderboard"),
+      previewBatteryReuse: vi.fn().mockName("AdminBenchmarkService.previewBatteryReuse"),
+      attachBatteryMember: vi.fn().mockName("AdminBenchmarkService.attachBatteryMember"),
+      getBatteryAttachCandidates: vi.fn().mockName("AdminBenchmarkService.getBatteryAttachCandidates")
+    } as unknown as MockedObject<AdminBenchmarkService>;
 
     // ngOnInit loads the launcher's batteries and reattaches a live battery run; the Multi-Suite tab
     // and the Battery Progress dialog read the rest.
-    benchmarkServiceMock.getBatteries.and.returnValue(of([]));
-    benchmarkServiceMock.getActiveBatteryRun.and.returnValue(of(null));
-    benchmarkServiceMock.getBatteryRuns.and.returnValue(of([]));
-    benchmarkServiceMock.getBatteryRun.and.returnValue(of(buildBatteryRun()));
-    benchmarkServiceMock.getBatteryAnalysis.and.returnValue(of(null));
-    benchmarkServiceMock.getBatteryLeaderboard.and.returnValue(of({ definitionSha256: 'def-abc', classes: [], incomplete: [] }));
-    benchmarkServiceMock.getBatteryReportUrl.and.returnValue('/api/admin/benchmark/batteries/runs/9/report');
+    benchmarkServiceMock.getBatteries.mockReturnValue(of([]));
+    benchmarkServiceMock.getActiveBatteryRun.mockReturnValue(of(null));
+    benchmarkServiceMock.getBatteryRuns.mockReturnValue(of([]));
+    benchmarkServiceMock.getBatteryRun.mockReturnValue(of(buildBatteryRun()));
+    benchmarkServiceMock.getBatteryAnalysis.mockReturnValue(of(null));
+    benchmarkServiceMock.getBatteryLeaderboard.mockReturnValue(of({ definitionSha256: 'def-abc', classes: [], incomplete: [] }));
+    benchmarkServiceMock.getBatteryReportUrl.mockReturnValue('/api/admin/benchmark/batteries/runs/9/report');
 
-    benchmarkServiceMock.getActiveQuestionGeneration.and.returnValue(of(null));
+    benchmarkServiceMock.getActiveQuestionGeneration.mockReturnValue(of(null));
     // The run report's AI Reports tab lists the run's AI-written reports whenever it loads a run,
     // estimates the cost of a missing one and follows a writing job.
-    benchmarkServiceMock.listReportDocuments.and.returnValue(of([]));
-    benchmarkServiceMock.getRunReportJob.and.returnValue(of(null));
-    benchmarkServiceMock.estimateRunReports.and.returnValue(of({
+    benchmarkServiceMock.listReportDocuments.mockReturnValue(of([]));
+    benchmarkServiceMock.getRunReportJob.mockReturnValue(of(null));
+    benchmarkServiceMock.estimateRunReports.mockReturnValue(of({
       estimates: [], estimatedTotalCostUsd: null, refusal: null, sameProviderWarning: null
     }));
-    benchmarkServiceMock.deleteRunReportDocument.and.returnValue(of(undefined));
-    benchmarkServiceMock.reportDocumentPdfUrl.and.returnValue('/api/admin/benchmark/report-documents/0/render/pdf');
-    benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of(null));
+    benchmarkServiceMock.deleteRunReportDocument.mockReturnValue(of(undefined));
+    benchmarkServiceMock.reportDocumentPdfUrl.mockReturnValue('/api/admin/benchmark/report-documents/0/render/pdf');
+    benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(of(null));
 
-    benchmarkServiceMock.getActiveDifficultyAssessment.and.returnValue(of(null));
-    benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
+    benchmarkServiceMock.getActiveDifficultyAssessment.mockReturnValue(of(null));
+    benchmarkServiceMock.getActiveRun.mockReturnValue(of(null));
     // ngOnInit reads the caps and reattaches a live series, and entering Run History loads the
     // groups for the group column. All three run on paths every test in this file goes through.
-    benchmarkServiceMock.getActiveRunSeries.and.returnValue(of(null));
-    benchmarkServiceMock.getRunSeries.and.returnValue(of({ id: 1, status: 'Running', completedRunCount: 0, requestedRunCount: 1, members: [] } as any));
-    benchmarkServiceMock.getRunGroups.and.returnValue(of([]));
-    benchmarkServiceMock.getRunLimits.and.returnValue(of({
+    benchmarkServiceMock.getActiveRunSeries.mockReturnValue(of(null));
+    benchmarkServiceMock.getRunSeries.mockReturnValue(of({ id: 1, status: 'Running', completedRunCount: 0, requestedRunCount: 1, members: [] } as any));
+    benchmarkServiceMock.getRunGroups.mockReturnValue(of([]));
+    benchmarkServiceMock.getRunLimits.mockReturnValue(of({
       maxRunsPerHour: 4,
       maxRunsPerDay: 20,
       runsInLastHour: 0,
@@ -225,17 +226,17 @@ describe('AdminBenchmarkComponent', () => {
       remainingDailyHeadroom: 20,
       maxRunCountPerSeries: 20
     }));
-    benchmarkServiceMock.getRun.and.returnValue(of({ id: 1, answers: [] } as any));
-    benchmarkServiceMock.getQuestions.and.returnValue(of([]));
-    benchmarkServiceMock.getSuiteRunsFootprint.and.returnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
-    benchmarkServiceMock.getCalibrations.and.returnValue(of([]));
-    benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([]));
+    benchmarkServiceMock.getRun.mockReturnValue(of({ id: 1, answers: [] } as any));
+    benchmarkServiceMock.getQuestions.mockReturnValue(of([]));
+    benchmarkServiceMock.getSuiteRunsFootprint.mockReturnValue(of({ runCount: 0, totalAnswerCharacters: 0 }));
+    benchmarkServiceMock.getCalibrations.mockReturnValue(of([]));
+    benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([]));
     // A suite with no completed run has no assessor to differ from, which is not an error.
-    benchmarkServiceMock.getLastAssessor.and.returnValue(of({}));
-    benchmarkServiceMock.getSuites.and.returnValue(of([
+    benchmarkServiceMock.getLastAssessor.mockReturnValue(of({}));
+    benchmarkServiceMock.getSuites.mockReturnValue(of([
       { id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 15, assessedQuestionCount: 15, difficultyFullyAssessed: true }
     ]));
-    benchmarkServiceMock.getScoringProfiles.and.returnValue(of([
+    benchmarkServiceMock.getScoringProfiles.mockReturnValue(of([
       {
         id: 1,
         name: 'Default Intelligence Profile',
@@ -257,9 +258,9 @@ describe('AdminBenchmarkComponent', () => {
         modifiedAtUtc: '2026-09-01T00:00:00Z'
       }
     ]));
-    benchmarkServiceMock.getRuns.and.returnValue(of([]));
-    benchmarkServiceMock.compareModels.and.returnValue(of({ entries: [] } as any));
-    benchmarkServiceMock.getComparabilityIndex.and.returnValue(of({
+    benchmarkServiceMock.getRuns.mockReturnValue(of([]));
+    benchmarkServiceMock.compareModels.mockReturnValue(of({ entries: [] } as any));
+    benchmarkServiceMock.getComparabilityIndex.mockReturnValue(of({
       computedAtUtc: '2026-09-07T12:00:00Z',
       entries: [],
       conditions: [],
@@ -270,16 +271,18 @@ describe('AdminBenchmarkComponent', () => {
       degradingKeyNames: ['PricingSnapshot']
     } as any));
 
-    systemServiceMock = jasmine.createSpyObj('SystemService', ['getVersion']);
-    systemServiceMock.getVersion.and.returnValue(of('1.0.29'));
+    systemServiceMock = {
+      getVersion: vi.fn().mockName("SystemService.getVersion")
+    } as unknown as MockedObject<SystemService>;
+    systemServiceMock.getVersion.mockReturnValue(of('1.0.29'));
 
     // BenchmarkPollTickerService prefers a real Worker when one exists, which ChromeHeadless does,
-    // but a worker fetching '/workers/benchmark-poll-ticker.js' from the Karma server is not the
+    // but a worker fetching '/workers/benchmark-poll-ticker.js' from the test server is not the
     // same thing this suite's many fakeAsync/tick()-driven polling specs need: a deterministic,
     // zone-visible timer. Every spec in this file gets the plain setInterval fallback instead, so
     // polling behaves exactly as it did before the ticker existed; BenchmarkPollTickerService's own
     // spec file is what actually exercises the worker path and its post-start fallback.
-    spyOn(BenchmarkPollTickerService.prototype, 'start').and.callFake((intervalMs: number, onTick: () => void) => {
+    vi.spyOn(BenchmarkPollTickerService.prototype, 'start').mockImplementation((intervalMs: number, onTick: () => void) => {
       const id = setInterval(onTick, intervalMs);
       const handle = (() => clearInterval(id)) as any;
       Object.defineProperty(handle, 'mode', { value: 'timer', enumerable: true });
@@ -291,7 +294,7 @@ describe('AdminBenchmarkComponent', () => {
       providers: [
         { provide: AdminBenchmarkService, useValue: benchmarkServiceMock },
         { provide: SystemService, useValue: systemServiceMock },
-        // The AI Reports tab hosts the PDF viewer; Karma never loads pdf.js.
+        // The AI Reports tab hosts the PDF viewer; the test runner never loads pdf.js.
         { provide: PDFJS_LOADER, useValue: () => Promise.reject(new Error('pdf.js is not loaded in specs')) },
         provideHttpClient(),
         provideHttpClientTesting()
@@ -351,19 +354,21 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   it('should open a run requested through openRunId exactly once, and report it handled', () => {
-    const viewRunDetail = spyOn(component, 'viewRunDetail');
-    const handled = spyOn(component.openRunHandled, 'emit');
+    const viewRunDetail = vi.spyOn(component, 'viewRunDetail').mockReturnValue(undefined);
+    const handled = vi.spyOn(component.openRunHandled, 'emit').mockReturnValue(undefined);
 
     component.openRunId = 123;
     component.openRunId = null;
 
-    expect(viewRunDetail).toHaveBeenCalledOnceWith(123);
+    expect(viewRunDetail).toHaveBeenCalledTimes(1);
+
+    expect(viewRunDetail).toHaveBeenCalledWith(123);
     expect(handled).toHaveBeenCalledTimes(1);
   });
 
   it('should open a run requested before its view existed once the view is initialised', async () => {
     const early = TestBed.createComponent(AdminBenchmarkComponent);
-    const viewRunDetail = spyOn(early.componentInstance, 'viewRunDetail');
+    const viewRunDetail = vi.spyOn(early.componentInstance, 'viewRunDetail').mockReturnValue(undefined);
     early.componentInstance.openRunId = 77;
 
     expect(viewRunDetail).not.toHaveBeenCalled();
@@ -371,7 +376,9 @@ describe('AdminBenchmarkComponent', () => {
     early.detectChanges();
     await Promise.resolve();
 
-    expect(viewRunDetail).toHaveBeenCalledOnceWith(77);
+    expect(viewRunDetail).toHaveBeenCalledTimes(1);
+
+    expect(viewRunDetail).toHaveBeenCalledWith(77);
     early.destroy();
   });
 
@@ -503,13 +510,13 @@ describe('AdminBenchmarkComponent', () => {
     const buttons = Array.from(host.querySelectorAll<HTMLElement>('.suite-card-actions button'));
     const labels = buttons.map(b => (b.textContent ?? '').trim());
     for (const label of ['Manage Questions', 'Generate Questions', 'Check Rubrics', 'Verify All']) {
-      expect(labels).withContext(label).toContain(label);
+      expect(labels, label).toContain(label);
     }
 
     const primaryButtons = buttons.filter(b => b.classList.contains('btn-gh'));
     expect(primaryButtons.length).toBe(2); // One "Manage Questions" per suite card.
     const secondaryButtons = buttons.filter(b => !b.classList.contains('btn-gh'));
-    expect(secondaryButtons.every(b => b.classList.contains('btn-ghost'))).toBeTrue();
+    expect(secondaryButtons.every(b => b.classList.contains('btn-ghost'))).toBe(true);
 
     const snapshotBadges = Array.from(host.querySelectorAll<HTMLElement>('.badge-board'));
     expect(snapshotBadges.length).toBe(2);
@@ -530,7 +537,7 @@ describe('AdminBenchmarkComponent', () => {
 
     const iconCharacters = /\p{Extended_Pictographic}|✓|✔/u;
     for (const element of [...buttons, ...reviewed]) {
-      expect(iconCharacters.test(element.textContent ?? '')).withContext(element.textContent ?? '').toBeFalse();
+      expect(iconCharacters.test(element.textContent ?? ''), element.textContent ?? '').toBe(false);
     }
   });
 
@@ -554,14 +561,14 @@ describe('AdminBenchmarkComponent', () => {
     const host = fixture.nativeElement as HTMLElement;
     const generateBtn = Array.from(host.querySelectorAll<HTMLElement>('.suite-card-actions button'))
       .find(b => (b.textContent ?? '').trim() === 'Generate Questions');
-    expect(generateBtn).withContext('Generate Questions button should render for a suite with a game snapshot').toBeTruthy();
+    expect(generateBtn, 'Generate Questions button should render for a suite with a game snapshot').toBeTruthy();
 
     // The click sets component state synchronously through the (click) binding; fixture.detectChanges()
     // is deliberately not called again afterwards, so the newly visible child's own ngOnChanges (which
     // calls service methods this spec does not stub) never fires.
     generateBtn!.click();
 
-    expect(component.generationDialogVisible).toBeTrue();
+    expect(component.generationDialogVisible).toBe(true);
     expect(component.generationSuiteForJob).toBe(suiteWithSnapshot);
   });
 
@@ -627,7 +634,7 @@ describe('AdminBenchmarkComponent', () => {
 
     const dialog: HTMLDialogElement = fixture.nativeElement.querySelector('dialog.benchmark-question-form-dialog');
     expect(dialog).toBeTruthy();
-    expect(dialog.classList.contains('benchmark-form-dialog')).toBeTrue();
+    expect(dialog.classList.contains('benchmark-form-dialog')).toBe(true);
   });
 
   it('should mark the suite form dialog as the wide markdown-editor variant', () => {
@@ -635,7 +642,7 @@ describe('AdminBenchmarkComponent', () => {
 
     const dialog: HTMLDialogElement = fixture.nativeElement.querySelector('dialog.benchmark-suite-form-dialog');
     expect(dialog).toBeTruthy();
-    expect(dialog.classList.contains('benchmark-form-dialog')).toBeTrue();
+    expect(dialog.classList.contains('benchmark-form-dialog')).toBe(true);
   });
 
   it('should render the suite description through the markdown editor and write back through suiteForm', () => {
@@ -664,8 +671,8 @@ describe('AdminBenchmarkComponent', () => {
       difficultyFullyAssessed: true
     } as any;
 
-    let suiteClose: jasmine.Spy;
-    let confirmShowModal: jasmine.Spy;
+    let suiteClose: Mock;
+    let confirmShowModal: Mock;
 
     function generateButton(): HTMLButtonElement | undefined {
       const host = fixture.nativeElement as HTMLElement;
@@ -675,21 +682,21 @@ describe('AdminBenchmarkComponent', () => {
 
     beforeEach(() => {
       fixture.detectChanges();
-      spyOn(component.suiteDialog.nativeElement, 'showModal');
-      suiteClose = spyOn(component.suiteDialog.nativeElement, 'close');
-      confirmShowModal = spyOn(component.confirmActionDialog.nativeElement, 'showModal');
-      spyOn(component.confirmActionDialog.nativeElement, 'close');
+      vi.spyOn(component.suiteDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      suiteClose = vi.spyOn(component.suiteDialog.nativeElement, 'close').mockReturnValue(undefined);
+      confirmShowModal = vi.spyOn(component.confirmActionDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.confirmActionDialog.nativeElement, 'close').mockReturnValue(undefined);
     });
 
     it('disables Generate with AI in create mode and enables it for an existing suite', () => {
       component.openCreateSuite();
       fixture.detectChanges();
       expect(generateButton()).toBeTruthy();
-      expect(generateButton()!.disabled).toBeTrue();
+      expect(generateButton()!.disabled).toBe(true);
 
       component.openEditSuite(suite);
       fixture.detectChanges();
-      expect(generateButton()!.disabled).toBeFalse();
+      expect(generateButton()!.disabled).toBe(false);
     });
 
     it('sets descriptionGenerationVisible when Generate with AI is clicked', () => {
@@ -699,18 +706,18 @@ describe('AdminBenchmarkComponent', () => {
       // No detectChanges after the click, so the child's ngOnChanges never reaches unstubbed services.
       generateButton()!.click();
 
-      expect(component.descriptionGenerationVisible).toBeTrue();
+      expect(component.descriptionGenerationVisible).toBe(true);
       expect(component.descriptionGenerationSuite).toBe(suite);
     });
 
     it('writes a generated description into the suite form and marks it dirty', () => {
       component.openEditSuite(suite);
-      expect(component.suiteFormDirty).toBeFalse();
+      expect(component.suiteFormDirty).toBe(false);
 
       component.onDescriptionGenerated('## Draft');
 
       expect(component.suiteForm.description).toBe('## Draft');
-      expect(component.suiteFormDirty).toBeTrue();
+      expect(component.suiteFormDirty).toBe(true);
     });
 
     it('closes an unchanged suite dialog without asking', () => {
@@ -745,7 +752,7 @@ describe('AdminBenchmarkComponent', () => {
 
       component.onSuiteDialogCancel(event);
 
-      expect(event.defaultPrevented).toBeTrue();
+      expect(event.defaultPrevented).toBe(true);
       expect(suiteClose).not.toHaveBeenCalled();
       expect(component.confirmDialogTitle).toBe('Discard unsaved changes?');
     });
@@ -767,14 +774,14 @@ describe('AdminBenchmarkComponent', () => {
       component.loadingQuestions = false;
       fixture.detectChanges();
 
-      expect(component.canAutoRateAll).toBeFalse();
+      expect(component.canAutoRateAll).toBe(false);
 
       const button = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.questions-toolbar button'))
         .find(b => b.textContent?.trim() === 'AI Auto-Rate All Difficulties');
       expect(button).toBeTruthy();
       expect(button!.getAttribute('aria-disabled')).toBe('true');
 
-      spyOn(component, 'openDifficultyAssessorDialog');
+      vi.spyOn(component, 'openDifficultyAssessorDialog').mockReturnValue(undefined);
       button!.click();
       expect(component.openDifficultyAssessorDialog).not.toHaveBeenCalled();
 
@@ -803,13 +810,13 @@ describe('AdminBenchmarkComponent', () => {
       component.loadingQuestions = false;
       fixture.detectChanges();
 
-      expect(component.canAutoRateAll).toBeTrue();
+      expect(component.canAutoRateAll).toBe(true);
 
       const button = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll<HTMLButtonElement>('.questions-toolbar button'))
         .find(b => b.textContent?.trim() === 'AI Auto-Rate All Difficulties');
       expect(button!.getAttribute('aria-disabled')).toBeNull();
 
-      spyOn(component, 'openDifficultyAssessorDialog');
+      vi.spyOn(component, 'openDifficultyAssessorDialog').mockReturnValue(undefined);
       button!.click();
       expect(component.openDifficultyAssessorDialog).toHaveBeenCalledWith(component.currentSuiteForQuestions);
     });
@@ -963,12 +970,12 @@ describe('AdminBenchmarkComponent', () => {
 
     beforeEach(() => {
       component.activeSubTab = 'suites';
-      spyOn(component.importDefaultSuitesDialog.nativeElement, 'showModal');
-      spyOn(component.importDefaultSuitesDialog.nativeElement, 'close');
+      vi.spyOn(component.importDefaultSuitesDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.importDefaultSuitesDialog.nativeElement, 'close').mockReturnValue(undefined);
     });
 
     it('loads the catalog and renders one checkbox per entry, named for the suite', () => {
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
 
       component.openImportDefaultSuitesDialog();
@@ -985,7 +992,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('keeps Import selected aria-disabled until a suite is checked', () => {
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
       component.openImportDefaultSuitesDialog();
       fixture.detectChanges();
@@ -997,13 +1004,13 @@ describe('AdminBenchmarkComponent', () => {
       component.toggleDefaultSuite(catalogEntry.key);
       (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
 
-      expect(component.canImportDefaultSuites).toBeTrue();
+      expect(component.canImportDefaultSuites).toBe(true);
       expect(importBtn.getAttribute('aria-disabled')).toBe('false');
     });
 
     it('imports the selected keys and reloads the suite list', () => {
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
-      benchmarkServiceMock.importDefaultSuites.and.returnValue(of({
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.importDefaultSuites.mockReturnValue(of({
         imported: [{ id: 9, name: catalogEntry.name }],
         skipped: []
       } as any));
@@ -1022,8 +1029,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('announces a skipped entry with its reason', () => {
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
-      benchmarkServiceMock.importDefaultSuites.and.returnValue(of({
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.importDefaultSuites.mockReturnValue(of({
         imported: [],
         skipped: [{ key: catalogEntry.key, reason: 'Suite quota reached.' }]
       } as any));
@@ -1043,7 +1050,7 @@ describe('AdminBenchmarkComponent', () => {
         difficultyCounts: {}, fileName: 'broken.json', error: 'Missing "key" field.',
         alreadyImportedCount: 0, alreadyImportedNames: [], nameMatchedSuiteNames: []
       };
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([invalidEntry] as any));
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([invalidEntry] as any));
       fixture.detectChanges();
       component.openImportDefaultSuitesDialog();
       fixture.detectChanges();
@@ -1055,7 +1062,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('renders the description as HTML, not Markdown source', () => {
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
       component.openImportDefaultSuitesDialog();
       fixture.detectChanges();
@@ -1066,7 +1073,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('renders one difficulty badge per band with its count', () => {
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
       component.openImportDefaultSuitesDialog();
       fixture.detectChanges();
@@ -1080,7 +1087,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('shows the selection status bar and updates it on toggle', () => {
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
       component.openImportDefaultSuitesDialog();
       fixture.detectChanges();
@@ -1103,7 +1110,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('does not put the description inside the checkbox label', () => {
-      benchmarkServiceMock.getDefaultSuiteCatalog.and.returnValue(of([catalogEntry] as any));
+      benchmarkServiceMock.getDefaultSuiteCatalog.mockReturnValue(of([catalogEntry] as any));
       fixture.detectChanges();
       component.openImportDefaultSuitesDialog();
       fixture.detectChanges();
@@ -1116,7 +1123,7 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   it('shows the Manage Suites empty state and the Run Benchmark notice when no suites exist', () => {
-    benchmarkServiceMock.getSuites.and.returnValue(of([]));
+    benchmarkServiceMock.getSuites.mockReturnValue(of([]));
     component.loadSuites();
     fixture.detectChanges();
 
@@ -1136,7 +1143,7 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   it('keeps Start Benchmark aria-disabled with a hint naming the missing suite when none is selected', () => {
-    benchmarkServiceMock.getSuites.and.returnValue(of([]));
+    benchmarkServiceMock.getSuites.mockReturnValue(of([]));
     component.loadSuites();
     fixture.detectChanges();
 
@@ -1151,8 +1158,8 @@ describe('AdminBenchmarkComponent', () => {
   });
 
   it('should open confirmActionDialog modal on deleteSuite and delete when confirmed', () => {
-    spyOn(window, 'confirm');
-    benchmarkServiceMock.deleteSuite.and.returnValue(of(void 0));
+    vi.spyOn(window, 'confirm').mockReturnValue(undefined as any);
+    benchmarkServiceMock.deleteSuite.mockReturnValue(of(void 0));
     component.activeSubTab = 'suites';
     component.suites = [
       { id: 42, name: 'Target Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1, assessedQuestionCount: 0, difficultyFullyAssessed: false }
@@ -1172,8 +1179,8 @@ describe('AdminBenchmarkComponent', () => {
 
   it('should show the refusal a Delete Suite comes back with, rather than only logging it', () => {
     const refusal = 'The suite has runs. Delete its runs first.';
-    benchmarkServiceMock.deleteSuite.and.returnValue(throwError(() => ({ status: 409, error: refusal })));
-    const logged = spyOn(console, 'error');
+    benchmarkServiceMock.deleteSuite.mockReturnValue(throwError(() => ({ status: 409, error: refusal })));
+    const logged = vi.spyOn(console, 'error').mockReturnValue(undefined);
     component.activeSubTab = 'suites';
     component.suites = [
       { id: 42, name: 'Target Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 1, assessedQuestionCount: 0, difficultyFullyAssessed: false }
@@ -1184,7 +1191,7 @@ describe('AdminBenchmarkComponent', () => {
     component.executeConfirmAction();
 
     expect(component.actionErrorMessage).toBe(refusal);
-    expect(logged).not.toHaveBeenCalledWith('Failed to delete suite', jasmine.anything());
+    expect(logged).not.toHaveBeenCalledWith('Failed to delete suite', expect.anything());
     const alert = fixture.nativeElement.querySelector('#bm-panel-suites .alert-danger .alert-message') as HTMLElement;
     expect(alert?.textContent?.trim()).toBe(refusal);
   });
@@ -1204,7 +1211,7 @@ describe('AdminBenchmarkComponent', () => {
     component.suites = [testSuite];
     fixture.detectChanges();
 
-    spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal');
+    vi.spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
     component.openDifficultyAssessorDialog(testSuite);
 
@@ -1217,7 +1224,7 @@ describe('AdminBenchmarkComponent', () => {
     (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
     const radios: HTMLInputElement[] = Array.from(fixture.nativeElement.querySelectorAll('.difficulty-scope-fieldset input[type="radio"]'));
     expect(radios.map(r => r.value)).toEqual(['unassessed', 'suite']);
-    expect(radios[0].checked).toBeTrue();
+    expect(radios[0].checked).toBe(true);
   });
 
   it('should default the difficulty assessment scope to the whole suite when no question is assessed yet', () => {
@@ -1234,7 +1241,7 @@ describe('AdminBenchmarkComponent', () => {
     };
     component.suites = [unassessedSuite];
     fixture.detectChanges();
-    spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal');
+    vi.spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
     component.openDifficultyAssessorDialog(unassessedSuite);
     (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
@@ -1257,7 +1264,7 @@ describe('AdminBenchmarkComponent', () => {
     };
     component.suites = [assessedSuite];
     fixture.detectChanges();
-    spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal');
+    vi.spyOn(component.difficultyAssessorDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
     component.openDifficultyAssessorDialog(assessedSuite);
     (component as unknown as { cdr: ChangeDetectorRef }).cdr.detectChanges();
@@ -1368,8 +1375,8 @@ describe('AdminBenchmarkComponent', () => {
       log: []
     };
 
-    benchmarkServiceMock.startDifficultyAssessment.and.returnValue(of({ jobId: 'job-123' }));
-    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of(mockJob));
+    benchmarkServiceMock.startDifficultyAssessment.mockReturnValue(of({ jobId: 'job-123' }));
+    benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of(mockJob));
 
     component.confirmDifficultyAssessment();
 
@@ -1382,7 +1389,7 @@ describe('AdminBenchmarkComponent', () => {
     expect(component.difficultyDialogPhase).toBe('progress');
     expect(benchmarkServiceMock.getDifficultyAssessment).toHaveBeenCalledWith('job-123');
     expect(component.difficultyJob).toEqual(mockJob);
-    expect(component.difficultyJobIsRunning).toBeTrue();
+    expect(component.difficultyJobIsRunning).toBe(true);
   });
 
   it('should send onlyUnassessed when confirming the unassessed scope', () => {
@@ -1399,8 +1406,8 @@ describe('AdminBenchmarkComponent', () => {
     component.difficultyAssessmentScope = 'unassessed';
     component.difficultyAssessorConfigId = 1;
 
-    benchmarkServiceMock.startDifficultyAssessment.and.returnValue(of({ jobId: 'job-unassessed' }));
-    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of({
+    benchmarkServiceMock.startDifficultyAssessment.mockReturnValue(of({ jobId: 'job-unassessed' }));
+    benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of({
       id: 'job-unassessed',
       suiteId: 1,
       suiteName: 'Default Suite',
@@ -1464,14 +1471,14 @@ describe('AdminBenchmarkComponent', () => {
     };
 
     const errorResponse = { status: 409, error: existingJob };
-    benchmarkServiceMock.startDifficultyAssessment.and.returnValue(throwError(() => errorResponse));
-    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of(existingJob));
+    benchmarkServiceMock.startDifficultyAssessment.mockReturnValue(throwError(() => errorResponse));
+    benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of(existingJob));
 
     component.confirmDifficultyAssessment();
 
     expect(component.difficultyDialogPhase).toBe('progress');
     expect(component.difficultyJob).toEqual(existingJob);
-    expect(component.difficultyJobIsRunning).toBeTrue();
+    expect(component.difficultyJobIsRunning).toBe(true);
   });
 
   it('should cancel running assessment on terminateDifficultyAssessment', () => {
@@ -1496,8 +1503,8 @@ describe('AdminBenchmarkComponent', () => {
     };
 
     component.difficultyJob = runningJob;
-    benchmarkServiceMock.cancelDifficultyAssessment.and.returnValue(of({ cancelled: true }));
-    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of({ ...runningJob, status: 'Cancelled' }));
+    benchmarkServiceMock.cancelDifficultyAssessment.mockReturnValue(of({ cancelled: true }));
+    benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of({ ...runningJob, status: 'Cancelled' }));
 
     component.terminateDifficultyAssessment();
 
@@ -1531,19 +1538,19 @@ describe('AdminBenchmarkComponent', () => {
 
     component.difficultyJob = runningJob;
     component.difficultyDialogPhase = 'progress';
-    benchmarkServiceMock.cancelDifficultyAssessment.and.returnValue(of({ cancelled: true }));
-    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of(runningJob));
+    benchmarkServiceMock.cancelDifficultyAssessment.mockReturnValue(of({ cancelled: true }));
+    benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of(runningJob));
 
     component.terminateDifficultyAssessment();
     fixture.detectChanges();
 
-    expect(component.terminatingDifficultyJob).toBeTrue();
-    expect(component.difficultyJobIsRunning).toBeTrue();
+    expect(component.terminatingDifficultyJob).toBe(true);
+    expect(component.difficultyJobIsRunning).toBe(true);
     const terminatingButtons: HTMLButtonElement[] = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('button'))
       .filter(b => b.textContent?.includes('Terminating…'));
     expect(terminatingButtons.length).toBeGreaterThan(0);
     terminatingButtons.forEach(b => {
-      expect(b.disabled).toBeTrue();
+      expect(b.disabled).toBe(true);
       expect(b.getAttribute('aria-busy')).toBe('true');
     });
 
@@ -1553,14 +1560,14 @@ describe('AdminBenchmarkComponent', () => {
       completedAtUtc: '2026-09-02T00:01:00Z',
       items: runningJob.items.map(i => i.status === 'Rated' ? i : { ...i, status: 'Cancelled' })
     };
-    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of(cancelledJob));
+    benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of(cancelledJob));
 
     component.startDifficultyPolling('job-terminating');
     component.stopDifficultyPolling();
     fixture.detectChanges();
 
-    expect(component.terminatingDifficultyJob).toBeFalse();
-    expect(component.difficultyJobIsTerminal).toBeTrue();
+    expect(component.terminatingDifficultyJob).toBe(false);
+    expect(component.difficultyJobIsTerminal).toBe(true);
     expect(fixture.nativeElement.querySelectorAll('.job-status-chip.status-cancelled').length).toBe(2);
     expect(fixture.nativeElement.querySelectorAll('.job-status-chip.status-rated').length).toBe(1);
   });
@@ -1585,11 +1592,11 @@ describe('AdminBenchmarkComponent', () => {
       items: [],
       log: []
     };
-    benchmarkServiceMock.cancelDifficultyAssessment.and.returnValue(throwError(() => ({ status: 500, error: 'Boom' })));
+    benchmarkServiceMock.cancelDifficultyAssessment.mockReturnValue(throwError(() => ({ status: 500, error: 'Boom' })));
 
     component.terminateDifficultyAssessment();
 
-    expect(component.terminatingDifficultyJob).toBeFalse();
+    expect(component.terminatingDifficultyJob).toBe(false);
     expect(component.actionErrorMessage).toBe('Boom');
   });
 
@@ -1619,8 +1626,8 @@ describe('AdminBenchmarkComponent', () => {
     };
 
     component.difficultyJob = failedJob;
-    benchmarkServiceMock.startDifficultyAssessment.and.returnValue(of({ jobId: 'retry-job-1' }));
-    benchmarkServiceMock.getDifficultyAssessment.and.returnValue(of({ ...failedJob, id: 'retry-job-1', status: 'Running' }));
+    benchmarkServiceMock.startDifficultyAssessment.mockReturnValue(of({ jobId: 'retry-job-1' }));
+    benchmarkServiceMock.getDifficultyAssessment.mockReturnValue(of({ ...failedJob, id: 'retry-job-1', status: 'Running' }));
 
     component.retryFailedQuestions();
 
@@ -1662,7 +1669,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should write the diagnostics text to the clipboard, announce it, and reset after the timeout', fakeAsync(() => {
-      const writeTextSpy = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
       const expectedText = component.difficultyDiagnosticsText;
       expect(expectedText).toContain('Job ID: job-diag');
 
@@ -1676,7 +1683,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(writeTextSpy).toHaveBeenCalledWith(expectedText);
-      expect(component.copiedDiagnostics).toBeTrue();
+      expect(component.copiedDiagnostics).toBe(true);
 
       const status = fixture.nativeElement.querySelector('.diagnostics-copy-status') as HTMLElement;
       expect(status.textContent?.trim()).toBe('Diagnostics copied to clipboard');
@@ -1684,12 +1691,12 @@ describe('AdminBenchmarkComponent', () => {
       tick(2000);
       fixture.detectChanges();
 
-      expect(component.copiedDiagnostics).toBeFalse();
+      expect(component.copiedDiagnostics).toBe(false);
       expect(status.textContent?.trim()).toBe('');
     }));
 
     it('should surface a clipboard failure in the inline dialog error rather than throwing', fakeAsync(() => {
-      spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+      vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
 
       const copyButton = fixture.nativeElement.querySelector(
         'button[aria-label="Copy difficulty assessment diagnostics"]'
@@ -1699,7 +1706,7 @@ describe('AdminBenchmarkComponent', () => {
       tick();
       fixture.detectChanges();
 
-      expect(component.copiedDiagnostics).toBeFalse();
+      expect(component.copiedDiagnostics).toBe(false);
       expect(component.difficultyDialogError).toBe('Could not copy the diagnostics to the clipboard.');
     }));
   });
@@ -1723,7 +1730,7 @@ describe('AdminBenchmarkComponent', () => {
     ];
     fixture.detectChanges();
 
-    expect(component.canStartRun).toBeFalse();
+    expect(component.canStartRun).toBe(false);
 
     const warningEl = fixture.nativeElement.querySelector('.alert.alert-warning');
     expect(warningEl).toBeTruthy();
@@ -1927,13 +1934,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should load history when the history tab is selected', () => {
-      benchmarkServiceMock.getRuns.calls.reset();
+      benchmarkServiceMock.getRuns.mockClear();
       component.selectSubTab('history');
       expect(benchmarkServiceMock.getRuns).toHaveBeenCalled();
     });
 
     it('should load suites when the suites tab is selected', () => {
-      benchmarkServiceMock.getSuites.calls.reset();
+      benchmarkServiceMock.getSuites.mockClear();
       component.selectSubTab('suites');
       expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
     });
@@ -1950,7 +1957,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should load profiles when the profiles tab is selected', () => {
-      benchmarkServiceMock.getScoringProfiles.calls.reset();
+      benchmarkServiceMock.getScoringProfiles.mockClear();
       component.selectSubTab('profiles');
       expect(benchmarkServiceMock.getScoringProfiles).toHaveBeenCalled();
     });
@@ -1984,7 +1991,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
       const input = fixture.nativeElement.querySelector('#runCountInput');
       expect(input).toBeTruthy();
-      expect(input.classList.contains('run-count-input')).toBeTrue();
+      expect(input.classList.contains('run-count-input')).toBe(true);
       expect(input.closest('.setup-group-exec')).toBeTruthy();
     });
   });
@@ -2012,9 +2019,7 @@ describe('AdminBenchmarkComponent', () => {
 
         for (const btn of buttons) {
           const name = (btn.textContent || '').trim() || btn.getAttribute('aria-label');
-          expect(name)
-            .withContext(`unnamed button in "${where}" tab: ${btn.outerHTML.slice(0, 120)}`)
-            .toBeTruthy();
+          expect(name, `unnamed button in "${where}" tab: ${btn.outerHTML.slice(0, 120)}`).toBeTruthy();
         }
       });
     });
@@ -2025,9 +2030,7 @@ describe('AdminBenchmarkComponent', () => {
           Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]
         ).filter(b => b.getAttribute('type') !== 'button');
 
-        expect(untyped.map(b => b.outerHTML.slice(0, 100)))
-          .withContext(`buttons without type="button" in "${where}" tab`)
-          .toEqual([]);
+        expect(untyped.map(b => b.outerHTML.slice(0, 100)), `buttons without type="button" in "${where}" tab`).toEqual([]);
       });
     });
 
@@ -2037,20 +2040,14 @@ describe('AdminBenchmarkComponent', () => {
           Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[]
         ).filter(b => b.hasAttribute('title'));
 
-        expect(titled.map(b => b.getAttribute('title')))
-          .withContext(`buttons still using title in "${where}" tab`)
-          .toEqual([]);
+        expect(titled.map(b => b.getAttribute('title')), `buttons still using title in "${where}" tab`).toEqual([]);
       });
     });
 
     it('should not use the invented btn-gh-primary or btn-gh-danger variants', () => {
       forEachSubTab(where => {
-        const stale = fixture.nativeElement.querySelectorAll(
-          '.btn-gh-primary, .btn-gh-danger, .btn-gh-icon, .btn-danger-icon, .subnav-btn'
-        );
-        expect(stale.length)
-          .withContext(`stale button classes in "${where}" tab`)
-          .toBe(0);
+        const stale = fixture.nativeElement.querySelectorAll('.btn-gh-primary, .btn-gh-danger, .btn-gh-icon, .btn-danger-icon, .subnav-btn');
+        expect(stale.length, `stale button classes in "${where}" tab`).toBe(0);
       });
     });
 
@@ -2066,9 +2063,7 @@ describe('AdminBenchmarkComponent', () => {
       for (const trigger of triggers) {
         const id = trigger.getAttribute('interestfor')!;
         const tooltip = fixture.nativeElement.querySelector(`#${id}`);
-        expect(tooltip)
-          .withContext(`no tooltip element for interestfor="${id}"`)
-          .toBeTruthy();
+        expect(tooltip, `no tooltip element for interestfor="${id}"`).toBeTruthy();
         expect(tooltip.getAttribute('popover')).toBe('hint');
         // The polyfill cannot use the implicit anchor interestfor establishes,
         // so both ends must name it explicitly.
@@ -2169,14 +2164,14 @@ describe('AdminBenchmarkComponent', () => {
       component.assessorConfigId = 1;
       fixture.detectChanges();
 
-      const showModal = spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 42 }));
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun()));
+      const showModal = vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun()));
 
       component.startBenchmark();
 
       expect(showModal).toHaveBeenCalled();
-      expect(component.isRunProgressDialogOpen).toBeTrue();
+      expect(component.isRunProgressDialogOpen).toBe(true);
       component.closeRunProgressDialog();
     });
 
@@ -2190,9 +2185,9 @@ describe('AdminBenchmarkComponent', () => {
         component.selectedSuiteId = 1;
         component.testedConfigId = 1;
         component.assessorConfigId = 1;
-        spyOn(component.runProgressDialog.nativeElement, 'showModal');
-        benchmarkServiceMock.startRun.and.returnValue(of({ runId: 42 }));
-        benchmarkServiceMock.getRun.and.returnValue(of(buildRun()));
+        vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+        benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 42 }));
+        benchmarkServiceMock.getRun.mockReturnValue(of(buildRun()));
       }
 
       const missingCheck = {
@@ -2202,15 +2197,15 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should warn and wait for acknowledgement when the suite rubrics quote text the board lacks', () => {
         selectSuiteWithBoard();
-        const showWarning = spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal');
-        benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of(missingCheck));
+        const showWarning = vi.spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
+        benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(of(missingCheck));
 
         component.startBenchmark();
 
         expect(benchmarkServiceMock.getBoardFactsCheck).toHaveBeenCalledWith(1);
         expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
         expect(showWarning).toHaveBeenCalled();
-        expect(component.startingRun).toBeFalse();
+        expect(component.startingRun).toBe(false);
         const text = (component.boardQuoteWarningDialog!.nativeElement.textContent || '').replace(/\s+/g, ' ');
         expect(text).toContain('These rubrics quote text the board does not contain; grades on them will rest on stale facts.');
         expect(text).toContain('Q3: "a blessed +1 long sword"');
@@ -2231,8 +2226,8 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should start nothing when the warning is cancelled', () => {
         selectSuiteWithBoard();
-        spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal');
-        benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of(missingCheck));
+        vi.spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
+        benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(of(missingCheck));
 
         component.startBenchmark();
         component.closeBoardQuoteWarningDialog();
@@ -2243,8 +2238,8 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should start straight away when every quote is on the board', () => {
         selectSuiteWithBoard();
-        const showWarning = spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal');
-        benchmarkServiceMock.getBoardFactsCheck.and.returnValue(of({ ...missingCheck, missingLiterals: [] }));
+        const showWarning = vi.spyOn(component.boardQuoteWarningDialog!.nativeElement, 'showModal').mockReturnValue(undefined);
+        benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(of({ ...missingCheck, missingLiterals: [] }));
 
         component.startBenchmark();
 
@@ -2255,8 +2250,8 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should start anyway when the check itself fails, since it is advisory', () => {
         selectSuiteWithBoard();
-        spyOn(console, 'warn');
-        benchmarkServiceMock.getBoardFactsCheck.and.returnValue(throwError(() => ({ status: 500 })));
+        vi.spyOn(console, 'warn').mockReturnValue(undefined);
+        benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(throwError(() => ({ status: 500 })));
 
         component.startBenchmark();
 
@@ -2302,7 +2297,7 @@ describe('AdminBenchmarkComponent', () => {
         answers: [buildAnswer(1), buildAnswer(2), buildAnswer(3)]
       });
       expect(component.runStage).toBe('terminal');
-      expect(component.runIsTerminal).toBeTrue();
+      expect(component.runIsTerminal).toBe(true);
     });
 
     it('should merge suite questions with answers and mark unanswered questions Pending', () => {
@@ -2347,7 +2342,7 @@ describe('AdminBenchmarkComponent', () => {
       const liveRegions = Array.from(dialog.querySelectorAll('[role="status"], [role="alert"]'))
         .filter(el => !el.closest('.job-diagnostics'));
       expect(liveRegions.length).toBe(1);
-      expect(liveRegions[0].classList.contains('progress-status')).toBeTrue();
+      expect(liveRegions[0].classList.contains('progress-status')).toBe(true);
       expect(liveRegions[0].getAttribute('aria-live')).toBe('polite');
 
       // It moved into the Assessments block when the claims and second-opinion bars were
@@ -2362,17 +2357,17 @@ describe('AdminBenchmarkComponent', () => {
       component.activeRunDetail = buildRun({ answers: [] });
       fixture.detectChanges();
       const bannerShown = () => !!fixture.nativeElement.querySelector('.active-run-banner');
-      expect(bannerShown()).toBeTrue();
+      expect(bannerShown()).toBe(true);
 
       // Driven through the real API: the flag is only ever set by these two methods,
       // and each refreshes the view itself.
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       component.openRunProgressDialog();
-      expect(component.isRunProgressDialogOpen).toBeTrue();
-      expect(bannerShown()).toBeFalse();
+      expect(component.isRunProgressDialogOpen).toBe(true);
+      expect(bannerShown()).toBe(false);
 
       component.closeRunProgressDialog();
-      expect(bannerShown()).toBeTrue();
+      expect(bannerShown()).toBe(true);
     });
 
     it('should give every button in the open dialog an accessible name, type, and no title', () => {
@@ -2390,9 +2385,9 @@ describe('AdminBenchmarkComponent', () => {
 
       for (const btn of buttons) {
         const name = (btn.textContent || '').trim() || btn.getAttribute('aria-label');
-        expect(name).withContext(btn.outerHTML.slice(0, 120)).toBeTruthy();
+        expect(name, btn.outerHTML.slice(0, 120)).toBeTruthy();
         expect(btn.getAttribute('type')).toBe('button');
-        expect(btn.hasAttribute('title')).toBeFalse();
+        expect(btn.hasAttribute('title')).toBe(false);
       }
 
       expect(dialog.querySelectorAll('.btn-gh-primary, .btn-gh-danger, .btn-gh-icon').length).toBe(0);
@@ -2439,9 +2434,9 @@ describe('AdminBenchmarkComponent', () => {
       component.isRunProgressDialogOpen = true;
       fixture.detectChanges();
 
-      const create = spyOn(URL, 'createObjectURL').and.returnValue('blob:test-url');
-      spyOn(URL, 'revokeObjectURL');
-      const click = spyOn(HTMLAnchorElement.prototype, 'click');
+      const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-url');
+      vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockReturnValue(undefined);
       const expectedText = component.runDiagnosticsText;
 
       const downloadButton = fixture.nativeElement.querySelector(
@@ -2450,10 +2445,10 @@ describe('AdminBenchmarkComponent', () => {
       downloadButton.click();
 
       expect(click).toHaveBeenCalledTimes(1);
-      const anchor = click.calls.mostRecent().object as HTMLAnchorElement;
+      const anchor = click.mock.contexts.at(-1) as HTMLAnchorElement;
       expect(anchor.download).toBe('snapshot-tommi2-2026-09-17_gemini-3.7-flash_run55_diagnostics.txt');
       expect(create).toHaveBeenCalledTimes(1);
-      const blob = create.calls.mostRecent().args[0] as Blob;
+      const blob = vi.mocked(create).mock.lastCall![0] as Blob;
       expect(blob.type).toBe('text/plain;charset=utf-8');
       expect(withoutCaptureTime(await blob.text())).toBe(withoutCaptureTime(expectedText));
     });
@@ -2473,7 +2468,7 @@ describe('AdminBenchmarkComponent', () => {
       component.isRunProgressDialogOpen = true;
       fixture.detectChanges();
 
-      const writeTextSpy = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const writeTextSpy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
       const expectedText = component.runDiagnosticsText;
       expect(expectedText).toContain('Run ID: 42');
 
@@ -2487,13 +2482,13 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(writeTextSpy).toHaveBeenCalledWith(expectedText);
-      expect(component.copiedRunDiagnostics).toBeTrue();
+      expect(component.copiedRunDiagnostics).toBe(true);
       expect(component.runDiagnosticsCopyStatus).toBe('Diagnostics copied to clipboard');
 
       tick(2000);
       fixture.detectChanges();
 
-      expect(component.copiedRunDiagnostics).toBeFalse();
+      expect(component.copiedRunDiagnostics).toBe(false);
       expect(component.runDiagnosticsCopyStatus).toBe('');
     }));
 
@@ -2506,7 +2501,7 @@ describe('AdminBenchmarkComponent', () => {
       component.isRunProgressDialogOpen = true;
       fixture.detectChanges();
 
-      spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
+      vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
 
       const copyButton = fixture.nativeElement.querySelector(
         'button[aria-label="Copy benchmark run diagnostics"]'
@@ -2515,7 +2510,7 @@ describe('AdminBenchmarkComponent', () => {
       tick();
       fixture.detectChanges();
 
-      expect(component.copiedRunDiagnostics).toBeFalse();
+      expect(component.copiedRunDiagnostics).toBe(false);
       expect(component.runDiagnosticsCopyStatus).toBe('Could not copy the diagnostics to the clipboard.');
       expect(component.runErrorMessage).toBe('Could not copy the benchmark run diagnostics to the clipboard.');
     }));
@@ -2542,7 +2537,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('prints the ticker mode on the Run poll line, and an attempts section for the sound and the notification', () => {
       component.activeRunDetail = buildRun({ answers: [] });
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Running', answers: [] })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Running', answers: [] })));
       (component as any).startPolling(42);
 
       // Pushed directly rather than exercised through a real play() call, so this spec does not
@@ -2563,21 +2558,21 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should reattach to a run already in progress without opening the dialog', () => {
-      benchmarkServiceMock.getActiveRun.and.returnValue(of({ runId: 77 }));
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 77 })));
-      const showModal = spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      benchmarkServiceMock.getActiveRun.mockReturnValue(of({ runId: 77 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 77 })));
+      const showModal = vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
       component.checkActiveRun();
 
       expect(component.activeRunId).toBe(77);
       expect(benchmarkServiceMock.getRun).toHaveBeenCalledWith(77);
-      expect(component.isRunProgressDialogOpen).toBeFalse();
+      expect(component.isRunProgressDialogOpen).toBe(false);
       expect(showModal).not.toHaveBeenCalled();
     });
 
     it('should do nothing when no run is active', () => {
-      benchmarkServiceMock.getActiveRun.and.returnValue(of(null));
-      benchmarkServiceMock.getRun.calls.reset();
+      benchmarkServiceMock.getActiveRun.mockReturnValue(of(null));
+      benchmarkServiceMock.getRun.mockClear();
 
       component.checkActiveRun();
 
@@ -2587,9 +2582,9 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should fetch the suite questions once per dialog open, not per poll tick', () => {
       component.activeRunDetail = buildRun({ answers: [] });
-      benchmarkServiceMock.getQuestions.calls.reset();
-      benchmarkServiceMock.getQuestions.and.returnValue(of([]));
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      benchmarkServiceMock.getQuestions.mockClear();
+      benchmarkServiceMock.getQuestions.mockReturnValue(of([]));
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
       component.openRunProgressDialog();
       component.closeRunProgressDialog();
@@ -2636,8 +2631,8 @@ describe('AdminBenchmarkComponent', () => {
         completedAtUtc: null
       });
 
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      spyOn(component.runProgressDialog.nativeElement, 'close');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
 
       component.openRunProgressDialog();
       expect(component.runElapsedLabel).toBe('10s');
@@ -2653,7 +2648,7 @@ describe('AdminBenchmarkComponent', () => {
     }));
 
     it('should not start ticker for terminal run and stop ticker when poll reports terminal', fakeAsync(() => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       component.activeRunDetail = buildRun({
         status: 'Completed',
         startedAtUtc: '2026-09-02T17:00:00Z',
@@ -2672,7 +2667,7 @@ describe('AdminBenchmarkComponent', () => {
       expect((component as any).runElapsedInterval).not.toBeNull();
 
       // Poll returns terminal run
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({
         status: 'Completed',
         startedAtUtc: '2026-09-02T17:00:00Z',
         completedAtUtc: '2026-09-02T17:05:00Z'
@@ -2693,7 +2688,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
       expect(details).toBeTruthy();
-      expect(details.open).toBeFalse();
+      expect(details.open).toBe(false);
 
       const copyBtn = details.querySelector('button[aria-label="Copy benchmark run diagnostics"]');
       expect(copyBtn).toBeTruthy();
@@ -2719,8 +2714,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should record lastRunPollError on failed poll and report it in diagnostics text', () => {
-      const consoleError = spyOn(console, 'error');
-      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
+      benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({
         status: 500,
         message: 'Internal Server Error'
       })));
@@ -2730,7 +2725,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.lastRunPollError).toContain('500');
       expect(component.runDiagnosticsText).toContain('Last poll error:');
       expect(component.runDiagnosticsText).toContain('500');
-      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
     });
 
     it('should produce non-empty diagnostics text when activeRunDetail is null', () => {
@@ -2755,62 +2750,111 @@ describe('AdminBenchmarkComponent', () => {
       expect(code).toBeTruthy();
     });
 
+    it('leaves the diagnostics text unrendered while the panel is closed', () => {
+      component.activeRunDetail = buildRun({ answers: [] });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const code = fixture.nativeElement.querySelector('.job-diagnostics pre code') as HTMLElement;
+      expect(code.textContent).toBe('');
+    });
+
+    it('renders the diagnostics text once the panel is opened', () => {
+      component.activeRunDetail = buildRun({ answers: [] });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+      fixture.detectChanges();
+
+      const code = details.querySelector('pre code') as HTMLElement;
+      expect(code.textContent).toContain('=== BENCHMARK RUN DIAGNOSTICS ===');
+      expect(code.textContent).toContain('Captured:');
+    });
+
+    it('keeps the open panel stable across change-detection passes', fakeAsync(() => {
+      component.activeRunDetail = buildRun({ answers: [] });
+      component.isRunProgressDialogOpen = true;
+      fixture.detectChanges();
+
+      const details = fixture.nativeElement.querySelector('.job-diagnostics') as HTMLDetailsElement;
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+      fixture.detectChanges();
+
+      const code = details.querySelector('pre code') as HTMLElement;
+      const rendered = code.textContent;
+
+      // The component is OnPush, so the view re-renders only once it is marked for check.
+      tick(5);
+      (component as unknown as {
+        cdr: ChangeDetectorRef;
+      }).cdr.markForCheck();
+      fixture.detectChanges();
+
+      expect(code.textContent).toBe(rendered);
+      expect(() => fixture.checkNoChanges()).not.toThrow();
+      discardPeriodicTasks();
+    }));
+
     it('should set returnToSeriesOnClose to true when opened from a series', () => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      expect(component.returnToSeriesOnClose).toBeFalse();
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      expect(component.returnToSeriesOnClose).toBe(false);
 
       component.onOpenRunProgressFromSeries(42);
 
-      expect(component.returnToSeriesOnClose).toBeTrue();
-      expect(component.isRunProgressDialogOpen).toBeTrue();
-      expect(component.multiRunDialogVisible).toBeFalse();
+      expect(component.returnToSeriesOnClose).toBe(true);
+      expect(component.isRunProgressDialogOpen).toBe(true);
+      expect(component.multiRunDialogVisible).toBe(false);
     });
 
     it('should reopen multi-run dialog when closing single-run progress with returnToSeriesOnClose true', () => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      spyOn(component.runProgressDialog.nativeElement, 'close');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
       component.activeSeriesId = 10;
       component.onOpenRunProgressFromSeries(42);
 
-      expect(component.multiRunDialogVisible).toBeFalse();
-      expect(component.returnToSeriesOnClose).toBeTrue();
+      expect(component.multiRunDialogVisible).toBe(false);
+      expect(component.returnToSeriesOnClose).toBe(true);
 
       component.closeRunProgressDialog();
 
-      expect(component.multiRunDialogVisible).toBeTrue();
-      expect(component.returnToSeriesOnClose).toBeFalse();
-      expect(component.isRunProgressDialogOpen).toBeFalse();
+      expect(component.multiRunDialogVisible).toBe(true);
+      expect(component.returnToSeriesOnClose).toBe(false);
+      expect(component.isRunProgressDialogOpen).toBe(false);
     });
 
     it('should not reopen multi-run dialog when closing single-run progress with returnToSeriesOnClose false', () => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      spyOn(component.runProgressDialog.nativeElement, 'close');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
       component.activeSeriesId = 10;
       component.openRunProgressDialog();
 
-      expect(component.returnToSeriesOnClose).toBeFalse();
-      expect(component.multiRunDialogVisible).toBeFalse();
+      expect(component.returnToSeriesOnClose).toBe(false);
+      expect(component.multiRunDialogVisible).toBe(false);
 
       component.closeRunProgressDialog();
 
-      expect(component.multiRunDialogVisible).toBeFalse();
-      expect(component.returnToSeriesOnClose).toBeFalse();
+      expect(component.multiRunDialogVisible).toBe(false);
+      expect(component.returnToSeriesOnClose).toBe(false);
     });
 
     it('should not reopen multi-run dialog when viewing full report detail from progress dialog', () => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      spyOn(component.runProgressDialog.nativeElement, 'close');
-      spyOn(component, 'viewRunDetail');
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42 })));
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
+      vi.spyOn(component, 'viewRunDetail').mockReturnValue(undefined);
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42 })));
       component.activeSeriesId = 10;
       component.onOpenRunProgressFromSeries(42);
 
-      expect(component.returnToSeriesOnClose).toBeTrue();
+      expect(component.returnToSeriesOnClose).toBe(true);
 
       component.viewActiveRunDetail();
 
-      expect(component.multiRunDialogVisible).toBeFalse();
-      expect(component.returnToSeriesOnClose).toBeFalse();
+      expect(component.multiRunDialogVisible).toBe(false);
+      expect(component.returnToSeriesOnClose).toBe(false);
       expect(component.viewRunDetail).toHaveBeenCalledWith(42);
     });
 
@@ -2836,18 +2880,18 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should keep polling and stay non-terminal when the first poll after a re-run launch still reports the previous status', () => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      spyOn(component.runProgressDialog.nativeElement, 'close');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
 
       component.selectedRunDetail = buildRun({
         id: 37,
         status: 'CompletedWithErrors',
         answers: [buildAnswer(3, { status: 'Failed' })]
       });
-      benchmarkServiceMock.rerunFailedQuestions.and.returnValue(of({ runId: 37 }));
+      benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(of({ runId: 37 }));
       // The server has not yet flipped the row to Running: the first poll after the launch
       // still sees the previous attempt's terminal status.
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({
         id: 37,
         status: 'CompletedWithErrors',
         answers: [buildAnswer(3, { status: 'Failed' })]
@@ -2855,8 +2899,8 @@ describe('AdminBenchmarkComponent', () => {
 
       component.rerunFailedFromRunDetail(37);
 
-      expect(component.rerunLaunchPending).toBeTrue();
-      expect(component.runIsTerminal).toBeFalse();
+      expect(component.rerunLaunchPending).toBe(true);
+      expect(component.runIsTerminal).toBe(false);
       expect(component.runStageLabel).toContain('Starting');
       expect((component as any).pollTickerHandle).not.toBeNull();
 
@@ -2864,31 +2908,31 @@ describe('AdminBenchmarkComponent', () => {
       const footer = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-footer') as HTMLElement;
       expect(footer.querySelector('.btn-gh-delete')).toBeTruthy();
       const buttons = Array.from(footer.querySelectorAll('button')) as HTMLButtonElement[];
-      expect(buttons.some(b => (b.textContent || '').trim() === 'View Full Report')).toBeFalse();
+      expect(buttons.some(b => (b.textContent || '').trim() === 'View Full Report')).toBe(false);
 
       component.closeRunProgressDialog();
     });
 
     it('should clear the launch-pending state once a poll reports the run running', () => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      spyOn(component.runProgressDialog.nativeElement, 'close');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
 
       component.activeRunId = 37;
       component.rerunLaunchPending = true;
       (component as any).rerunLaunchedAtMs = Date.now();
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 37, status: 'Running' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 37, status: 'Running' })));
 
       (component as any).pollRunDetail(37);
 
-      expect(component.rerunLaunchPending).toBeFalse();
-      expect(component.runIsRunning).toBeTrue();
+      expect(component.rerunLaunchPending).toBe(false);
+      expect(component.runIsRunning).toBe(true);
 
       component.closeRunProgressDialog();
     });
 
     it('should surface a refused re-run inside the progress dialog and keep the loaded run detail', () => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      spyOn(component.runProgressDialog.nativeElement, 'close');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
 
       component.activeRunDetail = buildRun({
         id: 37,
@@ -2897,7 +2941,7 @@ describe('AdminBenchmarkComponent', () => {
         answers: [buildAnswer(1, { status: 'Failed' })]
       });
       component.isRunProgressDialogOpen = true;
-      benchmarkServiceMock.rerunFailedQuestions.and.returnValue(throwError(() => ({
+      benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(throwError(() => ({
         status: 409,
         error: 'A benchmark run is already in progress.'
       })));
@@ -2905,7 +2949,7 @@ describe('AdminBenchmarkComponent', () => {
       component.rerunFailedFromProgress();
 
       expect(component.runErrorMessage).toBe('A benchmark run is already in progress.');
-      expect(component.rerunLaunchPending).toBeFalse();
+      expect(component.rerunLaunchPending).toBe(false);
       expect(component.activeRunDetail).not.toBeNull();
 
       fixture.detectChanges();
@@ -2922,7 +2966,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
       const dialog = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog') as HTMLElement;
       expect(dialog).toBeTruthy();
-      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBeTrue();
+      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBe(true);
     });
 
     it('should put the question list in its own section and everything else before it', () => {
@@ -2937,13 +2981,13 @@ describe('AdminBenchmarkComponent', () => {
       const sections = Array.from(body.children) as HTMLElement[];
       expect(sections.map(s => s.tagName)).toEqual(['SECTION', 'SECTION']);
       const [overview, questions] = sections;
-      expect(overview.classList.contains('run-progress-overview')).toBeTrue();
-      expect(questions.classList.contains('run-progress-questions')).toBeTrue();
+      expect(overview.classList.contains('run-progress-overview')).toBe(true);
+      expect(questions.classList.contains('run-progress-questions')).toBe(true);
 
       // The overview keeps everything but the question list, in its order.
       for (const selector of ['.run-model-strip', '.run-stage-rail', '.job-progress-block',
         '.run-stat-strip', 'app-benchmark-cost-panel', '.job-diagnostics']) {
-        expect(overview.querySelector(selector)).withContext(selector).toBeTruthy();
+        expect(overview.querySelector(selector), selector).toBeTruthy();
       }
       expect(overview.querySelector('.run-question-list')).toBeNull();
       expect(overview.querySelector('[role="status"][aria-live="polite"].progress-status')).toBeTruthy();
@@ -2968,7 +3012,7 @@ describe('AdminBenchmarkComponent', () => {
       component.openRunProgressDialog();
 
       try {
-        expect(dialog.open).toBeTrue();
+        expect(dialog.open).toBe(true);
         expect(document.activeElement?.id).toBe('runProgressDialogTitle');
       } finally {
         component.closeRunProgressDialog();
@@ -3045,7 +3089,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(score.textContent?.trim()).toBe('Score 83');
       expect(score.querySelector('.visually-hidden')?.textContent).toBe('Score ');
       // Before the status chip.
-      expect(score.nextElementSibling?.classList.contains('job-status-chip')).toBeTrue();
+      expect(score.nextElementSibling?.classList.contains('job-status-chip')).toBe(true);
       expect(rows[1].querySelector('.job-item-score')).toBeNull();
     });
 
@@ -3060,11 +3104,11 @@ describe('AdminBenchmarkComponent', () => {
 
       const scores = Array.from(fixture.nativeElement.querySelectorAll('.run-question-list .job-item-score')) as HTMLElement[];
       expect(scores.length).toBe(2);
-      expect(scores[0].classList.contains('job-item-score')).toBeTrue();
-      expect(scores[0].classList.contains('badge-score-high')).toBeTrue();
-      expect(scores[1].classList.contains('badge-score-low')).toBeTrue();
+      expect(scores[0].classList.contains('job-item-score')).toBe(true);
+      expect(scores[0].classList.contains('badge-score-high')).toBe(true);
+      expect(scores[1].classList.contains('badge-score-low')).toBe(true);
       expect(scores[1].textContent?.trim()).toBe('Score 45');
-      expect(scores[1].nextElementSibling?.classList.contains('job-status-chip')).toBeTrue();
+      expect(scores[1].nextElementSibling?.classList.contains('job-status-chip')).toBe(true);
     });
 
     it('should show the panel score on a panel run\'s question row, and none until both members have scored', () => {
@@ -3114,8 +3158,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should give benchmark dialog content no padding of its own', () => {
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      spyOn(component.runProgressDialog.nativeElement, 'close');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
 
       fixture.detectChanges();
       const content = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-content') as HTMLElement;
@@ -3156,8 +3200,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should trigger rerunAnswer on confirmRetry when scope is question', () => {
-      benchmarkServiceMock.rerunAnswer.and.returnValue(of({ runId: 42 }));
-      benchmarkServiceMock.getRun.and.returnValue(of(component.selectedRunDetail!));
+      benchmarkServiceMock.rerunAnswer.mockReturnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(component.selectedRunDetail!));
 
       const answer = component.selectedRunDetail!.answers[1];
       component.openRetryDialog('question', 42, answer);
@@ -3168,8 +3212,8 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should trigger reassessAnswer on confirmRetry when scope is assessment', () => {
-      benchmarkServiceMock.reassessAnswer.and.returnValue(of({ runId: 42 }));
-      benchmarkServiceMock.getRun.and.returnValue(of(component.selectedRunDetail!));
+      benchmarkServiceMock.reassessAnswer.mockReturnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(component.selectedRunDetail!));
 
       const answer = component.selectedRunDetail!.answers[1];
       component.openRetryDialog('assessment', 42, answer);
@@ -3180,32 +3224,32 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should trigger rerunFinalSynthesis on confirmRetry when scope is synthesis', () => {
-      benchmarkServiceMock.rerunFinalSynthesis.and.returnValue(of({ runId: 42 }));
-      benchmarkServiceMock.getRun.and.returnValue(of(component.selectedRunDetail!));
+      benchmarkServiceMock.rerunFinalSynthesis.mockReturnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(component.selectedRunDetail!));
 
       component.openRetryDialog('synthesis', 42);
       component.confirmRetry();
 
       expect(benchmarkServiceMock.rerunFinalSynthesis).toHaveBeenCalledWith(42, 1);
-      expect(component.runningSynthesis).toBeTrue();
+      expect(component.runningSynthesis).toBe(true);
     });
 
     it('should trigger retryFailedAssessments on confirmRetry when scope is assessments', () => {
-      benchmarkServiceMock.retryFailedAssessments.and.returnValue(of({ runId: 42 }));
-      benchmarkServiceMock.getRun.and.returnValue(of(component.selectedRunDetail!));
+      benchmarkServiceMock.retryFailedAssessments.mockReturnValue(of({ runId: 42 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(component.selectedRunDetail!));
 
       component.openRetryDialog('assessments', 42);
       component.confirmRetry();
 
       expect(benchmarkServiceMock.retryFailedAssessments).toHaveBeenCalledWith(42, 1);
-      expect(component.retryingAssessments).toBeTrue();
+      expect(component.retryingAssessments).toBe(true);
     });
   });
 
   describe('downloadToolCallLog', () => {
     it('should open the tool-call log through window.open using the service URL', () => {
-      benchmarkServiceMock.getToolCallLogUrl.and.returnValue('/api/admin/benchmark/runs/42/tool-call-log');
-      const openSpy = spyOn(window, 'open');
+      benchmarkServiceMock.getToolCallLogUrl.mockReturnValue('/api/admin/benchmark/runs/42/tool-call-log');
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
 
       component.downloadToolCallLog(42);
 
@@ -3504,21 +3548,21 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should treat empty answers and the Empty, HarnessArtifacts and Truncated bits as transport defects', () => {
-      expect(component.hasTransportDefect(buildScoredAnswer(1, { status: 'EmptyAnswer' }))).toBeTrue();
-      expect(component.hasTransportDefect(buildScoredAnswer(1, { status: 5 }))).toBeTrue();
-      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 1 }))).toBeTrue();
-      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 2 }))).toBeTrue();
-      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 4 }))).toBeTrue();
-      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 6 }))).toBeTrue();
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { status: 'EmptyAnswer' }))).toBe(true);
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { status: 5 }))).toBe(true);
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 1 }))).toBe(true);
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 2 }))).toBe(true);
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 4 }))).toBe(true);
+      expect(component.hasTransportDefect(buildScoredAnswer(1, { answerFlags: 6 }))).toBe(true);
     });
 
     it('should treat a tool budget cap as a harness limit and never as a transport defect', () => {
       const capped = buildScoredAnswer(1, { toolBudgetExhausted: true, toolCallCount: 25, toolCallBudgetUsed: 25 });
 
-      expect(component.hasHarnessLimit(capped)).toBeTrue();
-      expect(component.hasTransportDefect(capped)).toBeFalse();
-      expect(component.hasAdvisoryFlag(capped)).toBeFalse();
-      expect(component.hasHarnessLimit(buildScoredAnswer(1))).toBeFalse();
+      expect(component.hasHarnessLimit(capped)).toBe(true);
+      expect(component.hasTransportDefect(capped)).toBe(false);
+      expect(component.hasAdvisoryFlag(capped)).toBe(false);
+      expect(component.hasHarnessLimit(buildScoredAnswer(1))).toBe(false);
     });
 
     it('should count an answer carrying only advisory flags as clean', () => {
@@ -3527,27 +3571,27 @@ describe('AdminBenchmarkComponent', () => {
       const both = buildScoredAnswer(3, { answerFlags: 24, answerFlagNames: ['ReasoningBleed', 'RepeatedFragments'] });
 
       for (const answer of [bleed, repeated, both]) {
-        expect(component.hasAdvisoryFlag(answer)).toBeTrue();
-        expect(component.hasTransportDefect(answer)).toBeFalse();
-        expect(component.hasHarnessLimit(answer)).toBeFalse();
+        expect(component.hasAdvisoryFlag(answer)).toBe(true);
+        expect(component.hasTransportDefect(answer)).toBe(false);
+        expect(component.hasHarnessLimit(answer)).toBe(false);
       }
 
       // Advisory flags may overlap a defect without masking it.
       const overlapping = buildScoredAnswer(4, { answerFlags: 2 | 8 });
-      expect(component.hasTransportDefect(overlapping)).toBeTrue();
-      expect(component.hasAdvisoryFlag(overlapping)).toBeTrue();
+      expect(component.hasTransportDefect(overlapping)).toBe(true);
+      expect(component.hasAdvisoryFlag(overlapping)).toBe(true);
 
       const clean = buildScoredAnswer(5);
-      expect(component.hasAdvisoryFlag(clean)).toBeFalse();
-      expect(component.hasTransportDefect(clean)).toBeFalse();
+      expect(component.hasAdvisoryFlag(clean)).toBe(false);
+      expect(component.hasTransportDefect(clean)).toBe(false);
     });
 
     it('should flag an AnswerFramingOpener-only answer as advisory and list its question number', () => {
       const framed = buildScoredAnswer(7, { answerFlags: 1024, answerFlagNames: ['AnswerFramingOpener'] });
 
-      expect(component.hasAdvisoryFlag(framed)).toBeTrue();
-      expect(component.hasTransportDefect(framed)).toBeFalse();
-      expect(component.hasHarnessLimit(framed)).toBeFalse();
+      expect(component.hasAdvisoryFlag(framed)).toBe(true);
+      expect(component.hasTransportDefect(framed)).toBe(false);
+      expect(component.hasHarnessLimit(framed)).toBe(false);
 
       component.selectedRunDetail = buildCompletedRun({ answers: [framed] });
       fixture.detectChanges();
@@ -3556,19 +3600,19 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should name only the advisory flags as advisory', () => {
-      expect(component.isAdvisoryFlagName('ReasoningBleed')).toBeTrue();
-      expect(component.isAdvisoryFlagName('RepeatedFragments')).toBeTrue();
-      expect(component.isAdvisoryFlagName('ContestedVerdict')).toBeTrue();
-      expect(component.isAdvisoryFlagName('UnevidencedDeduction')).toBeTrue();
-      expect(component.isAdvisoryFlagName('RefutedClaim')).toBeTrue();
-      expect(component.isAdvisoryFlagName('OutOfRubricAccuracyDeduction')).toBeTrue();
-      expect(component.isAdvisoryFlagName('AnswerFramingOpener')).toBeTrue();
-      expect(component.isAdvisoryFlagName('ContestedCriticalError')).toBeTrue();
-      expect(component.isAdvisoryFlagName('ContestedAccuracyDeduction')).toBeTrue();
-      expect(component.isAdvisoryFlagName('DimensionOutlier')).toBeTrue();
-      expect(component.isAdvisoryFlagName('HarnessArtifacts')).toBeFalse();
-      expect(component.isAdvisoryFlagName('Truncated')).toBeFalse();
-      expect(component.isAdvisoryFlagName('Empty')).toBeFalse();
+      expect(component.isAdvisoryFlagName('ReasoningBleed')).toBe(true);
+      expect(component.isAdvisoryFlagName('RepeatedFragments')).toBe(true);
+      expect(component.isAdvisoryFlagName('ContestedVerdict')).toBe(true);
+      expect(component.isAdvisoryFlagName('UnevidencedDeduction')).toBe(true);
+      expect(component.isAdvisoryFlagName('RefutedClaim')).toBe(true);
+      expect(component.isAdvisoryFlagName('OutOfRubricAccuracyDeduction')).toBe(true);
+      expect(component.isAdvisoryFlagName('AnswerFramingOpener')).toBe(true);
+      expect(component.isAdvisoryFlagName('ContestedCriticalError')).toBe(true);
+      expect(component.isAdvisoryFlagName('ContestedAccuracyDeduction')).toBe(true);
+      expect(component.isAdvisoryFlagName('DimensionOutlier')).toBe(true);
+      expect(component.isAdvisoryFlagName('HarnessArtifacts')).toBe(false);
+      expect(component.isAdvisoryFlagName('Truncated')).toBe(false);
+      expect(component.isAdvisoryFlagName('Empty')).toBe(false);
     });
 
     it('should count and name the critical error answers alongside the advisory ones', () => {
@@ -3688,7 +3732,7 @@ describe('AdminBenchmarkComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(component.hasRunIntegrityNotice).toBeTrue();
+      expect(component.hasRunIntegrityNotice).toBe(true);
       const text = integrityNoticeText().replace(/\s+/g, ' ').trim();
       expect(text).toContain('1 answer(s) flagged with a critical error (question(s) 1; member A flagged 0, member B 1).');
     });
@@ -3700,7 +3744,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(component.criticalErrorAnswerCount).toBe(0);
-      expect(component.hasRunIntegrityNotice).toBeFalse();
+      expect(component.hasRunIntegrityNotice).toBe(false);
       expect(integrityNoticeText()).toBe('');
     });
 
@@ -3813,14 +3857,14 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should toggle the removed transport artifacts block per answer', () => {
-      expect(component.expandedArtifacts.has(1)).toBeFalse();
+      expect(component.expandedArtifacts.has(1)).toBe(false);
 
       component.toggleArtifact(1);
-      expect(component.expandedArtifacts.has(1)).toBeTrue();
-      expect(component.expandedArtifacts.has(2)).toBeFalse();
+      expect(component.expandedArtifacts.has(1)).toBe(true);
+      expect(component.expandedArtifacts.has(2)).toBe(false);
 
       component.toggleArtifact(1);
-      expect(component.expandedArtifacts.has(1)).toBeFalse();
+      expect(component.expandedArtifacts.has(1)).toBe(false);
     });
 
     it('should reveal the scrubbed artifact text as plain text only once expanded', () => {
@@ -3865,22 +3909,22 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should send the second opinion assessor only when one is selected', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 9 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 9 }));
       // Suppress the success path's side effects: polling would leave a live interval behind
       // and the dialog would need a real <dialog> to open.
-      spyOn<any>(component, 'startPolling');
-      spyOn<any>(component, 'openRunProgressDialog');
+      vi.spyOn(component as any, 'startPolling').mockReturnValue(undefined);
+      vi.spyOn(component as any, 'openRunProgressDialog').mockReturnValue(undefined);
       component.selectedSuiteId = 1;
       component.testedConfigId = 10;
       component.assessorConfigId = 11;
 
       component.startBenchmark();
-      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionAssessorModelConfigurationId)
+      expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].secondOpinionAssessorModelConfigurationId)
         .toBeNull();
 
       component.secondOpinionConfigId = 12;
       component.startBenchmark();
-      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionAssessorModelConfigurationId)
+      expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].secondOpinionAssessorModelConfigurationId)
         .toBe(12);
     });
 
@@ -3900,12 +3944,12 @@ describe('AdminBenchmarkComponent', () => {
       component.scoringProfileFormDialog?.nativeElement.close();
       expect(component.profileForm.notAttemptedScore).toBe(50);
 
-      benchmarkServiceMock.createScoringProfile.and.returnValue(of({ id: 9 } as any));
+      benchmarkServiceMock.createScoringProfile.mockReturnValue(of({ id: 9 } as any));
       component.profileForm.name = 'Abstention Profile';
       component.saveProfile();
 
       expect(component.profileValidationErrors).toEqual([]);
-      expect(benchmarkServiceMock.createScoringProfile.calls.mostRecent().args[0].notAttemptedScore).toBe(50);
+      expect(vi.mocked(benchmarkServiceMock.createScoringProfile).mock.lastCall![0].notAttemptedScore).toBe(50);
     });
 
     it('should load a profile\'s not-attempted score for editing and send a blank one as null', () => {
@@ -3922,12 +3966,12 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.profileForm.notAttemptedScore).toBe(40);
 
       // An update that omits the field clears it on the server, so a blank field is sent as null.
-      benchmarkServiceMock.updateScoringProfile.and.returnValue(of(profile));
+      benchmarkServiceMock.updateScoringProfile.mockReturnValue(of(profile));
       component.profileForm.notAttemptedScore = undefined as any;
       component.saveProfile();
 
-      const sent = benchmarkServiceMock.updateScoringProfile.calls.mostRecent().args[1];
-      expect(Object.prototype.hasOwnProperty.call(sent, 'notAttemptedScore')).toBeTrue();
+      const sent = vi.mocked(benchmarkServiceMock.updateScoringProfile).mock.lastCall![1];
+      expect(Object.prototype.hasOwnProperty.call(sent, 'notAttemptedScore')).toBe(true);
       expect(sent.notAttemptedScore).toBeNull();
 
       // A profile served without the field edits as blank.
@@ -3970,7 +4014,7 @@ describe('AdminBenchmarkComponent', () => {
       const blind = (fixture.nativeElement.querySelector('#profileSecondOpinionBlind') as HTMLElement).closest('label') as HTMLElement;
       expect(blind.textContent?.trim()).toBe('Blind Second Reader');
 
-      const open = spyOn(component.graderGuide!, 'open');
+      const open = vi.spyOn(component.graderGuide!, 'open').mockReturnValue(undefined);
       const guideButton = (fixture.nativeElement.querySelector('#secondOpinionModeProfile') as HTMLElement)
         .closest('.form-group')!.querySelector('.grader-guide-btn') as HTMLButtonElement;
       expect(guideButton.textContent?.trim()).toBe('How the graders work');
@@ -4276,14 +4320,14 @@ describe('AdminBenchmarkComponent', () => {
       }
 
       /** Starts the real poll on a run seen Running, with the lock and the document's visibility held still. */
-      function startWatching(): jasmine.Spy {
+      function startWatching(): Mock {
         const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
-        spyOn(lockService, 'acquireForRun');
-        spyOn(lockService, 'release');
-        spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
-        const playSpy = spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').and.returnValue(Promise.resolve('played'));
+        vi.spyOn(lockService, 'acquireForRun').mockReturnValue(undefined);
+        vi.spyOn(lockService, 'release').mockReturnValue(undefined);
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+        const playSpy = vi.spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').mockResolvedValue('played');
         component.completionSound = true;
-        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({ status: 'Running', stage: 'Synthesizing', completedAtUtc: null })));
+        benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({ status: 'Running', stage: 'Synthesizing', completedAtUtc: null })));
         (component as any).startPolling(55);
         return playSpy;
       }
@@ -4339,10 +4383,10 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       it('should make stage 4 current while the reports are written, with the job in the status line, stat strip and cost panel', () => {
-        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+        benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({
           status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing
         })));
-        benchmarkServiceMock.getRunReportJob.and.returnValue(of(reportJob()));
+        benchmarkServiceMock.getRunReportJob.mockReturnValue(of(reportJob()));
 
         (component as any).pollRunDetail(55);
         fixture.detectChanges();
@@ -4368,10 +4412,10 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       it('should name the queue position while the job waits for the report writer', () => {
-        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+        benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({
           status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending
         })));
-        benchmarkServiceMock.getRunReportJob.and.returnValue(of(reportJob({
+        benchmarkServiceMock.getRunReportJob.mockReturnValue(of(reportJob({
           phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null, jobsAhead: 1
         })));
 
@@ -4386,10 +4430,10 @@ describe('AdminBenchmarkComponent', () => {
         const playSpy = startWatching();
         expect(pollTicker()).not.toBeNull();
 
-        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+        benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({
           status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending
         })));
-        benchmarkServiceMock.getRunReportJob.and.returnValue(of(reportJob({
+        benchmarkServiceMock.getRunReportJob.mockReturnValue(of(reportJob({
           phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null, jobsAhead: 0
         })));
         tick(2000);
@@ -4398,16 +4442,16 @@ describe('AdminBenchmarkComponent', () => {
         expect(pollTicker()).not.toBeNull();
         expect(playSpy).not.toHaveBeenCalled();
 
-        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+        benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({
           status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing
         })));
-        benchmarkServiceMock.getRunReportJob.and.returnValue(of(reportJob()));
+        benchmarkServiceMock.getRunReportJob.mockReturnValue(of(reportJob()));
         tick(2000);
         expect(component.runStageLabel).toBe('Stage 4 of 4 — Writing reports: writing the Executive Summary (1 of 2)');
         expect(pollTicker()).not.toBeNull();
         expect(playSpy).not.toHaveBeenCalled();
 
-        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+        benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({
           status: 'Completed',
           reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Completed,
           reportDocumentsWrittenCount: 2,
@@ -4420,18 +4464,19 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.runReportsStatLabel).toBe('2 documents, 1m 12s');
         expect(component.runReportWriterCost).toBe(0.12);
         expect(pollTicker()).toBeNull();
-        expect(playSpy).toHaveBeenCalledOnceWith('run:55');
+        expect(playSpy).toHaveBeenCalledTimes(1);
+        expect(playSpy).toHaveBeenCalledWith('run:55');
 
-        const polls = benchmarkServiceMock.getRun.calls.count();
+        const polls = vi.mocked(benchmarkServiceMock.getRun).mock.calls.length;
         tick(10000);
-        expect(benchmarkServiceMock.getRun.calls.count()).toBe(polls);
+        expect(vi.mocked(benchmarkServiceMock.getRun).mock.calls.length).toBe(polls);
         discardPeriodicTasks();
       }));
 
       it('should stop polling a run whose writer never starts once the 30-second grace has passed, and chime then', fakeAsync(() => {
         const playSpy = startWatching();
 
-        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+        benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({
           status: 'Completed', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.NotRequested
         })));
         tick(2000);
@@ -4448,19 +4493,20 @@ describe('AdminBenchmarkComponent', () => {
         expect(pollTicker()).toBeNull();
         expect(component.runReportStage).toBe('notWritten');
         expect(component.runStageLabel).toBe('Completed. Answered 2 of 2.');
-        expect(playSpy).toHaveBeenCalledOnceWith('run:55');
+        expect(playSpy).toHaveBeenCalledTimes(1);
+        expect(playSpy).toHaveBeenCalledWith('run:55');
 
-        const polls = benchmarkServiceMock.getRun.calls.count();
+        const polls = vi.mocked(benchmarkServiceMock.getRun).mock.calls.length;
         tick(10000);
-        expect(benchmarkServiceMock.getRun.calls.count()).toBe(polls);
+        expect(vi.mocked(benchmarkServiceMock.getRun).mock.calls.length).toBe(polls);
         discardPeriodicTasks();
       }));
 
       it('should stop at once and chime for a writer run that ends with another terminal status', fakeAsync(() => {
         const playSpy = startWatching();
-        benchmarkServiceMock.getRunReportJob.calls.reset();
+        benchmarkServiceMock.getRunReportJob.mockClear();
 
-        benchmarkServiceMock.getRun.and.returnValue(of(writerRun({
+        benchmarkServiceMock.getRun.mockReturnValue(of(writerRun({
           status: 'CompletedWithErrors', reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending
         })));
         tick(2000);
@@ -4468,7 +4514,8 @@ describe('AdminBenchmarkComponent', () => {
         expect(pollTicker()).toBeNull();
         expect(component.runReportStage).toBe('notWritten');
         expect(benchmarkServiceMock.getRunReportJob).not.toHaveBeenCalled();
-        expect(playSpy).toHaveBeenCalledOnceWith('run:55');
+        expect(playSpy).toHaveBeenCalledTimes(1);
+        expect(playSpy).toHaveBeenCalledWith('run:55');
         discardPeriodicTasks();
       }));
 
@@ -4558,10 +4605,10 @@ describe('AdminBenchmarkComponent', () => {
       // The row list is unchanged: the whole suite stays listed and the rows outside the
       // re-run keep the status they already have.
       expect(rows.length).toBe(3);
-      expect(component.runHasRerunScope).toBeTrue();
-      expect(component.isRerunScope(rows[0])).toBeFalse();
-      expect(component.isRerunScope(rows[1])).toBeTrue();
-      expect(component.isRerunScope(rows[2])).toBeFalse();
+      expect(component.runHasRerunScope).toBe(true);
+      expect(component.isRerunScope(rows[0])).toBe(false);
+      expect(component.isRerunScope(rows[1])).toBe(true);
+      expect(component.isRerunScope(rows[2])).toBe(false);
       expect(component.runRowChipLabel(rows[0])).toBe('Scored');
       expect(component.runRowChipLabel(rows[2])).toBe('Scored');
     });
@@ -4647,7 +4694,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(rows.map(r => r.questionText))
         .toEqual(['Stored question 1', 'Deleted question, as asked', 'Stored question 3']);
       expect(rows.map(r => component.runRowChipLabel(r))).toEqual(['Scored', 'Scored', 'Scored']);
-      expect(rows.every(r => r.answer != null)).toBeTrue();
+      expect(rows.every(r => r.answer != null)).toBe(true);
     });
 
     it('should add a question the first pass has not answered yet, matched by question id rather than order index', () => {
@@ -4690,7 +4737,7 @@ describe('AdminBenchmarkComponent', () => {
         { id: 40, orderIndex: 3, questionText: 'A question added after the run' }
       ] as any;
 
-      expect(component.runIsFirstPass).toBeFalse();
+      expect(component.runIsFirstPass).toBe(false);
       expect(component.runProgressRows.map(r => r.orderIndex)).toEqual([1, 2]);
 
       // A single-answer re-run whose scope the server has not reported yet is still not a first pass.
@@ -4700,7 +4747,7 @@ describe('AdminBenchmarkComponent', () => {
         rerunStartedAtUtc: '2026-09-24T10:00:00Z',
         answers: [buildScoredAnswer(1, { benchmarkQuestionId: 11 }), buildScoredAnswer(2, { benchmarkQuestionId: 12 })]
       });
-      expect(component.runIsFirstPass).toBeFalse();
+      expect(component.runIsFirstPass).toBe(false);
       expect(component.runProgressRows.map(r => r.orderIndex)).toEqual([1, 2]);
     });
 
@@ -4733,7 +4780,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it("should open the run's own board read-only from View Game Snapshot", () => {
       const board = { name: 'Run board', sanitizedText: 'Line 1\nLine 2', digestText: null, charCount: 13, sha256: 'feedbeef' };
-      benchmarkServiceMock.getRunBoard.and.returnValue(of(board));
+      benchmarkServiceMock.getRunBoard.mockReturnValue(of(board));
       component.selectedRunDetail = buildCompletedRun({ hasBoardRecord: true, gameSnapshotSha256Used: 'feedbeef' });
       fixture.detectChanges();
 
@@ -4743,11 +4790,11 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(benchmarkServiceMock.getRunBoard).toHaveBeenCalledWith(55);
       const viewer = component.snapshotViewer!;
-      expect(viewer.readOnly).toBeTrue();
+      expect(viewer.readOnly).toBe(true);
       expect(viewer.readOnlyBoard).toEqual(board);
 
       const dialog = viewer.viewerDialog.nativeElement;
-      expect(dialog.open).toBeTrue();
+      expect(dialog.open).toBe(true);
       expect(dialog.textContent).toContain('The board this run was made with.');
       expect(dialog.querySelector('.readonly-board-text')?.textContent).toBe('Line 1\nLine 2');
       expect(Array.from(dialog.querySelectorAll('[role="tab"]')).map(t => (t.textContent || '').trim()))
@@ -4761,14 +4808,14 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should offer View Game Snapshot for a run that recorded only its board hash', () => {
       component.selectedRunDetail = buildCompletedRun({ gameSnapshotSha256Used: 'feedbeef' });
-      expect(component.selectedRunHasBoard).toBeTrue();
+      expect(component.selectedRunHasBoard).toBe(true);
     });
 
     it('should hide View Game Snapshot for a run made without a board', () => {
       component.selectedRunDetail = buildCompletedRun();
       fixture.detectChanges();
 
-      expect(component.selectedRunHasBoard).toBeFalse();
+      expect(component.selectedRunHasBoard).toBe(false);
       expect(viewGameSnapshotButton()).toBeUndefined();
     });
 
@@ -4785,7 +4832,7 @@ describe('AdminBenchmarkComponent', () => {
         rerunScoredOrderIndexes: []
       });
 
-      expect(component.runElapsedIsRerun).toBeTrue();
+      expect(component.runElapsedIsRerun).toBe(true);
       expect(component.runElapsedLabel).toMatch(/^1m 3\ds$/);
 
       const diagnostics = component.runDiagnosticsText;
@@ -4865,7 +4912,7 @@ describe('AdminBenchmarkComponent', () => {
         rerunScoredOrderIndexes: []
       });
 
-      expect(component.runElapsedIsRerun).toBeTrue();
+      expect(component.runElapsedIsRerun).toBe(true);
       expect(component.runElapsedLabel).toMatch(/^1m 3\ds$/);
     });
 
@@ -5068,9 +5115,9 @@ describe('AdminBenchmarkComponent', () => {
       ];
       for (const [marker, prefix] of pickers) {
         const trigger = fixture.nativeElement.querySelector(`.${marker} .selector-trigger`) as HTMLButtonElement;
-        expect(trigger).withContext(marker).toBeTruthy();
-        expect(trigger.getAttribute('aria-labelledby')!.startsWith(`${prefix}Label `)).withContext(marker).toBeTrue();
-        expect(trigger.getAttribute('aria-describedby')).withContext(marker).toBe(`${prefix}Hint`);
+        expect(trigger, marker).toBeTruthy();
+        expect(trigger.getAttribute('aria-labelledby')!.startsWith(`${prefix}Label `), marker).toBe(true);
+        expect(trigger.getAttribute('aria-describedby'), marker).toBe(`${prefix}Hint`);
       }
     });
 
@@ -5255,7 +5302,7 @@ describe('AdminBenchmarkComponent', () => {
       const modeBadge = dds[2].querySelector('.config-badge');
       expect(modeBadge).toBeTruthy();
       expect(modeBadge?.textContent?.trim()).toBe('coverage Only flagged answers');
-      expect(modeBadge?.hasAttribute('title')).toBeFalse();
+      expect(modeBadge?.hasAttribute('title')).toBe(false);
       expect(dds[2].querySelector('app-info-tip .gh-info-btn')?.getAttribute('aria-label')).toBe('About Second reader coverage');
       expect(fixture.nativeElement.querySelector('#runProgressCoverageTip')?.textContent).toContain('raised a flag');
     });
@@ -5408,15 +5455,15 @@ describe('AdminBenchmarkComponent', () => {
       ];
       for (const [id, controlSelector] of hints) {
         const hint = card().querySelector(`#${id}`) as HTMLElement;
-        expect(hint).withContext(id).toBeTruthy();
+        expect(hint, id).toBeTruthy();
         const popup = hint.closest('.gh-info-popup') as HTMLElement;
-        expect(popup).withContext(id).toBeTruthy();
-        expect(popup.getAttribute('popover')).withContext(id).toBe('auto');
+        expect(popup, id).toBeTruthy();
+        expect(popup.getAttribute('popover'), id).toBe('auto');
 
         const tip = popup.closest('app-info-tip') as HTMLElement;
         const control = card().querySelector(controlSelector) as HTMLElement;
-        expect(control.parentElement!.classList).withContext(id).toContain('gh-field-row');
-        expect(control.nextElementSibling).withContext(id).toBe(tip);
+        expect(control.parentElement!.classList, id).toContain('gh-field-row');
+        expect(control.nextElementSibling, id).toBe(tip);
       }
     });
 
@@ -5437,8 +5484,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(card().querySelectorAll('.gh-checkbox').length).toBe(0);
       for (const id of ['allowCapWaitInput', 'completionSoundInput', 'completionNotificationInput']) {
         const label = card().querySelector(`label[for="${id}"]`) as HTMLElement;
-        expect(label).withContext(id).toBeTruthy();
-        expect(label.classList).withContext(id).toContain('checkbox-label');
+        expect(label, id).toBeTruthy();
+        expect(label.classList, id).toContain('checkbox-label');
       }
       expect(getComputedStyle(card().querySelector('#completionSoundInput')!).width).toBe('20px');
     });
@@ -5516,7 +5563,7 @@ describe('AdminBenchmarkComponent', () => {
         'Disallowed — production default',
         'Allowed — answers cite source files and lines'
       ]);
-      expect(component.candidateAllowSourceCodeReferences).toBeFalse();
+      expect(component.candidateAllowSourceCodeReferences).toBe(false);
       expect(select.getAttribute('aria-describedby')).toBe('candidateSourceCodeReferencesHint');
 
       const hint = card().querySelector('#candidateSourceCodeReferencesHint') as HTMLElement;
@@ -5586,9 +5633,8 @@ describe('AdminBenchmarkComponent', () => {
 
       for (const tipId of ['bmAssessorModelHint', 'bmCoAssessorModelHint', 'bmSecondOpinionModelHint', 'bmClaimVerifierModelHint']) {
         const tip = card().querySelector(`#${tipId}`) as HTMLElement;
-        expect(Array.from(tip.querySelectorAll('p > strong')).map(s => s.textContent))
-          .withContext(tipId).toContain('Recommended:');
-        expect(tip.textContent).withContext(tipId).toContain('More: How the graders work.');
+        expect(Array.from(tip.querySelectorAll('p > strong')).map(s => s.textContent), tipId).toContain('Recommended:');
+        expect(tip.textContent, tipId).toContain('More: How the graders work.');
       }
       const reader = card().querySelector('#bmSecondOpinionModelHint') as HTMLElement;
       expect(reader.textContent).toContain('A second model grades answers again');
@@ -5602,7 +5648,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should open the grader guide at the roles overview from the Grading group', () => {
       fixture.detectChanges();
 
-      const open = spyOn(component.graderGuide!, 'open');
+      const open = vi.spyOn(component.graderGuide!, 'open').mockReturnValue(undefined);
       const button = card().querySelector('.setup-group-grading .grader-guide-btn') as HTMLButtonElement;
       expect(button.textContent?.trim()).toBe('How the graders work');
       button.click();
@@ -5654,7 +5700,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(advisory.querySelector('svg.alert-icon')?.getAttribute('aria-hidden')).toBe('true');
       expect(advisory.textContent?.replace(/\s+/g, ' ').trim()).toBe(warning);
       expect(card().querySelector('.setup-group-grading .report-writer-refusal')).toBeNull();
-      expect(component.canStartRun).toBeTrue();
+      expect(component.canStartRun).toBe(true);
       expect(component.startBenchmarkHint).toBe('');
     });
 
@@ -5675,7 +5721,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(card().querySelector('.setup-group-grading .report-writer-advisory')).toBeNull();
       const trigger = card().querySelector('.report-writer-model-selector .selector-trigger') as HTMLElement;
       expect(trigger.getAttribute('aria-describedby')).toBe('bmReportWriterModelHint bmReportWriterRefusal');
-      expect(component.canStartRun).toBeFalse();
+      expect(component.canStartRun).toBe(false);
       expect(component.startBenchmarkHint).toBe(refusal);
 
       component.reportWriterConfigId = null;
@@ -5693,15 +5739,15 @@ describe('AdminBenchmarkComponent', () => {
       assessorModelDisplayName: 'Test Model', message: 'The assessor shares the provider.', role: 'assessor'
     };
 
-    function prepare(): jasmine.Spy {
+    function prepare(): Mock {
       component.activeSubTab = 'run';
       fixture.detectChanges();
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 1;
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
-      benchmarkServiceMock.getRun.and.returnValue(of({ id: 42, answers: [] } as any));
-      return spyOn(component.sameProviderDialog.nativeElement, 'showModal');
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      benchmarkServiceMock.getRun.mockReturnValue(of({ id: 42, answers: [] } as any));
+      return vi.spyOn(component.sameProviderDialog.nativeElement, 'showModal').mockReturnValue(undefined);
     }
 
     function dialogHeading(): string {
@@ -5713,23 +5759,20 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     function sentBodies(): any[] {
-      return benchmarkServiceMock.startRun.calls.allArgs().map(args => args[0]);
+      return vi.mocked(benchmarkServiceMock.startRun).mock.calls.map(args => args[0]);
     }
 
     afterEach(() => component.ngOnDestroy());
 
     it('should open the dialog in report-writer wording on the writer\'s 409 and re-send with the writer\'s flag', () => {
       const showModal = prepare();
-      benchmarkServiceMock.startRun.and.returnValues(
-        throwError(() => ({ status: 409, error: writerWarning })),
-        of({ runId: 42 })
-      );
+      benchmarkServiceMock.startRun.mockReturnValueOnce(throwError(() => ({ status: 409, error: writerWarning }))).mockReturnValueOnce(of({ runId: 42 }));
 
       component.startBenchmark();
       fixture.detectChanges();
 
       expect(showModal).toHaveBeenCalledTimes(1);
-      expect(component.sameProviderWarningIsReportWriter).toBeTrue();
+      expect(component.sameProviderWarningIsReportWriter).toBe(true);
       expect(dialogHeading()).toBe('Same-Provider Report Writer');
       expect(dialogText()).toContain('Report Writer: Other Claude');
       expect(dialogText()).not.toContain('Assessor Model:');
@@ -5742,52 +5785,44 @@ describe('AdminBenchmarkComponent', () => {
 
       const bodies = sentBodies();
       expect(bodies.length).toBe(2);
-      expect(bodies[0].acknowledgeSameProvider).toBeFalse();
+      expect(bodies[0].acknowledgeSameProvider).toBe(false);
       expect(bodies[0].acknowledgeSameProviderReportWriter).toBeUndefined();
-      expect(bodies[1].acknowledgeSameProvider).toBeFalse();
-      expect(bodies[1].acknowledgeSameProviderReportWriter).toBeTrue();
+      expect(bodies[1].acknowledgeSameProvider).toBe(false);
+      expect(bodies[1].acknowledgeSameProviderReportWriter).toBe(true);
       // Per-run safety acknowledgments: neither is remembered with the launcher's settings.
       expect(localStorage.getItem(RUN_SETTINGS_KEY) ?? '').not.toContain('acknowledge');
     });
 
     it('should keep the assessor\'s acknowledgment when the report writer\'s warning follows it', () => {
       const showModal = prepare();
-      benchmarkServiceMock.startRun.and.returnValues(
-        throwError(() => ({ status: 409, error: assessorWarning })),
-        throwError(() => ({ status: 409, error: writerWarning })),
-        of({ runId: 42 })
-      );
+      benchmarkServiceMock.startRun.mockReturnValueOnce(throwError(() => ({ status: 409, error: assessorWarning }))).mockReturnValueOnce(throwError(() => ({ status: 409, error: writerWarning }))).mockReturnValueOnce(of({ runId: 42 }));
 
       component.startBenchmark();
       fixture.detectChanges();
-      expect(component.sameProviderWarningIsReportWriter).toBeFalse();
+      expect(component.sameProviderWarningIsReportWriter).toBe(false);
       expect(dialogHeading()).toBe('Same-Provider Assessment Warning');
       expect(dialogText()).toContain('Assessor Model: Test Model');
 
       component.confirmSameProviderRun();
       fixture.detectChanges();
-      expect(component.sameProviderWarningIsReportWriter).toBeTrue();
+      expect(component.sameProviderWarningIsReportWriter).toBe(true);
       expect(dialogHeading()).toBe('Same-Provider Report Writer');
 
       component.confirmSameProviderRun();
 
       const bodies = sentBodies();
       expect(bodies.length).toBe(3);
-      expect(bodies[1].acknowledgeSameProvider).toBeTrue();
+      expect(bodies[1].acknowledgeSameProvider).toBe(true);
       expect(bodies[1].acknowledgeSameProviderReportWriter).toBeUndefined();
-      expect(bodies[2].acknowledgeSameProvider).toBeTrue();
-      expect(bodies[2].acknowledgeSameProviderReportWriter).toBeTrue();
+      expect(bodies[2].acknowledgeSameProvider).toBe(true);
+      expect(bodies[2].acknowledgeSameProviderReportWriter).toBe(true);
       expect(showModal).toHaveBeenCalled();
       expect(localStorage.getItem(RUN_SETTINGS_KEY) ?? '').not.toContain('acknowledge');
     });
 
     it('should start a new attempt without the acknowledgments of the last one', () => {
       prepare();
-      benchmarkServiceMock.startRun.and.returnValues(
-        throwError(() => ({ status: 409, error: writerWarning })),
-        throwError(() => ({ status: 500, error: 'Boom' })),
-        throwError(() => ({ status: 500, error: 'Boom' }))
-      );
+      benchmarkServiceMock.startRun.mockReturnValueOnce(throwError(() => ({ status: 409, error: writerWarning }))).mockReturnValueOnce(throwError(() => ({ status: 500, error: 'Boom' }))).mockReturnValueOnce(throwError(() => ({ status: 500, error: 'Boom' })));
 
       component.startBenchmark();
       component.confirmSameProviderRun();
@@ -5796,8 +5831,8 @@ describe('AdminBenchmarkComponent', () => {
 
       const bodies = sentBodies();
       expect(bodies.length).toBe(3);
-      expect(bodies[1].acknowledgeSameProviderReportWriter).toBeTrue();
-      expect(bodies[2].acknowledgeSameProvider).toBeFalse();
+      expect(bodies[1].acknowledgeSameProviderReportWriter).toBe(true);
+      expect(bodies[2].acknowledgeSameProvider).toBe(false);
       expect(bodies[2].acknowledgeSameProviderReportWriter).toBeUndefined();
     });
   });
@@ -5826,7 +5861,7 @@ describe('AdminBenchmarkComponent', () => {
       // The default profile targets 2000 ms, which is well inside the interactive band.
       for (const level of ['high', 'max', 'Max', 'HIGH']) {
         selectTestedModelWithThinkingLevel(level);
-        expect(component.showProfileFitAdvisory).withContext(level).toBeTrue();
+        expect(component.showProfileFitAdvisory, level).toBe(true);
       }
 
       fixture.detectChanges();
@@ -5836,11 +5871,11 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should stay silent for a shallow thinking level or a profile with a slow speed target', () => {
       selectTestedModelWithThinkingLevel('low');
-      expect(component.showProfileFitAdvisory).toBeFalse();
+      expect(component.showProfileFitAdvisory).toBe(false);
 
       selectTestedModelWithThinkingLevel('max');
       component.scoringProfiles = [{ ...component.scoringProfiles[0], speedTargetMs: 30000 }];
-      expect(component.showProfileFitAdvisory).toBeFalse();
+      expect(component.showProfileFitAdvisory).toBe(false);
 
       fixture.detectChanges();
       expect(profileFitHintText()).toBe('');
@@ -5849,21 +5884,21 @@ describe('AdminBenchmarkComponent', () => {
     it('should stay silent while either half of the pairing is unselected', () => {
       component.testedConfigId = null;
       component.selectedScoringProfileId = null;
-      expect(component.showProfileFitAdvisory).toBeFalse();
+      expect(component.showProfileFitAdvisory).toBe(false);
 
       // A model chosen, but no profile yet.
       selectTestedModelWithThinkingLevel('max');
       component.selectedScoringProfileId = null;
-      expect(component.showProfileFitAdvisory).toBeFalse();
+      expect(component.showProfileFitAdvisory).toBe(false);
 
       // A profile chosen, but no model yet.
       component.selectedScoringProfileId = 1;
       component.testedConfigId = null;
-      expect(component.showProfileFitAdvisory).toBeFalse();
+      expect(component.showProfileFitAdvisory).toBe(false);
 
       // A model with no thinking level at all is not a deliberating one.
       selectTestedModelWithThinkingLevel(null);
-      expect(component.showProfileFitAdvisory).toBeFalse();
+      expect(component.showProfileFitAdvisory).toBe(false);
     });
   });
   describe('second opinion mode', () => {
@@ -5904,7 +5939,7 @@ describe('AdminBenchmarkComponent', () => {
 
       // The hard gate that silently produced the 2026-09-03 run's zero second verdicts: the
       // mode is inert without an assessor, so the control says so rather than looking set.
-      expect(select!.disabled).toBeTrue();
+      expect(select!.disabled).toBe(true);
       expect(component.secondOpinionModeHint).toContain('Choose a second reader to set its coverage');
       discardPeriodicTasks();
     }));
@@ -5914,7 +5949,7 @@ describe('AdminBenchmarkComponent', () => {
       component.secondOpinionMode = 3;
       const select = modeSelect();
 
-      expect(select!.disabled).toBeFalse();
+      expect(select!.disabled).toBe(false);
       expect(component.secondOpinionModeHint).toContain('unbiased measure of grading reliability');
       discardPeriodicTasks();
     }));
@@ -5929,23 +5964,23 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should send the mode only when an assessor is selected', fakeAsync(() => {
-      const consoleError = spyOn(console, 'error');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 2;
       component.secondOpinionConfigId = null;
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 7 }));
-      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 0 })));
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 7 }));
+      benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 0 })));
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
       component.startBenchmark();
-      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionMode).toBeNull();
+      expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].secondOpinionMode).toBeNull();
 
       component.secondOpinionConfigId = 3;
       component.secondOpinionMode = 3;
       component.startBenchmark();
-      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].secondOpinionMode).toBe(3);
-      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
+      expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].secondOpinionMode).toBe(3);
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
 
       (component as any).stopPolling();
       discardPeriodicTasks();
@@ -5953,13 +5988,13 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should enable the profile editor outlier delta for FlaggedAndOutliers only', () => {
       component.profileForm.secondOpinionMode = 1;
-      expect(component.outlierDeltaEnabled).toBeFalse();
+      expect(component.outlierDeltaEnabled).toBe(false);
 
       component.profileForm.secondOpinionMode = 3;
-      expect(component.outlierDeltaEnabled).toBeFalse();
+      expect(component.outlierDeltaEnabled).toBe(false);
 
       component.profileForm.secondOpinionMode = 2;
-      expect(component.outlierDeltaEnabled).toBeTrue();
+      expect(component.outlierDeltaEnabled).toBe(true);
     });
 
     it('should reject a non-positive outlier delta under FlaggedAndOutliers', () => {
@@ -5987,10 +6022,10 @@ describe('AdminBenchmarkComponent', () => {
       ];
       component.assessorConfigId = 1;
       component.secondOpinionConfigId = 2;
-      expect(component.showAssessorPairingAdvisory).toBeTrue();
+      expect(component.showAssessorPairingAdvisory).toBe(true);
 
       component.secondOpinionConfigId = 3;
-      expect(component.showAssessorPairingAdvisory).toBeFalse();
+      expect(component.showAssessorPairingAdvisory).toBe(false);
     });
 
     it('should warn when the assessor differs from the suite\'s last completed run', () => {
@@ -6001,16 +6036,16 @@ describe('AdminBenchmarkComponent', () => {
         assessorModelDisplayNameUsed: 'Gemini 3.7 Flash',
         assessorModelProviderUsed: 'Google'
       };
-      expect(component.showAssessorChangeAdvisory).toBeTrue();
+      expect(component.showAssessorChangeAdvisory).toBe(true);
 
       component.assessorConfigId = 2;
-      expect(component.showAssessorChangeAdvisory).toBeFalse();
+      expect(component.showAssessorChangeAdvisory).toBe(false);
     });
 
     it('should stay silent for a suite with no completed run to compare against', () => {
       component.assessorConfigId = 5;
       component.lastAssessor = {};
-      expect(component.showAssessorChangeAdvisory).toBeFalse();
+      expect(component.showAssessorChangeAdvisory).toBe(false);
     });
   });
 
@@ -6070,7 +6105,7 @@ describe('AdminBenchmarkComponent', () => {
       component.selectedRunDetail = buildFinishedRun();
       fixture.detectChanges();
 
-      expect(component.showUnweightedQualityTile).toBeTrue();
+      expect(component.showUnweightedQualityTile).toBe(true);
       expect(component.weightingDeltaLabel).toBe('+2');
       expect(scoreCardText('Unweighted Mean')).toContain('92 / 100');
       expect(scoreCardText('Unweighted Mean')).toContain('equal weights · difficulty weighting moved the index +2');
@@ -6080,7 +6115,7 @@ describe('AdminBenchmarkComponent', () => {
       component.selectedRunDetail = buildFinishedRun({ qualityIndex: 92, unweightedQualityIndex: 92 });
       fixture.detectChanges();
 
-      expect(component.showUnweightedQualityTile).toBeFalse();
+      expect(component.showUnweightedQualityTile).toBe(false);
       expect(scoreCardText('Unweighted Mean')).toBe('');
     });
 
@@ -6088,7 +6123,7 @@ describe('AdminBenchmarkComponent', () => {
       component.selectedRunDetail = buildFinishedRun();
       fixture.detectChanges();
 
-      expect(component.showRunProfileFitAdvisory).toBeTrue();
+      expect(component.showRunProfileFitAdvisory).toBe(true);
       expect(scoreCardText('Speed Index')).toContain('*');
       expect(component.runProfileFitAdvisoryTitle).toContain('thinking level max');
     });
@@ -6097,7 +6132,7 @@ describe('AdminBenchmarkComponent', () => {
       component.selectedRunDetail = buildFinishedRun({ scoringProfileSpeedTargetMs: 30000 });
       fixture.detectChanges();
 
-      expect(component.showRunProfileFitAdvisory).toBeFalse();
+      expect(component.showRunProfileFitAdvisory).toBe(false);
     });
 
     it('should show the agreement tile with its coverage fraction beneath the value', () => {
@@ -6112,7 +6147,7 @@ describe('AdminBenchmarkComponent', () => {
       // The coverage never travels separately from the figure: 4 of 18 selected by trigger and
       // 18 of 18 are different measurements, and only the fraction tells them apart.
       expect(component.agreementCoverageLabel).toBe('4 of 18 answers graded twice');
-      expect(component.agreementIsSelective).toBeTrue();
+      expect(component.agreementIsSelective).toBe(true);
       const text = scoreCardText('Assessor Agreement');
       expect(text).toContain('mean |Δ| 4.3 pts');
       expect(text).toContain('4 of 18 answers graded twice · Flagged only');
@@ -6138,7 +6173,7 @@ describe('AdminBenchmarkComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(component.showAgreementAdvisory).toBeTrue();
+      expect(component.showAgreementAdvisory).toBe(true);
       expect(component.agreementAdvisoryTitle)
         .toBe('Coverage is selected by trigger, so this is conditioned on the first assessor’s own uncertainty, not an unbiased agreement rate. n = 6 of 18.');
     });
@@ -6151,7 +6186,7 @@ describe('AdminBenchmarkComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(component.showAgreementAdvisory).toBeTrue();
+      expect(component.showAgreementAdvisory).toBe(true);
       expect(component.agreementAdvisoryTitle)
         .toBe('Only n = 3 of 18 answers were graded twice, too few for a mean to be an agreement rate.');
     });
@@ -6178,7 +6213,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(component.agreementCoverageLabel).toBe('18 of 18 answers graded twice');
-      expect(component.agreementIsSelective).toBeFalse();
+      expect(component.agreementIsSelective).toBe(false);
       expect(scoreCardText('Assessor Agreement')).toContain('Every answer');
     });
 
@@ -6200,7 +6235,7 @@ describe('AdminBenchmarkComponent', () => {
       component.selectedRunDetail = buildFinishedRun({ secondOpinionGradedAnswerCount: 0 });
       fixture.detectChanges();
 
-      expect(component.showAgreementTile).toBeFalse();
+      expect(component.showAgreementTile).toBe(false);
       expect(scoreCardText('Assessor Agreement')).toBe('');
     });
 
@@ -6537,7 +6572,7 @@ describe('AdminBenchmarkComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(component.secondOpinionSelectedButUnused).toBeTrue();
+      expect(component.secondOpinionSelectedButUnused).toBe(true);
       const notices: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.alert-heading'));
       const heading = notices.find(n => (n.textContent || '').includes('Run Integrity Notice'));
       const body = ((heading?.parentElement?.querySelector('.alert-body') as HTMLElement)?.textContent || '')
@@ -6571,9 +6606,9 @@ describe('AdminBenchmarkComponent', () => {
 
       const pills: HTMLElement[] = Array.from(box.querySelectorAll('.verdict-pill'));
       expect(pills.length).toBe(3);
-      expect(pills[0].classList.contains('verdict-refuted')).toBeFalse();
-      expect(pills[1].classList.contains('verdict-refuted')).toBeTrue();
-      expect(pills[2].classList.contains('verdict-refuted')).toBeFalse();
+      expect(pills[0].classList.contains('verdict-refuted')).toBe(false);
+      expect(pills[1].classList.contains('verdict-refuted')).toBe(true);
+      expect(pills[2].classList.contains('verdict-refuted')).toBe(false);
     });
 
     function renderClaimVerifications(claimVerificationJson: string): HTMLElement {
@@ -6766,8 +6801,8 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(component.speedIndexScoredAnswerCount).toBe(4);
         expect(component.speedIndexCeilingAnswerCount).toBe(2);
-        expect(component.showSpeedIndexSaturationAdvisory).toBeTrue();
-        expect(component.demoteSpeedIndex).toBeTrue();
+        expect(component.showSpeedIndexSaturationAdvisory).toBe(true);
+        expect(component.demoteSpeedIndex).toBe(true);
         expect(component.medianModelTimeMs).toBe(2500);
         expect(speedCardLabel()).toBe('Median Model Time');
         expect(speedCardValueText()).toBe('2.5 s');
@@ -6786,7 +6821,7 @@ describe('AdminBenchmarkComponent', () => {
         });
         fixture.detectChanges();
 
-        expect(component.demoteSpeedIndex).toBeTrue();
+        expect(component.demoteSpeedIndex).toBe(true);
         const marker = speedCard()?.querySelector('.score-subvalue .degraded-tag');
         expect(marker?.getAttribute('title')).toBe('Concurrency enabled; speed advisory');
         const cards: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('.score-card'));
@@ -6804,8 +6839,8 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(component.speedIndexScoredAnswerCount).toBe(5);
         expect(component.speedIndexCeilingAnswerCount).toBe(2);
-        expect(component.showSpeedIndexSaturationAdvisory).toBeFalse();
-        expect(component.demoteSpeedIndex).toBeFalse();
+        expect(component.showSpeedIndexSaturationAdvisory).toBe(false);
+        expect(component.demoteSpeedIndex).toBe(false);
         expect(speedCardLabel()).toBe('Speed Index');
         expect(speedIndexNoteText()).not.toContain('saturated');
       });
@@ -6832,7 +6867,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.readabilityFormOnlyCount).toBe(3);
         expect(component.completenessOutOfScopeDeductedCount).toBe(1);
         expect(component.readabilityFormOnlyDeductedCount).toBe(2);
-        expect(component.hasInstrumentMeasurements).toBeTrue();
+        expect(component.hasInstrumentMeasurements).toBe(true);
         expect(measurementsText()).toContain('2 out-of-scope completeness deduction(s)');
         expect(measurementsText()).toContain('3 rubric format suggestion(s) not followed');
         expect(measurementsText()).toContain('1 of them sit beside a Completeness level below 6');
@@ -6846,7 +6881,7 @@ describe('AdminBenchmarkComponent', () => {
         });
         fixture.detectChanges();
 
-        expect(component.hasInstrumentMeasurements).toBeTrue();
+        expect(component.hasInstrumentMeasurements).toBe(true);
         expect(measurementsText()).not.toContain('out-of-scope completeness deduction(s)');
         expect(measurementsText()).toContain('1 rubric format suggestion(s) not followed');
       });
@@ -6874,7 +6909,7 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(component.memberBReadabilityFormOnlyCount).toBe(2);
         expect(component.memberBCompletenessOutOfScopeCount).toBe(1);
-        expect(component.hasInstrumentMeasurements).toBeTrue();
+        expect(component.hasInstrumentMeasurements).toBe(true);
         const text = measurementsText();
         expect(text).toContain('8 (member A) and 2 (member B) rubric format suggestion(s) not followed');
         expect(text).toContain("2 of member A's sit beside a Readability level below 6");
@@ -6892,7 +6927,7 @@ describe('AdminBenchmarkComponent', () => {
         });
         fixture.detectChanges();
 
-        expect(component.hasInstrumentMeasurements).toBeFalse();
+        expect(component.hasInstrumentMeasurements).toBe(false);
         expect(measurementsText()).toBe('');
       });
     });
@@ -7378,7 +7413,7 @@ describe('AdminBenchmarkComponent', () => {
 
   describe('assessor calibration panel', () => {
     it('should load calibrations when a run detail opens and clear them on close', () => {
-      benchmarkServiceMock.getRun.and.returnValue(of({
+      benchmarkServiceMock.getRun.mockReturnValue(of({
         id: 99, suiteName: 'Default Suite', status: 'Completed',
         testedModelDisplayNameUsed: 'M', testedModelProviderUsed: 'OpenAI', testedModelIdUsed: 'm',
         testedModelParallelExecutionModeUsed: 0,
@@ -7390,7 +7425,7 @@ describe('AdminBenchmarkComponent', () => {
         assessmentParseFailed: false, totalInputTokens: 0, totalOutputTokens: 0,
         totalCacheReadTokens: 0, totalCacheCreationTokens: 0, answers: []
       } as any));
-      benchmarkServiceMock.getCalibrations.and.returnValue(of([
+      benchmarkServiceMock.getCalibrations.mockReturnValue(of([
         {
           id: 1, benchmarkRunId: 99, assessorDisplayNameUsed: 'Claude Opus 5',
           assessorProviderUsed: 'Anthropic', assessorModelIdUsed: 'claude-opus-5',
@@ -7399,7 +7434,7 @@ describe('AdminBenchmarkComponent', () => {
           durationMs: 42000
         }
       ]));
-      spyOn(component.runDetailDialog.nativeElement, 'showModal');
+      vi.spyOn(component.runDetailDialog.nativeElement, 'showModal').mockReturnValue(undefined);
 
       component.viewRunDetail(99);
 
@@ -7417,15 +7452,15 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should reload the list after a calibration completes', () => {
-      benchmarkServiceMock.calibrateAssessor.and.returnValue(of({ id: 2 } as any));
-      benchmarkServiceMock.getCalibrations.and.returnValue(of([]));
+      benchmarkServiceMock.calibrateAssessor.mockReturnValue(of({ id: 2 } as any));
+      benchmarkServiceMock.getCalibrations.mockReturnValue(of([]));
       component.calibrationAssessorConfigId = 3;
 
       component.runCalibration(99);
 
       expect(benchmarkServiceMock.calibrateAssessor).toHaveBeenCalledWith(99, 3);
       expect(benchmarkServiceMock.getCalibrations).toHaveBeenCalledWith(99);
-      expect(component.calibrating).toBeFalse();
+      expect(component.calibrating).toBe(false);
     });
   });
 
@@ -7437,9 +7472,9 @@ describe('AdminBenchmarkComponent', () => {
     };
 
     beforeEach(() => {
-      spyOn(component.retryDialog.nativeElement, 'showModal');
-      spyOn(component.retryDialog.nativeElement, 'close');
-      benchmarkServiceMock.trialReassessAnswer.and.returnValue(of({ runId: 99 }));
+      vi.spyOn(component.retryDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.retryDialog.nativeElement, 'close').mockReturnValue(undefined);
+      benchmarkServiceMock.trialReassessAnswer.mockReturnValue(of({ runId: 99 }));
     });
 
     it('should call the trial endpoint and never the one that replaces the verdict', fakeAsync(() => {
@@ -7458,12 +7493,12 @@ describe('AdminBenchmarkComponent', () => {
       component.openRetryDialog('trial', 99, { ...answer, secondOpinionQualityScore: 80, secondOpinionTrigger: 'All' });
       component.retryAssessorConfigId = 4;
       component.confirmRetry();
-      expect(benchmarkServiceMock.trialReassessAnswer.calls.mostRecent().args[3]).toBeTrue();
+      expect(vi.mocked(benchmarkServiceMock.trialReassessAnswer).mock.lastCall![3]).toBe(true);
 
       component.openRetryDialog('trial', 99, { ...answer, secondOpinionQualityScore: 80, secondOpinionTrigger: 'Manual' });
       component.retryAssessorConfigId = 4;
       component.confirmRetry();
-      expect(benchmarkServiceMock.trialReassessAnswer.calls.mostRecent().args[3]).toBeFalse();
+      expect(vi.mocked(benchmarkServiceMock.trialReassessAnswer).mock.lastCall![3]).toBe(false);
 
       component.stopDetailPolling();
       discardPeriodicTasks();
@@ -7506,7 +7541,7 @@ describe('AdminBenchmarkComponent', () => {
         answers: []
       } as any;
 
-      expect(component.runCacheCreationUnreported).toBeTrue();
+      expect(component.runCacheCreationUnreported).toBe(true);
 
       fixture.detectChanges();
       const el: HTMLElement = fixture.nativeElement;
@@ -7526,7 +7561,7 @@ describe('AdminBenchmarkComponent', () => {
         answers: []
       } as any;
 
-      expect(component.runCacheCreationUnreported).toBeFalse();
+      expect(component.runCacheCreationUnreported).toBe(false);
 
       fixture.detectChanges();
       const el: HTMLElement = fixture.nativeElement;
@@ -7746,7 +7781,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(component.secondOpinionFailedAnswerCount).toBe(1);
       expect(component.secondOpinionFailedQuestionNumbers).toBe('7');
-      expect(component.secondOpinionSelectedButUnused).toBeTrue();
+      expect(component.secondOpinionSelectedButUnused).toBe(true);
 
       fixture.detectChanges();
 
@@ -7771,7 +7806,7 @@ describe('AdminBenchmarkComponent', () => {
       } as any;
 
       expect(component.secondOpinionFailedAnswerCount).toBe(0);
-      expect(component.secondOpinionSelectedButUnused).toBeTrue();
+      expect(component.secondOpinionSelectedButUnused).toBe(true);
 
       fixture.detectChanges();
 
@@ -7976,7 +8011,7 @@ describe('AdminBenchmarkComponent', () => {
       for (const trigger of triggers) {
         const label = component.secondOpinionTriggerLabel(trigger);
         expect(label).not.toBe(trigger);
-        expect(label.includes(' ') || /^[a-z]/.test(label)).withContext(trigger).toBeTrue();
+        expect(label.includes(' ') || /^[a-z]/.test(label), trigger).toBe(true);
       }
     });
 
@@ -8038,7 +8073,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should include verboseMode in startRun payload', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 101 } as any));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 101 } as any));
       component.selectedSuiteId = 1;
       component.testedConfigId = 10;
       component.assessorConfigId = 20;
@@ -8046,23 +8081,23 @@ describe('AdminBenchmarkComponent', () => {
 
       component.startBenchmark();
 
-      expect(benchmarkServiceMock.startRun).toHaveBeenCalledWith(jasmine.objectContaining({
+      expect(benchmarkServiceMock.startRun).toHaveBeenCalledWith(expect.objectContaining({
         verboseMode: true
       }));
     });
 
     it('should send allowSourceCodeReferences, false by default', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 101 } as any));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 101 } as any));
       component.selectedSuiteId = 1;
       component.testedConfigId = 10;
       component.assessorConfigId = 20;
 
       component.startBenchmark();
-      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].allowSourceCodeReferences).toBeFalse();
+      expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].allowSourceCodeReferences).toBe(false);
 
       component.candidateAllowSourceCodeReferences = true;
       component.startBenchmark();
-      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].allowSourceCodeReferences).toBeTrue();
+      expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].allowSourceCodeReferences).toBe(true);
     });
 
     it('should identify failed claim verifications and trigger retry', () => {
@@ -8078,15 +8113,15 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.claimVerificationFailedAnswerCount).toBe(1);
       expect(component.claimVerificationFailedQuestionNumbers).toBe('2');
 
-      benchmarkServiceMock.retryClaimVerification.and.returnValue(of({ runId: 55 } as any));
-      benchmarkServiceMock.getRun.and.returnValue(of({ id: 55, answers: [] } as any));
+      benchmarkServiceMock.retryClaimVerification.mockReturnValue(of({ runId: 55 } as any));
+      benchmarkServiceMock.getRun.mockReturnValue(of({ id: 55, answers: [] } as any));
 
       component.openRetryDialog('claim-verification', 55);
       expect(component.retryScope).toBe('claim-verification');
       expect(component.retryRunId).toBe(55);
 
       component.confirmRetry();
-      expect(benchmarkServiceMock.retryClaimVerification).toHaveBeenCalledWith(55, jasmine.anything());
+      expect(benchmarkServiceMock.retryClaimVerification).toHaveBeenCalledWith(55, expect.anything());
       component.stopDetailPolling();
     });
   });
@@ -8491,7 +8526,7 @@ describe('AdminBenchmarkComponent', () => {
     const secondConfig = (id: number) => ({ ...component.systemConfigs[0], id, displayName: `Model ${id}` });
 
     it('should write the run settings to localStorage when a run is started', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       component.systemConfigs = [component.systemConfigs[0], secondConfig(2)];
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
@@ -8510,8 +8545,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(stored.secondOpinionConfigId).toBe(2);
       expect(stored.claimVerifierConfigId).toBe(1);
       expect(stored.scoringProfileId).toBe(1);
-      expect(stored.verboseMode).toBeTrue();
-      expect(stored.allowSourceCodeReferences).toBeFalse();
+      expect(stored.verboseMode).toBe(true);
+      expect(stored.allowSourceCodeReferences).toBe(false);
       expect(stored.runCount).toBe(1);
       component.ngOnDestroy();
     });
@@ -8521,14 +8556,14 @@ describe('AdminBenchmarkComponent', () => {
       const allowed = TestBed.createComponent(AdminBenchmarkComponent);
       allowed.componentInstance.systemConfigs = [component.systemConfigs[0]];
       allowed.detectChanges();
-      expect(allowed.componentInstance.candidateAllowSourceCodeReferences).toBeTrue();
+      expect(allowed.componentInstance.candidateAllowSourceCodeReferences).toBe(true);
       allowed.componentInstance.ngOnDestroy();
 
       localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({ suiteId: 1, verboseMode: true }));
       const older = TestBed.createComponent(AdminBenchmarkComponent);
       older.componentInstance.systemConfigs = [component.systemConfigs[0]];
       older.detectChanges();
-      expect(older.componentInstance.candidateAllowSourceCodeReferences).toBeFalse();
+      expect(older.componentInstance.candidateAllowSourceCodeReferences).toBe(false);
       older.componentInstance.ngOnDestroy();
     });
 
@@ -8557,7 +8592,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(c.claimVerifierConfigId).toBe(1);
       expect(c.secondOpinionMode).toBe(3);
       expect(c.selectedScoringProfileId).toBe(1);
-      expect(c.candidateVerboseMode).toBeTrue();
+      expect(c.candidateVerboseMode).toBe(true);
       expect(c.runCount).toBe(5);
       c.ngOnDestroy();
     });
@@ -8586,7 +8621,7 @@ describe('AdminBenchmarkComponent', () => {
         runCount: 25
       }));
 
-      benchmarkServiceMock.getRunLimits.and.returnValue(of({
+      benchmarkServiceMock.getRunLimits.mockReturnValue(of({
         maxRunsPerHour: 4,
         maxRunsPerDay: 20,
         runsInLastHour: 0,
@@ -8647,7 +8682,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should leave every default untouched when localStorage throws', () => {
-      spyOn(localStorage, 'getItem').and.throwError('SecurityError');
+      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+        throw new Error('SecurityError');
+      });
 
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
@@ -8655,12 +8692,12 @@ describe('AdminBenchmarkComponent', () => {
       expect(() => restored.detectChanges()).not.toThrow();
       expect(restored.componentInstance.selectedSuiteId).toBe(1);
       expect(restored.componentInstance.testedConfigId).toBe(1);
-      expect(restored.componentInstance.candidateVerboseMode).toBeFalse();
+      expect(restored.componentInstance.candidateVerboseMode).toBe(false);
       restored.componentInstance.ngOnDestroy();
     });
 
     it('should not remember the same-provider acknowledgement', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 1;
@@ -8674,7 +8711,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should send and remember the report writer, and restore it while it still qualifies', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       const writer = { ...secondConfig(2), provider: 'OpenAI', modelId: 'gpt-writer' };
       component.systemConfigs = [component.systemConfigs[0], writer];
       component.selectedSuiteId = 1;
@@ -8684,7 +8721,7 @@ describe('AdminBenchmarkComponent', () => {
 
       component.startBenchmark();
 
-      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].reportWriterModelConfigurationId).toBe(2);
+      expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].reportWriterModelConfigurationId).toBe(2);
       expect(JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!).reportWriterConfigId).toBe(2);
       component.ngOnDestroy();
 
@@ -8703,11 +8740,11 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should default completionSound to true before anything is remembered', () => {
-      expect(component.completionSound).toBeTrue();
+      expect(component.completionSound).toBe(true);
     });
 
     it('should persist completionSound when a run is started', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 1;
@@ -8716,7 +8753,7 @@ describe('AdminBenchmarkComponent', () => {
       component.startBenchmark();
 
       const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
-      expect(stored.completionSound).toBeFalse();
+      expect(stored.completionSound).toBe(false);
       component.ngOnDestroy();
     });
 
@@ -8732,7 +8769,7 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
 
-      expect(restored.componentInstance.completionSound).toBeFalse();
+      expect(restored.componentInstance.completionSound).toBe(false);
       restored.componentInstance.ngOnDestroy();
     });
 
@@ -8747,13 +8784,13 @@ describe('AdminBenchmarkComponent', () => {
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
 
-      expect(restored.componentInstance.completionSound).toBeTrue();
+      expect(restored.componentInstance.completionSound).toBe(true);
       restored.componentInstance.ngOnDestroy();
     });
   });
 
   describe('completion sound transition detection', () => {
-    let playSpy: jasmine.Spy;
+    let playSpy: Mock;
 
     function makeRun(overrides: Record<string, unknown> = {}): any {
       return {
@@ -8778,15 +8815,15 @@ describe('AdminBenchmarkComponent', () => {
 
     beforeEach(() => {
       const soundService = TestBed.inject(BenchmarkCompletionSoundService);
-      playSpy = spyOn(soundService, 'play').and.returnValue(Promise.resolve('played'));
+      playSpy = vi.spyOn(soundService, 'play').mockResolvedValue('played');
     });
 
     it('should chime once for a run seen Running and then reaching a terminal status', () => {
-      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Running' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Running' })));
       (component as any).pollRunDetail(42);
       expect(playSpy).not.toHaveBeenCalled();
 
-      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Completed' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
       (component as any).pollRunDetail(42);
       expect(playSpy).toHaveBeenCalledWith('run:42');
       expect(playSpy).toHaveBeenCalledTimes(1);
@@ -8797,7 +8834,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should not chime for a run first observed already terminal', () => {
-      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Completed' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
       (component as any).pollRunDetail(42);
 
       expect(playSpy).not.toHaveBeenCalled();
@@ -8807,23 +8844,23 @@ describe('AdminBenchmarkComponent', () => {
       component.activeSeries = { id: 7, status: 'Running', members: [] } as any;
       component.activeSeriesId = 7;
 
-      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Running' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Running' })));
       (component as any).pollRunDetail(42);
 
-      benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Completed' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
       (component as any).pollRunDetail(42);
 
       expect(playSpy).not.toHaveBeenCalledWith('run:42');
     });
 
     it('should chime once for a series seen live and then reaching a terminal status', () => {
-      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+      benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 8, status: 'Running', completedRunCount: 0, requestedRunCount: 2, members: []
       } as any));
       (component as any).pollSeries(8);
       expect(playSpy).not.toHaveBeenCalled();
 
-      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+      benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 8, status: 'Completed', completedRunCount: 2, requestedRunCount: 2, members: []
       } as any));
       (component as any).pollSeries(8);
@@ -8836,7 +8873,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should not chime for a series first observed already finished', () => {
-      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+      benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 8, status: 'Completed', completedRunCount: 2, requestedRunCount: 2, members: []
       } as any));
       (component as any).pollSeries(8);
@@ -8845,30 +8882,30 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     describe('cancellation', () => {
-      let notifySpy: jasmine.Spy;
+      let notifySpy: Mock;
 
       function series(status: string, members: { runId: number }[] = []): any {
         return { id: 8, status, completedRunCount: 1, requestedRunCount: 2, members };
       }
 
       function seeRunLive(id = 42): void {
-        benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id, status: 'Running' })));
+        benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id, status: 'Running' })));
         (component as any).pollRunDetail(id);
       }
 
       function pollRun(id: number, status: string | number): void {
-        benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id, status })));
+        benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id, status })));
         (component as any).pollRunDetail(id);
       }
 
       beforeEach(() => {
         const notificationService = TestBed.inject(BenchmarkCompletionNotificationService);
-        notifySpy = spyOn(notificationService, 'notify');
-        spyOn(notificationService, 'permission').and.returnValue('granted');
+        notifySpy = vi.spyOn(notificationService, 'notify').mockReturnValue(undefined as any);
+        vi.spyOn(notificationService, 'permission').mockReturnValue('granted');
         component.completionSound = true;
         component.completionNotification = true;
-        spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
-        spyOn(document, 'hasFocus').and.returnValue(false);
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+        vi.spyOn(document, 'hasFocus').mockReturnValue(false);
       });
 
       it('does not chime or notify for a run that ends Canceled', () => {
@@ -8889,8 +8926,8 @@ describe('AdminBenchmarkComponent', () => {
       it('does not chime for a run cancelled here that the server returns to Completed', () => {
         seeRunLive();
         component.activeRunId = 42;
-        benchmarkServiceMock.cancelRun.and.returnValue(of({ success: true }));
-        benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Completed' })));
+        benchmarkServiceMock.cancelRun.mockReturnValue(of({ success: true }));
+        benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Completed' })));
 
         component.cancelActiveRun();
 
@@ -8900,20 +8937,24 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       it('still chimes when the cancel request fails and the run then completes', () => {
-        spyOn(console, 'error');
+        vi.spyOn(console, 'error').mockReturnValue(undefined);
         seeRunLive();
         component.activeRunId = 42;
-        benchmarkServiceMock.cancelRun.and.returnValue(throwError(() => ({ status: 500 })));
+        benchmarkServiceMock.cancelRun.mockReturnValue(throwError(() => ({ status: 500 })));
 
         component.cancelActiveRun();
         pollRun(42, 'Completed');
 
-        expect(playSpy).toHaveBeenCalledOnceWith('run:42');
+        expect(playSpy).toHaveBeenCalledTimes(1);
+
+        expect(playSpy).toHaveBeenCalledWith('run:42');
       });
 
       it('does not chime for a run cancelled from the run detail view', () => {
         seeRunLive();
-        benchmarkServiceMock.cancelRun.and.returnValue(new Subject<{ success: boolean }>());
+        benchmarkServiceMock.cancelRun.mockReturnValue(new Subject<{
+          success: boolean;
+        }>());
 
         component.cancelRunById(42);
         pollRun(42, 'Completed');
@@ -8923,22 +8964,26 @@ describe('AdminBenchmarkComponent', () => {
 
       it('chimes for a failed-question re-run launched after a cancel of the same run', () => {
         seeRunLive();
-        benchmarkServiceMock.cancelRun.and.returnValue(new Subject<{ success: boolean }>());
+        benchmarkServiceMock.cancelRun.mockReturnValue(new Subject<{
+          success: boolean;
+        }>());
         component.cancelRunById(42);
 
-        benchmarkServiceMock.rerunFailedQuestions.and.returnValue(of({ runId: 42 }));
-        benchmarkServiceMock.getRun.and.returnValue(of(makeRun({ id: 42, status: 'Running' })));
+        benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(of({ runId: 42 }));
+        benchmarkServiceMock.getRun.mockReturnValue(of(makeRun({ id: 42, status: 'Running' })));
         (component as any).launchFailedQuestionRerun(42, [0]);
         pollRun(42, 'Completed');
 
-        expect(playSpy).toHaveBeenCalledOnceWith('run:42');
+        expect(playSpy).toHaveBeenCalledTimes(1);
+
+        expect(playSpy).toHaveBeenCalledWith('run:42');
         component.closeRunProgressDialog();
       });
 
       it('does not chime or notify for a series that ends Cancelled, then or later', () => {
-        benchmarkServiceMock.getRunSeries.and.returnValue(of(series('Running')));
+        benchmarkServiceMock.getRunSeries.mockReturnValue(of(series('Running')));
         (component as any).pollSeries(8);
-        benchmarkServiceMock.getRunSeries.and.returnValue(of(series('Cancelled')));
+        benchmarkServiceMock.getRunSeries.mockReturnValue(of(series('Cancelled')));
         (component as any).pollSeries(8);
         (component as any).pollSeries(8);
 
@@ -8960,25 +9005,29 @@ describe('AdminBenchmarkComponent', () => {
         seeRunLive();
         pollRun(42, 'Failed');
 
-        expect(playSpy).toHaveBeenCalledOnceWith('run:42');
+        expect(playSpy).toHaveBeenCalledTimes(1);
+
+        expect(playSpy).toHaveBeenCalledWith('run:42');
         expect(notifySpy).toHaveBeenCalledTimes(1);
       });
 
       for (const status of ['Stopped', 'Failed']) {
         it(`still chimes for a series that ends ${status}`, () => {
-          benchmarkServiceMock.getRunSeries.and.returnValue(of(series('Running')));
+          benchmarkServiceMock.getRunSeries.mockReturnValue(of(series('Running')));
           (component as any).pollSeries(8);
-          benchmarkServiceMock.getRunSeries.and.returnValue(of(series(status)));
+          benchmarkServiceMock.getRunSeries.mockReturnValue(of(series(status)));
           (component as any).pollSeries(8);
 
-          expect(playSpy).toHaveBeenCalledOnceWith('series:8');
+          expect(playSpy).toHaveBeenCalledTimes(1);
+
+          expect(playSpy).toHaveBeenCalledWith('series:8');
         });
       }
     });
   });
 
   describe('Part C: arming the completion signals from a user gesture', () => {
-    let armSpy: jasmine.Spy;
+    let armSpy: Mock;
 
     function buildRun(overrides: Record<string, unknown> = {}): any {
       return {
@@ -8992,11 +9041,11 @@ describe('AdminBenchmarkComponent', () => {
 
     beforeEach(() => {
       const soundService = TestBed.inject(BenchmarkCompletionSoundService);
-      armSpy = spyOn(soundService, 'arm').and.returnValue(Promise.resolve());
+      armSpy = vi.spyOn(soundService, 'arm').mockResolvedValue();
     });
 
     it('arms from startBenchmark', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 1;
@@ -9009,8 +9058,8 @@ describe('AdminBenchmarkComponent', () => {
 
     it('arms from resumeActiveSeries', () => {
       component.activeSeriesId = 5;
-      benchmarkServiceMock.resumeRunSeries.and.returnValue(of({} as any));
-      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+      benchmarkServiceMock.resumeRunSeries.mockReturnValue(of({} as any));
+      benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 5, status: 'Running', completedRunCount: 0, requestedRunCount: 2, members: []
       } as any));
 
@@ -9022,8 +9071,8 @@ describe('AdminBenchmarkComponent', () => {
 
     it('arms from rerunFailedFromProgress', () => {
       component.activeRunDetail = buildRun({ id: 37, answers: [] });
-      benchmarkServiceMock.rerunFailedQuestions.and.returnValue(of({ runId: 37 }));
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 37 })));
+      benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(of({ runId: 37 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 37 })));
 
       component.rerunFailedFromProgress();
 
@@ -9033,8 +9082,8 @@ describe('AdminBenchmarkComponent', () => {
 
     it('arms from rerunFailedFromRunDetail', () => {
       component.selectedRunDetail = buildRun({ id: 37, answers: [] });
-      benchmarkServiceMock.rerunFailedQuestions.and.returnValue(of({ runId: 37 }));
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 37 })));
+      benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(of({ runId: 37 }));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 37 })));
 
       component.rerunFailedFromRunDetail(37);
 
@@ -9044,7 +9093,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('arms from testCompletionSound, before priming', () => {
       const soundService = TestBed.inject(BenchmarkCompletionSoundService);
-      const primeSpy = spyOn(soundService, 'prime').and.returnValue(Promise.resolve('played'));
+      const primeSpy = vi.spyOn(soundService, 'prime').mockResolvedValue('played');
 
       component.testCompletionSound();
 
@@ -9055,7 +9104,7 @@ describe('AdminBenchmarkComponent', () => {
     it('does nothing when neither signal is enabled', () => {
       component.completionSound = false;
       component.completionNotification = false;
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 1;
@@ -9069,8 +9118,8 @@ describe('AdminBenchmarkComponent', () => {
 
   describe('Part C: the desktop notification', () => {
     let notificationService: BenchmarkCompletionNotificationService;
-    let notifySpy: jasmine.Spy;
-    let permissionSpy: jasmine.Spy;
+    let notifySpy: Mock;
+    let permissionSpy: Mock;
 
     function buildRun(overrides: Record<string, unknown> = {}): any {
       return {
@@ -9084,63 +9133,63 @@ describe('AdminBenchmarkComponent', () => {
 
     beforeEach(() => {
       notificationService = TestBed.inject(BenchmarkCompletionNotificationService);
-      notifySpy = spyOn(notificationService, 'notify');
-      permissionSpy = spyOn(notificationService, 'permission').and.returnValue('granted');
-      spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').and.returnValue(Promise.resolve('played'));
-      spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'arm').and.returnValue(Promise.resolve());
+      notifySpy = vi.spyOn(notificationService, 'notify').mockReturnValue(undefined as any);
+      permissionSpy = vi.spyOn(notificationService, 'permission').mockReturnValue('granted');
+      vi.spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').mockResolvedValue('played');
+      vi.spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'arm').mockResolvedValue();
     });
 
     describe('when Start is pressed with the box ticked', () => {
       it('prompts under the gesture when this browser has not decided, and keeps the box on a grant', fakeAsync(() => {
-        permissionSpy.and.returnValue('default');
-        const requestSpy = spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('granted'));
+        permissionSpy.mockReturnValue('default');
+        const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('granted');
         component.completionNotification = true;
 
         (component as any).armCompletionSignalsFromGesture();
         expect(requestSpy).toHaveBeenCalledTimes(1);
         tick();
 
-        expect(component.completionNotification).toBeTrue();
+        expect(component.completionNotification).toBe(true);
         expect(component.completionNotificationStatus).toBeNull();
       }));
 
       it('unticks the box with the reason when the Start prompt is dismissed', fakeAsync(() => {
-        permissionSpy.and.returnValue('default');
-        spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('default'));
+        permissionSpy.mockReturnValue('default');
+        vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('default');
         component.completionNotification = true;
 
         (component as any).armCompletionSignalsFromGesture();
         tick();
 
-        expect(component.completionNotification).toBeFalse();
+        expect(component.completionNotification).toBe(false);
         expect(component.completionNotificationStatus).toBe('The permission prompt was dismissed.');
       }));
 
       it('does not prompt again once permission was granted', () => {
-        const requestSpy = spyOn(notificationService, 'requestPermission');
+        const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockReturnValue(undefined as any);
         component.completionNotification = true;
 
         (component as any).armCompletionSignalsFromGesture();
 
         expect(requestSpy).not.toHaveBeenCalled();
-        expect(component.completionNotification).toBeTrue();
+        expect(component.completionNotification).toBe(true);
       });
 
       it('does not prompt when blocked, and unticks the box with the reason at once', () => {
-        permissionSpy.and.returnValue('denied');
-        const requestSpy = spyOn(notificationService, 'requestPermission');
+        permissionSpy.mockReturnValue('denied');
+        const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockReturnValue(undefined as any);
         component.completionNotification = true;
 
         (component as any).armCompletionSignalsFromGesture();
 
         expect(requestSpy).not.toHaveBeenCalled();
-        expect(component.completionNotification).toBeFalse();
+        expect(component.completionNotification).toBe(false);
         expect(component.completionNotificationStatus).toBe("Notifications are blocked for this site in the browser's settings.");
       });
 
       it('never prompts when the box is unticked', () => {
-        permissionSpy.and.returnValue('default');
-        const requestSpy = spyOn(notificationService, 'requestPermission');
+        permissionSpy.mockReturnValue('default');
+        const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockReturnValue(undefined as any);
         component.completionSound = true;
         component.completionNotification = false;
 
@@ -9165,7 +9214,7 @@ describe('AdminBenchmarkComponent', () => {
       const gap = testSound.getBoundingClientRect().top - toggle.getBoundingClientRect().bottom;
       expect(gap).toBeLessThanOrEqual(12);
 
-      spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('default'));
+      vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('default');
       component.onCompletionNotificationChange(true);
       tick();
 
@@ -9175,7 +9224,7 @@ describe('AdminBenchmarkComponent', () => {
     }));
 
     it('persists and restores completionNotification alongside completionSound', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 1;
@@ -9184,35 +9233,35 @@ describe('AdminBenchmarkComponent', () => {
       component.startBenchmark();
 
       const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
-      expect(stored.completionNotification).toBeTrue();
+      expect(stored.completionNotification).toBe(true);
       component.ngOnDestroy();
 
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
       restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
       restored.detectChanges();
-      expect(restored.componentInstance.completionNotification).toBeTrue();
+      expect(restored.componentInstance.completionNotification).toBe(true);
       restored.componentInstance.ngOnDestroy();
     });
 
     it('turns on and clears the status once permission is granted', fakeAsync(() => {
-      spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve('granted'));
+      vi.spyOn(notificationService, 'requestPermission').mockResolvedValue('granted');
 
       component.onCompletionNotificationChange(true);
       tick();
 
-      expect(component.completionNotification).toBeTrue();
+      expect(component.completionNotification).toBe(true);
       expect(component.completionNotificationStatus).toBeNull();
     }));
 
     (['denied', 'default', 'unsupported'] as const).forEach(outcome => {
       it(`unticks the box and explains a "${outcome}" permission result`, fakeAsync(() => {
-        spyOn(notificationService, 'requestPermission').and.returnValue(Promise.resolve(outcome));
+        vi.spyOn(notificationService, 'requestPermission').mockResolvedValue(outcome);
 
         component.onCompletionNotificationChange(true);
         tick();
         fixture.detectChanges();
 
-        expect(component.completionNotification).toBeFalse();
+        expect(component.completionNotification).toBe(false);
         expect(component.completionNotificationStatus).toBeTruthy();
         const status = fixture.nativeElement.querySelector('.completion-signals-status') as HTMLElement;
         expect(status.textContent).toContain(component.completionNotificationStatus);
@@ -9220,13 +9269,13 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('unticking directly clears the status without requesting permission', () => {
-      const requestSpy = spyOn(notificationService, 'requestPermission');
+      const requestSpy = vi.spyOn(notificationService, 'requestPermission').mockReturnValue(undefined as any);
       component.completionNotification = true;
       component.completionNotificationStatus = 'stale';
 
       component.onCompletionNotificationChange(false);
 
-      expect(component.completionNotification).toBeFalse();
+      expect(component.completionNotification).toBe(false);
       expect(component.completionNotificationStatus).toBeNull();
       expect(requestSpy).not.toHaveBeenCalled();
     });
@@ -9234,48 +9283,48 @@ describe('AdminBenchmarkComponent', () => {
     it('notifies once for a hidden completion with the sound off and the notification on', () => {
       component.completionSound = false;
       component.completionNotification = true;
-      spyOnProperty(document, 'hidden', 'get').and.returnValue(true);
-      spyOn(document, 'hasFocus').and.returnValue(false);
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+      vi.spyOn(document, 'hasFocus').mockReturnValue(false);
 
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Running' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Running' })));
       (component as any).pollRunDetail(42);
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Completed' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Completed' })));
       (component as any).pollRunDetail(42);
 
       expect(notifySpy).toHaveBeenCalledTimes(1);
-      expect(notifySpy.calls.mostRecent().args[0]).toBe('run:42');
+      expect(vi.mocked(notifySpy).mock.lastCall![0]).toBe('run:42');
     });
 
     it('notifies a visible, focused completion too — the ticked box no longer checks focus', () => {
       component.completionNotification = true;
-      spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
-      spyOn(document, 'hasFocus').and.returnValue(true);
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
 
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Running' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Running' })));
       (component as any).pollRunDetail(42);
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Completed' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Completed' })));
       (component as any).pollRunDetail(42);
 
       expect(notifySpy).toHaveBeenCalledTimes(1);
-      expect(notifySpy.calls.mostRecent().args[0]).toBe('run:42');
+      expect(vi.mocked(notifySpy).mock.lastCall![0]).toBe('run:42');
     });
 
     it('records a notification attempt with the tab focused, surfaced in diagnostics', () => {
       component.completionNotification = true;
-      spyOnProperty(document, 'hidden', 'get').and.returnValue(false);
-      spyOn(document, 'hasFocus').and.returnValue(true);
-      notifySpy.and.returnValue('shown');
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+      vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+      notifySpy.mockReturnValue('shown');
 
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Running' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Running' })));
       (component as any).pollRunDetail(42);
-      benchmarkServiceMock.getRun.and.returnValue(of(buildRun({ id: 42, status: 'Completed' })));
+      benchmarkServiceMock.getRun.mockReturnValue(of(buildRun({ id: 42, status: 'Completed' })));
       (component as any).pollRunDetail(42);
 
       const attempts = (component as any).notificationAttempts;
       expect(attempts.length).toBe(1);
       expect(attempts[0].key).toBe('run:42');
-      expect(attempts[0].hidden).toBeFalse();
-      expect(attempts[0].focused).toBeTrue();
+      expect(attempts[0].hidden).toBe(false);
+      expect(attempts[0].focused).toBe(true);
       expect(attempts[0].outcome).toBe('shown');
 
       const diagnostics = component.runDiagnosticsText;
@@ -9285,7 +9334,7 @@ describe('AdminBenchmarkComponent', () => {
 
   describe('Part C: the second series-resume path and the Web Lock', () => {
     it('restarts the series poll when the progress dialog resumes a stopped series', () => {
-      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+      benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 11, status: 'Running', completedRunCount: 1, requestedRunCount: 3, members: []
       } as any));
 
@@ -9297,35 +9346,35 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('does not release the background lock on a single run poll error, and stays polling', () => {
-      const consoleError = spyOn(console, 'error');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
-      const releaseSpy = spyOn(lockService, 'release');
-      const acquireSpy = spyOn(lockService, 'acquireForRun');
+      const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
+      const acquireSpy = vi.spyOn(lockService, 'acquireForRun').mockReturnValue(undefined);
 
       // startPolling's own poll is the first failure; its stopPolling() of any previous poller
       // may release, so the spy is reset once polling has started.
-      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
+      benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500 })));
       (component as any).startPolling(42);
       expect(acquireSpy).toHaveBeenCalledWith(42);
-      releaseSpy.calls.reset();
+      releaseSpy.mockClear();
 
       (component as any).pollRunDetail(42);
 
       expect(releaseSpy).not.toHaveBeenCalled();
       expect((component as any).pollTickerHandle).not.toBeNull();
-      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
       (component as any).stopPolling();
       component.ngOnDestroy();
     });
 
     it('releases the background lock only on the 5th consecutive run poll error', () => {
-      const consoleError = spyOn(console, 'error');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
-      const releaseSpy = spyOn(lockService, 'release');
+      const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
-      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
+      benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500 })));
       (component as any).startPolling(42);
-      releaseSpy.calls.reset();
+      releaseSpy.mockClear();
 
       // startPolling's own poll was the first failure; three more make four.
       for (let i = 0; i < 3; i++) {
@@ -9337,64 +9386,64 @@ describe('AdminBenchmarkComponent', () => {
       (component as any).pollRunDetail(42);
       expect(releaseSpy).toHaveBeenCalled();
       expect((component as any).pollTickerHandle).toBeNull();
-      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
       component.ngOnDestroy();
     });
 
     it('resets the consecutive run poll failure count on a successful poll', () => {
-      const consoleError = spyOn(console, 'error');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
-      const releaseSpy = spyOn(lockService, 'release');
+      const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
-      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
+      benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500 })));
       (component as any).startPolling(42);
-      releaseSpy.calls.reset();
+      releaseSpy.mockClear();
       for (let i = 0; i < 3; i++) {
         (component as any).pollRunDetail(42);
       }
 
-      benchmarkServiceMock.getRun.and.returnValue(of({ id: 42, status: 'Running', answers: [] } as any));
+      benchmarkServiceMock.getRun.mockReturnValue(of({ id: 42, status: 'Running', answers: [] } as any));
       (component as any).pollRunDetail(42);
 
-      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500 })));
+      benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500 })));
       for (let i = 0; i < 4; i++) {
         (component as any).pollRunDetail(42);
       }
 
       expect(releaseSpy).not.toHaveBeenCalled();
-      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', jasmine.any(Object));
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll run detail', expect.any(Object));
       (component as any).stopPolling();
       component.ngOnDestroy();
     });
 
     it('does not release the background lock on a single series poll error, and stays polling', () => {
-      const consoleError = spyOn(console, 'error');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
-      const releaseSpy = spyOn(lockService, 'release');
-      const acquireSpy = spyOn(lockService, 'acquireForSeries');
+      const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
+      const acquireSpy = vi.spyOn(lockService, 'acquireForSeries').mockReturnValue(undefined);
 
       (component as any).startSeriesPolling(11);
       expect(acquireSpy).toHaveBeenCalledWith(11);
-      releaseSpy.calls.reset();
+      releaseSpy.mockClear();
 
-      benchmarkServiceMock.getRunSeries.and.returnValue(throwError(() => ({ status: 500 })));
+      benchmarkServiceMock.getRunSeries.mockReturnValue(throwError(() => ({ status: 500 })));
       (component as any).pollSeries(11);
 
       expect(releaseSpy).not.toHaveBeenCalled();
       expect((component as any).seriesPollTickerHandle).not.toBeNull();
-      expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', jasmine.any(Object));
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', expect.any(Object));
       (component as any).stopSeriesPolling();
       component.ngOnDestroy();
     });
 
     it('releases the background lock only on the 5th consecutive series poll error', () => {
-      const consoleError = spyOn(console, 'error');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
-      const releaseSpy = spyOn(lockService, 'release');
+      const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
       (component as any).startSeriesPolling(11);
-      releaseSpy.calls.reset();
-      benchmarkServiceMock.getRunSeries.and.returnValue(throwError(() => ({ status: 500 })));
+      releaseSpy.mockClear();
+      benchmarkServiceMock.getRunSeries.mockReturnValue(throwError(() => ({ status: 500 })));
 
       for (let i = 0; i < 4; i++) {
         (component as any).pollSeries(11);
@@ -9404,21 +9453,22 @@ describe('AdminBenchmarkComponent', () => {
       (component as any).pollSeries(11);
       expect(releaseSpy).toHaveBeenCalled();
       expect((component as any).seriesPollTickerHandle).toBeNull();
-      expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', jasmine.any(Object));
+      expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', expect.any(Object));
       component.ngOnDestroy();
     });
 
     it('keeps the series lock while a member run is polled and when that run poller stops', () => {
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
-      benchmarkServiceMock.getRunSeries.and.returnValue(of({
+      benchmarkServiceMock.getRunSeries.mockReturnValue(of({
         id: 11, status: 'Running', completedRunCount: 0, requestedRunCount: 3, members: []
       } as any));
-      const acquireSeriesSpy = spyOn(lockService, 'acquireForSeries');
-      const acquireRunSpy = spyOn(lockService, 'acquireForRun');
-      const releaseSpy = spyOn(lockService, 'release');
+      const acquireSeriesSpy = vi.spyOn(lockService, 'acquireForSeries').mockReturnValue(undefined);
+      const acquireRunSpy = vi.spyOn(lockService, 'acquireForRun').mockReturnValue(undefined);
+      const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
       (component as any).startSeriesPolling(11);
-      expect(acquireSeriesSpy).toHaveBeenCalledOnceWith(11);
+      expect(acquireSeriesSpy).toHaveBeenCalledTimes(1);
+      expect(acquireSeriesSpy).toHaveBeenCalledWith(11);
 
       (component as any).startPolling(42);
       (component as any).stopPolling();
@@ -9454,8 +9504,8 @@ describe('AdminBenchmarkComponent', () => {
       it(`should show the series banner while the series is ${status}`, () => {
         attachSeries(status);
 
-        expect(component.seriesIsFinished).toBeFalse();
-        expect(component.seriesBannerVisible).toBeTrue();
+        expect(component.seriesIsFinished).toBe(false);
+        expect(component.seriesBannerVisible).toBe(true);
       });
     });
 
@@ -9463,16 +9513,16 @@ describe('AdminBenchmarkComponent', () => {
     it('should keep the series banner for a Stopped series, which is resumable', () => {
       attachSeries('Stopped');
 
-      expect(component.seriesIsFinished).toBeFalse();
-      expect(component.seriesBannerVisible).toBeTrue();
+      expect(component.seriesIsFinished).toBe(false);
+      expect(component.seriesBannerVisible).toBe(true);
     });
 
     ['Completed', 'Cancelled', 'Failed'].forEach(status => {
       it(`should hide the series banner once the series is ${status}`, () => {
         attachSeries(status);
 
-        expect(component.seriesIsFinished).toBeTrue();
-        expect(component.seriesBannerVisible).toBeFalse();
+        expect(component.seriesIsFinished).toBe(true);
+        expect(component.seriesBannerVisible).toBe(false);
       });
     });
 
@@ -9497,7 +9547,7 @@ describe('AdminBenchmarkComponent', () => {
       attachSeries('Running');
       component.multiRunDialogVisible = true;
 
-      expect(component.seriesBannerVisible).toBeFalse();
+      expect(component.seriesBannerVisible).toBe(false);
     });
   });
 
@@ -9513,7 +9563,7 @@ describe('AdminBenchmarkComponent', () => {
      * models. The suite's beforeEach has already run ngOnInit, so the lists are fetched again here.
      */
     function renderLauncher(batteries: BenchmarkBatteryDto[] = [buildBattery()]): void {
-      benchmarkServiceMock.getBatteries.and.returnValue(of(batteries));
+      benchmarkServiceMock.getBatteries.mockReturnValue(of(batteries));
       component.loadRunLimits();
       component.loadBatteries();
       component.activeSubTab = 'run';
@@ -9535,7 +9585,7 @@ describe('AdminBenchmarkComponent', () => {
     }
 
     function withLimits(overrides: Record<string, number>): void {
-      benchmarkServiceMock.getRunLimits.and.returnValue(of({
+      benchmarkServiceMock.getRunLimits.mockReturnValue(of({
         maxRunsPerHour: 4, maxRunsPerDay: 20, runsInLastHour: 0, runsInLast24Hours: 0,
         remainingDailyHeadroom: 20, maxRunCountPerSeries: 20, maxMembersPerBattery: 40,
         ...overrides
@@ -9554,7 +9604,7 @@ describe('AdminBenchmarkComponent', () => {
         const radios = Array.from(group.querySelectorAll('input[type="radio"]')) as HTMLInputElement[];
         expect(radios.map(r => r.id)).toEqual(['runTargetSuite', 'runTargetBattery']);
         expect(radios.map(r => (r.closest('label')!.textContent || '').trim())).toEqual(['Single suite', 'Battery']);
-        expect(radios[0].checked).toBeTrue();
+        expect(radios[0].checked).toBe(true);
 
         const suiteSelect = query('#suiteSelect')!;
         expect(group.compareDocumentPosition(suiteSelect) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -9610,7 +9660,7 @@ describe('AdminBenchmarkComponent', () => {
 
         chooseBattery();
 
-        expect(component.canStartRun).toBeFalse();
+        expect(component.canStartRun).toBe(false);
         expect(startButton().getAttribute('aria-disabled')).toBe('true');
         expect(component.startBenchmarkHint).toContain('Second Suite');
         expect(card().querySelector('.alert-warning')!.textContent).toContain('Second Suite');
@@ -9643,7 +9693,7 @@ describe('AdminBenchmarkComponent', () => {
         setRunCount(3);
 
         expect(component.batteryLaunchCount).toBe(6);
-        expect(component.canStartRun).toBeFalse();
+        expect(component.canStartRun).toBe(false);
         expect(component.startBenchmarkHint).toContain('exceed the daily cap of 4');
         const warning = (query('.battery-cap-warning')!.textContent || '').replace(/\s+/g, ' ');
         expect(warning).toContain('spans at least 2 days');
@@ -9651,8 +9701,8 @@ describe('AdminBenchmarkComponent', () => {
         query<HTMLInputElement>('#allowCapWaitInput')!.click();
         fixture.detectChanges();
 
-        expect(component.allowCapWait).toBeTrue();
-        expect(component.canStartRun).toBeTrue();
+        expect(component.allowCapWait).toBe(true);
+        expect(component.canStartRun).toBe(true);
         expect(query('.battery-cap-warning')!.textContent).toContain('pause at the cap');
       });
     });
@@ -9662,25 +9712,25 @@ describe('AdminBenchmarkComponent', () => {
         renderLauncher();
         chooseBattery();
         setRunCount(2);
-        benchmarkServiceMock.startBatteryRun.and.returnValue(of({ batteryRunId: 9 }));
+        benchmarkServiceMock.startBatteryRun.mockReturnValue(of({ batteryRunId: 9 }));
 
         startButton().click();
         fixture.detectChanges();
 
         expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
         expect(benchmarkServiceMock.startRunSeries).not.toHaveBeenCalled();
-        const body = benchmarkServiceMock.startBatteryRun.calls.mostRecent().args[0];
+        const body = vi.mocked(benchmarkServiceMock.startBatteryRun).mock.lastCall![0];
         expect(body.batteryId).toBe(5);
         expect(body.runsPerSuite).toBe(2);
-        expect(body.allowCapWait).toBeFalse();
+        expect(body.allowCapWait).toBe(false);
         expect(body.run.testedModelConfigurationId).toBe(1);
         expect(body.run.assessorModelConfigurationId).toBe(1);
-        expect(body.run.acknowledgeSameProvider).toBeFalse();
+        expect(body.run.acknowledgeSameProvider).toBe(false);
         expect(body.attach).toBeUndefined();
         expect(benchmarkServiceMock.previewBatteryReuse).not.toHaveBeenCalled();
 
         expect(component.activeBatteryRunId).toBe(9);
-        expect(component.batteryDialogVisible).toBeTrue();
+        expect(component.batteryDialogVisible).toBe(true);
         expect(component.dialogBatteryRunId).toBe(9);
 
         const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
@@ -9695,7 +9745,7 @@ describe('AdminBenchmarkComponent', () => {
           targetKind: 'battery', batteryId: 5, runCount: 2
         }));
         const batteries = new Subject<BenchmarkBatteryDto[]>();
-        benchmarkServiceMock.getBatteries.and.returnValue(batteries);
+        benchmarkServiceMock.getBatteries.mockReturnValue(batteries);
 
         const restored = TestBed.createComponent(AdminBenchmarkComponent);
         restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
@@ -9714,7 +9764,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(c.selectedBatteryId).toBe(5);
         expect(c.runCount).toBe(2);
         expect(restored.nativeElement.querySelector('#batterySelect')).toBeTruthy();
-        expect((restored.nativeElement.querySelector('#runTargetBattery') as HTMLInputElement).checked).toBeTrue();
+        expect((restored.nativeElement.querySelector('#runTargetBattery') as HTMLInputElement).checked).toBe(true);
         expect((c as any).pendingRunSettings).toBeNull();
         c.ngOnDestroy();
       });
@@ -9726,7 +9776,7 @@ describe('AdminBenchmarkComponent', () => {
           targetKind: 'battery', batteryId: 5, runCount: 30
         }));
         const batteries = new Subject<BenchmarkBatteryDto[]>();
-        benchmarkServiceMock.getBatteries.and.returnValue(batteries);
+        benchmarkServiceMock.getBatteries.mockReturnValue(batteries);
 
         const restored = TestBed.createComponent(AdminBenchmarkComponent);
         restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
@@ -9756,7 +9806,7 @@ describe('AdminBenchmarkComponent', () => {
           localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
             suiteId: 1, testedConfigId: 1, assessorConfigId: 1, targetKind: 'battery', batteryId: 5
           }));
-          benchmarkServiceMock.getBatteries.and.returnValue(of(listed));
+          benchmarkServiceMock.getBatteries.mockReturnValue(of(listed));
 
           const restored = TestBed.createComponent(AdminBenchmarkComponent);
           restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
@@ -9772,17 +9822,14 @@ describe('AdminBenchmarkComponent', () => {
       it('should send a same-provider 409 through the acknowledgment dialog and resend the battery start', () => {
         renderLauncher();
         chooseBattery();
-        const showModal = spyOn(component.sameProviderDialog.nativeElement, 'showModal');
-        benchmarkServiceMock.startBatteryRun.and.returnValues(
-          throwError(() => ({
+        const showModal = vi.spyOn(component.sameProviderDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+        benchmarkServiceMock.startBatteryRun.mockReturnValueOnce(throwError(() => ({
             status: 409,
             error: {
               sameProvider: true, provider: 'Anthropic', testedModelDisplayName: 'Test Model',
               assessorModelDisplayName: 'Test Model', message: 'The assessor shares the provider.', role: 'assessor'
             }
-          })),
-          of({ batteryRunId: 9 })
-        );
+        }))).mockReturnValueOnce(of({ batteryRunId: 9 }));
 
         startButton().click();
         fixture.detectChanges();
@@ -9792,17 +9839,17 @@ describe('AdminBenchmarkComponent', () => {
           .find(button => (button.textContent ?? '').includes('Acknowledge & Start Run'))!;
         confirm.click();
 
-        const bodies = benchmarkServiceMock.startBatteryRun.calls.allArgs().map(args => args[0]);
+        const bodies = vi.mocked(benchmarkServiceMock.startBatteryRun).mock.calls.map(args => args[0]);
         expect(bodies.length).toBe(2);
-        expect(bodies[0].run.acknowledgeSameProvider).toBeFalse();
-        expect(bodies[1].run.acknowledgeSameProvider).toBeTrue();
+        expect(bodies[0].run.acknowledgeSameProvider).toBe(false);
+        expect(bodies[1].run.acknowledgeSameProvider).toBe(true);
         expect(component.activeBatteryRunId).toBe(9);
       });
 
       it('should show a refused battery start\'s reason under the launcher', () => {
         renderLauncher();
         chooseBattery();
-        benchmarkServiceMock.startBatteryRun.and.returnValue(throwError(() => ({
+        benchmarkServiceMock.startBatteryRun.mockReturnValue(throwError(() => ({
           status: 409, error: 'A benchmark run is already in progress.'
         })));
 
@@ -9815,7 +9862,7 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should show the 409 a single-run start receives while a battery runs', () => {
         renderLauncher();
-        benchmarkServiceMock.startRun.and.returnValue(throwError(() => ({
+        benchmarkServiceMock.startRun.mockReturnValue(throwError(() => ({
           status: 409, error: 'A battery is running; wait for it or cancel it.'
         })));
 
@@ -9828,8 +9875,8 @@ describe('AdminBenchmarkComponent', () => {
       });
 
       it('should surface the 409 a re-run receives while a battery runs inside the progress dialog', () => {
-        spyOn(component.runProgressDialog.nativeElement, 'showModal');
-        spyOn(component.runProgressDialog.nativeElement, 'close');
+        vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+        vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
         component.activeRunDetail = {
           id: 37, benchmarkSuiteId: 1, suiteName: 'Suite X', testedModelDisplayNameUsed: 'Test Model',
           testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'claude-3-5-sonnet', testedModelParallelExecutionModeUsed: 2,
@@ -9843,7 +9890,7 @@ describe('AdminBenchmarkComponent', () => {
           errorMessage: null, answers: []
         } as any;
         component.isRunProgressDialogOpen = true;
-        benchmarkServiceMock.rerunFailedQuestions.and.returnValue(throwError(() => ({
+        benchmarkServiceMock.rerunFailedQuestions.mockReturnValue(throwError(() => ({
           status: 409, error: 'A battery is running; wait for it or cancel it.'
         })));
 
@@ -9851,7 +9898,7 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
 
         expect(component.runErrorMessage).toBe('A battery is running; wait for it or cancel it.');
-        expect(component.rerunLaunchPending).toBeFalse();
+        expect(component.rerunLaunchPending).toBe(false);
         const alert = fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-body .alert-danger') as HTMLElement;
         expect(alert.textContent).toContain('A battery is running; wait for it or cancel it.');
         component.closeRunProgressDialog();
@@ -9894,8 +9941,8 @@ describe('AdminBenchmarkComponent', () => {
         chooseBattery();
 
         expect(reuseBox()).not.toBeNull();
-        expect(reuseBox()!.checked).toBeFalse();
-        expect(component.reuseEarlierRuns).toBeFalse();
+        expect(reuseBox()!.checked).toBe(false);
+        expect(component.reuseEarlierRuns).toBe(false);
         expect(query('.battery-reuse-row')).toBeNull();
         expect(benchmarkServiceMock.previewBatteryReuse).not.toHaveBeenCalled();
       });
@@ -9903,12 +9950,12 @@ describe('AdminBenchmarkComponent', () => {
       it('should preview the reuse when checked and project the runs reused and launched', () => {
         renderLauncher();
         chooseBattery();
-        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview()));
+        benchmarkServiceMock.previewBatteryReuse.mockReturnValue(of(buildPreview()));
 
         checkReuse();
 
         expect(benchmarkServiceMock.previewBatteryReuse).toHaveBeenCalledTimes(1);
-        const body = benchmarkServiceMock.previewBatteryReuse.calls.mostRecent().args[0];
+        const body = vi.mocked(benchmarkServiceMock.previewBatteryReuse).mock.lastCall![0];
         expect(body.batteryId).toBe(5);
         expect(body.runsPerSuite).toBe(1);
         expect(body.run.testedModelConfigurationId).toBe(1);
@@ -9919,13 +9966,13 @@ describe('AdminBenchmarkComponent', () => {
         expect(reasons).toContain('Second Suite, round 1:');
         expect(reasons).toContain('Run #13 has no usable result: index withheld.');
         expect(component.batteryRunsToLaunch).toBe(1);
-        expect(component.canStartRun).toBeTrue();
+        expect(component.canStartRun).toBe(true);
       });
 
       it('should say when nothing qualifies, and why', () => {
         renderLauncher();
         chooseBattery();
-        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview({
+        benchmarkServiceMock.previewBatteryReuse.mockReturnValue(of(buildPreview({
           reusedCount: 0, launchCount: 2, attach: [],
           slots: [
             { suiteIndex: 0, suiteId: 1, suiteName: 'Default Suite', round: 1, runId: null,
@@ -9946,7 +9993,7 @@ describe('AdminBenchmarkComponent', () => {
       it('should preview again on every change of battery, model, grader or Runs per Suite', () => {
         renderLauncher([buildBattery(), buildBattery({ id: 6, name: 'Other Battery' })]);
         chooseBattery();
-        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview()));
+        benchmarkServiceMock.previewBatteryReuse.mockReturnValue(of(buildPreview()));
         checkReuse();
         expect(benchmarkServiceMock.previewBatteryReuse).toHaveBeenCalledTimes(1);
 
@@ -9954,7 +10001,7 @@ describe('AdminBenchmarkComponent', () => {
         select.value = select.options[1].value;
         select.dispatchEvent(new Event('change'));
         fixture.detectChanges();
-        expect(benchmarkServiceMock.previewBatteryReuse.calls.mostRecent().args[0].batteryId).toBe(6);
+        expect(vi.mocked(benchmarkServiceMock.previewBatteryReuse).mock.lastCall![0].batteryId).toBe(6);
 
         component.selectTestedModel(component.systemConfigs[0]);
         component.selectAssessorModel(component.systemConfigs[0]);
@@ -9962,7 +10009,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(benchmarkServiceMock.previewBatteryReuse).toHaveBeenCalledTimes(5);
 
         setRunCount(2);
-        expect(benchmarkServiceMock.previewBatteryReuse.calls.mostRecent().args[0].runsPerSuite).toBe(2);
+        expect(vi.mocked(benchmarkServiceMock.previewBatteryReuse).mock.lastCall![0].runsPerSuite).toBe(2);
       });
 
       it('should cancel a stale preview request when the settings change, and hold Start while one is pending', () => {
@@ -9970,59 +10017,59 @@ describe('AdminBenchmarkComponent', () => {
         chooseBattery();
         const first = new Subject<BenchmarkBatteryReusePreviewDto>();
         const second = new Subject<BenchmarkBatteryReusePreviewDto>();
-        benchmarkServiceMock.previewBatteryReuse.and.returnValues(first, second);
+        benchmarkServiceMock.previewBatteryReuse.mockReturnValueOnce(first).mockReturnValueOnce(second);
 
         checkReuse();
-        expect(first.observed).toBeTrue();
+        expect(first.observed).toBe(true);
         expect(summary()).toBe('Checking which earlier runs can be reused…');
-        expect(component.canStartRun).toBeFalse();
+        expect(component.canStartRun).toBe(false);
         expect(component.startBenchmarkHint).toBe('Checking which earlier runs can be reused…');
 
         setRunCount(2);
-        expect(first.observed).toBeFalse();
-        expect(second.observed).toBeTrue();
+        expect(first.observed).toBe(false);
+        expect(second.observed).toBe(true);
 
         second.next(buildPreview({ runsPerSuite: 2, launchCount: 3, slots: [] }));
         second.complete();
         fixture.detectChanges();
         expect(summary()).toBe('Reusing 1 earlier run (#12); launching 3.');
-        expect(component.canStartRun).toBeTrue();
+        expect(component.canStartRun).toBe(true);
       });
 
       it('should hold Start and say so when the preview fails', () => {
         renderLauncher();
         chooseBattery();
-        benchmarkServiceMock.previewBatteryReuse.and.returnValue(throwError(() => ({ status: 404, error: 'Battery not found.' })));
+        benchmarkServiceMock.previewBatteryReuse.mockReturnValue(throwError(() => ({ status: 404, error: 'Battery not found.' })));
 
         checkReuse();
 
         expect(summary()).toBe('The reuse of earlier runs could not be previewed: Battery not found.');
-        expect(component.canStartRun).toBeFalse();
+        expect(component.canStartRun).toBe(false);
         expect(component.startBenchmarkHint).toContain('clear Reuse earlier runs');
 
         reuseBox()!.click();
         fixture.detectChanges();
-        expect(component.canStartRun).toBeTrue();
+        expect(component.canStartRun).toBe(true);
         expect(query('.battery-reuse-row')).toBeNull();
       });
 
       it('should send the previewed runs as attach on Start, and not remember the choice', () => {
         renderLauncher();
         chooseBattery();
-        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview()));
-        benchmarkServiceMock.startBatteryRun.and.returnValue(of({ batteryRunId: 9 }));
+        benchmarkServiceMock.previewBatteryReuse.mockReturnValue(of(buildPreview()));
+        benchmarkServiceMock.startBatteryRun.mockReturnValue(of({ batteryRunId: 9 }));
         checkReuse();
 
         startButton().click();
         fixture.detectChanges();
 
-        const body = benchmarkServiceMock.startBatteryRun.calls.mostRecent().args[0];
+        const body = vi.mocked(benchmarkServiceMock.startBatteryRun).mock.lastCall![0];
         expect(body.attach).toEqual([{ suiteIndex: 0, round: 1, runId: 12 }]);
         expect(body.runsPerSuite).toBe(1);
 
         // A per-start decision: cleared after the start and absent from the stored settings.
-        expect(component.reuseEarlierRuns).toBeFalse();
-        expect(reuseBox()!.checked).toBeFalse();
+        expect(component.reuseEarlierRuns).toBe(false);
+        expect(reuseBox()!.checked).toBe(false);
         const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
         expect(Object.keys(stored)).not.toContain('reuseEarlierRuns');
         expect(Object.keys(stored)).not.toContain('attach');
@@ -10031,16 +10078,16 @@ describe('AdminBenchmarkComponent', () => {
         restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
         restored.detectChanges();
         expect(restored.componentInstance.runTargetKind).toBe('battery');
-        expect(restored.componentInstance.reuseEarlierRuns).toBeFalse();
-        expect((restored.nativeElement.querySelector('#reuseEarlierRunsInput') as HTMLInputElement).checked).toBeFalse();
+        expect(restored.componentInstance.reuseEarlierRuns).toBe(false);
+        expect((restored.nativeElement.querySelector('#reuseEarlierRunsInput') as HTMLInputElement).checked).toBe(false);
         restored.componentInstance.ngOnDestroy();
       });
 
       it('should preview again after a start refused because a reused run stopped qualifying', () => {
         renderLauncher();
         chooseBattery();
-        benchmarkServiceMock.previewBatteryReuse.and.returnValue(of(buildPreview()));
-        benchmarkServiceMock.startBatteryRun.and.returnValue(throwError(() => ({
+        benchmarkServiceMock.previewBatteryReuse.mockReturnValue(of(buildPreview()));
+        benchmarkServiceMock.startBatteryRun.mockReturnValue(throwError(() => ({
           status: 400, error: 'Run #12, chosen for suite \'Default Suite\', round 1, no longer qualifies.'
         })));
         checkReuse();
@@ -10050,15 +10097,15 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(card().querySelector('.alert-danger')!.textContent).toContain('no longer qualifies');
         expect(benchmarkServiceMock.previewBatteryReuse).toHaveBeenCalledTimes(2);
-        expect(component.reuseEarlierRuns).toBeTrue();
+        expect(component.reuseEarlierRuns).toBe(true);
       });
     });
 
     describe('banner lifecycle', () => {
       function attachBattery(overrides: Partial<BenchmarkBatteryRunDto>): void {
         const batteryRun = buildBatteryRun(overrides);
-        benchmarkServiceMock.getActiveBatteryRun.and.returnValue(of(batteryRun));
-        benchmarkServiceMock.getBatteryRun.and.returnValue(of(batteryRun));
+        benchmarkServiceMock.getActiveBatteryRun.mockReturnValue(of(batteryRun));
+        benchmarkServiceMock.getBatteryRun.mockReturnValue(of(batteryRun));
         component.activeSubTab = 'run';
         // What ngOnInit does on a page load, repeated after the suite's own first load.
         component.checkActiveBatteryRun();
@@ -10086,7 +10133,7 @@ describe('AdminBenchmarkComponent', () => {
 
         bannerButton('Show Battery Progress')!.click();
         fixture.detectChanges();
-        expect(component.batteryDialogVisible).toBeTrue();
+        expect(component.batteryDialogVisible).toBe(true);
         expect(component.dialogBatteryRunId).toBe(9);
         expect(banner()).toBeNull();
 
@@ -10094,7 +10141,7 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
         expect(banner()).toBeTruthy();
 
-        benchmarkServiceMock.getBatteryRun.and.returnValue(of(buildBatteryRun({ status: 'Completed', completedSuiteCount: 2 })));
+        benchmarkServiceMock.getBatteryRun.mockReturnValue(of(buildBatteryRun({ status: 'Completed', completedSuiteCount: 2 })));
         (component as any).pollBatteryRun(9);
         fixture.detectChanges();
         expect(banner()).toBeNull();
@@ -10103,7 +10150,7 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should offer Continue for a stopped battery run and resume it', () => {
         attachBattery({ status: 'Stopped', stopReason: 'MemberFailed', stopReasonText: 'A member run failed', resumable: true });
-        benchmarkServiceMock.resumeBatteryRun.and.returnValue(of({ batteryRunId: 9 }));
+        benchmarkServiceMock.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 9 }));
 
         expect(bannerButton('Re-run under current instrument')).toBeUndefined();
         const cont = bannerButton('Continue (A member run failed)')!;
@@ -10118,8 +10165,8 @@ describe('AdminBenchmarkComponent', () => {
           status: 'Stopped', stopReason: 'InstrumentChanged',
           stopReasonText: 'A member is not comparable with the others', resumable: true
         });
-        benchmarkServiceMock.resumeBatteryRun.and.returnValue(of({ batteryRunId: 9 }));
-        benchmarkServiceMock.cancelBatteryRun.and.returnValue(of(undefined));
+        benchmarkServiceMock.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 9 }));
+        benchmarkServiceMock.cancelBatteryRun.mockReturnValue(of(undefined));
 
         expect(bannerButton('Continue')).toBeUndefined();
         expect(bannerButton('Cancel Battery')).toBeTruthy();
@@ -10130,7 +10177,7 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should cancel the battery run from the banner', () => {
         attachBattery({ status: 'Running' });
-        benchmarkServiceMock.cancelBatteryRun.and.returnValue(of(undefined));
+        benchmarkServiceMock.cancelBatteryRun.mockReturnValue(of(undefined));
 
         bannerButton('Cancel Battery')!.click();
 
@@ -10139,12 +10186,13 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should hold the battery Web Lock while polling, and leave it with the battery when a member is polled', () => {
         const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
-        const acquireBatterySpy = spyOn(lockService, 'acquireForBattery');
-        const acquireRunSpy = spyOn(lockService, 'acquireForRun');
-        const releaseSpy = spyOn(lockService, 'release');
+        const acquireBatterySpy = vi.spyOn(lockService, 'acquireForBattery').mockReturnValue(undefined);
+        const acquireRunSpy = vi.spyOn(lockService, 'acquireForRun').mockReturnValue(undefined);
+        const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
 
         (component as any).startBatteryPolling(9);
-        expect(acquireBatterySpy).toHaveBeenCalledOnceWith(9);
+        expect(acquireBatterySpy).toHaveBeenCalledTimes(1);
+        expect(acquireBatterySpy).toHaveBeenCalledWith(9);
 
         (component as any).startPolling(42);
         (component as any).stopPolling();
@@ -10157,19 +10205,19 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should hand a member from the battery dialog to the run progress dialog, and back', () => {
         attachBattery({ status: 'Running' });
-        spyOn(component.runProgressDialog.nativeElement, 'showModal');
-        spyOn(component.runProgressDialog.nativeElement, 'close');
+        vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+        vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
         component.openBatteryDialog();
 
         component.onOpenRunProgressFromBattery(42);
         fixture.detectChanges();
-        expect(component.batteryDialogVisible).toBeFalse();
+        expect(component.batteryDialogVisible).toBe(false);
         expect(component.activeRunId).toBe(42);
-        expect(component.returnToBatteryOnClose).toBeTrue();
+        expect(component.returnToBatteryOnClose).toBe(true);
 
         component.closeRunProgressDialog();
-        expect(component.batteryDialogVisible).toBeTrue();
-        expect(component.returnToBatteryOnClose).toBeFalse();
+        expect(component.batteryDialogVisible).toBe(true);
+        expect(component.returnToBatteryOnClose).toBe(false);
       });
 
       it('should switch to the Multi-Suite tab and show the analysis the dialog asks for', () => {
@@ -10179,26 +10227,26 @@ describe('AdminBenchmarkComponent', () => {
         component.onOpenBatteryAnalysis(9);
 
         expect(component.activeSubTab).toBe('multisuite');
-        expect(component.batteryDialogVisible).toBeFalse();
+        expect(component.batteryDialogVisible).toBe(false);
         expect(component.batteriesPanel).toBeTruthy();
       });
     });
 
     describe('completion signal', () => {
-      let playSpy: jasmine.Spy;
-      let notifySpy: jasmine.Spy;
+      let playSpy: Mock;
+      let notifySpy: Mock;
 
       function member(runId: number, suiteIndex: number): any {
         return { memberId: runId, suiteIndex, round: 1, runId, runStatus: 'Completed', usable: true, superseded: false };
       }
 
       function pollBattery(overrides: Partial<BenchmarkBatteryRunDto>): void {
-        benchmarkServiceMock.getBatteryRun.and.returnValue(of(buildBatteryRun(overrides)));
+        benchmarkServiceMock.getBatteryRun.mockReturnValue(of(buildBatteryRun(overrides)));
         (component as any).pollBatteryRun(9);
       }
 
       function pollRun(id: number, status: string): void {
-        benchmarkServiceMock.getRun.and.returnValue(of({
+        benchmarkServiceMock.getRun.mockReturnValue(of({
           id, benchmarkSuiteId: 1, suiteName: 'Default Suite', testedModelDisplayNameUsed: 'Test Model',
           testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'claude-3-5-sonnet',
           assessorModelDisplayNameUsed: 'Test Assessor', assessorModelProviderUsed: 'Anthropic',
@@ -10209,10 +10257,10 @@ describe('AdminBenchmarkComponent', () => {
       }
 
       beforeEach(() => {
-        playSpy = spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').and.returnValue(Promise.resolve('played'));
+        playSpy = vi.spyOn(TestBed.inject(BenchmarkCompletionSoundService), 'play').mockResolvedValue('played');
         const notificationService = TestBed.inject(BenchmarkCompletionNotificationService);
-        notifySpy = spyOn(notificationService, 'notify');
-        spyOn(notificationService, 'permission').and.returnValue('granted');
+        notifySpy = vi.spyOn(notificationService, 'notify').mockReturnValue(undefined as any);
+        vi.spyOn(notificationService, 'permission').mockReturnValue('granted');
         component.completionSound = true;
         component.completionNotification = true;
       });
@@ -10229,9 +10277,9 @@ describe('AdminBenchmarkComponent', () => {
         pollRun(42, 'Completed');
         pollBattery({ status: 'Completed', completedSuiteCount: 2, currentRunId: null, members: [member(41, 0), member(42, 1)] });
 
-        expect(playSpy.calls.allArgs()).toEqual([['battery:9']]);
-        expect(notifySpy).toHaveBeenCalledOnceWith(
-          'battery:9', 'AI Benchmark', 'Battery #9 — Core Battery — 2 of 2 suites — Completed');
+        expect(vi.mocked(playSpy).mock.calls).toEqual([['battery:9']]);
+        expect(notifySpy).toHaveBeenCalledTimes(1);
+        expect(notifySpy).toHaveBeenCalledWith('battery:9', 'AI Benchmark', 'Battery #9 — Core Battery — 2 of 2 suites — Completed');
       });
 
       it('should signal a battery run that stops, but not one that is canceled', () => {
@@ -10240,10 +10288,11 @@ describe('AdminBenchmarkComponent', () => {
         expect(playSpy).not.toHaveBeenCalled();
 
         // The dialog continues it; this page's poller sees it live again.
-        benchmarkServiceMock.getBatteryRun.and.returnValue(of(buildBatteryRun({ status: 'Running' })));
+        benchmarkServiceMock.getBatteryRun.mockReturnValue(of(buildBatteryRun({ status: 'Running' })));
         component.onBatteryResumedFromDialog(9);
         pollBattery({ status: 'Stopped', stopReason: 'MemberFailed' });
-        expect(playSpy).toHaveBeenCalledOnceWith('battery:9');
+        expect(playSpy).toHaveBeenCalledTimes(1);
+        expect(playSpy).toHaveBeenCalledWith('battery:9');
       });
 
       it('should not signal a battery run first seen already finished', () => {
@@ -10255,7 +10304,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should badge a Run History card with its battery run and suite position', () => {
-      benchmarkServiceMock.getRuns.and.returnValue(of([
+      benchmarkServiceMock.getRuns.mockReturnValue(of([
         {
           id: 2, benchmarkSuiteId: 1, suiteName: 'Default Suite', testedModelDisplayNameUsed: 'Model A',
           testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'model-a', assessorModelDisplayNameUsed: 'Model B',
@@ -10292,7 +10341,7 @@ describe('AdminBenchmarkComponent', () => {
 
       expect(component.seriesDialogId).toBe(7);
       expect(component.dialogSeriesId).toBe(7);
-      expect(component.multiRunDialogVisible).toBeTrue();
+      expect(component.multiRunDialogVisible).toBe(true);
     });
 
     it('should fall back to the live series when none was explicitly opened', () => {
@@ -10309,7 +10358,7 @@ describe('AdminBenchmarkComponent', () => {
       component.onMultiRunDialogClosed();
 
       expect(component.seriesDialogId).toBeNull();
-      expect(component.multiRunDialogVisible).toBeFalse();
+      expect(component.multiRunDialogVisible).toBe(false);
       // Back to the live series, which is what the banner and the run labelling describe.
       expect(component.dialogSeriesId).toBe(2);
     });
@@ -10321,19 +10370,19 @@ describe('AdminBenchmarkComponent', () => {
     it('should switch to the Multi-Run Analysis tab and clear the series dialog state', () => {
       // The panel's own fetch is not the subject here, and it would reach a service method this
       // suite's mock does not carry.
-      spyOn(MultiRunComponent.prototype, 'openGroupById');
+      vi.spyOn(MultiRunComponent.prototype, 'openGroupById').mockReturnValue(undefined);
       component.multiRunDialogVisible = true;
       component.seriesDialogId = 9;
 
       component.onOpenGroupAnalysisFromSeries(42);
 
       expect(component.activeSubTab).toBe('multirun');
-      expect(component.multiRunDialogVisible).toBeFalse();
+      expect(component.multiRunDialogVisible).toBe(false);
       expect(component.seriesDialogId).toBeNull();
     });
 
     it('should hand the group id to the multirun panel once the tab has rendered it', () => {
-      const openGroupByIdSpy = spyOn(MultiRunComponent.prototype, 'openGroupById');
+      const openGroupByIdSpy = vi.spyOn(MultiRunComponent.prototype, 'openGroupById').mockReturnValue(undefined);
 
       component.onOpenGroupAnalysisFromSeries(42);
 
@@ -10418,7 +10467,7 @@ describe('AdminBenchmarkComponent', () => {
       // A facet change returns the list to one batch.
       component.onHistoryFacetChange('suite', ['Suite 2']);
       expect(component.historyView.length).toBe(10);
-      expect(component.historyView.every(r => r.suiteName === 'Suite 2')).toBeTrue();
+      expect(component.historyView.every(r => r.suiteName === 'Suite 2')).toBe(true);
       expect(component.historyList.matching(component.historyRuns).length).toBe(12);
 
       expect(component.historyRuns).toBe(runs);
@@ -10452,7 +10501,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(values.map(dd => dd.textContent?.trim())).toEqual(['sha-a', 'guide-a', 'kb-a', '-', 'src-a']);
 
       const cssClasses = ['fp-prompt', 'fp-guides', 'fp-kb', 'fp-wiki', 'fp-source'];
-      cssClasses.forEach((cssClass, i) => expect(values[i].classList.contains(cssClass)).toBeTrue());
+      cssClasses.forEach((cssClass, i) => expect(values[i].classList.contains(cssClass)).toBe(true));
       expect(getComputedStyle(values[0]).fontFamily).toContain('monospace');
 
       expect(strip.querySelectorAll('[title]').length).toBe(0);
@@ -10474,7 +10523,7 @@ describe('AdminBenchmarkComponent', () => {
 
     /** Enters Run History through its real tab, with the server returning these runs. */
     function openHistoryWith(runs: any[]): void {
-      benchmarkServiceMock.getRuns.and.returnValue(of(runs));
+      benchmarkServiceMock.getRuns.mockReturnValue(of(runs));
       (fixture.nativeElement.querySelector('#bm-tab-history') as HTMLButtonElement).click();
       fixture.detectChanges();
     }
@@ -10519,7 +10568,7 @@ describe('AdminBenchmarkComponent', () => {
       const glyph = degraded.querySelector('svg') as SVGElement;
       expect(glyph.getAttribute('aria-hidden')).toBe('true');
       expect(glyph.getAttribute('width')).toBe('12');
-      expect(degraded.hasAttribute('title')).toBeFalse();
+      expect(degraded.hasAttribute('title')).toBe(false);
       expect(card.textContent).not.toContain('⚠');
 
       const time = card.querySelector('.rh-card-meta time') as HTMLTimeElement;
@@ -10543,7 +10592,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(buttons[1].querySelector('path')?.getAttribute('d')).toMatch(/^M14 2H6/);
       expect(buttons[1].querySelector('polyline[points="9 15 12 18 15 15"]')).toBeTruthy();
       expect(buttons[2].querySelector('polyline[points="9 15 12 18 15 15"]')).toBeNull();
-      expect(buttons[3].classList.contains('action-btn-danger')).toBeTrue();
+      expect(buttons[3].classList.contains('action-btn-danger')).toBe(true);
       expect(buttons.map(b => b.getAttribute('interestfor'))).toEqual([
         'tip-view-run-42', 'tip-dl-run-42', 'tip-tcl-run-42', 'tip-del-run-42'
       ]);
@@ -10600,14 +10649,13 @@ describe('AdminBenchmarkComponent', () => {
       expect(list.clientWidth).toBeGreaterThan(0);
       expect(list.scrollWidth).toBeLessThanOrEqual(list.clientWidth);
       for (const card of cards) {
-        expect(card.scrollWidth).withContext(card.getAttribute('data-run-id')!).toBeLessThanOrEqual(card.clientWidth);
+        expect(card.scrollWidth, card.getAttribute('data-run-id')!).toBeLessThanOrEqual(card.clientWidth);
       }
 
       // Each metric column starts at the same x-position on every card, so the list scans like a table.
       for (let column = 0; column < 4; column++) {
-        const lefts = cards.map(card =>
-          Math.round((card.querySelectorAll('.rh-metrics > .rh-metric')[column] as HTMLElement).getBoundingClientRect().left));
-        expect(new Set(lefts).size).withContext(`metric column ${column}`).toBe(1);
+        const lefts = cards.map(card => Math.round((card.querySelectorAll('.rh-metrics > .rh-metric')[column] as HTMLElement).getBoundingClientRect().left));
+        expect(new Set(lefts).size, `metric column ${column}`).toBe(1);
       }
 
       // The model under test is the card's headline.
@@ -10623,7 +10671,7 @@ describe('AdminBenchmarkComponent', () => {
         buildHistoryRun({ id: 2, suiteName: 'Beta' }),
         buildHistoryRun({ id: 1, suiteName: 'Alpha' })
       ]);
-      benchmarkServiceMock.getRuns.calls.reset();
+      benchmarkServiceMock.getRuns.mockClear();
 
       const facet = component.historyFacets.find(f => f.column === 'suite')!;
       expect(facet.facetId).toBe('rh-facet-suite');
@@ -10689,18 +10737,18 @@ describe('AdminBenchmarkComponent', () => {
       const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
       search.dispatchEvent(escape);
 
-      expect(escape.defaultPrevented).toBeTrue();
+      expect(escape.defaultPrevented).toBe(true);
       expect(reached).toEqual([]);
       expect(search.value).toBe('');
       expect(component.historyList.searchText).toBe('');
       // The pending search was dropped with the text.
       await afterSearchDebounce();
-      expect(component.historyTable.hasActiveFilters).toBeFalse();
+      expect(component.historyTable.hasActiveFilters).toBe(false);
       expect(shownIds()).toEqual([2, 1]);
 
       const again = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
       search.dispatchEvent(again);
-      expect(again.defaultPrevented).toBeFalse();
+      expect(again.defaultPrevented).toBe(false);
       expect(reached.length).toBe(1);
       expect(reached[0]).toBe(again);
     });
@@ -10762,10 +10810,10 @@ describe('AdminBenchmarkComponent', () => {
       expect(shownIds().length).toBe(10);
 
       const more = fixture.nativeElement.querySelector('.rh-load-more .rh-show-more') as HTMLButtonElement;
-      expect(more.classList.contains('btn-ghost')).toBeTrue();
+      expect(more.classList.contains('btn-ghost')).toBe(true);
       expect(more.textContent?.trim()).toBe('Show 10 more');
       const all = fixture.nativeElement.querySelector('.rh-load-more .rh-show-all') as HTMLButtonElement;
-      expect(all.classList.contains('gh-filter-clear')).toBeTrue();
+      expect(all.classList.contains('gh-filter-clear')).toBe(true);
       expect(all.textContent?.trim()).toBe('Show all 25');
 
       more.click();
@@ -10781,10 +10829,10 @@ describe('AdminBenchmarkComponent', () => {
     it('should move focus to the next card title after a delete, else the previous one, else the heading', () => {
       const runs = [3, 2, 1].map(id => buildHistoryRun({ id }));
       openHistoryWith(runs);
-      benchmarkServiceMock.deleteRun.and.returnValue(of(undefined as any));
+      benchmarkServiceMock.deleteRun.mockReturnValue(of(undefined as any));
 
       // The middle card: its successor takes its place.
-      benchmarkServiceMock.getRuns.and.returnValue(of([runs[0], runs[2]]));
+      benchmarkServiceMock.getRuns.mockReturnValue(of([runs[0], runs[2]]));
       (fixture.nativeElement.querySelector('button[aria-label="Delete run 2"]') as HTMLButtonElement).click();
       component.executeConfirmAction();
       expect(benchmarkServiceMock.deleteRun).toHaveBeenCalledWith(2);
@@ -10792,13 +10840,13 @@ describe('AdminBenchmarkComponent', () => {
       expect(document.activeElement?.id).toBe('rh-run-1-title');
 
       // The last card: the one before it.
-      benchmarkServiceMock.getRuns.and.returnValue(of([runs[0]]));
+      benchmarkServiceMock.getRuns.mockReturnValue(of([runs[0]]));
       (fixture.nativeElement.querySelector('button[aria-label="Delete run 1"]') as HTMLButtonElement).click();
       component.executeConfirmAction();
       expect(document.activeElement?.id).toBe('rh-run-3-title');
 
       // The only card: the list's heading.
-      benchmarkServiceMock.getRuns.and.returnValue(of([]));
+      benchmarkServiceMock.getRuns.mockReturnValue(of([]));
       (fixture.nativeElement.querySelector('button[aria-label="Delete run 3"]') as HTMLButtonElement).click();
       component.executeConfirmAction();
       expect(document.activeElement?.id).toBe('rh-list-title');
@@ -10810,13 +10858,15 @@ describe('AdminBenchmarkComponent', () => {
       expect(status.getAttribute('role')).toBe('status');
       expect(historyStatus()).toBe('Showing 10 of 12 runs');
 
-      benchmarkServiceMock.getRuns.calls.reset();
-      benchmarkServiceMock.getRuns.and.returnValue(of(Array.from({ length: 200 }, (_, i) => buildHistoryRun({ id: 200 - i }))));
+      benchmarkServiceMock.getRuns.mockClear();
+      benchmarkServiceMock.getRuns.mockReturnValue(of(Array.from({ length: 200 }, (_, i) => buildHistoryRun({ id: 200 - i }))));
       const refresh = fixture.nativeElement.querySelector('.rh-list-head .rh-refresh') as HTMLButtonElement;
-      expect(refresh.classList.contains('btn-ghost')).toBeTrue();
+      expect(refresh.classList.contains('btn-ghost')).toBe(true);
       refresh.click();
 
-      expect(benchmarkServiceMock.getRuns).toHaveBeenCalledOnceWith(undefined, 200);
+      expect(benchmarkServiceMock.getRuns).toHaveBeenCalledTimes(1);
+
+      expect(benchmarkServiceMock.getRuns).toHaveBeenCalledWith(undefined, 200);
       expect(historyStatus()).toBe('Showing 10 of 200 runs · Only the newest 200 runs are loaded');
     });
 
@@ -10854,16 +10904,16 @@ describe('AdminBenchmarkComponent', () => {
         const button = head().querySelector('app-info-tip button.gh-info-btn') as HTMLButtonElement;
         expect(button.getAttribute('aria-label')).toBe('About Run history');
         expect(button.getAttribute('aria-haspopup')).toBe('dialog');
-        expect(button.hasAttribute('popovertarget')).toBeFalse();
+        expect(button.hasAttribute('popovertarget')).toBe(false);
         expect(head().querySelector('.gh-info-popup')).toBeNull();
 
         const dialog = head().querySelector('app-info-tip dialog.gh-info-dialog') as HTMLDialogElement;
-        expect(dialog.open).toBeFalse();
+        expect(dialog.open).toBe(false);
 
         button.focus();
         button.click();
-        expect(dialog.open).toBeTrue();
-        expect(dialog.matches(':modal')).toBeTrue();
+        expect(dialog.open).toBe(true);
+        expect(dialog.matches(':modal')).toBe(true);
         const title = dialog.querySelector('h3') as HTMLElement;
         expect(title.id).toBe('rh-list-tip-title');
         expect(title.textContent?.trim()).toBe('About the run history');
@@ -10878,7 +10928,7 @@ describe('AdminBenchmarkComponent', () => {
         const close = dialog.querySelector('.dialog-header .btn-icon-action') as HTMLButtonElement;
         expect(close.getAttribute('aria-label')).toBe('Close About the run history');
         close.click();
-        expect(dialog.open).toBeFalse();
+        expect(dialog.open).toBe(false);
         expect(document.activeElement).toBe(button);
       });
     });
@@ -10890,7 +10940,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(panel().querySelector('.rh-no-matches')).toBeNull();
       expect(panel().querySelector('.rh-filter-bar')).toBeNull();
 
-      benchmarkServiceMock.getRuns.and.returnValue(of([buildHistoryRun({ id: 2 }), buildHistoryRun({ id: 1 })]));
+      benchmarkServiceMock.getRuns.mockReturnValue(of([buildHistoryRun({ id: 2 }), buildHistoryRun({ id: 1 })]));
       (panel().querySelector('.rh-refresh') as HTMLButtonElement).click();
       component.onHistoryFacetChange('status', ['Failed']);
 
@@ -10976,7 +11026,7 @@ describe('AdminBenchmarkComponent', () => {
       const run = buildRun({ status: 'Canceled', totalAnswerDurationMs: 2000000, totalDurationMs: 1419000 });
 
       expect(component.runDurationMs(run)).toBe(1419000);
-      expect(component.isAbortedRun(run)).toBeTrue();
+      expect(component.isAbortedRun(run)).toBe(true);
     });
 
     it('should not treat a Canceled run whose answers cover its suite as aborted', () => {
@@ -10984,21 +11034,21 @@ describe('AdminBenchmarkComponent', () => {
       // reports isAborted false and the run is measured by its answers like any complete run.
       const run = buildRun({ status: 'Canceled', isAborted: false });
 
-      expect(component.isAbortedRun(run)).toBeFalse();
+      expect(component.isAbortedRun(run)).toBe(false);
       expect(component.runDurationMs(run)).toBe(765466);
     });
 
     it('should trust the server flag over the status', () => {
       const run = buildRun({ status: 'CompletedWithErrors', isAborted: true });
 
-      expect(component.isAbortedRun(run)).toBeTrue();
+      expect(component.isAbortedRun(run)).toBe(true);
     });
 
     it('should measure a completed run by the time its answers took', () => {
       const run = buildRun();
 
       expect(component.runDurationMs(run)).toBe(765466);
-      expect(component.isAbortedRun(run)).toBeFalse();
+      expect(component.isAbortedRun(run)).toBe(false);
     });
 
     it('should derive a duration from the timestamps when neither total was recorded', () => {
@@ -11244,7 +11294,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(panel).toBeTruthy();
       // Structural, not a computed style: a sticky element only sticks while its parent's box is
       // on screen, and the parent is what this asserts.
-      expect(container.contains(panel)).toBeTrue();
+      expect(container.contains(panel)).toBe(true);
     });
 
     it('gives the comparison panel the same panel class as the other five sub-tabs', () => {
@@ -11252,9 +11302,9 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const panel = fixture.nativeElement.querySelector('#bm-panel-modelcomparison');
-      expect(panel.classList.contains('benchmark-tab-content')).toBeTrue();
+      expect(panel.classList.contains('benchmark-tab-content')).toBe(true);
       // gh-tab-panel is defined in no stylesheet in the repository.
-      expect(panel.classList.contains('gh-tab-panel')).toBeFalse();
+      expect(panel.classList.contains('gh-tab-panel')).toBe(false);
     });
 
     it('shows a launcher, and mounts nothing of the wizard until it is opened', () => {
@@ -11269,11 +11319,11 @@ describe('AdminBenchmarkComponent', () => {
 
       // Deferred: nothing of the wizard is constructed for an operator who never opens it, and a
       // modal that appeared without a gesture would leave them pressing Escape onto an empty tab.
-      expect(component.comparisonWizardMounted).toBeFalse();
+      expect(component.comparisonWizardMounted).toBe(false);
       const dialog = fixture.nativeElement.querySelector('.benchmark-model-comparison-dialog');
       expect(dialog).toBeTruthy();
       expect(dialog.querySelector('app-benchmark-model-comparison')).toBeNull();
-      expect(dialog.open).toBeFalse();
+      expect(dialog.open).toBe(false);
     });
 
     it('reports no pending selection in the launcher, and offers no control that could change one', () => {
@@ -11297,10 +11347,9 @@ describe('AdminBenchmarkComponent', () => {
       expect(actions.length).toBe(1);
       expect(actions[0].textContent.trim()).toBe('Open Comparison Wizard');
       // The page's primary task, and its only image button outside a dialog footer.
-      expect(actions[0].classList.contains('btn-gh')).toBeTrue();
-      expect(actions[0].classList.contains('btn-gh-small')).toBeFalse();
-      const imageButtons = (Array.from(
-        fixture.nativeElement.querySelectorAll('#bm-panel-modelcomparison .btn-gh')) as HTMLElement[])
+      expect(actions[0].classList.contains('btn-gh')).toBe(true);
+      expect(actions[0].classList.contains('btn-gh-small')).toBe(false);
+      const imageButtons = (Array.from(fixture.nativeElement.querySelectorAll('#bm-panel-modelcomparison .btn-gh')) as HTMLElement[])
         .filter(button => !button.closest('dialog'));
       expect(imageButtons).toEqual([actions[0]]);
     });
@@ -11325,7 +11374,7 @@ describe('AdminBenchmarkComponent', () => {
       const hero = fixture.nativeElement.querySelector('.mc-launcher-hero') as HTMLElement;
       const details = hero.querySelector('details.gh-disclosure.mc-launcher-howto') as HTMLDetailsElement;
       expect(details).toBeTruthy();
-      expect(details.hasAttribute('name')).toBeFalse();
+      expect(details.hasAttribute('name')).toBe(false);
       expect(details.querySelector('summary')?.textContent?.trim()).toBe('How the comparison works');
       expect(details.querySelector('ol.mc-launcher-steps')).toBeTruthy();
       expect(details.querySelector('.alert.alert-info[role="note"]')?.textContent)
@@ -11337,7 +11386,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       let details = fixture.nativeElement.querySelector('.mc-launcher-howto') as HTMLDetailsElement;
-      expect(details.open).toBeTrue();
+      expect(details.open).toBe(true);
       // Recorded closed at once, so the next visit starts closed unless the operator keeps it open.
       expect(JSON.parse(localStorage.getItem(COMPARISON_LAUNCHER_KEY)!)).toEqual({ howItWorksOpen: false });
 
@@ -11349,7 +11398,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       details = fixture.nativeElement.querySelector('.mc-launcher-howto') as HTMLDetailsElement;
-      expect(details.open).toBeFalse();
+      expect(details.open).toBe(false);
 
       // The native toggle, dispatched synchronously rather than awaited.
       details.open = true;
@@ -11363,29 +11412,34 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       details = fixture.nativeElement.querySelector('.mc-launcher-howto') as HTMLDetailsElement;
-      expect(details.open).toBeTrue();
+      expect(details.open).toBe(true);
     });
 
     it('opens the disclosure when storage throws, and does not throw itself', () => {
-      spyOn(localStorage, 'getItem').and.throwError('private browsing');
-      spyOn(localStorage, 'setItem').and.throwError('private browsing');
+      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+        throw new Error('private browsing');
+      });
+      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('private browsing');
+      });
 
       fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
       fixture.detectChanges();
 
       const details = fixture.nativeElement.querySelector('.mc-launcher-howto') as HTMLDetailsElement;
-      expect(details.open).toBeTrue();
+      expect(details.open).toBe(true);
       details.open = false;
       expect(() => details.dispatchEvent(new Event('toggle'))).not.toThrow();
-      expect(component.comparisonHowItWorksOpen).toBeFalse();
+      expect(component.comparisonHowItWorksOpen).toBe(false);
     });
 
     // --- The Comparison reports card ---
 
     /** The card's list requests: the report-pack documents, apart from any run's own list. */
     function comparisonReportLoads(): number {
-      return benchmarkServiceMock.listReportDocuments.calls.all()
-        .filter(call => (call.args[0] as { origin?: string } | undefined)?.origin === 'reportPack')
+      return vi.mocked(benchmarkServiceMock.listReportDocuments).mock.calls.filter(call => (call[0] as {
+        origin?: string;
+      } | undefined)?.origin === 'reportPack')
         .length;
     }
 
@@ -11400,7 +11454,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const host = launcherDebug.nativeElement as HTMLElement;
       const hero = fixture.nativeElement.querySelector('.mc-launcher-hero') as HTMLElement;
-      expect(hero.contains(host)).toBeFalse();
+      expect(hero.contains(host)).toBe(false);
       expect(hero.compareDocumentPosition(host) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
       // The lead paragraph is the card's info tip now.
       expect(fixture.nativeElement.querySelector('.mc-launcher-library-lead')).toBeNull();
@@ -11410,8 +11464,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(host.querySelector('#mcl-open')?.getAttribute('aria-disabled')).toBe('true');
       expect(host.querySelector('.rdl-launcher-summary')?.textContent).toContain('No reports yet.');
 
-      expect(benchmarkServiceMock.listReportDocuments).toHaveBeenCalledWith(
-        jasmine.objectContaining({ origin: 'reportPack', take: 500 }));
+      expect(benchmarkServiceMock.listReportDocuments).toHaveBeenCalledWith(expect.objectContaining({ origin: 'reportPack', take: 500 }));
     });
 
     it('loads the Comparison reports only once the tab is shown, then on every showing and wizard close', () => {
@@ -11487,13 +11540,13 @@ describe('AdminBenchmarkComponent', () => {
 
       const dialog = fixture.nativeElement
         .querySelector('.benchmark-model-comparison-dialog') as HTMLDialogElement;
-      const showModal = spyOn(dialog, 'showModal').and.callThrough();
+      const showModal = vi.spyOn(dialog, 'showModal');
 
       component.openComparisonWizard();
       fixture.detectChanges();
 
       expect(showModal).toHaveBeenCalledTimes(1);
-      expect(component.comparisonWizardMounted).toBeTrue();
+      expect(component.comparisonWizardMounted).toBe(true);
       expect(dialog.querySelector('app-benchmark-model-comparison')).toBeTruthy();
       expect(dialog.querySelector('app-comparison-source-picker')).toBeTruthy();
 
@@ -11502,7 +11555,7 @@ describe('AdminBenchmarkComponent', () => {
 
       // Mount-once, destroy-never: reopening has to preserve the picker's table state, the step,
       // the filters, the entry selection and the rendered charts.
-      expect(component.comparisonWizardMounted).toBeTrue();
+      expect(component.comparisonWizardMounted).toBe(true);
       expect(dialog.querySelector('app-benchmark-model-comparison')).toBeTruthy();
     });
 
@@ -11512,36 +11565,38 @@ describe('AdminBenchmarkComponent', () => {
 
       const cancel = new Event('cancel', { cancelable: true });
       component.onComparisonWizardCancel(cancel);
-      expect(cancel.defaultPrevented).toBeFalse();
+      expect(cancel.defaultPrevented).toBe(false);
 
       // An export re-renders charts and writes files in sequence; tearing the DOM out from under
       // it would leave a detached chart and a half-written batch.
       component.comparisonWizard!.exporting = true;
       const blocked = new Event('cancel', { cancelable: true });
       component.onComparisonWizardCancel(blocked);
-      expect(blocked.defaultPrevented).toBeTrue();
+      expect(blocked.defaultPrevented).toBe(true);
     });
 
     it('refuses Escape while the wizard draws and uploads document charts', () => {
       component.openComparisonWizard();
       fixture.detectChanges();
       const wizard = component.comparisonWizard!;
-      expect(wizard.chartsPublishing).toBeFalse();
+      expect(wizard.chartsPublishing).toBe(false);
 
-      (wizard as unknown as { pendingPublishes: number }).pendingPublishes = 1;
-      expect(wizard.chartsPublishing).toBeTrue();
+      (wizard as unknown as {
+        pendingPublishes: number;
+      }).pendingPublishes = 1;
+      expect(wizard.chartsPublishing).toBe(true);
       const blocked = new Event('cancel', { cancelable: true });
       component.onComparisonWizardCancel(blocked);
-      expect(blocked.defaultPrevented).toBeTrue();
+      expect(blocked.defaultPrevented).toBe(true);
 
       (wizard as unknown as { pendingPublishes: number }).pendingPublishes = 0;
       const allowed = new Event('cancel', { cancelable: true });
       component.onComparisonWizardCancel(allowed);
-      expect(allowed.defaultPrevented).toBeFalse();
+      expect(allowed.defaultPrevented).toBe(false);
     });
 
     it('loads the comparability index for the sources on offer, and survives it failing', () => {
-      benchmarkServiceMock.getComparabilityIndex.calls.reset();
+      benchmarkServiceMock.getComparabilityIndex.mockClear();
 
       // A new suite scope is a new set of offered sources, so it re-indexes them.
       component.onComparisonSuiteChange(5);
@@ -11552,8 +11607,7 @@ describe('AdminBenchmarkComponent', () => {
       });
       expect(component.comparabilityIndex).toBeTruthy();
 
-      benchmarkServiceMock.getComparabilityIndex.and.returnValue(
-        throwError(() => ({ error: 'The index could not be built.' })));
+      benchmarkServiceMock.getComparabilityIndex.mockReturnValue(throwError(() => ({ error: 'The index could not be built.' })));
       component.onComparisonSuiteChange(6);
 
       // Non-fatal: the Condition column falls back to a dash and Compare still works.
@@ -11677,25 +11731,25 @@ describe('AdminBenchmarkComponent', () => {
       // other consumer of that block, so this is the regression guard for the move.
       const dialog = fixture.nativeElement
         .querySelector('.benchmark-suite-health-dialog') as HTMLDialogElement;
-      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBeTrue();
+      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBe(true);
 
       component.suiteHealthSuiteId = null;
       component.openSuiteHealth({ id: 5, name: 'Suite 5', questionCount: 4 } as any);
       fixture.detectChanges();
-      expect(dialog.open).toBeTrue();
+      expect(dialog.open).toBe(true);
 
       component.closeSuiteHealth();
       fixture.detectChanges();
-      expect(dialog.open).toBeFalse();
+      expect(dialog.open).toBe(false);
     });
 
     // --- Loading and the request ---
 
     it('loads the three lists the picker needs on tab entry, and fetches no comparison', () => {
-      benchmarkServiceMock.getRuns.calls.reset();
-      benchmarkServiceMock.getRunGroups.calls.reset();
-      benchmarkServiceMock.getSuites.calls.reset();
-      benchmarkServiceMock.compareModels.calls.reset();
+      benchmarkServiceMock.getRuns.mockClear();
+      benchmarkServiceMock.getRunGroups.mockClear();
+      benchmarkServiceMock.getSuites.mockClear();
+      benchmarkServiceMock.compareModels.mockClear();
 
       component.selectSubTab('modelcomparison');
 
@@ -11708,7 +11762,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('issues one request carrying the selected ids and the basis name', () => {
       component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [11] });
-      benchmarkServiceMock.compareModels.calls.reset();
+      benchmarkServiceMock.compareModels.mockClear();
 
       component.runComparison();
 
@@ -11722,7 +11776,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('refuses an empty selection rather than sending a request the server will reject', () => {
       component.clearComparisonSelection();
-      benchmarkServiceMock.compareModels.calls.reset();
+      benchmarkServiceMock.compareModels.mockClear();
 
       component.runComparison();
 
@@ -11731,21 +11785,20 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('reports the server error text rather than a generic failure', () => {
-      benchmarkServiceMock.compareModels.and.returnValue(
-        throwError(() => ({ error: 'Run(s) not found: 4' })));
+      benchmarkServiceMock.compareModels.mockReturnValue(throwError(() => ({ error: 'Run(s) not found: 4' })));
       component.onComparisonSelectionChange({ runIds: [4], groupIds: [] });
 
       component.runComparison();
 
       expect(component.comparisonError).toBe('Run(s) not found: 4');
       expect(component.comparison).toBeNull();
-      expect(component.comparisonLoading).toBeFalse();
+      expect(component.comparisonLoading).toBe(false);
     });
 
     it('discards an out-of-order response so the older payload never overwrites the newer', () => {
       const first = new Subject<any>();
       const second = new Subject<any>();
-      benchmarkServiceMock.compareModels.and.returnValues(first as any, second as any);
+      benchmarkServiceMock.compareModels.mockReturnValueOnce(first as any).mockReturnValueOnce(second as any);
       component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
 
       component.runComparison();
@@ -11761,18 +11814,18 @@ describe('AdminBenchmarkComponent', () => {
 
     it('cancels the comparison in flight, releasing the request and ignoring its late result', () => {
       const request = new Subject<any>();
-      benchmarkServiceMock.compareModels.and.returnValue(request as any);
+      benchmarkServiceMock.compareModels.mockReturnValue(request as any);
       component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
 
       component.runComparison();
-      expect(component.comparisonLoading).toBeTrue();
-      expect(request.observed).toBeTrue();
+      expect(component.comparisonLoading).toBe(true);
+      expect(request.observed).toBe(true);
 
       component.cancelComparison();
 
-      expect(component.comparisonLoading).toBeFalse();
+      expect(component.comparisonLoading).toBe(false);
       // Unsubscribed, so the HTTP request is aborted and the server stops pricing.
-      expect(request.observed).toBeFalse();
+      expect(request.observed).toBe(false);
       request.next({ entries: [], explanation: 'late' });
       expect(component.comparison).toBeNull();
     });
@@ -11780,19 +11833,19 @@ describe('AdminBenchmarkComponent', () => {
     it('releases a superseded request when Compare runs again', () => {
       const first = new Subject<any>();
       const second = new Subject<any>();
-      benchmarkServiceMock.compareModels.and.returnValues(first as any, second as any);
+      benchmarkServiceMock.compareModels.mockReturnValueOnce(first as any).mockReturnValueOnce(second as any);
       component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
 
       component.runComparison();
       component.runComparison();
 
-      expect(first.observed).toBeFalse();
-      expect(second.observed).toBeTrue();
+      expect(first.observed).toBe(false);
+      expect(second.observed).toBe(true);
     });
 
     it('drops the request in flight when the selection changes under it', () => {
       const request = new Subject<any>();
-      benchmarkServiceMock.compareModels.and.returnValue(request as any);
+      benchmarkServiceMock.compareModels.mockReturnValue(request as any);
       component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
       component.runComparison();
 
@@ -11801,23 +11854,23 @@ describe('AdminBenchmarkComponent', () => {
 
       // The older response would otherwise chart the previous selection and advance the wizard.
       expect(component.comparison).toBeNull();
-      expect(component.comparisonLoading).toBeFalse();
-      expect(request.observed).toBeFalse();
+      expect(component.comparisonLoading).toBe(false);
+      expect(request.observed).toBe(false);
     });
 
     it('treats a cancel with nothing in flight as a no-op', () => {
-      const detectChanges = spyOn((component as any).cdr, 'detectChanges').and.callThrough();
+      const detectChanges = vi.spyOn((component as any).cdr, 'detectChanges');
 
       component.cancelComparison();
 
-      expect(component.comparisonLoading).toBeFalse();
+      expect(component.comparisonLoading).toBe(false);
       expect(detectChanges).not.toHaveBeenCalled();
     });
 
     it('never refuses Escape because a comparison is loading', () => {
       component.comparisonLoading = true;
       component.comparisonWizard = { exporting: false } as any;
-      const event = { preventDefault: jasmine.createSpy('preventDefault') } as unknown as Event;
+      const event = { preventDefault: vi.fn().mockName('preventDefault') } as unknown as Event;
 
       component.onComparisonWizardCancel(event);
 
@@ -11836,25 +11889,25 @@ describe('AdminBenchmarkComponent', () => {
 
     it('keeps the projected picker live and the wizard uncovered while a comparison loads', () => {
       const request = new Subject<any>();
-      benchmarkServiceMock.compareModels.and.returnValue(request as any);
+      benchmarkServiceMock.compareModels.mockReturnValue(request as any);
       component.onComparisonSelectionChange({ runIds: [1, 2], groupIds: [] });
       component.openComparisonWizard();
       fixture.detectChanges();
 
       component.runComparison();
       fixture.detectChanges();
-      expect(component.comparisonLoading).toBeTrue();
+      expect(component.comparisonLoading).toBe(true);
 
       const dialog = fixture.nativeElement
         .querySelector('dialog.benchmark-model-comparison-dialog') as HTMLDialogElement;
       const checkboxes = Array.from(
         dialog.querySelectorAll('#mc-step-panel-1 input[type="checkbox"]')) as HTMLInputElement[];
       expect(checkboxes.length).toBeGreaterThan(0);
-      expect(checkboxes.some(checkbox => !checkbox.disabled)).toBeTrue();
+      expect(checkboxes.some(checkbox => !checkbox.disabled)).toBe(true);
       expect(dialog.querySelectorAll('[inert]').length).toBe(0);
 
       const close = dialog.querySelector('[aria-label="Close cross-model comparison"]') as HTMLButtonElement;
-      expect(close.disabled).toBeFalse();
+      expect(close.disabled).toBe(false);
 
       component.closeComparisonWizard();
     });
@@ -11897,13 +11950,12 @@ describe('AdminBenchmarkComponent', () => {
 
     it('refetches at once on a pricing basis change, because it re-prices an unchanged set', () => {
       component.onComparisonSelectionChange({ runIds: [1], groupIds: [] });
-      benchmarkServiceMock.compareModels.calls.reset();
+      benchmarkServiceMock.compareModels.mockClear();
 
       component.onComparisonPricingBasisChange('AsRun');
 
       expect(component.comparisonPricingBasis).toBe('AsRun');
-      expect(benchmarkServiceMock.compareModels).toHaveBeenCalledWith(
-        jasmine.objectContaining({ pricingBasis: 'AsRun' }));
+      expect(benchmarkServiceMock.compareModels).toHaveBeenCalledWith(expect.objectContaining({ pricingBasis: 'AsRun' }));
     });
 
     // --- Persistence ---
@@ -11937,7 +11989,9 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('survives a localStorage read that throws, leaving every default standing', () => {
-      spyOn(localStorage, 'getItem').and.throwError('private browsing');
+      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+        throw new Error('private browsing');
+      });
 
       expect(() => component.selectSubTab('modelcomparison')).not.toThrow();
       expect(component.comparisonRunIds).toEqual([]);
@@ -11977,7 +12031,7 @@ describe('AdminBenchmarkComponent', () => {
       showQuestions();
       const icons = host().querySelector('.questions-toolbar-icons')!;
       expect(tooltipTexts(icons)).toEqual(['Download All as YAML', 'Copy All to Clipboard', 'Import Questions from YAML', 'Import/Export Help']);
-      expect(Array.from(icons.querySelectorAll('button')).every(b => b.getAttribute('aria-label'))).toBeTrue();
+      expect(Array.from(icons.querySelectorAll('button')).every(b => b.getAttribute('aria-label'))).toBe(true);
     });
 
     it('gives every per-question YAML button a distinct accessible name', () => {
@@ -12007,8 +12061,8 @@ describe('AdminBenchmarkComponent', () => {
       expect(help.getAttribute('aria-label')).toBe('Open suite YAML import and export help');
       expect(tooltipTexts(toolbar)).toEqual(['Suite Import/Export Help']);
 
-      const openSuite = spyOn(component.suiteYamlHelpDialog!, 'open');
-      const openQuestions = spyOn(component.questionYamlHelpDialog!, 'open');
+      const openSuite = vi.spyOn(component.suiteYamlHelpDialog!, 'open').mockReturnValue(undefined);
+      const openQuestions = vi.spyOn(component.questionYamlHelpDialog!, 'open').mockReturnValue(undefined);
       help.click();
       expect(openSuite).toHaveBeenCalled();
       expect(openQuestions).not.toHaveBeenCalled();
@@ -12024,7 +12078,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(buttons[wizardIndex + 1].classList).toContain('action-btn');
       expect(buttons[wizardIndex].classList).toContain('btn-ghost');
 
-      const open = spyOn(component.snapshotSuiteWizard!, 'open');
+      const open = vi.spyOn(component.snapshotSuiteWizard!, 'open').mockReturnValue(undefined);
       buttons[wizardIndex].click();
       expect(open).toHaveBeenCalled();
     });
@@ -12032,15 +12086,15 @@ describe('AdminBenchmarkComponent', () => {
     it('closes the suite help before opening the wizard it asks for', () => {
       showQuestions();
       const order: string[] = [];
-      spyOn(component.suiteYamlHelpDialog!, 'close').and.callFake(() => { order.push('close help'); });
-      spyOn(component.snapshotSuiteWizard!, 'open').and.callFake(() => { order.push('open wizard'); });
+      vi.spyOn(component.suiteYamlHelpDialog!, 'close').mockImplementation(() => { order.push('close help'); });
+      vi.spyOn(component.snapshotSuiteWizard!, 'open').mockImplementation(() => { order.push('open wizard'); });
       component.onSuiteWizardRequestedFromHelp();
       expect(order).toEqual(['close help', 'open wizard']);
     });
 
     it('opens the assessor for the current copy of the suite the wizard names', () => {
       showQuestions();
-      const assess = spyOn(component, 'openDifficultyAssessorDialog');
+      const assess = vi.spyOn(component, 'openDifficultyAssessorDialog').mockReturnValue(undefined);
       const stale = { ...component.suites[0], questionCount: 0 };
       component.onWizardAssessRequested(stale);
       expect(assess).toHaveBeenCalledWith(component.suites[0]);
@@ -12048,34 +12102,34 @@ describe('AdminBenchmarkComponent', () => {
 
     it('reloads the suites when the wizard applies a description', () => {
       showQuestions();
-      const load = spyOn(component, 'loadSuites');
+      const load = vi.spyOn(component, 'loadSuites').mockReturnValue(undefined);
       component.onWizardSuiteUpdated();
       expect(load).toHaveBeenCalled();
     });
 
     it('exports an empty snapshot suite without asking for its questions, and keeps a bare suite inert', async () => {
       showQuestions();
-      benchmarkServiceMock.getQuestions.calls.reset();
-      benchmarkServiceMock.getSnapshot.and.returnValue(of({
+      benchmarkServiceMock.getQuestions.mockClear();
+      benchmarkServiceMock.getSnapshot.mockReturnValue(of({
         id: 7, name: 'Low HP', sanitizedText: 'GnollHack 4.2.0 Build 47', charCount: 24,
         sha256: 'a'.repeat(64), captureMethod: 'TextUpload', createdAtUtc: ''
       } as any));
       const emptySnapshotSuite = { ...component.suites[0], questionCount: 0, gameSnapshotId: 7 };
       const bare = { ...component.suites[0], questionCount: 0, gameSnapshotId: null };
-      expect(component.canExportSuite(emptySnapshotSuite)).toBeTrue();
-      expect(component.canExportSuite(bare)).toBeFalse();
+      expect(component.canExportSuite(emptySnapshotSuite)).toBe(true);
+      expect(component.canExportSuite(bare)).toBe(false);
 
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
       try {
         await component.copySuiteYaml(emptySnapshotSuite);
         expect(benchmarkServiceMock.getQuestions).not.toHaveBeenCalled();
-        const yaml = writeText.calls.mostRecent().args[0] as string;
+        const yaml = vi.mocked(writeText).mock.lastCall![0] as string;
         expect(yaml).toContain('\nquestions: []\n');
         expect(yaml).toContain('  snapshot:\n');
 
-        writeText.calls.reset();
+        writeText.mockClear();
         await component.copySuiteYaml(bare);
         expect(writeText).not.toHaveBeenCalled();
       } finally {
@@ -12086,8 +12140,8 @@ describe('AdminBenchmarkComponent', () => {
 
     it('routes the import dialog help request by the mode the import was opened for', () => {
       showQuestions();
-      const openSuite = spyOn(component.suiteYamlHelpDialog!, 'open');
-      const openQuestions = spyOn(component.questionYamlHelpDialog!, 'open');
+      const openSuite = vi.spyOn(component.suiteYamlHelpDialog!, 'open').mockReturnValue(undefined);
+      const openQuestions = vi.spyOn(component.questionYamlHelpDialog!, 'open').mockReturnValue(undefined);
 
       component.questionYamlImportDialog!.mode = 'suite';
       component.onYamlHelpRequested();
@@ -12101,20 +12155,20 @@ describe('AdminBenchmarkComponent', () => {
 
     it('exports a suite with its whole snapshot: text, hash and metadata', async () => {
       showQuestions();
-      benchmarkServiceMock.getQuestions.and.returnValue(of(questions.map(q => ({ ...q }))));
-      benchmarkServiceMock.getSnapshot.and.returnValue(of({
+      benchmarkServiceMock.getQuestions.mockReturnValue(of(questions.map(q => ({ ...q }))));
+      benchmarkServiceMock.getSnapshot.mockReturnValue(of({
         id: 7, name: 'Low HP', sanitizedText: 'GnollHack 4.2.0 Build 47\nDlvl:11 HP:14(58)', charCount: 44,
         sha256: 'a'.repeat(64), captureMethod: 'TextUpload', sourceGnollHackVersion: '4.2.0 Build 47',
         notes: 'From the viewer.', capturedAtUtc: '2026-09-16T18:04:11Z', createdAtUtc: ''
       } as any));
 
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
       try {
         await component.copySuiteYaml(component.suites[0]);
         expect(benchmarkServiceMock.getSnapshot).toHaveBeenCalledWith(7, true);
-        const yaml = writeText.calls.mostRecent().args[0] as string;
+        const yaml = vi.mocked(writeText).mock.lastCall![0] as string;
         expect(yaml).toContain('  snapshot:\n');
         expect(yaml).toContain('    sha256: "' + 'a'.repeat(64) + '"');
         expect(yaml).toContain('    text: |\n');
@@ -12128,15 +12182,15 @@ describe('AdminBenchmarkComponent', () => {
 
     it('exports without the board, and says so, when the snapshot fetch fails', async () => {
       showQuestions();
-      benchmarkServiceMock.getQuestions.and.returnValue(of(questions.map(q => ({ ...q }))));
-      benchmarkServiceMock.getSnapshot.and.returnValue(throwError(() => new Error('gone')));
+      benchmarkServiceMock.getQuestions.mockReturnValue(of(questions.map(q => ({ ...q }))));
+      benchmarkServiceMock.getSnapshot.mockReturnValue(throwError(() => new Error('gone')));
 
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
       try {
         await component.copySuiteYaml(component.suites[0]);
-        expect(writeText.calls.mostRecent().args[0] as string).not.toContain('snapshot');
+        expect(vi.mocked(writeText).mock.lastCall![0] as string).not.toContain('snapshot');
         expect(component.suitesCopyStatus).toContain('Exported without the snapshot text');
       } finally {
         delete (navigator as { clipboard?: unknown }).clipboard;
@@ -12150,7 +12204,7 @@ describe('AdminBenchmarkComponent', () => {
       const button = host().querySelector('.suite-card .upload-snapshot-card-btn') as HTMLButtonElement;
       expect(button.getAttribute('aria-disabled')).toBe('true');
 
-      const open = spyOn(component.snapshotUploadDialog!, 'open');
+      const open = vi.spyOn(component.snapshotUploadDialog!, 'open').mockReturnValue(undefined);
       button.click();
       expect(open).not.toHaveBeenCalled();
       expect(component.snapshotDeleteBlockedReason).toBeNull();
@@ -12158,7 +12212,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('copies one question as YAML', async () => {
       showQuestions();
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
       Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
       try {
@@ -12173,14 +12227,14 @@ describe('AdminBenchmarkComponent', () => {
 
     it('reloads questions and suites after an import', () => {
       showQuestions();
-      benchmarkServiceMock.getQuestions.calls.reset();
-      benchmarkServiceMock.getSuites.calls.reset();
+      benchmarkServiceMock.getQuestions.mockClear();
+      benchmarkServiceMock.getSuites.mockClear();
 
       component.onQuestionsImported({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] });
       expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(1);
       expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
 
-      benchmarkServiceMock.getSuites.calls.reset();
+      benchmarkServiceMock.getSuites.mockClear();
       component.onSuiteImported({ ...suite, id: 5, name: 'Imported' });
       expect(benchmarkServiceMock.getSuites).toHaveBeenCalled();
     });
@@ -12200,7 +12254,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('clears the snapshot fields after a delete and reloads', () => {
       showQuestions();
-      benchmarkServiceMock.getSuites.calls.reset();
+      benchmarkServiceMock.getSuites.mockClear();
       const card = component.suites[0];
 
       component.onSnapshotDeleted(7);
@@ -12252,7 +12306,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(component.coAssessorConfigId).toBeNull();
-      expect(component.isPanelLaunch).toBeFalse();
+      expect(component.isPanelLaunch).toBe(false);
       const trigger = fixture.nativeElement.querySelector('.co-assessor-model-selector .selector-trigger') as HTMLButtonElement;
       expect(trigger).toBeTruthy();
       expect(trigger.textContent).toContain('None — single assessor');
@@ -12282,25 +12336,25 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should send the co-assessor only when one is selected', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
-      spyOn(component.runProgressDialog.nativeElement, 'showModal');
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
+      vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       usePanelConfigs();
       component.selectedSuiteId = 1;
       component.testedConfigId = 1;
       component.assessorConfigId = 2;
 
       component.startBenchmark();
-      const single = benchmarkServiceMock.startRun.calls.mostRecent().args[0];
-      expect('coAssessorModelConfigurationId' in single).toBeFalse();
+      const single = vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0];
+      expect('coAssessorModelConfigurationId' in single).toBe(false);
 
       component.coAssessorConfigId = 4;
       component.startBenchmark();
-      expect(benchmarkServiceMock.startRun.calls.mostRecent().args[0].coAssessorModelConfigurationId).toBe(4);
+      expect(vi.mocked(benchmarkServiceMock.startRun).mock.lastCall![0].coAssessorModelConfigurationId).toBe(4);
       component.ngOnDestroy();
     });
 
     it('should persist the co-assessor when a run is started', () => {
-      benchmarkServiceMock.startRun.and.returnValue(of({ runId: 99 }));
+      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
       selectValidPanel();
 
       component.startBenchmark();
@@ -12371,14 +12425,14 @@ describe('AdminBenchmarkComponent', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
 
-      expect(component.showCoAssessorSameProviderAdvisory).toBeTrue();
+      expect(component.showCoAssessorSameProviderAdvisory).toBe(true);
       const advisory = fixture.nativeElement.querySelector('.setup-group-grading .co-assessor-advisory') as HTMLElement;
       expect(advisory).toBeTruthy();
       expect(advisory.classList).toContain('alert-warning');
       expect(advisory.getAttribute('role')).toBe('note');
       expect(advisory.textContent).toContain('Panel members share a provider');
 
-      expect(component.canStartRun).toBeFalse();
+      expect(component.canStartRun).toBe(false);
       expect(startButton().getAttribute('aria-disabled')).toBe('true');
       expect((fixture.nativeElement.querySelector('#startBenchmarkHint') as HTMLElement).textContent)
         .toContain('must come from different providers');
@@ -12394,16 +12448,16 @@ describe('AdminBenchmarkComponent', () => {
       component.activeSubTab = 'run';
       fixture.detectChanges();
 
-      expect(component.showCoAssessorCandidateAdvisory).toBeTrue();
+      expect(component.showCoAssessorCandidateAdvisory).toBe(true);
       expect(fixture.nativeElement.querySelector('.setup-group-grading .co-assessor-advisory')?.textContent)
         .toContain('A panel member is the model under test');
       expect(component.startBenchmarkHint).toContain('Neither panel member may be the model under test');
-      expect(component.canStartRun).toBeFalse();
+      expect(component.canStartRun).toBe(false);
 
       // Member A as the candidate is refused the same way.
       component.coAssessorConfigId = 2;
       component.assessorConfigId = 6;
-      expect(component.showCoAssessorCandidateAdvisory).toBeTrue();
+      expect(component.showCoAssessorCandidateAdvisory).toBe(true);
     });
 
     it('should accept a member from the candidate\'s own provider when the model differs', () => {
@@ -12412,7 +12466,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       expect(component.panelLaunchRefusal).toBe('');
-      expect(component.canStartRun).toBeTrue();
+      expect(component.canStartRun).toBe(true);
       expect(fixture.nativeElement.querySelector('.co-assessor-advisory')).toBeNull();
     });
 
@@ -12428,7 +12482,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.referenceReaderSharedFamilyRoles).toEqual(['panel member A']);
       expect(component.claimVerifierSharedFamilyRoles).toEqual(['the model under test', 'panel member B']);
       // The single-run pairing advisory gives way to the panel's fuller one.
-      expect(component.showAssessorPairingAdvisory).toBeFalse();
+      expect(component.showAssessorPairingAdvisory).toBe(false);
 
       component.activeSubTab = 'run';
       fixture.detectChanges();
@@ -12442,10 +12496,10 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('should never open the same-provider dialog for a panel run', () => {
-      benchmarkServiceMock.startRun.and.returnValue(throwError(() => ({
+      benchmarkServiceMock.startRun.mockReturnValue(throwError(() => ({
         status: 409, error: { sameProvider: true, provider: 'Anthropic' }
       })));
-      const showModal = spyOn(component.sameProviderDialog.nativeElement, 'showModal');
+      const showModal = vi.spyOn(component.sameProviderDialog.nativeElement, 'showModal').mockReturnValue(undefined);
       selectValidPanel();
 
       component.startBenchmark();
@@ -12655,7 +12709,7 @@ describe('AdminBenchmarkComponent', () => {
       }
 
       it('should offer the member choice without an assessor picker, and send the chosen member', fakeAsync(() => {
-        benchmarkServiceMock.reassessPanelAnswer.and.returnValue(of({ runId: 77 }));
+        benchmarkServiceMock.reassessPanelAnswer.mockReturnValue(of({ runId: 77 }));
         const answer = component.selectedRunDetail!.answers[0];
 
         component.openRetryDialog('assessment', 77, answer);
@@ -12664,14 +12718,14 @@ describe('AdminBenchmarkComponent', () => {
         expect(retryDialog().querySelector('.retry-assessor-model-selector')).toBeNull();
         const radios = Array.from(retryDialog().querySelectorAll('.retry-panel-member input[type="radio"]')) as HTMLInputElement[];
         expect(radios.length).toBe(3);
-        expect(radios[0].checked).toBeTrue();
+        expect(radios[0].checked).toBe(true);
 
         radios[2].click();
         fixture.detectChanges();
         expect(component.retryPanelMember).toBe('B');
 
         const confirm = retryDialog().querySelector('.dialog-footer .btn-gh:not(.btn-gh-cancel)') as HTMLButtonElement;
-        expect(confirm.disabled).toBeFalse();
+        expect(confirm.disabled).toBe(false);
         confirm.click();
 
         expect(benchmarkServiceMock.reassessPanelAnswer).toHaveBeenCalledWith(77, 501, 'B');
@@ -12682,9 +12736,9 @@ describe('AdminBenchmarkComponent', () => {
       }));
 
       it('should send no assessor override for a panel run\'s question, synthesis and failed-assessment re-runs', fakeAsync(() => {
-        benchmarkServiceMock.rerunAnswer.and.returnValue(of({ runId: 77 }));
-        benchmarkServiceMock.rerunFinalSynthesis.and.returnValue(of({ runId: 77 }));
-        benchmarkServiceMock.retryFailedAssessments.and.returnValue(of({ runId: 77 }));
+        benchmarkServiceMock.rerunAnswer.mockReturnValue(of({ runId: 77 }));
+        benchmarkServiceMock.rerunFinalSynthesis.mockReturnValue(of({ runId: 77 }));
+        benchmarkServiceMock.retryFailedAssessments.mockReturnValue(of({ runId: 77 }));
         const answer = component.selectedRunDetail!.answers[0];
 
         component.openRetryDialog('question', 77, answer);
@@ -12709,11 +12763,11 @@ describe('AdminBenchmarkComponent', () => {
       }));
 
       it('should offer the trial only where the reference reader has not graded, and never ask to replace', fakeAsync(() => {
-        benchmarkServiceMock.trialReassessAnswer.and.returnValue(of({ runId: 77 }));
+        benchmarkServiceMock.trialReassessAnswer.mockReturnValue(of({ runId: 77 }));
         const graded = component.selectedRunDetail!.answers[0];
         const empty = { ...graded, secondOpinionQualityScore: null, secondOpinionTrigger: null };
-        expect(component.canTrialReassess(graded)).toBeFalse();
-        expect(component.canTrialReassess(empty)).toBeTrue();
+        expect(component.canTrialReassess(graded)).toBe(false);
+        expect(component.canTrialReassess(empty)).toBe(true);
 
         const card = expandFirstAnswer();
         expect(card.querySelector('.btn-gh-trial')).toBeNull();
@@ -12721,7 +12775,7 @@ describe('AdminBenchmarkComponent', () => {
         component.openRetryDialog('trial', 77, graded);
         component.retryAssessorConfigId = 1;
         component.confirmRetry();
-        expect(benchmarkServiceMock.trialReassessAnswer.calls.mostRecent().args[3]).toBeFalse();
+        expect(vi.mocked(benchmarkServiceMock.trialReassessAnswer).mock.lastCall![3]).toBe(false);
 
         component.stopDetailPolling();
         discardPeriodicTasks();
@@ -12730,7 +12784,7 @@ describe('AdminBenchmarkComponent', () => {
 
     describe('calibration target', () => {
       it('should offer Compare against on a panel run and send the chosen target', fakeAsync(() => {
-        benchmarkServiceMock.calibrateAssessor.and.returnValue(of({ id: 2 } as any));
+        benchmarkServiceMock.calibrateAssessor.mockReturnValue(of({ id: 2 } as any));
         component.selectedRunDetail = buildPanelRun();
         component.calibrationAssessorConfigId = 1;
         fixture.detectChanges();
@@ -12934,7 +12988,7 @@ describe('AdminBenchmarkComponent', () => {
 
     /** Opens the report the way Run History does, so the dialog is really modal. */
     function openReport(run: any): void {
-      benchmarkServiceMock.getRun.and.returnValue(of(run));
+      benchmarkServiceMock.getRun.mockReturnValue(of(run));
       component.viewRunDetail(run.id);
       fixture.detectChanges();
     }
@@ -12954,7 +13008,7 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
 
       const dialog = fixture.nativeElement.querySelector('.benchmark-run-detail-dialog') as HTMLDialogElement;
-      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBeTrue();
+      expect(dialog.classList.contains('gh-dialog-fullscreen')).toBe(true);
       expect(dialog.getAttribute('aria-labelledby')).toBe('runDetailTitle');
       expect(dialog.querySelector('#runDetailTitle')?.textContent?.trim()).toBe('Run #55: Default Suite');
 
@@ -12967,27 +13021,27 @@ describe('AdminBenchmarkComponent', () => {
       expect(names).toEqual(['Downloads', 'Re-run', 'View game snapshot of run 55', 'Copy diagnostics of run 55']);
       for (const button of buttons) {
         expect(button.getAttribute('type')).toBe('button');
-        expect(button.hasAttribute('title')).withContext(names[buttons.indexOf(button)]).toBeFalse();
+        expect(button.hasAttribute('title'), names[buttons.indexOf(button)]).toBe(false);
       }
-      expect(buttons[0].classList.contains('btn-ghost')).toBeTrue();
-      expect(buttons[1].classList.contains('btn-ghost')).toBeTrue();
+      expect(buttons[0].classList.contains('btn-ghost')).toBe(true);
+      expect(buttons[1].classList.contains('btn-ghost')).toBe(true);
       expect(buttons[1].getAttribute('popovertarget')).toBe('rr-rerun-popover');
       expect(buttons[1].getAttribute('aria-expanded')).toBe('false');
-      expect(buttons[2].classList.contains('action-btn')).toBeTrue();
+      expect(buttons[2].classList.contains('action-btn')).toBe(true);
       expect(buttons[2].getAttribute('interestfor')).toBe('rr-snapshot-tip');
-      expect(buttons[3].classList.contains('action-btn')).toBeTrue();
+      expect(buttons[3].classList.contains('action-btn')).toBe(true);
       expect(buttons[3].getAttribute('interestfor')).toBe('rr-copy-diagnostics-tip');
       expect(getComputedStyle(group).display).toBe('grid');
 
       // Close is a dialog control, not a run action: it sits beside the group, not in it.
       const close = dialog.querySelector('.rr-header-controls > .rr-close') as HTMLButtonElement;
       expect(close).toBeTruthy();
-      expect(close.classList.contains('btn-icon-action')).toBeTrue();
+      expect(close.classList.contains('btn-icon-action')).toBe(true);
       expect(close.getAttribute('aria-label')).toBe('Close run details');
       expect(close.getAttribute('type')).toBe('button');
-      expect(close.hasAttribute('title')).toBeFalse();
-      expect(group.contains(close)).toBeFalse();
-      expect(group.parentElement?.classList.contains('rr-header-controls')).toBeTrue();
+      expect(close.hasAttribute('title')).toBe(false);
+      expect(group.contains(close)).toBe(false);
+      expect(group.parentElement?.classList.contains('rr-header-controls')).toBe(true);
 
       const popover = dialog.querySelector('#rr-rerun-popover') as HTMLElement;
       expect(popover.getAttribute('popover')).toBe('auto');
@@ -13025,7 +13079,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(factKeys('.rr-identity app-run-facts.rr-run-facts-primary')).toEqual(['model', 'assessor']);
       const details = runDetails();
       expect(details.classList).toContain('gh-disclosure');
-      expect(details.open).toBeFalse();
+      expect(details.open).toBe(false);
       expect(factKeys('#rr-run-details app-run-facts')).toEqual(['prompt', 'profile', 'started', 'board']);
       // Both lists together keep the header's order, and the board note's tip is rendered once.
       expect(factKeys('.rr-identity')).toEqual(['model', 'assessor', 'prompt', 'profile', 'started', 'board']);
@@ -13049,8 +13103,8 @@ describe('AdminBenchmarkComponent', () => {
       await toggled;
       fixture.detectChanges();
 
-      expect(runDetails().open).toBeTrue();
-      expect(component.runHeaderDetailsOpen).toBeTrue();
+      expect(runDetails().open).toBe(true);
+      expect(component.runHeaderDetailsOpen).toBe(true);
       expect(JSON.parse(localStorage.getItem(RUN_REPORT_HEADER_STORAGE_KEY)!)).toEqual({ version: 1, detailsOpen: true });
       expect(getComputedStyle(runDetails().querySelector('.rr-run-details-readout') as HTMLElement).display).toBe('none');
 
@@ -13059,22 +13113,22 @@ describe('AdminBenchmarkComponent', () => {
       await closed;
       await macrotask();
       openReport(reportRun({ id: 56 }));
-      expect(runDetails().open).toBeTrue();
+      expect(runDetails().open).toBe(true);
 
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
-      expect(restored.componentInstance.runHeaderDetailsOpen).toBeTrue();
+      expect(restored.componentInstance.runHeaderDetailsOpen).toBe(true);
       restored.destroy();
     });
 
     it('should start Run details closed when the stored state is unreadable', () => {
       localStorage.setItem(RUN_REPORT_HEADER_STORAGE_KEY, '{not json');
       const unreadable = TestBed.createComponent(AdminBenchmarkComponent);
-      expect(unreadable.componentInstance.runHeaderDetailsOpen).toBeFalse();
+      expect(unreadable.componentInstance.runHeaderDetailsOpen).toBe(false);
       unreadable.destroy();
 
       localStorage.setItem(RUN_REPORT_HEADER_STORAGE_KEY, JSON.stringify({ version: 2, detailsOpen: true }));
       const unknown = TestBed.createComponent(AdminBenchmarkComponent);
-      expect(unknown.componentInstance.runHeaderDetailsOpen).toBeFalse();
+      expect(unknown.componentInstance.runHeaderDetailsOpen).toBe(false);
       unknown.destroy();
     });
 
@@ -13082,7 +13136,7 @@ describe('AdminBenchmarkComponent', () => {
       openReport(reportRun({ boardDelivery: BOARD_WITH_GAP }));
 
       const details = runDetails();
-      expect(details.open).toBeFalse();
+      expect(details.open).toBe(false);
       const tag = details.querySelector(':scope > summary .rr-run-details-gap') as HTMLElement;
       expect(tag).toBeTruthy();
       expect(tag.classList).toContain('gh-tag');
@@ -13117,7 +13171,7 @@ describe('AdminBenchmarkComponent', () => {
         await document.fonts.ready;
         fixture.detectChanges();
 
-        expect(runDetails().open).toBeFalse();
+        expect(runDetails().open).toBe(false);
         expect(header.getBoundingClientRect().width).toBeGreaterThan(1000);
         expect(header.getBoundingClientRect().height).toBeLessThanOrEqual(190);
       });
@@ -13135,8 +13189,8 @@ describe('AdminBenchmarkComponent', () => {
         for (const fact of facts) {
           const height = fact.getBoundingClientRect().height;
           const tallest = Math.max(...Array.from(fact.children).map(child => child.getBoundingClientRect().height));
-          expect(height).withContext(fact.getAttribute('data-fact')!).toBeGreaterThan(0);
-          expect(height).withContext(fact.getAttribute('data-fact')!).toBeLessThanOrEqual(tallest + 2);
+          expect(height, fact.getAttribute('data-fact')!).toBeGreaterThan(0);
+          expect(height, fact.getAttribute('data-fact')!).toBeLessThanOrEqual(tallest + 2);
         }
       });
 
@@ -13149,7 +13203,7 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
 
         const details = runDetails();
-        expect(details.open).toBeTrue();
+        expect(details.open).toBe(true);
         const primary = reportDialog().querySelector('.rr-run-facts-primary') as HTMLElement;
         expect(Math.abs(details.getBoundingClientRect().width - primary.getBoundingClientRect().width)).toBeLessThanOrEqual(1);
         expect(details.querySelector('app-run-facts')?.classList).toContain('rr-facts-stacked');
@@ -13171,7 +13225,7 @@ describe('AdminBenchmarkComponent', () => {
       await opened;
       fixture.detectChanges();
 
-      expect(popover.matches(':popover-open')).toBeTrue();
+      expect(popover.matches(':popover-open')).toBe(true);
       expect(trigger.getAttribute('aria-expanded')).toBe('true');
       expect(document.activeElement).toBe(popover.querySelector('[data-action="rescore"]'));
     });
@@ -13193,10 +13247,10 @@ describe('AdminBenchmarkComponent', () => {
       await closed;
       fixture.detectChanges();
 
-      expect(escape.defaultPrevented).toBeTrue();
+      expect(escape.defaultPrevented).toBe(true);
       expect(dialogKeydowns.length).toBe(0);
-      expect(popover.matches(':popover-open')).toBeFalse();
-      expect(reportDialog().open).toBeTrue();
+      expect(popover.matches(':popover-open')).toBe(false);
+      expect(reportDialog().open).toBe(true);
       expect(trigger.getAttribute('aria-expanded')).toBe('false');
       expect(document.activeElement).toBe(trigger);
     });
@@ -13208,17 +13262,16 @@ describe('AdminBenchmarkComponent', () => {
         answers: [reportAnswer(1, { status: 'Failed', errorMessage: 'boom', qualityScore: null })]
       });
       fixture.detectChanges();
-      const rescore = spyOn(component, 'rescoreRun');
-      const rerunFailed = spyOn(component, 'rerunFailedFromRunDetail');
+      const rescore = vi.spyOn(component, 'rescoreRun').mockReturnValue(undefined);
+      const rerunFailed = vi.spyOn(component, 'rerunFailedFromRunDetail').mockReturnValue(undefined);
 
       const items = Array.from(fixture.nativeElement.querySelectorAll('#rr-rerun-popover .gh-action-popover-item')) as HTMLButtonElement[];
       const item = (key: string) => items.find(i => i.getAttribute('data-action') === key)!;
       for (const key of ['rescore', 'failed-questions']) {
-        expect(item(key)).withContext(key).toBeTruthy();
-        expect(item(key).getAttribute('aria-disabled')).withContext(key).toBe('true');
-        expect(item(key).disabled).withContext(key).toBeFalse();
-        expect(item(key).querySelector('.gh-action-popover-item-reason')?.textContent)
-          .withContext(key).toContain('The run stopped before finishing its suite.');
+        expect(item(key), key).toBeTruthy();
+        expect(item(key).getAttribute('aria-disabled'), key).toBe('true');
+        expect(item(key).disabled, key).toBe(false);
+        expect(item(key).querySelector('.gh-action-popover-item-reason')?.textContent, key).toContain('The run stopped before finishing its suite.');
       }
 
       item('rescore').click();
@@ -13241,11 +13294,12 @@ describe('AdminBenchmarkComponent', () => {
     it('should run an available Re-run action', () => {
       component.selectedRunDetail = reportRun();
       fixture.detectChanges();
-      const rescore = spyOn(component, 'rescoreRun');
+      const rescore = vi.spyOn(component, 'rescoreRun').mockReturnValue(undefined);
       const available = fixture.nativeElement.querySelector('#rr-rerun-popover [data-action="rescore"]') as HTMLButtonElement;
-      expect(available.hasAttribute('aria-disabled')).toBeFalse();
+      expect(available.hasAttribute('aria-disabled')).toBe(false);
       available.click();
-      expect(rescore).toHaveBeenCalledOnceWith(55);
+      expect(rescore).toHaveBeenCalledTimes(1);
+      expect(rescore).toHaveBeenCalledWith(55);
     });
 
     it('should filter the questions by any pressed filter, without Members disagree on a single-assessor run', () => {
@@ -13364,7 +13418,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(headers().map(h => h.getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true']);
       for (const header of headers()) {
         const body = fixture.nativeElement.querySelector('#' + header.getAttribute('aria-controls'));
-        expect(body?.classList.contains('question-card-body')).toBeTrue();
+        expect(body?.classList.contains('question-card-body')).toBe(true);
       }
 
       (fixture.nativeElement.querySelector('#rr-collapse-all') as HTMLButtonElement).click();
@@ -13383,12 +13437,12 @@ describe('AdminBenchmarkComponent', () => {
       expect(actions.map(b => (b.textContent || '').replace(/\s+/g, ' ').trim()))
         .toEqual(['Re-run Question', 'Re-assess Question', 'Try another assessor (does not change the score)']);
       for (const action of actions) {
-        expect(action.classList.contains('btn-ghost')).toBeTrue();
-        expect(action.classList.contains('btn-gh')).toBeFalse();
+        expect(action.classList.contains('btn-ghost')).toBe(true);
+        expect(action.classList.contains('btn-gh')).toBe(false);
       }
       const trial = actions[2];
-      expect(trial.classList.contains('btn-gh-trial')).toBeTrue();
-      expect(trial.hasAttribute('title')).toBeFalse();
+      expect(trial.classList.contains('btn-gh-trial')).toBe(true);
+      expect(trial.hasAttribute('title')).toBe(false);
       const tip = fixture.nativeElement.querySelector('#' + trial.getAttribute('interestfor')) as HTMLElement;
       expect(tip.getAttribute('popover')).toBe('hint');
       expect(tip.textContent).toContain('Changes no score, level, flag or index.');
@@ -13398,7 +13452,7 @@ describe('AdminBenchmarkComponent', () => {
       openReport(reportRun());
       component.startDetailPolling(55);
       expect(component.detailPollInterval).not.toBeNull();
-      const cleanup = spyOn(component, 'onRunDetailClosed').and.callThrough();
+      const cleanup = vi.spyOn(component, 'onRunDetailClosed');
 
       const closed = nextEvent(reportDialog(), 'close');
       (reportDialog().querySelector('button.rr-close[aria-label="Close run details"]') as HTMLButtonElement).click();
@@ -13406,7 +13460,7 @@ describe('AdminBenchmarkComponent', () => {
       await macrotask();
 
       expect(cleanup).toHaveBeenCalledTimes(1);
-      expect(reportDialog().open).toBeFalse();
+      expect(reportDialog().open).toBe(false);
       expect(component.detailPollInterval).toBeNull();
       expect(component.selectedRunDetail).toBeNull();
       expect(component.runDetailRequestedId).toBeNull();
@@ -13415,8 +13469,10 @@ describe('AdminBenchmarkComponent', () => {
     it('should clean up exactly once when Escape closes the report, stopping detail polling', async () => {
       openReport(reportRun());
       component.startDetailPolling(55);
-      const cleanup = spyOn(component, 'onRunDetailClosed').and.callThrough();
-      const dialog = reportDialog() as HTMLDialogElement & { requestClose?: () => void };
+      const cleanup = vi.spyOn(component, 'onRunDetailClosed');
+      const dialog = reportDialog() as HTMLDialogElement & {
+        requestClose?: () => void;
+      };
 
       const closed = nextEvent(dialog, 'close');
       // What Escape sends: a close request, which is a cancel event and then the close.
@@ -13436,7 +13492,7 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should clean up exactly once when code closes the report, whether or not it is open', async () => {
       openReport(reportRun());
-      const cleanup = spyOn(component, 'onRunDetailClosed').and.callThrough();
+      const cleanup = vi.spyOn(component, 'onRunDetailClosed');
 
       const closed = nextEvent(reportDialog(), 'close');
       component.closeRunDetail();
@@ -13445,7 +13501,7 @@ describe('AdminBenchmarkComponent', () => {
       await macrotask();
       expect(cleanup).toHaveBeenCalledTimes(1);
 
-      cleanup.calls.reset();
+      cleanup.mockClear();
       component.selectedRunDetail = reportRun();
       component.closeRunDetail();
       expect(cleanup).toHaveBeenCalledTimes(1);
@@ -13460,13 +13516,13 @@ describe('AdminBenchmarkComponent', () => {
       await closed;
       await macrotask();
 
-      expect(reportDialog().open).toBeTrue();
+      expect(reportDialog().open).toBe(true);
       expect(component.selectedRunDetail?.id).toBe(56);
     });
 
     it('should show the header with Close and a skeleton while the run loads', () => {
       const pending = new Subject<any>();
-      benchmarkServiceMock.getRun.and.returnValue(pending.asObservable());
+      benchmarkServiceMock.getRun.mockReturnValue(pending.asObservable());
       component.viewRunDetail(77);
       fixture.detectChanges();
 
@@ -13483,12 +13539,12 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
       expect(dialog.querySelector('#runDetailTitle')?.textContent?.trim()).toBe('Run #77: Default Suite');
       expect(dialog.querySelectorAll('.rr-skeleton').length).toBe(0);
-      expect(dialog.querySelector('.rrf-body')?.hasAttribute('aria-busy')).toBeFalse();
+      expect(dialog.querySelector('.rrf-body')?.hasAttribute('aria-busy')).toBe(false);
     });
 
     it('should show a load failure with Close and Try again', () => {
-      spyOn(console, 'error');
-      benchmarkServiceMock.getRun.and.returnValue(throwError(() => ({ status: 500, error: 'Database unavailable' })));
+      vi.spyOn(console, 'error').mockReturnValue(undefined);
+      benchmarkServiceMock.getRun.mockReturnValue(throwError(() => ({ status: 500, error: 'Database unavailable' })));
       component.viewRunDetail(77);
       fixture.detectChanges();
 
@@ -13498,12 +13554,14 @@ describe('AdminBenchmarkComponent', () => {
       expect(dialog.querySelector('button[aria-label="Close run details"]')).toBeTruthy();
       expect(dialog.querySelector('.rr-skeleton')).toBeNull();
 
-      benchmarkServiceMock.getRun.calls.reset();
-      benchmarkServiceMock.getRun.and.returnValue(of(reportRun({ id: 77 })));
+      benchmarkServiceMock.getRun.mockClear();
+      benchmarkServiceMock.getRun.mockReturnValue(of(reportRun({ id: 77 })));
       (dialog.querySelector('#rr-retry-load') as HTMLButtonElement).click();
       fixture.detectChanges();
 
-      expect(benchmarkServiceMock.getRun).toHaveBeenCalledOnceWith(77);
+      expect(benchmarkServiceMock.getRun).toHaveBeenCalledTimes(1);
+
+      expect(benchmarkServiceMock.getRun).toHaveBeenCalledWith(77);
       expect(component.selectedRunDetail?.id).toBe(77);
       expect(component.runDetailLoadError).toBeNull();
       expect(dialog.querySelector('#rr-retry-load')).toBeNull();
@@ -13512,12 +13570,12 @@ describe('AdminBenchmarkComponent', () => {
     it('should open the Download Center on the viewed run from Downloads', () => {
       component.selectedRunDetail = reportRun();
       fixture.detectChanges();
-      const open = spyOn(component.runDownloadCenter!, 'open');
+      const open = vi.spyOn(component.runDownloadCenter!, 'open').mockReturnValue(undefined);
 
       (fixture.nativeElement.querySelector('#rr-downloads-trigger') as HTMLButtonElement).click();
 
       expect(open).toHaveBeenCalledTimes(1);
-      const context = open.calls.mostRecent().args[0] as any;
+      const context = vi.mocked(open).mock.lastCall![0] as any;
       expect(context.kind).toBe('run');
       expect(context.run).toEqual({
         id: 55, suiteName: 'Default Suite', modelLabel: 'Test Model',
@@ -13529,7 +13587,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     it('the AI Reports notice\'s Open Download Center opens the Download Center and returns focus to that button', () => {
-      benchmarkServiceMock.listReportDocuments.and.returnValue(of([{
+      benchmarkServiceMock.listReportDocuments.mockReturnValue(of([{
         id: 71, packId: 'run-55', audience: 1, title: 'Document 71', subjectKey: 'run:55', subjectLabel: 'Test Model',
         subjectRunIds: [55], suiteId: 1, suiteName: 'Default Suite', writerDisplayName: 'Test Model',
         writerProvider: 'Anthropic', writerModelId: 'claude-3-5-sonnet', writerThinkingLevel: null,
@@ -13540,14 +13598,14 @@ describe('AdminBenchmarkComponent', () => {
       openReport(reportRun({ assessmentJson: '{}' }));
       component.selectRunReportTab('reports');
       fixture.detectChanges();
-      const open = spyOn(component.runDownloadCenter!, 'open');
+      const open = vi.spyOn(component.runDownloadCenter!, 'open').mockReturnValue(undefined);
 
       const button = fixture.nativeElement.querySelector('#rr-panel-reports .rr-ai-download-notice .rr-ai-open-downloads') as HTMLButtonElement;
       expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe('Open Download Center');
       button.click();
 
       expect(open).toHaveBeenCalledTimes(1);
-      expect((open.calls.mostRecent().args[0] as any).run.id).toBe(55);
+      expect((vi.mocked(open).mock.lastCall![0] as any).run.id).toBe(55);
 
       // The Download Center closed and focus fell to the page: it goes back to the notice's button.
       (document.activeElement as HTMLElement | null)?.blur();
@@ -13559,7 +13617,7 @@ describe('AdminBenchmarkComponent', () => {
       const run = reportRun();
       component.selectedRunDetail = run;
       fixture.detectChanges();
-      const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue();
       const expected = component.runDiagnosticsTextFor(run, component.runStageOf(run));
       expect(expected).toContain('Run ID: 55');
 
@@ -13567,7 +13625,9 @@ describe('AdminBenchmarkComponent', () => {
       tick();
       fixture.detectChanges();
 
-      expect(writeText).toHaveBeenCalledOnceWith(expected);
+      expect(writeText).toHaveBeenCalledTimes(1);
+
+      expect(writeText).toHaveBeenCalledWith(expected);
       const status = runActions().querySelector('.rr-status[role="status"]') as HTMLElement;
       expect(status.textContent?.trim()).toBe('Diagnostics copied to the clipboard.');
 
@@ -13623,18 +13683,18 @@ describe('AdminBenchmarkComponent', () => {
 
       const usage = numericCells('.tool-usage-table');
       expect(usage.length).toBeGreaterThan(0);
-      expect(usage.every(row => row.length === 2 && !row[0] && row[1])).toBeTrue();
+      expect(usage.every(row => row.length === 2 && !row[0] && row[1])).toBe(true);
       expect(tools.querySelector('.tool-usage-table thead th:nth-child(2)')!.classList).toContain('rr-num');
 
       const routing = numericCells('.tool-routing-table');
       expect(routing.length).toBeGreaterThan(0);
-      expect(routing.every(row => row.length === 3 && !row[0] && row[1] && row[2])).toBeTrue();
+      expect(routing.every(row => row.length === 3 && !row[0] && row[1] && row[2])).toBe(true);
       const routingHeads = Array.from(tools.querySelectorAll('.tool-routing-table thead th')).map(th => th.classList.contains('rr-num'));
       expect(routingHeads).toEqual([false, true, true]);
     });
 
     describe('typography', () => {
-      // Expected sizes follow the root size, so the specs hold whatever Karma's root font size is.
+      // Expected sizes follow the root size, so the specs hold whatever the test page's root font size is.
       const rootPx = () => parseFloat(getComputedStyle(document.documentElement).fontSize);
       const sizeOf = (el: Element) => parseFloat(getComputedStyle(el).fontSize);
 
@@ -13644,13 +13704,13 @@ describe('AdminBenchmarkComponent', () => {
 
       function one(root: HTMLElement, selector: string): HTMLElement {
         const el = root.querySelector(selector) as HTMLElement;
-        expect(el).withContext(selector).toBeTruthy();
+        expect(el, selector).toBeTruthy();
         return el;
       }
 
       /** Tool calls, a band disagreement, a configuration hash, a written report and a calibration row. */
       function openTypographyReport(): void {
-        benchmarkServiceMock.listReportDocuments.and.returnValue(of([{
+        benchmarkServiceMock.listReportDocuments.mockReturnValue(of([{
           id: 71, packId: 'run-55', audience: 1, title: 'Document 71', subjectKey: 'run:55', subjectLabel: 'Test Model',
           subjectRunIds: [55], suiteId: 1, suiteName: 'Default Suite', writerDisplayName: 'Test Model',
           writerProvider: 'Anthropic', writerModelId: 'claude-3-5-sonnet', writerThinkingLevel: null,
@@ -13658,7 +13718,7 @@ describe('AdminBenchmarkComponent', () => {
           createdAtUtc: '2026-09-28T10:15:00Z', inputTokens: 0, outputTokens: 0, durationMs: 0, costUsd: null,
           runChangedSinceGeneration: false, missingRunIds: [], allowedDisclosures: [1, 2, 3], origin: 2
         }]));
-        benchmarkServiceMock.getCalibrations.and.returnValue(of([
+        benchmarkServiceMock.getCalibrations.mockReturnValue(of([
           { id: 2, benchmarkRunId: 55, assessorDisplayNameUsed: 'Claude Opus 5', assessorProviderUsed: 'Anthropic',
             createdAtUtc: '2026-09-27T09:00:00Z', answerCount: 3, skippedAnswerCount: 0, meanAbsDelta: 4.5,
             disagreementCount: 1, inputTokens: 1, outputTokens: 1, durationMs: 1, comparedAgainst: null }
@@ -13679,7 +13739,7 @@ describe('AdminBenchmarkComponent', () => {
         const panels = Array.from(fixture.nativeElement.querySelectorAll('.benchmark-run-detail-dialog [role="tabpanel"].rr-panel')) as HTMLElement[];
         expect(panels.length).toBe(10);
         for (const p of panels) {
-          expect(sizeOf(p)).withContext(p.id).toBeCloseTo(body, 2);
+          expect(sizeOf(p), p.id).toBeCloseTo(body, 2);
         }
 
         const texts: [string, string][] = [
@@ -13695,7 +13755,7 @@ describe('AdminBenchmarkComponent', () => {
           ['questions', '.section-note']
         ];
         for (const [key, selector] of texts) {
-          expect(sizeOf(one(panel(key), selector))).withContext(`${key} ${selector}`).toBeCloseTo(body, 2);
+          expect(sizeOf(one(panel(key), selector)), `${key} ${selector}`).toBeCloseTo(body, 2);
         }
       });
 
@@ -13781,9 +13841,9 @@ describe('AdminBenchmarkComponent', () => {
         for (const t of all) {
           expect(t.getAttribute('type')).toBe('button');
           const panel = fixture.nativeElement.querySelector('#' + t.getAttribute('aria-controls')) as HTMLElement;
-          expect(panel.getAttribute('role')).withContext(t.id).toBe('tabpanel');
-          expect(panel.getAttribute('aria-labelledby')).withContext(t.id).toBe(t.id);
-          expect(panel.getAttribute('tabindex')).withContext(t.id).toBe('0');
+          expect(panel.getAttribute('role'), t.id).toBe('tabpanel');
+          expect(panel.getAttribute('aria-labelledby'), t.id).toBe(t.id);
+          expect(panel.getAttribute('tabindex'), t.id).toBe('0');
         }
         expect(tab('summary').getAttribute('aria-selected')).toBe('true');
         expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-summary']);
@@ -13794,16 +13854,16 @@ describe('AdminBenchmarkComponent', () => {
 
         const panel = (key: string) => fixture.nativeElement.querySelector(`#rr-panel-${key}`) as HTMLElement;
         for (const key of ['difficulty', 'tools', 'cost']) {
-          expect(panel(key).classList).withContext(key).toContain('rr-panel-narrow');
-          expect(panel(key).classList).withContext(key).not.toContain('rr-panel-medium');
+          expect(panel(key).classList, key).toContain('rr-panel-narrow');
+          expect(panel(key).classList, key).not.toContain('rr-panel-medium');
         }
         for (const key of ['configuration', 'reports', 'calibration']) {
-          expect(panel(key).classList).withContext(key).toContain('rr-panel-medium');
-          expect(panel(key).classList).withContext(key).not.toContain('rr-panel-narrow');
+          expect(panel(key).classList, key).toContain('rr-panel-medium');
+          expect(panel(key).classList, key).not.toContain('rr-panel-narrow');
         }
         for (const key of ['summary', 'questions']) {
-          expect(panel(key).classList).withContext(key).not.toContain('rr-panel-narrow');
-          expect(panel(key).classList).withContext(key).not.toContain('rr-panel-medium');
+          expect(panel(key).classList, key).not.toContain('rr-panel-narrow');
+          expect(panel(key).classList, key).not.toContain('rr-panel-medium');
         }
       });
 
@@ -13827,7 +13887,7 @@ describe('AdminBenchmarkComponent', () => {
         openReport(reportRun());
 
         let event = press(tab('summary'), 'ArrowLeft');
-        expect(event.defaultPrevented).toBeTrue();
+        expect(event.defaultPrevented).toBe(true);
         expect(component.runReportTab).toBe('calibration');
         expect(document.activeElement).toBe(tab('calibration'));
 
@@ -13844,7 +13904,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(document.activeElement).toBe(tab('integrity'));
 
         event = press(tab('integrity'), 'a');
-        expect(event.defaultPrevented).toBeFalse();
+        expect(event.defaultPrevented).toBe(false);
         expect(component.runReportTab).toBe('integrity');
       });
 
@@ -13876,7 +13936,9 @@ describe('AdminBenchmarkComponent', () => {
         const closed = nextEvent(reportDialog(), 'close');
         reportDialog().close();
         await closed;
-        spyOn(localStorage, 'getItem').and.throwError('denied');
+        vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+          throw new Error('denied');
+        });
         component.runReportTab = 'cost';
         openReport(reportRun());
         expect(component.runReportTab).toBe('summary');
@@ -13884,12 +13946,12 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should mark the Integrity tab with Notice exactly while the Run Integrity Notice shows', () => {
         openReport(reportRun());
-        expect(component.hasRunIntegrityNotice).toBeTrue();
+        expect(component.hasRunIntegrityNotice).toBe(true);
         expect(tab('integrity').querySelector('.gh-tag.rr-tab-flag')?.textContent?.trim()).toBe('Notice');
         expect(fixture.nativeElement.querySelector('#rr-panel-integrity')?.textContent).toContain('Run Integrity Notice');
 
         openReport(cleanRun());
-        expect(component.hasRunIntegrityNotice).toBeFalse();
+        expect(component.hasRunIntegrityNotice).toBe(false);
         expect(tab('integrity').querySelector('.rr-tab-flag')).toBeNull();
         const panel = fixture.nativeElement.querySelector('#rr-panel-integrity') as HTMLElement;
         expect(panel.textContent).not.toContain('Run Integrity Notice');
@@ -13904,7 +13966,7 @@ describe('AdminBenchmarkComponent', () => {
 
         expect(component.runReportTab).toBe('questions');
         expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-questions']);
-        expect(component.expandedQuestions.has(3)).toBeTrue();
+        expect(component.expandedQuestions.has(3)).toBe(true);
       });
 
       it('should keep the run-wide strips above the panels, outside every tab panel', () => {
@@ -13922,13 +13984,13 @@ describe('AdminBenchmarkComponent', () => {
 
       it('should show no tab row while the run loads or after it failed to load', () => {
         const pending = new Subject<any>();
-        benchmarkServiceMock.getRun.and.returnValue(pending.asObservable());
+        benchmarkServiceMock.getRun.mockReturnValue(pending.asObservable());
         component.viewRunDetail(77);
         fixture.detectChanges();
         expect(fixture.nativeElement.querySelector('.benchmark-run-detail-dialog [role="tablist"]')).toBeNull();
         expect(fixture.nativeElement.querySelector('.benchmark-run-detail-dialog [role="tabpanel"]')).toBeNull();
 
-        spyOn(console, 'error');
+        vi.spyOn(console, 'error').mockReturnValue(undefined);
         pending.error({ status: 500 });
         fixture.detectChanges();
         expect(fixture.nativeElement.querySelector('#rr-retry-load')).not.toBeNull();
@@ -13940,8 +14002,8 @@ describe('AdminBenchmarkComponent', () => {
       const NOW = new Date(2026, 8, 28, 12, 34, 56);
 
       beforeEach(() => {
-        spyOn(keyFiguresImageIo, 'loadImage').and.callFake(() => Promise.reject(new Error('404')));
-        spyOn(keyFiguresImageIo, 'now').and.returnValue(NOW);
+        vi.spyOn(keyFiguresImageIo, 'loadImage').mockImplementation(() => Promise.reject(new Error('404')));
+        vi.spyOn(keyFiguresImageIo, 'now').mockReturnValue(NOW);
       });
 
       function dialog(): HTMLElement {
@@ -13953,9 +14015,9 @@ describe('AdminBenchmarkComponent', () => {
       }
 
       /** Clicks a button whose handler is async, and waits for the handler to finish. */
-      async function clickAndSettle(button: HTMLButtonElement, handler: jasmine.Spy): Promise<void> {
+      async function clickAndSettle(button: HTMLButtonElement, handler: Mock): Promise<void> {
         button.click();
-        await handler.calls.mostRecent().returnValue;
+        await handler.mock.results.at(-1)!.value;
         fixture.detectChanges();
       }
 
@@ -13967,7 +14029,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(fixture.nativeElement.querySelector('.bm-brand')).toBeNull();
         const container = fixture.nativeElement.querySelector('.benchmark-container') as HTMLElement;
         const firstChild = container.firstElementChild as HTMLElement;
-        expect(firstChild.matches('.gh-tabs[role="tablist"]')).toBeTrue();
+        expect(firstChild.matches('.gh-tabs[role="tablist"]')).toBe(true);
 
         const emblem = dialog().querySelector('.rr-identity > img.gnollbench-emblem') as HTMLImageElement;
         expect(emblem).toBeTruthy();
@@ -14019,7 +14081,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(figures.getAttribute('role')).toBe('group');
         expect(figures.getAttribute('aria-labelledby')).toBe('rrFiguresTitle');
         expect(figures.querySelectorAll(':scope > .score-card').length).toBeGreaterThan(0);
-        expect(figures.hidden).toBeFalse();
+        expect(figures.hidden).toBe(false);
         expect(getComputedStyle(figures).display).toBe('grid');
         expect(panel.querySelector('.rr-figures-empty')).toBeNull();
         expect(dialog().querySelector('.rrf-figures-toggle, .rrf-figures, .rrf-figures-bar')).toBeNull();
@@ -14034,45 +14096,45 @@ describe('AdminBenchmarkComponent', () => {
         for (const card of cards) {
           const label = (card.querySelector('.score-label')?.textContent || '').trim();
           const actions = card.querySelectorAll(':scope > app-key-figure-card-actions');
-          expect(actions.length).withContext(label).toBe(1);
-          expect(card.lastElementChild?.tagName.toLowerCase()).withContext(label).toBe('app-key-figure-card-actions');
+          expect(actions.length, label).toBe(1);
+          expect(card.lastElementChild?.tagName.toLowerCase(), label).toBe('app-key-figure-card-actions');
           const copy = actions[0].querySelector('button') as HTMLButtonElement;
-          expect(copy.getAttribute('aria-label')).withContext(label).toBe(`Copy ${label} of run 55 as an image`);
+          expect(copy.getAttribute('aria-label'), label).toBe(`Copy ${label} of run 55 as an image`);
         }
       });
 
       it('should copy the strip and announce each copy outcome', async () => {
         component.selectedRunDetail = reportRun();
         fixture.detectChanges();
-        const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
-        const handler = spyOn(component, 'copyKeyFigures').and.callThrough();
+        const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('copied');
+        const handler = vi.spyOn(component, 'copyKeyFigures');
         const button = dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement;
 
         await clickAndSettle(button, handler);
         expect(copy).toHaveBeenCalledTimes(1);
-        expect((copy.calls.mostRecent().args[0] as Blob).type).toBe('image/png');
+        expect((vi.mocked(copy).mock.lastCall![0] as Blob).type).toBe('image/png');
         expect(status()).toBe('Key figures copied as an image.');
 
-        copy.and.resolveTo('unsupported');
+        copy.mockResolvedValue('unsupported');
         await clickAndSettle(button, handler);
         expect(status()).toBe('This browser cannot copy images here; use Download instead.');
 
-        copy.and.resolveTo('denied');
+        copy.mockResolvedValue('denied');
         await clickAndSettle(button, handler);
         expect(status()).toBe('Could not copy the image.');
-        expect(component.keyFiguresExporting).toBeFalse();
+        expect(component.keyFiguresExporting).toBe(false);
       });
 
       it('should copy one card and name it in the status line', async () => {
         component.selectedRunDetail = reportRun();
         fixture.detectChanges();
-        const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
-        const handler = spyOn(component, 'exportKeyFigureCard').and.callThrough();
+        const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('copied');
+        const handler = vi.spyOn(component, 'exportKeyFigureCard');
         const card = dialog().querySelector('.score-card.main-score') as HTMLElement;
 
         await clickAndSettle(card.querySelector('app-key-figure-card-actions button') as HTMLButtonElement, handler);
 
-        expect(handler.calls.mostRecent().args[0]).toEqual({ action: 'copy', card });
+        expect(vi.mocked(handler).mock.lastCall![0]).toEqual({ action: 'copy', card });
         expect(copy).toHaveBeenCalledTimes(1);
         expect(status()).toBe('Intelligence Index copied as an image.');
       });
@@ -14082,14 +14144,14 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
         component.selectRunReportTab('cost');
         fixture.detectChanges();
-        expect((dialog().querySelector('#rr-panel-summary') as HTMLElement).hidden).toBeTrue();
-        const save = spyOn(keyFiguresImageIo, 'save');
-        const handler = spyOn(component, 'downloadKeyFigures').and.callThrough();
+        expect((dialog().querySelector('#rr-panel-summary') as HTMLElement).hidden).toBe(true);
+        const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
+        const handler = vi.spyOn(component, 'downloadKeyFigures');
 
         await clickAndSettle(dialog().querySelector('#rr-figures-download-btn') as HTMLButtonElement, handler);
 
         expect(save).toHaveBeenCalledTimes(1);
-        const [blob, fileName] = save.calls.mostRecent().args;
+        const [blob, fileName] = vi.mocked(save).mock.lastCall!;
         expect(blob.type).toBe('image/png');
         expect(fileName).toBe('gnollbench_run55_default-suite_test-model_key-figures_20260928_123456.png');
         expect(status()).toBe('Image downloaded.');
@@ -14099,7 +14161,7 @@ describe('AdminBenchmarkComponent', () => {
         component.selectedRunDetail = reportRun();
         component.keyFiguresExporting = true;
         fixture.detectChanges();
-        const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
+        const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('copied');
 
         const strip = dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement;
         expect(strip.getAttribute('aria-disabled')).toBe('true');
@@ -14216,8 +14278,8 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
 
         const chooser = dialog().querySelector('app-key-figures-chooser dialog') as HTMLDialogElement;
-        expect(chooser.open).toBeTrue();
-        expect(chooser.matches(':modal')).toBeTrue();
+        expect(chooser.open).toBe(true);
+        expect(chooser.matches(':modal')).toBe(true);
         const allKeys = [
           'intelligence', 'critical-errors', 'answered', 'speed', 'mean-time', 'holistic', 'answer-duration',
           'wall-time', 'estimated-cost'
@@ -14239,8 +14301,8 @@ describe('AdminBenchmarkComponent', () => {
         expect(component.keyFigureExclusions).toEqual(['speed', 'estimated-cost']);
         for (const key of ['speed', 'estimated-cost']) {
           const card = dialog().querySelector(`.score-card[data-figure="${key}"]`) as HTMLElement;
-          expect(card.hidden).withContext(key).toBeTrue();
-          expect(getComputedStyle(card).display).withContext(key).toBe('none');
+          expect(card.hidden, key).toBe(true);
+          expect(getComputedStyle(card).display, key).toBe('none');
         }
         expect(shownFigureKeys()).toEqual([
           'intelligence', 'critical-errors', 'answered', 'mean-time', 'holistic', 'answer-duration', 'wall-time'
@@ -14251,9 +14313,9 @@ describe('AdminBenchmarkComponent', () => {
         await closed;
         fixture.detectChanges();
 
-        expect(chooser.open).toBeFalse();
+        expect(chooser.open).toBe(false);
         expect(document.activeElement).toBe(choose);
-        expect(reportDialog().open).toBeTrue();
+        expect(reportDialog().open).toBe(true);
         expect(textOf(choose)).toBe('Choose figures (7 of 9)');
         expect(choose.getAttribute('aria-label')).toBe('Choose key figures for run 55, 7 of 9 selected');
         expect(dialog().querySelector('#rr-figures-copy-btn')?.getAttribute('aria-label'))
@@ -14261,8 +14323,8 @@ describe('AdminBenchmarkComponent', () => {
         expect(dialog().querySelector('#rr-figures-download-btn')?.getAttribute('aria-label'))
           .toBe('Download key figures of run 55 as a PNG image, 7 of 9 key figures');
 
-        const save = spyOn(keyFiguresImageIo, 'save');
-        const handler = spyOn(component, 'downloadKeyFigures').and.callThrough();
+        const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
+        const handler = vi.spyOn(component, 'downloadKeyFigures');
         await clickAndSettle(dialog().querySelector('#rr-figures-download-btn') as HTMLButtonElement, handler);
         expect(save).toHaveBeenCalledTimes(1);
         expect(status()).toBe('Image downloaded.');
@@ -14285,9 +14347,9 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
 
         expect(component.keyFigureExclusions).toEqual(component.shownKeyFigureKeys);
-        expect(figureCards().every(card => card.hidden)).toBeTrue();
+        expect(figureCards().every(card => card.hidden)).toBe(true);
         const figures = dialog().querySelector('.rr-figures') as HTMLElement;
-        expect(figures.hidden).toBeTrue();
+        expect(figures.hidden).toBe(true);
         expect(getComputedStyle(figures).display).toBe('none');
         expect(textOf(dialog().querySelector('.rr-figures-empty')))
           .toBe('No key figures are selected. Use Choose figures to show them.');
@@ -14296,7 +14358,7 @@ describe('AdminBenchmarkComponent', () => {
         (chooser.querySelector('#kfch-holistic') as HTMLInputElement).click();
         fixture.detectChanges();
         expect(dialog().querySelector('.rr-figures-empty')).toBeNull();
-        expect(figures.hidden).toBeFalse();
+        expect(figures.hidden).toBe(false);
         expect(shownFigureKeys()).toEqual(['holistic']);
 
         const closed = nextEvent(chooser, 'close');
@@ -14309,7 +14371,7 @@ describe('AdminBenchmarkComponent', () => {
           'estimated-cost'
         ];
         expect(document.activeElement).toBe(choose);
-        expect(reportDialog().open).toBeTrue();
+        expect(reportDialog().open).toBe(true);
         expect(component.keyFigureExclusions).toEqual(others);
         expect(JSON.parse(localStorage.getItem(KEY_FIGURES_STORAGE_KEY)!)).toEqual({ version: 1, excluded: others });
       });
@@ -14320,9 +14382,9 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
         expect(textOf(dialog().querySelector('.rr-figures-empty')))
           .toBe('No key figures are selected. Use Choose figures to show them.');
-        expect((dialog().querySelector('.rr-figures') as HTMLElement).hidden).toBeTrue();
-        const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
-        const handler = spyOn(component, 'copyKeyFigures').and.callThrough();
+        expect((dialog().querySelector('.rr-figures') as HTMLElement).hidden).toBe(true);
+        const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('copied');
+        const handler = vi.spyOn(component, 'copyKeyFigures');
 
         await clickAndSettle(dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement, handler);
         expect(copy).not.toHaveBeenCalled();

@@ -91,7 +91,7 @@ describe('figure-theme', () => {
     expect(theme.frameColor).toBe('#c3c2b7');
 
     for (const [ink, minimum] of [['#0b0b0b', 19], ['#52514e', 7.8], ['#6b6a66', 5.3], ['#9a6b12', 4.6], ['#047857', 5.4], ['#8a5a00', 5.8]] as const) {
-      expect(contrastRatio(ink, '#ffffff')).withContext(ink).toBeGreaterThan(minimum);
+      expect(contrastRatio(ink, '#ffffff'), ink).toBeGreaterThan(minimum);
     }
     expect(appearanceWarnings(appearance({ theme: 'light' }))).toEqual([]);
     expect(appearanceWarnings(DEFAULT_APPEARANCE_STYLE)).toEqual([]);
@@ -141,7 +141,7 @@ describe('figure-theme', () => {
 
   it('gives a bundled font to both the chrome and the charts', () => {
     const fonts = resolveFigureTheme(appearance({ fontFamily: 'inter', headingWeight: 700, labelWeight: 500 })).fonts;
-    expect(fonts.chromeStack.startsWith('"Inter", ')).toBeTrue();
+    expect(fonts.chromeStack.startsWith('"Inter", ')).toBe(true);
     expect(fonts.chartStack).toBe(fonts.chromeStack);
     expect(fonts.headingWeight).toBe(700);
     expect(fonts.labelWeight).toBe(500);
@@ -158,18 +158,18 @@ describe('figure-theme', () => {
   it('warns about faint headings, text and series in plain sentences', () => {
     const faint = appearanceWarnings(appearance({ background: 'custom', backgroundColor: '#ffffff' }));
     // Dark theme inks on a white ground: the gold heading and the light body text fail.
-    expect(faint.some(w => w.startsWith('Headings in #e0ba6d'))).toBeTrue();
-    expect(faint.some(w => w.startsWith('Text in #d4d4d8'))).toBeTrue();
-    expect(faint.every(w => w.includes('the background #ffffff'))).toBeTrue();
+    expect(faint.some(w => w.startsWith('Headings in #e0ba6d'))).toBe(true);
+    expect(faint.some(w => w.startsWith('Text in #d4d4d8'))).toBe(true);
+    expect(faint.every(w => w.includes('the background #ffffff'))).toBe(true);
 
     const onBlue = appearanceWarnings(appearance({ background: 'custom', backgroundColor: '#3987e5' }));
-    expect(onBlue.some(w => w.startsWith('The series color #3987e5 has 1.0:1'))).toBeTrue();
+    expect(onBlue.some(w => w.startsWith('The series color #3987e5 has 1.0:1'))).toBe(true);
   });
 
   it('judges a transparent image against the backdrop colour, or the theme base under the checkerboard', () => {
     const onColour = appearanceWarnings(appearance({ background: 'transparent', previewBackdrop: 'color', previewBackdropColor: '#ffffff' }));
     expect(onColour.length).toBeGreaterThan(0);
-    expect(onColour.every(w => w.includes('preview backdrop color #ffffff'))).toBeTrue();
+    expect(onColour.every(w => w.includes('preview backdrop color #ffffff'))).toBe(true);
 
     const onChecker = appearanceWarnings(appearance({ background: 'transparent', textColor: '#202020' }));
     expect(onChecker.length).toBe(1);

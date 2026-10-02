@@ -88,7 +88,7 @@ These are the **only** correct ways to run this repository's tests. Use them ver
   ```bash
   npm run test:headless
   ```
-  Never plain `npm test` or `ng test`: without `--no-watch` Karma stays in watch mode and the command never returns, and without `--browsers=ChromeHeadless` it opens a browser window on the user's desktop.
+  Never plain `npm test` or `ng test`: in an interactive terminal they start Vitest's watch mode and the command never returns.
 
 Rationale, the `[Trait("Category", "UsesExternalApi")]` convention, live-model policy, and the Angular test configuration rules are in the `testing-guidelines` skill.
 

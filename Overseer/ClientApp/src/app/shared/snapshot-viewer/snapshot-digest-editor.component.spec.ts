@@ -36,7 +36,7 @@ describe('SnapshotDigestEditorComponent', () => {
   it('shows the digest in the editor and counts it against the cap', async () => {
     await mount(digest);
 
-    expect(component.loadError).toBeFalse();
+    expect(component.loadError).toBe(false);
     expect(host.querySelector('.cm-editor')).toBeTruthy();
     expect(component.view!.state.doc.toString()).toBe(digest);
     expect(counterText()).toBe(`${digest.length.toLocaleString('en-US')} / 6,000 chars`);
@@ -73,7 +73,7 @@ describe('SnapshotDigestEditorComponent', () => {
     component.view!.dispatch({ changes: { from: 0, insert: 'x'.repeat(DIGEST_MAX_CHARS) } });
     fixture.detectChanges();
 
-    expect(component.overCap).toBeTrue();
+    expect(component.overCap).toBe(true);
     expect(host.querySelector('.digest-counter.over-cap')).toBeTruthy();
     expect(host.querySelector('.digest-cap-warning')!.textContent)
       .toContain('the server cuts the digest at 6,000 characters');

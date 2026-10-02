@@ -31,8 +31,8 @@ describe('suite-yaml-guide', () => {
     expect(SUITE_GUIDE_TABS.map(t => t.id)).toEqual(['workflow', 'format', 'snapshot']);
     expect(SUITE_GUIDE_TABS.map(t => t.label)).toEqual(['Workflow', 'Format', 'From a Snapshot']);
     for (const tab of SUITE_GUIDE_TABS) {
-      expect(tab.markdown.trim()).withContext(tab.id).not.toBe('');
-      expect(tab.ingress.trim()).withContext(tab.id).not.toBe('');
+      expect(tab.markdown.trim(), tab.id).not.toBe('');
+      expect(tab.ingress.trim(), tab.id).not.toBe('');
     }
     expect(SUITE_GUIDE_TABS.filter(t => t.action === 'wizard').map(t => t.id)).toEqual(['snapshot']);
     expect(SUITE_EXAMPLES_INTRO_MARKDOWN.trim()).not.toBe('');
@@ -44,7 +44,7 @@ describe('suite-yaml-guide', () => {
     const format = SUITE_GUIDE_TABS.find(t => t.id === 'format')!.markdown;
     expect(format).toContain(QUESTION_YAML_FORMAT);
     for (const key of ['name', 'gnollhack_version', 'captured_at', 'snapshot_format', 'notes', 'sha256', 'text']) {
-      expect(format).withContext(`snapshot key ${key}`).toContain(key);
+      expect(format, `snapshot key ${key}`).toContain(key);
     }
     expect(format).toContain('Simple');
     expect(format).toContain('Intermediate');
@@ -57,7 +57,7 @@ describe('suite-yaml-guide', () => {
     for (const id of ids) {
       expect(id).toMatch(/^[a-z0-9-]+$/);
     }
-    expect(SUITE_YAML_EXAMPLES.every(e => e.mode === 'suite')).toBeTrue();
+    expect(SUITE_YAML_EXAMPLES.every(e => e.mode === 'suite')).toBe(true);
   });
 
   for (const example of SUITE_YAML_EXAMPLES) {
@@ -89,7 +89,7 @@ describe('suite-yaml-guide', () => {
       expect(q.rubric).toContain('**BOARD FACTS**');
       for (const quote of boardFactQuotes(q.rubric!)) {
         quoteCount++;
-        expect(snapshot!.text).withContext(`board fact quote ${JSON.stringify(quote)}`).toContain(quote);
+        expect(snapshot!.text, `board fact quote ${JSON.stringify(quote)}`).toContain(quote);
       }
     }
     expect(quoteCount).toBeGreaterThan(3);
@@ -125,8 +125,8 @@ describe('suite-yaml-guide', () => {
     expect(documents.length).toBeGreaterThan(0);
     for (const document of documents) {
       const result = await parseQuestionYaml(document);
-      expect(result.errors).withContext(document).toEqual([]);
-      expect(validateForMode(result, 'suite', []).errors).withContext(document).toEqual([]);
+      expect(result.errors, document).toEqual([]);
+      expect(validateForMode(result, 'suite', []).errors, document).toEqual([]);
     }
   });
 

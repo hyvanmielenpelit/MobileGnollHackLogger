@@ -117,7 +117,7 @@ describe('InfoTipComponent (click trigger)', () => {
     expect(button().getAttribute('aria-label')).toBe('About Scoring Profile');
     expect(button().getAttribute('popovertarget')).toBe('click-tip-popup');
     expect(button().getAttribute('aria-expanded')).toBe('false');
-    expect(button().hasAttribute('interestfor')).toBeFalse();
+    expect(button().hasAttribute('interestfor')).toBe(false);
     expect(button().querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
   });
 
@@ -183,14 +183,14 @@ describe('InfoTipComponent (dialog trigger)', () => {
     expect(button().classList).toContain('gh-info-btn--click');
     expect(button().getAttribute('aria-label')).toBe('About Report writer');
     expect(button().getAttribute('aria-haspopup')).toBe('dialog');
-    expect(button().hasAttribute('popovertarget')).toBeFalse();
-    expect(button().hasAttribute('interestfor')).toBeFalse();
+    expect(button().hasAttribute('popovertarget')).toBe(false);
+    expect(button().hasAttribute('interestfor')).toBe(false);
     expect(button().querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(root().querySelector('.gh-info-popup')).toBeNull();
   });
 
   it('keeps a closed light-dismiss dialog titled by dialogTitle, its ids derived from tipId', () => {
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
     expect(dialog().classList).toContain('gh-dialog');
     expect(dialog().classList).toContain('gh-info-dialog');
     expect(dialog().getAttribute('closedby')).toBe('any');
@@ -201,7 +201,7 @@ describe('InfoTipComponent (dialog trigger)', () => {
     expect(title.textContent?.trim()).toBe('Choosing a report writer');
     const body = root().querySelector('#dlg-tip') as HTMLElement;
     expect(body.classList).toContain('gh-info-dialog-body');
-    expect(dialog().contains(body)).toBeTrue();
+    expect(dialog().contains(body)).toBe(true);
     expect(body.textContent?.trim()).toBe('Use a strong writing model.');
     expect(root().querySelector('#dlg-tip-close-tip')).not.toBeNull();
   });
@@ -209,8 +209,8 @@ describe('InfoTipComponent (dialog trigger)', () => {
   it('opens modally from the button and focuses its title', () => {
     button().click();
     fixture.detectChanges();
-    expect(dialog().open).toBeTrue();
-    expect(dialog().matches(':modal')).toBeTrue();
+    expect(dialog().open).toBe(true);
+    expect(dialog().matches(':modal')).toBe(true);
     expect(document.activeElement).toBe(root().querySelector('#dlg-tip-title'));
   });
 
@@ -219,7 +219,7 @@ describe('InfoTipComponent (dialog trigger)', () => {
     fixture.detectChanges();
     const close = closeButton();
     expect(close.getAttribute('aria-label')).toBe('Close Choosing a report writer');
-    expect(close.hasAttribute('title')).toBeFalse();
+    expect(close.hasAttribute('title')).toBe(false);
     expect(close.getAttribute('interestfor')).toBe('dlg-tip-close-tip');
     expect(close.getAttribute('style')).toContain('anchor-name: --dlg-tip-close-tip');
     const tip = root().querySelector('#dlg-tip-close-tip') as HTMLElement;
@@ -229,7 +229,7 @@ describe('InfoTipComponent (dialog trigger)', () => {
 
     close.click();
     fixture.detectChanges();
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
   });
 
   it('keeps clicks inside the dialog from reaching the control it sits in', () => {
@@ -238,7 +238,7 @@ describe('InfoTipComponent (dialog trigger)', () => {
     const clicksBefore = fixture.componentInstance.rowClicks;
     (root().querySelector('#dlg-tip p') as HTMLElement).click();
     expect(fixture.componentInstance.rowClicks).toBe(clicksBefore);
-    expect(dialog().open).toBeTrue();
+    expect(dialog().open).toBe(true);
   });
 
   it('falls back to the subject for the title', () => {
@@ -281,7 +281,7 @@ describe('InfoTipComponent (dialog trigger inside another dialog)', () => {
     outer().showModal();
     ((fixture.nativeElement as HTMLElement).querySelector('button.gh-info-btn') as HTMLButtonElement).click();
     fixture.detectChanges();
-    expect(inner().open).toBeTrue();
+    expect(inner().open).toBe(true);
     expect(document.activeElement).toBe((fixture.nativeElement as HTMLElement).querySelector('#nested-tip-title'));
 
     inner().dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
@@ -291,8 +291,8 @@ describe('InfoTipComponent (dialog trigger inside another dialog)', () => {
     await new Promise(resolve => setTimeout(resolve));
     fixture.detectChanges();
 
-    expect(inner().open).toBeFalse();
-    expect(outer().open).toBeTrue();
+    expect(inner().open).toBe(false);
+    expect(outer().open).toBe(true);
     expect(fixture.componentInstance.events).toEqual([]);
   });
 });

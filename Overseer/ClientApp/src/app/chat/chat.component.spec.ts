@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ChatComponent } from './chat.component';
 
 describe('ChatComponent.stripThoughts', () => {
@@ -121,11 +122,11 @@ import { ClientBridgeService } from '../services/client-bridge.service';
 import { AdminBenchmarkService, AttachedSnapshotInfo } from '../services/admin-benchmark.service';
 import { isSentryConfidentialSessionActive, setSentryConfidentialSession } from '../utils/sentry-filter.util';
 
-// ChatComponent.ngOnInit opens a real SignalR connection to /chathub, which under Karma
+// ChatComponent.ngOnInit opens a real SignalR connection to /chathub, which under the test runner
 // is live network I/O the test web server answers with 404 and which outlives the spec
 // that started it. Every fixture stubs it out.
 function stubSignalRConnection(): void {
-  spyOn(ChatComponent.prototype, 'setupSignalR');
+  vi.spyOn(ChatComponent.prototype, 'setupSignalR').mockReturnValue(undefined);
 }
 
 /* One full badge, in the shape the server sends. The server authors every sentence, so a
@@ -188,14 +189,14 @@ describe('ChatComponent session loading and exclusivity', () => {
     (component as any).hubConnection = null;
 
     const sessionSubject = new Subject<HttpResponse<ChatSessionDetailResponse>>();
-    spyOn(chatService, 'getSession').and.returnValue(sessionSubject.asObservable());
+    vi.spyOn(chatService, 'getSession').mockReturnValue(sessionSubject.asObservable());
 
     const loadPromise = component.loadSession(42);
 
     // Verify immediate state change BEFORE response arrives
     expect(component.messages.length).toBe(0);
-    expect(component.autoScrollEnabled).toBeTrue();
-    expect(component.isLoadingSession).toBeTrue();
+    expect(component.autoScrollEnabled).toBe(true);
+    expect(component.isLoadingSession).toBe(true);
 
     // Yield macro task to let joinSessionAsync resolve and chatService.getSession subscribe
     await new Promise(r => setTimeout(r, 0));
@@ -213,7 +214,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     await loadPromise;
 
-    expect(component.isLoadingSession).toBeFalse();
+    expect(component.isLoadingSession).toBe(false);
     expect(component.messages.length).toBe(1);
     expect(component.messages[0].content).toBe('Hello in new session');
   });
@@ -270,13 +271,13 @@ describe('ChatComponent session loading and exclusivity', () => {
         events: []
       }
     };
-    spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+    vi.spyOn(chatService, 'getSession').mockReturnValue(of(new HttpResponse({ body: mockDetail })));
 
     await component.syncSessionSilently(42);
 
-    expect(component.isLoadingSession).toBeFalse();
+    expect(component.isLoadingSession).toBe(false);
     expect(component.messages.length).toBe(1);
-    expect(component.isStreaming).toBeTrue();
+    expect(component.isStreaming).toBe(true);
     expect(component.streamingMessage).toBe('Partial response...');
   });
 
@@ -288,7 +289,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       { id: 1, role: 'user', content: 'User question', timestampUtc: '2026-08-20T20:00:00Z' }
     ];
 
-    const processSpy = spyOn(component, 'processChatEvent').and.callThrough();
+    const processSpy = vi.spyOn(component, 'processChatEvent');
 
     const mockDetail: ChatSessionDetailResponse = {
       id: 42,
@@ -305,7 +306,7 @@ describe('ChatComponent session loading and exclusivity', () => {
         ]
       }
     };
-    spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+    vi.spyOn(chatService, 'getSession').mockReturnValue(of(new HttpResponse({ body: mockDetail })));
 
     await component.syncSessionSilently(42);
 
@@ -330,11 +331,11 @@ describe('ChatComponent session loading and exclusivity', () => {
       ],
       hasOngoingGeneration: false
     };
-    spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+    vi.spyOn(chatService, 'getSession').mockReturnValue(of(new HttpResponse({ body: mockDetail })));
 
     await component.syncSessionSilently(42);
 
-    expect(component.isStreaming).toBeFalse();
+    expect(component.isStreaming).toBe(false);
     expect(component.messages.length).toBe(2);
     expect(component.messages[1].content).toBe('Complete server response');
   });
@@ -346,20 +347,20 @@ describe('ChatComponent session loading and exclusivity', () => {
       { id: 1, role: 'user', content: 'Existing msg', timestampUtc: '2026-08-20T20:00:00Z' }
     ];
 
-    const getSessionSpy = spyOn(chatService, 'getSession');
+    const getSessionSpy = vi.spyOn(chatService, 'getSession').mockReturnValue(undefined as any);
 
     await component.loadSession(42);
 
     expect(getSessionSpy).not.toHaveBeenCalled();
     expect(component.messages.length).toBe(1);
-    expect(component.isLoadingSession).toBeFalse();
+    expect(component.isLoadingSession).toBe(false);
   });
 
   it('should trigger scrollToBottomClamped after session loads', async () => {
     (component as any).hubStartPromise = null;
     (component as any).hubConnection = null;
 
-    const scrollSpy = spyOn(component, 'scrollToBottomClamped');
+    const scrollSpy = vi.spyOn(component, 'scrollToBottomClamped').mockReturnValue(undefined);
 
     const mockDetail: ChatSessionDetailResponse = {
       id: 99,
@@ -368,7 +369,7 @@ describe('ChatComponent session loading and exclusivity', () => {
         { id: 1, role: 'assistant', content: 'Hello', timestampUtc: '2026-08-20T20:00:00Z' }
       ]
     };
-    spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+    vi.spyOn(chatService, 'getSession').mockReturnValue(of(new HttpResponse({ body: mockDetail })));
 
     await component.loadSession(99);
 
@@ -397,13 +398,13 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should determine whether to show reasoning badge correctly', () => {
-      expect(component.showReasoningBadge(null)).toBeFalse();
-      expect(component.showReasoningBadge(undefined)).toBeFalse();
-      expect(component.showReasoningBadge('')).toBeFalse();
-      expect(component.showReasoningBadge('default')).toBeFalse();
-      expect(component.showReasoningBadge('standard')).toBeFalse();
-      expect(component.showReasoningBadge('pro')).toBeTrue();
-      expect(component.showReasoningBadge('PRO')).toBeTrue();
+      expect(component.showReasoningBadge(null)).toBe(false);
+      expect(component.showReasoningBadge(undefined)).toBe(false);
+      expect(component.showReasoningBadge('')).toBe(false);
+      expect(component.showReasoningBadge('default')).toBe(false);
+      expect(component.showReasoningBadge('standard')).toBe(false);
+      expect(component.showReasoningBadge('pro')).toBe(true);
+      expect(component.showReasoningBadge('PRO')).toBe(true);
     });
 
     it('should update totalDurationMs when duration event is received', () => {
@@ -418,7 +419,7 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should attach totalDurationMs to assistant message on done event and reset timing state', () => {
-      jasmine.clock().install();
+      vi.useFakeTimers();
       try {
         component.isStreaming = true;
         component.streamingMessage = 'Hello from Overseer';
@@ -427,20 +428,21 @@ describe('ChatComponent session loading and exclusivity', () => {
 
         component.processChatEvent({ type: 'done', data: '' });
 
-        jasmine.clock().tick(2000);
+        vi.advanceTimersByTime(2000);
 
         expect(component.messages.length).toBe(1);
         expect(component.messages[0].timeToFirstTokenMs).toBe(9120);
         expect(component.messages[0].totalDurationMs).toBe(30450);
         expect(component.timeToFirstTokenMs).toBeNull();
         expect(component.totalDurationMs).toBeNull();
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
     });
 
     it('should carry the cost onto the completed message and fold it into the session total exactly once', () => {
-      jasmine.clock().install();
+      vi.useFakeTimers();
       try {
         component.sessionTotalCost = 0.01;
         component.showChatCost = true;
@@ -450,11 +452,11 @@ describe('ChatComponent session loading and exclusivity', () => {
         component.liveIsOperatorCost = true;
 
         component.processChatEvent({ type: 'done', data: '' });
-        jasmine.clock().tick(2000);
+        vi.advanceTimersByTime(2000);
 
         expect(component.messages.length).toBe(1);
         expect(component.messages[0].estimatedCost).toBe(0.005);
-        expect(component.messages[0].isOperatorCost).toBeTrue();
+        expect(component.messages[0].isOperatorCost).toBe(true);
 
         // Folded once, and only once: the live figure is cleared straight after.
         expect(component.sessionTotalCost).toBeCloseTo(0.015, 6);
@@ -466,8 +468,9 @@ describe('ChatComponent session loading and exclusivity', () => {
         const footer = compiled.querySelector('.message-box.assistant .msg-cost-footer');
         expect(footer).toBeTruthy();
         expect(footer?.textContent).toContain('0.50¢');
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
     });
 
@@ -476,7 +479,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       // The wire format ChatService actually serializes: estimatedCost, not cost.
       component.processChatEvent({ type: 'cost', data: JSON.stringify({ estimatedCost: 0.0015, isOperatorCost: true }) });
       expect(component.liveCost).toBe(0.0015);
-      expect(component.liveIsOperatorCost).toBeTrue();
+      expect(component.liveIsOperatorCost).toBe(true);
     });
 
     it('should calculate totalLoadedCost correctly for loaded messages and live stream', () => {
@@ -577,7 +580,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       component.showChatCost = true;
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(component.isChatCostPartial).toBeTrue();
+      expect(component.isChatCostPartial).toBe(true);
       expect(compiled.querySelector('.cost-partial-badge')).toBeTruthy();
       expect(component.chatCostTooltip).toContain('not included');
 
@@ -600,7 +603,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       component.showChatCost = true;
       fixture.detectChanges();
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(component.isChatCostPartial).toBeFalse();
+      expect(component.isChatCostPartial).toBe(false);
       expect(compiled.querySelector('.cost-partial-badge')).toBeFalsy();
     });
 
@@ -633,7 +636,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       const compiled = fixture.nativeElement as HTMLElement;
 
       expect(compiled.querySelector('.message-box.assistant .msg-cost-footer')).toBeFalsy();
-      expect(component.isChatCostPartial).toBeFalse();
+      expect(component.isChatCostPartial).toBe(false);
       expect(compiled.querySelector('.cost-partial-badge')).toBeFalsy();
     });
 
@@ -646,7 +649,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       component.showChatCost = true;
       fixture.detectChanges();
 
-      expect(component.isChatCostPartial).toBeTrue();
+      expect(component.isChatCostPartial).toBe(true);
     });
 
     it('should leave liveCost null and the session total unchanged on a withheld cost event', () => {
@@ -659,7 +662,7 @@ describe('ChatComponent session loading and exclusivity', () => {
       });
 
       expect(component.liveCost).toBeNull();
-      expect(component.liveIsOperatorCost).toBeTrue();
+      expect(component.liveIsOperatorCost).toBe(true);
       expect(component.sessionTotalCost).toBe(0.02);
     });
 
@@ -725,22 +728,20 @@ describe('ChatComponent session loading and exclusivity', () => {
           { id: 1, provider: 'google', modelId: 'gemini-3.7-flash', displayName: 'Gemini 3.7 Flash', isSystem: false, modelRole: 1 }
         ];
 
-        spyOn(settingsService, 'getSettingsResponse').and.returnValue(of(new HttpResponse({ body: mockSettings })));
-        spyOn(settingsService, 'getUserModels').and.returnValue(of(mockModels));
+        vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(of(new HttpResponse({ body: mockSettings })));
+        vi.spyOn(settingsService, 'getUserModels').mockReturnValue(of(mockModels));
 
         component.loadSettings(false);
 
-        expect(component.hasApiKey).toBeTrue();
-        expect(component.hasModel).toBeTrue();
+        expect(component.hasApiKey).toBe(true);
+        expect(component.hasModel).toBe(true);
         expect(component.showThoughtsAndTools).toBe(1);
         expect(component.userModels.length).toBe(1);
         expect(component.userModels[0].displayName).toBe('Gemini 3.7 Flash');
       });
 
       it('should handle TypeError: Failed to fetch on getSettingsResponse without unhandled error', () => {
-        spyOn(settingsService, 'getSettingsResponse').and.returnValue(
-          throwError(() => new TypeError('Failed to fetch'))
-        );
+        vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
         expect(() => {
           component.loadSettings(true);
@@ -753,23 +754,21 @@ describe('ChatComponent session loading and exclusivity', () => {
           hasModel: false,
           spoilerFreeMode: false
         };
-        spyOn(settingsService, 'getSettingsResponse').and.returnValue(of(new HttpResponse({ body: mockSettings })));
-        spyOn(settingsService, 'getUserModels').and.returnValue(
-          throwError(() => new TypeError('Failed to fetch'))
-        );
+        vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(of(new HttpResponse({ body: mockSettings })));
+        vi.spyOn(settingsService, 'getUserModels').mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
         expect(() => {
           component.loadSettings(false);
         }).not.toThrow();
-        expect(component.hasApiKey).toBeTrue();
+        expect(component.hasApiKey).toBe(true);
       });
     });
 
     describe('confirmDelete', () => {
       it('should delete session and clear sessionToDelete on normal success', () => {
         component.sessionToDelete = 123;
-        spyOn(chatService, 'deleteSession').and.returnValue(of({} as any));
-        spyOn(component, 'loadSessions');
+        vi.spyOn(chatService, 'deleteSession').mockReturnValue(of({} as any));
+        vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
 
         component.confirmDelete();
 
@@ -779,9 +778,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
       it('should catch TypeError: Failed to fetch on deleteSession and clean up dialog state', () => {
         component.sessionToDelete = 123;
-        spyOn(chatService, 'deleteSession').and.returnValue(
-          throwError(() => new TypeError('Failed to fetch'))
-        );
+        vi.spyOn(chatService, 'deleteSession').mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
         expect(() => {
           component.confirmDelete();
@@ -792,8 +789,8 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     describe('executeLogout', () => {
       it('should navigate to /login when logout succeeds normally', () => {
-        spyOn(authService, 'logout').and.returnValue(of({}));
-        const navigateSpy = spyOn(router, 'navigate');
+        vi.spyOn(authService, 'logout').mockReturnValue(of({}));
+        const navigateSpy = vi.spyOn(router, 'navigate').mockReturnValue(undefined as any);
 
         component.executeLogout();
 
@@ -801,10 +798,8 @@ describe('ChatComponent session loading and exclusivity', () => {
       });
 
       it('should navigate to /login even when logout throws TypeError: Failed to fetch', () => {
-        spyOn(authService, 'logout').and.returnValue(
-          throwError(() => new TypeError('Failed to fetch'))
-        );
-        const navigateSpy = spyOn(router, 'navigate');
+        vi.spyOn(authService, 'logout').mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
+        const navigateSpy = vi.spyOn(router, 'navigate').mockReturnValue(undefined as any);
 
         expect(() => {
           component.executeLogout();
@@ -939,14 +934,14 @@ describe('ChatComponent session loading and exclusivity', () => {
   describe('native bridge integration', () => {
     it('should notify ClientBridgeService on loadSession', async () => {
       const bridge = TestBed.inject(ClientBridgeService);
-      const sessionSpy = spyOn(bridge, 'notifySessionChanged');
+      const sessionSpy = vi.spyOn(bridge, 'notifySessionChanged').mockReturnValue(undefined);
 
       const mockDetail: ChatSessionDetailResponse = {
         id: 77,
         title: 'Session 77',
         messages: []
       };
-      spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse({ body: mockDetail })));
+      vi.spyOn(chatService, 'getSession').mockReturnValue(of(new HttpResponse({ body: mockDetail })));
 
       (component as any).hubStartPromise = null;
       (component as any).hubConnection = null;
@@ -958,7 +953,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     it('should notify ClientBridgeService on newSession', () => {
       const bridge = TestBed.inject(ClientBridgeService);
-      const sessionSpy = spyOn(bridge, 'notifySessionChanged');
+      const sessionSpy = vi.spyOn(bridge, 'notifySessionChanged').mockReturnValue(undefined);
 
       component.newSession();
 
@@ -967,8 +962,8 @@ describe('ChatComponent session loading and exclusivity', () => {
 
     it('should forward tool request via ClientBridgeService when embedded', () => {
       const bridge = TestBed.inject(ClientBridgeService);
-      spyOn(bridge, 'isEmbedded').and.returnValue(true);
-      const postSpy = spyOn(bridge, 'postMessage');
+      vi.spyOn(bridge, 'isEmbedded').mockReturnValue(true);
+      const postSpy = vi.spyOn(bridge, 'postMessage').mockReturnValue(undefined);
 
       const request = {
         type: 'client_tool_call',
@@ -980,14 +975,14 @@ describe('ChatComponent session loading and exclusivity', () => {
       component.forwardToolRequest(request);
 
       expect(postSpy).toHaveBeenCalledWith(request);
-      expect(component.pendingRequests.has('req-1')).toBeTrue();
+      expect(component.pendingRequests.has('req-1')).toBe(true);
     });
 
     it('should fail tool request immediately when not embedded', () => {
-      const consoleError = spyOn(console, 'error');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       const bridge = TestBed.inject(ClientBridgeService);
-      spyOn(bridge, 'isEmbedded').and.returnValue(false);
-      const sendResultSpy = spyOn(component, 'sendToolResult');
+      vi.spyOn(bridge, 'isEmbedded').mockReturnValue(false);
+      const sendResultSpy = vi.spyOn(component, 'sendToolResult').mockReturnValue(undefined as any);
 
       const request = {
         type: 'client_tool_call',
@@ -1005,20 +1000,20 @@ describe('ChatComponent session loading and exclusivity', () => {
 
   describe('bulk chat actions', () => {
     it('should open and close bulk delete dialog', () => {
-      const showModalSpy = jasmine.createSpy('showModal');
-      const closeSpy = jasmine.createSpy('close');
+      const showModalSpy = vi.fn().mockName('showModal');
+      const closeSpy = vi.fn().mockName('close');
       component.bulkDeleteConfirmDialog = {
         nativeElement: { showModal: showModalSpy, close: closeSpy }
       } as any;
 
       component.openBulkDeleteDialog();
       expect(showModalSpy).toHaveBeenCalled();
-      expect(component.includePinnedInBulkDelete).toBeFalse();
-      expect(component.isBulkDeleting).toBeFalse();
+      expect(component.includePinnedInBulkDelete).toBe(false);
+      expect(component.isBulkDeleting).toBe(false);
 
       component.closeBulkDeleteDialog();
       expect(closeSpy).toHaveBeenCalled();
-      expect(component.isBulkDeleting).toBeFalse();
+      expect(component.isBulkDeleting).toBe(false);
     });
 
     it('should compute bulkDeleteTargetCount based on includePinnedInBulkDelete', () => {
@@ -1033,17 +1028,17 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should call bulkDeleteSessions and reload on confirmBulkDelete', () => {
-      const closeSpy = jasmine.createSpy('close');
+      const closeSpy = vi.fn().mockName('close');
       component.bulkDeleteConfirmDialog = {
         nativeElement: { close: closeSpy }
       } as any;
 
-      spyOn(chatService, 'bulkDeleteSessions').and.returnValue(of({ count: 5 }));
-      const loadSessionsSpy = spyOn(component, 'loadSessions');
+      vi.spyOn(chatService, 'bulkDeleteSessions').mockReturnValue(of({ count: 5 }));
+      const loadSessionsSpy = vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
       component.includePinnedInBulkDelete = true;
       component.currentSessionId = '10';
       component.sessions = [{ id: 10, title: 'Chat 10', isPinned: true, lastMessageUtc: new Date().toISOString() }];
-      const navSpy = spyOn(component, 'navigateToNewSession');
+      const navSpy = vi.spyOn(component, 'navigateToNewSession').mockReturnValue(undefined);
 
       component.confirmBulkDelete();
 
@@ -1054,8 +1049,8 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should open and close unpin all dialog', () => {
-      const showModalSpy = jasmine.createSpy('showModal');
-      const closeSpy = jasmine.createSpy('close');
+      const showModalSpy = vi.fn().mockName('showModal');
+      const closeSpy = vi.fn().mockName('close');
       component.unpinAllConfirmDialog = {
         nativeElement: { showModal: showModalSpy, close: closeSpy }
       } as any;
@@ -1068,13 +1063,13 @@ describe('ChatComponent session loading and exclusivity', () => {
     });
 
     it('should call unpinAllSessions and reload on confirmUnpinAll', () => {
-      const closeSpy = jasmine.createSpy('close');
+      const closeSpy = vi.fn().mockName('close');
       component.unpinAllConfirmDialog = {
         nativeElement: { close: closeSpy }
       } as any;
 
-      spyOn(chatService, 'unpinAllSessions').and.returnValue(of({ count: 3 }));
-      const loadSessionsSpy = spyOn(component, 'loadSessions');
+      vi.spyOn(chatService, 'unpinAllSessions').mockReturnValue(of({ count: 3 }));
+      const loadSessionsSpy = vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
 
       component.confirmUnpinAll();
 
@@ -1097,8 +1092,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
   describe('confidential chats in the session list', () => {
     function stubSessions(body: Record<string, unknown>) {
-      spyOn(chatService, 'getSessions').and.returnValue(
-        of(new HttpResponse({ body: { hasMore: false, ...body } as any })));
+      vi.spyOn(chatService, 'getSessions').mockReturnValue(of(new HttpResponse({ body: { hasMore: false, ...body } as any })));
     }
 
     const purgedSession = {
@@ -1126,7 +1120,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
       component.loadSessions();
 
-      expect(component.sessions[0].immediatePurgeOnDelete).toBeTrue();
+      expect(component.sessions[0].immediatePurgeOnDelete).toBe(true);
       expect(component.immediatePurgeCount).toBe(1);
       expect(component.immediatePurgePinnedCount).toBe(2);
       expect(component.confidentialExcludedCount).toBe(3);
@@ -1139,7 +1133,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
       const dialog = openDeleteDialogFor(7);
 
-      expect(component.deleteTargetPurgesImmediately).toBeTrue();
+      expect(component.deleteTargetPurgesImmediately).toBe(true);
       expect(dialog.querySelector('h3')?.textContent).toContain('Delete Confidential Chat');
       expect(dialog.textContent).toContain('It does not go to Trash and cannot be restored.');
       expect(dialog.querySelector('.btn-gh-delete')?.textContent?.trim()).toBe('Delete chat');
@@ -1153,7 +1147,7 @@ describe('ChatComponent session loading and exclusivity', () => {
 
       const dialog = openDeleteDialogFor(8);
 
-      expect(component.deleteTargetPurgesImmediately).toBeFalse();
+      expect(component.deleteTargetPurgesImmediately).toBe(false);
       expect(dialog.querySelector('h3')?.textContent).toContain('Move Conversation to Trash');
       expect(dialog.querySelector('.btn-gh-delete')?.textContent?.trim()).toBe('Move to Trash');
       dialog.close();
@@ -1442,7 +1436,7 @@ describe('ChatComponent context window indicator', () => {
 
   describe('the display setting', () => {
     it('should default to showing the indicator', () => {
-      expect(component.showContextWindowUsage).toBeTrue();
+      expect(component.showContextWindowUsage).toBe(true);
     });
   });
 
@@ -1458,7 +1452,7 @@ describe('ChatComponent context window indicator', () => {
     /* The two are mutually exclusive: one needs an attached snapshot and the other needs there
        to be none, so each case asserts the absence of the other button. */
     it('should offer only the save button when isAdmin, currentSessionId, hasGameSnapshot and the embedded client are all true', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
       (authService as any).userSubject.next({
         userName: 'admin',
         email: 'admin@example.com',
@@ -1479,7 +1473,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('should offer only the attach button when hasGameSnapshot is false', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
       (authService as any).userSubject.next({
         userName: 'admin',
         email: 'admin@example.com',
@@ -1500,7 +1494,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('should offer the save button and no attach button in an ordinary browser session', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(false);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(false);
       (authService as any).userSubject.next({
         userName: 'admin',
         email: 'admin@example.com',
@@ -1521,7 +1515,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('should no longer offer the live capture link in the sidebar', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
       (authService as any).userSubject.next({
         userName: 'admin',
         email: 'admin@example.com',
@@ -1556,7 +1550,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('should offer the attach button to a non-admin embedded user', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
       (authService as any).userSubject.next({
         userName: 'player',
         email: 'player@example.com',
@@ -1576,7 +1570,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('should show the header attach-snapshot button only when embedded and !hasGameSnapshot', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
       component.hasGameSnapshot = false;
       fixture.detectChanges();
 
@@ -1592,7 +1586,7 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('should hide the header attach-snapshot button when not embedded', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(false);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(false);
       component.hasGameSnapshot = false;
       fixture.detectChanges();
 
@@ -1604,7 +1598,7 @@ describe('ChatComponent context window indicator', () => {
     /* The GnollHack host opens the Overseer from the About page with no game running, where
        refresh_snapshot throws and the user only ever sees a bridge error toast. */
     it('should hide the header attach-snapshot button when the host reports no running game', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
       clientBridge.setHostGameOn(false);
       component.hasGameSnapshot = false;
       fixture.detectChanges();
@@ -1616,7 +1610,7 @@ describe('ChatComponent context window indicator', () => {
 
     /* A GnollHack build predating the isGameOn field reports nothing, and must lose nothing. */
     it('should show the header attach-snapshot button when the host has not reported game state', () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
       clientBridge.setHostGameOn(null);
       component.hasGameSnapshot = false;
       fixture.detectChanges();
@@ -1627,25 +1621,25 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('should not request a snapshot when the host reports no running game', async () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
-      const postMessageSpy = spyOn(clientBridge, 'postMessage');
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
+      const postMessageSpy = vi.spyOn(clientBridge, 'postMessage').mockReturnValue(undefined);
       clientBridge.setHostGameOn(false);
       component.hasGameSnapshot = false;
 
       await component.attachGameSnapshotFromClient();
 
       expect(postMessageSpy).not.toHaveBeenCalled();
-      expect(component.isAttachingSnapshot).toBeFalse();
+      expect(component.isAttachingSnapshot).toBe(false);
     });
 
     /* The handoff redirect is the only moment the host's real game state reaches the SPA, and
        it arrives as a query parameter the route subscription hands to this method. */
     it('should capture gameOn from the route query parameters', () => {
       (component as any).applyRouteGameOnParam('0');
-      expect(clientBridge.isGameOn()).toBeFalse();
+      expect(clientBridge.isGameOn()).toBe(false);
 
       (component as any).applyRouteGameOnParam('1');
-      expect(clientBridge.isGameOn()).toBeTrue();
+      expect(clientBridge.isGameOn()).toBe(true);
     });
 
     /* A sidebar switch or "New Chat" navigates without the parameter; the state is page
@@ -1653,11 +1647,11 @@ describe('ChatComponent context window indicator', () => {
     it('should leave the captured game state alone when gameOn is absent', () => {
       (component as any).applyRouteGameOnParam('0');
       (component as any).applyRouteGameOnParam(undefined);
-      expect(clientBridge.isGameOn()).toBeFalse();
+      expect(clientBridge.isGameOn()).toBe(false);
     });
 
     it('should resolve local tool request and not forward to sendToolResult when requestId matches', async () => {
-      const sendToolResultSpy = spyOn(component, 'sendToolResult');
+      const sendToolResultSpy = vi.spyOn(component, 'sendToolResult').mockReturnValue(undefined as any);
       const reqId = 'local_test_123';
       let resolvedContent: string | null = null;
 
@@ -1676,12 +1670,12 @@ describe('ChatComponent context window indicator', () => {
 
       resolvedContent = await promise;
       expect(resolvedContent).toBe('GnollHack snapshot text content');
-      expect(component.localToolRequests.has(reqId)).toBeFalse();
+      expect(component.localToolRequests.has(reqId)).toBe(false);
       expect(sendToolResultSpy).not.toHaveBeenCalled();
     });
 
     it('should reject local tool request when response success is false', async () => {
-      const sendToolResultSpy = spyOn(component, 'sendToolResult');
+      const sendToolResultSpy = vi.spyOn(component, 'sendToolResult').mockReturnValue(undefined as any);
       const reqId = 'local_test_456';
       let rejectedError: any = null;
 
@@ -1700,14 +1694,15 @@ describe('ChatComponent context window indicator', () => {
 
       try {
         await promise;
-        fail('Should have rejected');
-      } catch (err: any) {
+        expect.fail('Should have rejected');
+      }
+      catch (err: any) {
         rejectedError = err;
       }
 
       expect(rejectedError).toBeTruthy();
       expect(rejectedError.message).toBe('Game not running');
-      expect(component.localToolRequests.has(reqId)).toBeFalse();
+      expect(component.localToolRequests.has(reqId)).toBe(false);
       expect(sendToolResultSpy).not.toHaveBeenCalled();
     });
   });
@@ -1736,7 +1731,7 @@ describe('ChatComponent context window indicator', () => {
       fixture.detectChanges();
     });
 
-    // A modal left open makes the rest of the Karma page inert.
+    // A modal left open makes the rest of the test page inert.
     afterEach(() => component.captureBoardDialog?.nativeElement?.close());
 
     it('suggests a board name from a gameplay chat title', () => {
@@ -1749,60 +1744,59 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('prefills the version the client reported', () => {
-      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(of(info({ detectedGnollHackVersion: '0.9.4' })));
+      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(of(info({ detectedGnollHackVersion: '0.9.4' })));
 
       component.openCaptureBoardModal();
 
       expect(adminBenchmark.getAttachedSnapshotInfo).toHaveBeenCalledWith('42');
       expect(component.captureBoardVersion).toBe('0.9.4');
-      expect(component.captureBoardVersionDetected).toBeTrue();
-      expect(component.captureBoardInfo?.hasSnapshot).toBeTrue();
-      expect(component.isLoadingCaptureInfo).toBeFalse();
+      expect(component.captureBoardVersionDetected).toBe(true);
+      expect(component.captureBoardInfo?.hasSnapshot).toBe(true);
+      expect(component.isLoadingCaptureInfo).toBe(false);
     });
 
     it('leaves the version empty when the client reported none', () => {
-      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(of(info()));
+      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(of(info()));
 
       component.openCaptureBoardModal();
 
       expect(component.captureBoardVersion).toBe('');
-      expect(component.captureBoardVersionDetected).toBeFalse();
+      expect(component.captureBoardVersionDetected).toBe(false);
     });
 
     it('shows an info failure and keeps the dialog open', () => {
-      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(
-        throwError(() => ({ error: { error: 'A confidential chat cannot be imported as a benchmark board.' } })));
+      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(throwError(() => ({ error: { error: 'A confidential chat cannot be imported as a benchmark board.' } })));
 
       component.openCaptureBoardModal();
 
       expect(component.captureBoardError).toContain('confidential');
-      expect(component.captureBoardDialog?.nativeElement.open).toBeTrue();
-      expect(component.isLoadingCaptureInfo).toBeFalse();
+      expect(component.captureBoardDialog?.nativeElement.open).toBe(true);
+      expect(component.isLoadingCaptureInfo).toBe(false);
     });
 
     it('disables saving when the chat no longer has a snapshot', () => {
-      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(of(info({ hasSnapshot: false })));
+      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(of(info({ hasSnapshot: false })));
 
       component.openCaptureBoardModal();
 
-      expect(component.canSubmitCaptureBoard).toBeFalse();
+      expect(component.canSubmitCaptureBoard).toBe(false);
     });
 
     it('keeps the dialog open on Escape while a save is in flight', () => {
-      spyOn(adminBenchmark, 'getAttachedSnapshotInfo').and.returnValue(of(info()));
+      vi.spyOn(adminBenchmark, 'getAttachedSnapshotInfo').mockReturnValue(of(info()));
       component.openCaptureBoardModal();
       component.isCapturingBoard = true;
 
       const event = new Event('cancel', { cancelable: true });
       component.onCaptureBoardCancel(event);
 
-      expect(event.defaultPrevented).toBeTrue();
-      expect(component.captureBoardDialog?.nativeElement.open).toBeTrue();
+      expect(event.defaultPrevented).toBe(true);
+      expect(component.captureBoardDialog?.nativeElement.open).toBe(true);
       component.isCapturingBoard = false;
     });
 
     it('does not save from a confidential chat', () => {
-      const saveSpy = spyOn(adminBenchmark, 'saveAttachedSnapshot');
+      const saveSpy = vi.spyOn(adminBenchmark, 'saveAttachedSnapshot').mockReturnValue(undefined as any);
       component.isConfidentialSession = true;
       component.captureBoardName = 'Board';
 
@@ -1827,10 +1821,10 @@ describe('ChatComponent context window indicator', () => {
     });
 
     it('forwards the remembered version when attaching a snapshot', async () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
       clientBridge.setHostGnollHackVersion('0.9.4');
       component.hasGameSnapshot = false;
-      spyOn(clientBridge, 'postMessage').and.callFake((message: any) => {
+      vi.spyOn(clientBridge, 'postMessage').mockImplementation((message: any) => {
         component.onGnollHackToolResponse({
           type: 'tool_response',
           requestId: message.requestId,
@@ -1839,19 +1833,18 @@ describe('ChatComponent context window indicator', () => {
           errorMessage: null
         });
       });
-      const attachSpy = spyOn(chatService, 'attachGameSnapshot').and.returnValue(
-        of({ sessionId: '42', hasGameSnapshot: true, gnollHackVersion: '0.9.4' }));
+      const attachSpy = vi.spyOn(chatService, 'attachGameSnapshot').mockReturnValue(of({ sessionId: '42', hasGameSnapshot: true, gnollHackVersion: '0.9.4' }));
 
       await component.attachGameSnapshotFromClient();
 
       expect(attachSpy).toHaveBeenCalled();
-      expect(attachSpy.calls.mostRecent().args[2]).toBe('0.9.4');
+      expect(vi.mocked(attachSpy).mock.lastCall![2]).toBe('0.9.4');
     });
 
     it('remembers the version a loaded chat reports', async () => {
       (component as any).hubStartPromise = null;
       (component as any).hubConnection = null;
-      spyOn(chatService, 'getSession').and.returnValue(of(new HttpResponse<ChatSessionDetailResponse>({
+      vi.spyOn(chatService, 'getSession').mockReturnValue(of(new HttpResponse<ChatSessionDetailResponse>({
         body: { id: 7, title: 'GnollHack Gameplay (Alice)', messages: [], gnollHackVersion: '0.9.4' }
       })));
 
@@ -1871,9 +1864,12 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
   let settingsService: SettingsService;
 
   /** The confirmation dialog is driven through its native API, so the spec stubs the element. */
-  function stubCloseDialog(): { showModal: jasmine.Spy; close: jasmine.Spy } {
-    const showModal = jasmine.createSpy('showModal');
-    const close = jasmine.createSpy('close');
+  function stubCloseDialog(): {
+    showModal: Mock;
+    close: Mock;
+  } {
+    const showModal = vi.fn().mockName('showModal');
+    const close = vi.fn().mockName('close');
     component.ephemeralCloseDialog = { nativeElement: { showModal, close } } as any;
     return { showModal, close };
   }
@@ -1899,17 +1895,17 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
 
   describe('session references', () => {
     it('should recognise an ephemeral reference and reject a persisted id', () => {
-      expect(ChatComponent.isEphemeralRef('eph_1f0c9f2e-0d1a-4c1e-9a3c-2f6d8b5a7c11')).toBeTrue();
-      expect(ChatComponent.isEphemeralRef('1234')).toBeFalse();
-      expect(ChatComponent.isEphemeralRef(null)).toBeFalse();
-      expect(ChatComponent.isEphemeralRef(undefined)).toBeFalse();
+      expect(ChatComponent.isEphemeralRef('eph_1f0c9f2e-0d1a-4c1e-9a3c-2f6d8b5a7c11')).toBe(true);
+      expect(ChatComponent.isEphemeralRef('1234')).toBe(false);
+      expect(ChatComponent.isEphemeralRef(null)).toBe(false);
+      expect(ChatComponent.isEphemeralRef(undefined)).toBe(false);
     });
 
     it('should treat a numeric session reference and its string form as the same chat', async () => {
       component.currentSessionId = '42';
       component.isLoadingSession = false;
       component.messages = [{ id: 1, role: 'user', content: 'Existing', timestampUtc: '2026-09-09T10:00:00Z' }];
-      const getSessionSpy = spyOn(chatService, 'getSession');
+      const getSessionSpy = vi.spyOn(chatService, 'getSession').mockReturnValue(undefined as any);
 
       await component.loadSession(42);
 
@@ -1921,8 +1917,8 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
     it('should turn Confidentiality Mode on with incognito, because incognito is the stricter form of it', () => {
       component.onNewChatEphemeralChange(true);
 
-      expect(component.newChatEphemeral).toBeTrue();
-      expect(component.newChatConfidential).toBeTrue();
+      expect(component.newChatEphemeral).toBe(true);
+      expect(component.newChatConfidential).toBe(true);
       expect(component.privacyModeLabel).toBe('Incognito');
     });
 
@@ -1930,8 +1926,8 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       component.onNewChatEphemeralChange(true);
       component.onNewChatConfidentialChange(false);
 
-      expect(component.newChatConfidential).toBeFalse();
-      expect(component.newChatEphemeral).toBeFalse();
+      expect(component.newChatConfidential).toBe(false);
+      expect(component.newChatEphemeral).toBe(false);
       expect(component.privacyModeLabel).toBe('Standard');
     });
 
@@ -1982,8 +1978,8 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
     it('should set confidential without incognito when Confidential is chosen', () => {
       component.setNewChatPrivacyMode('confidential');
 
-      expect(component.newChatConfidential).toBeTrue();
-      expect(component.newChatEphemeral).toBeFalse();
+      expect(component.newChatConfidential).toBe(true);
+      expect(component.newChatEphemeral).toBe(false);
       expect(component.newChatPrivacyMode).toBe('confidential');
     });
 
@@ -1991,8 +1987,8 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       component.setNewChatPrivacyMode('incognito');
       component.setNewChatPrivacyMode('standard');
 
-      expect(component.newChatConfidential).toBeFalse();
-      expect(component.newChatEphemeral).toBeFalse();
+      expect(component.newChatConfidential).toBe(false);
+      expect(component.newChatEphemeral).toBe(false);
       expect(component.newChatPrivacyMode).toBe('standard');
     });
 
@@ -2030,12 +2026,13 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
         defaultChatPrivacyMode
       } as UserAiSettings;
       const responder = of(new HttpResponse({ body: settings }));
-      const existing = settingsService.getSettingsResponse as jasmine.Spy;
-      if (existing.and) {
-        existing.and.returnValue(responder);
-      } else {
-        spyOn(settingsService, 'getSettingsResponse').and.returnValue(responder);
-        spyOn(settingsService, 'getUserModels').and.returnValue(of([] as UserAiModel[]));
+      const existing = settingsService.getSettingsResponse as Mock;
+      if (vi.isMockFunction(existing)) {
+        existing.mockReturnValue(responder);
+      }
+      else {
+        vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(responder);
+        vi.spyOn(settingsService, 'getUserModels').mockReturnValue(of([] as UserAiModel[]));
       }
     }
 
@@ -2093,38 +2090,38 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
 
       const dialog = (fixture.nativeElement as HTMLElement)
         .querySelector('dialog.privacy-dialog') as HTMLDialogElement;
-      expect(dialog.open).toBeTrue();
+      expect(dialog.open).toBe(true);
       dialog.close();
     });
   });
 
   describe('creating an ephemeral chat', () => {
     beforeEach(() => {
-      spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
-      spyOn(component, 'loadSessions');
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({} as UserAiSettings));
+      vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
     });
 
     it('should send both privacy flags and keep the ephemeral reference out of the URL', async () => {
-      const sendSpy = spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: 'eph_abc' } as any));
-      const navSpy = spyOn(component.router, 'navigateByUrl');
+      const sendSpy = vi.spyOn(chatService, 'sendMessage').mockReturnValue(of({ sessionId: 'eph_abc' } as any));
+      const navSpy = vi.spyOn(component.router, 'navigateByUrl').mockReturnValue(undefined as any);
       component.onNewChatEphemeralChange(true);
       component.currentInput = 'Nothing on the record, please.';
 
       await component.sendMessage();
 
       expect(sendSpy).toHaveBeenCalled();
-      const args = sendSpy.calls.mostRecent().args as any[];
-      expect(args[6]).toBeTrue();
-      expect(args[7]).toBeTrue();
+      const args = vi.mocked(sendSpy).mock.lastCall as any[];
+      expect(args[6]).toBe(true);
+      expect(args[7]).toBe(true);
       expect(component.currentSessionId).toBe('eph_abc');
-      expect(component.isEphemeralSession).toBeTrue();
-      expect(component.isConfidentialSession).toBeTrue();
+      expect(component.isEphemeralSession).toBe(true);
+      expect(component.isConfidentialSession).toBe(true);
       expect(navSpy).not.toHaveBeenCalled();
     });
 
     it('should leave the notice strip empty, because the banner already says it', async () => {
-      spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: 'eph_abc' } as any));
-      spyOn(component.router, 'navigateByUrl');
+      vi.spyOn(chatService, 'sendMessage').mockReturnValue(of({ sessionId: 'eph_abc' } as any));
+      vi.spyOn(component.router, 'navigateByUrl').mockReturnValue(undefined as any);
       component.onNewChatEphemeralChange(true);
       component.currentInput = 'Nothing on the record, please.';
 
@@ -2136,14 +2133,14 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
     });
 
     it('should navigate to the session reference of an ordinary chat', async () => {
-      spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: '77' } as any));
-      const navSpy = spyOn(component.router, 'navigateByUrl');
+      vi.spyOn(chatService, 'sendMessage').mockReturnValue(of({ sessionId: '77' } as any));
+      const navSpy = vi.spyOn(component.router, 'navigateByUrl').mockReturnValue(undefined as any);
       component.currentInput = 'On the record is fine.';
 
       await component.sendMessage();
 
       expect(component.currentSessionId).toBe('77');
-      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.isEphemeralSession).toBe(false);
       expect(navSpy).toHaveBeenCalled();
     });
   });
@@ -2213,7 +2210,7 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       fixture.detectChanges();
 
       const dialog = component.ephemeralInfoDialog!.nativeElement;
-      const showModal = spyOn(dialog, 'showModal');
+      const showModal = vi.spyOn(dialog, 'showModal').mockReturnValue(undefined);
       (fixture.nativeElement as HTMLElement)
         .querySelector<HTMLButtonElement>('button.incognito-badge')!.click();
 
@@ -2328,7 +2325,7 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       component.requestCloseEphemeralSession();
 
       expect(dialog.showModal).toHaveBeenCalled();
-      expect(component.isEphemeralSession).toBeTrue();
+      expect(component.isEphemeralSession).toBe(true);
       expect(component.messages.length).toBe(1);
     });
 
@@ -2344,17 +2341,17 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
 
     it('should call the close endpoint and clear local state on success', () => {
       const dialog = stubCloseDialog();
-      const closeSpy = spyOn(chatService as any, 'closeEphemeralSession').and.returnValue(of({}));
-      const navSpy = spyOn(component, 'navigateToSession');
-      spyOn(component as any, 'performNavigateToNewSession');
+      const closeSpy = vi.spyOn(chatService as any, 'closeEphemeralSession').mockReturnValue(of({}));
+      const navSpy = vi.spyOn(component, 'navigateToSession').mockReturnValue(undefined);
+      vi.spyOn(component as any, 'performNavigateToNewSession').mockReturnValue(undefined);
 
       component.confirmCloseEphemeralSession();
 
       expect(closeSpy).toHaveBeenCalledWith('eph_abc');
-      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.isEphemeralSession).toBe(false);
       expect(component.currentSessionId).toBeNull();
       expect(component.messages.length).toBe(0);
-      expect(component.newChatEphemeral).toBeFalse();
+      expect(component.newChatEphemeral).toBe(false);
       expect(component.privacyNotice).toContain('cannot be recovered');
       expect(dialog.close).toHaveBeenCalled();
       expect(navSpy).not.toHaveBeenCalled();
@@ -2363,26 +2360,25 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
 
     it('should also clear local state on 404, because the chat is gone either way', () => {
       stubCloseDialog();
-      spyOn(chatService as any, 'closeEphemeralSession').and.returnValue(throwError(() => ({ status: 404 })));
-      spyOn(component as any, 'performNavigateToNewSession');
+      vi.spyOn(chatService as any, 'closeEphemeralSession').mockReturnValue(throwError(() => ({ status: 404 })));
+      vi.spyOn(component as any, 'performNavigateToNewSession').mockReturnValue(undefined);
 
       component.confirmCloseEphemeralSession();
 
-      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.isEphemeralSession).toBe(false);
       expect(component.messages.length).toBe(0);
     });
 
     it('should keep the chat and report the failure on any other error', () => {
       stubCloseDialog();
-      spyOn(chatService as any, 'closeEphemeralSession')
-        .and.returnValue(throwError(() => ({ status: 500, error: { message: 'Server said no' } })));
+      vi.spyOn(chatService as any, 'closeEphemeralSession').mockReturnValue(throwError(() => ({ status: 500, error: { message: 'Server said no' } })));
 
       component.confirmCloseEphemeralSession();
 
       expect(component.ephemeralCloseError).toBe('Server said no');
-      expect(component.isEphemeralSession).toBeTrue();
+      expect(component.isEphemeralSession).toBe(true);
       expect(component.messages.length).toBe(1);
-      expect(component.isClosingEphemeral).toBeFalse();
+      expect(component.isClosingEphemeral).toBe(false);
     });
 
     it('should abandon a pending navigation when the confirmation is dismissed', () => {
@@ -2393,14 +2389,14 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
 
       component.closeEphemeralCloseDialog();
       expect((component as any).pendingEphemeralNavigation).toBeNull();
-      expect(component.isEphemeralSession).toBeTrue();
+      expect(component.isEphemeralSession).toBe(true);
     });
 
     it('should carry the requested destination through the confirmation', () => {
       stubCloseDialog();
-      spyOn(chatService as any, 'closeEphemeralSession').and.returnValue(of({}));
-      const navSpy = spyOn(component, 'navigateToSession').and.callThrough();
-      const routerSpy = spyOn(component.router, 'navigate');
+      vi.spyOn(chatService as any, 'closeEphemeralSession').mockReturnValue(of({}));
+      const navSpy = vi.spyOn(component, 'navigateToSession');
+      const routerSpy = vi.spyOn(component.router, 'navigate').mockReturnValue(undefined as any);
 
       component.navigateToSession(7);
       expect(navSpy).toHaveBeenCalledTimes(1);
@@ -2423,7 +2419,7 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
 
     it('should ask before a new chat discards the content', () => {
       const dialog = stubCloseDialog();
-      const routerSpy = spyOn(component.router, 'navigate');
+      const routerSpy = vi.spyOn(component.router, 'navigate').mockReturnValue(undefined as any);
 
       component.navigateToNewSession();
 
@@ -2435,7 +2431,7 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       component.messages = [];
       component.currentInput = '';
       const dialog = stubCloseDialog();
-      const routerSpy = spyOn(component.router, 'navigate');
+      const routerSpy = vi.spyOn(component.router, 'navigate').mockReturnValue(undefined as any);
 
       component.navigateToNewSession();
 
@@ -2444,21 +2440,21 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
     });
 
     it('should prompt the browser before the tab closes, and only while there is content', () => {
-      const event = { preventDefault: jasmine.createSpy('preventDefault'), returnValue: undefined } as any;
+      const event = { preventDefault: vi.fn().mockName('preventDefault'), returnValue: undefined } as any;
       (component as any).beforeUnloadHandler(event);
       expect(event.preventDefault).toHaveBeenCalled();
 
       component.messages = [];
       component.currentInput = '';
-      const quiet = { preventDefault: jasmine.createSpy('preventDefault'), returnValue: undefined } as any;
+      const quiet = { preventDefault: vi.fn().mockName('preventDefault'), returnValue: undefined } as any;
       (component as any).beforeUnloadHandler(quiet);
       expect(quiet.preventDefault).not.toHaveBeenCalled();
     });
 
     it('should warn without blocking when the route is left', () => {
-      expect(component.canDeactivate()).toBeTrue();
+      expect(component.canDeactivate()).toBe(true);
       expect(component.privacyNotice).toContain('stays in memory');
-      expect(component.isEphemeralSession).toBeTrue();
+      expect(component.isEphemeralSession).toBe(true);
     });
 
     it('should say the chat survives a closed tab and ends on delete or the idle timeout', () => {
@@ -2543,14 +2539,14 @@ describe('ChatComponent confidential chats', () => {
 
   describe('the creating turn', () => {
     beforeEach(() => {
-      spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
-      spyOn(component, 'loadSessions');
-      spyOn(component.router, 'navigateByUrl');
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({} as UserAiSettings));
+      vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
+      vi.spyOn(component.router, 'navigateByUrl').mockReturnValue(undefined as any);
       fixture.detectChanges();
     });
 
     it('should adopt the confidential state a saved chat is created in', async () => {
-      spyOn(chatService, 'sendMessage').and.returnValue(of({
+      vi.spyOn(chatService, 'sendMessage').mockReturnValue(of({
         sessionId: '91',
         isConfidential: true,
         isEphemeral: false,
@@ -2562,16 +2558,16 @@ describe('ChatComponent confidential chats', () => {
       await component.sendMessage();
 
       expect(component.currentSessionId).toBe('91');
-      expect(component.isConfidentialSession).toBeTrue();
-      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.isConfidentialSession).toBe(true);
+      expect(component.isEphemeralSession).toBe(false);
       expect(component.privateBadge!.state).toBe('green');
-      expect(isSentryConfidentialSessionActive()).toBeTrue();
+      expect(isSentryConfidentialSessionActive()).toBe(true);
     });
 
     it('should start a chat from a snapshot with the chosen privacy flags', async () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
-      spyOn(clientBridge, 'postMessage');
-      const attachSpy = spyOn(chatService, 'attachGameSnapshot').and.returnValue(of({
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
+      vi.spyOn(clientBridge, 'postMessage').mockReturnValue(undefined);
+      const attachSpy = vi.spyOn(chatService, 'attachGameSnapshot').mockReturnValue(of({
         sessionId: '55',
         hasGameSnapshot: true,
         isConfidential: true,
@@ -2583,15 +2579,15 @@ describe('ChatComponent confidential chats', () => {
 
       expect(attachSpy).toHaveBeenCalledWith(null, 'the board', undefined, true, false);
       expect(component.currentSessionId).toBe('55');
-      expect(component.isConfidentialSession).toBeTrue();
+      expect(component.isConfidentialSession).toBe(true);
       expect(component.privateBadge!.state).toBe('yellow');
-      expect(component.hasGameSnapshot).toBeTrue();
+      expect(component.hasGameSnapshot).toBe(true);
     });
 
     it('should attach to an open incognito chat under its own reference', async () => {
-      spyOn(clientBridge, 'isEmbedded').and.returnValue(true);
-      spyOn(clientBridge, 'postMessage');
-      const attachSpy = spyOn(chatService, 'attachGameSnapshot').and.returnValue(of({
+      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
+      vi.spyOn(clientBridge, 'postMessage').mockReturnValue(undefined);
+      const attachSpy = vi.spyOn(chatService, 'attachGameSnapshot').mockReturnValue(of({
         sessionId: 'eph_abc',
         hasGameSnapshot: true,
         isConfidential: true,
@@ -2605,7 +2601,7 @@ describe('ChatComponent confidential chats', () => {
 
       expect(attachSpy).toHaveBeenCalledWith('eph_abc', 'the board', undefined, true, true);
       expect(component.currentSessionId).toBe('eph_abc');
-      expect(component.isEphemeralSession).toBeTrue();
+      expect(component.isEphemeralSession).toBe(true);
     });
   });
 
@@ -2650,10 +2646,10 @@ describe('ChatComponent confidential chats', () => {
     };
 
     beforeEach(() => {
-      spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
-      spyOn(component, 'loadSessions');
-      spyOn(component.router, 'navigateByUrl');
-      spyOn(chatService, 'sendMessage').and.returnValue(of({ sessionId: '91', isConfidential: true } as any));
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({} as UserAiSettings));
+      vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
+      vi.spyOn(component.router, 'navigateByUrl').mockReturnValue(undefined as any);
+      vi.spyOn(chatService, 'sendMessage').mockReturnValue(of({ sessionId: '91', isConfidential: true } as any));
       fixture.detectChanges();
     });
 
@@ -2664,23 +2660,23 @@ describe('ChatComponent confidential chats', () => {
 
       expect(component.messages.length).toBe(0);
       expect(component.currentInput).toBe('Something private.');
-      expect(component.isStreaming).toBeFalse();
+      expect(component.isStreaming).toBe(false);
       expect(component.confidentialGate!.reason).toBe(gatePayload.reason);
 
       const dialog = (fixture.nativeElement as HTMLElement)
         .querySelector('dialog[aria-labelledby="confidential-gate-title"]') as HTMLDialogElement;
-      expect(dialog.open).toBeTrue();
+      expect(dialog.open).toBe(true);
       expect(dialog.textContent).toContain('GPT-5');
       expect(dialog.textContent).toContain(gatePayload.reason);
       dialog.close();
     });
 
     it('should record the model as accepted and send the held turn again', async () => {
-      const trustSpy = spyOn(settingsService, 'saveApiKeyConfidentialTrust').and.returnValue(of({}));
+      const trustSpy = vi.spyOn(settingsService, 'saveApiKeyConfidentialTrust').mockReturnValue(of({}));
       component.currentInput = 'Something private.';
 
       await sendAndGate(gatePayload);
-      const resendSpy = spyOn(component, 'sendMessage');
+      const resendSpy = vi.spyOn(component, 'sendMessage').mockReturnValue(undefined as any);
       component.trustGatedModel();
 
       expect(trustSpy).toHaveBeenCalledWith('OpenAI', true);
@@ -2689,11 +2685,11 @@ describe('ChatComponent confidential chats', () => {
     });
 
     it('should record the model as refused and leave the turn unsent', async () => {
-      const trustSpy = spyOn(settingsService, 'saveApiKeyConfidentialTrust').and.returnValue(of({}));
+      const trustSpy = vi.spyOn(settingsService, 'saveApiKeyConfidentialTrust').mockReturnValue(of({}));
       component.currentInput = 'Something private.';
 
       await sendAndGate(gatePayload);
-      const resendSpy = spyOn(component, 'sendMessage');
+      const resendSpy = vi.spyOn(component, 'sendMessage').mockReturnValue(undefined as any);
       component.refuseGatedModel();
 
       expect(trustSpy).toHaveBeenCalledWith('OpenAI', false);
@@ -2705,11 +2701,11 @@ describe('ChatComponent confidential chats', () => {
 
   describe('an incognito chat the server no longer holds', () => {
     it('should return to a new chat and say the content is gone', async () => {
-      const consoleError = spyOn(console, 'error');
-      spyOn(settingsService, 'getSettings').and.returnValue(of({} as UserAiSettings));
-      spyOn(component, 'loadSessions');
-      spyOn(chatService, 'sendMessage').and.returnValue(throwError(() => ({ status: 404 })));
-      const navSpy = spyOn(component as any, 'performNavigateToNewSession');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({} as UserAiSettings));
+      vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
+      vi.spyOn(chatService, 'sendMessage').mockReturnValue(throwError(() => ({ status: 404 })));
+      const navSpy = vi.spyOn(component as any, 'performNavigateToNewSession').mockReturnValue(undefined);
       component.currentSessionId = 'eph_abc';
       component.isEphemeralSession = true;
       component.isConfidentialSession = true;
@@ -2718,11 +2714,11 @@ describe('ChatComponent confidential chats', () => {
       await component.sendMessage();
 
       expect(component.currentSessionId).toBeNull();
-      expect(component.isEphemeralSession).toBeFalse();
+      expect(component.isEphemeralSession).toBe(false);
       expect(component.messages.length).toBe(0);
       expect(component.privacyNotice).toContain('has expired or was closed');
       expect(navSpy).toHaveBeenCalled();
-      expect(consoleError).toHaveBeenCalledWith(jasmine.objectContaining({ status: 404 }));
+      expect(consoleError).toHaveBeenCalledWith(expect.objectContaining({ status: 404 }));
     });
   });
 
@@ -2772,8 +2768,8 @@ describe('ChatComponent confidential chats', () => {
 
     it('should adopt the upgraded state and announce the server notice', () => {
       fixture.detectChanges();
-      spyOn(component, 'loadSessions');
-      const upgradeSpy = spyOn(chatService, 'upgradeSessionToConfidential').and.returnValue(of({
+      vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
+      const upgradeSpy = vi.spyOn(chatService, 'upgradeSessionToConfidential').mockReturnValue(of({
         isConfidential: true,
         retroactive: false,
         notice: 'From the next message on, this chat is confidential.',
@@ -2784,23 +2780,22 @@ describe('ChatComponent confidential chats', () => {
       component.confirmUpgradeToConfidential();
 
       expect(upgradeSpy).toHaveBeenCalledWith(91);
-      expect(component.isConfidentialSession).toBeTrue();
+      expect(component.isConfidentialSession).toBe(true);
       expect(component.privateBadge!.state).toBe('green');
       expect(component.privacyNotice).toContain('From the next message on');
-      expect(isSentryConfidentialSessionActive()).toBeTrue();
+      expect(isSentryConfidentialSessionActive()).toBe(true);
       component.dismissEphemeralNotice();
     });
 
     it('should report a refused upgrade inside the dialog', () => {
       fixture.detectChanges();
-      spyOn(chatService, 'upgradeSessionToConfidential')
-        .and.returnValue(throwError(() => ({ status: 409, error: { error: 'A confidential chat cannot be made standard.' } })));
+      vi.spyOn(chatService, 'upgradeSessionToConfidential').mockReturnValue(throwError(() => ({ status: 409, error: { error: 'A confidential chat cannot be made standard.' } })));
       component.currentSessionId = '91';
 
       component.confirmUpgradeToConfidential();
 
       expect(component.upgradeConfidentialError).toBe('A confidential chat cannot be made standard.');
-      expect(component.isConfidentialSession).toBeFalse();
+      expect(component.isConfidentialSession).toBe(false);
     });
   });
 
@@ -2817,7 +2812,7 @@ describe('ChatComponent confidential chats', () => {
     });
 
     it('should warn about two minutes before the deadline', fakeAsync(() => {
-      spyOn(component.cdr, 'detectChanges');
+      vi.spyOn(component.cdr, 'detectChanges').mockReturnValue(undefined);
       component.currentSessionId = 'eph_abc';
       component.isEphemeralSession = true;
       component.ephemeralExpiresUtc = new Date(Date.now() + 10 * 60 * 1000).toISOString();
@@ -2873,13 +2868,16 @@ describe('ChatComponent confidential chats', () => {
 
   describe('the privacy badge details dialog', () => {
     /** Renders the badge, then opens its dialog without a real showModal(). */
-    function openDialog(badge: PrivateBadge): { dialog: HTMLDialogElement; showModal: jasmine.Spy } {
+    function openDialog(badge: PrivateBadge): {
+      dialog: HTMLDialogElement;
+      showModal: Mock;
+    } {
       fixture.detectChanges();
       component.privateBadge = badge;
       fixture.detectChanges();
 
       const dialog = component.privateBadgeDialog!.nativeElement;
-      const showModal = spyOn(dialog, 'showModal');
+      const showModal = vi.spyOn(dialog, 'showModal').mockReturnValue(undefined);
       (fixture.nativeElement as HTMLElement)
         .querySelector<HTMLButtonElement>('button.private-badge')!.click();
       fixture.detectChanges();
@@ -2915,7 +2913,7 @@ describe('ChatComponent confidential chats', () => {
       for (const state of ['green', 'yellow', 'orange'] as PrivateBadgeState[]) {
         component.privateBadge = makeBadge(state);
         fixture.detectChanges();
-        expect(dialog.querySelector('.pb-fix')).withContext(state).toBeFalsy();
+        expect(dialog.querySelector('.pb-fix'), state).toBeFalsy();
       }
     });
 
@@ -2962,8 +2960,8 @@ describe('ChatComponent attachment accept list', () => {
       spoilerFreeMode: false,
       attachmentAcceptExtensions: extensions
     };
-    spyOn(settingsService, 'getSettingsResponse').and.returnValue(of(new HttpResponse({ body: settings })));
-    spyOn(settingsService, 'getUserModels').and.returnValue(of([] as UserAiModel[]));
+    vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(of(new HttpResponse({ body: settings })));
+    vi.spyOn(settingsService, 'getUserModels').mockReturnValue(of([] as UserAiModel[]));
   }
 
   beforeEach(async () => {
@@ -3004,9 +3002,7 @@ describe('ChatComponent attachment accept list', () => {
     expect(component.attachmentAcceptExtensions).toEqual(DEFAULT_ACCEPT);
 
     component.attachmentAcceptExtensions = DEFAULT_ACCEPT.slice();
-    (settingsService.getSettingsResponse as jasmine.Spy).and.returnValue(
-      of(new HttpResponse({ body: { hasApiKey: true, spoilerFreeMode: false, attachmentAcceptExtensions: [] } as UserAiSettings }))
-    );
+    (settingsService.getSettingsResponse as Mock).mockReturnValue(of(new HttpResponse({ body: { hasApiKey: true, spoilerFreeMode: false, attachmentAcceptExtensions: [] } as UserAiSettings })));
     component.loadSettings(false);
     expect(component.attachmentAcceptExtensions).toEqual(DEFAULT_ACCEPT);
   });
@@ -3026,8 +3022,8 @@ describe('ChatComponent attachment accept list', () => {
     const btn = host.querySelector('.add-media-icon');
     expect(btn).toBeTruthy();
     expect(btn!.getAttribute('aria-label')).toBe('Add attachments');
-    expect(btn!.hasAttribute('title')).toBeFalse();
-    expect(btn!.hasAttribute('interestfor')).toBeFalse();
+    expect(btn!.hasAttribute('title')).toBe(false);
+    expect(btn!.hasAttribute('interestfor')).toBe(false);
     expect(host.querySelector('#tip-add-media')).toBeNull();
   });
 

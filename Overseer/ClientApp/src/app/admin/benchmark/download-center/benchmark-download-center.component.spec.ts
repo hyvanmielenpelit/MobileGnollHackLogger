@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ChangeDetectorRef } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HttpParams, provideHttpClient } from '@angular/common/http';
@@ -122,9 +123,9 @@ describe('BenchmarkDownloadCenterComponent', () => {
   /** The panel inside it: the packages, the rows and the download. */
   let component: DownloadCenterPanelComponent;
   let httpMock: HttpTestingController;
-  let saveText: jasmine.Spy;
-  let saveBytes: jasmine.Spy;
-  let saveBlob: jasmine.Spy;
+  let saveText: Mock;
+  let saveBytes: Mock;
+  let saveBlob: Mock;
   let requested: string[];
   let unexpected: string[];
   let binaryRequests: { url: string; method: string; params: HttpParams; body: unknown }[];
@@ -158,10 +159,10 @@ describe('BenchmarkDownloadCenterComponent', () => {
     fixture.detectChanges();
     component = wrapper.panel;
 
-    saveText = spyOn(downloadCenterIo, 'saveText');
-    saveBytes = spyOn(downloadCenterIo, 'saveBytes');
-    saveBlob = spyOn(downloadCenterIo, 'saveBlob');
-    spyOn(downloadCenterIo, 'now').and.returnValue(NOW);
+    saveText = vi.spyOn(downloadCenterIo, 'saveText').mockReturnValue(undefined);
+    saveBytes = vi.spyOn(downloadCenterIo, 'saveBytes').mockReturnValue(undefined);
+    saveBlob = vi.spyOn(downloadCenterIo, 'saveBlob').mockReturnValue(undefined);
+    vi.spyOn(downloadCenterIo, 'now').mockReturnValue(NOW);
     requested = [];
     unexpected = [];
     binaryRequests = [];
@@ -284,7 +285,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     const url = request.request.url;
     const params = request.request.params;
     binaryRequests.push({ url, method: request.request.method, params, body: request.request.body });
-    expect(request.request.responseType).withContext(url).toBe('arraybuffer');
+    expect(request.request.responseType, url).toBe('arraybuffer');
 
     if (options.pdfError && options.pdfError.pattern.test(url)) {
       request.flush(arrayBufferOf(JSON.stringify(options.pdfError.body)), { status: options.pdfError.status, statusText: 'Error' });
@@ -348,7 +349,10 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
   async function savedZip(): Promise<{ files: Record<string, string>; times: Map<string, Date>; name: string }> {
     expect(saveBlob).toHaveBeenCalledTimes(1);
-    const [blob, name] = saveBlob.calls.mostRecent().args as [Blob, string];
+    const [blob, name] = vi.mocked(saveBlob).mock.lastCall as [
+      Blob,
+      string
+    ];
     const bytes = new Uint8Array(await blob.arrayBuffer());
     const unzipped = unzipSync(bytes);
     const files: Record<string, string> = {};
@@ -366,15 +370,15 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.rows.map(r => r.key)).toEqual(['report:42', 'log:42', 'diag:42', 'doc:1', 'doc:2', 'doc:3']);
       for (const r of component.rows) {
         const check = rowElement(r.key).querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-        expect(check.checked).withContext(r.key).toBeTrue();
-        expect(check.disabled).withContext(r.key).toBeFalse();
+        expect(check.checked, r.key).toBe(true);
+        expect(check.disabled, r.key).toBe(false);
       }
       for (const key of ['doc:1', 'doc:2', 'doc:3']) {
         const [disclosure, names] = Array.from(rowElement(key).querySelectorAll<HTMLSelectElement>('select'));
         expect(disclosure.value).toBe(String(Full));
         expect(names.value).toBe(String(Named));
-        expect(disclosure.disabled).toBeTrue();
-        expect(names.disabled).toBeTrue();
+        expect(disclosure.disabled).toBe(true);
+        expect(names.disabled).toBe(true);
       }
       expect(component.summaryLine).toBe('18 files · 1 ZIP · Internal package');
     });
@@ -431,27 +435,27 @@ describe('BenchmarkDownloadCenterComponent', () => {
         const element = rowElement(key);
         const rid = component.rowId(row(key));
         const check = element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-        expect(check.disabled).withContext(key).toBeTrue();
-        expect(check.checked).withContext(key).toBeFalse();
-        expect(check.getAttribute('aria-describedby')!.split(' ')).withContext(key).toContain(`${rid}-reason`);
+        expect(check.disabled, key).toBe(true);
+        expect(check.checked, key).toBe(false);
+        expect(check.getAttribute('aria-describedby')!.split(' '), key).toContain(`${rid}-reason`);
         const reasonElement = element.querySelector(`[id="${rid}-reason"]`)!;
-        expect(reasonElement.textContent!.trim()).withContext(key).toBe(reason);
+        expect(reasonElement.textContent!.trim(), key).toBe(reason);
         const popup = reasonElement.closest('.gh-info-popup')!;
         expect(popup.querySelector('.gh-info-popup-title')!.textContent!.trim()).toBe(`Internal only: ${row(key).label}`);
-        expect(element.querySelector('.gh-tag-internal')).withContext(key).not.toBeNull();
-        expect(element.querySelector('.dc-reason')).withContext(key).toBeNull();
+        expect(element.querySelector('.gh-tag-internal'), key).not.toBeNull();
+        expect(element.querySelector('.dc-reason'), key).toBeNull();
       }
       expect(INTERNAL_REASONS.internalBrief).toBe('Internal only: contains rubric text');
       expect(INTERNAL_REASONS.runReport).toBe('Internal only: contains questions, rubrics and answers');
 
       for (const key of ['doc:1', 'doc:2']) {
         const element = rowElement(key);
-        expect(element.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBeTrue();
+        expect(element.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
         const [disclosure, names] = Array.from(element.querySelectorAll<HTMLSelectElement>('select'));
         expect(Array.from(disclosure.options).map(o => o.textContent!.trim())).toEqual(['Summary', 'Detailed']);
         expect(disclosure.value).toBe(String(Summary));
         expect(names.value).toBe(String(Anonymized));
-        expect(disclosure.disabled).toBeFalse();
+        expect(disclosure.disabled).toBe(false);
         expect(element.querySelector('.gh-tag-shareable')).not.toBeNull();
       }
       expect(component.summaryLine).toBe('2 files · 1 ZIP · External package');
@@ -486,7 +490,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(Array.from(esDisclosure.options).map(o => o.textContent!.trim())).toEqual(['Summary', 'Detailed', 'Full']);
       const [ibDisclosure] = Array.from(rowElement('doc:3').querySelectorAll<HTMLSelectElement>('select'));
       expect(Array.from(ibDisclosure.options).map(o => o.textContent!.trim())).toEqual(['Full']);
-      expect(rowElement('report:42').querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBeFalse();
+      expect(rowElement('report:42').querySelector<HTMLInputElement>('input[type="checkbox"]')!.disabled).toBe(false);
     });
 
     it('offers the Executive Summary at the levels the server allows, never adding Detailed', () => {
@@ -579,17 +583,17 @@ describe('BenchmarkDownloadCenterComponent', () => {
       for (const [key, note] of cases) {
         const rid = component.rowId(row(key));
         const element = rowElement(key);
-        expect(element.querySelector('.dc-doc-detail')!.textContent!.trim()).withContext(key).toBe('Board Suite · GPT Model X');
+        expect(element.querySelector('.dc-doc-detail')!.textContent!.trim(), key).toBe('Board Suite · GPT Model X');
         const tip = element.querySelector(`[id="${rid}-note"]`)!;
-        expect(tip.textContent!.trim()).withContext(key).toBe(note);
+        expect(tip.textContent!.trim(), key).toBe(note);
         expect(tip.closest('.gh-info-popup')!.querySelector('.gh-info-popup-title')!.textContent!.trim()).toBe(row(key).label);
         const check = element.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-        expect(check.getAttribute('aria-describedby')).withContext(key).toBe(`${rid}-note`);
+        expect(check.getAttribute('aria-describedby'), key).toBe(`${rid}-note`);
       }
       expect(ROW_NOTES.toolCallLog).toBe('Can run to several megabytes; its PDF and Word files can be hundreds of pages.');
       expect(ROW_NOTES.diagnostics).toBe('Captured when the download is prepared, not stored.');
       expect(rowElement('report:42').querySelector(`[id="${component.rowId(row('report:42'))}-note"]`)).toBeNull();
-      expect(rowElement('report:42').querySelector('input[type="checkbox"]')!.hasAttribute('aria-describedby')).toBeFalse();
+      expect(rowElement('report:42').querySelector('input[type="checkbox"]')!.hasAttribute('aria-describedby')).toBe(false);
     });
 
     it('names each row checkbox after its document', () => {
@@ -638,8 +642,8 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(title.getAttribute('tabindex')).toBe('-1');
       expect(document.activeElement).toBe(title);
       const tip = byId(`${component.idPrefix}-close-tip`)!;
-      expect(tip.matches(':popover-open')).toBeFalse();
-      expect(tip.classList.contains(':popover-open')).toBeFalse();
+      expect(tip.matches(':popover-open')).toBe(false);
+      expect(tip.classList.contains(':popover-open')).toBe(false);
     });
 
     it('puts each package description behind an info button beside, not inside, its label', () => {
@@ -648,12 +652,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
       for (const pkg of DOWNLOAD_PACKAGES) {
         const radio = host().querySelector<HTMLInputElement>(`#${component.idPrefix}-package-${pkg.id}`)!;
         const label = radio.closest('label')!;
-        expect(label.querySelector('button')).withContext(pkg.id).toBeNull();
-        expect(label.querySelector('.dc-package-name')!.textContent!.trim()).withContext(pkg.id).toBe(pkg.name);
-        expect(label.querySelector('.dc-package-tagline')!.textContent!.trim()).withContext(pkg.id).toBe(pkg.tagline);
+        expect(label.querySelector('button'), pkg.id).toBeNull();
+        expect(label.querySelector('.dc-package-name')!.textContent!.trim(), pkg.id).toBe(pkg.name);
+        expect(label.querySelector('.dc-package-tagline')!.textContent!.trim(), pkg.id).toBe(pkg.tagline);
         const descriptionId = radio.getAttribute('aria-describedby')!;
         expect(descriptionId).toBe(`${component.idPrefix}-package-${pkg.id}-desc`);
-        expect(byId(descriptionId)!.textContent!.trim()).withContext(pkg.id).toBe(pkg.description);
+        expect(byId(descriptionId)!.textContent!.trim(), pkg.id).toBe(pkg.description);
         const card = label.closest('.dc-package-card')!;
         expect(card.querySelector('button.gh-info-btn')!.getAttribute('aria-label')).toBe(`About ${pkg.name}`);
       }
@@ -665,7 +669,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       expect(host().querySelector('thead')).toBeNull();
       for (const name of ['sharing', 'disclosure', 'names', 'formats']) {
-        expect(byId(`${p}-${name}-tip`)).withContext(name).toBeNull();
+        expect(byId(`${p}-${name}-tip`), name).toBeNull();
       }
       const button = host().querySelector<HTMLButtonElement>('.dc-list-head button.gh-info-btn')!;
       expect(button.getAttribute('aria-label')).toBe('About Document options');
@@ -676,7 +680,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       render();
 
       const infoDialog = button.closest('app-info-tip')!.querySelector<HTMLDialogElement>('dialog')!;
-      expect(infoDialog.open).toBeTrue();
+      expect(infoDialog.open).toBe(true);
       expect(byId(`${p}-options-tip-title`)!.textContent!.trim()).toBe('About document options');
       const sections = Array.from(infoDialog.querySelectorAll('section.dc-help-section'));
       expect(sections.map(section => section.querySelector('h4')!.textContent!.trim()))
@@ -695,7 +699,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       infoDialog.close();
       await closeEvent;
       await settle();
-      expect(wrapper.dialog!.nativeElement.open).toBeTrue();
+      expect(wrapper.dialog!.nativeElement.open).toBe(true);
     });
 
     it('explains the disclosure levels in the options dialog, one section per document type, then the notes', async () => {
@@ -705,13 +709,13 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const button = host().querySelector<HTMLButtonElement>('.dc-list-head button.gh-info-btn[aria-label="About Document options"]')!;
       const tip = button.closest('app-info-tip')!;
       expect(tip.querySelector('.gh-info-popup')).toBeNull();
-      expect(button.hasAttribute('popovertarget')).toBeFalse();
+      expect(button.hasAttribute('popovertarget')).toBe(false);
 
       button.click();
       render();
 
       const infoDialog = tip.querySelector<HTMLDialogElement>('dialog')!;
-      expect(infoDialog.open).toBeTrue();
+      expect(infoDialog.open).toBe(true);
       expect(infoDialog.classList).toContain('gh-info-dialog');
       const disclosure = Array.from(infoDialog.querySelectorAll('section.dc-help-section'))
         .find(section => section.querySelector('h4')!.textContent!.trim() === 'Disclosure')!;
@@ -752,7 +756,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       infoDialog.close();
       await closeEvent;
       await settle();
-      expect(wrapper.dialog!.nativeElement.open).toBeTrue();
+      expect(wrapper.dialog!.nativeElement.open).toBe(true);
     });
 
     it('builds each document type\'s viewer explanation from its own guide', () => {
@@ -786,10 +790,10 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const allText = (audience: BenchmarkReportAudience) => reportDisclosureGuide(audience).items
         .map(item => [item.term, item.text, ...(item.points ?? [])].join(' '));
 
-      expect(allText(ExecutiveSummary).some(text => /topic/i.test(text))).toBeFalse();
-      expect(allText(ExecutiveSummary).some(text => text.includes('Evidence'))).toBeFalse();
-      expect(allText(InternalBrief).some(text => /Evidence line under/.test(text))).toBeFalse();
-      expect(allText(TechnicalReport).some(text => text.includes('An Evidence line'))).toBeTrue();
+      expect(allText(ExecutiveSummary).some(text => /topic/i.test(text))).toBe(false);
+      expect(allText(ExecutiveSummary).some(text => text.includes('Evidence'))).toBe(false);
+      expect(allText(InternalBrief).some(text => /Evidence line under/.test(text))).toBe(false);
+      expect(allText(TechnicalReport).some(text => text.includes('An Evidence line'))).toBe(true);
 
       const executiveFull = reportDisclosureGuide(ExecutiveSummary).items.find(item => item.term === 'Full')!;
       expect(executiveFull.points!.join(' ')).toContain('“INTERNAL — unpublished benchmark results.');
@@ -807,7 +811,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(REPORT_DISCLOSURE_GUIDES.map(guide => guide.audience)).toEqual(allowed.map(([audience]) => audience));
       for (const [audience, levels] of allowed) {
         const offered = reportDisclosureGuide(audience).items.map(item => item.term).filter(term => levelNames.includes(term));
-        expect(offered).withContext(`audience ${audience}`).toEqual(levels);
+        expect(offered, `audience ${audience}`).toEqual(levels);
       }
     });
 
@@ -824,14 +828,14 @@ describe('BenchmarkDownloadCenterComponent', () => {
         .map(element => element.id);
       expect(own.length).toBeGreaterThan(0);
       for (const id of own) {
-        expect(id.startsWith(`${component.idPrefix}-`)).withContext(id).toBeTrue();
+        expect(id.startsWith(`${component.idPrefix}-`), id).toBe(true);
       }
       expect(component.idPrefix).toBe(wrapper.idPrefix);
       const described = Array.from(host().querySelectorAll('[aria-describedby]'));
       expect(described.length).toBeGreaterThan(0);
       for (const element of described) {
         for (const id of element.getAttribute('aria-describedby')!.split(' ')) {
-          expect(byId(id)).withContext(id).not.toBeNull();
+          expect(byId(id), id).not.toBeNull();
         }
       }
     });
@@ -845,8 +849,8 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.paper).toBe('a4');
       const a4 = host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-a4`)!;
       const letter = host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-letter`)!;
-      expect(a4.checked).toBeTrue();
-      expect(letter.checked).toBeFalse();
+      expect(a4.checked).toBe(true);
+      expect(letter.checked).toBe(false);
       expect(letter.closest('label')!.textContent!.trim()).toBe('US Letter');
       for (const radio of [a4, letter]) {
         expect(byId(radio.getAttribute('aria-describedby')!)!.textContent!.trim())
@@ -873,7 +877,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         '/api/admin/benchmark/runs/42/tool-call-log/docx'
       ]);
       for (const request of binaryRequests) {
-        expect(request.params.get('paper')).withContext(request.url).toBe('letter');
+        expect(request.params.get('paper'), request.url).toBe('letter');
       }
       const manifest = (await savedZip()).files['MANIFEST.md'];
       expect(manifest.match(/- \*\*Format:\*\* Word\n- \*\*Word:\*\* Office Open XML \(\.docx\), US Letter\n/g)?.length).toBe(4);
@@ -901,7 +905,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         '/api/admin/benchmark/runs/42/tool-call-log/pdf'
       ]);
       for (const request of binaryRequests) {
-        expect(request.params.get('paper')).withContext(request.url).toBe('letter');
+        expect(request.params.get('paper'), request.url).toBe('letter');
       }
       const zip = await savedZip();
       expect(zip.files['MANIFEST.md'].match(/- \*\*PDF:\*\* PDF\/UA-1, PDF\/A-3A, US Letter/g)?.length).toBe(4);
@@ -910,7 +914,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       wrapper.close();
       openRun();
       expect(component.paper).toBe('letter');
-      expect(host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-letter`)!.checked).toBeTrue();
+      expect(host().querySelector<HTMLInputElement>(`#${component.idPrefix}-paper-letter`)!.checked).toBe(true);
     });
 
     it('shares one heading style across the sidebar and the Documents column, and draws the paper sizes as cards', () => {
@@ -918,7 +922,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const p = component.idPrefix;
 
       for (const id of [`${p}-package-legend`, `${p}-paper-legend`, `${p}-documents-title`]) {
-        expect(byId(id)!.classList.contains('gh-section-title')).withContext(id).toBeTrue();
+        expect(byId(id)!.classList.contains('gh-section-title'), id).toBe(true);
       }
       const options = Array.from(host().querySelectorAll<HTMLLabelElement>('.dc-paper-choice label.dc-paper-option'));
       expect(options.length).toBe(2);
@@ -962,7 +966,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.paper).toBe('a4');
       expect(component.stateOf(row('doc:1')).disclosure).toBe(Summary);
       expect(component.stateOf(row('doc:1')).formats).toEqual(['pdf']);
-      expect(component.isIncluded(row('report:42'))).toBeFalse();
+      expect(component.isIncluded(row('report:42'))).toBe(false);
     });
 
     it('ignores settings of version 1, so every admin starts from the PDF presets once', () => {
@@ -1027,7 +1031,9 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.packageId).toBe('internal');
       wrapper.close();
 
-      spyOn(Storage.prototype, 'getItem').and.throwError('denied');
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
       openRun();
       expect(component.packageId).toBe('internal');
     });
@@ -1043,7 +1049,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(stored.package).toBe('provider');
       expect(stored.paper).toBe('a4');
       expect(stored.packages.provider.executiveSummary).toEqual({ selected: true, disclosure: Detailed, naming: Named, formats: ['md'] });
-      expect(stored.packages.provider.technicalReport.selected).toBeFalse();
+      expect(stored.packages.provider.technicalReport.selected).toBe(false);
     });
   });
 
@@ -1057,10 +1063,8 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       expect(saveBlob).not.toHaveBeenCalled();
       expect(saveBytes).not.toHaveBeenCalled();
-      expect(saveText).toHaveBeenCalledOnceWith(
-        'run-42_executive-summary-gpt-model-x_summary_anonymized.md',
-        '# Document 1 (summary, anonymized)\n\nCost $4 per question.\n',
-        'text/markdown;charset=utf-8');
+      expect(saveText).toHaveBeenCalledTimes(1);
+      expect(saveText).toHaveBeenCalledWith('run-42_executive-summary-gpt-model-x_summary_anonymized.md', '# Document 1 (summary, anonymized)\n\nCost $4 per question.\n', 'text/markdown;charset=utf-8');
       expect(requested.filter(url => url.endsWith('/render')).length).toBe(1);
       expect(host().querySelector('.dc-status[role="status"]')!.textContent!.trim()).toBe('Downloaded 1 file.');
     });
@@ -1075,7 +1079,11 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(saveText).not.toHaveBeenCalled();
       expect(saveBlob).not.toHaveBeenCalled();
       expect(saveBytes).toHaveBeenCalledTimes(1);
-      const [name, bytes, mime] = saveBytes.calls.mostRecent().args as [string, Uint8Array, string];
+      const [name, bytes, mime] = vi.mocked(saveBytes).mock.lastCall as [
+        string,
+        Uint8Array,
+        string
+      ];
       expect(name).toBe('run-42_executive-summary-gpt-model-x_summary_anonymized.pdf');
       expect(mime).toBe('application/pdf');
       expect(new TextDecoder().decode(bytes)).toBe('%PDF-1.7\n% /api/admin/benchmark/report-documents/1/render/pdf a4\n');
@@ -1083,7 +1091,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(binaryRequests[0].params.get('disclosure')).toBe('summary');
       expect(binaryRequests[0].params.get('peers')).toBe('anonymized');
       expect(binaryRequests[0].params.get('paper')).toBe('a4');
-      expect(requested.some(url => url.endsWith('/render'))).toBeFalse();
+      expect(requested.some(url => url.endsWith('/render'))).toBe(false);
     });
 
     it('downloads several files as one ZIP with a manifest, each entry carrying its stated time', async () => {
@@ -1121,7 +1129,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       };
       expect(Object.keys(zip.files).sort()).toEqual(Object.keys(expected).sort());
       for (const [name, time] of Object.entries(expected)) {
-        expect(zip.times.get(name)?.getTime()).withContext(name).toBe(time);
+        expect(zip.times.get(name)?.getTime(), name).toBe(time);
       }
 
       // One fetch per source, however many formats use it.
@@ -1151,14 +1159,14 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(manifest).toContain(`\`${pdfHash}\``);
       const docxHash = await sha256Hex(zip.files[REPORT_DOCX_NAME]);
       expect(manifest).toContain(`\`${docxHash}\``);
-      expect(zip.files[REPORT_PDF_NAME].startsWith('%PDF-1.7\n')).toBeTrue();
+      expect(zip.files[REPORT_PDF_NAME].startsWith('%PDF-1.7\n')).toBe(true);
       expect(zip.files[REPORT_DOCX_NAME]).toBe('PK\u0003\u0004 /api/admin/benchmark/runs/42/report/docx a4\n');
       expect(zip.files['board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt']).toBe('=== BENCHMARK RUN DIAGNOSTICS ===\n');
       expect(host().querySelector('.dc-status[role="status"]')!.textContent!.trim()).toBe('Downloaded 18 files as one ZIP.');
     });
 
     it('captures the diagnostics once, feeding the Text, the PDF and the Word document the same text and time', async () => {
-      const diagnosticsText = jasmine.createSpy('diagnosticsText').and.returnValue('=== BENCHMARK RUN DIAGNOSTICS ===\nCaptured once.\n');
+      const diagnosticsText = vi.fn().mockName('diagnosticsText').mockReturnValue('=== BENCHMARK RUN DIAGNOSTICS ===\nCaptured once.\n');
       openRun(undefined, { ...runContext, diagnosticsText });
       choose('internal', { 'diag:42': {} });
       expect(component.stateOf(row('diag:42')).formats).toEqual(['pdf', 'docx', 'txt']);
@@ -1174,9 +1182,9 @@ describe('BenchmarkDownloadCenterComponent', () => {
         '/api/admin/benchmark/runs/42/diagnostics/docx'
       ]);
       for (const request of binaryRequests) {
-        expect(request.method).withContext(request.url).toBe('POST');
-        expect(request.body).withContext(request.url).toEqual({ text, capturedAtUtc: NOW_ISO });
-        expect(request.params.get('paper')).withContext(request.url).toBe('a4');
+        expect(request.method, request.url).toBe('POST');
+        expect(request.body, request.url).toEqual({ text, capturedAtUtc: NOW_ISO });
+        expect(request.params.get('paper'), request.url).toBe('a4');
       }
       expect(zip.times.get(DIAG_PDF_NAME)?.getTime()).toBe(NOW.getTime());
       expect(zip.times.get(DIAG_DOCX_NAME)?.getTime()).toBe(NOW.getTime());
@@ -1195,7 +1203,11 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(saveText).not.toHaveBeenCalled();
       expect(saveBlob).not.toHaveBeenCalled();
       expect(saveBytes).toHaveBeenCalledTimes(1);
-      const [name, bytes, mime] = saveBytes.calls.mostRecent().args as [string, Uint8Array, string];
+      const [name, bytes, mime] = vi.mocked(saveBytes).mock.lastCall as [
+        string,
+        Uint8Array,
+        string
+      ];
       expect(name).toBe('run-42_executive-summary-gpt-model-x_detailed_anonymized.docx');
       expect(mime).toBe(DOCX_MIME);
       expect(new TextDecoder().decode(bytes)).toBe('PK\u0003\u0004 /api/admin/benchmark/report-documents/1/render/docx letter\n');
@@ -1204,7 +1216,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(binaryRequests[0].params.get('disclosure')).toBe('detailed');
       expect(binaryRequests[0].params.get('peers')).toBe('anonymized');
       expect(binaryRequests[0].params.get('paper')).toBe('letter');
-      expect(requested.some(url => url.endsWith('/render') || url.endsWith('/render/pdf'))).toBeFalse();
+      expect(requested.some(url => url.endsWith('/render') || url.endsWith('/render/pdf'))).toBe(false);
     });
 
     it('names the diagnostics’ Word document itself when the server gives no name', async () => {
@@ -1213,62 +1225,62 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       await runDownload({ unnamed: /diagnostics\/docx$/ });
 
-      expect(saveBytes.calls.mostRecent().args[0]).toBe('board-suite_gpt-model-x_run42_diagnostics_INTERNAL.docx');
-      expect(saveBytes.calls.mostRecent().args[2]).toBe(DOCX_MIME);
+      expect(vi.mocked(saveBytes).mock.lastCall![0]).toBe('board-suite_gpt-model-x_run42_diagnostics_INTERNAL.docx');
+      expect(vi.mocked(saveBytes).mock.lastCall![2]).toBe(DOCX_MIME);
     });
 
     it('marks _INTERNAL in every package, after safeFileName, so the suffix keeps its case', async () => {
       openRun();
       choose('custom', { 'doc:1': { disclosure: Full, naming: Anonymized, formats: ['md'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('run-42_executive-summary-gpt-model-x_full_anonymized_INTERNAL.md');
+      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('run-42_executive-summary-gpt-model-x_full_anonymized_INTERNAL.md');
 
       choose('custom', { 'doc:2': { disclosure: Detailed, naming: Named, formats: ['html'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('run-42_gpt-model-x_Researcher_Report_detailed_named.html');
-      expect(saveText.calls.mostRecent().args[2]).toBe('text/html;charset=utf-8');
+      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('run-42_gpt-model-x_Researcher_Report_detailed_named.html');
+      expect(vi.mocked(saveText).mock.lastCall![2]).toBe('text/html;charset=utf-8');
 
       choose('provider', { 'doc:2': { formats: ['md'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('run-42_gpt-model-x_Researcher_Report_summary_anonymized.md');
-      expect(saveText.calls.mostRecent().args[0]).not.toContain('INTERNAL');
+      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('run-42_gpt-model-x_Researcher_Report_summary_anonymized.md');
+      expect(vi.mocked(saveText).mock.lastCall![0]).not.toContain('INTERNAL');
 
       choose('internal', { 'diag:42': { formats: ['txt'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt');
-      expect(saveText.calls.mostRecent().args[2]).toBe('text/plain;charset=utf-8');
+      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('board-suite_gpt-model-x_run42_diagnostics_INTERNAL.txt');
+      expect(vi.mocked(saveText).mock.lastCall![2]).toBe('text/plain;charset=utf-8');
 
       choose('custom', { 'doc:1': { disclosure: Full, naming: Named, formats: ['pdf'] } });
       await runDownload();
-      expect(saveBytes.calls.mostRecent().args[0]).toBe('run-42_executive-summary-gpt-model-x_full_named_INTERNAL.pdf');
+      expect(vi.mocked(saveBytes).mock.lastCall![0]).toBe('run-42_executive-summary-gpt-model-x_full_named_INTERNAL.pdf');
     });
 
     it('keeps the server file name of the run files, with _INTERNAL once', async () => {
       openRun();
       choose('custom', { 'report:42': { formats: ['html'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.html');
-      expect(saveText.calls.mostRecent().args[1]).toContain('<!DOCTYPE html>');
+      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('Board_Suite_GPT_Model_X_20260921_160000_INTERNAL.html');
+      expect(vi.mocked(saveText).mock.lastCall![1]).toContain('<!DOCTYPE html>');
 
       choose('custom', { 'log:42': { formats: ['md'] } });
       await runDownload();
-      expect(saveText.calls.mostRecent().args[0]).toBe('Board_Suite_GPT_Model_X_run42_tool_calls_INTERNAL.md');
-      expect(saveText.calls.mostRecent().args[1]).toBe('# Tool calls\n');
+      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('Board_Suite_GPT_Model_X_run42_tool_calls_INTERNAL.md');
+      expect(vi.mocked(saveText).mock.lastCall![1]).toBe('# Tool calls\n');
 
       const pdfs: [string, string][] = [['report:42', REPORT_PDF_NAME], ['log:42', LOG_PDF_NAME], ['diag:42', DIAG_PDF_NAME]];
       for (const [key, name] of pdfs) {
         choose('custom', { [key]: { formats: ['pdf'] } });
         await runDownload();
-        expect(saveBytes.calls.mostRecent().args[0]).withContext(key).toBe(name);
-        expect(saveBytes.calls.mostRecent().args[2]).withContext(key).toBe('application/pdf');
+        expect(vi.mocked(saveBytes).mock.lastCall![0], key).toBe(name);
+        expect(vi.mocked(saveBytes).mock.lastCall![2], key).toBe('application/pdf');
       }
 
       const docxs: [string, string][] = [['report:42', REPORT_DOCX_NAME], ['log:42', LOG_DOCX_NAME], ['diag:42', DIAG_DOCX_NAME]];
       for (const [key, name] of docxs) {
         choose('custom', { [key]: { formats: ['docx'] } });
         await runDownload();
-        expect(saveBytes.calls.mostRecent().args[0]).withContext(key).toBe(name);
-        expect(saveBytes.calls.mostRecent().args[2]).withContext(key).toBe(DOCX_MIME);
+        expect(vi.mocked(saveBytes).mock.lastCall![0], key).toBe(name);
+        expect(vi.mocked(saveBytes).mock.lastCall![2], key).toBe(DOCX_MIME);
       }
     });
 
@@ -1302,8 +1314,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(`${summary('group:5')}_summary_named.pdf`)
         .toBe('gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf');
       for (const key of ['run:', 'run:7a', 'run:12\n', 'xrun:12']) {
-        expect(summary(key)).withContext(JSON.stringify(key))
-          .toBe('gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary');
+        expect(summary(key), JSON.stringify(key)).toBe('gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary');
       }
     });
 
@@ -1320,7 +1331,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       const zip = await savedZip();
       expect(Object.keys(zip.files).length).toBe(16);
-      expect(Object.keys(zip.files).some(name => name.startsWith('Board_Suite_GPT_Model_X_2026'))).toBeFalse();
+      expect(Object.keys(zip.files).some(name => name.startsWith('Board_Suite_GPT_Model_X_2026'))).toBe(false);
       expect(zip.files['MANIFEST.md']).toContain('## Not included');
       expect(zip.files['MANIFEST.md']).toContain('Run report, run #42 (Markdown): the run no longer exists');
       expect(component.failures.map(f => `${f.label}: ${f.reason}`)).toEqual([
@@ -1354,10 +1365,14 @@ describe('BenchmarkDownloadCenterComponent', () => {
         renderBody: () => '# Title\n\n<script>alert(1)</script>\n\n<img src="https://example.invalid/x.png" onerror="alert(2)">\n\n<p style="color: red" onclick="x()">Styled</p>\n\nCost $4 and $20 in total.\n'
       });
 
-      const [name, html, mime] = saveText.calls.mostRecent().args as [string, string, string];
+      const [name, html, mime] = vi.mocked(saveText).mock.lastCall as [
+        string,
+        string,
+        string
+      ];
       expect(name).toBe('run-42_executive-summary-gpt-model-x_summary_anonymized.html');
       expect(mime).toBe('text/html;charset=utf-8');
-      expect(html.startsWith('<!DOCTYPE html>')).toBeTrue();
+      expect(html.startsWith('<!DOCTYPE html>')).toBe(true);
       expect(html).toContain('<title>Executive Summary: GPT Model X</title>');
       expect(html).not.toContain('<script>alert');
       expect(html).not.toContain('onerror');
@@ -1397,7 +1412,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       render();
 
       const step1 = 'Preparing 1 of 2 — Executive Summary: GPT Model X (PDF)';
-      expect(component.preparing).toBeTrue();
+      expect(component.preparing).toBe(true);
       expect(component.progress).toEqual({ done: 0, total: 3, step: step1 } satisfies DownloadProgress);
       expect(overlay()).not.toBeNull();
       expect(overlay()!.getAttribute('aria-hidden')).toBe('true');
@@ -1428,10 +1443,10 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await done;
       render();
 
-      expect(component.preparing).toBeFalse();
+      expect(component.preparing).toBe(false);
       expect(component.progress).toBeNull();
       expect(overlay()).toBeNull();
-      expect(host().querySelector('.dc-body')!.hasAttribute('aria-busy')).toBeFalse();
+      expect(host().querySelector('.dc-body')!.hasAttribute('aria-busy')).toBe(false);
       expect(downloadButton().textContent!.trim()).toBe('Download');
       expect(downloadButton().querySelector('.gh-spinner-small')).toBeNull();
       expect(downloadButton().querySelector('svg.btn-icon')).not.toBeNull();
@@ -1443,7 +1458,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       openRun();
       choose('custom', { 'doc:1': { formats: ['md', 'html'] } });
       const steps: string[] = [];
-      saveBlob.and.callFake(() => {
+      saveBlob.mockImplementation(() => {
         steps.push(component.progress!.step);
         expect(component.progress!.done).toBe(2);
       });
@@ -1457,7 +1472,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     it('names the last step Saving… for a single file', async () => {
       openRun();
       choose('custom', { 'doc:1': { formats: ['md'] } });
-      saveText.and.callFake(() => {
+      saveText.mockImplementation(() => {
         expect(component.progress).toEqual({ done: 1, total: 2, step: 'Saving…' });
       });
 
@@ -1480,7 +1495,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       fixture.nativeElement.querySelector('dialog')!.dispatchEvent(new Event('close'));
       render();
 
-      expect(component.preparing).toBeFalse();
+      expect(component.preparing).toBe(false);
       expect(component.progress).toBeNull();
       expect(overlay()).toBeNull();
 
@@ -1626,7 +1641,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       });
 
       expect(component.rows.map(r => r.key)).toEqual(['doc:1', 'doc:2', 'report:42']);
-      expect(component.rows.some(r => r.kind === 'diagnostics' || r.kind === 'toolCallLog')).toBeFalse();
+      expect(component.rows.some(r => r.kind === 'diagnostics' || r.kind === 'toolCallLog')).toBe(false);
       expect(row('report:42').formats).toEqual(['pdf', 'docx', 'md', 'html']);
       const notices = Array.from(host().querySelectorAll('.dc-notice')).map(n => n.textContent!.trim());
       expect(notices).toContain('Run #43 no longer exists, so its run report is not listed.');
@@ -1639,7 +1654,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       await runDownload();
 
-      expect(requested.every(url => ALLOWED_URLS.some(pattern => pattern.test(url)))).toBeTrue();
+      expect(requested.every(url => ALLOWED_URLS.some(pattern => pattern.test(url)))).toBe(true);
       const zip = await savedZip();
       expect(zip.name).toBe('gpt-model-x_internal-package_20260928_101502.zip');
       const started = new Date('2026-09-21T16:00:00Z').getTime();
@@ -1685,30 +1700,30 @@ describe('BenchmarkDownloadCenterComponent', () => {
   it('keeps the panel’s nested dialogs from closing it, and closes from the panel’s Cancel', () => {
     openRun();
     const outer = wrapper.dialog!.nativeElement;
-    expect(outer.open).toBeTrue();
+    expect(outer.open).toBe(true);
     const heard: string[] = [];
     outer.addEventListener('close', () => heard.push('close'));
     outer.addEventListener('cancel', () => heard.push('cancel'));
 
     for (const selector of ['dialog.dc-delete-dialog', 'dialog.pdfv']) {
       const nested = host().querySelector<HTMLDialogElement>(selector)!;
-      expect(nested).withContext(selector).not.toBeNull();
+      expect(nested, selector).not.toBeNull();
       nested.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
       nested.dispatchEvent(new Event('close', { bubbles: true }));
     }
     expect(heard).toEqual([]);
-    expect(outer.open).toBeTrue();
+    expect(outer.open).toBe(true);
     // The wrapper lends no chart actions.
     expect(host().querySelector('.dc-update-charts')).toBeNull();
     expect(host().querySelector('.dc-option-charts')).toBeNull();
 
     host().querySelector<HTMLButtonElement>('.dc-footer .dc-cancel')!.click();
-    expect(outer.open).toBeFalse();
+    expect(outer.open).toBe(false);
   });
 
   it('emits closed when the dialog closes', () => {
     openRun();
-    const closed = jasmine.createSpy('closed');
+    const closed = vi.fn().mockName('closed');
     wrapper.closed.subscribe(closed);
 
     wrapper.close();

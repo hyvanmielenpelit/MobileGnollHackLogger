@@ -25,10 +25,10 @@ describe('clipboard.util', () => {
   });
 
   it('writes the text and reports success', async () => {
-    const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+    const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
     installClipboard({ writeText });
 
-    await expectAsync(copyToClipboard('the methods statement')).toBeResolvedTo(true);
+    await expect(copyToClipboard('the methods statement')).resolves.toEqual(true);
     expect(writeText).toHaveBeenCalledWith('the methods statement');
   });
 
@@ -36,52 +36,51 @@ describe('clipboard.util', () => {
     // What an insecure context looks like from script: the property is simply not there.
     installClipboard(undefined);
 
-    await expectAsync(copyToClipboard('anything')).toBeResolvedTo(false);
+    await expect(copyToClipboard('anything')).resolves.toEqual(false);
   });
 
   it('reports failure when the write is rejected', async () => {
-    const writeText = jasmine.createSpy('writeText')
-      .and.returnValue(Promise.reject(new Error('Write permission denied.')));
+    const writeText = vi.fn().mockName('writeText').mockRejectedValue(new Error('Write permission denied.'));
     installClipboard({ writeText });
 
     // Resolved false, never a rejection: a denied permission is an outcome the caller renders.
-    await expectAsync(copyToClipboard('anything')).toBeResolvedTo(false);
+    await expect(copyToClipboard('anything')).resolves.toEqual(false);
     expect(writeText).toHaveBeenCalled();
   });
 
   describe('copyTextFromPromise', () => {
     it('falls back to writeText once the text resolves when there is no write()', async () => {
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       installClipboard({ writeText });
 
-      await expectAsync(copyTextFromPromise(Promise.resolve('late text'))).toBeResolvedTo(true);
+      await expect(copyTextFromPromise(Promise.resolve('late text'))).resolves.toEqual(true);
       expect(writeText).toHaveBeenCalledWith('late text');
     });
 
     it('reports failure when the text never arrives', async () => {
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       installClipboard({ writeText });
 
-      await expectAsync(copyTextFromPromise(Promise.reject(new Error('fetch failed')))).toBeResolvedTo(false);
+      await expect(copyTextFromPromise(Promise.reject(new Error('fetch failed')))).resolves.toEqual(false);
       expect(writeText).not.toHaveBeenCalled();
     });
 
     it('reports failure when there is no clipboard API', async () => {
       installClipboard(undefined);
-      await expectAsync(copyTextFromPromise(Promise.resolve('x'))).toBeResolvedTo(false);
+      await expect(copyTextFromPromise(Promise.resolve('x'))).resolves.toEqual(false);
     });
 
-    it('writes a promised ClipboardItem synchronously where the platform supports it', async () => {
+    it('writes a promised ClipboardItem synchronously where the platform supports it', async ({ skip }) => {
       if (typeof ClipboardItem === 'undefined') {
-        pending('ClipboardItem is not available in this browser.');
+        skip('ClipboardItem is not available in this browser.');
         return;
       }
       let written: ClipboardItem[] | null = null;
-      const write = jasmine.createSpy('write').and.callFake((items: ClipboardItem[]) => {
+      const write = vi.fn().mockName('write').mockImplementation((items: ClipboardItem[]) => {
         written = items;
         return Promise.resolve();
       });
-      installClipboard({ write, writeText: jasmine.createSpy('writeText') });
+      installClipboard({ write, writeText: vi.fn().mockName('writeText') });
 
       let resolveText!: (t: string) => void;
       const pendingText = new Promise<string>(r => { resolveText = r; });
@@ -90,7 +89,7 @@ describe('clipboard.util', () => {
       // Issued before the text exists, which is what keeps the write inside the user's activation.
       expect(write).toHaveBeenCalledTimes(1);
       resolveText('produced later');
-      await expectAsync(copy).toBeResolvedTo(true);
+      await expect(copy).resolves.toEqual(true);
 
       const blob = await written![0].getType('text/plain');
       expect(await blob.text()).toBe('produced later');

@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Subject, of } from 'rxjs';
 
@@ -18,7 +19,7 @@ import { SystemAiConfigDto } from '../../../services/admin.service';
 describe('SuiteDescriptionGenerationDialogComponent', () => {
   let component: SuiteDescriptionGenerationDialogComponent;
   let fixture: ComponentFixture<SuiteDescriptionGenerationDialogComponent>;
-  let serviceMock: jasmine.SpyObj<AdminBenchmarkService>;
+  let serviceMock: MockedObject<AdminBenchmarkService>;
 
   const MODEL_ID = 7;
 
@@ -100,15 +101,17 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
 
   function click(selector: string): void {
     const element = query<HTMLElement>(selector);
-    expect(element).withContext(selector).toBeTruthy();
+    expect(element, selector).toBeTruthy();
     element!.click();
     fixture.detectChanges();
   }
 
   beforeEach(async () => {
     localStorage.removeItem(SuiteDescriptionGenerationDialogComponent.MODEL_STORAGE_KEY);
-    serviceMock = jasmine.createSpyObj('AdminBenchmarkService', ['generateSuiteDescription']);
-    serviceMock.generateSuiteDescription.and.returnValue(of(buildResult()));
+    serviceMock = {
+      generateSuiteDescription: vi.fn().mockName("AdminBenchmarkService.generateSuiteDescription")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    serviceMock.generateSuiteDescription.mockReturnValue(of(buildResult()));
 
     await TestBed.configureTestingModule({
       imports: [SuiteDescriptionGenerationDialogComponent],
@@ -128,7 +131,7 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
     open();
 
     const dialog = query<HTMLDialogElement>('dialog.sdg-dialog')!;
-    expect(dialog.open).toBeTrue();
+    expect(dialog.open).toBe(true);
     expect(query('#sdgModelTrigger .model-name')!.textContent).toContain('GPT Generator');
 
     click('#sdgModelTrigger');
@@ -177,7 +180,7 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
 
   it('should call the service with the request body and show indeterminate progress while running', () => {
     const subject = new Subject<SuiteDescriptionGenerationResultDto>();
-    serviceMock.generateSuiteDescription.and.returnValue(subject.asObservable());
+    serviceMock.generateSuiteDescription.mockReturnValue(subject.asObservable());
     open();
 
     click('.sdg-start-btn');
@@ -195,11 +198,11 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
 
   it('should render a completed result and apply it through Use this description', () => {
     const subject = new Subject<SuiteDescriptionGenerationResultDto>();
-    serviceMock.generateSuiteDescription.and.returnValue(subject.asObservable());
+    serviceMock.generateSuiteDescription.mockReturnValue(subject.asObservable());
     open();
     click('.sdg-start-btn');
 
-    const generated = spyOn(component.descriptionGenerated, 'emit');
+    const generated = vi.spyOn(component.descriptionGenerated, 'emit').mockReturnValue(undefined);
     subject.next(buildResult());
     subject.complete();
     fixture.detectChanges();
@@ -212,30 +215,30 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
     // Preview is the default: the rendered pane is visible, the source pane hidden.
     expect(query('#sdgResult-tab-preview')!.getAttribute('aria-selected')).toBe('true');
     const preview = query<HTMLElement>('.sdg-result-preview')!;
-    expect(preview.hasAttribute('hidden')).toBeFalse();
+    expect(preview.hasAttribute('hidden')).toBe(false);
     // Heading level is the pipe's business; the preview only has to render it as a heading.
     const headings = Array.from(preview.querySelectorAll('h1, h2, h3')).map(h => h.textContent ?? '');
-    expect(headings.some(text => text.includes('Draft description'))).toBeTrue();
-    expect(resultBox.hasAttribute('hidden')).toBeTrue();
+    expect(headings.some(text => text.includes('Draft description'))).toBe(true);
+    expect(resultBox.hasAttribute('hidden')).toBe(true);
 
     click('#sdgResult-tab-markdown');
     expect(query('#sdgResult-tab-markdown')!.getAttribute('aria-selected')).toBe('true');
-    expect(preview.hasAttribute('hidden')).toBeTrue();
-    expect(resultBox.hasAttribute('hidden')).toBeFalse();
+    expect(preview.hasAttribute('hidden')).toBe(true);
+    expect(resultBox.hasAttribute('hidden')).toBe(false);
 
     // Generate again is the plain gold image button, never a ghost button in a footer.
     const again = query<HTMLButtonElement>('.sdg-again-btn')!;
-    expect(again.classList.contains('btn-gh')).toBeTrue();
-    expect(again.classList.contains('btn-ghost')).toBeFalse();
+    expect(again.classList.contains('btn-gh')).toBe(true);
+    expect(again.classList.contains('btn-ghost')).toBe(false);
 
     click('.sdg-use-btn');
 
     expect(generated).toHaveBeenCalledWith('## Draft description\n\nSome generated text.');
-    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBeFalse();
+    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBe(false);
   });
 
   it('should auto-open diagnostics on a failed result and copy the log excerpt', async () => {
-    serviceMock.generateSuiteDescription.and.returnValue(of(buildResult({
+    serviceMock.generateSuiteDescription.mockReturnValue(of(buildResult({
       status: 'Failed',
       description: null,
       errorMessage: 'The model returned no usable text.',
@@ -246,21 +249,21 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
     open();
     click('.sdg-start-btn');
 
-    expect(query<HTMLDetailsElement>('details.job-diagnostics')!.open).toBeTrue();
+    expect(query<HTMLDetailsElement>('details.job-diagnostics')!.open).toBe(true);
     expect(query('.sdg-alert')!.textContent).toContain('The model returned no usable text.');
 
-    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
     click('.diagnostics-toolbar .action-btn');
     await fixture.whenStable();
     fixture.detectChanges();
 
     expect(writeText).toHaveBeenCalledTimes(1);
-    expect(writeText.calls.mostRecent().args[0] as string).toContain('Excerpt: HTTP 200, empty body');
+    expect(vi.mocked(writeText).mock.lastCall![0] as string).toContain('Excerpt: HTTP 200, empty body');
   });
 
   it('should unsubscribe on Cancel and read the status as Cancelled', () => {
     const subject = new Subject<SuiteDescriptionGenerationResultDto>();
-    serviceMock.generateSuiteDescription.and.returnValue(subject.asObservable());
+    serviceMock.generateSuiteDescription.mockReturnValue(subject.asObservable());
     open();
     click('.sdg-start-btn');
 
@@ -276,17 +279,17 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
 
   it('should abort the request and close without a prompt when closed while running', () => {
     const subject = new Subject<SuiteDescriptionGenerationResultDto>();
-    serviceMock.generateSuiteDescription.and.returnValue(subject.asObservable());
+    serviceMock.generateSuiteDescription.mockReturnValue(subject.asObservable());
     open();
     click('.sdg-start-btn');
-    const closed = spyOn(component.closed, 'emit');
+    const closed = vi.spyOn(component.closed, 'emit').mockReturnValue(undefined);
 
     click('.dialog-header .btn-icon-action');
 
-    expect(query<HTMLDialogElement>('dialog.sdg-confirm-dialog')!.open).toBeFalse();
-    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBeFalse();
+    expect(query<HTMLDialogElement>('dialog.sdg-confirm-dialog')!.open).toBe(false);
+    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBe(false);
     expect(closed).toHaveBeenCalled();
-    expect(subject.observed).toBeFalse();
+    expect(subject.observed).toBe(false);
   });
 
   it('should move between the result tabs with the arrow keys and follow with focus', () => {
@@ -316,16 +319,16 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
     click('.dialog-header .btn-icon-action');
 
     const confirm = query<HTMLDialogElement>('dialog.sdg-confirm-dialog')!;
-    expect(confirm.open).toBeTrue();
-    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBeTrue();
+    expect(confirm.open).toBe(true);
+    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBe(true);
 
     click('dialog.sdg-confirm-dialog .dialog-footer .btn-gh-cancel');
-    expect(confirm.open).toBeFalse();
-    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBeTrue();
+    expect(confirm.open).toBe(false);
+    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBe(true);
 
     click('.dialog-header .btn-icon-action');
     click('dialog.sdg-confirm-dialog .dialog-footer .btn-gh-delete');
 
-    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBeFalse();
+    expect(query<HTMLDialogElement>('dialog.sdg-dialog')!.open).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -35,7 +36,7 @@ describe('AdminBenchmarkService group report URL', () => {
 describe('MultiRunComponent', () => {
   let component: MultiRunComponent;
   let fixture: ComponentFixture<MultiRunComponent>;
-  let serviceMock: jasmine.SpyObj<AdminBenchmarkService>;
+  let serviceMock: MockedObject<AdminBenchmarkService>;
 
   function buildGroup(overrides: Partial<BenchmarkRunGroupDto> = {}): BenchmarkRunGroupDto {
     return {
@@ -234,20 +235,27 @@ describe('MultiRunComponent', () => {
   }
 
   beforeEach(async () => {
-    serviceMock = jasmine.createSpyObj('AdminBenchmarkService', [
-      'getRunGroups', 'getRunGroup', 'getRuns', 'previewRunGroupTier', 'createRunGroup',
-      'updateRunGroup', 'deleteRunGroup', 'analyseRunGroup', 'getRunGroupAnalysis',
-      'getGroupReportUrl'
-    ]);
+    serviceMock = {
+      getRunGroups: vi.fn().mockName("AdminBenchmarkService.getRunGroups"),
+      getRunGroup: vi.fn().mockName("AdminBenchmarkService.getRunGroup"),
+      getRuns: vi.fn().mockName("AdminBenchmarkService.getRuns"),
+      previewRunGroupTier: vi.fn().mockName("AdminBenchmarkService.previewRunGroupTier"),
+      createRunGroup: vi.fn().mockName("AdminBenchmarkService.createRunGroup"),
+      updateRunGroup: vi.fn().mockName("AdminBenchmarkService.updateRunGroup"),
+      deleteRunGroup: vi.fn().mockName("AdminBenchmarkService.deleteRunGroup"),
+      analyseRunGroup: vi.fn().mockName("AdminBenchmarkService.analyseRunGroup"),
+      getRunGroupAnalysis: vi.fn().mockName("AdminBenchmarkService.getRunGroupAnalysis"),
+      getGroupReportUrl: vi.fn().mockName("AdminBenchmarkService.getGroupReportUrl")
+    } as unknown as MockedObject<AdminBenchmarkService>;
 
-    serviceMock.getRunGroups.and.returnValue(of([buildGroup()]));
-    serviceMock.getRunGroup.and.returnValue(of(buildGroup()));
-    serviceMock.getRuns.and.returnValue(of([buildRun(), buildRun({ id: 42 }), buildRun({ id: 43 })]));
-    serviceMock.previewRunGroupTier.and.returnValue(of({ accepted: true, comparability: null, group: null }));
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(null));
-    serviceMock.analyseRunGroup.and.returnValue(of(buildAnalysis()));
-    serviceMock.deleteRunGroup.and.returnValue(of(void 0));
-    serviceMock.getGroupReportUrl.and.callFake((id: number) => `/api/admin/benchmark/runs/groups/${id}/report`);
+    serviceMock.getRunGroups.mockReturnValue(of([buildGroup()]));
+    serviceMock.getRunGroup.mockReturnValue(of(buildGroup()));
+    serviceMock.getRuns.mockReturnValue(of([buildRun(), buildRun({ id: 42 }), buildRun({ id: 43 })]));
+    serviceMock.previewRunGroupTier.mockReturnValue(of({ accepted: true, comparability: null, group: null }));
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(null));
+    serviceMock.analyseRunGroup.mockReturnValue(of(buildAnalysis()));
+    serviceMock.deleteRunGroup.mockReturnValue(of(void 0));
+    serviceMock.getGroupReportUrl.mockImplementation((id: number) => `/api/admin/benchmark/runs/groups/${id}/report`);
 
     await TestBed.configureTestingModule({
       imports: [MultiRunComponent],
@@ -282,7 +290,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should show a group row with its tier badge, run count and stale badge', () => {
-    serviceMock.getRunGroups.and.returnValue(of([buildGroup({
+    serviceMock.getRunGroups.mockReturnValue(of([buildGroup({
       latestAnalysisId: 11,
       latestAnalysisAtUtc: '2026-09-06T11:00:00Z',
       analysisStale: true
@@ -295,7 +303,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should show the comparability-definition badge only for a group whose key hash is stale', () => {
-    serviceMock.getRunGroups.and.returnValue(of([
+    serviceMock.getRunGroups.mockReturnValue(of([
       buildGroup({ id: 1, name: 'Stale key', comparabilityKeyStale: true, createdAtUtc: '2026-09-07T10:00:00Z' }),
       buildGroup({ id: 2, name: 'Current key', comparabilityKeyStale: false, createdAtUtc: '2026-09-06T10:00:00Z' })
     ]));
@@ -315,21 +323,21 @@ describe('MultiRunComponent', () => {
 
     const button = fixture.nativeElement.querySelector('.mr-download') as HTMLButtonElement;
     expect(button.getAttribute('aria-disabled')).toBe('true');
-    expect(component.canDownloadReport(component.groups[0])).toBeFalse();
+    expect(component.canDownloadReport(component.groups[0])).toBe(false);
     expect(component.downloadReportTooltip(component.groups[0]))
       .toContain('No analysis yet');
 
-    const openSpy = spyOn(window, 'open');
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
     button.click();
     expect(openSpy).not.toHaveBeenCalled();
   });
 
   it('should download the group report through window.open once an analysis exists', () => {
     const analysed = buildGroup({ latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z' });
-    serviceMock.getRunGroups.and.returnValue(of([analysed]));
+    serviceMock.getRunGroups.mockReturnValue(of([analysed]));
     open();
 
-    const openSpy = spyOn(window, 'open');
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
     const button = fixture.nativeElement.querySelector('.mr-download') as HTMLButtonElement;
     expect(button.getAttribute('aria-disabled')).toBe('false');
     button.click();
@@ -351,7 +359,7 @@ describe('MultiRunComponent', () => {
   // --- Tier feedback ---
 
   it('should render which keys differ and on which runs when a tier is refused', () => {
-    serviceMock.previewRunGroupTier.and.returnValue(of(buildRefusedPreview()));
+    serviceMock.previewRunGroupTier.mockReturnValue(of(buildRefusedPreview()));
     open();
 
     component.toggleRun(41);
@@ -367,14 +375,14 @@ describe('MultiRunComponent', () => {
   });
 
   it('should offer the cross-condition checkbox only at Tier C', () => {
-    serviceMock.previewRunGroupTier.and.returnValue(of(buildRefusedPreview()));
+    serviceMock.previewRunGroupTier.mockReturnValue(of(buildRefusedPreview()));
     open();
     component.toggleRun(41);
     component.toggleRun(43);
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('#mr-cross-condition')).toBeNull();
 
-    serviceMock.previewRunGroupTier.and.returnValue(of(buildCrossConditionPreview()));
+    serviceMock.previewRunGroupTier.mockReturnValue(of(buildCrossConditionPreview()));
     component.previewTier();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('#mr-cross-condition')).not.toBeNull();
@@ -382,7 +390,7 @@ describe('MultiRunComponent', () => {
 
   it('should not preview a tier below two selected runs', () => {
     open();
-    serviceMock.previewRunGroupTier.calls.reset();
+    serviceMock.previewRunGroupTier.mockClear();
 
     component.toggleRun(41);
 
@@ -394,9 +402,9 @@ describe('MultiRunComponent', () => {
 
   function openAnalysed(analysis: BenchmarkGroupAnalysisDto = buildAnalysis()): void {
     const analysed = buildGroup({ latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z' });
-    serviceMock.getRunGroups.and.returnValue(of([analysed]));
-    serviceMock.getRunGroup.and.returnValue(of(analysed));
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(analysis));
+    serviceMock.getRunGroups.mockReturnValue(of([analysed]));
+    serviceMock.getRunGroup.mockReturnValue(of(analysed));
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(analysis));
     open();
     component.selectGroup(analysed);
     fixture.detectChanges();
@@ -491,7 +499,7 @@ describe('MultiRunComponent', () => {
     // The tier reaches the detail view through the read-only preview endpoint, so the test drives
     // it the same way the component does. Assigning the field from outside would leave the view
     // unmarked and never re-render, which measures the test harness rather than the component.
-    serviceMock.previewRunGroupTier.and.returnValue(of({
+    serviceMock.previewRunGroupTier.mockReturnValue(of({
       accepted: true,
       group: null,
       comparability: {
@@ -510,12 +518,12 @@ describe('MultiRunComponent', () => {
 
     // The statistics themselves say nothing is degraded: only the tier does, which is the point.
     const analysis = buildAnalysis();
-    expect(analysis.result.speed.degraded).toBeFalse();
-    expect(analysis.result.cost.degraded).toBeFalse();
+    expect(analysis.result.speed.degraded).toBe(false);
+    expect(analysis.result.cost.degraded).toBe(false);
     openAnalysed(analysis);
 
-    expect(component.speedDegraded).toBeTrue();
-    expect(component.costDegraded).toBeTrue();
+    expect(component.speedDegraded).toBe(true);
+    expect(component.costDegraded).toBe(true);
 
     const panel = allText('.mr-subsection');
     expect(panel).toContain('Speed aggregates degraded');
@@ -629,7 +637,7 @@ describe('MultiRunComponent', () => {
       '.mr-group-table .col-actions .action-btn') as HTMLButtonElement;
     expect(view.getAttribute('aria-label')).toContain('View analysis for group');
 
-    spyOn(component, 'openGroup').and.callThrough();
+    vi.spyOn(component, 'openGroup');
     view.click();
     fixture.detectChanges();
 
@@ -639,7 +647,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should render the detail inside the dialog and clear it on close', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis()));
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis()));
     open();
 
     component.openGroup(component.groups[0]);
@@ -657,7 +665,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should emit the originating series from the group row badge', () => {
-    serviceMock.getRunGroups.and.returnValue(of([buildGroup({ createdFromSeriesId: 2 })]));
+    serviceMock.getRunGroups.mockReturnValue(of([buildGroup({ createdFromSeriesId: 2 })]));
     open();
 
     const emitted: number[] = [];
@@ -683,7 +691,7 @@ describe('MultiRunComponent', () => {
   // --- The blocks the panel was missing ---
 
   it('should render the prompt under test, including the divergence from live chat', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
       result: {
         ...(buildAnalysis().result as object),
         promptUnderTest: {
@@ -717,7 +725,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should say so when the prompt configuration was not recorded', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
       result: {
         ...(buildAnalysis().result as object),
         promptUnderTest: { recorded: false, divergent: false } as unknown
@@ -731,7 +739,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should render the dimension table and name the lowest dimension', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
       result: {
         ...(buildAnalysis().result as object),
         dimensions: [
@@ -758,7 +766,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should render pooled tool families and what the claim verifier bought', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
       result: {
         ...(buildAnalysis().result as object),
         usage: {
@@ -803,7 +811,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should name the role carrying the cost spread', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
       result: {
         ...(buildAnalysis().result as object),
         cost: {
@@ -833,7 +841,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should show a stored analysis\'s legacy Second opinion cost role as Second reader', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
       result: {
         ...(buildAnalysis().result as object),
         cost: {
@@ -861,8 +869,10 @@ describe('MultiRunComponent', () => {
   });
 
   it('should name the questions asked beside the cost per question', () => {
-    const base = buildAnalysis().result as { cost: Record<string, unknown> };
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+    const base = buildAnalysis().result as {
+      cost: Record<string, unknown>;
+    };
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
       result: {
         ...(buildAnalysis().result as object),
         cost: { ...base.cost, questionsAskedPerRun: 18 }
@@ -878,7 +888,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should mark a stored analysis whose cost per question predates the asked count', () => {
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis()));
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis()));
     open();
     component.openGroup(component.groups[0]);
     fixture.detectChanges();
@@ -889,8 +899,10 @@ describe('MultiRunComponent', () => {
   });
 
   it('should mark a combined interval that was truncated at the score bound', () => {
-    const base = buildAnalysis().result as { index: Record<string, unknown> };
-    serviceMock.getRunGroupAnalysis.and.returnValue(of(buildAnalysis({
+    const base = buildAnalysis().result as {
+      index: Record<string, unknown>;
+    };
+    serviceMock.getRunGroupAnalysis.mockReturnValue(of(buildAnalysis({
       result: {
         ...(buildAnalysis().result as object),
         index: { ...base.index, combinedUpper: 100, combinedIntervalTruncated: true }
@@ -908,8 +920,8 @@ describe('MultiRunComponent', () => {
 
   it('should open a listed group through its normal open path, without the id-fetch fallback', () => {
     open();
-    serviceMock.getRunGroup.calls.reset();
-    spyOn(component, 'openGroup').and.callThrough();
+    serviceMock.getRunGroup.mockClear();
+    vi.spyOn(component, 'openGroup');
 
     component.openGroupById(7);
 
@@ -922,8 +934,8 @@ describe('MultiRunComponent', () => {
   it('should fetch and open a group absent from the current list', () => {
     open();
     const other = buildGroup({ id: 99, name: 'Suite 5 · other · R=3' });
-    serviceMock.getRunGroup.and.returnValue(of(other));
-    spyOn(component, 'openGroup').and.callThrough();
+    serviceMock.getRunGroup.mockReturnValue(of(other));
+    vi.spyOn(component, 'openGroup');
 
     component.openGroupById(99);
 
@@ -934,7 +946,7 @@ describe('MultiRunComponent', () => {
 
   it('should report the same groups-list error shape when the id-fetch fallback fails', () => {
     open();
-    serviceMock.getRunGroup.and.returnValue(throwError(() => ({ error: { message: 'Group 99 not found.' } })));
+    serviceMock.getRunGroup.mockReturnValue(throwError(() => ({ error: { message: 'Group 99 not found.' } })));
 
     component.openGroupById(99);
 
@@ -946,7 +958,7 @@ describe('MultiRunComponent', () => {
   it('should default the group table to Created descending', () => {
     const older = buildGroup({ id: 1, name: 'Older', createdAtUtc: '2026-09-01T00:00:00Z' });
     const newer = buildGroup({ id: 2, name: 'Newer', createdAtUtc: '2026-09-06T00:00:00Z' });
-    serviceMock.getRunGroups.and.returnValue(of([older, newer]));
+    serviceMock.getRunGroups.mockReturnValue(of([older, newer]));
     open();
 
     expect(component.groupTable.sortColumn).toBe('createdAtUtc');
@@ -963,7 +975,7 @@ describe('MultiRunComponent', () => {
   it('should list a Tier A group before a Tier B group on the first click of the tier header', () => {
     const tierA = buildGroup({ id: 1, name: 'A', tier: 'Replicate', createdAtUtc: '2026-09-01T00:00:00Z' });
     const tierB = buildGroup({ id: 2, name: 'B', tier: 'QualityComparable', createdAtUtc: '2026-09-02T00:00:00Z' });
-    serviceMock.getRunGroups.and.returnValue(of([tierB, tierA]));
+    serviceMock.getRunGroups.mockReturnValue(of([tierB, tierA]));
     open();
 
     component.groupTable.toggleSort('tier');
@@ -977,7 +989,7 @@ describe('MultiRunComponent', () => {
   it('should list a Tier B group first on the second click of the tier header', () => {
     const tierA = buildGroup({ id: 1, name: 'A', tier: 'Replicate', createdAtUtc: '2026-09-01T00:00:00Z' });
     const tierB = buildGroup({ id: 2, name: 'B', tier: 'QualityComparable', createdAtUtc: '2026-09-02T00:00:00Z' });
-    serviceMock.getRunGroups.and.returnValue(of([tierB, tierA]));
+    serviceMock.getRunGroups.mockReturnValue(of([tierB, tierA]));
     open();
 
     component.groupTable.toggleSort('tier');
@@ -991,7 +1003,7 @@ describe('MultiRunComponent', () => {
 
   it('should treat a stale group as Stale only, not also Analysed, under the analysis-state filter', () => {
     const stale = buildGroup({ id: 1, latestAnalysisId: 11, analysisStale: true });
-    serviceMock.getRunGroups.and.returnValue(of([stale]));
+    serviceMock.getRunGroups.mockReturnValue(of([stale]));
     open();
 
     expect(component.analysisState(stale)).toBe('stale');
@@ -1004,7 +1016,7 @@ describe('MultiRunComponent', () => {
   });
 
   it('should keep the stale-analysis tooltip working when filtered to Stale', () => {
-    serviceMock.getRunGroups.and.returnValue(of([buildGroup({
+    serviceMock.getRunGroups.mockReturnValue(of([buildGroup({
       latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z', analysisStale: true
     })]));
     open();
@@ -1062,14 +1074,14 @@ describe('MultiRunComponent', () => {
 
   it('should keep a run selected across a page change and a filter change, and still pass it to createGroup', () => {
     const many = Array.from({ length: 12 }, (_, i) => buildRun({ id: i + 1, testedModelDisplayNameUsed: `Model ${i + 1}` }));
-    serviceMock.getRuns.and.returnValue(of(many));
+    serviceMock.getRuns.mockReturnValue(of(many));
     const created = buildGroup({ id: 50 });
-    serviceMock.createRunGroup.and.returnValue(of({ accepted: true, error: null, comparability: null, group: created }));
+    serviceMock.createRunGroup.mockReturnValue(of({ accepted: true, error: null, comparability: null, group: created }));
     open();
 
     // ID desc by default: run 12 leads page 1.
     component.toggleRun(12);
-    expect(component.runPickerTable.view(component.availableRuns).some(r => r.id === 12)).toBeTrue();
+    expect(component.runPickerTable.view(component.availableRuns).some(r => r.id === 12)).toBe(true);
 
     // Move to a different page and apply a filter — neither touches the selection underneath.
     component.runPickerTable.setPage(2, component.availableRuns);
@@ -1082,14 +1094,14 @@ describe('MultiRunComponent', () => {
     component.builderName = 'Cross-page group';
     component.createGroup();
 
-    expect(serviceMock.createRunGroup).toHaveBeenCalledWith(jasmine.objectContaining({
-      runIds: jasmine.arrayContaining([12, 1])
+    expect(serviceMock.createRunGroup).toHaveBeenCalledWith(expect.objectContaining({
+      runIds: expect.arrayContaining([12, 1])
     }));
   });
 
   it('should count a selected run as off-page once a page change moves it out of view', () => {
     const many = Array.from({ length: 15 }, (_, i) => buildRun({ id: i + 1 }));
-    serviceMock.getRuns.and.returnValue(of(many));
+    serviceMock.getRuns.mockReturnValue(of(many));
     open();
 
     component.toggleRun(15); // ID desc default: run 15 leads page 1.

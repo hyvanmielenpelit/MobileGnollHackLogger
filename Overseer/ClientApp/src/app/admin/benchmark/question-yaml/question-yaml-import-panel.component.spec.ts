@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import {
@@ -15,7 +16,7 @@ describe('QuestionYamlImportPanelComponent', () => {
   let fixture: ComponentFixture<QuestionYamlImportPanelComponent>;
   let component: QuestionYamlImportPanelComponent;
   let host: HTMLElement;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
+  let service: MockedObject<AdminBenchmarkService>;
 
   const suite: BenchmarkSuiteDto = {
     id: 7, name: 'Core Suite', description: null, createdAtUtc: '2026-09-16T00:00:00Z', modifiedAtUtc: null,
@@ -40,9 +41,14 @@ describe('QuestionYamlImportPanelComponent', () => {
   }
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj('AdminBenchmarkService', ['importQuestions', 'importSuite', 'matchSnapshot', 'getBoardFactsCheck']);
-    service.matchSnapshot.and.returnValue(of(noMatch()));
-    service.getBoardFactsCheck.and.returnValue(of(null));
+    service = {
+      importQuestions: vi.fn().mockName("AdminBenchmarkService.importQuestions"),
+      importSuite: vi.fn().mockName("AdminBenchmarkService.importSuite"),
+      matchSnapshot: vi.fn().mockName("AdminBenchmarkService.matchSnapshot"),
+      getBoardFactsCheck: vi.fn().mockName("AdminBenchmarkService.getBoardFactsCheck")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    service.matchSnapshot.mockReturnValue(of(noMatch()));
+    service.getBoardFactsCheck.mockReturnValue(of(null));
 
     await TestBed.configureTestingModule({
       imports: [QuestionYamlImportPanelComponent],
@@ -110,7 +116,7 @@ describe('QuestionYamlImportPanelComponent', () => {
     const errors = host.querySelectorAll('.import-errors li');
     expect(errors.length).toBe(1);
     expect(errors[0].textContent).toContain('unknown key `tier`');
-    expect(component.canReview).toBeFalse();
+    expect(component.canReview).toBe(false);
   });
 
   it('enables Review after a valid paste, and editing the text clears it', async () => {
@@ -120,10 +126,10 @@ describe('QuestionYamlImportPanelComponent', () => {
     await component.validate();
     fixture.detectChanges();
     expect(host.querySelector('.import-valid-summary')!.textContent).toContain('Valid: 1 question to replace.');
-    expect(component.canReview).toBeTrue();
+    expect(component.canReview).toBe(true);
 
     await paste(serializeQuestionsYaml([existing[0]], suite) + '# edited\n');
-    expect(component.canReview).toBeFalse();
+    expect(component.canReview).toBe(false);
   });
 
   it('reviews side by side and as a diff', async () => {
@@ -153,10 +159,10 @@ describe('QuestionYamlImportPanelComponent', () => {
 
     const notices = Array.from(host.querySelectorAll('.import-rubric-notice')).map(n => n.textContent!.trim());
     expect(notices.length).toBe(2);
-    expect(notices.every(n => n.startsWith('Rubric:'))).toBeTrue();
+    expect(notices.every(n => n.startsWith('Rubric:'))).toBe(true);
     expect(notices[0]).toContain('**REQUIRED**');
     expect(component.applyLabel).toBe('Apply 1 change');
-    expect(component.canApply).toBeTrue();
+    expect(component.canApply).toBe(true);
   });
 
   it('shows no rubric notice for an unchanged rubric', async () => {
@@ -170,8 +176,8 @@ describe('QuestionYamlImportPanelComponent', () => {
   });
 
   it('applies a questions import without replacing an absent rubric', async () => {
-    service.importQuestions.and.returnValue(of({ createdCount: 1, replacedCount: 1, unchangedCount: 0, questions: [] }));
-    const emitted = jasmine.createSpy('imported');
+    service.importQuestions.mockReturnValue(of({ createdCount: 1, replacedCount: 1, unchangedCount: 0, questions: [] }));
+    const emitted = vi.fn().mockName('imported');
     component.imported.subscribe(emitted);
 
     open('questions');
@@ -201,7 +207,7 @@ describe('QuestionYamlImportPanelComponent', () => {
       unquotedBullets: [],
       missingLiterals: [{ questionId: 18, orderIndex: 5, literal: 'the uncursed Holy Grail', lineExcerpt: 'T - the Holy Grail' }]
     };
-    service.importQuestions.and.returnValue(of({ createdCount: 0, replacedCount: 1, unchangedCount: 0, questions: [], boardFactsCheck: check }));
+    service.importQuestions.mockReturnValue(of({ createdCount: 0, replacedCount: 1, unchangedCount: 0, questions: [], boardFactsCheck: check }));
 
     open('questions');
     await paste(header + 'questions:\n  - id: 18\n    difficulty: Advanced\n');
@@ -222,8 +228,8 @@ describe('QuestionYamlImportPanelComponent', () => {
 
   it('creates a suite in suite mode', async () => {
     const created: BenchmarkSuiteDto = { ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1 };
-    service.importSuite.and.returnValue(of(created));
-    const emitted = jasmine.createSpy('suiteImported');
+    service.importSuite.mockReturnValue(of(created));
+    const emitted = vi.fn().mockName('suiteImported');
     component.suiteImported.subscribe(emitted);
 
     open('suite');
@@ -250,13 +256,13 @@ describe('QuestionYamlImportPanelComponent', () => {
 
   it('fetches the board-facts check on demand after a successful suite import', async () => {
     const created: BenchmarkSuiteDto = { ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1 };
-    service.importSuite.and.returnValue(of(created));
+    service.importSuite.mockReturnValue(of(created));
     const check: BoardFactsCheckDto = {
       bulletCount: 4, checkedLiteralCount: 3, unquotedBulletCount: 0,
       unquotedBullets: [],
       missingLiterals: [{ questionId: 17, orderIndex: 1, literal: 'a level 3 peaceful dwarf', lineExcerpt: 'h - a level 3 peaceful dwarf' }]
     };
-    service.getBoardFactsCheck.and.returnValue(of(check));
+    service.getBoardFactsCheck.mockReturnValue(of(check));
 
     open('suite');
     await paste(header + 'suite:\n  name: Core Suite\nquestions:\n  - id: 17\n    question: Q\n    rubric: |\n      R\n');
@@ -289,41 +295,41 @@ describe('QuestionYamlImportPanelComponent', () => {
     });
 
     it('announces a reused unattached snapshot, and a copy of one owned by another suite', async () => {
-      service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 5, name: 'Stored board', suiteId: null, suiteName: null } }));
+      service.matchSnapshot.mockReturnValue(of({ ...noMatch(), match: { id: 5, name: 'Stored board', suiteId: null, suiteName: null } }));
       await reviewSnapshotDoc();
       expect(host.textContent).toContain('An identical snapshot, Stored board, is already stored and belongs to no suite.');
 
-      service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 5, name: 'Stored board', suiteId: 3, suiteName: 'Other Suite' } }));
+      service.matchSnapshot.mockReturnValue(of({ ...noMatch(), match: { id: 5, name: 'Stored board', suiteId: 3, suiteName: 'Other Suite' } }));
       await reviewSnapshotDoc();
       expect(host.textContent).toContain('belongs to suite Other Suite');
       expect(host.textContent).toContain('stores a copy named Stored board (2)');
     });
 
     it('still imports when the preflight fails', async () => {
-      service.matchSnapshot.and.returnValue(throwError(() => new Error('down')));
+      service.matchSnapshot.mockReturnValue(throwError(() => new Error('down')));
       await reviewSnapshotDoc();
 
       expect(component.snapshotCheckState).toBe('failed');
       expect(host.textContent).toContain('Could not check for an identical stored snapshot. The import still attaches one.');
-      expect(component.canApply).toBeTrue();
+      expect(component.canApply).toBe(true);
     });
 
     it('warns when the file hash differs from the hash the server computes', async () => {
-      service.matchSnapshot.and.returnValue(of({ ...noMatch(), sha256: 'b'.repeat(64) }));
+      service.matchSnapshot.mockReturnValue(of({ ...noMatch(), sha256: 'b'.repeat(64) }));
       await reviewSnapshotDoc();
 
-      expect(component.snapshotHashMismatch).toBeTrue();
+      expect(component.snapshotHashMismatch).toBe(true);
       expect(host.querySelector('.import-snapshot-warning')!.textContent).toContain('it was edited, or damaged in transit');
     });
 
     it('sends the snapshot with the box ticked and null with it cleared', async () => {
       const created: BenchmarkSuiteDto = { ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1, gameSnapshotId: 12, gameSnapshotName: 'Valkyrie dlvl 11' };
-      service.importSuite.and.returnValue(of(created));
+      service.importSuite.mockReturnValue(of(created));
       await reviewSnapshotDoc();
 
       component.apply();
       fixture.detectChanges();
-      expect(service.importSuite.calls.mostRecent().args[0].snapshot).toEqual({
+      expect(vi.mocked(service.importSuite).mock.lastCall![0].snapshot).toEqual({
         name: 'Valkyrie dlvl 11',
         text: 'GnollHack 4.2.0 Build 47\nDlvl:11 HP:14(58) Hungry',
         sourceGnollHackVersion: '4.2.0 Build 47',
@@ -337,16 +343,16 @@ describe('QuestionYamlImportPanelComponent', () => {
       const box = host.querySelector('#panel-test-attach-snapshot') as HTMLInputElement;
       box.click();
       fixture.detectChanges();
-      expect(component.attachSnapshot).toBeFalse();
+      expect(component.attachSnapshot).toBe(false);
 
       component.apply();
       fixture.detectChanges();
-      expect(service.importSuite.calls.mostRecent().args[0].snapshot).toBeNull();
+      expect(vi.mocked(service.importSuite).mock.lastCall![0].snapshot).toBeNull();
     });
 
     it('names the attached snapshot as existing when the response reuses the matched board', async () => {
-      service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 12, name: 'Stored board', suiteId: null, suiteName: null } }));
-      service.importSuite.and.returnValue(of({ ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1, gameSnapshotId: 12, gameSnapshotName: 'Stored board' }));
+      service.matchSnapshot.mockReturnValue(of({ ...noMatch(), match: { id: 12, name: 'Stored board', suiteId: null, suiteName: null } }));
+      service.importSuite.mockReturnValue(of({ ...suite, id: 9, name: 'Core Suite (Imported)', questionCount: 1, gameSnapshotId: 12, gameSnapshotName: 'Stored board' }));
       await reviewSnapshotDoc();
 
       component.apply();
@@ -366,7 +372,7 @@ describe('QuestionYamlImportPanelComponent', () => {
   });
 
   it('shows a server error inline and stays on the review step', async () => {
-    service.importQuestions.and.returnValue(throwError(() => ({ error: 'Suite question limit reached (50 questions maximum).' })));
+    service.importQuestions.mockReturnValue(throwError(() => ({ error: 'Suite question limit reached (50 questions maximum).' })));
 
     open('single', existing[0]);
     await paste(header + 'questions:\n  - question: Changed\n');
@@ -393,7 +399,7 @@ describe('QuestionYamlImportPanelComponent', () => {
     expect(card.querySelector('.gh-file-card-name')!.textContent).toBe('q.yaml');
     expect(host.querySelector('input[type="file"]')).toBeNull();
     expect(host.querySelector('.import-file-advice')).toBeNull();
-    await expectAsync(component.validate()).toBeResolvedTo(true);
+    await expect(component.validate()).resolves.toEqual(true);
   });
 
   it('returns to the empty picker when the attached file is removed', async () => {
@@ -443,7 +449,7 @@ describe('QuestionYamlImportPanelComponent', () => {
     it('never blocks validation', async () => {
       await attach('overseer-suite-export-core.yaml', 'agent-new-questions-core.yaml', 'overseer-suite-export-core.yaml');
       expect(host.querySelector('.import-file-advice')).not.toBeNull();
-      expect(component.canValidate).toBeTrue();
+      expect(component.canValidate).toBe(true);
     });
   });
 
@@ -473,36 +479,36 @@ describe('QuestionYamlImportPanelComponent', () => {
     }
 
     it('states the outcome, lists the checks and waits for the confirmation', async () => {
-      service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 3, name: 'Board', suiteId: 7, suiteName: 'Core Suite' } }));
-      expect(await reviewWith('add-to-suite', addDoc)).toBeTrue();
+      service.matchSnapshot.mockReturnValue(of({ ...noMatch(), match: { id: 3, name: 'Board', suiteId: 7, suiteName: 'Core Suite' } }));
+      expect(await reviewWith('add-to-suite', addDoc)).toBe(true);
 
       expect(host.querySelector('.import-outcome')!.textContent).toContain('add 2 new questions');
       expect(host.querySelector('[data-code="board-matches"]')!.textContent).toContain('The board in the file is the board stored on this suite.');
       expect(component.applyLabel).toBe('Add 2 Questions to Core Suite');
-      expect(component.canApply).toBeFalse();
+      expect(component.canApply).toBe(false);
 
       (host.querySelector('#panel-test-confirm') as HTMLInputElement).click();
       fixture.detectChanges();
-      expect(component.canApply).toBeTrue();
+      expect(component.canApply).toBe(true);
     });
 
     it('keeps the suggested description of the validated file, and clears it on reset', async () => {
       const withSuggestion = addDoc.replace('  name: Core Suite\n', '  name: Core Suite\n  suggested_description: |\n    The **whole** suite.\n');
-      expect(await reviewWith('add-to-suite', withSuggestion)).toBeTrue();
+      expect(await reviewWith('add-to-suite', withSuggestion)).toBe(true);
       expect(component.suggestedDescription).toBe('The **whole** suite.');
       expect(host.querySelector('.import-outcome')!.textContent).toContain('The file\'s suggested description is offered in the next steps.');
 
       component.reset();
       expect(component.suggestedDescription).toBeNull();
 
-      expect(await reviewWith('add-to-suite', addDoc)).toBeTrue();
+      expect(await reviewWith('add-to-suite', addDoc)).toBe(true);
       expect(component.suggestedDescription).toBeNull();
       expect(host.querySelector('.import-outcome')!.textContent).not.toContain('suggested description');
     });
 
     it('checks the result against the intent after apply', async () => {
-      service.matchSnapshot.and.returnValue(of({ ...noMatch(), match: { id: 3, name: 'Board', suiteId: 7, suiteName: 'Core Suite' } }));
-      service.importQuestions.and.returnValue(of({ createdCount: 2, replacedCount: 0, unchangedCount: 0, questions: [] }));
+      service.matchSnapshot.mockReturnValue(of({ ...noMatch(), match: { id: 3, name: 'Board', suiteId: 7, suiteName: 'Core Suite' } }));
+      service.importQuestions.mockReturnValue(of({ createdCount: 2, replacedCount: 0, unchangedCount: 0, questions: [] }));
       await reviewWith('add-to-suite', addDoc);
       component.onConfirmedChange(true);
       component.apply();
@@ -522,14 +528,14 @@ describe('QuestionYamlImportPanelComponent', () => {
       fixture.detectChanges();
 
       expect(component.blockingFindings.map(f => f.code)).toEqual(['replaces-questions']);
-      expect(component.canApply).toBeFalse();
+      expect(component.canApply).toBe(false);
       component.apply();
       expect(service.importQuestions).not.toHaveBeenCalled();
     });
 
     it('hints that an empty downloaded suite file is the wrong file', async () => {
       const downloaded = header + 'suite:\n  name: Core Suite\n' + boardBlock + 'questions: []\n';
-      expect(await reviewWith('add-to-suite', downloaded)).toBeFalse();
+      expect(await reviewWith('add-to-suite', downloaded)).toBe(false);
       expect(host.querySelector('.import-downloaded-hint')!.textContent).toContain('the file you downloaded for the agent');
     });
 

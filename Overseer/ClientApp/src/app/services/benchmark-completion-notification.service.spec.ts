@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { TestBed } from '@angular/core/testing';
 
 import { BenchmarkCompletionNotificationService } from './benchmark-completion-notification.service';
@@ -5,7 +6,7 @@ import { BenchmarkCompletionNotificationService } from './benchmark-completion-n
 /** A stand-in `Notification` constructor, installed onto `window.Notification` per test. */
 class FakeNotification {
   static permission: NotificationPermission = 'default';
-  static requestPermission = jasmine.createSpy('requestPermission');
+  static requestPermission = vi.fn().mockName('requestPermission');
   onclick: ((this: Notification, ev: Event) => unknown) | null = null;
   closeCalls = 0;
 
@@ -23,15 +24,15 @@ class FakeNotification {
 describe('BenchmarkCompletionNotificationService', () => {
   let service: BenchmarkCompletionNotificationService;
   let originalNotification: unknown;
-  let secureContextSpy: jasmine.Spy;
+  let secureContextSpy: Mock;
 
   beforeEach(() => {
     originalNotification = (window as any).Notification;
     FakeNotification.instances = [];
     FakeNotification.permission = 'default';
-    FakeNotification.requestPermission = jasmine.createSpy('requestPermission');
+    FakeNotification.requestPermission = vi.fn().mockName('requestPermission');
     (window as any).Notification = FakeNotification;
-    secureContextSpy = spyOnProperty(window, 'isSecureContext', 'get').and.returnValue(true);
+    secureContextSpy = vi.spyOn(window, 'isSecureContext', 'get').mockReturnValue(true);
 
     TestBed.configureTestingModule({});
     service = TestBed.inject(BenchmarkCompletionNotificationService);
@@ -44,16 +45,16 @@ describe('BenchmarkCompletionNotificationService', () => {
   describe('isSupported', () => {
     it('is false when the Notification API does not exist', () => {
       delete (window as any).Notification;
-      expect(service.isSupported()).toBeFalse();
+      expect(service.isSupported()).toBe(false);
     });
 
     it('is false outside a secure context', () => {
-      secureContextSpy.and.returnValue(false);
-      expect(service.isSupported()).toBeFalse();
+      secureContextSpy.mockReturnValue(false);
+      expect(service.isSupported()).toBe(false);
     });
 
     it('is true when the API exists in a secure context', () => {
-      expect(service.isSupported()).toBeTrue();
+      expect(service.isSupported()).toBe(true);
     });
   });
 
@@ -78,18 +79,18 @@ describe('BenchmarkCompletionNotificationService', () => {
     });
 
     it('resolves each platform result', async () => {
-      FakeNotification.requestPermission.and.returnValue(Promise.resolve('granted'));
+      FakeNotification.requestPermission.mockResolvedValue('granted');
       expect(await service.requestPermission()).toBe('granted');
 
-      FakeNotification.requestPermission.and.returnValue(Promise.resolve('denied'));
+      FakeNotification.requestPermission.mockResolvedValue('denied');
       expect(await service.requestPermission()).toBe('denied');
 
-      FakeNotification.requestPermission.and.returnValue(Promise.resolve('default'));
+      FakeNotification.requestPermission.mockResolvedValue('default');
       expect(await service.requestPermission()).toBe('default');
     });
 
     it('swallows a platform exception as unsupported', async () => {
-      FakeNotification.requestPermission.and.returnValue(Promise.reject(new Error('blocked by enterprise policy')));
+      FakeNotification.requestPermission.mockRejectedValue(new Error('blocked by enterprise policy'));
       const outcome = await service.requestPermission();
       expect(outcome).toBe('unsupported');
     });
@@ -111,7 +112,7 @@ describe('BenchmarkCompletionNotificationService', () => {
 
     it('resolves "shown", raises one notification with the key as its tag, and focuses the window on click', () => {
       FakeNotification.permission = 'granted';
-      const focusSpy = spyOn(window, 'focus');
+      const focusSpy = vi.spyOn(window, 'focus').mockReturnValue(undefined);
 
       const outcome = service.notify('run:1', 'Run finished', 'Suite X — Completed');
 
@@ -119,7 +120,7 @@ describe('BenchmarkCompletionNotificationService', () => {
       expect(FakeNotification.instances.length).toBe(1);
       const notification = FakeNotification.instances[0];
       expect(notification.title).toBe('Run finished');
-      expect(notification.options).toEqual(jasmine.objectContaining({
+      expect(notification.options).toEqual(expect.objectContaining({
         body: 'Suite X — Completed',
         tag: 'run:1',
         icon: '/favicon.ico'

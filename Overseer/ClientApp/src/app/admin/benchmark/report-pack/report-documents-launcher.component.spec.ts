@@ -114,13 +114,13 @@ describe('ReportDocumentsLauncherComponent', () => {
 
     const tip = el.querySelector('app-info-tip')!;
     expect(tip.querySelector('button.gh-info-btn')!.getAttribute('aria-label')).toBe('About Comparison reports');
-    expect(tip.querySelector('button.gh-info-btn')!.hasAttribute('popovertarget')).toBeTrue();
+    expect(tip.querySelector('button.gh-info-btn')!.hasAttribute('popovertarget')).toBe(true);
     expect(el.querySelector('#mcl-tip')!.textContent).toContain('A run\'s own reports are in its run report.');
   });
 
   it('says No reports yet and keeps Open Download Center aria-disabled with that reason', () => {
     render([]);
-    const open = spyOn(launcher().downloadCenter!, 'open');
+    const open = vi.spyOn(launcher().downloadCenter!, 'open').mockReturnValue(undefined);
 
     expect(text('.rdl-launcher-summary')).toContain('No reports yet.');
     expect(el.querySelector('.rdl-launcher-changed')).toBeNull();
@@ -134,15 +134,17 @@ describe('ReportDocumentsLauncherComponent', () => {
 
   it('opens the Download Center on every comparison document with nothing preselected', () => {
     render([doc(11), doc(12)]);
-    const open = spyOn(launcher().downloadCenter!, 'open');
+    const open = vi.spyOn(launcher().downloadCenter!, 'open').mockReturnValue(undefined);
 
     const button = openButton();
-    expect(button.hasAttribute('aria-disabled')).toBeFalse();
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
     expect(button.textContent!.trim()).toBe('Open Download Center');
     expect(button.querySelector('svg.btn-icon')!.getAttribute('aria-hidden')).toBe('true');
     button.click();
 
-    expect(open).toHaveBeenCalledOnceWith(jasmine.objectContaining({
+    expect(open).toHaveBeenCalledTimes(1);
+
+    expect(open).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'library',
       scope: { kind: 'all' },
       preselect: 'none',

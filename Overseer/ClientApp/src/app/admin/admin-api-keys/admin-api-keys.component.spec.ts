@@ -152,8 +152,7 @@ describe('AdminApiKeysComponent', () => {
       message: 'Anthropic rejected the key: invalid x-api-key.',
       detail: { ...unverifiable.detail!, httpStatus: 401, httpReason: 'Unauthorized', exception: null, text: 'GET x\nHTTP 401 Unauthorized' }
     };
-    const save = spyOn(adminService, 'saveDefaultApiKey').and.returnValue(
-      throwError(() => new HttpErrorResponse({ status: 400, error: refusal })));
+    const save = vi.spyOn(adminService, 'saveDefaultApiKey').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 400, error: refusal })));
 
     type('Anthropic', FAKE_KEY);
     (card('Anthropic').querySelector('.aak-save') as HTMLButtonElement).click();
@@ -165,15 +164,13 @@ describe('AdminApiKeysComponent', () => {
     expect(error.querySelector('.aak-error-detail')!.textContent).toContain('HTTP 401 Unauthorized');
     expect(input('Anthropic').getAttribute('aria-describedby')).toBe(error.id);
     expect(input('Anthropic').value).toBe(FAKE_KEY);
-    expect(verificationDialog().open).toBeFalse();
+    expect(verificationDialog().open).toBe(false);
     expect(changed).toBe(0);
   });
 
   it('opens the verification dialog on a 409, and Save Anyway saves the key as Not verified', async () => {
     await render([status('Anthropic'), status('Google'), status('OpenAI')]);
-    const save = spyOn(adminService, 'saveDefaultApiKey').and.returnValues(
-      throwError(() => new HttpErrorResponse({ status: 409, error: unverifiable })),
-      of({
+    const save = vi.spyOn(adminService, 'saveDefaultApiKey').mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: unverifiable }))).mockReturnValueOnce(of({
         status: status('Anthropic', {
           hasKey: true, keyHint: '0001',
           verification: { status: 'NotVerified', checkedAtUtc: '2026-09-29T10:00:00Z', message: unverifiable.detail!.text }
@@ -186,7 +183,7 @@ describe('AdminApiKeysComponent', () => {
     (card('Anthropic').querySelector('.aak-save') as HTMLButtonElement).click();
     fixture.detectChanges();
 
-    expect(verificationDialog().open).toBeTrue();
+    expect(verificationDialog().open).toBe(true);
     const terms = Array.from(verificationDialog().querySelectorAll('.kv-detail dt')).map(dt => dt.textContent!.trim());
     expect(terms).toEqual(['Check', 'Response', 'Error', 'Time']);
     expect(verificationDialog().textContent).toContain('No response');
@@ -197,7 +194,7 @@ describe('AdminApiKeysComponent', () => {
     await closing;
     fixture.detectChanges();
 
-    expect(save.calls.mostRecent().args).toEqual(['Anthropic', FAKE_KEY, true]);
+    expect(vi.mocked(save).mock.lastCall).toEqual(['Anthropic', FAKE_KEY, true]);
     const label = card('Anthropic').querySelector('.aak-verification') as HTMLElement;
     expect(label.textContent!.trim()).toBe('Not verified');
     expect(card('Anthropic').querySelector('.aak-verify-again')).not.toBeNull();
@@ -208,7 +205,7 @@ describe('AdminApiKeysComponent', () => {
 
   it('shows a rate-limit warning as an amber alert after a save', async () => {
     await render([status('Anthropic'), status('Google'), status('OpenAI')]);
-    spyOn(adminService, 'saveDefaultApiKey').and.returnValue(of({
+    vi.spyOn(adminService, 'saveDefaultApiKey').mockReturnValue(of({
       status: status('Google', { hasKey: true, keyHint: '0001', verification: { status: 'Verified', checkedAtUtc: '2026-09-29T10:00:00Z', message: 'Rate limited' } }),
       updatedConfigCount: 0,
       warning: 'Google answered 429: the key works but is rate-limited.'
@@ -233,7 +230,7 @@ describe('AdminApiKeysComponent', () => {
       status('Google'),
       status('OpenAI')
     ]);
-    const verify = spyOn(adminService, 'verifyDefaultApiKey').and.returnValue(of({
+    const verify = vi.spyOn(adminService, 'verifyDefaultApiKey').mockReturnValue(of({
       status: status('Anthropic', {
         hasKey: true, keyHint: 'ab12',
         verification: { status: 'Verified', checkedAtUtc: '2026-09-29T10:00:00Z', message: null }
@@ -270,17 +267,17 @@ describe('AdminApiKeysComponent', () => {
       status('Google'),
       status('OpenAI')
     ]);
-    const check = spyOn(adminService, 'getDefaultApiKeyDeletionCheck').and.returnValue(of({
+    const check = vi.spyOn(adminService, 'getDefaultApiKeyDeletionCheck').mockReturnValue(of({
       count: 2,
       configs: [{ id: 3, displayName: 'Claude Chat', isEnabled: true }, { id: 5, displayName: 'Claude Bench', isEnabled: true }]
     }));
-    const del = spyOn(adminService, 'deleteDefaultApiKey').and.returnValue(of({ disabledCount: 2 }));
+    const del = vi.spyOn(adminService, 'deleteDefaultApiKey').mockReturnValue(of({ disabledCount: 2 }));
 
     (card('Anthropic').querySelector('.aak-delete') as HTMLButtonElement).click();
     fixture.detectChanges();
 
     expect(check).toHaveBeenCalledWith('Anthropic');
-    expect(deleteDialog().open).toBeTrue();
+    expect(deleteDialog().open).toBe(true);
     const text = deleteDialog().textContent!.replace(/\s+/g, ' ');
     expect(text).toContain('Delete the default Anthropic key?');
     expect(text).toContain('2 system AI configurations use this key. They will be disabled');
@@ -301,7 +298,7 @@ describe('AdminApiKeysComponent', () => {
 
   it('says no configuration uses a key when the deletion check finds none', async () => {
     await render([status('Anthropic'), status('Google'), status('OpenAI', { hasKey: true, keyHint: 'zz99' })]);
-    spyOn(adminService, 'getDefaultApiKeyDeletionCheck').and.returnValue(of({ count: 0, configs: [] }));
+    vi.spyOn(adminService, 'getDefaultApiKeyDeletionCheck').mockReturnValue(of({ count: 0, configs: [] }));
 
     (card('OpenAI').querySelector('.aak-delete') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -311,7 +308,7 @@ describe('AdminApiKeysComponent', () => {
 
   it('stops the delete dialog close and cancel events', async () => {
     await render([status('Anthropic', { hasKey: true, keyHint: 'ab12' }), status('Google'), status('OpenAI')]);
-    spyOn(adminService, 'getDefaultApiKeyDeletionCheck').and.returnValue(of({ count: 0, configs: [] }));
+    vi.spyOn(adminService, 'getDefaultApiKeyDeletionCheck').mockReturnValue(of({ count: 0, configs: [] }));
     (card('Anthropic').querySelector('.aak-delete') as HTMLButtonElement).click();
     fixture.detectChanges();
 

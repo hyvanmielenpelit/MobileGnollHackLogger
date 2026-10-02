@@ -3,7 +3,7 @@ import { diffLines, MAX_DIFF_LINES } from './text-diff.util';
 describe('text-diff.util', () => {
   it('marks identical text as equal', () => {
     const result = diffLines('a\nb', 'a\nb');
-    expect(result.truncated).toBeFalse();
+    expect(result.truncated).toBe(false);
     expect(result.lines).toEqual([{ kind: 'equal', text: 'a' }, { kind: 'equal', text: 'b' }]);
   });
 
@@ -33,7 +33,7 @@ describe('text-diff.util', () => {
   });
 
   it('ignores the difference between CRLF and LF', () => {
-    expect(diffLines('a\r\nb', 'a\nb').lines.every(l => l.kind === 'equal')).toBeTrue();
+    expect(diffLines('a\r\nb', 'a\nb').lines.every(l => l.kind === 'equal')).toBe(true);
   });
 
   it('treats an empty side as all added or all removed', () => {
@@ -44,7 +44,7 @@ describe('text-diff.util', () => {
   it('does not align inputs above the cap', () => {
     const big = Array.from({ length: MAX_DIFF_LINES + 1 }, (_, i) => `line ${i}`).join('\n');
     const result = diffLines(big, 'line 0');
-    expect(result.truncated).toBeTrue();
+    expect(result.truncated).toBe(true);
     expect(result.lines.filter(l => l.kind === 'removed').length).toBe(MAX_DIFF_LINES + 1);
     expect(result.lines.filter(l => l.kind === 'added').length).toBe(1);
   });

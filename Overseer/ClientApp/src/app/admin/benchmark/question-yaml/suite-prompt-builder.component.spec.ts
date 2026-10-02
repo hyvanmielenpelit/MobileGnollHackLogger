@@ -49,22 +49,22 @@ describe('SuitePromptBuilderComponent', () => {
     const controls = Array.from(host.querySelectorAll<HTMLInputElement>('input'));
     expect(controls.length).toBeGreaterThan(4);
     for (const control of controls) {
-      expect(control.labels!.length).withContext(control.id || control.type).toBeGreaterThan(0);
+      expect(control.labels!.length, control.id || control.type).toBeGreaterThan(0);
     }
     for (const el of Array.from(host.querySelectorAll('[id]'))) {
-      expect(el.id).withContext(el.id).toMatch(/^(tip-)?suite-prompt-/);
+      expect(el.id, el.id).toMatch(/^(tip-)?suite-prompt-/);
     }
   });
 
   it('opens with no prompt, no path field and the go-ahead box ticked', () => {
     expect(prompt()).toBeNull();
     expect(input('path')).toBeNull();
-    expect(input('wait').checked).toBeTrue();
-    expect(input('counts-propose').checked).toBeTrue();
+    expect(input('wait').checked).toBe(true);
+    expect(input('counts-propose').checked).toBe(true);
   });
 
   it('generates the prompt the builder module would, announces it and emits the options', () => {
-    const emitted = jasmine.createSpy('generated');
+    const emitted = vi.fn().mockName('generated');
     component.generated.subscribe(emitted);
     submit();
 

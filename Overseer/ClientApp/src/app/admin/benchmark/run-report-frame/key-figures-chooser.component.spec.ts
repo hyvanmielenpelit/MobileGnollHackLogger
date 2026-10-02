@@ -104,7 +104,7 @@ describe('KeyFiguresChooserComponent', () => {
   }
 
   it('keeps a closed, light-dismiss dialog labelled by its title', () => {
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
     expect(dialog().classList).toContain('gh-dialog');
     expect(dialog().getAttribute('closedby')).toBe('any');
     expect(dialog().getAttribute('aria-labelledby')).toBe('kfchTitle');
@@ -116,8 +116,8 @@ describe('KeyFiguresChooserComponent', () => {
 
   it('opens modally over the dialog it sits in and focuses its title', () => {
     open();
-    expect(dialog().open).toBeTrue();
-    expect(dialog().matches(':modal')).toBeTrue();
+    expect(dialog().open).toBe(true);
+    expect(dialog().matches(':modal')).toBe(true);
     expect(document.activeElement).toBe(dialog().querySelector('#kfchTitle'));
   });
 
@@ -166,7 +166,7 @@ describe('KeyFiguresChooserComponent', () => {
     click(boxes()[1]);
     expect(status()).toBe('2 of 3 selected');
     expect(fixture.componentInstance.changes).toEqual([['panel', 'mean-time']]);
-    expect(dialog().open).toBeTrue();
+    expect(dialog().open).toBe(true);
 
     click(button('.kfch-all'));
     click(button('.kfch-none'));
@@ -192,9 +192,9 @@ describe('KeyFiguresChooserComponent', () => {
     const closed = nextEvent(dialog(), 'close');
     click(close);
     await closed;
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
     expect(document.activeElement).toBe(opener());
-    expect(outer().open).toBeTrue();
+    expect(outer().open).toBe(true);
     expect(fixture.componentInstance.changes).toEqual([]);
   });
 
@@ -211,9 +211,9 @@ describe('KeyFiguresChooserComponent', () => {
     const closed = nextEvent(dialog(), 'close');
     click(done);
     await closed;
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
     expect(document.activeElement).toBe(opener());
-    expect(outer().open).toBeTrue();
+    expect(outer().open).toBe(true);
     expect(fixture.componentInstance.events).not.toContain('close');
   });
 
@@ -221,7 +221,7 @@ describe('KeyFiguresChooserComponent', () => {
     open();
     click(button('.kfch-none'));
     for (const selector of ['#kfchReason', '.kfch-copy', '.kfch-download', '.kfch-cancel']) {
-      expect(dialog().querySelector(selector)).withContext(selector).toBeNull();
+      expect(dialog().querySelector(selector), selector).toBeNull();
     }
   });
 
@@ -333,6 +333,6 @@ describe('KeyFiguresChooserComponent', () => {
     dialog().close();
     await closed;
     expect(fixture.componentInstance.events.length).toBe(eventsBefore);
-    expect(outer().open).toBeTrue();
+    expect(outer().open).toBe(true);
   });
 });

@@ -195,7 +195,7 @@ current schema.
      ```bash
      npm run build
      ```
-     Never plain `npm test` or `ng test`: Karma stays in watch mode and never returns.
+     Never plain `npm test` or `ng test`: it starts watch mode in an interactive terminal and never returns.
 
 4. **Resolve the Sentry Issue (User's Call, After Deployment)**:
    - Resolving an issue is an outward-facing change. Do it only when the user asks.

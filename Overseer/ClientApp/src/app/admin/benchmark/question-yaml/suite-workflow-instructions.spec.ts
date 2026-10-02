@@ -52,7 +52,7 @@ describe('buildSuiteWorkflowInstructions', () => {
       for (const route of ['add-to-suite', 'create-suite'] as const) {
         const allowed = allowedLabels(details);
         for (const run of boldRuns(buildSuiteWorkflowInstructions(route, details))) {
-          expect(allowed.has(run)).withContext(`${route}: **${run}**`).toBeTrue();
+          expect(allowed.has(run), `${route}: **${run}**`).toBe(true);
         }
       }
     }

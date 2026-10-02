@@ -107,32 +107,17 @@
           "builder": "@angular/build:extract-i18n"
         },
         "test": {
-          "builder": "@angular/build:karma",
+          "builder": "@angular/build:unit-test",
           "options": {
-            "polyfills": [
-              "zone.js",
-              "zone.js/testing"
-            ],
             "tsConfig": "tsconfig.spec.json",
-            "inlineStyleLanguage": "scss",
-            "assets": [
-              {
-                "glob": "**/*",
-                "input": "public"
-              },
-              {
-                "glob": "KaTeX_*",
-                "input": "node_modules/katex/dist/fonts",
-                "output": "base/media"
-              }
+            "browsers": [
+              "ChromiumHeadless"
             ],
-            "styles": [
-              "src/fonts.scss",
-              "src/figure-fonts.scss",
-              "src/styles.scss",
-              "node_modules/katex/dist/katex.min.css"
+            "browserViewport": "800x600",
+            "setupFiles": [
+              "src/test-setup.ts"
             ],
-            "scripts": []
+            "runnerConfig": "vitest-base.config.ts"
           }
         }
       }

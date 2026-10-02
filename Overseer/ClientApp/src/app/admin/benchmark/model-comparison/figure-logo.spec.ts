@@ -27,10 +27,10 @@ describe('figure-logo', () => {
 
   it('loads each variant from its own high-resolution asset', async () => {
     const image = stubImage();
-    const load = spyOn(figureLogoIo, 'loadImage').and.resolveTo(image);
-    await expectAsync(ensureFigureLogo('wide')).toBeResolvedTo(image);
-    await expectAsync(ensureFigureLogo('square')).toBeResolvedTo(image);
-    expect(load.calls.allArgs()).toEqual([
+    const load = vi.spyOn(figureLogoIo, 'loadImage').mockResolvedValue(image);
+    await expect(ensureFigureLogo('wide')).resolves.toEqual(image);
+    await expect(ensureFigureLogo('square')).resolves.toEqual(image);
+    expect(vi.mocked(load).mock.calls).toEqual([
       ['/img/gnollbench/gnollbench-wide-v3-h850.webp'],
       ['/img/gnollbench/gnollbench-logo-v3-843.webp']
     ]);
@@ -39,7 +39,7 @@ describe('figure-logo', () => {
   });
 
   it('reuses the promise of a variant it has loaded', async () => {
-    const load = spyOn(figureLogoIo, 'loadImage').and.resolveTo(stubImage());
+    const load = vi.spyOn(figureLogoIo, 'loadImage').mockResolvedValue(stubImage());
     const first = ensureFigureLogo('wide');
     const second = ensureFigureLogo('wide');
     expect(second).toBe(first);
@@ -50,17 +50,19 @@ describe('figure-logo', () => {
 
   it('does not cache a failed load, so the next call tries again', async () => {
     const image = stubImage();
-    const load = spyOn(figureLogoIo, 'loadImage').and.returnValues(Promise.resolve(null), Promise.resolve(image));
-    await expectAsync(ensureFigureLogo('square')).toBeResolvedTo(null);
-    await expectAsync(ensureFigureLogo('square')).toBeResolvedTo(image);
+    const load = vi.spyOn(figureLogoIo, 'loadImage').mockReturnValueOnce(Promise.resolve(null)).mockReturnValueOnce(Promise.resolve(image));
+    await expect(ensureFigureLogo('square')).resolves.toEqual(null);
+    await expect(ensureFigureLogo('square')).resolves.toEqual(image);
     expect(load).toHaveBeenCalledTimes(2);
   });
 
   it('resolves null rather than rejecting when the load throws or rejects', async () => {
-    const load = spyOn(figureLogoIo, 'loadImage').and.rejectWith(new Error('404'));
-    await expectAsync(ensureFigureLogo('wide')).toBeResolvedTo(null);
-    load.and.throwError('no image');
-    await expectAsync(ensureFigureLogo('wide')).toBeResolvedTo(null);
+    const load = vi.spyOn(figureLogoIo, 'loadImage').mockRejectedValue(new Error('404'));
+    await expect(ensureFigureLogo('wide')).resolves.toEqual(null);
+    load.mockImplementation(() => {
+      throw new Error('no image');
+    });
+    await expect(ensureFigureLogo('wide')).resolves.toEqual(null);
     expect(load).toHaveBeenCalledTimes(2);
   });
 
@@ -95,13 +97,13 @@ describe('figure-logo', () => {
   it('draws the image into the box with high-quality smoothing', () => {
     const context = document.createElement('canvas').getContext('2d')!;
     const drawn = logo(48, 2);
-    const drawImage = spyOn(context, 'drawImage').and.callThrough();
-    const save = spyOn(context, 'save').and.callThrough();
-    const restore = spyOn(context, 'restore').and.callThrough();
+    const drawImage = vi.spyOn(context, 'drawImage');
+    const save = vi.spyOn(context, 'save');
+    const restore = vi.spyOn(context, 'restore');
     context.imageSmoothingQuality = 'low';
     drawFigureLogo(context, drawn, { width: 96, height: 48 }, 10, 20);
     expect(drawImage).toHaveBeenCalledTimes(1);
-    expect(drawImage.calls.argsFor(0) as unknown[]).toEqual([drawn.image, 10, 20, 96, 48]);
+    expect(vi.mocked(drawImage).mock.calls[0] as unknown[]).toEqual([drawn.image, 10, 20, 96, 48]);
     expect(save).toHaveBeenCalledTimes(1);
     expect(restore).toHaveBeenCalledTimes(1);
     expect(context.imageSmoothingQuality).toBe('low');

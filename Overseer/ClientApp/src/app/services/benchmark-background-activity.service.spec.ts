@@ -35,18 +35,18 @@ describe('BenchmarkBackgroundActivityService', () => {
           }
         };
         requests.push(request);
-        return deferred ? new Promise<void>(() => { /* settled by the test via grant() */ }) : request.grant();
+        return deferred ? new Promise<void>(() => { }) : request.grant();
       }
     };
-    spyOn(service as any, 'lockManager').and.returnValue(fake);
+    vi.spyOn(service as any, 'lockManager').mockReturnValue(fake);
     return { requests };
   }
 
   it('reports unsupported and never throws when the Locks API does not exist', () => {
-    spyOn(service as any, 'lockManager').and.returnValue(undefined);
+    vi.spyOn(service as any, 'lockManager').mockReturnValue(undefined);
     expect(() => service.acquireForRun(54)).not.toThrow();
     expect(service.state).toBe('unsupported');
-    expect(service.isSupported()).toBeFalse();
+    expect(service.isSupported()).toBe(false);
   });
 
   it('names the lock for a run, a series and a battery run distinctly', () => {
@@ -72,11 +72,11 @@ describe('BenchmarkBackgroundActivityService', () => {
     let settled = false;
     requests[0].promise!.then(() => { settled = true; });
     await Promise.resolve();
-    expect(settled).toBeFalse();
+    expect(settled).toBe(false);
 
     service.release();
     await requests[0].promise;
-    expect(settled).toBeTrue();
+    expect(settled).toBe(true);
     expect(service.state).toBe('idle');
     expect(service.heldName).toBeNull();
   });
@@ -90,7 +90,7 @@ describe('BenchmarkBackgroundActivityService', () => {
     service.acquireForRun(2);
     await Promise.resolve();
 
-    expect(firstSettled).toBeTrue();
+    expect(firstSettled).toBe(true);
     expect(requests.length).toBe(2);
     expect(service.state).toBe('held');
     expect(service.heldName).toBe('overseer-benchmark-live:run:2');
@@ -106,7 +106,7 @@ describe('BenchmarkBackgroundActivityService', () => {
     requests[0].grant().then(() => { settled = true; });
     await Promise.resolve();
 
-    expect(settled).toBeTrue();
+    expect(settled).toBe(true);
     expect(service.state).toBe('idle');
   });
 
@@ -120,7 +120,7 @@ describe('BenchmarkBackgroundActivityService', () => {
     requests[1].grant();
     await Promise.resolve();
 
-    expect(firstSettled).toBeTrue();
+    expect(firstSettled).toBe(true);
     expect(service.state).toBe('held');
     expect(service.heldName).toBe('overseer-benchmark-live:run:2');
 
@@ -128,11 +128,11 @@ describe('BenchmarkBackgroundActivityService', () => {
     requests[1].promise!.then(() => { secondSettled = true; });
     service.release();
     await Promise.resolve();
-    expect(secondSettled).toBeTrue();
+    expect(secondSettled).toBe(true);
   });
 
   it('records a rejected acquisition as an error rather than throwing', async () => {
-    spyOn(service as any, 'lockManager').and.returnValue({
+    vi.spyOn(service as any, 'lockManager').mockReturnValue({
       request: () => Promise.reject(new Error('lock manager unavailable'))
     });
 

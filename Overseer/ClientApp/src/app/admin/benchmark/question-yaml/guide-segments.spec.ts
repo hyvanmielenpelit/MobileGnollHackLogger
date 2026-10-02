@@ -35,7 +35,7 @@ describe('splitGuideMarkdown', () => {
     const codes = splitGuideMarkdown(format).filter(s => s.kind === 'code').map(s => (s as { code: string }).code);
     const right = codes.find(c => c.includes('Map grid:') && c.includes('0123456789012345'))!;
     expect(right).toContain('\n           0123456789012345\n        8  |..........@...|');
-    expect(right.startsWith('    text: |')).toBeTrue();
+    expect(right.startsWith('    text: |')).toBe(true);
     const wrong = codes.find(c => c.endsWith('\n    Map grid:'))!;
     expect(wrong).toBe('    text: |\n      GnollHack 4.2.0 Build 47\n    Map grid:');
   });
@@ -43,8 +43,8 @@ describe('splitGuideMarkdown', () => {
   it('round-trips every guide tab of both variants', () => {
     for (const tab of [...HUMAN_GUIDE_TABS, ...SUITE_GUIDE_TABS]) {
       const segments = splitGuideMarkdown(tab.markdown);
-      expect(segments.length).withContext(tab.id).toBeGreaterThan(0);
-      expect(squeeze(join(segments))).withContext(tab.id).toBe(squeeze(tab.markdown));
+      expect(segments.length, tab.id).toBeGreaterThan(0);
+      expect(squeeze(join(segments)), tab.id).toBe(squeeze(tab.markdown));
     }
   });
 });

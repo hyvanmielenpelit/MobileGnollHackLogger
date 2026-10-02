@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
   PREF_LINE_NUMBERS,
@@ -13,7 +14,7 @@ describe('SnapshotTextEditorComponent', () => {
   let host: HTMLElement;
 
   beforeEach(async () => {
-    spyOn(Storage.prototype, 'getItem').and.returnValue(null);
+    vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
     await TestBed.configureTestingModule({
       imports: [SnapshotTextEditorComponent]
     }).compileComponents();
@@ -66,16 +67,16 @@ describe('SnapshotTextEditorComponent', () => {
 
     component.view!.dispatch({ changes: { from: 0, insert: 'X' } });
     fixture.detectChanges();
-    expect(component.dirty).toBeTrue();
-    expect(component.canSave).toBeTrue();
-    expect(component.canRevert).toBeTrue();
-    expect(component.currentText()!.startsWith('XMap:')).toBeTrue();
+    expect(component.dirty).toBe(true);
+    expect(component.canSave).toBe(true);
+    expect(component.canRevert).toBe(true);
+    expect(component.currentText()!.startsWith('XMap:')).toBe(true);
 
     component.view!.dispatch({ changes: { from: 0, to: 1 } });
     fixture.detectChanges();
-    expect(component.dirty).toBeFalse();
-    expect(component.canSave).toBeFalse();
-    expect(component.canRevert).toBeFalse();
+    expect(component.dirty).toBe(false);
+    expect(component.canSave).toBe(false);
+    expect(component.canRevert).toBe(false);
 
     expect(emitted).toEqual([true, false]);
   });
@@ -93,7 +94,7 @@ describe('SnapshotTextEditorComponent', () => {
     component.requestSave();
 
     expect(saved.length).toBe(1);
-    expect(saved[0].startsWith('Edited Map:\n')).toBeTrue();
+    expect(saved[0].startsWith('Edited Map:\n')).toBe(true);
   });
 
   it('does not emit a save while one is in progress', async () => {
@@ -125,8 +126,8 @@ describe('SnapshotTextEditorComponent', () => {
     fixture.detectChanges();
 
     expect(component.currentText()).toBe(board);
-    expect(component.dirty).toBeFalse();
-    expect(component.canRevert).toBeFalse();
+    expect(component.dirty).toBe(false);
+    expect(component.canRevert).toBe(false);
   });
 
   it('takes the saved text as the new clean state', async () => {
@@ -137,7 +138,7 @@ describe('SnapshotTextEditorComponent', () => {
     component.markSaved('Normalized by the server', submitted);
     fixture.detectChanges();
     expect(component.currentText()).toBe('Normalized by the server');
-    expect(component.dirty).toBeFalse();
+    expect(component.dirty).toBe(false);
 
     component.view!.dispatch({ changes: { from: 0, insert: 'More ' } });
     component.revert();
@@ -160,7 +161,7 @@ describe('SnapshotTextEditorComponent', () => {
   it('lists the map grid among the sections', async () => {
     await mount(buildBoard());
     const options = Array.from(host.querySelectorAll<HTMLOptionElement>('.section-select option')).map(o => o.textContent ?? '');
-    expect(options.some(o => o.startsWith('Map grid:'))).toBeTrue();
+    expect(options.some(o => o.startsWith('Map grid:'))).toBe(true);
   });
 
   it('moves the cursor to the chosen section', async () => {
@@ -182,7 +183,7 @@ describe('SnapshotTextEditorComponent', () => {
 
   it('copies the buffer, unsaved edits included, and announces it', async () => {
     await mount(buildBoard());
-    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
     component.view!.dispatch({ changes: { from: 0, insert: 'Edited ' } });
 
     host.querySelector<HTMLButtonElement>('.copy-text-btn')!.click();
@@ -190,28 +191,28 @@ describe('SnapshotTextEditorComponent', () => {
     fixture.detectChanges();
 
     expect(writeText).toHaveBeenCalledWith(component.currentText()!);
-    expect((writeText.calls.mostRecent().args[0] as string).startsWith('Edited Map:')).toBeTrue();
+    expect((vi.mocked(writeText).mock.lastCall![0] as string).startsWith('Edited Map:')).toBe(true);
     expect(host.querySelector('.copy-text-btn')!.textContent!.trim()).toBe('Copied');
     expect(statusText()).toBe('Copied');
   });
 
   it('copies all lines with line numbers when nothing is selected', async () => {
     await mount(buildBoard());
-    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
 
     host.querySelector<HTMLButtonElement>('.copy-lines-btn')!.click();
     await settle();
     fixture.detectChanges();
 
-    const copied = writeText.calls.mostRecent().args[0] as string;
-    expect(copied.startsWith('L  1: Map:\n')).toBeTrue();
+    const copied = vi.mocked(writeText).mock.lastCall![0] as string;
+    expect(copied.startsWith('L  1: Map:\n')).toBe(true);
     expect(copied.split('\n').length).toBe(250);
     expect(statusText()).toBe('Copied all 250 lines');
   });
 
   it('copies only the selected lines with line numbers', async () => {
     await mount(buildBoard());
-    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
     const doc = component.view!.state.doc;
     component.view!.dispatch({ selection: { anchor: doc.line(2).from + 1, head: doc.line(4).to } });
 
@@ -219,8 +220,7 @@ describe('SnapshotTextEditorComponent', () => {
     await settle();
     fixture.detectChanges();
 
-    expect(writeText.calls.mostRecent().args[0]).toBe(
-      'L2: The hero is at <10,13>, shown as \'@\'.\nL3: A food ration lies here.\nL4: Map grid:');
+    expect(vi.mocked(writeText).mock.lastCall![0]).toBe('L2: The hero is at <10,13>, shown as \'@\'.\nL3: A food ration lies here.\nL4: Map grid:');
     expect(statusText()).toBe('Copied lines 2–4');
   });
 
@@ -240,10 +240,10 @@ describe('SnapshotTextEditorComponent', () => {
 
   it('toggles line numbers and wrapping, and remembers both', async () => {
     await mount(buildBoard());
-    const setItem = spyOn(Storage.prototype, 'setItem');
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockReturnValue(undefined);
     const view = component.view!;
-    expect(host.querySelector<HTMLInputElement>('.line-numbers-toggle')!.checked).toBeTrue();
-    expect(host.querySelector<HTMLInputElement>('.wrap-toggle')!.checked).toBeFalse();
+    expect(host.querySelector<HTMLInputElement>('.line-numbers-toggle')!.checked).toBe(true);
+    expect(host.querySelector<HTMLInputElement>('.wrap-toggle')!.checked).toBe(false);
     expect(host.querySelector('.cm-lineNumbers')).toBeTruthy();
 
     host.querySelector<HTMLInputElement>('.line-numbers-toggle')!.click();
@@ -257,15 +257,17 @@ describe('SnapshotTextEditorComponent', () => {
   });
 
   it('falls back to the defaults when storage throws', async () => {
-    (Storage.prototype.getItem as jasmine.Spy).and.throwError(new Error('storage denied'));
+    (Storage.prototype.getItem as Mock).mockImplementation(() => {
+      throw new Error('storage denied');
+    });
     await mount(buildBoard());
-    expect(component.showLineNumbers).toBeTrue();
-    expect(component.wrapLines).toBeFalse();
+    expect(component.showLineNumbers).toBe(true);
+    expect(component.wrapLines).toBe(false);
   });
 
   it('shows the map readout and copies its coordinate', async () => {
     await mount(buildBoard());
-    const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
     expect(host.querySelector('.copy-coordinate-btn')).toBeNull();
 
     const view = component.view!;

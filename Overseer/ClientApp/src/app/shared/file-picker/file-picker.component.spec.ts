@@ -85,9 +85,9 @@ describe('FilePickerComponent', () => {
 
   it('reads the accept extensions', () => {
     expect(acceptExtensions('.yaml, .YML,text/plain')).toEqual(['.yaml', '.yml']);
-    expect(matchesAccept('a.Yaml', '.yaml,.yml')).toBeTrue();
-    expect(matchesAccept('a.png', '.yaml,.yml')).toBeFalse();
-    expect(matchesAccept('a.png', 'text/plain')).toBeTrue();
+    expect(matchesAccept('a.Yaml', '.yaml,.yml')).toBe(true);
+    expect(matchesAccept('a.png', '.yaml,.yml')).toBe(false);
+    expect(matchesAccept('a.png', 'text/plain')).toBe(true);
   });
 
   it('renders a zone and a labelled, described file input while empty', () => {
@@ -133,11 +133,11 @@ describe('FilePickerComponent', () => {
     pick(yaml());
     const button = removeButton()!;
     expect(button.getAttribute('aria-label')).toBe('Remove agent-new-questions-core.yaml');
-    expect(button.hasAttribute('title')).toBeFalse();
+    expect(button.hasAttribute('title')).toBe(false);
     const tip = el.querySelector('#' + button.getAttribute('interestfor'))!;
     expect(tip.getAttribute('popover')).toBe('hint');
     expect(tip.textContent).toBe('Remove file');
-    expect(tip.hasAttribute('role')).toBeFalse();
+    expect(tip.hasAttribute('role')).toBe(false);
   });
 
   it('fires cleared on the remove button and returns to the zone', () => {
@@ -163,7 +163,7 @@ describe('FilePickerComponent', () => {
 
   it('attaches a dropped file with a matching extension', () => {
     const event = drop(el.querySelector('.gh-file-zone')!, yaml('x.YML'));
-    expect(event.defaultPrevented).toBeTrue();
+    expect(event.defaultPrevented).toBe(true);
     expect(hostComponent.selected.map(f => f.name)).toEqual(['x.YML']);
     expect(card()).not.toBeNull();
   });

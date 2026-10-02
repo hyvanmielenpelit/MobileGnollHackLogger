@@ -1127,10 +1127,10 @@ Always execute unit tests before completing frontend modifications in Overseer. 
   ```bash
   npm run test:headless
   ```
-  *(Or: `npx ng test --no-watch --browsers=ChromeHeadless`)*
+  *(Or: `npx ng test --no-watch`)*
 - **Single Test File (Headless)**:
   ```bash
-  npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch --browsers=ChromeHeadless
+  npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch
   ```
 - **Build Verification**:
   ```bash

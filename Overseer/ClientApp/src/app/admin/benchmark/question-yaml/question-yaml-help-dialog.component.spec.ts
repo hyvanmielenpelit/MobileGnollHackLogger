@@ -1,3 +1,4 @@
+import type { Mock, MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { AdminBenchmarkService, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
@@ -10,7 +11,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
   let fixture: ComponentFixture<QuestionYamlHelpDialogComponent>;
   let component: QuestionYamlHelpDialogComponent;
   let host: HTMLElement;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
+  let service: MockedObject<AdminBenchmarkService>;
 
   const GUIDANCE: RubricAuthoringGuidance = {
     sectionRules: '1. **BOARD FACTS**: fixture rule.\r\n2. **REQUIRED**: fixture rule.',
@@ -25,8 +26,10 @@ describe('QuestionYamlHelpDialogComponent', () => {
   };
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj('AdminBenchmarkService', ['getRubricAuthoringGuidance']);
-    service.getRubricAuthoringGuidance.and.returnValue(of(GUIDANCE));
+    service = {
+      getRubricAuthoringGuidance: vi.fn().mockName("AdminBenchmarkService.getRubricAuthoringGuidance")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    service.getRubricAuthoringGuidance.mockReturnValue(of(GUIDANCE));
     await TestBed.configureTestingModule({
       imports: [QuestionYamlHelpDialogComponent],
       providers: [{ provide: AdminBenchmarkService, useValue: service }]
@@ -43,8 +46,8 @@ describe('QuestionYamlHelpDialogComponent', () => {
   const selectedTab = (): HTMLButtonElement | undefined => tabButtons().find(b => b.getAttribute('aria-selected') === 'true');
   const aiText = (): HTMLElement | null => host.querySelector('.help-ai app-code-block pre code');
 
-  const withClipboard = async (run: (writeText: jasmine.Spy) => Promise<void>) => {
-    const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+  const withClipboard = async (run: (writeText: Mock) => Promise<void>) => {
+    const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
     const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
     try {
@@ -57,7 +60,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
 
   it('opens on the workflow tab with the guide, and without the AI instructions', () => {
     component.open();
-    expect(component.dialog.nativeElement.open).toBeTrue();
+    expect(component.dialog.nativeElement.open).toBe(true);
     expect(host.querySelector('.help-guide')!.textContent).toContain('Export, edit, import');
     expect(host.querySelector('.help-ai')).toBeNull();
   });
@@ -77,8 +80,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
       for (const tab of component.tabs) {
         component.selectTab(tab.id);
         fixture.detectChanges();
-        expect(host.querySelector('.help-ingress')!.textContent!.trim())
-          .withContext(`${variant} / ${tab.id}`).not.toBe('');
+        expect(host.querySelector('.help-ingress')!.textContent!.trim(), `${variant} / ${tab.id}`).not.toBe('');
       }
       component.close();
     }
@@ -103,7 +105,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
       return event;
     };
 
-    expect(keydown('ArrowLeft', 0).defaultPrevented).toBeTrue();
+    expect(keydown('ArrowLeft', 0).defaultPrevented).toBe(true);
     expect(component.activeTab).toBe('ai');
     expect(document.activeElement).toBe(host.querySelector('#yaml-help-tab-ai'));
 
@@ -115,7 +117,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
     keydown('Home', 4);
     expect(component.activeTab).toBe('workflow');
 
-    expect(keydown('a', 0).defaultPrevented).toBeFalse();
+    expect(keydown('a', 0).defaultPrevented).toBe(false);
     expect(component.activeTab).toBe('workflow');
   });
 
@@ -129,7 +131,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
   });
 
   it('copies the instructions from the code block and announces the result', async () => {
-    await withClipboard(async writeText => {
+    await withClipboard(async (writeText) => {
       component.open();
       component.selectTab('ai');
       fixture.detectChanges();
@@ -167,8 +169,8 @@ describe('QuestionYamlHelpDialogComponent', () => {
   });
 
   it('falls back when the guidance cannot be loaded, and Copy still works', async () => {
-    service.getRubricAuthoringGuidance.and.returnValue(throwError(() => new Error('offline')));
-    await withClipboard(async writeText => {
+    service.getRubricAuthoringGuidance.mockReturnValue(throwError(() => new Error('offline')));
+    await withClipboard(async (writeText) => {
       component.open();
       component.selectTab('ai');
       fixture.detectChanges();
@@ -195,7 +197,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
     it('renders every example as an exclusive disclosure, with the first one open', () => {
       const details = exampleDetails();
       expect(details.length).toBe(YAML_EXAMPLES.length);
-      expect(details.every(d => d.getAttribute('name') === 'yaml-help-example')).toBeTrue();
+      expect(details.every(d => d.getAttribute('name') === 'yaml-help-example')).toBe(true);
       expect(details.map(d => d.open)).toEqual(YAML_EXAMPLES.map((_, i) => i === 0));
       expect(details.map(d => d.querySelector('summary')!.textContent!.trim())).toEqual(YAML_EXAMPLES.map(e => e.title));
       expect(details[0].querySelector('app-code-block pre code')!.textContent).toBe(YAML_EXAMPLES[0].yaml);
@@ -208,7 +210,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
     });
 
     it('copies one example and announces it beside that example only', async () => {
-      await withClipboard(async writeText => {
+      await withClipboard(async (writeText) => {
         exampleDetails()[2].querySelector<HTMLButtonElement>('.code-block-copy')!.click();
         await fixture.whenStable();
         fixture.detectChanges();
@@ -246,8 +248,8 @@ describe('QuestionYamlHelpDialogComponent', () => {
       const ids = Array.from(host.querySelectorAll('[id]')).map(e => e.id);
       expect(ids).toContain('suite-yaml-help-title');
       expect(ids).toContain('suite-yaml-help-panel');
-      expect(tabButtons().every(b => b.id.startsWith('suite-yaml-help-tab-'))).toBeTrue();
-      expect(ids.some(id => id === 'yaml-help-title' || id === 'yaml-help-panel')).toBeFalse();
+      expect(tabButtons().every(b => b.id.startsWith('suite-yaml-help-tab-'))).toBe(true);
+      expect(ids.some(id => id === 'yaml-help-title' || id === 'yaml-help-panel')).toBe(false);
       expect(host.querySelector('button.btn-icon-action')!.getAttribute('aria-label'))
         .toBe('Close suite YAML import and export help');
     });
@@ -271,7 +273,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
     });
 
     it('asks for the wizard from From a Snapshot and from AI Prompt', () => {
-      const requested = jasmine.createSpy('wizardRequested');
+      const requested = vi.fn().mockName('wizardRequested');
       component.wizardRequested.subscribe(requested);
       component.open();
       for (const tab of ['snapshot', 'ai'] as const) {
@@ -289,7 +291,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
       const blocks = Array.from(host.querySelectorAll('app-code-block'));
       const fences = (SUITE_GUIDE_TABS.find(t => t.id === 'format')!.markdown.match(/^```/gm) ?? []).length / 2;
       expect(blocks.length).toBe(fences);
-      expect(blocks.every(b => b.querySelector('.code-block-corner .code-block-copy'))).toBeTrue();
+      expect(blocks.every(b => b.querySelector('.code-block-corner .code-block-copy'))).toBe(true);
       expect(host.querySelector('.help-guide pre')).toBeNull();
       const right = blocks.map(b => b.querySelector('pre code')!.textContent!).find(t => t.includes('0123456789012345'))!;
       expect(right).toContain('\n           0123456789012345\n');
@@ -304,7 +306,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
         component.selectTab(tab.id);
         fixture.detectChanges();
         const ids = Array.from(host.querySelectorAll('[id]')).map(e => e.id);
-        expect(new Set(ids).size).withContext(tab.id).toBe(ids.length);
+        expect(new Set(ids).size, tab.id).toBe(ids.length);
       }
     });
 
@@ -314,7 +316,7 @@ describe('QuestionYamlHelpDialogComponent', () => {
       fixture.detectChanges();
       const details = Array.from(host.querySelectorAll<HTMLDetailsElement>('details.help-example'));
       expect(details.length).toBe(SUITE_YAML_EXAMPLES.length);
-      expect(details.every(d => d.getAttribute('name') === 'suite-yaml-help-example')).toBeTrue();
+      expect(details.every(d => d.getAttribute('name') === 'suite-yaml-help-example')).toBe(true);
       expect(details.map(d => d.open)).toEqual(SUITE_YAML_EXAMPLES.map((_, i) => i === 0));
     });
 

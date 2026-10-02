@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { CardListSort, CardListState, CardListStateOptions } from './card-list-state';
 import { anyOfFilter, customFilter, exactFilter, TableState } from './table-state';
 
@@ -79,11 +80,17 @@ function listFor(overrides: Partial<CardListStateOptions<Row>> = {}, table = tab
 }
 
 /** A keydown event whose target is an input holding `value`. */
-function keydown(key: string, value: string): { event: KeyboardEvent; input: { value: string };
-  preventDefault: jasmine.Spy; stopPropagation: jasmine.Spy; } {
+function keydown(key: string, value: string): {
+  event: KeyboardEvent;
+  input: {
+    value: string;
+  };
+  preventDefault: Mock;
+  stopPropagation: Mock;
+} {
   const input = { value };
-  const preventDefault = jasmine.createSpy('preventDefault');
-  const stopPropagation = jasmine.createSpy('stopPropagation');
+  const preventDefault = vi.fn().mockName('preventDefault');
+  const stopPropagation = vi.fn().mockName('stopPropagation');
   const event = { key, target: input, preventDefault, stopPropagation } as unknown as KeyboardEvent;
   return { event, input, preventDefault, stopPropagation };
 }
@@ -125,13 +132,15 @@ describe('CardListState', () => {
     it('falls back to the default for an unknown sort, a wrong version or an unreadable value', () => {
       for (const stored of [{ version: 1, sort: 'nonsense' }, { version: 2, sort: 'kind' }, '{not json', 'null']) {
         storeSort(stored);
-        expect(listFor().sortId).withContext(JSON.stringify(stored)).toBe('id-desc');
+        expect(listFor().sortId, JSON.stringify(stored)).toBe('id-desc');
       }
     });
 
     it('falls back to the default when localStorage throws', () => {
       storeSort({ version: 1, sort: 'kind' });
-      spyOn(Storage.prototype, 'getItem').and.throwError('denied');
+      vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
 
       expect(listFor().sortId).toBe('id-desc');
     });
@@ -143,7 +152,7 @@ describe('CardListState', () => {
       const list = listFor({}, table);
       list.showMore(manyRows(25));
 
-      expect(list.setSort('kind')).toBeTrue();
+      expect(list.setSort('kind')).toBe(true);
       expect(list.sortId).toBe('kind');
       expect(table.sortColumn).toBe('kind');
       expect(table.sortDirection).toBe('asc');
@@ -156,7 +165,7 @@ describe('CardListState', () => {
       const list = listFor({}, table);
       list.showMore(manyRows(25));
 
-      expect(list.setSort('nonsense')).toBeFalse();
+      expect(list.setSort('nonsense')).toBe(false);
       expect(list.sortId).toBe('id-desc');
       expect(table.sortColumn).toBe('id');
       expect(list.visibleCount).toBe(20);
@@ -164,10 +173,12 @@ describe('CardListState', () => {
     });
 
     it('still applies the sort when localStorage throws', () => {
-      spyOn(Storage.prototype, 'setItem').and.throwError('full');
+      vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+        throw new Error('full');
+      });
       const list = listFor();
 
-      expect(list.setSort('id-asc')).toBeTrue();
+      expect(list.setSort('id-asc')).toBe(true);
       expect(list.sortId).toBe('id-asc');
     });
   });
@@ -234,23 +245,23 @@ describe('CardListState', () => {
   });
 
   describe('search', () => {
-    beforeEach(() => jasmine.clock().install());
-    afterEach(() => jasmine.clock().uninstall());
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
 
     it('applies once typing pauses, resets the batch and calls onChange', () => {
-      const onChange = jasmine.createSpy('onChange');
+      const onChange = vi.fn().mockName('onChange');
       const table = tableFor();
       const list = listFor({ onChange }, table);
       list.showMore(manyRows(25));
 
       list.setSearchInput('a1');
       expect(list.searchText).toBe('a1');
-      jasmine.clock().tick(199);
+      vi.advanceTimersByTime(199);
       expect(table.filters['search']).toBeUndefined();
       expect(list.visibleCount).toBe(20);
       expect(onChange).not.toHaveBeenCalled();
 
-      jasmine.clock().tick(1);
+      vi.advanceTimersByTime(1);
       expect(table.filters['search']).toBe('a1');
       expect(list.visibleCount).toBe(10);
       expect(list.matching(ROWS).map(r => r.id)).toEqual(['a10', 'a1']);
@@ -262,31 +273,31 @@ describe('CardListState', () => {
       const list = listFor({ debounceMs: 100 }, table);
 
       list.setSearchInput('a');
-      jasmine.clock().tick(80);
+      vi.advanceTimersByTime(80);
       list.setSearchInput('a1');
-      jasmine.clock().tick(80);
+      vi.advanceTimersByTime(80);
       expect(table.filters['search']).toBeUndefined();
 
-      jasmine.clock().tick(20);
+      vi.advanceTimersByTime(20);
       expect(table.filters['search']).toBe('a1');
     });
 
     it('Escape with text clears it at once and cancels the pending search', () => {
-      const onChange = jasmine.createSpy('onChange');
+      const onChange = vi.fn().mockName('onChange');
       const table = tableFor();
       const list = listFor({ onChange }, table);
       table.setFilter('search', 'a');
       list.setSearchInput('a1');
       const { event, input, preventDefault, stopPropagation } = keydown('Escape', 'a1');
 
-      expect(list.clearSearchOnEscape(event)).toBeTrue();
+      expect(list.clearSearchOnEscape(event)).toBe(true);
       expect(preventDefault).toHaveBeenCalled();
       expect(stopPropagation).toHaveBeenCalled();
       expect(input.value).toBe('');
       expect(list.searchText).toBe('');
       expect(table.filters['search']).toBe('');
 
-      jasmine.clock().tick(500);
+      vi.advanceTimersByTime(500);
       expect(table.filters['search']).toBe('');
       expect(onChange).not.toHaveBeenCalled();
     });
@@ -296,7 +307,7 @@ describe('CardListState', () => {
       for (const [key, value] of [['Escape', ''], ['Enter', 'a1']]) {
         const { event, input, preventDefault, stopPropagation } = keydown(key, value);
 
-        expect(list.clearSearchOnEscape(event)).withContext(key).toBeFalse();
+        expect(list.clearSearchOnEscape(event), key).toBe(false);
         expect(preventDefault).not.toHaveBeenCalled();
         expect(stopPropagation).not.toHaveBeenCalled();
         expect(input.value).toBe(value);
@@ -309,7 +320,7 @@ describe('CardListState', () => {
 
       list.setSearchInput('a1');
       list.dispose();
-      jasmine.clock().tick(500);
+      vi.advanceTimersByTime(500);
 
       expect(table.filters['search']).toBeUndefined();
     });
@@ -451,8 +462,8 @@ describe('CardListState', () => {
       });
       const rows = [ROWS[0], ROWS[3]];
 
-      expect(list.facets(rows).some(f => f.column === 'age')).toBeFalse();
-      expect(list.facets(ROWS).some(f => f.column === 'age')).toBeTrue();
+      expect(list.facets(rows).some(f => f.column === 'age')).toBe(false);
+      expect(list.facets(ROWS).some(f => f.column === 'age')).toBe(true);
 
       list.setFacet('age', ['new']);
       const age = list.facets(rows).find(f => f.column === 'age')!;
@@ -463,8 +474,8 @@ describe('CardListState', () => {
     it('defaults to listing with two rows or more', () => {
       const list = listFor();
 
-      expect(list.facets([ROWS[0]]).some(f => f.column === 'age')).toBeFalse();
-      expect(list.facets([ROWS[0], ROWS[1]]).some(f => f.column === 'age')).toBeTrue();
+      expect(list.facets([ROWS[0]]).some(f => f.column === 'age')).toBe(false);
+      expect(list.facets([ROWS[0], ROWS[1]]).some(f => f.column === 'age')).toBe(true);
     });
 
     it('sets the filter string to the first value, or clears it', () => {
@@ -481,8 +492,8 @@ describe('CardListState', () => {
   });
 
   describe('chips', () => {
-    beforeEach(() => jasmine.clock().install());
-    afterEach(() => jasmine.clock().uninstall());
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
 
     it('lists one chip per selected value in facet order, then the search', () => {
       const list = listFor();
@@ -490,7 +501,7 @@ describe('CardListState', () => {
       list.setFacet('kind', ['report', 'log']);
       list.setFacet('age', ['new']);
       list.setSearchInput('  a1 ');
-      jasmine.clock().tick(200);
+      vi.advanceTimersByTime(200);
 
       expect(list.chips(ROWS)).toEqual([
         { key: 'kind:report', column: 'kind', value: 'report', facetLabel: 'Kind', valueLabel: 'report' },
@@ -507,7 +518,7 @@ describe('CardListState', () => {
       list.setFacet('kind', ['report', 'log']);
       list.setFacet('age', ['new']);
       list.setSearchInput('a');
-      jasmine.clock().tick(200);
+      vi.advanceTimersByTime(200);
       const chips = list.chips(ROWS);
 
       expect(list.removeChip(chips[1], ROWS)).toBe(1);
@@ -534,10 +545,10 @@ describe('CardListState', () => {
       const table = tableFor();
       const list = listFor({}, table);
       list.setSearchInput('a');
-      jasmine.clock().tick(200);
+      vi.advanceTimersByTime(200);
       list.setSearchInput('a1');
       list.removeChip(list.chips(ROWS)[0], ROWS);
-      jasmine.clock().tick(500);
+      vi.advanceTimersByTime(500);
 
       expect(table.filters['search']).toBe('');
     });
@@ -595,8 +606,8 @@ describe('CardListState', () => {
   });
 
   describe('clearFilters', () => {
-    beforeEach(() => jasmine.clock().install());
-    afterEach(() => jasmine.clock().uninstall());
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
 
     it('clears the search, its timer and every filter, resetting the batch', () => {
       const table = tableFor();
@@ -608,13 +619,13 @@ describe('CardListState', () => {
       list.showMore(manyRows(25));
 
       list.clearFilters();
-      jasmine.clock().tick(500);
+      vi.advanceTimersByTime(500);
 
       expect(list.searchText).toBe('');
       expect(table.filters['search']).toBeUndefined();
       expect(table.filters['selected']).toBeUndefined();
       expect(table.filterValues('kind')).toEqual([]);
-      expect(table.hasActiveFilters).toBeFalse();
+      expect(table.hasActiveFilters).toBe(false);
       expect(list.visibleCount).toBe(10);
     });
 
@@ -642,13 +653,13 @@ describe('CardListState', () => {
 
       list.clearFilters(['selected']);
 
-      expect('selected' in table.filters).toBeFalse();
+      expect('selected' in table.filters).toBe(false);
     });
   });
 
   describe('reset', () => {
-    beforeEach(() => jasmine.clock().install());
-    afterEach(() => jasmine.clock().uninstall());
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
 
     it('clears the search, its timer and every filter, returns to page 1 and restores the stored sort', () => {
       storeSort({ version: 1, sort: 'kind' });
@@ -662,11 +673,11 @@ describe('CardListState', () => {
       const facets = list.facets(ROWS);
 
       list.reset();
-      jasmine.clock().tick(500);
+      vi.advanceTimersByTime(500);
 
       expect(list.searchText).toBe('');
       expect(table.filters['search']).toBeUndefined();
-      expect(table.hasActiveFilters).toBeFalse();
+      expect(table.hasActiveFilters).toBe(false);
       expect(table.page).toBe(1);
       expect(list.sortId).toBe('kind');
       expect(table.sortColumn).toBe('kind');

@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import {
@@ -12,7 +13,7 @@ describe('QuestionYamlImportDialogComponent', () => {
   let fixture: ComponentFixture<QuestionYamlImportDialogComponent>;
   let component: QuestionYamlImportDialogComponent;
   let host: HTMLElement;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
+  let service: MockedObject<AdminBenchmarkService>;
 
   const suite: BenchmarkSuiteDto = {
     id: 7, name: 'Core Suite', description: null, createdAtUtc: '2026-09-16T00:00:00Z', modifiedAtUtc: null,
@@ -24,7 +25,11 @@ describe('QuestionYamlImportDialogComponent', () => {
   const header = 'format: overseer-benchmark-questions\nversion: 1\n';
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj('AdminBenchmarkService', ['importQuestions', 'importSuite', 'matchSnapshot']);
+    service = {
+      importQuestions: vi.fn().mockName("AdminBenchmarkService.importQuestions"),
+      importSuite: vi.fn().mockName("AdminBenchmarkService.importSuite"),
+      matchSnapshot: vi.fn().mockName("AdminBenchmarkService.matchSnapshot")
+    } as unknown as MockedObject<AdminBenchmarkService>;
 
     await TestBed.configureTestingModule({
       imports: [QuestionYamlImportDialogComponent],
@@ -74,7 +79,7 @@ describe('QuestionYamlImportDialogComponent', () => {
 
   it('opens on the first step with the stepper and no route checks', () => {
     component.open('questions');
-    expect(component.dialog.nativeElement.open).toBeTrue();
+    expect(component.dialog.nativeElement.open).toBe(true);
     const current = host.querySelector('.gh-steps li[aria-current="step"]')!;
     expect(current.textContent).toContain('Provide YAML');
     expect(host.querySelector('textarea')!.id).toBe('questionYamlImport-paste');
@@ -82,7 +87,7 @@ describe('QuestionYamlImportDialogComponent', () => {
   });
 
   it('keeps Review inert until the text validates, and walks the footer through the steps', async () => {
-    service.importQuestions.and.returnValue(of({ createdCount: 0, replacedCount: 1, unchangedCount: 0, questions: [] }));
+    service.importQuestions.mockReturnValue(of({ createdCount: 0, replacedCount: 1, unchangedCount: 0, questions: [] }));
     component.open('questions');
     expect(button('Validate').getAttribute('aria-disabled')).toBe('true');
 
@@ -106,11 +111,11 @@ describe('QuestionYamlImportDialogComponent', () => {
   });
 
   it('re-emits the panel outputs', async () => {
-    const imported = jasmine.createSpy('imported');
-    const help = jasmine.createSpy('help');
+    const imported = vi.fn().mockName('imported');
+    const help = vi.fn().mockName('help');
     component.imported.subscribe(imported);
     component.helpRequested.subscribe(help);
-    service.importQuestions.and.returnValue(of({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] }));
+    service.importQuestions.mockReturnValue(of({ createdCount: 1, replacedCount: 0, unchangedCount: 0, questions: [] }));
 
     component.open('questions');
     (Array.from(host.querySelectorAll('button')).find(b => b.textContent!.trim() === 'Open the format help') as HTMLButtonElement).click();
@@ -128,10 +133,10 @@ describe('QuestionYamlImportDialogComponent', () => {
     component.panel.applying = true;
     const event = new Event('cancel', { cancelable: true });
     component.onCancel(event);
-    expect(event.defaultPrevented).toBeTrue();
+    expect(event.defaultPrevented).toBe(true);
 
     component.close();
-    expect(component.dialog.nativeElement.open).toBeTrue();
+    expect(component.dialog.nativeElement.open).toBe(true);
     component.panel.applying = false;
   });
 

@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { Component, ElementRef, ViewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -98,11 +99,11 @@ class FakePdfViewer {
 interface FakeDocument {
   numPages: number;
   /** Called when the loading task that produced this document is destroyed. */
-  destroy: jasmine.Spy;
+  destroy: Mock;
 }
 
 function fakeDocument(numPages = 3): FakeDocument {
-  return { numPages, destroy: jasmine.createSpy('destroy').and.returnValue(Promise.resolve()) };
+  return { numPages, destroy: vi.fn().mockName('destroy').mockResolvedValue(undefined) };
 }
 
 interface Deferred<T> {
@@ -120,10 +121,10 @@ function deferred<T>(): Deferred<T> {
 class FakePdfJs {
   readonly queue: Promise<FakeDocument>[] = [];
   readonly documents: FakeDocument[] = [];
-  readonly getDocument = jasmine.createSpy('getDocument').and.callFake(() => {
+  readonly getDocument = vi.fn().mockName('getDocument').mockImplementation(() => {
     const promise = this.queue.shift() ?? Promise.resolve(this.track(fakeDocument()));
     // pdf.js 6 destroys a document through its loading task.
-    const destroy = jasmine.createSpy('taskDestroy').and.callFake(() => {
+    const destroy = vi.fn().mockName('taskDestroy').mockImplementation(() => {
       void promise.then(doc => doc.destroy());
       return Promise.resolve();
     });
@@ -233,7 +234,7 @@ describe('PdfViewerDialogComponent', () => {
     host.viewer.open(request());
     fixture.detectChanges();
 
-    expect(dialog().open).toBeTrue();
+    expect(dialog().open).toBe(true);
     expect(heading().textContent?.trim()).toBe(TITLE);
     expect(document.activeElement).toBe(heading());
     expect(dialog().getAttribute('aria-labelledby')).toBe(heading().id);
@@ -268,7 +269,7 @@ describe('PdfViewerDialogComponent', () => {
     const bytes = pdfBytes();
     await openReady(request({ load: () => of({ bytes, fileName: null }) }));
 
-    const passed = pdfjs.getDocument.calls.mostRecent().args[0].data as Uint8Array;
+    const passed = vi.mocked(pdfjs.getDocument).mock.lastCall![0].data as Uint8Array;
     expect(passed).not.toBe(bytes);
     expect(Array.from(passed)).toEqual(Array.from(bytes));
   });
@@ -280,9 +281,9 @@ describe('PdfViewerDialogComponent', () => {
     beforeEach(() => {
       downloadNames = [];
       revoked = [];
-      spyOn(URL, 'createObjectURL').and.returnValue('blob:pdf-viewer-test');
-      spyOn(URL, 'revokeObjectURL').and.callFake((url: string) => revoked.push(url));
-      spyOn(HTMLAnchorElement.prototype, 'click').and.callFake(function (this: HTMLAnchorElement) {
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:pdf-viewer-test');
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url: string) => revoked.push(url));
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
         downloadNames.push(this.download);
       });
     });
@@ -375,7 +376,7 @@ describe('PdfViewerDialogComponent', () => {
 
     const alert = dialog().querySelector('.alert.alert-danger[role="alert"]');
     expect(alert?.textContent).toContain('The report could not be rendered.');
-    expect(dialog().querySelector<HTMLElement>('.pdfv-pages')!.hidden).toBeTrue();
+    expect(dialog().querySelector<HTMLElement>('.pdfv-pages')!.hidden).toBe(true);
 
     const retry = Array.from(dialog().querySelectorAll<HTMLButtonElement>('button.btn-gh'))
       .find(b => b.textContent?.trim() === 'Try Again')!;
@@ -408,7 +409,7 @@ describe('PdfViewerDialogComponent', () => {
     await closeEvent;
     await settle();
 
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
     expect(doc.destroy).toHaveBeenCalled();
     expect(viewer.setDocumentCalls[viewer.setDocumentCalls.length - 1]).toBeNull();
     expect(host.closedCount).toBe(1);
@@ -428,7 +429,7 @@ describe('PdfViewerDialogComponent', () => {
 
     expect(host.parentCancels).toBe(1);
     expect(host.parentCloses).toBe(0);
-    expect(host.parent.nativeElement.open).toBeTrue();
+    expect(host.parent.nativeElement.open).toBe(true);
   });
 
   it('zooms with + and - on the focused pages, and prevents the browser zoom for Ctrl+=', async () => {
@@ -442,7 +443,7 @@ describe('PdfViewerDialogComponent', () => {
 
     expect(viewerInstance().increaseCount).toBe(2);
     expect(viewerInstance().decreaseCount).toBe(1);
-    expect(ctrlPlus.defaultPrevented).toBeTrue();
+    expect(ctrlPlus.defaultPrevented).toBe(true);
     expect(pages.getAttribute('aria-label')).toBe(`${TITLE}, PDF pages`);
     expect(pages.tabIndex).toBe(0);
   });
@@ -454,10 +455,10 @@ describe('PdfViewerDialogComponent', () => {
     const names = controls.map(c => c.getAttribute('aria-label') ?? '');
 
     expect(controls.length).toBe(7);
-    expect(names.every(name => name.includes(TITLE))).toBeTrue();
+    expect(names.every(name => name.includes(TITLE))).toBe(true);
     expect(new Set(names).size).toBe(names.length);
     for (const control of controls) {
-      expect(control.hasAttribute('title')).toBeFalse();
+      expect(control.hasAttribute('title')).toBe(false);
       const tip = document.getElementById(control.getAttribute('interestfor') ?? '');
       expect(tip?.getAttribute('popover')).toBe('hint');
     }
@@ -512,14 +513,14 @@ describe('PdfViewerDialogComponent', () => {
       const tip = tablist.nextElementSibling!;
       expect(tip.tagName.toLowerCase()).toBe('app-info-tip');
       const button = versionsButton()!;
-      expect(tip.contains(button)).toBeTrue();
-      expect(button.hasAttribute('title')).toBeFalse();
+      expect(tip.contains(button)).toBe(true);
+      expect(button.hasAttribute('title')).toBe(false);
 
       button.click();
       fixture.detectChanges();
 
       const infoDialog = tip.querySelector<HTMLDialogElement>('dialog')!;
-      expect(infoDialog.open).toBeTrue();
+      expect(infoDialog.open).toBe(true);
       expect(infoDialog.textContent).toContain(INFO.title);
       const ddText = (dd: Element) => {
         const copy = dd.cloneNode(true) as Element;
@@ -545,8 +546,8 @@ describe('PdfViewerDialogComponent', () => {
       await closeEvent;
       await settle();
 
-      expect(infoDialog.open).toBeFalse();
-      expect(dialog().open).toBeTrue();
+      expect(infoDialog.open).toBe(false);
+      expect(dialog().open).toBe(true);
       expect(host.closedCount).toBe(0);
     });
 
@@ -639,7 +640,7 @@ describe('PdfViewerDialogComponent', () => {
       expect(tabs.map(tab => tab.textContent!.trim())).toEqual(['Named', 'Anonymized']);
       expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false']);
       expect(tabs.map(tab => tab.getAttribute('tabindex'))).toEqual(['0', '-1']);
-      expect(tabs.every(tab => tab.getAttribute('aria-controls') === `${host.viewer.idPrefix}-body`)).toBeTrue();
+      expect(tabs.every(tab => tab.getAttribute('aria-controls') === `${host.viewer.idPrefix}-body`)).toBe(true);
       expect(new Set([...tabs, ...Array.from(lists[0].querySelectorAll('[role="tab"]'))].map(tab => tab.id)).size).toBe(4);
       expect(calls).toEqual([['full', 'named']]);
 

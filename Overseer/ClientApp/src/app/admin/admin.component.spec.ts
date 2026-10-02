@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
@@ -23,10 +24,10 @@ describe('AdminComponent', () => {
     }).compileComponents();
 
     adminService = TestBed.inject(AdminService);
-    spyOn(adminService, 'getUsers').and.returnValue(of({ rows: [], totalCount: 0 }));
-    spyOn(adminService, 'getGroups').and.returnValue(of([]));
-    spyOn(adminService, 'getSystemConfigs').and.returnValue(of([]));
-    spyOn(adminService, 'getDefaultApiKeys').and.returnValue(of([]));
+    vi.spyOn(adminService, 'getUsers').mockReturnValue(of({ rows: [], totalCount: 0 }));
+    vi.spyOn(adminService, 'getGroups').mockReturnValue(of([]));
+    vi.spyOn(adminService, 'getSystemConfigs').mockReturnValue(of([]));
+    vi.spyOn(adminService, 'getDefaultApiKeys').mockReturnValue(of([]));
 
     fixture = TestBed.createComponent(AdminComponent);
     component = fixture.componentInstance;
@@ -44,25 +45,23 @@ describe('AdminComponent', () => {
         ],
         totalCount: 1
       };
-      (adminService.getUsers as jasmine.Spy).and.returnValue(of(mockResponse));
+      (adminService.getUsers as Mock).mockReturnValue(of(mockResponse));
 
       component.loadUsers();
 
       expect(component.users.length).toBe(1);
       expect(component.totalCount).toBe(1);
-      expect(component.usersLoading).toBeFalse();
+      expect(component.usersLoading).toBe(false);
     });
 
     it('should catch TypeError: Failed to fetch on getUsers and reset usersLoading to false', () => {
-      (adminService.getUsers as jasmine.Spy).and.returnValue(
-        throwError(() => new TypeError('Failed to fetch'))
-      );
+      (adminService.getUsers as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
         component.loadUsers();
       }).not.toThrow();
 
-      expect(component.usersLoading).toBeFalse();
+      expect(component.usersLoading).toBe(false);
     });
   });
 
@@ -116,55 +115,49 @@ describe('AdminComponent', () => {
         parallelExecutionMode: 2
       }];
 
-      (adminService.getUsers as jasmine.Spy).and.returnValue(of(mockUsers));
-      (adminService.getGroups as jasmine.Spy).and.returnValue(of(mockGroups));
-      (adminService.getSystemConfigs as jasmine.Spy).and.returnValue(of(mockConfigs));
+      (adminService.getUsers as Mock).mockReturnValue(of(mockUsers));
+      (adminService.getGroups as Mock).mockReturnValue(of(mockGroups));
+      (adminService.getSystemConfigs as Mock).mockReturnValue(of(mockConfigs));
 
       component.loadData();
 
       expect(component.users.length).toBe(1);
       expect(component.groups.length).toBe(1);
       expect(component.configs.length).toBe(1);
-      expect(component.loading).toBeFalse();
+      expect(component.loading).toBe(false);
     });
 
     it('should catch TypeError: Failed to fetch on getUsers and reset loading to false', () => {
-      (adminService.getUsers as jasmine.Spy).and.returnValue(
-        throwError(() => new TypeError('Failed to fetch'))
-      );
+      (adminService.getUsers as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
         component.loadData();
       }).not.toThrow();
 
-      expect(component.loading).toBeFalse();
+      expect(component.loading).toBe(false);
     });
 
     it('should catch TypeError: Failed to fetch on nested getGroups and reset loading to false', () => {
-      (adminService.getUsers as jasmine.Spy).and.returnValue(of({ rows: [], totalCount: 0 }));
-      (adminService.getGroups as jasmine.Spy).and.returnValue(
-        throwError(() => new TypeError('Failed to fetch'))
-      );
+      (adminService.getUsers as Mock).mockReturnValue(of({ rows: [], totalCount: 0 }));
+      (adminService.getGroups as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
         component.loadData();
       }).not.toThrow();
 
-      expect(component.loading).toBeFalse();
+      expect(component.loading).toBe(false);
     });
 
     it('should catch TypeError: Failed to fetch on nested getSystemConfigs and reset loading to false', () => {
-      (adminService.getUsers as jasmine.Spy).and.returnValue(of({ rows: [], totalCount: 0 }));
-      (adminService.getGroups as jasmine.Spy).and.returnValue(of([]));
-      (adminService.getSystemConfigs as jasmine.Spy).and.returnValue(
-        throwError(() => new TypeError('Failed to fetch'))
-      );
+      (adminService.getUsers as Mock).mockReturnValue(of({ rows: [], totalCount: 0 }));
+      (adminService.getGroups as Mock).mockReturnValue(of([]));
+      (adminService.getSystemConfigs as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
         component.loadData();
       }).not.toThrow();
 
-      expect(component.loading).toBeFalse();
+      expect(component.loading).toBe(false);
     });
   });
 
@@ -200,7 +193,7 @@ describe('AdminComponent', () => {
     });
 
     it('should give every tab an explicit type="button"', () => {
-      expect(mainTabs().every(t => t.getAttribute('type') === 'button')).toBeTrue();
+      expect(mainTabs().every(t => t.getAttribute('type') === 'button')).toBe(true);
     });
 
     it('should wrap forward from the last tab to the first with ArrowRight', () => {
@@ -347,7 +340,7 @@ describe('AdminComponent', () => {
     });
 
     it('dragging inside a filtered view reorders the right configs in the full array', () => {
-      spyOn(adminService, 'reorderSystemConfigs').and.returnValue(of(true as any));
+      vi.spyOn(adminService, 'reorderSystemConfigs').mockReturnValue(of(true as any));
       // 5 configs: A (Chat), B (Title), C (Chat), D (Title), E (Chat)
       const c1 = createMockConfig(1, 'A', 'OpenAI', 1);
       const c2 = createMockConfig(2, 'B', 'Google', 2);
@@ -465,8 +458,8 @@ describe('AdminComponent', () => {
     });
 
     beforeEach(() => {
-      spyOn(adminService, 'getStorageMetrics').and.returnValue(of(metrics()));
-      spyOn(adminService, 'getMaintenanceHistory').and.returnValue(of({ totalCount: 0, rows: [] }));
+      vi.spyOn(adminService, 'getStorageMetrics').mockReturnValue(of(metrics()));
+      vi.spyOn(adminService, 'getMaintenanceHistory').mockReturnValue(of({ totalCount: 0, rows: [] }));
     });
 
     const historyRun = (id: number, hasLog: boolean): MaintenanceRunLog => ({
@@ -482,30 +475,30 @@ describe('AdminComponent', () => {
 
     it('opens the run dialog while running and switches it to the result in place', () => {
       const response = new Subject<MaintenanceResult>();
-      spyOn(adminService, 'runMaintenanceNow').and.returnValue(response.asObservable());
+      vi.spyOn(adminService, 'runMaintenanceNow').mockReturnValue(response.asObservable());
       fixture.detectChanges();
 
       component.maintenanceDryRun = true;
       component.runFullMaintenance();
 
       expect(component.maintenanceRunPhase).toBe('running');
-      expect(runDialog().open).toBeTrue();
+      expect(runDialog().open).toBe(true);
 
       response.next(result(true));
       response.complete();
 
       expect(component.maintenanceRunPhase).toBe('completed');
-      expect(component.lastMaintenanceResult?.isDryRun).toBeTrue();
-      expect(runDialog().open).toBeTrue();
+      expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
+      expect(runDialog().open).toBe(true);
       expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#maintenanceRunTitle'));
 
       component.closeMaintenanceRunDialog();
-      expect(runDialog().open).toBeFalse();
+      expect(runDialog().open).toBe(false);
     });
 
     it('shows the result summary in the run dialog and no separate last-run line in the tab', async () => {
       const response = new Subject<MaintenanceResult>();
-      spyOn(adminService, 'runMaintenanceNow').and.returnValue(response.asObservable());
+      vi.spyOn(adminService, 'runMaintenanceNow').mockReturnValue(response.asObservable());
       component.selectTab('database');
       fixture.detectChanges();
       await fixture.whenStable();
@@ -529,21 +522,21 @@ describe('AdminComponent', () => {
     });
 
     it('switches the run dialog to the failed phase when the request errors', () => {
-      spyOn(adminService, 'runMaintenanceNow').and.returnValue(throwError(() => ({ message: 'boom' })));
+      vi.spyOn(adminService, 'runMaintenanceNow').mockReturnValue(throwError(() => ({ message: 'boom' })));
 
       component.maintenanceDryRun = true;
       component.runFullMaintenance();
 
       expect(component.maintenanceRunPhase).toBe('failed');
-      expect(component.lastMaintenanceResult?.success).toBeFalse();
+      expect(component.lastMaintenanceResult?.success).toBe(false);
       expect(component.lastMaintenanceResult?.errorMessage).toBe('boom');
       component.closeMaintenanceRunDialog();
     });
 
     it('re-fetches the history page the pager chose and persists the page size', () => {
       const storageKey = 'overseer.admin.maintenanceHistory.pageSize';
-      const historySpy = adminService.getMaintenanceHistory as jasmine.Spy;
-      historySpy.calls.reset();
+      const historySpy = adminService.getMaintenanceHistory as Mock;
+      historySpy.mockClear();
       const state = component.maintenanceHistoryTable;
       state.setRemoteTotal(300);
       state.setPageSize(50);
@@ -551,7 +544,7 @@ describe('AdminComponent', () => {
 
       component.onMaintenanceHistoryPageChanged();
 
-      expect(historySpy.calls.first().args).toEqual([3, 50]);
+      expect(vi.mocked(historySpy).mock.calls[0]).toEqual([3, 50]);
       expect(localStorage.getItem(storageKey)).toBe('50');
       localStorage.removeItem(storageKey);
     });
@@ -571,8 +564,7 @@ describe('AdminComponent', () => {
     });
 
     it('fetches a run log once and caches it on the row', () => {
-      const logSpy = spyOn(adminService, 'getMaintenanceRunLog')
-        .and.returnValue(of({ logText: 'line 1', errorMessage: null }));
+      const logSpy = vi.spyOn(adminService, 'getMaintenanceRunLog').mockReturnValue(of({ logText: 'line 1', errorMessage: null }));
       const run = historyRun(7, true);
 
       component.toggleHistoryLog(run);
@@ -587,7 +579,7 @@ describe('AdminComponent', () => {
     });
 
     it('never fetches a log for a run that has none', () => {
-      const logSpy = spyOn(adminService, 'getMaintenanceRunLog');
+      const logSpy = vi.spyOn(adminService, 'getMaintenanceRunLog').mockReturnValue(undefined as any);
 
       component.toggleHistoryLog(historyRun(8, false));
 
@@ -595,7 +587,7 @@ describe('AdminComponent', () => {
     });
 
     it('sends a day count chosen in the template select as a number, not a string', async () => {
-      const runSpy = spyOn(adminService, 'runMaintenanceNow').and.returnValue(of(result(true)));
+      const runSpy = vi.spyOn(adminService, 'runMaintenanceNow').mockReturnValue(of(result(true)));
       component.selectTab('database');
       fixture.detectChanges();
       await fixture.whenStable();
@@ -611,21 +603,21 @@ describe('AdminComponent', () => {
       component.maintenanceDryRun = true;
       component.runFullMaintenance();
 
-      const request = runSpy.calls.mostRecent().args[0]!;
+      const request = vi.mocked(runSpy).mock.lastCall![0]!;
       expect(request.inactivityDays).toBe(60);
       expect(typeof request.inactivityDays).toBe('number');
     });
 
     it('passes the dry-run switch to a granular action and skips the confirmation', () => {
-      const purgeSpy = spyOn(adminService, 'purgeInactive').and.returnValue(of(result(true)));
-      const confirmSpy = spyOn(component, 'openConfirmationModal');
+      const purgeSpy = vi.spyOn(adminService, 'purgeInactive').mockReturnValue(of(result(true)));
+      const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
 
       component.maintenanceDryRun = true;
       component.purgeInactiveNow();
 
       expect(confirmSpy).not.toHaveBeenCalled();
-      expect(purgeSpy).toHaveBeenCalledWith(jasmine.objectContaining({ dryRun: true }));
-      expect(component.lastMaintenanceResult?.isDryRun).toBeTrue();
+      expect(purgeSpy).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
+      expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
     });
 
     describe('report chart files', () => {
@@ -637,7 +629,7 @@ describe('AdminComponent', () => {
       });
 
       const openDatabaseTab = async (m: DatabaseStorageMetrics) => {
-        (adminService.getStorageMetrics as jasmine.Spy).and.returnValue(of(m));
+        (adminService.getStorageMetrics as Mock).mockReturnValue(of(m));
         component.selectTab('database');
         fixture.detectChanges();
         await fixture.whenStable();
@@ -681,10 +673,10 @@ describe('AdminComponent', () => {
         await openDatabaseTab(chartMetrics());
 
         let button = clearButton();
-        expect(button.matches('button.btn-gh.btn-danger[type="button"]')).toBeTrue();
-        expect(button.hasAttribute('title')).toBeFalse();
-        expect(button.hasAttribute('aria-disabled')).toBeFalse();
-        expect(button.hasAttribute('interestfor')).toBeFalse();
+        expect(button.matches('button.btn-gh.btn-danger[type="button"]')).toBe(true);
+        expect(button.hasAttribute('title')).toBe(false);
+        expect(button.hasAttribute('aria-disabled')).toBe(false);
+        expect(button.hasAttribute('interestfor')).toBe(false);
 
         component.maintenanceLoading = true;
         fixture.detectChanges();
@@ -707,8 +699,8 @@ describe('AdminComponent', () => {
       });
 
       it('does nothing when the aria-disabled button is clicked', async () => {
-        const clearSpy = spyOn(adminService, 'clearReportCharts');
-        const confirmSpy = spyOn(component, 'openConfirmationModal');
+        const clearSpy = vi.spyOn(adminService, 'clearReportCharts').mockReturnValue(undefined as any);
+        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
         await openDatabaseTab(chartMetrics({ reportChartFileCount: 0 }));
 
         clearButton().click();
@@ -718,40 +710,41 @@ describe('AdminComponent', () => {
       });
 
       it('runs a dry run without confirmation and reloads the metrics', () => {
-        const clearSpy = spyOn(adminService, 'clearReportCharts').and.returnValue(of(result(true)));
-        const confirmSpy = spyOn(component, 'openConfirmationModal');
-        const metricsSpy = adminService.getStorageMetrics as jasmine.Spy;
+        const clearSpy = vi.spyOn(adminService, 'clearReportCharts').mockReturnValue(of(result(true)));
+        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
+        const metricsSpy = adminService.getStorageMetrics as Mock;
         component.storageMetrics = chartMetrics();
-        metricsSpy.calls.reset();
+        metricsSpy.mockClear();
 
         component.maintenanceDryRun = true;
         component.clearReportChartsNow();
 
         expect(confirmSpy).not.toHaveBeenCalled();
-        expect(clearSpy).toHaveBeenCalledOnceWith({ dryRun: true });
-        expect(component.lastMaintenanceResult?.isDryRun).toBeTrue();
+        expect(clearSpy).toHaveBeenCalledTimes(1);
+        expect(clearSpy).toHaveBeenCalledWith({ dryRun: true });
+        expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
         expect(metricsSpy).toHaveBeenCalledTimes(1);
         component.closeMaintenanceRunDialog();
       });
 
       it('confirms a live run with the counts and sends dryRun false', () => {
-        const clearSpy = spyOn(adminService, 'clearReportCharts').and.returnValue(of(result(false)));
-        const confirmSpy = spyOn(component, 'openConfirmationModal')
-          .and.callFake((_title: string, _message: string, action: () => void) => action());
-        const metricsSpy = adminService.getStorageMetrics as jasmine.Spy;
+        const clearSpy = vi.spyOn(adminService, 'clearReportCharts').mockReturnValue(of(result(false)));
+        const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockImplementation((_title: string, _message: string, action: () => void) => action());
+        const metricsSpy = adminService.getStorageMetrics as Mock;
         component.storageMetrics = chartMetrics();
-        metricsSpy.calls.reset();
+        metricsSpy.mockClear();
 
         component.maintenanceDryRun = false;
         component.clearReportChartsNow();
 
-        const [title, message, , button, buttonClass] = confirmSpy.calls.mostRecent().args;
+        const [title, message, , button, buttonClass] = vi.mocked(confirmSpy).mock.lastCall!;
         expect(title).toBe('Clear Report Chart Files');
         expect(message).toBe('Delete 12 chart files (4.5 MB) for 3 documents? This cannot be undone. ' +
           'The documents stay; their charts can be added again from the Comparison Wizard.');
         expect(button).toBe('Clear Chart Files');
         expect(buttonClass).toBe('btn-gh btn-gh-delete');
-        expect(clearSpy).toHaveBeenCalledOnceWith({ dryRun: false });
+        expect(clearSpy).toHaveBeenCalledTimes(1);
+        expect(clearSpy).toHaveBeenCalledWith({ dryRun: false });
         expect(metricsSpy).toHaveBeenCalledTimes(1);
         component.closeMaintenanceRunDialog();
       });
@@ -773,13 +766,13 @@ describe('AdminComponent', () => {
       credentialKey, isRateLimited: remainingSeconds > 0, remainingCooldownSeconds: remainingSeconds, inFlightCalls: 0
     });
 
-    let governorSpy: jasmine.Spy;
-    let toastSpy: jasmine.Spy;
+    let governorSpy: Mock;
+    let toastSpy: Mock;
 
     beforeEach(() => {
-      spyOn(adminService, 'getAiTelemetrySummary').and.returnValue(of(summary()));
-      governorSpy = spyOn(adminService, 'getGovernorStatus').and.returnValue(of(governor()));
-      toastSpy = spyOn(component, 'showAdminToast');
+      vi.spyOn(adminService, 'getAiTelemetrySummary').mockReturnValue(of(summary()));
+      governorSpy = vi.spyOn(adminService, 'getGovernorStatus').mockReturnValue(of(governor()));
+      toastSpy = vi.spyOn(component, 'showAdminToast').mockReturnValue(undefined);
     });
 
     const openTab = () => {
@@ -796,19 +789,19 @@ describe('AdminComponent', () => {
       openTab();
 
       let button = clearAllButton();
-      expect(button.matches('button.btn-gh.btn-gh-small[type="button"]')).toBeTrue();
-      expect(button.hasAttribute('title')).toBeFalse();
+      expect(button.matches('button.btn-gh.btn-gh-small[type="button"]')).toBe(true);
+      expect(button.hasAttribute('title')).toBe(false);
       expect(button.getAttribute('aria-disabled')).toBe('true');
 
       component.governorStatus = governor([key('openai:user:u1', 30)]);
       fixture.detectChanges();
 
       button = clearAllButton();
-      expect(button.hasAttribute('aria-disabled')).toBeFalse();
+      expect(button.hasAttribute('aria-disabled')).toBe(false);
     });
 
     it('makes no request from Clear All Cooldowns when nothing is rate-limited', () => {
-      const resetSpy = spyOn(adminService, 'resetGovernorCooldown').and.returnValue(of(undefined));
+      const resetSpy = vi.spyOn(adminService, 'resetGovernorCooldown').mockReturnValue(of(undefined));
       component.governorStatus = governor([key('openai:user:u1', 0)]);
 
       component.resetGovernorCooldown();
@@ -818,71 +811,75 @@ describe('AdminComponent', () => {
     });
 
     it('clears all cooldowns and says so when a partition is rate-limited', () => {
-      const resetSpy = spyOn(adminService, 'resetGovernorCooldown').and.returnValue(of(undefined));
+      const resetSpy = vi.spyOn(adminService, 'resetGovernorCooldown').mockReturnValue(of(undefined));
       component.governorStatus = governor([key('openai:user:u1', 30)]);
 
       component.resetGovernorCooldown();
 
-      expect(resetSpy).toHaveBeenCalledOnceWith(undefined);
-      expect(toastSpy.calls.mostRecent().args[0]).toBe('All rate-limit cooldowns cleared.');
+      expect(resetSpy).toHaveBeenCalledTimes(1);
+
+      expect(resetSpy).toHaveBeenCalledWith(undefined);
+      expect(vi.mocked(toastSpy).mock.lastCall![0]).toBe('All rate-limit cooldowns cleared.');
     });
 
     it('raises exactly one toast for a successful refresh', () => {
       component.refreshTelemetryTab(true);
 
       expect(toastSpy).toHaveBeenCalledTimes(1);
-      expect(toastSpy.calls.mostRecent().args[1]).toBe('info');
-      expect(component.telemetryLoading).toBeFalse();
-      expect(component.governorLoading).toBeFalse();
+      expect(vi.mocked(toastSpy).mock.lastCall![1]).toBe('info');
+      expect(component.telemetryLoading).toBe(false);
+      expect(component.governorLoading).toBe(false);
     });
 
     it('raises one error toast when the governor call fails, and still shows the summary', () => {
-      spyOn(console, 'error');
-      governorSpy.and.returnValue(throwError(() => ({ message: 'boom' })));
+      vi.spyOn(console, 'error').mockReturnValue(undefined);
+      governorSpy.mockReturnValue(throwError(() => ({ message: 'boom' })));
 
       component.refreshTelemetryTab(true);
 
       expect(toastSpy).toHaveBeenCalledTimes(1);
-      expect(toastSpy.calls.mostRecent().args[0]).toContain('governor status: boom');
-      expect(toastSpy.calls.mostRecent().args[1]).toBe('error');
+      expect(vi.mocked(toastSpy).mock.lastCall![0]).toContain('governor status: boom');
+      expect(vi.mocked(toastSpy).mock.lastCall![1]).toBe('error');
       expect(component.telemetrySummary).not.toBeNull();
-      expect(component.governorLoading).toBeFalse();
+      expect(component.governorLoading).toBe(false);
     });
 
     it('counts a cooldown down locally and re-fetches once when it ends', () => {
-      jasmine.clock().install();
+      vi.useFakeTimers();
       try {
-        governorSpy.and.returnValues(of(governor([key('openai:user:u1', 2)])), of(governor()));
+        governorSpy.mockReturnValueOnce(of(governor([key('openai:user:u1', 2)]))).mockReturnValueOnce(of(governor()));
         component.refreshTelemetryTab();
         expect(governorSpy).toHaveBeenCalledTimes(1);
 
-        jasmine.clock().tick(1000);
+        vi.advanceTimersByTime(1000);
         expect(component.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(1);
         expect(governorSpy).toHaveBeenCalledTimes(1);
 
-        jasmine.clock().tick(1000);
+        vi.advanceTimersByTime(1000);
         expect(governorSpy).toHaveBeenCalledTimes(2);
         expect(component.rateLimitedKeyCount).toBe(0);
 
-        jasmine.clock().tick(5000);
+        vi.advanceTimersByTime(5000);
         expect(governorSpy).toHaveBeenCalledTimes(2);
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
     });
 
     it('stops the countdown when another tab is selected', () => {
-      jasmine.clock().install();
+      vi.useFakeTimers();
       try {
-        governorSpy.and.returnValue(of(governor([key('openai:user:u1', 5)])));
+        governorSpy.mockReturnValue(of(governor([key('openai:user:u1', 5)])));
         component.selectTab('telemetry');
         component.selectTab('groups');
 
-        jasmine.clock().tick(3000);
+        vi.advanceTimersByTime(3000);
 
         expect(component.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(5);
-      } finally {
-        jasmine.clock().uninstall();
+      }
+      finally {
+        vi.useRealTimers();
       }
     });
 
@@ -908,13 +905,13 @@ describe('AdminComponent', () => {
     });
 
     it('names each row reset button after its partition and pairs it with a hint tooltip', () => {
-      governorSpy.and.returnValue(of(governor([key('openai:system:7', 30)])));
+      governorSpy.mockReturnValue(of(governor([key('openai:system:7', 30)])));
       openTab();
 
       const button: HTMLButtonElement = fixture.nativeElement.querySelector('.telemetry-partitions button.action-btn');
       expect(button.getAttribute('type')).toBe('button');
       expect(button.getAttribute('aria-label')).toBe('Clear cooldown for openai:system:7');
-      expect(button.hasAttribute('title')).toBeFalse();
+      expect(button.hasAttribute('title')).toBe(false);
       const tip: HTMLElement | null = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor'));
       expect(tip?.getAttribute('popover')).toBe('hint');
     });
@@ -965,28 +962,28 @@ describe('AdminComponent', () => {
       (Array.from(dialogEl().querySelectorAll('.dialog-actions button')) as HTMLButtonElement[])
         .find(b => (b.textContent ?? '').includes(text))!;
 
-    let toastSpy: jasmine.Spy;
+    let toastSpy: Mock;
 
     beforeEach(() => {
       // Served by the load ngOnInit runs on the first detectChanges, which would replace a list set directly.
-      (adminService.getSystemConfigs as jasmine.Spy).and.returnValue(of([{ ...baseConfig }]));
+      (adminService.getSystemConfigs as Mock).mockReturnValue(of([{ ...baseConfig }]));
       component.selectTab('configs');
       fixture.detectChanges();
-      toastSpy = spyOn(component, 'showAdminToast');
-      spyOn(component.deleteConfigDialog.nativeElement, 'showModal');
-      spyOn(component.deleteConfigDialog.nativeElement, 'close');
+      toastSpy = vi.spyOn(component, 'showAdminToast').mockReturnValue(undefined);
+      vi.spyOn(component.deleteConfigDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+      vi.spyOn(component.deleteConfigDialog.nativeElement, 'close').mockReturnValue(undefined);
     });
 
     it('renders the row delete button with a distinct aria-label, an interestfor tooltip, and no title', () => {
       const button = rowDeleteButton();
       expect(button.getAttribute('type')).toBe('button');
-      expect(button.hasAttribute('title')).toBeFalse();
+      expect(button.hasAttribute('title')).toBe(false);
       const tip = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor'));
       expect(tip?.getAttribute('popover')).toBe('hint');
     });
 
     it('checks first, then opens directly in the blocked state naming each blocker, its roles and its start time', () => {
-      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(blockedCheck()));
+      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(blockedCheck()));
 
       rowDeleteButton().click();
       fixture.detectChanges();
@@ -1011,7 +1008,7 @@ describe('AdminComponent', () => {
     });
 
     it('opens directly in the deletable state with the impact list', () => {
-      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(deletableCheck()));
+      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck()));
 
       rowDeleteButton().click();
       fixture.detectChanges();
@@ -1026,8 +1023,7 @@ describe('AdminComponent', () => {
     });
 
     it('omits the confidentiality and stopped-series lines when their counts are zero', () => {
-      spyOn(adminService, 'getSystemConfigDeletionCheck')
-        .and.returnValue(of(deletableCheck({ confidentialTrustCount: 0, stoppedSeriesCount: 0 })));
+      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck({ confidentialTrustCount: 0, stoppedSeriesCount: 0 })));
 
       rowDeleteButton().click();
       fixture.detectChanges();
@@ -1043,8 +1039,7 @@ describe('AdminComponent', () => {
       [1, '1 stopped battery run names this configuration and can no longer be resumed.']
     ] as const) {
       it(`names ${count} stopped battery run(s) that can no longer be resumed`, () => {
-        spyOn(adminService, 'getSystemConfigDeletionCheck')
-          .and.returnValue(of(deletableCheck({ stoppedBatteryRunCount: count })));
+        vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck({ stoppedBatteryRunCount: count })));
 
         rowDeleteButton().click();
         fixture.detectChanges();
@@ -1054,8 +1049,7 @@ describe('AdminComponent', () => {
     }
 
     it('opens in the error state when the pre-check itself fails', () => {
-      spyOn(adminService, 'getSystemConfigDeletionCheck')
-        .and.returnValue(throwError(() => ({ status: 500, error: 'Deletion check is down' })));
+      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(throwError(() => ({ status: 500, error: 'Deletion check is down' })));
 
       rowDeleteButton().click();
       fixture.detectChanges();
@@ -1066,8 +1060,7 @@ describe('AdminComponent', () => {
     });
 
     it('Check Again re-runs the check and switches state in place', () => {
-      const checkSpy = spyOn(adminService, 'getSystemConfigDeletionCheck')
-        .and.returnValues(of(blockedCheck()), of(deletableCheck()));
+      const checkSpy = vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValueOnce(of(blockedCheck())).mockReturnValueOnce(of(deletableCheck()));
 
       rowDeleteButton().click();
       fixture.detectChanges();
@@ -1082,7 +1075,7 @@ describe('AdminComponent', () => {
     });
 
     it('closes the dialog, switches to the Benchmark tab and hands off the run id on "Open run #N"', () => {
-      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(blockedCheck()));
+      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(blockedCheck()));
 
       rowDeleteButton().click();
       fixture.detectChanges();
@@ -1096,8 +1089,8 @@ describe('AdminComponent', () => {
     });
 
     it('switches a deletable dialog to blocked with a live-announced reason on a 409 race', () => {
-      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(deletableCheck()));
-      spyOn(adminService, 'deleteSystemConfig').and.returnValue(throwError(() => ({
+      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck()));
+      vi.spyOn(adminService, 'deleteSystemConfig').mockReturnValue(throwError(() => ({
         status: 409,
         error: { error: "'Prod GPT-5' is in use by a benchmark right now.", blockers: [blocker()] }
       })));
@@ -1115,8 +1108,8 @@ describe('AdminComponent', () => {
     });
 
     it('shows an inline error and keeps the dialog open for any other delete failure', () => {
-      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(deletableCheck()));
-      spyOn(adminService, 'deleteSystemConfig').and.returnValue(throwError(() => ({
+      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck()));
+      vi.spyOn(adminService, 'deleteSystemConfig').mockReturnValue(throwError(() => ({
         status: 500, error: 'Something else went wrong.'
       })));
 
@@ -1134,8 +1127,8 @@ describe('AdminComponent', () => {
     });
 
     it('deletes on success: removes the row, closes the dialog and shows the kept-history toast', () => {
-      spyOn(adminService, 'getSystemConfigDeletionCheck').and.returnValue(of(deletableCheck()));
-      spyOn(adminService, 'deleteSystemConfig').and.returnValue(of(undefined));
+      vi.spyOn(adminService, 'getSystemConfigDeletionCheck').mockReturnValue(of(deletableCheck()));
+      vi.spyOn(adminService, 'deleteSystemConfig').mockReturnValue(of(undefined));
 
       rowDeleteButton().click();
       fixture.detectChanges();
@@ -1184,11 +1177,11 @@ describe('AdminComponent', () => {
     });
 
     it('renders the API Keys panel with the loaded keys and reloads them when the tab is chosen', () => {
-      (adminService.getDefaultApiKeys as jasmine.Spy).and.returnValue(of([
+      (adminService.getDefaultApiKeys as Mock).mockReturnValue(of([
         keyStatus('Anthropic', { hasKey: true, keyHint: 'ab12' }), keyStatus('Google'), keyStatus('OpenAI')
       ]));
       fixture.detectChanges();
-      (adminService.getDefaultApiKeys as jasmine.Spy).calls.reset();
+      (adminService.getDefaultApiKeys as Mock).mockClear();
 
       (fixture.nativeElement.querySelector('#admin-tab-apikeys') as HTMLButtonElement).click();
       fixture.detectChanges();
@@ -1203,7 +1196,7 @@ describe('AdminComponent', () => {
     });
 
     it('passes the configuration form each provider\'s default key, unverified only when Not verified', () => {
-      (adminService.getDefaultApiKeys as jasmine.Spy).and.returnValue(of([
+      (adminService.getDefaultApiKeys as Mock).mockReturnValue(of([
         keyStatus('Anthropic', { hasKey: true, keyHint: 'ab12', verification: { status: 'NotVerified', checkedAtUtc: null, message: 'No response' } }),
         keyStatus('Google'),
         keyStatus('OpenAI', { hasKey: true, keyHint: 'zz99' })
@@ -1219,7 +1212,7 @@ describe('AdminComponent', () => {
     });
 
     it('labels each configuration\'s key: Default Key, Default Key Missing, Key Saved or No Key', () => {
-      (adminService.getSystemConfigs as jasmine.Spy).and.returnValue(of([
+      (adminService.getSystemConfigs as Mock).mockReturnValue(of([
         config(1, 'Uses Default', { useDefaultApiKey: true, hasApiKey: true }),
         config(2, 'Default Gone', { useDefaultApiKey: true, hasApiKey: false, isEnabled: false }),
         config(3, 'Own Key', { useDefaultApiKey: false, hasApiKey: true }),
@@ -1236,9 +1229,9 @@ describe('AdminComponent', () => {
 
     it('reloads the keys and the configurations after the tab changes a key', () => {
       fixture.detectChanges();
-      (adminService.getDefaultApiKeys as jasmine.Spy).calls.reset();
-      (adminService.getSystemConfigs as jasmine.Spy).calls.reset();
-      (adminService.getSystemConfigs as jasmine.Spy).and.returnValue(of([config(2, 'Default Gone', { useDefaultApiKey: true, hasApiKey: false, isEnabled: false })]));
+      (adminService.getDefaultApiKeys as Mock).mockClear();
+      (adminService.getSystemConfigs as Mock).mockClear();
+      (adminService.getSystemConfigs as Mock).mockReturnValue(of([config(2, 'Default Gone', { useDefaultApiKey: true, hasApiKey: false, isEnabled: false })]));
 
       component.onDefaultApiKeysChanged();
 
@@ -1249,11 +1242,11 @@ describe('AdminComponent', () => {
     });
 
     it('sends useDefaultApiKey with a saved configuration', () => {
-      const create = spyOn(adminService, 'createSystemConfig').and.returnValue(of(config(5, 'New')));
+      const create = vi.spyOn(adminService, 'createSystemConfig').mockReturnValue(of(config(5, 'New')));
       fixture.detectChanges();
       component.isNewConfig = true;
       component.editingConfig = { provider: 'Anthropic', isEnabled: true };
-      spyOn(component.configDialog.nativeElement, 'close');
+      vi.spyOn(component.configDialog.nativeElement, 'close').mockReturnValue(undefined);
 
       component.onConfigSave({
         displayName: 'New', displayNameMode: 'model_id', provider: 'Anthropic', modelId: 'claude-x',
@@ -1261,8 +1254,8 @@ describe('AdminComponent', () => {
         maxInputTokens: null, maxOutputTokens: null, useDefaultApiKey: true
       });
 
-      expect(create.calls.mostRecent().args[0].useDefaultApiKey).toBeTrue();
-      expect(create.calls.mostRecent().args[0].apiKey).toBeUndefined();
+      expect(vi.mocked(create).mock.lastCall![0].useDefaultApiKey).toBe(true);
+      expect(vi.mocked(create).mock.lastCall![0].apiKey).toBeUndefined();
     });
   });
 });

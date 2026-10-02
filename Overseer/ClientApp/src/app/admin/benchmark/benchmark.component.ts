@@ -757,6 +757,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   private runProgressQuestionsSuiteId: number | null = null;
   copiedRunDiagnostics = false;
+  runDiagnosticsPanelOpen = false;
+  runDiagnosticsPanelCapturedAt = new Date(0);
   private copiedRunDiagnosticsTimer: ReturnType<typeof setTimeout> | null = null;
 
   // --- Multi-run series ---
@@ -5556,6 +5558,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
         this.lastRunPollError = null;
         this.runPollFailureCount = 0;
         this.activeRunDetail = run;
+        this.runDiagnosticsPanelCapturedAt = new Date();
         const statusStr = this.formatStatus(run.status);
         if (statusStr === 'Running') {
           this.runsSeenLive.add(run.id);
@@ -6368,6 +6371,20 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return this.runDiagnosticsTextFor(this.activeRunDetail, this.runStage);
   }
 
+  /** The text the Diagnostics panel shows: empty while it is closed, stamped when it last refreshed. */
+  get runDiagnosticsPanelText(): string {
+    return this.runDiagnosticsPanelOpen
+      ? this.runDiagnosticsTextFor(this.activeRunDetail, this.runStage, this.runDiagnosticsPanelCapturedAt)
+      : '';
+  }
+
+  onRunDiagnosticsToggle(event: Event): void {
+    this.runDiagnosticsPanelOpen = (event.target as HTMLDetailsElement).open;
+    if (this.runDiagnosticsPanelOpen) {
+      this.runDiagnosticsPanelCapturedAt = new Date();
+    }
+  }
+
   /**
    * Everything an operator would paste into a bug report, assembled from a run detail.
    * Answer text, thought text, and assessor comments are deliberately excluded: they are
@@ -6378,14 +6395,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * state included. Any other run, such as the one the run report shows, is described from its
    * detail alone, so the run report and the Download Center capture the same text for it.
    */
-  runDiagnosticsTextFor(run: BenchmarkRunDetailDto | null, stage: BenchmarkRunStage): string {
+  runDiagnosticsTextFor(run: BenchmarkRunDetailDto | null, stage: BenchmarkRunStage, capturedAt: Date = new Date()): string {
     const live = run === this.activeRunDetail;
     const facts = live || !run ? this.activeRunDiagnosticsFacts() : this.detailDiagnosticsFacts(run);
     const lines: string[] = [];
 
     // Header
     lines.push('=== BENCHMARK RUN DIAGNOSTICS ===');
-    lines.push(`Captured:         ${new Date().toISOString()}`);
+    lines.push(`Captured:         ${capturedAt.toISOString()}`);
     lines.push(`Overseer build:   ${this.overseerBuildVersion || 'unknown'}`);
     const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown';
     lines.push(`Client:           ${userAgent}`);

@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -89,10 +90,10 @@ describe('AiModelFormComponent', () => {
     }).compileComponents();
 
     settingsService = TestBed.inject(SettingsService);
-    spyOn(settingsService, 'getAvailableModels').and.returnValue(of(mockModels));
+    vi.spyOn(settingsService, 'getAvailableModels').mockReturnValue(of(mockModels));
 
     adminService = TestBed.inject(AdminService);
-    spyOn(adminService, 'getEndpointPolicy').and.returnValue(of(openPolicy));
+    vi.spyOn(adminService, 'getEndpointPolicy').mockReturnValue(of(openPolicy));
 
     fixture = TestBed.createComponent(AiModelFormComponent);
     component = fixture.componentInstance;
@@ -287,7 +288,7 @@ describe('AiModelFormComponent', () => {
     });
 
     it('should resolve legacy inference even when getAvailableModels returns empty array', () => {
-      (settingsService.getAvailableModels as jasmine.Spy).and.returnValue(of([]));
+      (settingsService.getAvailableModels as Mock).mockReturnValue(of([]));
 
       component.mode = 'edit';
       component.initialData = {
@@ -408,7 +409,7 @@ describe('AiModelFormComponent', () => {
     });
 
     it('should fallback all configured parameters to custom when availableModels is empty', () => {
-      (settingsService.getAvailableModels as jasmine.Spy).and.returnValue(of([]));
+      (settingsService.getAvailableModels as Mock).mockReturnValue(of([]));
 
       component.isAdmin = true;
       component.mode = 'edit';
@@ -566,7 +567,7 @@ describe('AiModelFormComponent', () => {
       editFixture.detectChanges();
 
       const editSelect: HTMLSelectElement = editFixture.nativeElement.querySelector('select');
-      expect(editSelect.disabled).toBeTrue();
+      expect(editSelect.disabled).toBe(true);
       expect(editSelect.title).toBe('Provider cannot be changed for an existing configuration');
 
       const addFixture = TestBed.createComponent(AiModelFormComponent);
@@ -578,7 +579,7 @@ describe('AiModelFormComponent', () => {
       addFixture.detectChanges();
 
       const addSelect: HTMLSelectElement = addFixture.nativeElement.querySelector('select');
-      expect(addSelect.disabled).toBeFalse();
+      expect(addSelect.disabled).toBe(false);
       expect(addSelect.title).toBe('');
     });
 
@@ -864,11 +865,11 @@ describe('AiModelFormComponent', () => {
       component.baseUrl = ' https://gateway.example.com/openai ';
       component.customHeadersJson = '{"X-Gateway-Tenant":"acme"}';
       component.apiVersion = '2026-05-01';
-      (settingsService.getAvailableModels as jasmine.Spy).calls.reset();
+      (settingsService.getAvailableModels as Mock).mockClear();
 
       component.onCheckModels();
 
-      const args = (settingsService.getAvailableModels as jasmine.Spy).calls.mostRecent().args;
+      const args = vi.mocked((settingsService.getAvailableModels as Mock)).mock.lastCall!;
       expect(args[3]).toEqual({
         baseUrl: 'https://gateway.example.com/openai',
         customHeadersJson: '{"X-Gateway-Tenant":"acme"}',
@@ -920,7 +921,7 @@ describe('AiModelFormComponent', () => {
     });
 
     it('should disable the endpoint fields and say so when no host is allowlisted', async () => {
-      (adminService.getEndpointPolicy as jasmine.Spy).and.returnValue(of({
+      (adminService.getEndpointPolicy as Mock).mockReturnValue(of({
         customEndpointsEnabled: false,
         allowedHostPatterns: [],
         allowedHeaderNames: [],
@@ -940,7 +941,7 @@ describe('AiModelFormComponent', () => {
       for (const id of ['#baseUrlInput', '#apiVersionInput', '#customHeadersInput']) {
         const input = fixture.nativeElement.querySelector(id) as HTMLInputElement;
         expect(input).toBeTruthy();
-        expect(input.disabled).withContext(id).toBe(true);
+        expect(input.disabled, id).toBe(true);
       }
 
       const fieldset = fixture.nativeElement.querySelector('.endpoint-fieldset') as HTMLElement;
@@ -1031,8 +1032,8 @@ describe('AiModelFormComponent', () => {
 
       for (const id of ['providerSelect', 'pickerModelSelect']) {
         const label = el().querySelector(`label[for="${id}"]`) as HTMLLabelElement;
-        expect(label).withContext(id).toBeTruthy();
-        expect(el().querySelector(`#${id}`)?.tagName).withContext(id).toBe('SELECT');
+        expect(label, id).toBeTruthy();
+        expect(el().querySelector(`#${id}`)?.tagName, id).toBe('SELECT');
       }
       expect(el().querySelector('label[for="providerSelect"]')?.textContent?.trim()).toBe('Provider');
       expect(el().querySelector('label[for="pickerModelSelect"]')?.textContent?.trim()).toBe('Models');
@@ -1058,8 +1059,8 @@ describe('AiModelFormComponent', () => {
       fixture.detectChanges();
 
       expect(component.apiKeyChoice).toBe('default');
-      expect(defaultRadio().checked).toBeTrue();
-      expect(defaultRadio().disabled).toBeFalse();
+      expect(defaultRadio().checked).toBe(true);
+      expect(defaultRadio().disabled).toBe(false);
       expect(defaultRadio().closest('label')!.textContent).toContain('The Anthropic default key, …ab12');
       expect(customRadio().closest('label')!.textContent).toContain('A key for this configuration only');
       expect(el().querySelector('.custom-api-key-input')).toBeNull();
@@ -1082,7 +1083,7 @@ describe('AiModelFormComponent', () => {
       const detail = label.querySelector('.api-key-option-detail') as HTMLElement;
       expect(name).not.toBeNull();
       expect(detail).not.toBeNull();
-      expect(name.contains(detail)).toBeFalse();
+      expect(name.contains(detail)).toBe(false);
       expect(getComputedStyle(label).display).toBe('grid');
     });
 
@@ -1094,7 +1095,7 @@ describe('AiModelFormComponent', () => {
       fixture.detectChanges();
 
       expect(defaultRadio().getAttribute('aria-describedby')).toBe('apiKeyChoiceDefaultDetail apiKeyChoiceDefaultReason');
-      expect(defaultRadio().closest('label')!.contains(reason())).toBeTrue();
+      expect(defaultRadio().closest('label')!.contains(reason())).toBe(true);
     });
 
     it('keeps a default key that is not verified selectable, and says so', () => {
@@ -1102,8 +1103,8 @@ describe('AiModelFormComponent', () => {
       component.mode = 'add';
       fixture.detectChanges();
 
-      expect(defaultRadio().disabled).toBeFalse();
-      expect(defaultRadio().checked).toBeTrue();
+      expect(defaultRadio().disabled).toBe(false);
+      expect(defaultRadio().checked).toBe(true);
       expect(defaultRadio().closest('label')!.textContent).toContain('…ab12 (not verified)');
     });
 
@@ -1116,8 +1117,8 @@ describe('AiModelFormComponent', () => {
       fixture.detectChanges();
 
       expect(component.apiKeyChoice).toBe('custom');
-      expect(customRadio().checked).toBeTrue();
-      expect(defaultRadio().disabled).toBeTrue();
+      expect(customRadio().checked).toBe(true);
+      expect(defaultRadio().disabled).toBe(true);
       expect(defaultRadio().getAttribute('aria-describedby')).toBe('apiKeyChoiceDefaultReason');
       expect(reason()!.textContent!.trim()).toBe('No default Google key. Add one in Admin → API Keys.');
     });
@@ -1129,13 +1130,13 @@ describe('AiModelFormComponent', () => {
       component.onBaseUrlChange('https://gateway.example.com/anthropic');
       fixture.detectChanges();
       expect(component.apiKeyChoice).toBe('custom');
-      expect(defaultRadio().disabled).toBeTrue();
+      expect(defaultRadio().disabled).toBe(true);
       expect(reason()!.textContent!.trim()).toBe('A default key works only with the provider\'s own endpoint.');
 
       component.onBaseUrlChange('');
       fixture.detectChanges();
       expect(component.apiKeyChoice).toBe('default');
-      expect(defaultRadio().disabled).toBeFalse();
+      expect(defaultRadio().disabled).toBe(false);
     });
 
     it('checks models with the default key and saves without sending a key', async () => {
@@ -1145,23 +1146,23 @@ describe('AiModelFormComponent', () => {
       fixture.detectChanges();
 
       const picker = el().querySelector('.picker-model-select') as HTMLSelectElement;
-      expect(picker.disabled).toBeFalse();
+      expect(picker.disabled).toBe(false);
 
-      (settingsService.getAvailableModels as jasmine.Spy).calls.reset();
+      (settingsService.getAvailableModels as Mock).mockClear();
       (el().querySelector('.check-models-btn') as HTMLButtonElement).click();
       fixture.detectChanges();
 
-      const args = (settingsService.getAvailableModels as jasmine.Spy).calls.mostRecent().args;
+      const args = vi.mocked((settingsService.getAvailableModels as Mock)).mock.lastCall!;
       expect(args[0]).toBe('Anthropic');
       expect(args[1]).toBe('');
-      expect(args[4]).toBeTrue();
+      expect(args[4]).toBe(true);
 
       let saved: AiModelFormResult | undefined;
       component.save.subscribe(result => saved = result);
       component.onSave();
 
       expect(saved).toBeDefined();
-      expect(saved!.useDefaultApiKey).toBeTrue();
+      expect(saved!.useDefaultApiKey).toBe(true);
       expect(saved!.apiKey).toBeUndefined();
     });
 
@@ -1184,7 +1185,7 @@ describe('AiModelFormComponent', () => {
       component.save.subscribe(result => saved = result);
       component.onSave();
 
-      expect(saved!.useDefaultApiKey).toBeFalse();
+      expect(saved!.useDefaultApiKey).toBe(false);
       expect(saved!.apiKey).toBe('test-key-not-real-0001');
     });
 
@@ -1196,7 +1197,7 @@ describe('AiModelFormComponent', () => {
       };
       fixture.detectChanges();
 
-      expect(defaultRadio().checked).toBeTrue();
+      expect(defaultRadio().checked).toBe(true);
 
       customRadio().click();
       fixture.detectChanges();
@@ -1223,7 +1224,7 @@ describe('AiModelFormComponent', () => {
       fixture.detectChanges();
 
       expect(component.apiKeyChoice).toBe('custom');
-      expect(defaultRadio().disabled).toBeTrue();
+      expect(defaultRadio().disabled).toBe(true);
       expect(el().querySelector('.custom-api-key-input')).not.toBeNull();
     });
 

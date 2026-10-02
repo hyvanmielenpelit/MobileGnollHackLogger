@@ -192,7 +192,7 @@ Five ways a plan gets this wrong, all of which have happened:
   carries the Microsoft.Testing.Platform opt-in the .NET 10 SDK requires; without it every
   `dotnet test` command above fails before running a single test.
 - **Writing `npm test`, `ng test`, or `npm test -- --watch=false`** instead of
-  `npm run test:headless`. Karma stays in watch mode and the command never returns.
+  `npm run test:headless`. In an interactive terminal it starts watch mode and the command never returns.
 - **Writing `.sln`.** This repository uses `MobileGnollHackLogger.slnx`.
 
 **Read `testing_guidelines` before writing this section.** It also governs whether any test

@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -8,7 +9,7 @@ import { ChatService, TrashSession } from '../../services/chat.service';
 describe('TrashModalComponent', () => {
   let component: TrashModalComponent;
   let fixture: ComponentFixture<TrashModalComponent>;
-  let chatService: jasmine.SpyObj<ChatService>;
+  let chatService: MockedObject<ChatService>;
 
   const mockTrashSessions: TrashSession[] = [
     {
@@ -36,13 +37,13 @@ describe('TrashModalComponent', () => {
   ];
 
   beforeEach(async () => {
-    const chatServiceSpy = jasmine.createSpyObj('ChatService', [
-      'getTrashSessions',
-      'restoreSession',
-      'permanentDeleteSession',
-      'emptyTrash'
-    ]);
-    chatServiceSpy.getTrashSessions.and.returnValue(of(mockTrashSessions));
+    const chatServiceSpy = {
+      getTrashSessions: vi.fn().mockName("ChatService.getTrashSessions"),
+      restoreSession: vi.fn().mockName("ChatService.restoreSession"),
+      permanentDeleteSession: vi.fn().mockName("ChatService.permanentDeleteSession"),
+      emptyTrash: vi.fn().mockName("ChatService.emptyTrash")
+    };
+    chatServiceSpy.getTrashSessions.mockReturnValue(of(mockTrashSessions));
 
     await TestBed.configureTestingModule({
       imports: [TrashModalComponent],
@@ -53,7 +54,7 @@ describe('TrashModalComponent', () => {
       ]
     }).compileComponents();
 
-    chatService = TestBed.inject(ChatService) as jasmine.SpyObj<ChatService>;
+    chatService = TestBed.inject(ChatService) as MockedObject<ChatService>;
     fixture = TestBed.createComponent(TrashModalComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
@@ -66,8 +67,8 @@ describe('TrashModalComponent', () => {
   });
 
   it('should open and close modal dialog', () => {
-    const showModalSpy = jasmine.createSpy('showModal');
-    const closeSpy = jasmine.createSpy('close');
+    const showModalSpy = vi.fn().mockName('showModal');
+    const closeSpy = vi.fn().mockName('close');
     component.trashDialog = { nativeElement: { showModal: showModalSpy, close: closeSpy } } as any;
 
     component.open();
@@ -78,9 +79,9 @@ describe('TrashModalComponent', () => {
   });
 
   it('should restore trash session when not at max quota', () => {
-    chatService.restoreSession.and.returnValue(of({ message: 'Session restored' }));
-    const countChangeSpy = spyOn(component.trashCountChange, 'emit');
-    const restoredSpy = spyOn(component.sessionRestored, 'emit');
+    chatService.restoreSession.mockReturnValue(of({ message: 'Session restored' }));
+    const countChangeSpy = vi.spyOn(component.trashCountChange, 'emit').mockReturnValue(undefined);
+    const restoredSpy = vi.spyOn(component.sessionRestored, 'emit').mockReturnValue(undefined);
 
     component.activeSessionCount = 10;
     component.maxQuota = 50;
@@ -101,10 +102,8 @@ describe('TrashModalComponent', () => {
   });
 
   it('should emit restoreError when server returns error on restore', () => {
-    chatService.restoreSession.and.returnValue(
-      throwError(() => ({ error: { message: 'Quota exceeded' } }))
-    );
-    const errorSpy = spyOn(component.restoreError, 'emit');
+    chatService.restoreSession.mockReturnValue(throwError(() => ({ error: { message: 'Quota exceeded' } })));
+    const errorSpy = vi.spyOn(component.restoreError, 'emit').mockReturnValue(undefined);
 
     component.activeSessionCount = 10;
     component.maxQuota = 50;
@@ -114,11 +113,11 @@ describe('TrashModalComponent', () => {
   });
 
   it('should permanently delete a session', () => {
-    chatService.permanentDeleteSession.and.returnValue(of({ message: 'Deleted' }));
-    const showModalSpy = jasmine.createSpy('showModal');
-    const closeSpy = jasmine.createSpy('close');
+    chatService.permanentDeleteSession.mockReturnValue(of({ message: 'Deleted' }));
+    const showModalSpy = vi.fn().mockName('showModal');
+    const closeSpy = vi.fn().mockName('close');
     component.permanentDeleteConfirmDialog = { nativeElement: { showModal: showModalSpy, close: closeSpy } } as any;
-    const countChangeSpy = spyOn(component.trashCountChange, 'emit');
+    const countChangeSpy = vi.spyOn(component.trashCountChange, 'emit').mockReturnValue(undefined);
 
     component.requestPermanentDelete(101);
     expect(component.trashSessionToDeletePermanently).toBe(101);
@@ -132,12 +131,12 @@ describe('TrashModalComponent', () => {
   });
 
   it('should empty entire trash', () => {
-    chatService.emptyTrash.and.returnValue(of({ count: 2 }));
-    const showModalSpy = jasmine.createSpy('showModal');
-    const closeSpy = jasmine.createSpy('close');
+    chatService.emptyTrash.mockReturnValue(of({ count: 2 }));
+    const showModalSpy = vi.fn().mockName('showModal');
+    const closeSpy = vi.fn().mockName('close');
     component.emptyTrashConfirmDialog = { nativeElement: { showModal: showModalSpy, close: closeSpy } } as any;
-    const countChangeSpy = spyOn(component.trashCountChange, 'emit');
-    const trashEmptiedSpy = spyOn(component.trashEmptied, 'emit');
+    const countChangeSpy = vi.spyOn(component.trashCountChange, 'emit').mockReturnValue(undefined);
+    const trashEmptiedSpy = vi.spyOn(component.trashEmptied, 'emit').mockReturnValue(undefined);
 
     component.requestEmptyTrash();
     expect(showModalSpy).toHaveBeenCalled();

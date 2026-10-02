@@ -65,7 +65,7 @@ plan -- `package.json` is the source of truth.
   (`app-pdf-viewer-dialog`) that shows a run's AI-written reports. It is reached **only** through the
   dynamic `import()`s in `shared/pdf-viewer/pdfjs-loader.ts` (the display module, then
   `pdfjs-dist/web/pdf_viewer.mjs`), so it lands in lazy chunks and never in the initial bundle; specs
-  replace the loader through the `PDFJS_LOADER` token, so Karma never loads pdf.js. Its worker,
+  replace the loader through the `PDFJS_LOADER` token, so specs never load pdf.js. Its worker,
   `build/pdf.worker.min.mjs`, is copied as an asset by `angular.json` to `/pdfjs/`, a same-origin
   file the CSP already allows. The viewer's stylesheet carries a **scoped subset** of the package's
   `web/pdf_viewer.css` (the page, canvas wrapper and text layer, under `.pdfv`) rather than the whole
@@ -82,7 +82,7 @@ plan -- `package.json` is the source of truth.
 `npm outdated` will keep listing these; do not force them.
 - **`typescript`** -- gated by the Angular compiler's peer range, not by us. Read it with
   `npm view @angular/compiler-cli@<installed version> peerDependencies` and stay inside it.
-- **`jasmine-core` and `@types/jasmine` majors** -- `karma-jasmine` (whose Karma runner is
-  deprecated upstream) declares an older `jasmine-core` range. Move them together with a
-  Karma-to-Vitest migration, not on their own.
+- **`vitest` and `@vitest/browser-playwright` majors** -- gated by the installed
+  `@angular/build`'s `peerDependencies.vitest`; read it with `npm view @angular/build@<installed
+  version> peerDependencies` and move both packages together, to the same version.
 - Never run `npm audit fix --force`: it applies breaking majors, including the ones above.

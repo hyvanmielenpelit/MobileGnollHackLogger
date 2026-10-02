@@ -23,15 +23,15 @@ describe('DebugLogComponent', () => {
 
   it('should post message via ClientBridgeService when shareLogs is called in webview', () => {
     const bridge = TestBed.inject(ClientBridgeService);
-    spyOn(bridge, 'isEmbedded').and.returnValue(true);
-    const postSpy = spyOn(bridge, 'postMessage');
+    vi.spyOn(bridge, 'isEmbedded').mockReturnValue(true);
+    const postSpy = vi.spyOn(bridge, 'postMessage').mockReturnValue(undefined);
 
     component.shareLogs();
 
-    expect(postSpy).toHaveBeenCalledWith(jasmine.objectContaining({
+    expect(postSpy).toHaveBeenCalledWith(expect.objectContaining({
       type: 'share_text_file',
       filename: 'overseer-debug-log.txt'
     }));
-    expect(component.isShared).toBeTrue();
+    expect(component.isShared).toBe(true);
   });
 });

@@ -302,7 +302,7 @@ describe('model-comparison-charts', () => {
       expect(hues.slice(0, 4)).toEqual([...CATEGORICAL_PALETTE_DARK, DE_EMPHASIS_STROKE]);
       expect(eight.map((e) => glyphFor(glyphs, e.key).provider).slice(0, 4))
         .toEqual(['google', 'anthropic', 'openai', 'other']);
-      expect(eight.every((e) => (IDENTITY_SHAPES as readonly string[]).includes(glyphFor(glyphs, e.key).shape))).toBeTrue();
+      expect(eight.every((e) => (IDENTITY_SHAPES as readonly string[]).includes(glyphFor(glyphs, e.key).shape))).toBe(true);
     });
 
     it('does not repaint the survivors when a model is filtered out', () => {
@@ -325,7 +325,7 @@ describe('model-comparison-charts', () => {
         makeEntry({ key: 'ok2', provider: 'anthropic' }),
       ];
       const glyphs = buildIdentityGlyphs(withExcluded);
-      expect(glyphs.has('bad')).toBeFalse();
+      expect(glyphs.has('bad')).toBe(false);
       expect(glyphFor(glyphs, 'ok1').hue).toBe(CATEGORICAL_PALETTE_DARK[0]);
       expect(glyphFor(glyphs, 'ok2').hue).toBe(CATEGORICAL_PALETTE_DARK[1]);
     });
@@ -365,9 +365,8 @@ describe('model-comparison-charts', () => {
 
     it('orders by the list, ignoring the direction', () => {
       for (const direction of ['asc', 'desc'] as const) {
-        const ordered = sortEntriesForComparison(
-          three, { key: 'custom', direction, customOrder: ['c', 'a', 'b'] }, 'speedIndex', 'candidateSuite', CONTEXT);
-        expect(ordered.map((e) => e.key)).withContext(direction).toEqual(['c', 'a', 'b']);
+        const ordered = sortEntriesForComparison(three, { key: 'custom', direction, customOrder: ['c', 'a', 'b'] }, 'speedIndex', 'candidateSuite', CONTEXT);
+        expect(ordered.map((e) => e.key), direction).toEqual(['c', 'a', 'b']);
       }
     });
 
@@ -491,7 +490,7 @@ describe('model-comparison-charts', () => {
 
       const interaction = spec.config.options?.interaction;
       expect(interaction?.mode).toBe('nearest');
-      expect(interaction?.intersect).toBeFalse();
+      expect(interaction?.intersect).toBe(false);
     });
 
     it('draws single-run entries hollow and multi-run entries solid', () => {
@@ -555,7 +554,7 @@ describe('model-comparison-charts', () => {
       const point = pointsOf(spec.config)[0];
       expect(point['note']).toBeUndefined();
       expect(point['xErrLow']).toBeUndefined();
-      expect(spec.chrome.key).toContain({ glyph: 'hollow', text: 'Single run' });
+      expect(spec.chrome.key).toContainEqual({ glyph: 'hollow', text: 'Single run' });
       expect(spec.chrome.key.map((item) => item.glyph)).not.toContain('solid');
     });
 
@@ -601,8 +600,8 @@ describe('model-comparison-charts', () => {
         };
         return options.plugins?.datalabels?.display;
       };
-      expect(display(many)).toBeFalse();
-      expect(display(few)).toBeFalse();
+      expect(display(many)).toBe(false);
+      expect(display(few)).toBe(false);
       expect(many.plugins).not.toContain(ChartDataLabels);
     });
 
@@ -626,8 +625,8 @@ describe('model-comparison-charts', () => {
       ]);
 
       // Three models are plotted, so dataset index 3 is the frontier annotation.
-      expect(tooltip.filter?.({ datasetIndex: 0 })).toBeTrue();
-      expect(tooltip.filter?.({ datasetIndex: 3 })).toBeFalse();
+      expect(tooltip.filter?.({ datasetIndex: 0 })).toBe(true);
+      expect(tooltip.filter?.({ datasetIndex: 3 })).toBe(false);
     });
   });
 
@@ -636,9 +635,9 @@ describe('model-comparison-charts', () => {
       const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
       for (const panel of [figure.quality, figure.speed, figure.cost]) {
         const value = scaleOf(panel.config, 'y');
-        expect(value.beginAtZero).withContext(panel.id).toBeTrue();
-        expect(value.min).withContext(panel.id).toBe(0);
-        expect(value.type).withContext(panel.id).toBe('linear');
+        expect(value.beginAtZero, panel.id).toBe(true);
+        expect(value.min, panel.id).toBe(0);
+        expect(value.type, panel.id).toBe('linear');
       }
     });
 
@@ -702,7 +701,7 @@ describe('model-comparison-charts', () => {
       expect(meanPoint['y']).toBe(PROFILE_FIXTURE[0].modelTimeMeanMs);
       expect(meanPoint['yErrLow']).toBeUndefined();
       expect(meanPoint['yErrHigh']).toBeUndefined();
-      expect(mean.speed.chrome.notes).toContain({
+      expect(mean.speed.chrome.notes).toContainEqual({
         text: 'Mean time per question has no uncertainty bar: the spread across questions is not recorded.',
         tone: 'info',
       });
@@ -796,8 +795,8 @@ describe('model-comparison-charts', () => {
       // One label list across the three panels: a two-line tick on one alone would shrink its
       // plot area and put its bars out of line with the other two.
       for (const panel of [figure.quality, figure.speed, figure.cost]) {
-        expect(panel.config.data.labels?.[0]).withContext(panel.id).toEqual([once.label, 'n = 1']);
-        expect(panel.config.data.labels?.[1]).withContext(panel.id).toBe(twice.label);
+        expect(panel.config.data.labels?.[0], panel.id).toEqual([once.label, 'n = 1']);
+        expect(panel.config.data.labels?.[1], panel.id).toBe(twice.label);
       }
     });
 
@@ -819,7 +818,7 @@ describe('model-comparison-charts', () => {
       const plain = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
       for (const panel of [plain.quality, plain.speed, plain.cost]) {
         const fills = datasetsOf(panel.config)[0]['backgroundColor'] as string[];
-        expect(fills).withContext(panel.id).toEqual([...CATEGORICAL_PALETTE_DARK]);
+        expect(fills, panel.id).toEqual([...CATEGORICAL_PALETTE_DARK]);
       }
       const other = makeEntry({ key: 'other', provider: 'mistral' });
       const gray = buildSmallMultiples([other], { ...smallMultiplesOptions(), glyphs: buildIdentityGlyphs([other]) });
@@ -835,33 +834,33 @@ describe('model-comparison-charts', () => {
       const horizontal = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ orientation: 'horizontal' }));
       expect(horizontal.quality.config.options?.indexAxis).toBe('y');
       // The value axis moves with the bars, and it still starts at zero.
-      expect(scaleOf(horizontal.quality.config, 'x').beginAtZero).toBeTrue();
+      expect(scaleOf(horizontal.quality.config, 'x').beginAtZero).toBe(true);
       expect(scaleOf(horizontal.quality.config, 'x').min).toBe(0);
       expect(scaleOf(horizontal.quality.config, 'y').type).toBe('category');
     });
 
     it('carries no legend box, because each panel plots exactly one series', () => {
       const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
-      expect(figure.quality.config.options?.plugins?.legend?.display).toBeFalse();
+      expect(figure.quality.config.options?.plugins?.legend?.display).toBe(false);
     });
 
     it('states n in every panel\'s badges, and the pricing basis on the cost panel only', () => {
       const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
       for (const panel of [figure.quality, figure.speed, figure.cost]) {
         const texts = panel.chrome.badges.map((badge) => badge.text);
-        expect(texts.slice(0, 3)).withContext(panel.id).toEqual(['3 models', '3 runs each', '10 questions']);
-        expect(panel.chrome.title).withContext(panel.id).toBe(panel.title);
+        expect(texts.slice(0, 3), panel.id).toEqual(['3 models', '3 runs each', '10 questions']);
+        expect(panel.chrome.title, panel.id).toBe(panel.title);
         // The provider key row: one dot per provider present, in its hue.
-        expect(panel.chrome.key).withContext(panel.id).toEqual([
+        expect(panel.chrome.key, panel.id).toEqual([
           { glyph: 'provider', text: 'Google', color: CATEGORICAL_PALETTE_DARK[0] },
           { glyph: 'provider', text: 'Anthropic', color: CATEGORICAL_PALETTE_DARK[1] },
           { glyph: 'provider', text: 'OpenAI', color: CATEGORICAL_PALETTE_DARK[2] },
         ]);
-        expect(panel.chrome.highlight).withContext(panel.id).toBe('');
+        expect(panel.chrome.highlight, panel.id).toBe('');
       }
       expect(figure.cost.chrome.badges.length).toBe(4);
       expect(figure.cost.chrome.badges[3].tone).toBe('pricing');
-      expect(figure.cost.chrome.badges[3].text.startsWith('Catalog prices')).toBeTrue();
+      expect(figure.cost.chrome.badges[3].text.startsWith('Catalog prices')).toBe(true);
       expect(figure.cost.chrome.detail).not.toBe('');
       expect(figure.quality.chrome.detail).toBe('');
       expect(figure.speed.chrome.detail).toBe('');
@@ -881,12 +880,12 @@ describe('model-comparison-charts', () => {
       const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions({ costMeasure: 'candidateSuite' }));
 
       for (const panel of [figure.quality, figure.speed, figure.cost]) {
-        expect(panel.plugins).withContext(panel.id).toContain(ChartDataLabels);
+        expect(panel.plugins, panel.id).toContain(ChartDataLabels);
         const datalabels = panel.config.options?.plugins?.datalabels as {
           display?: (ctx: { dataIndex: number }) => boolean;
         };
-        expect(typeof datalabels.display).withContext(panel.id).toBe('function');
-        expect(datalabels.display?.({ dataIndex: 0 })).withContext(panel.id).toBeTrue();
+        expect(typeof datalabels.display, panel.id).toBe('function');
+        expect(datalabels.display?.({ dataIndex: 0 }), panel.id).toBe(true);
       }
 
       // Grace is the headroom the label needs, and it is ignored once an axis max is explicit —
@@ -915,8 +914,8 @@ describe('model-comparison-charts', () => {
         display?: (ctx: { dataIndex: number }) => boolean;
       };
 
-      expect(costDatalabels.display?.({ dataIndex: 0 })).toBeTrue();
-      expect(costDatalabels.display?.({ dataIndex: 1 })).toBeFalse();
+      expect(costDatalabels.display?.({ dataIndex: 0 })).toBe(true);
+      expect(costDatalabels.display?.({ dataIndex: 1 })).toBe(false);
     });
   });
 
@@ -943,7 +942,7 @@ describe('model-comparison-charts', () => {
       expect(speed.domainMax).toBe(100);
       // Suite cost $0.10..$0.30 on an inverted log axis padded by 1.25 each way.
       expect(cost.scale).toBe('log');
-      expect(cost.lowerIsBetter).toBeTrue();
+      expect(cost.lowerIsBetter).toBe(true);
       expect(cost.domainMin).toBeCloseTo(0.1 / 1.25, 10);
       expect(cost.domainMax).toBeCloseTo(0.3 * 1.25, 10);
       expect(cost.min).toBeCloseTo(0.1, 10);
@@ -963,7 +962,7 @@ describe('model-comparison-charts', () => {
       // A latency takes the inverted log axis too: C is the fastest and sits highest.
       const ttft = normalizeProfile(PROFILE_FIXTURE, { ...SPEED_INDEX, speedMeasure: 'ttftP50' });
       expect(ttft.axes[1].scale).toBe('log');
-      expect(ttft.axes[1].lowerIsBetter).toBeTrue();
+      expect(ttft.axes[1].lowerIsBetter).toBe(true);
       expect(ttft.axes[1].domainMin).toBeCloseTo(100 / 1.25, 10);
       expect(ttft.axes[1].domainMax).toBeCloseTo(500 * 1.25, 10);
       const speeds = ttft.rows.map((row) => row.values[1]);
@@ -1019,10 +1018,8 @@ describe('model-comparison-charts', () => {
         const entry = PROFILE_FIXTURE[index];
         const datasets = datasetsOf(tile);
         // The model's own line first, then the Ideal line, then every other model.
-        expect(datasets.map((d) => d['label']))
-          .withContext(entry.key)
-          .toEqual([entry.label, PROFILE_IDEAL_LABEL, ...PROFILE_FIXTURE.filter((e) => e !== entry).map((e) => e.label)]);
-        expect(datasets[0]['borderColor']).withContext(entry.key).toBe(CATEGORICAL_PALETTE_DARK[index]);
+        expect(datasets.map((d) => d['label']), entry.key).toEqual([entry.label, PROFILE_IDEAL_LABEL, ...PROFILE_FIXTURE.filter((e) => e !== entry).map((e) => e.label)]);
+        expect(datasets[0]['borderColor'], entry.key).toBe(CATEGORICAL_PALETTE_DARK[index]);
         expect(datasets[0]['borderWidth']).toBe(2.5);
         expect(datasets[0]['pointRadius']).toBe(4);
         expect(datasets[0]['pointBorderColor']).toBe(CHART_SURFACE);
@@ -1066,8 +1063,10 @@ describe('model-comparison-charts', () => {
 
     it('draws the tile scales without numeric ticks', () => {
       const tile = profileTiles(buildProfilePlot(PROFILE_FIXTURE, PROFILE_OPTIONS))[0];
-      const y = scaleOf(tile, 'y') as ScaleProbe & { display?: boolean };
-      expect(y.display).toBeFalse();
+      const y = scaleOf(tile, 'y') as ScaleProbe & {
+        display?: boolean;
+      };
+      expect(y.display).toBe(false);
       expect(y.min!).toBeLessThan(0);
       expect(y.max!).toBeGreaterThan(1);
       expect((tile as { data: { labels: unknown[] } }).data.labels)
@@ -1084,7 +1083,7 @@ describe('model-comparison-charts', () => {
       expect(notes).toContain('Cost uses a log scale: equal steps are equal ratios.');
       expect(notes).toContain('Intelligence 30–90 · Speed Index 0–100 · cost $0.1000–$0.3000 per suite run');
       expect(notes.join(' ')).not.toContain('listed below the plot');
-      expect(profile.chrome.badges.some((badge) => badge.tone === 'pricing')).toBeTrue();
+      expect(profile.chrome.badges.some((badge) => badge.tone === 'pricing')).toBe(true);
 
       const timed = buildProfilePlot(PROFILE_FIXTURE, { ...PROFILE_OPTIONS, speedMeasure: 'meanModelTime' });
       expect(timed.chrome.notes.map((note) => note.text)).toContain('Speed and cost use log scales: equal steps are equal ratios.');
@@ -1200,7 +1199,7 @@ describe('model-comparison-charts', () => {
         { x: 300, y: 60 },
         { x: 100, y: 30 },
       ]);
-      expect(frontier['showLine']).toBeTrue();
+      expect(frontier['showLine']).toBe(true);
       expect(frontier['borderDash']).toEqual([0, 6]);
       expect(frontier['borderCapStyle']).toBe('round');
       expect(frontier['borderWidth']).toBe(DEFAULT_FIGURE_STYLE.scatter.frontierWidthPx);
@@ -1226,10 +1225,10 @@ describe('model-comparison-charts', () => {
       const shown = build(true);
       const hidden = build(false);
 
-      expect(datasetsOf(shown.config).some((d) => d['label'] === 'Pareto frontier')).toBeTrue();
+      expect(datasetsOf(shown.config).some((d) => d['label'] === 'Pareto frontier')).toBe(true);
       expect(shown.chrome.key.map((item) => item.glyph)).toContain('frontier');
 
-      expect(datasetsOf(hidden.config).some((d) => d['label'] === 'Pareto frontier')).toBeFalse();
+      expect(datasetsOf(hidden.config).some((d) => d['label'] === 'Pareto frontier')).toBe(false);
       expect(datasetsOf(hidden.config).length).toBe(entries.length);
       expect(hidden.chrome.key.map((item) => item.glyph)).not.toContain('frontier');
       expect(hidden.chrome.key.map((item) => item.glyph)).toContain('faded');
@@ -1276,7 +1275,7 @@ describe('model-comparison-charts', () => {
       });
       const datasets = datasetsOf(spec.config).slice(0, entries.length);
       expect(datasets.map((d) => d['backgroundColor'])).toEqual([CATEGORICAL_PALETTE_DARK[0], CATEGORICAL_PALETTE_DARK[2], DE_EMPHASIS_STROKE]);
-      expect(datasets.every((d) => d['pointStyle'] === 'circle')).toBeTrue();
+      expect(datasets.every((d) => d['pointStyle'] === 'circle')).toBe(true);
       expect(spec.chrome.key.filter((item) => item.glyph === 'provider')).toEqual([
         { glyph: 'provider', text: 'Google', color: CATEGORICAL_PALETTE_DARK[0] },
         { glyph: 'provider', text: 'OpenAI', color: CATEGORICAL_PALETTE_DARK[2] },
@@ -1361,8 +1360,8 @@ describe('model-comparison-charts', () => {
         const span = scale.max! - scale.min!;
         for (const entry of SCREENSHOT) {
           const value = axis === 'x' ? entry.modelTimeMeanMs : entry.intelligenceIndex;
-          expect((value - scale.min!) / span).withContext(`${entry.label} on ${axis}`).toBeGreaterThanOrEqual(0.05);
-          expect((scale.max! - value) / span).withContext(`${entry.label} on ${axis}`).toBeGreaterThanOrEqual(0.05);
+          expect((value - scale.min!) / span, `${entry.label} on ${axis}`).toBeGreaterThanOrEqual(0.05);
+          expect((scale.max! - value) / span, `${entry.label} on ${axis}`).toBeGreaterThanOrEqual(0.05);
         }
       }
     });
@@ -1373,7 +1372,7 @@ describe('model-comparison-charts', () => {
 
       expect(frontier).toBeUndefined();
       expect(spec.chrome.highlight).toBe('GPT-5.6 Luna is best on both axes');
-      expect(spec.chrome.notes).toContain({
+      expect(spec.chrome.notes).toContainEqual({
         text: 'Some differences are within the 95 % intervals, so treat the frontier as indicative rather than a clear win.',
         tone: 'info',
       });
@@ -1405,11 +1404,11 @@ describe('model-comparison-charts', () => {
       const { quality, speed, cost } = figures.smallMultiples;
       const directed = [quality, speed, cost, figures.qualitySpeed, figures.qualityCost, figures.speedCost];
       for (const figure of [...directed, figures.profile]) {
-        expect(figure.chrome.badges.some((badge) => badge.text.includes('Better'))).withContext(figure.id).toBeFalse();
+        expect(figure.chrome.badges.some((badge) => badge.text.includes('Better')), figure.id).toBe(false);
       }
       expect(figures.profile.chrome.direction).toBeUndefined();
       for (const figure of directed) {
-        expect(figure.chrome.direction).withContext(figure.id).toBeDefined();
+        expect(figure.chrome.direction, figure.id).toBeDefined();
       }
       expect(quality.chrome.direction).toEqual({ y: 'top', label: 'Better' });
       // Mean time per question, the default speed measure, is better lower.
@@ -1422,16 +1421,16 @@ describe('model-comparison-charts', () => {
       const priced = (spec: { chrome: { badges: readonly { tone: string }[] } }): boolean =>
         spec.chrome.badges.some((badge) => badge.tone === 'pricing');
 
-      expect(priced(figures.qualitySpeed)).toBeFalse();
-      expect(priced(figures.qualityCost)).toBeTrue();
-      expect(priced(figures.speedCost)).toBeTrue();
-      expect(priced(figures.smallMultiples.quality)).toBeFalse();
-      expect(priced(figures.smallMultiples.speed)).toBeFalse();
-      expect(priced(figures.smallMultiples.cost)).toBeTrue();
-      expect(priced(figures.profile)).toBeTrue();
+      expect(priced(figures.qualitySpeed)).toBe(false);
+      expect(priced(figures.qualityCost)).toBe(true);
+      expect(priced(figures.speedCost)).toBe(true);
+      expect(priced(figures.smallMultiples.quality)).toBe(false);
+      expect(priced(figures.smallMultiples.speed)).toBe(false);
+      expect(priced(figures.smallMultiples.cost)).toBe(true);
+      expect(priced(figures.profile)).toBe(true);
 
       const badge = figures.qualityCost.chrome.badges.find((b) => b.tone === 'pricing');
-      expect(badge?.text.startsWith('Catalog prices')).toBeTrue();
+      expect(badge?.text.startsWith('Catalog prices')).toBe(true);
       expect(figures.qualitySpeed.chrome.detail).toBe('');
       expect(figures.qualityCost.chrome.detail).not.toBe('');
     });
@@ -1480,9 +1479,9 @@ describe('model-comparison-charts', () => {
         buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT, speedMeasure: 'speedIndex' }),
       ]) {
         for (const spec of allFigures(set)) {
-          expect(spec.chrome.title).withContext(spec.id).toBe(spec.title);
+          expect(spec.chrome.title, spec.id).toBe(spec.title);
           for (const note of spec.chrome.notes) {
-            expect(note.text).withContext(spec.id).not.toContain('DTO');
+            expect(note.text, spec.id).not.toContain('DTO');
           }
         }
       }
@@ -1492,7 +1491,7 @@ describe('model-comparison-charts', () => {
   describe('reduced motion', () => {
     it('turns animation off outright rather than merely shortening it', () => {
       const still = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, reducedMotion: true });
-      expect(still.config.options?.animation).toBeFalse();
+      expect(still.config.options?.animation).toBe(false);
 
       const moving = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, reducedMotion: false });
       expect(moving.config.options?.animation).toEqual({ duration: 300 });
@@ -1500,11 +1499,11 @@ describe('model-comparison-charts', () => {
 
     it('applies to every figure, not only the scatters', () => {
       const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT, reducedMotion: true });
-      expect(figures.smallMultiples.quality.config.options?.animation).toBeFalse();
-      expect(figures.smallMultiples.speed.config.options?.animation).toBeFalse();
-      expect(figures.smallMultiples.cost.config.options?.animation).toBeFalse();
+      expect(figures.smallMultiples.quality.config.options?.animation).toBe(false);
+      expect(figures.smallMultiples.speed.config.options?.animation).toBe(false);
+      expect(figures.smallMultiples.cost.config.options?.animation).toBe(false);
       for (const tile of figures.profile.tiles) {
-        expect(tile.options?.animation).toBeFalse();
+        expect(tile.options?.animation).toBe(false);
       }
     });
 
@@ -1527,13 +1526,13 @@ describe('model-comparison-charts', () => {
       const seen: boolean[] = [];
       const unsubscribe = watcher.subscribe((reduced) => seen.push(reduced));
 
-      expect(watcher.matches).toBeFalse();
+      expect(watcher.matches).toBe(false);
       expect(listeners.length).toBe(1);
 
       query.matches = true;
       listeners[0]({ matches: true } as MediaQueryListEvent);
       expect(seen).toEqual([true]);
-      expect(watcher.matches).toBeTrue();
+      expect(watcher.matches).toBe(true);
 
       unsubscribe();
       listeners[0]({ matches: false } as MediaQueryListEvent);
@@ -1545,7 +1544,7 @@ describe('model-comparison-charts', () => {
 
     it('reports no preference when the environment has no matchMedia', () => {
       const watcher = new ReducedMotionWatcher(() => null);
-      expect(watcher.matches).toBeFalse();
+      expect(watcher.matches).toBe(false);
       watcher.dispose();
     });
   });
@@ -1587,16 +1586,14 @@ describe('model-comparison-charts', () => {
 
       expect(boxes.length).toBe(anchors.length);
       for (const box of boxes) {
-        expect(box.x).withContext(box.key).toBeGreaterThanOrEqual(AREA.left);
-        expect(box.y).withContext(box.key).toBeGreaterThanOrEqual(AREA.top);
-        expect(box.x + box.width).withContext(box.key).toBeLessThanOrEqual(AREA.right);
-        expect(box.y + box.height).withContext(box.key).toBeLessThanOrEqual(AREA.bottom);
+        expect(box.x, box.key).toBeGreaterThanOrEqual(AREA.left);
+        expect(box.y, box.key).toBeGreaterThanOrEqual(AREA.top);
+        expect(box.x + box.width, box.key).toBeLessThanOrEqual(AREA.right);
+        expect(box.y + box.height, box.key).toBeLessThanOrEqual(AREA.bottom);
       }
       for (let i = 0; i < boxes.length; i += 1) {
         for (let j = i + 1; j < boxes.length; j += 1) {
-          expect(rectsOverlap(boxes[i], boxes[j]))
-            .withContext(`${boxes[i].key} over ${boxes[j].key}`)
-            .toBeFalse();
+          expect(rectsOverlap(boxes[i], boxes[j]), `${boxes[i].key} over ${boxes[j].key}`).toBe(false);
         }
       }
     });
@@ -1610,7 +1607,7 @@ describe('model-comparison-charts', () => {
           const nearestX = Math.min(Math.max(mark.x, box.x), box.x + box.width);
           const nearestY = Math.min(Math.max(mark.y, box.y), box.y + box.height);
           const distance = Math.hypot(mark.x - nearestX, mark.y - nearestY);
-          expect(distance).withContext(`${box.key} over mark ${mark.key}`).toBeGreaterThanOrEqual(9);
+          expect(distance, `${box.key} over mark ${mark.key}`).toBeGreaterThanOrEqual(9);
         }
       }
     });
@@ -1636,10 +1633,10 @@ describe('model-comparison-charts', () => {
 
       expect(boxes.length).toBe(2);
       for (const box of boxes) {
-        expect(box.x).withContext(box.key).toBeGreaterThanOrEqual(tight.left);
-        expect(box.y).withContext(box.key).toBeGreaterThanOrEqual(tight.top);
-        expect(box.x + box.width).withContext(box.key).toBeLessThanOrEqual(tight.right);
-        expect(box.y + box.height).withContext(box.key).toBeLessThanOrEqual(tight.bottom);
+        expect(box.x, box.key).toBeGreaterThanOrEqual(tight.left);
+        expect(box.y, box.key).toBeGreaterThanOrEqual(tight.top);
+        expect(box.x + box.width, box.key).toBeLessThanOrEqual(tight.right);
+        expect(box.y + box.height, box.key).toBeLessThanOrEqual(tight.bottom);
       }
     });
 
@@ -1652,9 +1649,9 @@ describe('model-comparison-charts', () => {
 
       // With nothing in the way the placer takes the right-hand candidate, which lies on the whisker.
       expect(unobstructed[0].x).toBeGreaterThan(100);
-      expect(boxOverlapsRect(unobstructed[0], whisker)).toBeTrue();
+      expect(boxOverlapsRect(unobstructed[0], whisker)).toBe(true);
 
-      expect(boxOverlapsRect(avoiding[0], whisker)).toBeFalse();
+      expect(boxOverlapsRect(avoiding[0], whisker)).toBe(false);
       expect(avoiding[0].x + avoiding[0].width).toBeLessThanOrEqual(100);
     });
 
@@ -1663,7 +1660,7 @@ describe('model-comparison-charts', () => {
       const boxes = placeDirectLabels([anchor('A', 100, 100)], AREA, 9, { polylines: [frontier] });
 
       expect(boxes.length).toBe(1);
-      expect(segmentIntersectsRect(frontier[0], frontier[1], boxEdges(boxes[0]))).toBeFalse();
+      expect(segmentIntersectsRect(frontier[0], frontier[1], boxEdges(boxes[0]))).toBe(false);
     });
 
     it('places the label of a mark 10 px from the right edge to its left', () => {
@@ -1675,19 +1672,19 @@ describe('model-comparison-charts', () => {
 
     describe('segment geometry', () => {
       it('separates crossing, collinear-overlapping and disjoint segments', () => {
-        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 })).toBeTrue();
-        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 0 }, { x: 15, y: 0 })).toBeTrue();
-        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 5 }, { x: 10, y: 5 })).toBeFalse();
-        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 5, y: 5 }, { x: 6, y: 6 })).toBeFalse();
+        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 })).toBe(true);
+        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 5, y: 0 }, { x: 15, y: 0 })).toBe(true);
+        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 0, y: 5 }, { x: 10, y: 5 })).toBe(false);
+        expect(segmentsIntersect({ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 5, y: 5 }, { x: 6, y: 6 })).toBe(false);
       });
 
       it('treats a rect as filled, so an endpoint inside it counts as much as an edge crossed', () => {
         const rect = { left: 0, top: 0, right: 10, bottom: 10 };
 
-        expect(segmentIntersectsRect({ x: -5, y: 5 }, { x: 15, y: 5 }, rect)).toBeTrue();
-        expect(segmentIntersectsRect({ x: 2, y: 2 }, { x: 3, y: 3 }, rect)).toBeTrue();
-        expect(segmentIntersectsRect({ x: -5, y: -5 }, { x: 15, y: -5 }, rect)).toBeFalse();
-        expect(segmentIntersectsRect({ x: 20, y: 20 }, { x: 30, y: 30 }, rect)).toBeFalse();
+        expect(segmentIntersectsRect({ x: -5, y: 5 }, { x: 15, y: 5 }, rect)).toBe(true);
+        expect(segmentIntersectsRect({ x: 2, y: 2 }, { x: 3, y: 3 }, rect)).toBe(true);
+        expect(segmentIntersectsRect({ x: -5, y: -5 }, { x: 15, y: -5 }, rect)).toBe(false);
+        expect(segmentIntersectsRect({ x: 20, y: 20 }, { x: 30, y: 30 }, rect)).toBe(false);
       });
     });
 
@@ -1863,18 +1860,18 @@ describe('model-comparison-charts', () => {
 
       const off = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, inlineValues: false });
       expect(off.plugins).not.toContain(directLabelPlugin);
-      expect(off.config.options?.plugins?.legend?.display).toBeTrue();
+      expect(off.config.options?.plugins?.legend?.display).toBe(true);
 
       const named = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, directLabels: true });
       expect(named.plugins).toContain(directLabelPlugin);
-      expect(named.config.options?.plugins?.legend?.display).toBeFalse();
+      expect(named.config.options?.plugins?.legend?.display).toBe(false);
       expect(pluginOptions(named).blocks.map((b) => b.name)).toEqual(PROFILE_FIXTURE.map((e) => e.label));
-      expect(pluginOptions(named).blocks.every((b) => b.values.length === 0)).toBeTrue();
+      expect(pluginOptions(named).blocks.every((b) => b.values.length === 0)).toBe(true);
 
       // Values are about the marks' numbers, not their names, so the legend stays.
       const valued = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, inlineValues: true });
       expect(valued.plugins).toContain(directLabelPlugin);
-      expect(valued.config.options?.plugins?.legend?.display).toBeTrue();
+      expect(valued.config.options?.plugins?.legend?.display).toBe(true);
       expect(pluginOptions(valued).blocks.map((b) => b.name)).toEqual([undefined, undefined, undefined]);
       expect(pluginOptions(valued).blocks[0].values).toEqual([
         // 900 ms on an axis whose padded domain passes 1000 ms, so the plate follows the axis into seconds.
@@ -1888,7 +1885,7 @@ describe('model-comparison-charts', () => {
         directLabels: true,
         inlineValues: true,
       });
-      expect(both.config.options?.plugins?.legend?.display).toBeFalse();
+      expect(both.config.options?.plugins?.legend?.display).toBe(false);
       expect(pluginOptions(both).blocks[0].name).toBe('A');
       expect(pluginOptions(both).blocks[0].values.length).toBe(2);
     });
@@ -1977,13 +1974,13 @@ describe('model-comparison-charts', () => {
 
     it('writes no text at all: the plugin strokes intervals and nothing else', () => {
       const calls = runPlugin([{ x: 1, y: 1 }], { x: makeScale('linear'), y: makeScale('linear') });
-      expect(calls.some((c) => c.op === 'fillText')).toBeFalse();
-      expect(calls.some((c) => c.op === 'lineTo')).toBeFalse();
+      expect(calls.some((c) => c.op === 'fillText')).toBe(false);
+      expect(calls.some((c) => c.op === 'lineTo')).toBe(false);
     });
 
     it('ignores plain numeric data, so it is inert on the profile plot', () => {
       const calls = runPlugin([0.5], { x: makeScale('linear'), y: makeScale('linear') });
-      expect(calls.some((c) => c.op === 'lineTo')).toBeFalse();
+      expect(calls.some((c) => c.op === 'lineTo')).toBe(false);
     });
   });
 
@@ -2015,7 +2012,7 @@ describe('model-comparison-charts', () => {
       expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toEqual(['Mean time per question (ms)']);
       expect(titleLines(scaleOf(figures.qualitySpeed.config, 'x'))[0]).toContain('Mean time per question');
       expect(titleLines(scaleOf(figures.speedCost.config, 'x'))[0]).toContain('Mean time per question');
-      expect(figures.profile.tiles[0].data.labels).toContain(['Speed', '(mean model time)']);
+      expect(figures.profile.tiles[0].data.labels).toContainEqual(['Speed', '(mean model time)']);
     });
   });
 
@@ -2035,10 +2032,10 @@ describe('model-comparison-charts', () => {
     });
 
     it('is true for the three time measures and false only for Speed Index', () => {
-      expect(speedLowerIsBetter('meanModelTime')).toBeTrue();
-      expect(speedLowerIsBetter('totalModelTime')).toBeTrue();
-      expect(speedLowerIsBetter('ttftP50')).toBeTrue();
-      expect(speedLowerIsBetter('speedIndex')).toBeFalse();
+      expect(speedLowerIsBetter('meanModelTime')).toBe(true);
+      expect(speedLowerIsBetter('totalModelTime')).toBe(true);
+      expect(speedLowerIsBetter('ttftP50')).toBe(true);
+      expect(speedLowerIsBetter('speedIndex')).toBe(false);
     });
   });
 
@@ -2086,7 +2083,7 @@ describe('model-comparison-charts', () => {
         };
         expect(value.ticks?.font?.size).toBe(11);
         expect(value.title?.font?.size).toBe(12);
-        expect(value.grid?.display).toBeTrue();
+        expect(value.grid?.display).toBe(true);
         expect(figure.quality.plugins).toEqual([errorBarPlugin, ChartDataLabels]);
         expect(noteTexts(figure.quality)).not.toContain(HIDDEN_INTERVALS_NOTE);
 
@@ -2101,7 +2098,7 @@ describe('model-comparison-charts', () => {
         const dataset = datasetsOf(figure.quality.config)[0];
         expect(dataset['categoryPercentage']).toBe(1);
         expect(dataset['barPercentage']).toBeCloseTo(0.9, 9);
-        expect('maxBarThickness' in dataset).toBeFalse();
+        expect('maxBarThickness' in dataset).toBe(false);
         expect(dataset['borderRadius']).toBe(0);
         expect(dataset['borderWidth']).toBe(3);
       });
@@ -2135,16 +2132,28 @@ describe('model-comparison-charts', () => {
         }));
         const datalabels = figure.quality.config.options?.plugins?.datalabels as {
           display?: unknown;
-          font?: { size?: number };
+          font?: {
+            size?: number;
         };
-        expect(datalabels.display).toBeFalse();
+        };
+        expect(datalabels.display).toBe(false);
         expect(datalabels.font?.size).toBe(18);
         const value = scaleOf(figure.quality.config, 'y') as ScaleProbe & {
-          ticks?: { font?: { size?: number } };
-          title?: { font?: { size?: number } };
-          grid?: { display?: boolean };
+          ticks?: {
+            font?: {
+              size?: number;
         };
-        expect(value.grid?.display).toBeFalse();
+          };
+          title?: {
+            font?: {
+              size?: number;
+            };
+          };
+          grid?: {
+            display?: boolean;
+          };
+        };
+        expect(value.grid?.display).toBe(false);
         expect(value.ticks?.font?.size).toBe(16);
         expect(value.title?.font?.size).toBe(20);
         const category = scaleOf(figure.quality.config, 'x') as ScaleProbe & {
@@ -2168,7 +2177,7 @@ describe('model-comparison-charts', () => {
         };
         const chart = { scales: { y: { getPixelForValue: (v: number) => 300 - v * 2 } } };
         for (let index = 0; index < PROFILE_FIXTURE.length; index += 1) {
-          expect(datalabels.offset({ dataIndex: index, chart })).withContext(String(index)).toBe(4);
+          expect(datalabels.offset({ dataIndex: index, chart }), String(index)).toBe(4);
         }
         expect(noteTexts(figure.quality)).toContain(HIDDEN_INTERVALS_NOTE);
         // Mean model time per question draws no whisker anyway.
@@ -2201,12 +2210,12 @@ describe('model-comparison-charts', () => {
         expect(noteTexts(on.speed)).toContain(MEAN_TIME_NO_INTERVAL_NOTE);
         expect(noteTexts(on.quality)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
         expect(noteTexts(on.cost)).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
-        expect(warning(noteTexts(on.speed))).toBeTrue();
+        expect(warning(noteTexts(on.speed))).toBe(true);
 
         for (const intervals of [true, false]) {
           const off = buildSmallMultiples(degraded, options(style({ intervals, meanTimeNoIntervalNote: false })));
-          expect(noteTexts(off.speed)).withContext(`intervals ${intervals}`).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
-          expect(warning(noteTexts(off.speed))).withContext(`intervals ${intervals}`).toBeTrue();
+          expect(noteTexts(off.speed), `intervals ${intervals}`).not.toContain(MEAN_TIME_NO_INTERVAL_NOTE);
+          expect(warning(noteTexts(off.speed)), `intervals ${intervals}`).toBe(true);
         }
 
         for (const figureStyle of [DEFAULT_FIGURE_STYLE, style({ meanTimeNoIntervalNote: false })]) {
@@ -2245,7 +2254,7 @@ describe('model-comparison-charts', () => {
         };
         expect(x.ticks?.font?.size).toBe(16);
         expect(x.title?.font?.size).toBe(22);
-        expect(x.grid?.display).toBeFalse();
+        expect(x.grid?.display).toBe(false);
 
         const small = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, style: style({}, { markRadiusPx: 3 }) });
         expect(datasetsOf(small.config)[0]['hitRadius']).toBe(15);
@@ -2270,8 +2279,8 @@ describe('model-comparison-charts', () => {
 
         expect(hidden.plugins).not.toContain(errorBarPlugin);
         for (const axis of ['x', 'y'] as const) {
-          expect(scaleOf(hidden.config, axis).min).withContext(axis).toBe(scaleOf(bare.config, axis).min!);
-          expect(scaleOf(hidden.config, axis).max).withContext(axis).toBe(scaleOf(bare.config, axis).max!);
+          expect(scaleOf(hidden.config, axis).min, axis).toBe(scaleOf(bare.config, axis).min!);
+          expect(scaleOf(hidden.config, axis).max, axis).toBe(scaleOf(bare.config, axis).max!);
         }
         expect(shown.chrome.key.map((item) => item.glyph)).toContain('interval');
         expect(hidden.chrome.key.map((item) => item.glyph)).not.toContain('interval');
@@ -2287,12 +2296,11 @@ describe('model-comparison-charts', () => {
           style: style({}, { intervals: false, labelTextSizePx: 14, markRadiusPx: 8 }),
         });
         const pluginOptions = (labelled.config.options?.plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id];
-        expect(pluginOptions.avoidWhiskers).toBeFalse();
+        expect(pluginOptions.avoidWhiskers).toBe(false);
         expect(pluginOptions.fontSizePx).toBe(14);
         expect(pluginOptions.markRadiusPx).toBe(8);
         const defaultLabelled = buildQualityCostScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, directLabels: true });
-        expect((defaultLabelled.config.options?.plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id].avoidWhiskers)
-          .toBeTrue();
+        expect((defaultLabelled.config.options?.plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id].avoidWhiskers).toBe(true);
       });
 
       it('keeps the frontier note whatever the whiskers, and drops each note only on its own switch', () => {
@@ -2312,8 +2320,8 @@ describe('model-comparison-charts', () => {
 
         for (const intervals of [true, false]) {
           const spec = buildQualitySpeedScatter(WITHIN, withinOptions(style({}, { intervals, frontierIntervalsNote: false })));
-          expect(noteTexts(spec)).withContext(`intervals ${intervals}`).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
-          expect(spec.chrome.notes.some((note) => note.tone === 'warning')).withContext(`intervals ${intervals}`).toBeTrue();
+          expect(noteTexts(spec), `intervals ${intervals}`).not.toContain(FRONTIER_UNCERTAINTY_NOTE);
+          expect(spec.chrome.notes.some((note) => note.tone === 'warning'), `intervals ${intervals}`).toBe(true);
         }
         const silent = buildQualitySpeedScatter(WITHIN, withinOptions(style({}, {
           intervals: false,
@@ -2345,7 +2353,9 @@ describe('model-comparison-charts', () => {
         // The arrow follows the axis as drawn: no bar value axis is reversed.
         for (const [figure, orientation] of [[vertical, 'vertical'], [horizontal, 'horizontal']] as const) {
           for (const panel of [figure.quality, figure.speed, figure.cost]) {
-            expect((valueScaleOf(panel, orientation) as { reverse?: boolean }).reverse).withContext(panel.id).toBeUndefined();
+            expect((valueScaleOf(panel, orientation) as {
+              reverse?: boolean;
+            }).reverse, panel.id).toBeUndefined();
           }
         }
       });
@@ -2363,7 +2373,7 @@ describe('model-comparison-charts', () => {
         expect(titleLines(scaleOf(hidden.speed.config, 'y'))).toEqual(['Mean time per question (ms)', 'lower is better']);
         expect(titleLines(scaleOf(hidden.cost.config, 'y'))).toEqual(['Candidate cost per suite run', '(USD, 10 questions)', 'lower is better']);
         for (const panel of [hidden.quality, hidden.speed, hidden.cost]) {
-          expect(panel.chrome.direction).withContext(panel.id).toBeUndefined();
+          expect(panel.chrome.direction, panel.id).toBeUndefined();
         }
       });
 
@@ -2373,19 +2383,24 @@ describe('model-comparison-charts', () => {
             ...BASE_FIGURE_OPTIONS,
             style: style({}, { hiddenBadges: [...hiddenBadges] }),
           });
-          expect(titleLines(scaleOf(spec.config, 'x'))[1]).withContext(`${hiddenBadges}`).toBe('lower is better');
-          expect(titleLines(scaleOf(spec.config, 'y'))[1]).withContext(`${hiddenBadges}`).toBe('higher is better');
-          expect(spec.chrome.direction).withContext(`${hiddenBadges}`)
-            .toEqual(hiddenBadges.length === 0 ? { x: 'left', y: 'top', label: 'Better' } : undefined);
+          expect(titleLines(scaleOf(spec.config, 'x'))[1], `${hiddenBadges}`).toBe('lower is better');
+          expect(titleLines(scaleOf(spec.config, 'y'))[1], `${hiddenBadges}`).toBe('higher is better');
+          expect(spec.chrome.direction, `${hiddenBadges}`).toEqual(hiddenBadges.length === 0 ? { x: 'left', y: 'top', label: 'Better' } : undefined);
         }
       });
 
       it('leaves the plot of a scatter alone: no reserved top padding and no marker plugin', () => {
         const figures = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT });
         for (const spec of [figures.qualitySpeed, figures.qualityCost, figures.speedCost]) {
-          const layout = (spec.config.options as { layout?: { padding?: { top?: number } } }).layout;
-          expect(layout?.padding?.top).withContext(spec.id).toBeUndefined();
-          expect(Object.keys(spec.config.options?.plugins ?? {})).withContext(spec.id).not.toContain('overseerDirectionMarker');
+          const layout = (spec.config.options as {
+            layout?: {
+              padding?: {
+                top?: number;
+              };
+            };
+          }).layout;
+          expect(layout?.padding?.top, spec.id).toBeUndefined();
+          expect(Object.keys(spec.config.options?.plugins ?? {}), spec.id).not.toContain('overseerDirectionMarker');
         }
         expect(figures.qualitySpeed.plugins).toEqual([errorBarPlugin]);
       });
@@ -2396,10 +2411,10 @@ describe('model-comparison-charts', () => {
           style: style({}, { hiddenBadges: ['direction'] }),
         });
         for (const spec of [figures.qualitySpeed, figures.qualityCost, figures.speedCost]) {
-          expect(spec.chrome.direction).withContext(spec.id).toBeUndefined();
+          expect(spec.chrome.direction, spec.id).toBeUndefined();
         }
         for (const spec of [figures.smallMultiples.quality, figures.smallMultiples.speed, figures.smallMultiples.cost]) {
-          expect(spec.chrome.direction).withContext(spec.id).toBeDefined();
+          expect(spec.chrome.direction, spec.id).toBeDefined();
         }
       });
     });
@@ -2429,8 +2444,8 @@ describe('model-comparison-charts', () => {
           glyphs: buildIdentityGlyphs(entries),
         });
         for (const panel of [figure.quality, figure.speed, figure.cost]) {
-          expect(panel.config.data.labels?.[0]).withContext(panel.id).toBe(once.label);
-          expect(panel.config.data.labels?.[1]).withContext(panel.id).toBe(twice.label);
+          expect(panel.config.data.labels?.[0], panel.id).toBe(once.label);
+          expect(panel.config.data.labels?.[1], panel.id).toBe(twice.label);
         }
       });
 
@@ -2440,9 +2455,9 @@ describe('model-comparison-charts', () => {
           const expected = PRICED_IDS.includes(spec.id)
             ? ['models', 'runs', 'questions', 'pricing']
             : ['models', 'runs', 'questions'];
-          expect(kindsOf(spec)).withContext(spec.id).toEqual(expected);
+          expect(kindsOf(spec), spec.id).toEqual(expected);
           for (const badge of spec.chrome.badges) {
-            expect(badge.kind === 'pricing').withContext(`${spec.id} ${badge.text}`).toBe(badge.tone === 'pricing');
+            expect(badge.kind === 'pricing', `${spec.id} ${badge.text}`).toBe(badge.tone === 'pricing');
           }
         }
       });
@@ -2456,9 +2471,10 @@ describe('model-comparison-charts', () => {
         const plainById = new Map(allFigures(plain).map((spec) => [spec.id, spec]));
         for (const spec of allFigures(figures)) {
           if (BAR_IDS.includes(spec.id)) {
-            expect(kindsOf(spec)).withContext(spec.id).toEqual(['models', 'questions']);
-          } else {
-            expect(spec.chrome.badges).withContext(spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
+            expect(kindsOf(spec), spec.id).toEqual(['models', 'questions']);
+          }
+          else {
+            expect(spec.chrome.badges, spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
           }
         }
         expect(figures.smallMultiples.cost.chrome.detail).toBe(plain.smallMultiples.cost.chrome.detail);
@@ -2474,9 +2490,10 @@ describe('model-comparison-charts', () => {
         const plainById = new Map(allFigures(plain).map((spec) => [spec.id, spec]));
         for (const spec of allFigures(figures)) {
           if (SCATTER_IDS.includes(spec.id)) {
-            expect(kindsOf(spec)).withContext(spec.id).toEqual(['runs', 'questions']);
-          } else {
-            expect(spec.chrome.badges).withContext(spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
+            expect(kindsOf(spec), spec.id).toEqual(['runs', 'questions']);
+          }
+          else {
+            expect(spec.chrome.badges, spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
           }
         }
       });
@@ -2492,8 +2509,9 @@ describe('model-comparison-charts', () => {
           if (spec.id === 'p2-profile') {
             expect(kindsOf(spec)).toEqual(['models', 'runs', 'pricing']);
             expect(spec.chrome.detail).toBe(plainById.get(spec.id)!.chrome.detail);
-          } else {
-            expect(spec.chrome.badges).withContext(spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
+          }
+          else {
+            expect(spec.chrome.badges, spec.id).toEqual(plainById.get(spec.id)!.chrome.badges);
           }
         }
       });
@@ -2530,12 +2548,10 @@ describe('model-comparison-charts', () => {
           const off = build(false);
           const on = build(true);
           for (const panel of [off.quality, off.speed, off.cost]) {
-            expect(panel.config.data.labels).withContext(panel.id)
-              .toEqual(['GPT-5.6 Luna (max)', 'Gemini 3.7 Flash (high)', 'Plain Model']);
+            expect(panel.config.data.labels, panel.id).toEqual(['GPT-5.6 Luna (max)', 'Gemini 3.7 Flash (high)', 'Plain Model']);
           }
           for (const panel of [on.quality, on.speed, on.cost]) {
-            expect(panel.config.data.labels).withContext(panel.id)
-              .toEqual([['GPT-5.6 Luna', '(max)'], ['Gemini 3.7 Flash', '(high)'], 'Plain Model']);
+            expect(panel.config.data.labels, panel.id).toEqual([['GPT-5.6 Luna', '(max)'], ['Gemini 3.7 Flash', '(high)'], 'Plain Model']);
           }
         });
       }
@@ -2547,8 +2563,7 @@ describe('model-comparison-charts', () => {
           glyphs: buildIdentityGlyphs(entries),
         });
         for (const panel of [build(true).quality, build(true).speed, build(true).cost]) {
-          expect(panel.config.data.labels).withContext(panel.id)
-            .toEqual([['GPT-5.6 Luna', '(max)', 'n = 1'], ['Plain Model', 'n = 1']]);
+          expect(panel.config.data.labels, panel.id).toEqual([['GPT-5.6 Luna', '(max)', 'n = 1'], ['Plain Model', 'n = 1']]);
         }
         expect(build(false).quality.config.data.labels)
           .toEqual([['GPT-5.6 Luna (max)', 'n = 1'], ['Plain Model', 'n = 1']]);
@@ -2613,8 +2628,7 @@ describe('model-comparison-charts', () => {
             { text: 'Plain Model', datasetIndex: 2 },
             { text: 'Pareto frontier', datasetIndex: 3 },
           ];
-          spyOn(Chart.defaults.plugins.legend.labels, 'generateLabels')
-            .and.returnValue(defaults as unknown as ReturnType<typeof Chart.defaults.plugins.legend.labels.generateLabels>);
+          vi.spyOn(Chart.defaults.plugins.legend.labels, 'generateLabels').mockReturnValue(defaults as unknown as ReturnType<typeof Chart.defaults.plugins.legend.labels.generateLabels>);
           const generate = legendLabels({ legendPosition: 'right', thinkingLevelBreak: true }).generateLabels!;
           expect(generate({} as Chart).map((item) => item.text)).toEqual([
             ['GPT-5.6 Luna', '(max)'],
@@ -2841,13 +2855,13 @@ describe('number formats in the figures', () => {
     for (const [speedMeasure, text] of speeds) {
       const style = withNumbers({ meanModelTime: 0, totalModelTime: 0, ttftP50: 0, speedIndex: 0, [speedMeasure]: 3 });
       const figure = buildSmallMultiples(FORMAT_FIXTURE, formatOptions({ speedMeasure, style }));
-      expect(barText(figure.speed).label(0)).withContext(speedMeasure).toBe(text);
+      expect(barText(figure.speed).label(0), speedMeasure).toBe(text);
     }
     const costs: [CostMeasure, string][] = [['candidateSuite', '$0.076'], ['totalRun', '$0.3']];
     for (const [costMeasure, text] of costs) {
       const style = withNumbers({ suiteCost: costMeasure === 'candidateSuite' ? 3 : 0, totalRunCost: costMeasure === 'totalRun' ? 1 : 5 });
       const figure = buildSmallMultiples(FORMAT_FIXTURE, formatOptions({ costMeasure, style }));
-      expect(barText(figure.cost).label(0)).withContext(costMeasure).toBe(text);
+      expect(barText(figure.cost).label(0), costMeasure).toBe(text);
     }
   });
 
@@ -2858,7 +2872,7 @@ describe('number formats in the figures', () => {
     }));
     for (const panel of ['quality', 'speed', 'cost'] as const) {
       for (const index of [0, 1]) {
-        expect(barText(others[panel]).label(index)).withContext(`${panel} ${index}`).toBe(barText(base[panel]).label(index));
+        expect(barText(others[panel]).label(index), `${panel} ${index}`).toBe(barText(base[panel]).label(index));
       }
     }
   });
@@ -2873,16 +2887,16 @@ describe('number formats in the figures', () => {
     const before = allSpecs(plain);
     const after = allSpecs(precise);
     before.forEach((spec, i) => {
-      expect(datasetsOf(after[i].config).map((d) => d['data'])).withContext(spec.id).toEqual(datasetsOf(spec.config).map((d) => d['data']));
+      expect(datasetsOf(after[i].config).map((d) => d['data']), spec.id).toEqual(datasetsOf(spec.config).map((d) => d['data']));
       for (const axis of ['x', 'y'] as const) {
         const a = scaleOf(spec.config, axis);
         const b = scaleOf(after[i].config, axis);
-        expect(b.min).withContext(`${spec.id} ${axis}`).toBe(a.min);
-        expect(b.max).withContext(`${spec.id} ${axis}`).toBe(a.max);
-        expect(ticksOf(b)).withContext(`${spec.id} ${axis}`).toEqual(ticksOf(a));
+        expect(b.min, `${spec.id} ${axis}`).toBe(a.min);
+        expect(b.max, `${spec.id} ${axis}`).toBe(a.max);
+        expect(ticksOf(b), `${spec.id} ${axis}`).toEqual(ticksOf(a));
         const steps = [{ value: 0 }, { value: 2500 }];
         for (const value of [0, 0.05, 2500, 12345]) {
-          expect(b.ticks?.callback?.(value, 1, steps)).withContext(`${spec.id} ${axis} ${value}`).toEqual(a.ticks?.callback?.(value, 1, steps));
+          expect(b.ticks?.callback?.(value, 1, steps), `${spec.id} ${axis} ${value}`).toEqual(a.ticks?.callback?.(value, 1, steps));
         }
       }
     });
@@ -3012,7 +3026,7 @@ describe('number format samples', () => {
   it('leaves out a measure nothing plotted has, and everything for an empty set', () => {
     const none = [makeEntry({ key: 'x', speedIndex: null }), makeEntry({ key: 'y', speedIndex: null })];
     const samples = buildNumberSamples(none, { ...options, speedMeasure: 'speedIndex' }, 'profile');
-    expect('speedIndex' in samples).toBeFalse();
+    expect('speedIndex' in samples).toBe(false);
     expect(samples.intelligenceIndex).toEqual({ value: 50 });
     expect(buildNumberSamples([], options, 'scatter')).toEqual({});
   });
@@ -3094,7 +3108,7 @@ describe('the value-axis title break', () => {
     // The category axis and the tooltip keep their one-line titles in every mode.
     for (const figure of [always, never, auto]) {
       expect(scaleOf(figure.cost.config, 'x').title?.text).toBe('Model');
-      expect(barText(figure.cost).tooltip(0).startsWith(`${SUITE_TITLE}: `)).toBeTrue();
+      expect(barText(figure.cost).tooltip(0).startsWith(`${SUITE_TITLE}: `)).toBe(true);
     }
 
     const hidden = build({ axisTitleBreak: 'always', hiddenBadges: ['direction'] });
@@ -3230,9 +3244,9 @@ describe('the automatic title break on a real chart', () => {
     const length = orientation === 'vertical' ? scale.height : scale.width;
     const fits = widest(chart, scale, lines.unbroken) <= Math.max(0, length - AXIS_TITLE_RESERVE_PX);
     const text = titleText(scale) as string[];
-    expect(text).withContext(`${context}, axis ${length.toFixed(2)} px`).toEqual(fits ? [...lines.unbroken] : [...lines.broken!]);
+    expect(text, `${context}, axis ${length.toFixed(2)} px`).toEqual(fits ? [...lines.unbroken] : [...lines.broken!]);
     // Nothing is dropped, whichever form was drawn.
-    expect(text.slice(0, fits ? 1 : 2).join(' ')).withContext(context).toBe(COST_TITLE);
+    expect(text.slice(0, fits ? 1 : 2).join(' '), context).toBe(COST_TITLE);
     return fits ? 'unbroken' : 'broken';
   }
 
@@ -3262,9 +3276,9 @@ describe('the automatic title break on a real chart', () => {
               const chart = orientation === 'vertical' ? mount(spec, 420, length) : mount(spec, length, 320);
               outcomes.add(expectFinalDecision(chart, orientation, directionHidden, `${orientation} ${labels} ${titleSize}px hidden=${directionHidden} ${length}`));
             }
-            expect(source.title.text).withContext('source').toEqual(source.copy);
+            expect(source.title.text, 'source').toEqual(source.copy);
             if (titleSize === 12) {
-              expect(outcomes.size).withContext(`${orientation} ${labels} hidden=${directionHidden}: both forms reached`).toBe(2);
+              expect(outcomes.size, `${orientation} ${labels} hidden=${directionHidden}: both forms reached`).toBe(2);
             }
           }
         }
@@ -3281,8 +3295,8 @@ describe('the automatic title break on a real chart', () => {
         const chart = orientation === 'vertical' ? mount(spec, 420, length) : mount(spec, length, 320);
         outcomes.push(expectFinalDecision(chart, orientation, false, `${orientation} ${length}`));
       }
-      expect(outcomes).withContext(orientation).toContain('broken');
-      expect(outcomes).withContext(orientation).toContain('unbroken');
+      expect(outcomes, orientation).toContain('broken');
+      expect(outcomes, orientation).toContain('unbroken');
     }
   });
 
@@ -3316,12 +3330,12 @@ describe('the automatic title break on a real chart', () => {
           }
           // Whatever was decided, an unbroken title is never squeezed.
           if (!broken) {
-            expect(unbrokenFits).withContext(context).toBeTrue();
+            expect(unbrokenFits, context).toBe(true);
           }
         }
       }
     }
-    expect(skipped).withContext('the category axis autoskipped somewhere').toBeTrue();
+    expect(skipped, 'the category axis autoskipped somewhere').toBe(true);
   });
 
   it('keeps the whole broken title where even one line is longer than a too-short axis', () => {
@@ -3366,7 +3380,7 @@ describe('the automatic title break on a real chart', () => {
     for (const height of sweep(200, 600, 50)) {
       const one = mount(spec, 420, height, 1);
       const two = mount(spec, 420, height, 2);
-      expect(titleText(two.scales['y'])).withContext(String(height)).toEqual(titleText(one.scales['y']));
+      expect(titleText(two.scales['y']), String(height)).toEqual(titleText(one.scales['y']));
     }
   });
 });
@@ -3456,7 +3470,7 @@ describe('the figure theme in the charts', () => {
       const scatterX = themedScale(figures.qualitySpeed.config, 'x');
       expect(scatterX.ticks?.font).toEqual({ family: LATO, size: 11 });
       expect(scatterX.title?.font).toEqual({ size: 12 });
-      expect('font' in legendLabels(figures.qualitySpeed.config)).toBeFalse();
+      expect('font' in legendLabels(figures.qualitySpeed.config)).toBe(false);
       expect(Object.keys(pluginsOf(figures.qualitySpeed.config))).toEqual(['legend', 'tooltip', 'datalabels']);
       expect(Object.keys(directOptions(labelled.qualitySpeed.config)))
         .toEqual(['blocks', 'highlightedIndex', 'fontSizePx', 'markRadiusPx', 'avoidWhiskers']);
@@ -3501,14 +3515,14 @@ describe('the figure theme in the charts', () => {
       expect(profile[0]['pointBorderColor']).toBe('#ffffff');
       expect(profile[0]['borderColor']).toBe(CATEGORICAL_PALETTE_LIGHT[0]);
       expect(profile[1]['borderColor']).toBe(theme.chart.accent);
-      expect(profile.slice(2).every((dataset) => dataset['borderColor'] === theme.chart.deEmphasisStroke)).toBeTrue();
+      expect(profile.slice(2).every((dataset) => dataset['borderColor'] === theme.chart.deEmphasisStroke)).toBe(true);
     });
 
     it('gives the glyphs and the three panels the light provider hues', () => {
       const figures = figuresWith({ style: light });
       expect(PROFILE_FIXTURE.map((entry) => glyphFor(figures.glyphs, entry.key).hue)).toEqual([...CATEGORICAL_PALETTE_LIGHT]);
       for (const panel of [figures.smallMultiples.quality, figures.smallMultiples.speed, figures.smallMultiples.cost]) {
-        expect(datasetsOf(panel.config)[0]['backgroundColor']).withContext(panel.id).toEqual(['#2a78d6', '#eb6834', '#18a070']);
+        expect(datasetsOf(panel.config)[0]['backgroundColor'], panel.id).toEqual(['#2a78d6', '#eb6834', '#18a070']);
       }
     });
 
@@ -3542,8 +3556,8 @@ describe('the figure theme in the charts', () => {
     expect(datasetsOf(figures.qualitySpeed.config)[0]['borderColor']).toBe('#202020');
     const direct = directOptions(figures.qualitySpeed.config);
     expect(direct.surfaceColor).toBe('#202020');
-    expect('accentColor' in direct).toBeFalse();
-    expect('inkColor' in direct).toBeFalse();
+    expect('accentColor' in direct).toBe(false);
+    expect('inkColor' in direct).toBe(false);
     expect(pluginsOf(figures.qualitySpeed.config)[errorBarPlugin.id]).toBeUndefined();
   });
 
@@ -3634,7 +3648,7 @@ describe('the figure theme in the charts', () => {
       expect(fills).toContain('#9a6b12');
       expect(fills).toContain('#52514e');
       expect(fills).not.toContain(ACCENT);
-      expect(strokes.every((stroke) => stroke === '#6b6a66')).toBeTrue();
+      expect(strokes.every((stroke) => stroke === '#6b6a66')).toBe(true);
     });
   });
 
@@ -3677,7 +3691,7 @@ describe('the figure theme in the charts', () => {
       expect(datalabelsFont(figures.smallMultiples.speed.config)).toEqual({ size: 11, weight: 600 });
       expect(legendLabels(figures.qualitySpeed.config).font).toEqual({ weight: 600 });
       expect(directOptions(labelled.qualitySpeed.config).nameFontWeight).toBe(600);
-      expect('fontFamily' in directOptions(labelled.qualitySpeed.config)).toBeFalse();
+      expect('fontFamily' in directOptions(labelled.qualitySpeed.config)).toBe(false);
 
       const scatterX = themedScale(figures.qualitySpeed.config, 'x');
       expect(scatterX.ticks?.font).toEqual({ family: LATO, size: 11 });
@@ -3728,19 +3742,19 @@ describe('the figure theme in the charts', () => {
 
     it('is off by default', () => {
       const figures = figuresWith();
-      expect(allSpecs(figures).some((spec) => spec.plugins.includes(plotFramePlugin))).toBeFalse();
-      expect(allSpecs(figures).some((spec) => pluginsOf(spec.config)[plotFramePlugin.id] !== undefined)).toBeFalse();
+      expect(allSpecs(figures).some((spec) => spec.plugins.includes(plotFramePlugin))).toBe(false);
+      expect(allSpecs(figures).some((spec) => pluginsOf(spec.config)[plotFramePlugin.id] !== undefined)).toBe(false);
     });
 
     it('frames the bar panels from the bar style and the scatters from the trade-off style', () => {
       const barFramed = figuresWith({ style: styled({}, { plotFrame: true }) });
-      expect(panels(barFramed).every((spec) => spec.plugins.includes(plotFramePlugin))).toBeTrue();
-      expect(scatters(barFramed).some((spec) => spec.plugins.includes(plotFramePlugin))).toBeFalse();
+      expect(panels(barFramed).every((spec) => spec.plugins.includes(plotFramePlugin))).toBe(true);
+      expect(scatters(barFramed).some((spec) => spec.plugins.includes(plotFramePlugin))).toBe(false);
       expect(pluginsOf(barFramed.smallMultiples.speed.config)[plotFramePlugin.id]).toEqual({ color: CHART_INK.baseline });
 
       const scatterFramed = figuresWith({ style: styled({}, {}, { plotFrame: true }) });
-      expect(scatters(scatterFramed).every((spec) => spec.plugins.includes(plotFramePlugin))).toBeTrue();
-      expect(panels(scatterFramed).some((spec) => spec.plugins.includes(plotFramePlugin))).toBeFalse();
+      expect(scatters(scatterFramed).every((spec) => spec.plugins.includes(plotFramePlugin))).toBe(true);
+      expect(panels(scatterFramed).some((spec) => spec.plugins.includes(plotFramePlugin))).toBe(false);
     });
 
     it('never frames the profile, and takes the theme\'s frame colour', () => {

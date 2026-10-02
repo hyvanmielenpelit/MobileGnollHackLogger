@@ -62,11 +62,11 @@ describe('ModelIdentityComponent', () => {
     const host = render({ thinkingLevel: 'max', reasoningMode: 'pro' });
 
     const thinking = host.querySelector('.thinking-badge') as HTMLElement;
-    expect(thinking.firstElementChild?.classList.contains('visually-hidden')).toBeTrue();
+    expect(thinking.firstElementChild?.classList.contains('visually-hidden')).toBe(true);
     expect(thinking.textContent?.trim()).toBe('thinking level max');
 
     const reasoning = host.querySelector('.reasoning-badge') as HTMLElement;
-    expect(reasoning.firstElementChild?.classList.contains('visually-hidden')).toBeTrue();
+    expect(reasoning.firstElementChild?.classList.contains('visually-hidden')).toBe(true);
     expect(reasoning.textContent?.trim()).toBe('reasoning mode pro');
   });
 });

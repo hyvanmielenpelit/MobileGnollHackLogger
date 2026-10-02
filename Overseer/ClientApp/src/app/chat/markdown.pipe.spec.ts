@@ -1,13 +1,16 @@
+import type { MockedObject } from "vitest";
 import { MarkdownPipe } from './markdown.pipe';
 import { DomSanitizer } from '@angular/platform-browser';
 
 describe('MarkdownPipe', () => {
   let pipe: MarkdownPipe;
-  let mockSanitizer: jasmine.SpyObj<DomSanitizer>;
+  let mockSanitizer: MockedObject<DomSanitizer>;
 
   beforeEach(() => {
-    mockSanitizer = jasmine.createSpyObj('DomSanitizer', ['bypassSecurityTrustHtml']);
-    mockSanitizer.bypassSecurityTrustHtml.and.callFake((html: string) => html as any);
+    mockSanitizer = {
+      bypassSecurityTrustHtml: vi.fn().mockName("DomSanitizer.bypassSecurityTrustHtml")
+    } as unknown as MockedObject<DomSanitizer>;
+    mockSanitizer.bypassSecurityTrustHtml.mockImplementation((html: string) => html as any);
     pipe = new MarkdownPipe(mockSanitizer);
   });
 

@@ -58,7 +58,7 @@ describe('CollapsibleMarkdownComponent', () => {
     toggleBtn.click();
     fixture.detectChanges();
 
-    expect(component.isExpanded).toBeTrue();
+    expect(component.isExpanded).toBe(true);
     expect(toggleBtn.getAttribute('aria-expanded')).toBe('true');
     expect(toggleBtn.getAttribute('aria-label')).toBe('Show less of expected answer criteria');
     expect(toggleBtn.textContent.trim()).toBe('Show less');
@@ -71,11 +71,11 @@ describe('CollapsibleMarkdownComponent', () => {
     fixture.detectChanges();
 
     const contentEl = fixture.nativeElement.querySelector('.markdown-content');
-    expect(contentEl.classList.contains('collapsed')).toBeTrue();
+    expect(contentEl.classList.contains('collapsed')).toBe(true);
 
     component.isExpanded = true;
     fixture.detectChanges();
-    expect(contentEl.classList.contains('collapsed')).toBeFalse();
+    expect(contentEl.classList.contains('collapsed')).toBe(false);
   });
 
   it('should carry both markdown-content and markdown-body on the rendered content', () => {
@@ -84,6 +84,6 @@ describe('CollapsibleMarkdownComponent', () => {
 
     const contentEl = fixture.nativeElement.querySelector('.markdown-content');
     expect(contentEl).toBeTruthy();
-    expect(contentEl.classList.contains('markdown-body')).toBeTrue();
+    expect(contentEl.classList.contains('markdown-body')).toBe(true);
   });
 });

@@ -3,11 +3,12 @@
   "version": "1.1.2",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve --port 44447",
+    "start": "node serve-https.js",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "test:headless": "ng test --no-watch --browsers=ChromeHeadless"
+    "test:headless": "ng test --no-watch",
+    "test:profile": "ng test --no-watch --reporters=verbose"
   },
   "private": true,
   "dependencies": {
@@ -45,15 +46,10 @@
     "@angular/cli": "^22.1.8",
     "@angular/compiler-cli": "^22.1.6",
     "@sentry/cli": "^3.7.0",
-    "@types/jasmine": "~5.1.0",
-    "istanbul-lib-instrument": "^6.0.3",
-    "jasmine-core": "~5.2.0",
-    "karma": "~6.4.0",
-    "karma-chrome-launcher": "~3.2.0",
-    "karma-coverage": "~2.2.0",
-    "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.3.0",
-    "typescript": "~6.0.3"
+    "@vitest/browser-playwright": "^4.1.11",
+    "playwright": "^1.63.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11"
   },
   "allowScripts": {
     "esbuild": true,

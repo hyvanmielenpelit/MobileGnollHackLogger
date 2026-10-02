@@ -67,7 +67,7 @@ describe('figure-size', () => {
 
     expect(JSON.parse(localStorage.getItem(FIGURE_SIZE_STORAGE_KEY)!).version).toBe(1);
     expect(readStoredFigureSize(1)).toEqual(size);
-    expect(sameFigureSize(readStoredFigureSize(1), size)).toBeTrue();
+    expect(sameFigureSize(readStoredFigureSize(1), size)).toBe(true);
 
     const preset: FigureSizeSettings = { ...defaultFigureSize(1), resolutionId: 'a4p', densitySelection: 3 };
     writeStoredFigureSize(preset);
@@ -118,8 +118,12 @@ describe('figure-size', () => {
   });
 
   it('leaves the defaults when storage throws, on read and on write', () => {
-    spyOn(Storage.prototype, 'getItem').and.throwError('blocked');
-    spyOn(Storage.prototype, 'setItem').and.throwError('blocked');
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
 
     expect(readStoredFigureSize(1)).toEqual(defaultFigureSize(1));
     expect(() => writeStoredFigureSize({ ...defaultFigureSize(1), resolutionId: 'hd' })).not.toThrow();
@@ -127,9 +131,9 @@ describe('figure-size', () => {
 
   it('tells a size apart from the default by any one field', () => {
     const base = defaultFigureSize(1);
-    expect(sameFigureSize(base, defaultFigureSize(1))).toBeTrue();
-    expect(sameFigureSize(base, { ...base, textScalePercent: 105 })).toBeFalse();
-    expect(sameFigureSize(base, { ...base, densitySelection: 'custom' })).toBeFalse();
+    expect(sameFigureSize(base, defaultFigureSize(1))).toBe(true);
+    expect(sameFigureSize(base, { ...base, textScalePercent: 105 })).toBe(false);
+    expect(sameFigureSize(base, { ...base, densitySelection: 'custom' })).toBe(false);
   });
 
   it('reads a stored table fit size as Full HD for the charts', () => {
@@ -174,9 +178,9 @@ describe('figure-size', () => {
     const base = defaultFigureSize(1);
 
     it('resolves presets, custom pairs and fit', () => {
-      expect(resolveSizeResolution({ ...base, resolutionId: 'uhd' })).toEqual(jasmine.objectContaining({ widthPx: 3840, heightPx: 2160 }));
+      expect(resolveSizeResolution({ ...base, resolutionId: 'uhd' })).toEqual(expect.objectContaining({ widthPx: 3840, heightPx: 2160 }));
       expect(resolveSizeResolution({ ...base, resolutionId: 'custom', customWidthPx: 100, customHeightPx: 9999.6 }))
-        .toEqual(jasmine.objectContaining({ id: 'custom', widthPx: 320, heightPx: 8000 }));
+        .toEqual(expect.objectContaining({ id: 'custom', widthPx: 320, heightPx: 8000 }));
       expect(resolveSizeResolution({ ...base, resolutionId: 'fit' }).id).toBe('fullhd');
     });
 

@@ -1,3 +1,4 @@
+import { isDevMode } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { appConfig } from './app/app.config';
 import { AppComponent } from './app/app.component';
@@ -22,6 +23,7 @@ Sentry.init({
   tunnel: '/api/sentry/log',
   transport: (options) => Sentry.makeFetchTransport(options, sentryFetchWithCredentials),
   release: packageJson.version, // Automatically matches package.json and MSBuild SyncAngularVersion
+  environment: isDevMode() ? 'development' : 'production',
   integrations: (integrations) => integrations.filter(i => i.name !== 'BrowserSession'),
   sendClientReports: false,
   beforeSend: sentryBeforeSend

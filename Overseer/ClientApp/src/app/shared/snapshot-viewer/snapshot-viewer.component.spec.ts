@@ -1,3 +1,4 @@
+import type { Mock, MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { SnapshotViewerComponent } from './snapshot-viewer.component';
@@ -20,22 +21,22 @@ function textResponse(
 describe('SnapshotViewerComponent', () => {
   let component: SnapshotViewerComponent;
   let fixture: ComponentFixture<SnapshotViewerComponent>;
-  let mockBenchmarkService: jasmine.SpyObj<AdminBenchmarkService>;
+  let mockBenchmarkService: MockedObject<AdminBenchmarkService>;
   let host: HTMLElement;
 
   beforeEach(async () => {
-    spyOn(Storage.prototype, 'getItem').and.returnValue(null);
+    vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
 
-    mockBenchmarkService = jasmine.createSpyObj('AdminBenchmarkService', [
-      'getSnapshot',
-      'getSnapshotTextUrl',
-      'updateSnapshot',
-      'updateSnapshotText',
-      'regenerateSnapshotDigest',
-      'deleteSnapshot'
-    ]);
+    mockBenchmarkService = {
+      getSnapshot: vi.fn().mockName("AdminBenchmarkService.getSnapshot"),
+      getSnapshotTextUrl: vi.fn().mockName("AdminBenchmarkService.getSnapshotTextUrl"),
+      updateSnapshot: vi.fn().mockName("AdminBenchmarkService.updateSnapshot"),
+      updateSnapshotText: vi.fn().mockName("AdminBenchmarkService.updateSnapshotText"),
+      regenerateSnapshotDigest: vi.fn().mockName("AdminBenchmarkService.regenerateSnapshotDigest"),
+      deleteSnapshot: vi.fn().mockName("AdminBenchmarkService.deleteSnapshot")
+    } as unknown as MockedObject<AdminBenchmarkService>;
 
-    mockBenchmarkService.getSnapshot.and.returnValue(of({
+    mockBenchmarkService.getSnapshot.mockReturnValue(of({
       id: 1,
       name: 'Emergency Low HP',
       charCount: 15000,
@@ -44,7 +45,7 @@ describe('SnapshotViewerComponent', () => {
       sanitizedText: 'Line 1\nLine 2',
       createdAtUtc: new Date().toISOString()
     }));
-    mockBenchmarkService.getSnapshotTextUrl.and.callFake((id: number) => `/api/admin/benchmark/snapshots/${id}/text`);
+    mockBenchmarkService.getSnapshotTextUrl.mockImplementation((id: number) => `/api/admin/benchmark/snapshots/${id}/text`);
 
     await TestBed.configureTestingModule({
       imports: [SnapshotViewerComponent],
@@ -66,7 +67,7 @@ describe('SnapshotViewerComponent', () => {
   });
 
   function openWith(snapshot: BenchmarkGameSnapshotDto) {
-    mockBenchmarkService.getSnapshot.and.returnValue(of(snapshot));
+    mockBenchmarkService.getSnapshot.mockReturnValue(of(snapshot));
     component.open(1);
     fixture.detectChanges();
   }
@@ -170,7 +171,7 @@ describe('SnapshotViewerComponent', () => {
       sanitizedText: 'Some text [SNAPSHOT TRUNCATED at 60000 chars]',
       createdAtUtc: new Date().toISOString()
     };
-    expect(component.hasTruncationMarker).toBeTrue();
+    expect(component.hasTruncationMarker).toBe(true);
   });
 
   describe('the tabs', () => {
@@ -256,8 +257,8 @@ describe('SnapshotViewerComponent', () => {
       tab('snapshot').click();
       fixture.detectChanges();
       expect(textEditor()).toBe(editor);
-      expect(editor.dirty).toBeTrue();
-      expect(editor.currentText()!.startsWith('Edited Map:')).toBeTrue();
+      expect(editor.dirty).toBe(true);
+      expect(editor.currentText()!.startsWith('Edited Map:')).toBe(true);
     });
 
     it('names every action in words, with no emoji, on every tab and in the download confirmation', async () => {
@@ -265,7 +266,7 @@ describe('SnapshotViewerComponent', () => {
 
       function expectNoEmoji() {
         for (const button of buttons()) {
-          expect(/\p{Extended_Pictographic}/u.test(button.textContent ?? '')).withContext(button.textContent ?? '').toBeFalse();
+          expect(/\p{Extended_Pictographic}/u.test(button.textContent ?? ''), button.textContent ?? '').toBe(false);
         }
       }
 
@@ -275,7 +276,7 @@ describe('SnapshotViewerComponent', () => {
 
       for (const name of ['Close game snapshot', 'Find', 'Copy Text', 'Copy with line numbers',
                           'Download .snapshot.txt of Emergency Low HP', 'Revert', 'Save Changes']) {
-        expect(buttonNamed(name)).withContext(name).toBeTruthy();
+        expect(buttonNamed(name), name).toBeTruthy();
       }
       expect(countNamed('Save Changes')).toBe(1);
       expect(countNamed('Revert')).toBe(1);
@@ -284,7 +285,7 @@ describe('SnapshotViewerComponent', () => {
 
       clickTab('metadata');
       for (const name of ['Copy SHA-256', 'Regenerate digest from snapshot', 'Revert', 'Save Changes']) {
-        expect(buttonNamed(name)).withContext(name).toBeTruthy();
+        expect(buttonNamed(name), name).toBeTruthy();
       }
       expect(countNamed('Save Changes')).toBe(1);
       expect(buttonNamed('Edit Metadata')).toBeUndefined();
@@ -295,7 +296,7 @@ describe('SnapshotViewerComponent', () => {
       expectNoEmoji();
 
       for (const name of ['Cancel', 'Download saved text', 'Save and download']) {
-        expect(buttonNamed(name)).withContext(name).toBeTruthy();
+        expect(buttonNamed(name), name).toBeTruthy();
       }
     });
   });
@@ -311,7 +312,7 @@ describe('SnapshotViewerComponent', () => {
       clickTab('delete');
 
       const panel = deletePanel();
-      expect(panel.hidden).toBeFalse();
+      expect(panel.hidden).toBe(false);
       expect(panel.querySelector('h4')!.textContent!.trim()).toBe('Delete snapshot');
       const warning = panel.querySelector('.alert-danger')!;
       expect(warning.getAttribute('role')).toBeNull();
@@ -355,7 +356,7 @@ describe('SnapshotViewerComponent', () => {
     it('keeps Delete Snapshot on the tab but unavailable while a save is in flight', async () => {
       await openReady();
       const pending = new Subject<UpdateBenchmarkSnapshotTextResponse>();
-      mockBenchmarkService.updateSnapshotText.and.returnValue(pending.asObservable());
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(pending.asObservable());
       editText();
       saveAllButton().click();
       fixture.detectChanges();
@@ -366,7 +367,7 @@ describe('SnapshotViewerComponent', () => {
       expect(button.getAttribute('aria-disabled')).toBe('true');
       button.click();
       fixture.detectChanges();
-      expect(component.deleteConfirmDialog.nativeElement.open).toBeFalse();
+      expect(component.deleteConfirmDialog.nativeElement.open).toBe(false);
 
       pending.next(textResponse('saved'));
       pending.complete();
@@ -384,15 +385,15 @@ describe('SnapshotViewerComponent', () => {
     });
 
     it('deletes on confirm, emits the id and closes', async () => {
-      mockBenchmarkService.deleteSnapshot.and.returnValue(of(undefined));
-      const deleted = jasmine.createSpy('snapshotDeleted');
+      mockBenchmarkService.deleteSnapshot.mockReturnValue(of(undefined));
+      const deleted = vi.fn().mockName('snapshotDeleted');
       component.snapshotDeleted.subscribe(deleted);
       await openReady();
       clickTab('delete');
 
       deletePanel().querySelector<HTMLButtonElement>('.delete-snapshot-btn')!.click();
       fixture.detectChanges();
-      expect(component.deleteConfirmDialog.nativeElement.open).toBeTrue();
+      expect(component.deleteConfirmDialog.nativeElement.open).toBe(true);
       expect(document.activeElement?.textContent?.trim()).toBe('Cancel');
       expect(mockBenchmarkService.deleteSnapshot).not.toHaveBeenCalled();
 
@@ -401,13 +402,13 @@ describe('SnapshotViewerComponent', () => {
 
       expect(mockBenchmarkService.deleteSnapshot).toHaveBeenCalledWith(1);
       expect(deleted).toHaveBeenCalledWith(1);
-      expect(component.deleteConfirmDialog.nativeElement.open).toBeFalse();
-      expect(component.viewerDialog.nativeElement.open).toBeFalse();
+      expect(component.deleteConfirmDialog.nativeElement.open).toBe(false);
+      expect(component.viewerDialog.nativeElement.open).toBe(false);
     });
 
     it('keeps the confirmation open with the message when the delete fails', async () => {
-      mockBenchmarkService.deleteSnapshot.and.returnValue(throwError(() => ({ error: { error: 'Snapshot is locked.' } })));
-      const deleted = jasmine.createSpy('snapshotDeleted');
+      mockBenchmarkService.deleteSnapshot.mockReturnValue(throwError(() => ({ error: { error: 'Snapshot is locked.' } })));
+      const deleted = vi.fn().mockName('snapshotDeleted');
       component.snapshotDeleted.subscribe(deleted);
       await openReady();
 
@@ -416,7 +417,7 @@ describe('SnapshotViewerComponent', () => {
       component.confirmDelete();
       fixture.detectChanges();
 
-      expect(component.deleteConfirmDialog.nativeElement.open).toBeTrue();
+      expect(component.deleteConfirmDialog.nativeElement.open).toBe(true);
       expect(host.querySelector('.snapshot-delete-confirm [role="alert"]')!.textContent).toContain('Snapshot is locked.');
       expect(deleted).not.toHaveBeenCalled();
     });
@@ -460,7 +461,7 @@ describe('SnapshotViewerComponent', () => {
     });
 
     it('announces a SHA-256 copy', async () => {
-      const writeText = spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
       await openReady();
 
       component.copySha();
@@ -480,7 +481,7 @@ describe('SnapshotViewerComponent', () => {
       expect(revert.getAttribute('aria-disabled')).toBe('true');
 
       typeInto(nameInput(), 'Renamed');
-      expect(component.metadataDirty).toBeTrue();
+      expect(component.metadataDirty).toBe(true);
       expect(save.getAttribute('aria-disabled')).toBeNull();
       expect(revert.getAttribute('aria-disabled')).toBeNull();
 
@@ -495,23 +496,23 @@ describe('SnapshotViewerComponent', () => {
     });
 
     it('saves the form, re-initialises it from the response and shows Saved.', async () => {
-      const updatedSpy = jasmine.createSpy('snapshotUpdated');
+      const updatedSpy = vi.fn().mockName('snapshotUpdated');
       component.snapshotUpdated.subscribe(updatedSpy);
       await openReady();
       await fixture.whenStable();
-      mockBenchmarkService.updateSnapshot.and.returnValue(of(snapshotWith(buildBoard(), { name: 'Renamed' })));
+      mockBenchmarkService.updateSnapshot.mockReturnValue(of(snapshotWith(buildBoard(), { name: 'Renamed' })));
 
       typeInto(nameInput(), '  Renamed  ');
       buttonNamed('Save Changes')!.click();
       fixture.detectChanges();
 
-      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, jasmine.objectContaining({ name: 'Renamed' }));
+      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, expect.objectContaining({ name: 'Renamed' }));
       expect(component.snapshot!.name).toBe('Renamed');
       expect(component.editName).toBe('Renamed');
-      expect(component.metadataDirty).toBeFalse();
+      expect(component.metadataDirty).toBe(false);
       expect(host.querySelector('.viewer-status .is-ok')!.textContent!.trim()).toBe('Saved.');
       expect(mockBenchmarkService.updateSnapshotText).not.toHaveBeenCalled();
-      expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ name: 'Renamed' }));
+      expect(updatedSpy).toHaveBeenCalledWith(expect.objectContaining({ name: 'Renamed' }));
     });
 
     it('refuses to save an empty name', async () => {
@@ -541,8 +542,7 @@ describe('SnapshotViewerComponent', () => {
       component.selectTab('metadata');
       fixture.detectChanges();
       expect(digestText()).toBe('the old prefix digest');
-      mockBenchmarkService.regenerateSnapshotDigest.and.returnValue(
-        of(snapshotWith(buildBoard(), { digestText: rebuilt })));
+      mockBenchmarkService.regenerateSnapshotDigest.mockReturnValue(of(snapshotWith(buildBoard(), { digestText: rebuilt })));
 
       regenerateButton().click();
       fixture.detectChanges();
@@ -550,7 +550,7 @@ describe('SnapshotViewerComponent', () => {
       expect(mockBenchmarkService.regenerateSnapshotDigest).toHaveBeenCalledWith(1);
       expect(digestText()).toBe(rebuilt);
       expect(component.snapshot!.digestText).toBe(rebuilt);
-      expect(component.metadataDirty).toBeFalse();
+      expect(component.metadataDirty).toBe(false);
     });
 
     it('marks the button busy and refuses a second click while the request is pending', async () => {
@@ -558,7 +558,7 @@ describe('SnapshotViewerComponent', () => {
       component.selectTab('metadata');
       fixture.detectChanges();
       const pending = new Subject<BenchmarkGameSnapshotDto>();
-      mockBenchmarkService.regenerateSnapshotDigest.and.returnValue(pending.asObservable());
+      mockBenchmarkService.regenerateSnapshotDigest.mockReturnValue(pending.asObservable());
 
       regenerateButton().click();
       fixture.detectChanges();
@@ -597,8 +597,7 @@ describe('SnapshotViewerComponent', () => {
       expect(notice()).not.toBeNull();
       expect(notice()!.textContent).toContain('holds 2 carriage return characters');
 
-      mockBenchmarkService.updateSnapshotText.and.returnValue(
-        of(textResponse('Map:\nThe hero is here.\nInventory:\na - an apple', { sha256: 'def0987654321' })));
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(of(textResponse('Map:\nThe hero is here.\nInventory:\na - an apple', { sha256: 'def0987654321' })));
       normalizeButton().click();
       fixture.detectChanges();
 
@@ -621,35 +620,34 @@ describe('SnapshotViewerComponent', () => {
 
   describe('editing the text', () => {
     it('saves with the loaded SHA-256 and stays on the tab with the saved text clean', async () => {
-      const updatedSpy = jasmine.createSpy('snapshotUpdated');
+      const updatedSpy = vi.fn().mockName('snapshotUpdated');
       component.snapshotUpdated.subscribe(updatedSpy);
       await openReady();
       editText('one\ntwo\n');
-      mockBenchmarkService.updateSnapshotText.and.returnValue(
-        of(textResponse('one\ntwo\nthree', { sha256: 'def0987654321', digestText: 'rebuilt digest' })));
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(of(textResponse('one\ntwo\nthree', { sha256: 'def0987654321', digestText: 'rebuilt digest' })));
 
       textEditor().save.emit(textEditor().currentText()!);
       fixture.detectChanges();
 
       expect(mockBenchmarkService.updateSnapshotText).toHaveBeenCalledWith(1, {
-        text: jasmine.stringMatching(/^one\ntwo\nMap:/),
+        text: expect.stringMatching(/^one\ntwo\nMap:/),
         expectedSha256: 'abc1234567890'
       });
       expect(component.activeTab).toBe('snapshot');
       expect(textEditor().currentText()).toBe('one\ntwo\nthree');
-      expect(textEditor().dirty).toBeFalse();
-      expect(component.editingTextDirty).toBeFalse();
+      expect(textEditor().dirty).toBe(false);
+      expect(component.editingTextDirty).toBe(false);
       expect(host.querySelector('.viewer-status .is-ok')!.textContent!.trim()).toBe('Saved. SHA-256 and digest updated.');
       expect(mockBenchmarkService.updateSnapshot).not.toHaveBeenCalled();
       expect(component.editDigestText).toBe('rebuilt digest');
       expect(host.querySelector('.sha-box')!.textContent).toContain('def0987654321');
-      expect(updatedSpy).toHaveBeenCalledWith(jasmine.objectContaining({ charCount: 13, sha256: 'def0987654321' }));
+      expect(updatedSpy).toHaveBeenCalledWith(expect.objectContaining({ charCount: 13, sha256: 'def0987654321' }));
     });
 
     it('lists a missing board-facts literal under the save confirmation, with the repair sentence', async () => {
       await openReady();
       editText();
-      mockBenchmarkService.updateSnapshotText.and.returnValue(of(textResponse('saved', {}, {
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(of(textResponse('saved', {}, {
         bulletCount: 10,
         checkedLiteralCount: 9,
         unquotedBulletCount: 1,
@@ -671,7 +669,7 @@ describe('SnapshotViewerComponent', () => {
     it('shows no board-facts notice when nothing is missing', async () => {
       await openReady();
       editText();
-      mockBenchmarkService.updateSnapshotText.and.returnValue(of(textResponse('saved', {}, {
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(of(textResponse('saved', {}, {
         bulletCount: 10,
         checkedLiteralCount: 10,
         unquotedBulletCount: 0,
@@ -690,41 +688,40 @@ describe('SnapshotViewerComponent', () => {
       await openReady();
       component.editDigestText = 'my digest edit';
       editText();
-      mockBenchmarkService.updateSnapshotText.and.returnValue(
-        of(textResponse('saved', { digestText: 'rebuilt digest' })));
-      mockBenchmarkService.updateSnapshot.and.returnValue(of(snapshotWith('saved', { digestText: 'my digest edit' })));
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(of(textResponse('saved', { digestText: 'rebuilt digest' })));
+      mockBenchmarkService.updateSnapshot.mockReturnValue(of(snapshotWith('saved', { digestText: 'my digest edit' })));
 
       textEditor().save.emit('saved');
       fixture.detectChanges();
-      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, jasmine.objectContaining({ digestText: 'my digest edit' }));
+      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, expect.objectContaining({ digestText: 'my digest edit' }));
       expect(component.editDigestText).toBe('my digest edit');
       expect(component.snapshot!.digestText).toBe('my digest edit');
-      expect(component.metadataDirty).toBeFalse();
+      expect(component.metadataDirty).toBe(false);
     });
 
     it('keeps the buffer and shows the server message when the save fails', async () => {
       await openReady();
       editText();
       const message = 'The snapshot text was changed by someone else since it was loaded. Reload the snapshot and reapply your edit.';
-      mockBenchmarkService.updateSnapshotText.and.returnValue(throwError(() => ({ status: 409, error: { error: message } })));
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(throwError(() => ({ status: 409, error: { error: message } })));
 
       textEditor().save.emit(textEditor().currentText()!);
       fixture.detectChanges();
 
       expect(footerStatus()).toBe(`Snapshot text: ${message}`);
-      expect(textEditor().dirty).toBeTrue();
-      expect(component.savingText).toBeFalse();
+      expect(textEditor().dirty).toBe(true);
+      expect(component.savingText).toBe(false);
     });
   });
 
   describe('Save Changes and Revert across both tabs', () => {
     function requestLog(): string[] {
       const log: string[] = [];
-      mockBenchmarkService.updateSnapshotText.and.callFake(() => {
+      mockBenchmarkService.updateSnapshotText.mockImplementation(() => {
         log.push('text');
         return of(textResponse('saved text', { sha256: 'def0987654321' }));
       });
-      mockBenchmarkService.updateSnapshot.and.callFake(() => {
+      mockBenchmarkService.updateSnapshot.mockImplementation(() => {
         log.push('metadata');
         return of(snapshotWith('saved text', { name: 'Renamed' }));
       });
@@ -747,9 +744,9 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
 
       expect(log).toEqual(['text', 'metadata']);
-      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, jasmine.objectContaining({ name: 'Renamed' }));
-      expect(component.editingTextDirty).toBeFalse();
-      expect(component.metadataDirty).toBeFalse();
+      expect(mockBenchmarkService.updateSnapshot).toHaveBeenCalledWith(1, expect.objectContaining({ name: 'Renamed' }));
+      expect(component.editingTextDirty).toBe(false);
+      expect(component.metadataDirty).toBe(false);
       expect(footerStatus()).toBe('Saved. SHA-256 and digest updated.');
       expect(saveAllButton().getAttribute('aria-disabled')).toBe('true');
     });
@@ -757,31 +754,29 @@ describe('SnapshotViewerComponent', () => {
     it('sends no metadata request when the text save fails, and keeps the metadata edit', async () => {
       await openReady();
       await editBoth();
-      mockBenchmarkService.updateSnapshotText.and.returnValue(
-        throwError(() => ({ status: 409, error: { error: 'Changed by someone else.' } })));
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(throwError(() => ({ status: 409, error: { error: 'Changed by someone else.' } })));
 
       saveAllButton().click();
       fixture.detectChanges();
 
       expect(mockBenchmarkService.updateSnapshot).not.toHaveBeenCalled();
-      expect(component.metadataDirty).toBeTrue();
-      expect(component.editingTextDirty).toBeTrue();
+      expect(component.metadataDirty).toBe(true);
+      expect(component.editingTextDirty).toBe(true);
       expect(footerStatus()).toBe('Snapshot text: Changed by someone else.');
     });
 
     it('says the text was saved when the metadata save after it fails', async () => {
       await openReady();
       await editBoth();
-      mockBenchmarkService.updateSnapshotText.and.returnValue(of(textResponse('saved text')));
-      mockBenchmarkService.updateSnapshot.and.returnValue(
-        throwError(() => ({ status: 409, error: { message: 'A benchmark snapshot named "Renamed" already exists.' } })));
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(of(textResponse('saved text')));
+      mockBenchmarkService.updateSnapshot.mockReturnValue(throwError(() => ({ status: 409, error: { message: 'A benchmark snapshot named "Renamed" already exists.' } })));
 
       saveAllButton().click();
       fixture.detectChanges();
 
       expect(footerStatus()).toBe('Snapshot text saved. Metadata: A benchmark snapshot named "Renamed" already exists.');
-      expect(component.editingTextDirty).toBeFalse();
-      expect(component.metadataDirty).toBeTrue();
+      expect(component.editingTextDirty).toBe(false);
+      expect(component.metadataDirty).toBe(true);
       expect(saveAllButton().getAttribute('aria-disabled')).toBeNull();
     });
 
@@ -800,7 +795,7 @@ describe('SnapshotViewerComponent', () => {
       expect(tab('metadata').getAttribute('aria-selected')).toBe('true');
       expect(document.activeElement).toBe(nameInput());
       expect(footerStatus()).toBe('Metadata: Snapshot name is required.');
-      expect(component.editingTextDirty).toBeTrue();
+      expect(component.editingTextDirty).toBe(true);
     });
 
     it('saves a text-only edit from the Metadata tab', async () => {
@@ -814,7 +809,7 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
 
       expect(log).toEqual(['text']);
-      expect(component.editingTextDirty).toBeFalse();
+      expect(component.editingTextDirty).toBe(false);
     });
 
     it('saves the metadata too from Ctrl+S in the text editor', async () => {
@@ -827,7 +822,7 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
 
       expect(log).toEqual(['text', 'metadata']);
-      expect(component.metadataDirty).toBeFalse();
+      expect(component.metadataDirty).toBe(false);
     });
 
     it('reverts at once when only the tab in view is dirty', async () => {
@@ -838,7 +833,7 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
       expect(host.querySelector('.discard-strip')).toBeNull();
       expect(textEditor().currentText()).toBe(board);
-      expect(component.editingTextDirty).toBeFalse();
+      expect(component.editingTextDirty).toBe(false);
 
       await fixture.whenStable();
       clickTab('metadata');
@@ -847,7 +842,7 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
       expect(host.querySelector('.discard-strip')).toBeNull();
       expect(component.editName).toBe('Emergency Low HP');
-      expect(component.metadataDirty).toBeFalse();
+      expect(component.metadataDirty).toBe(false);
     });
 
     it('asks before reverting an edit on the other tab; Keep editing keeps it, Revert reverts both', async () => {
@@ -860,11 +855,11 @@ describe('SnapshotViewerComponent', () => {
       fixture.detectChanges();
       expect(discardLabel()).toBe('Revert unsaved changes to the snapshot text?');
       expect((document.activeElement?.textContent ?? '').trim()).toBe('Keep editing');
-      expect(component.editingTextDirty).toBeTrue();
+      expect(component.editingTextDirty).toBe(true);
 
       clickButtonNamed('Keep editing');
       expect(host.querySelector('.discard-strip')).toBeNull();
-      expect(component.editingTextDirty).toBeTrue();
+      expect(component.editingTextDirty).toBe(true);
       expect(document.activeElement).toBe(nameInput());
 
       await fixture.whenStable();
@@ -877,9 +872,9 @@ describe('SnapshotViewerComponent', () => {
 
       expect(host.querySelector('.discard-strip')).toBeNull();
       expect(textEditor().currentText()).toBe(board);
-      expect(component.editingTextDirty).toBeFalse();
-      expect(component.metadataDirty).toBeFalse();
-      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+      expect(component.editingTextDirty).toBe(false);
+      expect(component.metadataDirty).toBe(false);
+      expect(component.viewerDialog.nativeElement.open).toBe(true);
     });
 
     it('marks a tab holding unsaved changes in its accessible name, until it is saved', async () => {
@@ -903,7 +898,7 @@ describe('SnapshotViewerComponent', () => {
     it('closes at once when nothing is unsaved', async () => {
       await openReady();
       clickButtonNamed('Close game snapshot');
-      expect(component.viewerDialog.nativeElement.open).toBeFalse();
+      expect(component.viewerDialog.nativeElement.open).toBe(false);
       expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
     });
 
@@ -912,18 +907,18 @@ describe('SnapshotViewerComponent', () => {
       editText();
 
       clickButtonNamed('Close game snapshot');
-      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+      expect(component.viewerDialog.nativeElement.open).toBe(true);
       expect(discardLabel()).toBe('Discard unsaved changes to the snapshot text?');
       expect((document.activeElement?.textContent ?? '').trim()).toBe('Keep editing');
 
       clickButtonNamed('Keep editing');
       expect(host.querySelector('.discard-strip')).toBeNull();
-      expect(component.viewerDialog.nativeElement.open).toBeTrue();
-      expect(textEditor().view!.hasFocus).toBeTrue();
+      expect(component.viewerDialog.nativeElement.open).toBe(true);
+      expect(textEditor().view!.hasFocus).toBe(true);
 
       clickButtonNamed('Close game snapshot');
       clickButtonNamed('Discard');
-      expect(component.viewerDialog.nativeElement.open).toBeFalse();
+      expect(component.viewerDialog.nativeElement.open).toBe(false);
       expect(host.querySelector('app-snapshot-text-editor')).toBeNull();
     });
 
@@ -935,8 +930,8 @@ describe('SnapshotViewerComponent', () => {
       component.viewerDialog.nativeElement.dispatchEvent(cancel);
       fixture.detectChanges();
 
-      expect(cancel.defaultPrevented).toBeTrue();
-      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+      expect(cancel.defaultPrevented).toBe(true);
+      expect(component.viewerDialog.nativeElement.open).toBe(true);
       expect(host.querySelector('.discard-strip')).toBeTruthy();
     });
 
@@ -957,12 +952,12 @@ describe('SnapshotViewerComponent', () => {
   });
 
   describe('downloading', () => {
-    let clickSpy: jasmine.Spy;
+    let clickSpy: Mock;
     let clickedLinks: HTMLAnchorElement[];
 
     beforeEach(() => {
       clickedLinks = [];
-      clickSpy = spyOn(HTMLAnchorElement.prototype, 'click').and.callFake(function (this: HTMLAnchorElement) {
+      clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
         clickedLinks.push(this);
       });
     });
@@ -975,11 +970,11 @@ describe('SnapshotViewerComponent', () => {
       await openReady();
       clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
-      expect(confirmOpen()).toBeFalse();
+      expect(confirmOpen()).toBe(false);
       expect(clickSpy).toHaveBeenCalledTimes(1);
       expect(clickedLinks[0].getAttribute('href')).toBe('/api/admin/benchmark/snapshots/1/text');
       expect(clickedLinks[0].getAttribute('download')).toBe('Emergency_Low_HP.snapshot.txt');
-      expect(clickedLinks[0].isConnected).toBeFalse();
+      expect(clickedLinks[0].isConnected).toBe(false);
     });
 
     it('sanitises the file name, falling back to snapshot', () => {
@@ -994,11 +989,11 @@ describe('SnapshotViewerComponent', () => {
       editText();
       clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
-      expect(confirmOpen()).toBeTrue();
+      expect(confirmOpen()).toBe(true);
       expect(clickSpy).not.toHaveBeenCalled();
 
       clickButtonNamed('Cancel');
-      expect(confirmOpen()).toBeFalse();
+      expect(confirmOpen()).toBe(false);
       expect(clickSpy).not.toHaveBeenCalled();
     });
 
@@ -1009,8 +1004,8 @@ describe('SnapshotViewerComponent', () => {
 
       component.downloadConfirmDialog.nativeElement.dispatchEvent(new Event('cancel', { cancelable: true }));
       fixture.detectChanges();
-      expect(confirmOpen()).toBeFalse();
-      expect(component.viewerDialog.nativeElement.open).toBeTrue();
+      expect(confirmOpen()).toBe(false);
+      expect(component.viewerDialog.nativeElement.open).toBe(true);
       expect(clickSpy).not.toHaveBeenCalled();
     });
 
@@ -1020,37 +1015,37 @@ describe('SnapshotViewerComponent', () => {
       clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
       clickButtonNamed('Download saved text');
-      expect(confirmOpen()).toBeFalse();
+      expect(confirmOpen()).toBe(false);
       expect(clickSpy).toHaveBeenCalledTimes(1);
       expect(mockBenchmarkService.updateSnapshotText).not.toHaveBeenCalled();
-      expect(textEditor().dirty).toBeTrue();
+      expect(textEditor().dirty).toBe(true);
     });
 
     it('saves the buffer and then downloads from Save and download', async () => {
       await openReady();
       editText();
       const buffer = textEditor().currentText()!;
-      mockBenchmarkService.updateSnapshotText.and.returnValue(of(textResponse(buffer, { sha256: 'def0987654321' })));
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(of(textResponse(buffer, { sha256: 'def0987654321' })));
       clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
       clickButtonNamed('Save and download');
       expect(mockBenchmarkService.updateSnapshotText).toHaveBeenCalledWith(1, { text: buffer, expectedSha256: 'abc1234567890' });
       expect(clickSpy).toHaveBeenCalledTimes(1);
-      expect(confirmOpen()).toBeFalse();
-      expect(textEditor().dirty).toBeFalse();
+      expect(confirmOpen()).toBe(false);
+      expect(textEditor().dirty).toBe(false);
     });
 
     it('downloads nothing and shows the error when Save and download fails', async () => {
       await openReady();
       editText();
-      mockBenchmarkService.updateSnapshotText.and.returnValue(throwError(() => ({ status: 500, error: { message: 'Server exploded.' } })));
+      mockBenchmarkService.updateSnapshotText.mockReturnValue(throwError(() => ({ status: 500, error: { message: 'Server exploded.' } })));
       clickButtonNamed('Download .snapshot.txt of Emergency Low HP');
 
       clickButtonNamed('Save and download');
-      expect(confirmOpen()).toBeFalse();
+      expect(confirmOpen()).toBe(false);
       expect(clickSpy).not.toHaveBeenCalled();
       expect(footerStatus()).toBe('Snapshot text: Server exploded.');
-      expect(textEditor().dirty).toBeTrue();
+      expect(textEditor().dirty).toBe(true);
     });
   });
 
@@ -1109,7 +1104,7 @@ describe('SnapshotViewerComponent', () => {
 
       openWith(snapshotWith(buildBoard()));
 
-      expect(component.readOnly).toBeFalse();
+      expect(component.readOnly).toBe(false);
       expect(tabs().length).toBe(3);
     });
   });

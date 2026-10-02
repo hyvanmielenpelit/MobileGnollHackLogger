@@ -24,8 +24,8 @@ describe('MarkdownEditorComponent', () => {
 
     expect(write).toBeTruthy();
     expect(preview).toBeTruthy();
-    expect(write.hasAttribute('hidden')).toBeFalse();
-    expect(preview.hasAttribute('hidden')).toBeTrue();
+    expect(write.hasAttribute('hidden')).toBe(false);
+    expect(preview.hasAttribute('hidden')).toBe(true);
   });
 
   it('selecting Preview flips aria-selected, flips hidden, and renders the Markdown', () => {
@@ -41,8 +41,8 @@ describe('MarkdownEditorComponent', () => {
 
     const write = fixture.nativeElement.querySelector('.md-editor-write');
     const preview = fixture.nativeElement.querySelector('.md-editor-preview');
-    expect(write.hasAttribute('hidden')).toBeTrue();
-    expect(preview.hasAttribute('hidden')).toBeFalse();
+    expect(write.hasAttribute('hidden')).toBe(true);
+    expect(preview.hasAttribute('hidden')).toBe(false);
 
     const strong = preview.querySelector('strong');
     expect(strong).toBeTruthy();
@@ -59,8 +59,8 @@ describe('MarkdownEditorComponent', () => {
 
     const write = fixture.nativeElement.querySelector('.md-editor-write');
     const preview = fixture.nativeElement.querySelector('.md-editor-preview');
-    expect(write.hasAttribute('hidden')).toBeFalse();
-    expect(preview.hasAttribute('hidden')).toBeFalse();
+    expect(write.hasAttribute('hidden')).toBe(false);
+    expect(preview.hasAttribute('hidden')).toBe(false);
 
     const panel = fixture.nativeElement.querySelector('.md-editor-panes');
     expect(panel.getAttribute('aria-labelledby')).toBe('testEditor-tab-split');
@@ -95,14 +95,13 @@ describe('MarkdownEditorComponent', () => {
 
     // The host is the flex child of whatever lays the editor out, so the modifier has to
     // land there; on the inner div it is below the join and grows nothing.
-    expect(fixture.nativeElement.classList.contains('md-editor-fill')).toBeTrue();
-    expect(fixture.nativeElement.querySelector('.md-editor').classList.contains('md-editor-fill'))
-      .toBeFalse();
+    expect(fixture.nativeElement.classList.contains('md-editor-fill')).toBe(true);
+    expect(fixture.nativeElement.querySelector('.md-editor').classList.contains('md-editor-fill')).toBe(false);
 
     component.fill = false;
     fixture.changeDetectorRef.markForCheck();
     fixture.detectChanges();
-    expect(fixture.nativeElement.classList.contains('md-editor-fill')).toBeFalse();
+    expect(fixture.nativeElement.classList.contains('md-editor-fill')).toBe(false);
   });
 
   it('lays the host out as a flex column so a fill parent can size it', () => {
@@ -129,7 +128,7 @@ describe('MarkdownEditorComponent', () => {
     expect(split.mode).toBe('split');
 
     split.onWidth(split.splitMinWidth - 1);
-    expect(split.splitAvailable).toBeFalse();
+    expect(split.splitAvailable).toBe(false);
     expect(split.mode).toBe('preview');
   });
 

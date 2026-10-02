@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ComponentFixture, TestBed, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { COPIED_MS, CodeBlockComponent } from './code-block.component';
 
@@ -21,9 +22,11 @@ describe('CodeBlockComponent', () => {
 
   const buttons = (): HTMLButtonElement[] => Array.from(host.querySelectorAll<HTMLButtonElement>('button'));
 
-  function withClipboard(reject: boolean): { writeText: jasmine.Spy; restore: () => void } {
-    const writeText = jasmine.createSpy('writeText')
-      .and.returnValue(reject ? Promise.reject(new Error('denied')) : Promise.resolve());
+  function withClipboard(reject: boolean): {
+    writeText: Mock;
+    restore: () => void;
+  } {
+    const writeText = vi.fn().mockName('writeText').mockReturnValue(reject ? Promise.reject(new Error('denied')) : Promise.resolve());
     const original = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true, writable: true });
     return {
@@ -60,7 +63,7 @@ describe('CodeBlockComponent', () => {
       .toEqual(['Download the sample', 'Copy the sample to the clipboard']);
     for (const b of buttons()) {
       expect(b.getAttribute('type')).toBe('button');
-      expect(b.hasAttribute('title')).toBeFalse();
+      expect(b.hasAttribute('title')).toBe(false);
       const tipId = b.getAttribute('interestfor')!;
       expect(b.getAttribute('style')).toBe(`anchor-name: --${tipId}`);
       expect(host.querySelector(`#${tipId}`)!.getAttribute('style')).toBe(`position-anchor: --${tipId}`);

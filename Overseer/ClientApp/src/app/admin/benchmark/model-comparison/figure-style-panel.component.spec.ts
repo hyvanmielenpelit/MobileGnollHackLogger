@@ -34,7 +34,7 @@ describe('FigureStylePanelComponent', () => {
 
   function control(id: string): HTMLInputElement {
     const element = host().querySelector<HTMLInputElement>(`#${id}`);
-    expect(element).withContext(id).not.toBeNull();
+    expect(element, id).not.toBeNull();
     return element!;
   }
 
@@ -52,7 +52,7 @@ describe('FigureStylePanelComponent', () => {
 
   function hintOf(input: HTMLInputElement): string {
     const id = input.getAttribute('aria-describedby');
-    expect(id).withContext(input.id).not.toBeNull();
+    expect(id, input.id).not.toBeNull();
     return host().querySelector(`#${id}`)?.textContent ?? '';
   }
 
@@ -80,7 +80,7 @@ describe('FigureStylePanelComponent', () => {
 
   function section(id: string): HTMLDetailsElement {
     const element = host().querySelector<HTMLDetailsElement>(`#${id}`);
-    expect(element).withContext(id).not.toBeNull();
+    expect(element, id).not.toBeNull();
     return element!;
   }
 
@@ -121,7 +121,7 @@ describe('FigureStylePanelComponent', () => {
       'mc-style-profile-footer',
       'mc-style-profile-footerTextSizePx'
     ]);
-    expect(inputs.filter(input => input.type === 'checkbox').every(input => input.checked)).toBeTrue();
+    expect(inputs.filter(input => input.type === 'checkbox').every(input => input.checked)).toBe(true);
     expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('Chart text follows Text size under Download → Chart size.');
     const reset = host().querySelector('#mc-style-profile-reset') as HTMLButtonElement;
     expect(reset.textContent!.trim()).toBe('Reset profile style');
@@ -130,20 +130,20 @@ describe('FigureStylePanelComponent', () => {
   it('switches the n = 1 marker, rewords the filled-bars hint and resets it', () => {
     render('bar');
     const marker = control('mc-style-bar-singleRunMarker');
-    expect(marker.checked).toBeTrue();
+    expect(marker.checked).toBe(true);
 
     setChecked(marker, false);
     expect(emitted[0].bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, singleRunMarker: false });
     expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
     expect(emitted[0].profile).toBe(DEFAULT_FIGURE_STYLE.profile);
     acceptLast();
-    expect(control('mc-style-bar-singleRunMarker').checked).toBeFalse();
+    expect(control('mc-style-bar-singleRunMarker').checked).toBe(false);
     const hint = hintOf(control('mc-style-bar-filledBars'));
     expect(hint).toBe('Single-run bars are outlined unless this is on; multi-run bars are always filled. '
       + 'With the n = 1 marker off, only the runs badge shows how many runs each bar has.');
 
     fixture.componentInstance.resetBar();
-    expect(emitted[emitted.length - 1].bar.singleRunMarker).toBeTrue();
+    expect(emitted[emitted.length - 1].bar.singleRunMarker).toBe(true);
   });
 
   it('switches the thinking level line of one family at a time and names it in the read-out', () => {
@@ -152,21 +152,21 @@ describe('FigureStylePanelComponent', () => {
 
     render('bar');
     const bar = control('mc-style-bar-thinkingLevelBreak');
-    expect(bar.checked).toBeFalse();
+    expect(bar.checked).toBe(false);
     expect(readout('bar', 'values')).not.toContain('level on own line');
     setChecked(bar, true);
     expect(emitted[0].bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, thinkingLevelBreak: true });
     expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
     acceptLast();
-    expect(control('mc-style-bar-thinkingLevelBreak').checked).toBeTrue();
+    expect(control('mc-style-bar-thinkingLevelBreak').checked).toBe(true);
     expect(readout('bar', 'values')).toBe('values 11 px · axis 11/12 px · n = 1 · level on own line');
     fixture.componentInstance.resetBar();
-    expect(emitted[emitted.length - 1].bar.thinkingLevelBreak).toBeFalse();
+    expect(emitted[emitted.length - 1].bar.thinkingLevelBreak).toBe(false);
 
     emitted.length = 0;
     render('scatter');
     const scatter = control('mc-style-scatter-thinkingLevelBreak');
-    expect(scatter.checked).toBeFalse();
+    expect(scatter.checked).toBe(false);
     expect(hintOf(scatter)).toContain('A legend at the bottom keeps each name on one line.');
     expect(readout('scatter', 'labels')).not.toContain('level on own line');
     setChecked(scatter, true);
@@ -175,21 +175,21 @@ describe('FigureStylePanelComponent', () => {
     acceptLast();
     expect(readout('scatter', 'labels')).toContain('level on own line');
     fixture.componentInstance.resetScatter();
-    expect(emitted[emitted.length - 1].scatter.thinkingLevelBreak).toBeFalse();
+    expect(emitted[emitted.length - 1].scatter.thinkingLevelBreak).toBe(false);
   });
 
   it('hides and shows one badge of one family at a time', () => {
     render('bar');
     const questions = control('mc-style-bar-badge-questions');
-    expect(questions.checked).toBeTrue();
+    expect(questions.checked).toBe(true);
     setChecked(questions, false);
     expect(emitted[0].bar.hiddenBadges).toEqual(['questions']);
     expect(emitted[0].bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, hiddenBadges: ['questions'] });
     expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
     expect(emitted[0].profile).toBe(DEFAULT_FIGURE_STYLE.profile);
     acceptLast();
-    expect(control('mc-style-bar-badge-questions').checked).toBeFalse();
-    expect(control('mc-style-bar-badge-models').checked).toBeTrue();
+    expect(control('mc-style-bar-badge-questions').checked).toBe(false);
+    expect(control('mc-style-bar-badge-models').checked).toBe(true);
     setChecked(control('mc-style-bar-badge-questions'), true);
     expect(emitted[1].bar.hiddenBadges).toEqual([]);
 
@@ -250,7 +250,7 @@ describe('FigureStylePanelComponent', () => {
     expect(emitted[0].bar.maxBarWidthPx).toBeNull();
     acceptLast();
     const range = control('mc-style-bar-maxBarWidthPx');
-    expect(range.disabled).toBeTrue();
+    expect(range.disabled).toBe(true);
     expect(range.getAttribute('aria-valuetext')).toBe('No limit');
 
     setChecked(control('mc-style-bar-noBarWidthLimit'), false);
@@ -260,58 +260,58 @@ describe('FigureStylePanelComponent', () => {
   it('switches filled bars and resets it', () => {
     render('bar');
     const filled = control('mc-style-bar-filledBars');
-    expect(filled.checked).toBeFalse();
+    expect(filled.checked).toBe(false);
     expect(hintOf(filled).trim()).toBe('Single-run bars are outlined unless this is on; multi-run bars are always filled.');
 
     setChecked(filled, true);
     expect(emitted[0].bar).toEqual({ ...DEFAULT_FIGURE_STYLE.bar, filledBars: true });
     expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
     acceptLast();
-    expect(control('mc-style-bar-filledBars').checked).toBeTrue();
+    expect(control('mc-style-bar-filledBars').checked).toBe(true);
 
     fixture.componentInstance.resetBar();
-    expect(emitted[emitted.length - 1].bar.filledBars).toBeFalse();
+    expect(emitted[emitted.length - 1].bar.filledBars).toBe(false);
   });
 
   it('switches the uncertainty bars of one family only', () => {
     render('bar');
     setChecked(control('mc-style-bar-intervals'), false);
-    expect(emitted[0].bar.intervals).toBeFalse();
-    expect(emitted[0].scatter.intervals).toBeTrue();
+    expect(emitted[0].bar.intervals).toBe(false);
+    expect(emitted[0].scatter.intervals).toBe(true);
 
     render('scatter');
     setChecked(control('mc-style-scatter-intervals'), false);
-    expect(emitted[emitted.length - 1].scatter.intervals).toBeFalse();
-    expect(emitted[emitted.length - 1].bar.intervals).toBeTrue();
+    expect(emitted[emitted.length - 1].scatter.intervals).toBe(false);
+    expect(emitted[emitted.length - 1].bar.intervals).toBe(true);
   });
 
   it('enables the hidden-intervals note only once the bars are hidden, and switches it for one family', () => {
     render('bar');
-    expect(control('mc-style-bar-hiddenIntervalsNote').disabled).toBeTrue();
-    expect(control('mc-style-bar-hiddenIntervalsNote').checked).toBeTrue();
+    expect(control('mc-style-bar-hiddenIntervalsNote').disabled).toBe(true);
+    expect(control('mc-style-bar-hiddenIntervalsNote').checked).toBe(true);
 
     setChecked(control('mc-style-bar-intervals'), false);
     acceptLast();
     const note = control('mc-style-bar-hiddenIntervalsNote');
-    expect(note.disabled).toBeFalse();
+    expect(note.disabled).toBe(false);
     setChecked(note, false);
     const last = emitted[emitted.length - 1];
-    expect(last.bar.hiddenIntervalsNote).toBeFalse();
-    expect(last.scatter.hiddenIntervalsNote).toBeTrue();
+    expect(last.bar.hiddenIntervalsNote).toBe(false);
+    expect(last.scatter.hiddenIntervalsNote).toBe(true);
 
     render('scatter');
-    expect(control('mc-style-scatter-hiddenIntervalsNote').disabled).toBeTrue();
+    expect(control('mc-style-scatter-hiddenIntervalsNote').disabled).toBe(true);
     setChecked(control('mc-style-scatter-intervals'), false);
     acceptLast();
     setChecked(control('mc-style-scatter-hiddenIntervalsNote'), false);
-    expect(emitted[emitted.length - 1].scatter.hiddenIntervalsNote).toBeFalse();
-    expect(emitted[emitted.length - 1].bar.hiddenIntervalsNote).toBeTrue();
+    expect(emitted[emitted.length - 1].scatter.hiddenIntervalsNote).toBe(false);
+    expect(emitted[emitted.length - 1].bar.hiddenIntervalsNote).toBe(true);
   });
 
   it('switches the frontier note, and offers no shading control', () => {
     render('scatter');
     setChecked(control('mc-style-scatter-frontierIntervalsNote'), false);
-    expect(emitted[0].scatter.frontierIntervalsNote).toBeFalse();
+    expect(emitted[0].scatter.frontierIntervalsNote).toBe(false);
     expect(host().querySelector('#mc-style-scatter-dominatedShading')).toBeNull();
   });
 
@@ -326,8 +326,8 @@ describe('FigureStylePanelComponent', () => {
     const width = control('mc-style-scatter-frontierWidthPx');
     expect(line.closest('#mc-style-scatter-section-marks')).not.toBeNull();
     expect(line.compareDocumentPosition(width) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(line.checked).toBeTrue();
-    expect(width.disabled).toBeFalse();
+    expect(line.checked).toBe(true);
+    expect(width.disabled).toBe(false);
     expect(hintOf(line)).toContain('no line to draw');
     expect(readout()).toBe('marks 6 px · frontier 2 px');
     expect(reset().getAttribute('aria-disabled')).toBe('true');
@@ -335,20 +335,20 @@ describe('FigureStylePanelComponent', () => {
     setChecked(line, false);
     expect(emitted[0].scatter).toEqual({ ...DEFAULT_FIGURE_STYLE.scatter, frontierLine: false });
     acceptLast();
-    expect(control('mc-style-scatter-frontierLine').checked).toBeFalse();
-    expect(control('mc-style-scatter-frontierWidthPx').disabled).toBeTrue();
+    expect(control('mc-style-scatter-frontierLine').checked).toBe(false);
+    expect(control('mc-style-scatter-frontierWidthPx').disabled).toBe(true);
     expect(readout()).toBe('marks 6 px · no frontier line');
     expect(reset().getAttribute('aria-disabled')).toBeNull();
 
     reset().click();
-    expect(emitted[emitted.length - 1].scatter.frontierLine).toBeTrue();
+    expect(emitted[emitted.length - 1].scatter.frontierLine).toBe(true);
   });
 
   it('keeps the mean-time note enabled whatever the uncertainty bars, and switches it alone', () => {
     render('bar');
-    expect(control('mc-style-bar-meanTimeNoIntervalNote').disabled).toBeFalse();
+    expect(control('mc-style-bar-meanTimeNoIntervalNote').disabled).toBe(false);
     render('bar', { ...DEFAULT_FIGURE_STYLE, bar: { ...DEFAULT_FIGURE_STYLE.bar, intervals: false } });
-    expect(control('mc-style-bar-meanTimeNoIntervalNote').disabled).toBeFalse();
+    expect(control('mc-style-bar-meanTimeNoIntervalNote').disabled).toBe(false);
 
     render('bar');
     setChecked(control('mc-style-bar-meanTimeNoIntervalNote'), false);
@@ -393,7 +393,7 @@ describe('FigureStylePanelComponent', () => {
     fixture.componentInstance.inlineValuesChange.subscribe(on => valued.push(on));
     fixture.componentRef.setInput('inlineValues', false);
     render('scatter');
-    expect(control('mc-style-scatter-labelTextSizePx').disabled).toBeTrue();
+    expect(control('mc-style-scatter-labelTextSizePx').disabled).toBe(true);
 
     setChecked(control('mc-style-scatter-directLabels'), true);
     setChecked(control('mc-style-scatter-inlineValues'), true);
@@ -403,32 +403,31 @@ describe('FigureStylePanelComponent', () => {
 
     fixture.componentRef.setInput('directLabels', true);
     fixture.detectChanges();
-    expect(control('mc-style-scatter-labelTextSizePx').disabled).toBeFalse();
+    expect(control('mc-style-scatter-labelTextSizePx').disabled).toBe(false);
     const legend = host().querySelector('#mc-style-scatter-legend-right')!.closest('fieldset') as HTMLFieldSetElement;
-    expect(legend.disabled).toBeTrue();
+    expect(legend.disabled).toBe(true);
   });
 
   it('labels every control, and every id is unique', () => {
     for (const kind of ['bar', 'scatter', 'profile'] as const) {
       render(kind);
       const inputs = Array.from(host().querySelectorAll('input'));
-      expect(inputs.length).withContext(kind).toBeGreaterThan(kind === 'profile' ? 3 : 5);
+      expect(inputs.length, kind).toBeGreaterThan(kind === 'profile' ? 3 : 5);
       for (const input of inputs) {
-        expect(input.id).withContext(`${kind} ${input.type}`).toMatch(/^mc-style-/);
+        expect(input.id, `${kind} ${input.type}`).toMatch(/^mc-style-/);
         const label = input.closest('label') ?? host().querySelector(`label[for="${input.id}"]`);
-        expect(label?.textContent?.trim()).withContext(input.id).toBeTruthy();
+        expect(label?.textContent?.trim(), input.id).toBeTruthy();
       }
       const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
-      expect(new Set(ids).size).withContext(kind).toBe(ids.length);
+      expect(new Set(ids).size, kind).toBe(ids.length);
     }
   });
   it('opens the first section of each family by default and leaves the rest closed', () => {
     for (const kind of ['bar', 'scatter', 'profile'] as const) {
       render(kind);
       const sections = Array.from(host().querySelectorAll<HTMLDetailsElement>('details.gh-disclosure--section'));
-      expect(sections[0].id).withContext(kind).toBe(`mc-style-${kind}-section-heading`);
-      expect(sections.map(details => details.open)).withContext(kind)
-        .toEqual(sections.map((_details, index) => index === 0));
+      expect(sections[0].id, kind).toBe(`mc-style-${kind}-section-heading`);
+      expect(sections.map(details => details.open), kind).toEqual(sections.map((_details, index) => index === 0));
     }
   });
 
@@ -436,9 +435,9 @@ describe('FigureStylePanelComponent', () => {
     render('bar');
     toggleSection('mc-style-bar-section-bars');
     toggleSection('mc-style-bar-section-footer');
-    expect(section('mc-style-bar-section-heading').open).toBeTrue();
-    expect(section('mc-style-bar-section-bars').open).toBeTrue();
-    expect(section('mc-style-bar-section-footer').open).toBeTrue();
+    expect(section('mc-style-bar-section-heading').open).toBe(true);
+    expect(section('mc-style-bar-section-bars').open).toBe(true);
+    expect(section('mc-style-bar-section-footer').open).toBe(true);
 
     toggleSection('mc-style-bar-section-heading');
     const stored = JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!);
@@ -448,23 +447,27 @@ describe('FigureStylePanelComponent', () => {
     fixture.destroy();
     create();
     render('bar');
-    expect(section('mc-style-bar-section-heading').open).toBeFalse();
-    expect(section('mc-style-bar-section-bars').open).toBeTrue();
-    expect(section('mc-style-bar-section-footer').open).toBeTrue();
+    expect(section('mc-style-bar-section-heading').open).toBe(false);
+    expect(section('mc-style-bar-section-bars').open).toBe(true);
+    expect(section('mc-style-bar-section-footer').open).toBe(true);
     render('scatter');
-    expect(section('mc-style-scatter-section-heading').open).toBeTrue();
+    expect(section('mc-style-scatter-section-heading').open).toBe(true);
   });
 
   it('falls back to the default sections, silently, when storage throws', () => {
     fixture.destroy();
-    spyOn(Storage.prototype, 'getItem').and.throwError('blocked');
-    spyOn(Storage.prototype, 'setItem').and.throwError('blocked');
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
     expect(() => create()).not.toThrow();
     render('bar');
-    expect(section('mc-style-bar-section-heading').open).toBeTrue();
-    expect(section('mc-style-bar-section-bars').open).toBeFalse();
+    expect(section('mc-style-bar-section-heading').open).toBe(true);
+    expect(section('mc-style-bar-section-bars').open).toBe(false);
     expect(() => toggleSection('mc-style-bar-section-bars')).not.toThrow();
-    expect(section('mc-style-bar-section-bars').open).toBeTrue();
+    expect(section('mc-style-bar-section-bars').open).toBe(true);
   });
 
   it('ignores a malformed stored value', () => {
@@ -472,24 +475,23 @@ describe('FigureStylePanelComponent', () => {
     localStorage.setItem(FIGURE_STYLE_PANEL_OPEN_KEY, JSON.stringify({ bar: ['layout', 'nonsense', 3], scatter: 'all' }));
     create();
     render('bar');
-    expect(section('mc-style-bar-section-layout').open).toBeTrue();
-    expect(section('mc-style-bar-section-heading').open).toBeFalse();
+    expect(section('mc-style-bar-section-layout').open).toBe(true);
+    expect(section('mc-style-bar-section-heading').open).toBe(false);
     render('scatter');
-    expect(section('mc-style-scatter-section-heading').open).toBeTrue();
+    expect(section('mc-style-scatter-section-heading').open).toBe(true);
   });
 
   it('expands and collapses every section of the shown family', () => {
     render('scatter');
     (host().querySelector('#mc-style-scatter-expand') as HTMLButtonElement).click();
     fixture.detectChanges();
-    const sections = (): HTMLDetailsElement[] =>
-      Array.from(host().querySelectorAll<HTMLDetailsElement>('details.gh-disclosure--section'));
-    expect(sections().every(details => details.open)).toBeTrue();
+    const sections = (): HTMLDetailsElement[] => Array.from(host().querySelectorAll<HTMLDetailsElement>('details.gh-disclosure--section'));
+    expect(sections().every(details => details.open)).toBe(true);
     expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!).scatter.length).toBe(7);
 
     (host().querySelector('#mc-style-scatter-collapse') as HTMLButtonElement).click();
     fixture.detectChanges();
-    expect(sections().some(details => details.open)).toBeFalse();
+    expect(sections().some(details => details.open)).toBe(false);
     expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!).bar).toEqual(['heading']);
   });
 
@@ -511,23 +513,23 @@ describe('FigureStylePanelComponent', () => {
   it('puts every hint into an info tip the control is described by, and no hint paragraph remains', () => {
     for (const kind of ['bar', 'scatter', 'profile'] as const) {
       render(kind);
-      expect(host().querySelectorAll('.gh-fieldset-hint').length).withContext(kind).toBe(0);
+      expect(host().querySelectorAll('.gh-fieldset-hint').length, kind).toBe(0);
       const described = Array.from(host().querySelectorAll('[aria-describedby]'));
-      expect(described.length).withContext(kind).toBeGreaterThan(0);
+      expect(described.length, kind).toBeGreaterThan(0);
       for (const element of described) {
         // A decimal select is described by its example value first, then by its tip.
         const ids = element.getAttribute('aria-describedby')!.split(' ');
         const id = ids.pop()!;
         for (const sampleId of ids) {
-          expect(host().querySelector(`#${sampleId}`)?.tagName).withContext(`${kind} ${sampleId}`).toBe('OUTPUT');
+          expect(host().querySelector(`#${sampleId}`)?.tagName, `${kind} ${sampleId}`).toBe('OUTPUT');
         }
         const tip = host().querySelector(`#${id}`);
-        expect(tip?.getAttribute('popover')).withContext(`${kind} ${id}`).toBe('hint');
-        expect(tip?.closest('app-info-tip')).withContext(`${kind} ${id}`).not.toBeNull();
-        expect(id.endsWith('-tip')).withContext(`${kind} ${id}`).toBeTrue();
+        expect(tip?.getAttribute('popover'), `${kind} ${id}`).toBe('hint');
+        expect(tip?.closest('app-info-tip'), `${kind} ${id}`).not.toBeNull();
+        expect(id.endsWith('-tip'), `${kind} ${id}`).toBe(true);
       }
       for (const button of Array.from(host().querySelectorAll('app-info-tip button'))) {
-        expect(button.getAttribute('aria-label')).withContext(kind).toMatch(/^About /);
+        expect(button.getAttribute('aria-label'), kind).toMatch(/^About /);
       }
     }
   });
@@ -535,7 +537,7 @@ describe('FigureStylePanelComponent', () => {
   it('offers the Better badge for bars and trade-offs, with its own tip, but not for the profile', () => {
     render('bar');
     const bar = control('mc-style-bar-badge-direction');
-    expect(bar.checked).toBeTrue();
+    expect(bar.checked).toBe(true);
     expect(hintOf(bar)).toContain('toward the better end of the value axis');
     setChecked(bar, false);
     expect(emitted[0].bar.hiddenBadges).toEqual(['direction']);
@@ -558,15 +560,13 @@ describe('FigureStylePanelComponent', () => {
       for (const family of ['bar', 'scatter'] as const) {
         render(family);
         const group = radios(family);
-        expect(group.map(radio => radio.value)).withContext(family).toEqual(['fit', 'always']);
-        expect(group.map(radio => radio.checked)).withContext(family).toEqual([true, false]);
+        expect(group.map(radio => radio.value), family).toEqual(['fit', 'always']);
+        expect(group.map(radio => radio.checked), family).toEqual([true, false]);
         const fieldset = group[0].closest('fieldset')!;
-        expect(fieldset.closest(`#mc-style-${family}-section-heading`)).withContext(family).not.toBeNull();
-        expect(fieldset.querySelector('legend')?.textContent).withContext(family).toContain('Better badge position');
-        expect(host().querySelector(`#${fieldset.getAttribute('aria-describedby')}`)?.textContent?.trim())
-          .withContext(family).toContain('Where it fits keeps the heading\'s height');
-        expect(control(`mc-style-${family}-betterBadgePlacement-always`).closest('label')?.textContent?.trim())
-          .withContext(family).toBe('Always under the logo');
+        expect(fieldset.closest(`#mc-style-${family}-section-heading`), family).not.toBeNull();
+        expect(fieldset.querySelector('legend')?.textContent, family).toContain('Better badge position');
+        expect(host().querySelector(`#${fieldset.getAttribute('aria-describedby')}`)?.textContent?.trim(), family).toContain('Where it fits keeps the heading\'s height');
+        expect(control(`mc-style-${family}-betterBadgePlacement-always`).closest('label')?.textContent?.trim(), family).toBe('Always under the logo');
       }
 
       render('profile');
@@ -581,14 +581,13 @@ describe('FigureStylePanelComponent', () => {
         render(family);
         control(`mc-style-${family}-betterBadgePlacement-always`).click();
         fixture.detectChanges();
-        expect(emitted.length).withContext(family).toBe(1);
-        expect(emitted[0][family]).withContext(family)
-          .toEqual({ ...DEFAULT_FIGURE_STYLE[family], betterBadgePlacement: 'always' as const });
+        expect(emitted.length, family).toBe(1);
+        expect(emitted[0][family], family).toEqual({ ...DEFAULT_FIGURE_STYLE[family], betterBadgePlacement: 'always' as const });
         const other = family === 'bar' ? 'scatter' : 'bar';
-        expect(emitted[0][other]).withContext(family).toBe(DEFAULT_FIGURE_STYLE[other]);
-        expect(emitted[0].profile).withContext(family).toBe(DEFAULT_FIGURE_STYLE.profile);
-        expect(emitted[0].appearance).withContext(family).toBe(DEFAULT_FIGURE_STYLE.appearance);
-        expect(emitted[0].numbers).withContext(family).toBe(DEFAULT_FIGURE_STYLE.numbers);
+        expect(emitted[0][other], family).toBe(DEFAULT_FIGURE_STYLE[other]);
+        expect(emitted[0].profile, family).toBe(DEFAULT_FIGURE_STYLE.profile);
+        expect(emitted[0].appearance, family).toBe(DEFAULT_FIGURE_STYLE.appearance);
+        expect(emitted[0].numbers, family).toBe(DEFAULT_FIGURE_STYLE.numbers);
       }
     });
 
@@ -600,21 +599,19 @@ describe('FigureStylePanelComponent', () => {
         control(`mc-style-${family}-betterBadgePlacement-always`).click();
         fixture.detectChanges();
         acceptLast();
-        expect(control(`mc-style-${family}-betterBadgePlacement-always`).checked).withContext(family).toBeTrue();
-        expect(headingReadout(family)).withContext(family)
-          .toBe('18 px · badges 11 px · Better (always under logo), models, runs, questions, pricing');
+        expect(control(`mc-style-${family}-betterBadgePlacement-always`).checked, family).toBe(true);
+        expect(headingReadout(family), family).toBe('18 px · badges 11 px · Better (always under logo), models, runs, questions, pricing');
 
         const reset = resetButton(`mc-style-${family}-section-heading-reset`);
-        expect(reset.getAttribute('aria-label')).withContext(family).toBe('Reset Heading and badges to defaults');
-        expect(reset.getAttribute('aria-disabled')).withContext(family).toBeNull();
+        expect(reset.getAttribute('aria-label'), family).toBe('Reset Heading and badges to defaults');
+        expect(reset.getAttribute('aria-disabled'), family).toBeNull();
         reset.click();
-        expect(emitted.length).withContext(family).toBe(2);
-        expect(emitted[1][family].betterBadgePlacement).withContext(family).toBe('fit');
-        expect(emitted[1][family]).withContext(family).toEqual(DEFAULT_FIGURE_STYLE[family]);
+        expect(emitted.length, family).toBe(2);
+        expect(emitted[1][family].betterBadgePlacement, family).toBe('fit');
+        expect(emitted[1][family], family).toEqual(DEFAULT_FIGURE_STYLE[family]);
         acceptLast();
-        expect(control(`mc-style-${family}-betterBadgePlacement-fit`).checked).withContext(family).toBeTrue();
-        expect(headingReadout(family)).withContext(family)
-          .toBe('18 px · badges 11 px · Better, models, runs, questions, pricing');
+        expect(control(`mc-style-${family}-betterBadgePlacement-fit`).checked, family).toBe(true);
+        expect(headingReadout(family), family).toBe('18 px · badges 11 px · Better, models, runs, questions, pricing');
       }
     });
 
@@ -625,7 +622,7 @@ describe('FigureStylePanelComponent', () => {
       };
       render('bar', style);
       expect(headingReadout('bar')).toBe('18 px · badges 11 px · models, runs, questions, pricing');
-      expect(control('mc-style-bar-betterBadgePlacement-always').disabled).toBeFalse();
+      expect(control('mc-style-bar-betterBadgePlacement-always').disabled).toBe(false);
     });
   });
 
@@ -647,11 +644,11 @@ describe('FigureStylePanelComponent', () => {
   it('hides the footer and disables its size, saying why', () => {
     render('bar');
     const size = control('mc-style-bar-footerTextSizePx');
-    expect(size.disabled).toBeFalse();
+    expect(size.disabled).toBe(false);
     setChecked(control('mc-style-bar-footer'), false);
-    expect(emitted[0].bar.footer).toBeFalse();
+    expect(emitted[0].bar.footer).toBe(false);
     acceptLast();
-    expect(control('mc-style-bar-footerTextSizePx').disabled).toBeTrue();
+    expect(control('mc-style-bar-footerTextSizePx').disabled).toBe(true);
     expect(hintOf(control('mc-style-bar-footerTextSizePx'))).toBe('Available while the footer is shown.');
     expect(host().querySelector('#mc-style-bar-section-footer .gh-disclosure-summary-value')?.textContent?.trim()).toBe('hidden');
   });
@@ -660,7 +657,7 @@ describe('FigureStylePanelComponent', () => {
 
   function resetButton(id: string): HTMLButtonElement {
     const element = host().querySelector<HTMLButtonElement>(`#${id}`);
-    expect(element).withContext(id).not.toBeNull();
+    expect(element, id).not.toBeNull();
     return element!;
   }
 
@@ -671,8 +668,8 @@ describe('FigureStylePanelComponent', () => {
   it('claims every style field of each family in exactly one section', () => {
     for (const kind of ['bar', 'scatter', 'profile', 'appearance'] as const) {
       const keys = FIGURE_STYLE_SECTIONS[kind].filter(section => !section.shared).flatMap(section => [...section.keys]);
-      expect(new Set(keys).size).withContext(`${kind} duplicates`).toBe(keys.length);
-      expect([...keys].sort()).withContext(kind).toEqual(Object.keys(DEFAULT_FIGURE_STYLE[kind]).sort());
+      expect(new Set(keys).size, `${kind} duplicates`).toBe(keys.length);
+      expect([...keys].sort(), kind).toEqual(Object.keys(DEFAULT_FIGURE_STYLE[kind]).sort());
     }
   });
 
@@ -683,19 +680,19 @@ describe('FigureStylePanelComponent', () => {
       fixture.componentRef.setInput('inlineValues', false);
       render(kind);
       const sections = Array.from(host().querySelectorAll('.fsp-section'));
-      expect(sections.length).withContext(kind).toBe(FIGURE_STYLE_SECTIONS[kind].length);
+      expect(sections.length, kind).toBe(FIGURE_STYLE_SECTIONS[kind].length);
       sections.forEach((wrapper, index) => {
         const { title, shared } = FIGURE_STYLE_SECTIONS[kind][index];
         const buttons = wrapper.querySelectorAll('.fsp-section-reset');
-        expect(buttons.length).withContext(`${kind} ${title}`).toBe(1);
+        expect(buttons.length, `${kind} ${title}`).toBe(1);
         const button = buttons[0] as HTMLButtonElement;
         expect(button.getAttribute('aria-label'))
           .toBe(shared ? 'Reset visible number formats to defaults' : `Reset ${title} to defaults`);
-        expect(button.getAttribute('aria-disabled')).withContext(`${kind} ${title}`).toBe('true');
+        expect(button.getAttribute('aria-disabled'), `${kind} ${title}`).toBe('true');
         expect(button.closest('summary')).toBeNull();
         expect(button.closest('details')).toBeNull();
         const tip = host().querySelector(`#${button.getAttribute('interestfor')}`);
-        expect(tip?.getAttribute('popover')).withContext(`${kind} ${title}`).toBe('hint');
+        expect(tip?.getAttribute('popover'), `${kind} ${title}`).toBe('hint');
         expect(tip?.textContent?.trim()).toBe('Already at defaults');
       });
     }
@@ -705,13 +702,13 @@ describe('FigureStylePanelComponent', () => {
 
   function numberSelect(family: FigureStylePanelKind, measure: NumberMeasure): HTMLSelectElement {
     const element = host().querySelector<HTMLSelectElement>(`#mc-style-${family}-number-${measure}`);
-    expect(element).withContext(`${family} ${measure}`).not.toBeNull();
+    expect(element, `${family} ${measure}`).not.toBeNull();
     return element!;
   }
 
   function numberSampleEl(family: FigureStylePanelKind, measure: NumberMeasure): HTMLOutputElement {
     const element = host().querySelector<HTMLOutputElement>(`#mc-style-${family}-number-${measure}-sample`);
-    expect(element).withContext(`${family} ${measure} sample`).not.toBeNull();
+    expect(element, `${family} ${measure} sample`).not.toBeNull();
     return element!;
   }
 
@@ -736,8 +733,7 @@ describe('FigureStylePanelComponent', () => {
     (['candidateSuite', 'totalRun'] as CostMeasure[]).forEach(m => reachable.add(costNumberMeasure(m)));
     expect([...reachable].sort()).toEqual([...NUMBER_MEASURES].sort());
     for (const kind of ['bar', 'scatter', 'profile'] as const) {
-      expect(FIGURE_STYLE_SECTIONS[kind].filter(section => section.shared).map(section => section.name))
-        .withContext(kind).toEqual(['numbers']);
+      expect(FIGURE_STYLE_SECTIONS[kind].filter(section => section.shared).map(section => section.name), kind).toEqual(['numbers']);
     }
   });
 
@@ -757,7 +753,7 @@ describe('FigureStylePanelComponent', () => {
     for (const id of numberRowIds('profile')) {
       const label = host().querySelector(`label[for="${id}"]`);
       const measure = id.replace('mc-style-profile-number-', '') as NumberMeasure;
-      expect(label?.textContent?.trim()).withContext(id).toBe(MEASURE_NAMES[measure]);
+      expect(label?.textContent?.trim(), id).toBe(MEASURE_NAMES[measure]);
       expect(control(id).getAttribute('aria-describedby')).toBe(`${id}-sample mc-style-profile-numbers-tip`);
     }
     expect(host().querySelector('#mc-style-profile-numbers-tip')?.textContent)
@@ -774,10 +770,10 @@ describe('FigureStylePanelComponent', () => {
     for (const id of ids) {
       const select = control(id);
       const label = host().querySelector<HTMLLabelElement>(`label[for="${id}"]`)!;
-      expect(select.closest('.fsp-decimals')).withContext(id).toBe(label.closest('.fsp-decimals'));
-      expect(getComputedStyle(select).fontSize).withContext(id).toBe(getComputedStyle(label).fontSize);
-      expect(getComputedStyle(select).fontSize).withContext(id).toBe('13px');
-      expect(select.getBoundingClientRect().height).withContext(id).toBeGreaterThanOrEqual(24);
+      expect(select.closest('.fsp-decimals'), id).toBe(label.closest('.fsp-decimals'));
+      expect(getComputedStyle(select).fontSize, id).toBe(getComputedStyle(label).fontSize);
+      expect(getComputedStyle(select).fontSize, id).toBe('13px');
+      expect(select.getBoundingClientRect().height, id).toBeGreaterThanOrEqual(24);
     }
   });
 
@@ -794,8 +790,8 @@ describe('FigureStylePanelComponent', () => {
     for (const id of ids) {
       const style = getComputedStyle(control(id));
       // A grid item's `inline-flex` computes as `flex`.
-      expect(style.display).withContext(id).toMatch(/^(inline-)?flex$/);
-      expect(style.alignItems).withContext(id).toBe('center');
+      expect(style.display, id).toMatch(/^(inline-)?flex$/);
+      expect(style.alignItems, id).toBe('center');
     }
   });
 
@@ -815,7 +811,7 @@ describe('FigureStylePanelComponent', () => {
     expect(samples.length).toBe(3);
     const right = example.getBoundingClientRect().right;
     for (const sample of samples) {
-      expect(Math.abs(sample.getBoundingClientRect().right - right)).withContext(sample.id).toBeLessThanOrEqual(1);
+      expect(Math.abs(sample.getBoundingClientRect().right - right), sample.id).toBeLessThanOrEqual(1);
     }
   });
 
@@ -929,7 +925,7 @@ describe('FigureStylePanelComponent', () => {
       emitted = [];
       render(kind, changed);
       (host().querySelector(`#${id}`) as HTMLButtonElement).click();
-      expect(emitted[0].numbers).withContext(kind).toEqual(numbers);
+      expect(emitted[0].numbers, kind).toEqual(numbers);
     }
   });
 
@@ -938,27 +934,27 @@ describe('FigureStylePanelComponent', () => {
     localStorage.setItem(FIGURE_STYLE_PANEL_OPEN_KEY, JSON.stringify({ bar: ['values', 'layout'], scatter: ['labels'] }));
     create();
     render('bar');
-    expect(section('mc-style-bar-section-values').open).toBeTrue();
-    expect(section('mc-style-bar-section-numbers').open).toBeFalse();
+    expect(section('mc-style-bar-section-values').open).toBe(true);
+    expect(section('mc-style-bar-section-numbers').open).toBe(false);
     render('scatter');
-    expect(section('mc-style-scatter-section-numbers').open).toBeFalse();
+    expect(section('mc-style-scatter-section-numbers').open).toBe(false);
     render('profile');
-    expect(section('mc-style-profile-section-heading').open).toBeTrue();
-    expect(section('mc-style-profile-section-numbers').open).toBeFalse();
+    expect(section('mc-style-profile-section-heading').open).toBe(true);
+    expect(section('mc-style-profile-section-numbers').open).toBe(false);
   });
 
   it('gives every number control and title-break radio a distinct id', () => {
     for (const kind of ['bar', 'scatter', 'profile'] as const) {
       render(kind);
       const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
-      expect(new Set(ids).size).withContext(kind).toBe(ids.length);
+      expect(new Set(ids).size, kind).toBe(ids.length);
     }
   });
 
   it('chooses the axis title line break with a radio group, Automatic by default', () => {
     render('bar');
     const auto = control('mc-style-bar-axisTitleBreak-auto');
-    expect(auto.checked).toBeTrue();
+    expect(auto.checked).toBe(true);
     expect(auto.name).toBe('mc-style-bar-axisTitleBreak');
     const fieldset = auto.closest('fieldset')!;
     expect(fieldset.querySelector('legend')?.textContent).toContain('Axis title line break');
@@ -968,7 +964,7 @@ describe('FigureStylePanelComponent', () => {
     setChecked(control('mc-style-bar-axisTitleBreak-never'), true);
     expect(emitted[0].bar.axisTitleBreak).toBe('never');
     acceptLast();
-    expect(control('mc-style-bar-axisTitleBreak-never').checked).toBeTrue();
+    expect(control('mc-style-bar-axisTitleBreak-never').checked).toBe(true);
     expect(host().querySelector('#mc-style-bar-section-values > summary .gh-disclosure-summary-value')?.textContent?.trim())
       .toBe('values 11 px · axis 11/12 px · title never broken · n = 1');
     expect(resetButton('mc-style-bar-section-values-reset').getAttribute('aria-disabled')).toBeNull();
@@ -1005,7 +1001,7 @@ describe('FigureStylePanelComponent', () => {
   it('resets a closed section', () => {
     render('bar', { ...DEFAULT_FIGURE_STYLE, bar: { ...DEFAULT_FIGURE_STYLE.bar, titleSizePx: 30 } });
     toggleSection('mc-style-bar-section-heading');
-    expect(section('mc-style-bar-section-heading').open).toBeFalse();
+    expect(section('mc-style-bar-section-heading').open).toBe(false);
     resetButton('mc-style-bar-section-heading-reset').click();
     expect(emitted[0].bar).toEqual(DEFAULT_FIGURE_STYLE.bar);
   });
@@ -1025,7 +1021,7 @@ describe('FigureStylePanelComponent', () => {
     labels.click();
     expect(named).toEqual([true]);
     expect(valued).toEqual([false]);
-    expect(emitted.length).withContext('the style fields were already at defaults').toBe(0);
+    expect(emitted.length, 'the style fields were already at defaults').toBe(0);
   });
 
   it('announces a reset in the status region and clears it on the next change', () => {
@@ -1061,7 +1057,7 @@ describe('FigureStylePanelComponent', () => {
     fixture.componentRef.setInput('inlineValues', false);
     fixture.detectChanges();
     (host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement).click();
-    expect(named.length).withContext('no toggle emission at its default').toBe(1);
+    expect(named.length, 'no toggle emission at its default').toBe(1);
     expect(valued.length).toBe(1);
   });
 
@@ -1071,15 +1067,15 @@ describe('FigureStylePanelComponent', () => {
     render('bar');
     const weight = control('mc-style-bar-axisTitleWeight-600');
     expect(weight.name).toBe('mc-style-bar-axisTitleWeight');
-    expect(weight.closest('label')?.classList.contains('gh-radio')).toBeTrue();
+    expect(weight.closest('label')?.classList.contains('gh-radio')).toBe(true);
     setChecked(weight, true);
     expect(emitted[0].bar.axisTitleWeight).toBe(600);
     expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
 
     const frame = control('mc-style-bar-plotFrame');
-    expect(frame.checked).toBeFalse();
+    expect(frame.checked).toBe(false);
     setChecked(frame, true);
-    expect(emitted[1].bar.plotFrame).toBeTrue();
+    expect(emitted[1].bar.plotFrame).toBe(true);
     expect(emitted[1].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
   });
 
@@ -1090,7 +1086,7 @@ describe('FigureStylePanelComponent', () => {
     expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
 
     setChecked(control('mc-style-scatter-plotFrame'), true);
-    expect(emitted[1].scatter.plotFrame).toBeTrue();
+    expect(emitted[1].scatter.plotFrame).toBe(true);
     expect(emitted[1].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
   });
 
@@ -1124,7 +1120,7 @@ describe('FigureStylePanelComponent', () => {
   it('switches the theme with a radio group', () => {
     render('appearance');
     const dark = control('mc-style-appearance-theme-dark');
-    expect(dark.checked).toBeTrue();
+    expect(dark.checked).toBe(true);
     expect(dark.name).toBe('mc-style-appearance-theme');
     setChecked(control('mc-style-appearance-theme-light'), true);
     expect(emitted[0].appearance.theme).toBe('light');
@@ -1133,12 +1129,12 @@ describe('FigureStylePanelComponent', () => {
 
   it('enables the background colour row only for Custom, and the native swatch commits at once', () => {
     render('appearance');
-    expect(control('mc-style-appearance-backgroundColor').disabled).toBeTrue();
+    expect(control('mc-style-appearance-backgroundColor').disabled).toBe(true);
 
     setChecked(control('mc-style-appearance-background-custom'), true);
     acceptLast();
     const swatch = control('mc-style-appearance-backgroundColor');
-    expect(swatch.disabled).toBeFalse();
+    expect(swatch.disabled).toBe(false);
 
     swatch.value = '#123456';
     swatch.dispatchEvent(new Event('input'));
@@ -1171,16 +1167,16 @@ describe('FigureStylePanelComponent', () => {
   it('disables the preview backdrop group unless the background is transparent, and its colour row unless the backdrop is Colour', () => {
     render('appearance');
     const group = () => control('mc-style-appearance-previewBackdrop-color').closest('fieldset') as HTMLFieldSetElement;
-    expect(group().disabled).toBeTrue();
-    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBeTrue();
+    expect(group().disabled).toBe(true);
+    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBe(true);
 
     render('appearance', withAppearance({ background: 'transparent' }));
-    expect(group().disabled).toBeFalse();
-    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBeTrue();
+    expect(group().disabled).toBe(false);
+    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBe(true);
 
     setChecked(control('mc-style-appearance-previewBackdrop-color'), true);
     acceptLast();
-    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBeFalse();
+    expect(control('mc-style-appearance-previewBackdropColor').disabled).toBe(false);
   });
 
   it('chooses the font family and the heading and label weights', () => {
@@ -1216,13 +1212,13 @@ describe('FigureStylePanelComponent', () => {
   it('follows the theme for heading and text colour until unticked, remembering the last colour', () => {
     render('appearance');
     const followHeading = control('mc-style-appearance-headingColor-follow');
-    expect(followHeading.checked).toBeTrue();
-    expect(control('mc-style-appearance-headingColor').disabled).toBeTrue();
+    expect(followHeading.checked).toBe(true);
+    expect(control('mc-style-appearance-headingColor').disabled).toBe(true);
 
     setChecked(followHeading, false);
     expect(emitted[0].appearance.headingColor).toBe('#ffffff');
     acceptLast();
-    expect(control('mc-style-appearance-headingColor').disabled).toBeFalse();
+    expect(control('mc-style-appearance-headingColor').disabled).toBe(false);
 
     setChecked(control('mc-style-appearance-headingColor-follow'), true);
     expect(emitted[emitted.length - 1].appearance.headingColor).toBeNull();
@@ -1240,17 +1236,17 @@ describe('FigureStylePanelComponent', () => {
 
   it('disables the border width while the border is off, and the radius only while off on a transparent background', () => {
     render('appearance');
-    expect(control('mc-style-appearance-borderWidthPx').disabled).toBeTrue();
-    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBeFalse(); // the default background is painted
+    expect(control('mc-style-appearance-borderWidthPx').disabled).toBe(true);
+    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBe(false); // the default background is painted
 
     render('appearance', withAppearance({ background: 'transparent' }));
-    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBeTrue();
+    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBe(true);
 
     setChecked(control('mc-style-appearance-border'), true);
     acceptLast();
-    expect(control('mc-style-appearance-borderWidthPx').disabled).toBeFalse();
-    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBeFalse();
-    expect(control('mc-style-appearance-borderColor-follow').disabled).toBeFalse();
+    expect(control('mc-style-appearance-borderWidthPx').disabled).toBe(false);
+    expect(control('mc-style-appearance-borderRadiusPx').disabled).toBe(false);
+    expect(control('mc-style-appearance-borderColor-follow').disabled).toBe(false);
   });
 
   it('summarizes the appearance sections in their read-outs', () => {
@@ -1273,15 +1269,15 @@ describe('FigureStylePanelComponent', () => {
     it('shows the wide logo at 48 px by default, and hides it from its checkbox', () => {
       render('appearance');
       const show = control('mc-style-appearance-logo');
-      expect(show.checked).toBeTrue();
+      expect(show.checked).toBe(true);
       expect(show.closest('label')?.textContent).toContain('Show the GnollBench logo');
       expect(hintOf(show)).toContain('In the top right corner of every chart and of the table image');
-      expect(control('mc-style-appearance-logoVariant-wide').checked).toBeTrue();
+      expect(control('mc-style-appearance-logoVariant-wide').checked).toBe(true);
       expect(control('mc-style-appearance-logoHeightPx').value).toBe('48');
       expect(readout()).toBe('wide · 48 px');
 
       setChecked(show, false);
-      expect(emitted[0].appearance.logo).toBeFalse();
+      expect(emitted[0].appearance.logo).toBe(false);
       expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
     });
 
@@ -1309,15 +1305,15 @@ describe('FigureStylePanelComponent', () => {
       const group = (): HTMLFieldSetElement =>
         control('mc-style-appearance-logoVariant-wide').closest('fieldset') as HTMLFieldSetElement;
       render('appearance', withAppearance({ logo: false }));
-      expect(group().disabled).toBeTrue();
+      expect(group().disabled).toBe(true);
       expect(group().getAttribute('aria-labelledby')).toBe('mc-style-appearance-logoVariant-label');
       expect(host().querySelector('#mc-style-appearance-logoVariant-label')?.textContent?.trim()).toBe('Logo');
-      expect(control('mc-style-appearance-logoHeightPx').disabled).toBeTrue();
+      expect(control('mc-style-appearance-logoHeightPx').disabled).toBe(true);
       expect(readout()).toBe('hidden');
 
       render('appearance');
-      expect(group().disabled).toBeFalse();
-      expect(control('mc-style-appearance-logoHeightPx').disabled).toBeFalse();
+      expect(group().disabled).toBe(false);
+      expect(control('mc-style-appearance-logoHeightPx').disabled).toBe(false);
     });
 
     it('resets the section to the shown wide logo at 48 px', () => {
@@ -1346,7 +1342,7 @@ describe('FigureStylePanelComponent', () => {
     for (const element of controls) {
       expect(element.id).toMatch(/^mc-style-appearance-/);
       const label = element.closest('label') ?? host().querySelector(`label[for="${element.id}"]`);
-      expect(!!label || element.hasAttribute('aria-label')).withContext(element.id).toBeTrue();
+      expect(!!label || element.hasAttribute('aria-label'), element.id).toBe(true);
     }
     const ids = Array.from(host().querySelectorAll('[id]')).map(element => element.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -1355,10 +1351,10 @@ describe('FigureStylePanelComponent', () => {
   it('uses the shared gh-radio and gh-choice look for every radio group, in every kind', () => {
     for (const kind of ['bar', 'scatter', 'profile', 'appearance'] as const) {
       render(kind);
-      expect(host().querySelectorAll('.fsp-radio, .fsp-choice').length).withContext(kind).toBe(0);
+      expect(host().querySelectorAll('.fsp-radio, .fsp-choice').length, kind).toBe(0);
       for (const radio of Array.from(host().querySelectorAll<HTMLInputElement>('input[type="radio"]'))) {
-        expect(radio.closest('label')?.classList.contains('gh-radio')).withContext(`${kind} ${radio.id}`).toBeTrue();
-        expect(radio.closest('fieldset')?.classList.contains('gh-choice')).withContext(`${kind} ${radio.id}`).toBeTrue();
+        expect(radio.closest('label')?.classList.contains('gh-radio'), `${kind} ${radio.id}`).toBe(true);
+        expect(radio.closest('fieldset')?.classList.contains('gh-choice'), `${kind} ${radio.id}`).toBe(true);
       }
     }
   });

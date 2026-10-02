@@ -21,23 +21,23 @@ describe('model-badge-format.util', () => {
 
   describe('showReasoningBadge', () => {
     it('should return false when the mode is null', () => {
-      expect(showReasoningBadge(null)).toBeFalse();
+      expect(showReasoningBadge(null)).toBe(false);
     });
 
     it('should return false when the mode is undefined', () => {
-      expect(showReasoningBadge(undefined)).toBeFalse();
+      expect(showReasoningBadge(undefined)).toBe(false);
     });
 
     it('should return false for default, case-insensitively', () => {
-      expect(showReasoningBadge('Default')).toBeFalse();
+      expect(showReasoningBadge('Default')).toBe(false);
     });
 
     it('should return false for standard, case-insensitively', () => {
-      expect(showReasoningBadge('STANDARD')).toBeFalse();
+      expect(showReasoningBadge('STANDARD')).toBe(false);
     });
 
     it('should return true for any other mode', () => {
-      expect(showReasoningBadge('extended')).toBeTrue();
+      expect(showReasoningBadge('extended')).toBe(true);
     });
   });
 

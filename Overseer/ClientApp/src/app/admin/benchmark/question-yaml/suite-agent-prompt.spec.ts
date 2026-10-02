@@ -94,8 +94,8 @@ describe('buildSuiteAgentPrompt', () => {
     const sentence = 'Write the file as UTF-8 without a BOM and with LF line endings, like the downloaded file; never mix line endings in one file.';
     for (const source of ['snapshot-file', 'suite-yaml'] as const) {
       const lines = buildSuiteAgentPrompt(options({ source })).split('\n');
-      expect(lines).withContext(source).toContain(sentence);
-      expect(lines.indexOf(sentence) + 1).withContext(source).toBe(lines.findIndex(l => l.includes('stop and tell me')));
+      expect(lines, source).toContain(sentence);
+      expect(lines.indexOf(sentence) + 1, source).toBe(lines.findIndex(l => l.includes('stop and tell me')));
     }
   });
 
@@ -108,13 +108,13 @@ describe('buildSuiteAgentPrompt', () => {
     for (const path of cases) {
       const quoted = buildSuiteAgentPrompt(options({ sourcePath: `"${path}"` }));
       const unquoted = buildSuiteAgentPrompt(options({ sourcePath: path }));
-      expect(quoted).withContext(path).toBe(unquoted);
+      expect(quoted, path).toBe(unquoted);
 
       const written = line(quoted, 'Snapshot file');
-      expect(written).withContext(path).toBe(path);
-      expect(written.split('\\').length).withContext(path).toBe(path.split('\\').length);
-      expect(written).withContext(path).not.toContain('/');
-      expect(written).withContext(path).not.toContain('"');
+      expect(written, path).toBe(path);
+      expect(written.split('\\').length, path).toBe(path.split('\\').length);
+      expect(written, path).not.toContain('/');
+      expect(written, path).not.toContain('"');
     }
   });
 
@@ -153,8 +153,8 @@ describe('buildSuiteAgentPrompt for a suite YAML', () => {
     const lines = prompt.split('\n');
     expect(line(prompt, 'Mode')).toBe('add questions to an existing suite');
     expect(line(prompt, 'Suite file')).toBe(SUITE_PATH);
-    expect(lines.some(l => l.startsWith('Suite name: '))).toBeFalse();
-    expect(lines.some(l => l.startsWith('Snapshot file: '))).toBeFalse();
+    expect(lines.some(l => l.startsWith('Suite name: '))).toBe(false);
+    expect(lines.some(l => l.startsWith('Snapshot file: '))).toBe(false);
   });
 
   it('keeps the suite block, forbids ids and names the wizard', () => {
@@ -256,8 +256,7 @@ describe('validateSuiteAgentPromptOptions', () => {
 
   it('treats a pair of quotes with nothing inside as no path', () => {
     for (const path of ['""', '"   "']) {
-      expect(validateSuiteAgentPromptOptions(options({ sourcePath: path })).sourcePath)
-        .withContext(path).toBe('Enter the path to the snapshot file.');
+      expect(validateSuiteAgentPromptOptions(options({ sourcePath: path })).sourcePath, path).toBe('Enter the path to the snapshot file.');
     }
   });
 
@@ -287,19 +286,19 @@ describe('validateSuiteAgentPromptOptions', () => {
 describe('looksLikeAbsolutePath', () => {
   it('accepts a rooted path on either platform', () => {
     for (const path of ['C:\\temp\\board.ai.html', 'c:/temp/board.ai.html', '\\\\server\\share\\board.ai.html', '/home/me/board.ai.html', '~/board.ai.html']) {
-      expect(looksLikeAbsolutePath(path)).withContext(path).toBeTrue();
+      expect(looksLikeAbsolutePath(path), path).toBe(true);
     }
   });
 
   it('rejects a relative one', () => {
     for (const path of ['board.ai.html', './board.ai.html', '..\\board.ai.html', '']) {
-      expect(looksLikeAbsolutePath(path)).withContext(path).toBeFalse();
+      expect(looksLikeAbsolutePath(path), path).toBe(false);
     }
   });
 
   it('looks inside the quotes of a quoted path', () => {
-    expect(looksLikeAbsolutePath('"C:\\temp\\a.ai.html"')).toBeTrue();
-    expect(looksLikeAbsolutePath('"\\\\server\\share\\board.ai.html"')).toBeTrue();
-    expect(looksLikeAbsolutePath('"board.ai.html"')).toBeFalse();
+    expect(looksLikeAbsolutePath('"C:\\temp\\a.ai.html"')).toBe(true);
+    expect(looksLikeAbsolutePath('"\\\\server\\share\\board.ai.html"')).toBe(true);
+    expect(looksLikeAbsolutePath('"board.ai.html"')).toBe(false);
   });
 });

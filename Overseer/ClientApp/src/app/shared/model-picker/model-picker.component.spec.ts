@@ -107,7 +107,7 @@ describe('ModelPickerComponent', () => {
       const button = trigger();
       expect(button.getAttribute('aria-haspopup')).toBe('listbox');
       expect(button.getAttribute('aria-expanded')).toBe('false');
-      expect(button.hasAttribute('aria-controls')).toBeFalse();
+      expect(button.hasAttribute('aria-controls')).toBe(false);
 
       openByClick();
       expect(button.getAttribute('aria-expanded')).toBe('true');
@@ -148,7 +148,7 @@ describe('ModelPickerComponent', () => {
       expect(text).toContain('reasoning mode pro');
       expect(text).toContain('price $5.00/$25.00 per 1M');
       expect(text).toContain('parallel execution Sequential, disabled for this key');
-      expect(trigger().querySelector('.parallel-badge')!.hasAttribute('title')).toBeFalse();
+      expect(trigger().querySelector('.parallel-badge')!.hasAttribute('title')).toBe(false);
       expect(trigger().querySelector('.visually-hidden')).not.toBeNull();
     });
 
@@ -166,8 +166,8 @@ describe('ModelPickerComponent', () => {
       expect(all.length).toBe(4);
       expect(new Set(all.map(o => o.id)).size).toBe(4);
       expect(all.map(o => o.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false', 'false']);
-      expect(all.every(o => !o.hasAttribute('tabindex'))).toBeTrue();
-      expect(all.some(o => o.classList.contains('selected'))).toBeFalse();
+      expect(all.every(o => !o.hasAttribute('tabindex'))).toBe(true);
+      expect(all.some(o => o.classList.contains('selected'))).toBe(false);
     });
 
     it('render price and parallel badges only when asked', () => {
@@ -197,7 +197,7 @@ describe('ModelPickerComponent', () => {
     });
 
     it('keys options by prefix + id, or by the numeric id', () => {
-      expect(toModelPickerOptions(MODELS.slice(0, 1), 'G', 'u_')[0]).toEqual(jasmine.objectContaining({ key: 'u_1', group: 'G' }));
+      expect(toModelPickerOptions(MODELS.slice(0, 1), 'G', 'u_')[0]).toEqual(expect.objectContaining({ key: 'u_1', group: 'G' }));
       expect(toModelPickerOptions(MODELS.slice(0, 1))[0].key).toBe(1);
     });
 
@@ -257,7 +257,7 @@ describe('ModelPickerComponent', () => {
         openByClick();
         key(listbox()!, 'ArrowDown');
         const event = key(listbox()!, commitKey);
-        expect(event.defaultPrevented).toBeTrue();
+        expect(event.defaultPrevented).toBe(true);
         expect(host.selections.length).toBe(1);
         expect(host.selections[0].key).toBe(2);
         expect(host.selections[0].model!.displayName).toBe('Beta');
@@ -271,7 +271,7 @@ describe('ModelPickerComponent', () => {
       openByClick();
       key(listbox()!, 'ArrowDown');
       const event = key(listbox()!, 'Escape');
-      expect(event.defaultPrevented).toBeTrue();
+      expect(event.defaultPrevented).toBe(true);
       expect(host.outerKeys).not.toContain('Escape');
       expect(host.selections.length).toBe(0);
       expect(listbox()).toBeNull();
@@ -281,7 +281,7 @@ describe('ModelPickerComponent', () => {
     it('closes on Tab without emitting or preventing the default', () => {
       openByClick();
       const event = key(listbox()!, 'Tab');
-      expect(event.defaultPrevented).toBeFalse();
+      expect(event.defaultPrevented).toBe(false);
       expect(host.selections.length).toBe(0);
       expect(listbox()).toBeNull();
     });
@@ -319,7 +319,7 @@ describe('ModelPickerComponent', () => {
       const tag = first.querySelector('.model-option-tag')!;
       expect(tag.textContent!.trim()).toBe('Assessor A');
       expect(tag.nextElementSibling!.classList).toContain('model-name');
-      expect(first.textContent!.trim().startsWith('Assessor A')).toBeTrue();
+      expect(first.textContent!.trim().startsWith('Assessor A')).toBe(true);
       expect(options()[3].querySelector('.model-option-tag')).toBeNull();
     });
 

@@ -80,8 +80,8 @@ describe('question-yaml-format', () => {
       const yaml = serializeQuestionsYaml(FIXTURE, null);
       expect(yaml).toContain('    rubric: |2\n        starts with two spaces\n      then flush');
       expect(yaml).toContain('    question: |\n      What is the Gnoll race?');
-      expect(yaml.endsWith('\n')).toBeTrue();
-      expect(yaml.endsWith('\n\n')).toBeFalse();
+      expect(yaml.endsWith('\n')).toBe(true);
+      expect(yaml.endsWith('\n\n')).toBe(false);
       expect(yaml).not.toContain('suite:');
     });
 
@@ -304,7 +304,7 @@ describe('question-yaml-format', () => {
     it('marks an unchanged re-import and builds a request that keeps an absent rubric', async () => {
       const parsed = await parseQuestionYaml(serializeQuestionsYaml(existing, null));
       const plan = buildImportPlan(parsed, 'questions', existing);
-      expect(plan[0].unchanged).toBeTrue();
+      expect(plan[0].unchanged).toBe(true);
 
       const noRubric = await parseQuestionYaml('format: overseer-benchmark-questions\nversion: 1\nquestions:\n  - id: 17\n    difficulty: Advanced\n');
       const items = toImportItems(buildImportPlan(noRubric, 'questions', existing), 'questions');
@@ -314,7 +314,7 @@ describe('question-yaml-format', () => {
     it('detects a cleared rubric and drops ids in suite mode', async () => {
       const cleared = await parseQuestionYaml('format: overseer-benchmark-questions\nversion: 1\nquestions:\n  - id: 17\n    rubric: |\n');
       const plan = buildImportPlan(cleared, 'questions', existing);
-      expect(plan[0].rubricCleared).toBeTrue();
+      expect(plan[0].rubricCleared).toBe(true);
       expect(toImportItems(plan, 'suite')[0].questionId).toBeNull();
     });
 
@@ -343,12 +343,12 @@ describe('question-yaml-format', () => {
     });
 
     it('recognises a suite export name, browser suffixes included', () => {
-      expect(isSuiteExportFileName(suiteYamlFileName('Core'))).toBeTrue();
-      expect(isSuiteExportFileName('overseer-suite-export-core (1).yaml')).toBeTrue();
-      expect(isSuiteExportFileName('OVERSEER-SUITE-EXPORT-core.YML')).toBeTrue();
-      expect(isSuiteExportFileName('agent-new-questions-core.yaml')).toBeFalse();
-      expect(isSuiteExportFileName('overseer-questions-export-core.yaml')).toBeFalse();
-      expect(isSuiteExportFileName('overseer-suite-export-core.txt')).toBeFalse();
+      expect(isSuiteExportFileName(suiteYamlFileName('Core'))).toBe(true);
+      expect(isSuiteExportFileName('overseer-suite-export-core (1).yaml')).toBe(true);
+      expect(isSuiteExportFileName('OVERSEER-SUITE-EXPORT-core.YML')).toBe(true);
+      expect(isSuiteExportFileName('agent-new-questions-core.yaml')).toBe(false);
+      expect(isSuiteExportFileName('overseer-questions-export-core.yaml')).toBe(false);
+      expect(isSuiteExportFileName('overseer-suite-export-core.txt')).toBe(false);
     });
   });
 
@@ -357,7 +357,7 @@ describe('question-yaml-format', () => {
     for (const tab of HUMAN_GUIDE_TABS) {
       expect(tab.label.trim()).not.toBe('');
       expect(tab.markdown.trim()).not.toBe('');
-      expect(tab.ingress.trim()).withContext(tab.id).not.toBe('');
+      expect(tab.ingress.trim(), tab.id).not.toBe('');
     }
   });
 
@@ -566,7 +566,7 @@ describe('question-yaml-format', () => {
       const parsed = await parseQuestionYaml(serializeSuiteYaml(SNAPSHOT_SUITE, FIXTURE, SNAPSHOT));
       const checked = validateForMode(parsed, 'suite', []);
       expect(checked.errors).toEqual([]);
-      expect(checked.notices.some(n => n.includes('snapshot'))).toBeFalse();
+      expect(checked.notices.some(n => n.includes('snapshot'))).toBe(false);
     });
   });
 

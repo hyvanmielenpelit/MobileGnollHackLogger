@@ -5014,7 +5014,7 @@
           </div>
         }
 
-        <details class="job-diagnostics mt-15">
+        <details class="job-diagnostics mt-15" (toggle)="onRunDiagnosticsToggle($event)">
           <summary>
             Diagnostics
             @if (runFailedAnswerCount > 0) {
@@ -5064,7 +5064,7 @@
               {{ runDiagnosticsCopyStatus }}
             </p>
           </div>
-          <pre tabindex="0"><code>{{ runDiagnosticsText }}</code></pre>
+          <pre tabindex="0"><code>{{ runDiagnosticsPanelText }}</code></pre>
         </details>
       </section>
 

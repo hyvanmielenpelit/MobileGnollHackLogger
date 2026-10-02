@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
@@ -72,7 +73,7 @@ function battery(overrides: Partial<BenchmarkBatteryDto> = {}): BenchmarkBattery
 describe('BatteryEditorDialogComponent', () => {
   let fixture: ComponentFixture<BatteryEditorDialogComponent>;
   let component: BatteryEditorDialogComponent;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
+  let service: MockedObject<AdminBenchmarkService>;
 
   function el(): HTMLElement {
     return fixture.nativeElement as HTMLElement;
@@ -80,14 +81,14 @@ describe('BatteryEditorDialogComponent', () => {
 
   function checkSuite(name: string): void {
     const box = el().querySelector(`.rl-list input[type="checkbox"][aria-label="${name}"]`) as HTMLInputElement;
-    expect(box).withContext(`checkbox for ${name}`).not.toBeNull();
+    expect(box, `checkbox for ${name}`).not.toBeNull();
     box.click();
     fixture.detectChanges();
   }
 
   function chooseScheme(value: string): void {
     const radio = el().querySelector(`input[name="bbeScheme"][value="${value}"]`) as HTMLInputElement;
-    expect(radio).withContext(`radio for ${value}`).not.toBeNull();
+    expect(radio, `radio for ${value}`).not.toBeNull();
     radio.click();
     fixture.detectChanges();
   }
@@ -115,12 +116,14 @@ describe('BatteryEditorDialogComponent', () => {
   }
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj<AdminBenchmarkService>('AdminBenchmarkService', [
-      'getQuestions', 'createBattery', 'updateBattery'
-    ]);
-    service.getQuestions.and.callFake((suiteId: number) => of(QUESTIONS[suiteId] ?? []));
-    service.createBattery.and.callFake((req) => of(battery({ id: 9, name: req.name })));
-    service.updateBattery.and.callFake((id: number) => of(battery({ id, revision: 3 })));
+    service = {
+      getQuestions: vi.fn().mockName("AdminBenchmarkService.getQuestions"),
+      createBattery: vi.fn().mockName("AdminBenchmarkService.createBattery"),
+      updateBattery: vi.fn().mockName("AdminBenchmarkService.updateBattery")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    service.getQuestions.mockImplementation((suiteId: number) => of(QUESTIONS[suiteId] ?? []));
+    service.createBattery.mockImplementation((req) => of(battery({ id: 9, name: req.name })));
+    service.updateBattery.mockImplementation((id: number) => of(battery({ id, revision: 3 })));
 
     await TestBed.configureTestingModule({
       imports: [BatteryEditorDialogComponent],
@@ -262,7 +265,7 @@ describe('BatteryEditorDialogComponent', () => {
   });
 
   it('creates a battery with the checked suites in list order', () => {
-    const saved = jasmine.createSpy('saved');
+    const saved = vi.fn().mockName('saved');
     component.saved.subscribe(saved);
     component.open(null, SUITES);
     fixture.detectChanges();
@@ -272,12 +275,12 @@ describe('BatteryEditorDialogComponent', () => {
     clickSave();
 
     expect(service.createBattery).toHaveBeenCalledTimes(1);
-    const request = service.createBattery.calls.mostRecent().args[0];
+    const request = vi.mocked(service.createBattery).mock.lastCall![0];
     expect(request.name).toBe('New One');
     expect(request.weightingScheme).toBe('DifficultyMass');
     // The unchecked rows are sorted by name: Board Reading, Gameplay Help, Item Lore.
     expect(request.suiteIds).toEqual([11, 13]);
-    expect('customWeights' in request).toBeFalse();
+    expect('customWeights' in request).toBe(false);
     expect(saved).toHaveBeenCalled();
   });
 
@@ -292,14 +295,14 @@ describe('BatteryEditorDialogComponent', () => {
 
     clickSave();
     expect(service.updateBattery).toHaveBeenCalledTimes(1);
-    const [id, request] = service.updateBattery.calls.mostRecent().args;
+    const [id, request] = vi.mocked(service.updateBattery).mock.lastCall!;
     expect(id).toBe(3);
     expect(request.suiteIds).toEqual([12, 11]);
     expect(request.name).toBe('Core Battery');
   });
 
   it('shows the server refusal when saving fails', () => {
-    service.updateBattery.and.returnValue(throwError(() => ({ status: 400, error: 'A battery with this name already exists.' })));
+    service.updateBattery.mockReturnValue(throwError(() => ({ status: 400, error: 'A battery with this name already exists.' })));
     component.open(battery(), SUITES);
     fixture.detectChanges();
     clickSave();

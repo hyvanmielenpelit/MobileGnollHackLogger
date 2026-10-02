@@ -60,7 +60,7 @@ describe('TablePagerComponent', () => {
     });
 
     it('moves to the typed page on Enter and emits changed exactly once', () => {
-      const changed = jasmine.createSpy('changed');
+      const changed = vi.fn().mockName('changed');
       component.changed.subscribe(changed);
       render(rowsOf(20 * 10));
 
@@ -78,7 +78,7 @@ describe('TablePagerComponent', () => {
     });
 
     it('clamps an out-of-range page to the last page', () => {
-      const changed = jasmine.createSpy('changed');
+      const changed = vi.fn().mockName('changed');
       component.changed.subscribe(changed);
       render(rowsOf(20 * 10));
 
@@ -89,7 +89,7 @@ describe('TablePagerComponent', () => {
     });
 
     it('leaves the page unchanged and emits nothing for non-numeric or empty input', () => {
-      const changed = jasmine.createSpy('changed');
+      const changed = vi.fn().mockName('changed');
       component.changed.subscribe(changed);
       render(rowsOf(20 * 10));
 
@@ -107,7 +107,7 @@ describe('TablePagerComponent', () => {
 
   describe('the first/previous step buttons on page 1', () => {
     it('carry aria-disabled="true" and emit nothing when clicked', () => {
-      const changed = jasmine.createSpy('changed');
+      const changed = vi.fn().mockName('changed');
       component.changed.subscribe(changed);
       render(rowsOf(50));
 

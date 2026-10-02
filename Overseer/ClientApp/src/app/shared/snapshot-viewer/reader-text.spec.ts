@@ -75,7 +75,7 @@ describe('reader-text', () => {
 
     it('keeps rows trimmed to different lengths, including a fully blank one', () => {
       const block = detectMapBlock(buildMapBlock())!;
-      expect(block.rowByY.has(3)).toBeTrue();
+      expect(block.rowByY.has(3)).toBe(true);
       expect(block.rowByY.size).toBe(21);
     });
 

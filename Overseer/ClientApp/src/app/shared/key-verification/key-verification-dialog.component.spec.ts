@@ -94,7 +94,7 @@ describe('KeyVerificationDialogComponent', () => {
     component.open('Anthropic', unverifiable);
     fixture.detectChanges();
 
-    expect(dialog().open).toBeTrue();
+    expect(dialog().open).toBe(true);
     expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#kvTitle'));
     expect(text()).toContain('Anthropic could not confirm this key, so it is not known whether it works.');
 
@@ -151,7 +151,7 @@ describe('KeyVerificationDialogComponent', () => {
     (dialog().querySelector('.kv-cancel') as HTMLButtonElement).click();
     await closing;
 
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
     expect(closed).toBe(1);
   });
 

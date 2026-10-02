@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
@@ -17,8 +18,8 @@ import {
 describe('SuiteHealthComponent', () => {
   let component: SuiteHealthComponent;
   let fixture: ComponentFixture<SuiteHealthComponent>;
-  let serviceMock: jasmine.SpyObj<AdminBenchmarkService>;
-  let gapAuthorMock: jasmine.SpyObj<RubricGapAuthorService>;
+  let serviceMock: MockedObject<AdminBenchmarkService>;
+  let gapAuthorMock: MockedObject<RubricGapAuthorService>;
 
   function buildItem(overrides: Partial<BenchmarkItemStatisticsDto> = {}): BenchmarkItemStatisticsDto {
     return {
@@ -69,16 +70,26 @@ describe('SuiteHealthComponent', () => {
   }
 
   beforeEach(async () => {
-    serviceMock = jasmine.createSpyObj('AdminBenchmarkService', [
-      'getItemAnalysis', 'getRubricGaps', 'validateCitations', 'analyzeCoverage', 'startRubricCheck', 'getRubricCheck', 'getActiveRubricCheck', 'cancelRubricCheck'
-    ]);
-    serviceMock.getItemAnalysis.and.returnValue(of(buildAnalysis()));
-    serviceMock.getRubricGaps.and.returnValue(of({ suiteId: 5, runCount: 0, claimCount: 0, clusters: [] }));
+    serviceMock = {
+      getItemAnalysis: vi.fn().mockName("AdminBenchmarkService.getItemAnalysis"),
+      getRubricGaps: vi.fn().mockName("AdminBenchmarkService.getRubricGaps"),
+      validateCitations: vi.fn().mockName("AdminBenchmarkService.validateCitations"),
+      analyzeCoverage: vi.fn().mockName("AdminBenchmarkService.analyzeCoverage"),
+      startRubricCheck: vi.fn().mockName("AdminBenchmarkService.startRubricCheck"),
+      getRubricCheck: vi.fn().mockName("AdminBenchmarkService.getRubricCheck"),
+      getActiveRubricCheck: vi.fn().mockName("AdminBenchmarkService.getActiveRubricCheck"),
+      cancelRubricCheck: vi.fn().mockName("AdminBenchmarkService.cancelRubricCheck")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    serviceMock.getItemAnalysis.mockReturnValue(of(buildAnalysis()));
+    serviceMock.getRubricGaps.mockReturnValue(of({ suiteId: 5, runCount: 0, claimCount: 0, clusters: [] }));
 
-    gapAuthorMock = jasmine.createSpyObj('RubricGapAuthorService', [
-      'startRubricGapAuthor', 'getRubricGapAuthor', 'getActiveRubricGapAuthor',
-      'cancelRubricGapAuthor', 'acceptRubricAddition'
-    ]);
+    gapAuthorMock = {
+      startRubricGapAuthor: vi.fn().mockName("RubricGapAuthorService.startRubricGapAuthor"),
+      getRubricGapAuthor: vi.fn().mockName("RubricGapAuthorService.getRubricGapAuthor"),
+      getActiveRubricGapAuthor: vi.fn().mockName("RubricGapAuthorService.getActiveRubricGapAuthor"),
+      cancelRubricGapAuthor: vi.fn().mockName("RubricGapAuthorService.cancelRubricGapAuthor"),
+      acceptRubricAddition: vi.fn().mockName("RubricGapAuthorService.acceptRubricAddition")
+    } as unknown as MockedObject<RubricGapAuthorService>;
 
     await TestBed.configureTestingModule({
       imports: [SuiteHealthComponent],
@@ -93,7 +104,8 @@ describe('SuiteHealthComponent', () => {
   });
 
   function open(analysis?: BenchmarkSuiteItemAnalysisDto): void {
-    if (analysis) serviceMock.getItemAnalysis.and.returnValue(of(analysis));
+    if (analysis)
+      serviceMock.getItemAnalysis.mockReturnValue(of(analysis));
     component.suiteId = 5;
     component.ngOnChanges({ suiteId: { previousValue: null, currentValue: 5, firstChange: true, isFirstChange: () => true } });
     fixture.detectChanges();
@@ -148,7 +160,7 @@ describe('SuiteHealthComponent', () => {
       items: [buildItem({ runCount: 1, discrimination: null, insufficientData: true })]
     }));
 
-    expect(component.itemsAdvisory).toBeTrue();
+    expect(component.itemsAdvisory).toBe(true);
     expect(bannerText()).toContain('Below 4 runs, nothing in this table is a measurement.');
   });
 
@@ -166,8 +178,8 @@ describe('SuiteHealthComponent', () => {
   it('should name the assessor mix and the scoring-method mix when either exceeds one', () => {
     open(buildAnalysis({ distinctAssessorCount: 2, distinctScoringMethodVersionCount: 2 }));
 
-    expect(component.assessorMixed).toBeTrue();
-    expect(component.scoringMethodMixed).toBeTrue();
+    expect(component.assessorMixed).toBe(true);
+    expect(component.scoringMethodMixed).toBe(true);
 
     const text = bannerText();
     expect(text).toContain('Assessor mix:');
@@ -242,12 +254,12 @@ describe('SuiteHealthComponent', () => {
     // Citations and Coverage cost an index scan and AI tokens respectively, so a generic
     // Refresh must neither offer itself nor fire them.
     component.selectTab('citations');
-    expect(component.canRefreshActiveTab).toBeFalse();
+    expect(component.canRefreshActiveTab).toBe(false);
     component.refreshActiveTab();
     expect(serviceMock.validateCitations).not.toHaveBeenCalled();
 
     component.selectTab('coverage');
-    expect(component.canRefreshActiveTab).toBeFalse();
+    expect(component.canRefreshActiveTab).toBe(false);
     component.refreshActiveTab();
     expect(serviceMock.analyzeCoverage).not.toHaveBeenCalled();
   });
@@ -257,7 +269,7 @@ describe('SuiteHealthComponent', () => {
 
     const panels: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('[role="tabpanel"]'));
     expect(panels.length).toBe(1);
-    expect(panels.every(p => p.getAttribute('tabindex') === '0')).toBeTrue();
+    expect(panels.every(p => p.getAttribute('tabindex') === '0')).toBe(true);
 
     // The active tab's aria-controls has to resolve to the panel that is actually rendered.
     const activeTab = fixture.nativeElement.querySelector('[role="tab"][aria-selected="true"]') as HTMLElement;
@@ -280,11 +292,11 @@ describe('SuiteHealthComponent', () => {
   });
 
   it('should surface an item-analysis failure without breaking the panel', () => {
-    serviceMock.getItemAnalysis.and.returnValue(throwError(() => ({ error: 'boom' })));
+    serviceMock.getItemAnalysis.mockReturnValue(throwError(() => ({ error: 'boom' })));
     open();
 
     expect(component.itemsError).toBe('boom');
-    expect(component.loadingItems).toBeFalse();
+    expect(component.loadingItems).toBe(false);
   });
 
   it('should expose no write action anywhere in the panel', () => {
@@ -297,7 +309,7 @@ describe('SuiteHealthComponent', () => {
       .map(b => ((b as HTMLElement).textContent || '').trim().toLowerCase());
 
     expect(labels).toContain('edit question');
-    expect(labels.some(l => l.includes('apply') || l.includes('save') || l.includes('re-rate') || l.includes('write'))).toBeFalse();
+    expect(labels.some(l => l.includes('apply') || l.includes('save') || l.includes('re-rate') || l.includes('write'))).toBe(false);
   });
 
   it('should emit the question id rather than editing anything itself', () => {
@@ -314,7 +326,7 @@ describe('SuiteHealthComponent', () => {
     open();
     expect(serviceMock.validateCitations).not.toHaveBeenCalled();
 
-    serviceMock.validateCitations.and.returnValue(of({
+    serviceMock.validateCitations.mockReturnValue(of({
       suiteId: 5,
       unresolvedCount: 1,
       notValidatedCount: 1,
@@ -358,7 +370,7 @@ describe('SuiteHealthComponent', () => {
     component.analyzeCoverage();
     expect(serviceMock.analyzeCoverage).not.toHaveBeenCalled();
 
-    serviceMock.analyzeCoverage.and.returnValue(of({
+    serviceMock.analyzeCoverage.mockReturnValue(of({
       suiteId: 5,
       suiteName: 'Suite',
       questionCount: 18,
@@ -398,7 +410,7 @@ describe('SuiteHealthComponent', () => {
     fixture.detectChanges();
 
     const trigger = fixture.nativeElement.querySelector('.coverage-model-selector .selector-trigger') as HTMLElement;
-    expect(trigger).withContext('the Coverage tab renders the shared model selector').toBeTruthy();
+    expect(trigger, 'the Coverage tab renders the shared model selector').toBeTruthy();
 
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
     expect(trigger.getAttribute('aria-describedby')).toBe('coverageModelHint');
@@ -446,7 +458,7 @@ describe('SuiteHealthComponent', () => {
     expect(tabs[0].getAttribute('tabindex')).toBe('0');
     expect(tabs[1].getAttribute('aria-selected')).toBe('false');
     expect(tabs[1].getAttribute('tabindex')).toBe('-1');
-    expect(tabs.every(t => !!t.getAttribute('aria-controls'))).toBeTrue();
+    expect(tabs.every(t => !!t.getAttribute('aria-controls'))).toBe(true);
 
     const list = fixture.nativeElement.querySelector('[role="tablist"]') as HTMLElement;
     expect(list.getAttribute('aria-label')).toBe('Suite health sections');
@@ -482,8 +494,8 @@ describe('SuiteHealthComponent', () => {
       component.gameSnapshotId = 12;
       component.benchmarkCapableConfigs = [buildConfig({ id: 42 })];
       component.rubricCheckerConfigId = 42;
-      serviceMock.startRubricCheck.and.returnValue(of({ jobId: 'rubric-job-1' }));
-      serviceMock.getRubricCheck.and.returnValue(of({
+      serviceMock.startRubricCheck.mockReturnValue(of({ jobId: 'rubric-job-1' }));
+      serviceMock.getRubricCheck.mockReturnValue(of({
         id: 'rubric-job-1',
         suiteId: 5,
         suiteName: 'Test Suite',
@@ -566,8 +578,8 @@ describe('SuiteHealthComponent', () => {
       open();
       component.benchmarkCapableConfigs = [buildConfig({ id: 42 })];
       component.rubricGapAuthorConfigId = 42;
-      gapAuthorMock.startRubricGapAuthor.and.returnValue(of({ jobId: job.id }));
-      gapAuthorMock.getRubricGapAuthor.and.returnValue(of(job));
+      gapAuthorMock.startRubricGapAuthor.mockReturnValue(of({ jobId: job.id }));
+      gapAuthorMock.getRubricGapAuthor.mockReturnValue(of(job));
 
       component.selectTab('gaps');
       component.startRubricGapAuthor();
@@ -595,11 +607,11 @@ describe('SuiteHealthComponent', () => {
         clusterKeys: null
       });
       expect(component.rubricGapAuthorJob?.status).toBe('Completed');
-      expect(component.runningRubricGapAuthor).toBeFalse();
+      expect(component.runningRubricGapAuthor).toBe(false);
 
       component.rubricGapAuthorInstructions = '  Keep additions to one sentence.  ';
       component.startRubricGapAuthor();
-      expect(gapAuthorMock.startRubricGapAuthor.calls.mostRecent().args[0].instructions)
+      expect(vi.mocked(gapAuthorMock.startRubricGapAuthor).mock.lastCall![0].instructions)
         .toBe('Keep additions to one sentence.');
     });
 
@@ -607,9 +619,9 @@ describe('SuiteHealthComponent', () => {
       showJob();
 
       const area = textareaFor('7:0');
-      expect(area).withContext('the draft is rendered as a textarea, not as static text').toBeTruthy();
+      expect(area, 'the draft is rendered as a textarea, not as static text').toBeTruthy();
       expect(area.value).toBe('Notes that eating a wraith corpse grants one experience level.');
-      expect(area.disabled).toBeFalse();
+      expect(area.disabled).toBe(false);
 
       // A placeholder is not a name: it disappears on first keystroke and several screen readers
       // never announce it, so the association has to be a real <label for>.
@@ -628,7 +640,7 @@ describe('SuiteHealthComponent', () => {
 
     it('should accept the textarea contents rather than the model\'s draft', () => {
       showJob();
-      gapAuthorMock.acceptRubricAddition.and.returnValue(of({
+      gapAuthorMock.acceptRubricAddition.mockReturnValue(of({
         id: 1,
         questionId: 7,
         questionOrderIndex: 3,
@@ -666,24 +678,24 @@ describe('SuiteHealthComponent', () => {
     it('should mark a draft modified once it diverges, and revert it on request', () => {
       showJob();
 
-      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBeFalse();
+      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBe(false);
       expect(fixture.nativeElement.querySelector('.draft-modified')).toBeNull();
 
       type(textareaFor('7:0'), 'Rewritten by the operator.');
 
-      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBeTrue();
+      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBe(true);
       expect((fixture.nativeElement.querySelector('.draft-modified') as HTMLElement).textContent?.trim())
         .toBe('modified');
 
       const revert = Array.from(fixture.nativeElement.querySelectorAll('.draft-actions button'))
         .find(b => ((b as HTMLElement).textContent || '').includes('Revert')) as HTMLButtonElement;
-      expect(revert.disabled).withContext('Revert is live only while there is something to revert').toBeFalse();
+      expect(revert.disabled, 'Revert is live only while there is something to revert').toBe(false);
 
       revert.click();
       fixture.detectChanges();
 
       expect(textareaFor('7:0').value).toBe('Notes that eating a wraith corpse grants one experience level.');
-      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBeFalse();
+      expect(component.isDraftModified(component.rubricGapAuthorJob!.drafts[0])).toBe(false);
       expect(fixture.nativeElement.querySelector('.draft-modified')).toBeNull();
     });
 
@@ -711,8 +723,7 @@ describe('SuiteHealthComponent', () => {
       const buttons: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('button'));
       const labels = buttons.map(b => (b.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase());
 
-      expect(labels.some(l => /accept all|accept every|accept selected|apply all|accept remaining/.test(l)))
-        .withContext('no bulk-accept control exists').toBeFalse();
+      expect(labels.some(l => /accept all|accept every|accept selected|apply all|accept remaining/.test(l)), 'no bulk-accept control exists').toBe(false);
 
       // Exactly one Accept per draft, and no multi-select to feed one.
       expect(labels.filter(l => l.startsWith('accept')).length).toBe(2);
@@ -725,14 +736,13 @@ describe('SuiteHealthComponent', () => {
 
     it('should surface an acceptance failure against the draft it belongs to', () => {
       showJob();
-      gapAuthorMock.acceptRubricAddition.and.returnValue(
-        throwError(() => ({ error: { error: 'That draft belongs to a different question.' } })));
+      gapAuthorMock.acceptRubricAddition.mockReturnValue(throwError(() => ({ error: { error: 'That draft belongs to a different question.' } })));
 
       component.acceptDraft(component.rubricGapAuthorJob!.drafts[0]);
       fixture.detectChanges();
 
       expect(component.draftAcceptErrors['7:0']).toBe('That draft belongs to a different question.');
-      expect(component.isDraftAccepted(component.rubricGapAuthorJob!.drafts[0])).toBeFalse();
+      expect(component.isDraftAccepted(component.rubricGapAuthorJob!.drafts[0])).toBe(false);
       expect(fixture.nativeElement.textContent).toContain('That draft belongs to a different question.');
     });
 

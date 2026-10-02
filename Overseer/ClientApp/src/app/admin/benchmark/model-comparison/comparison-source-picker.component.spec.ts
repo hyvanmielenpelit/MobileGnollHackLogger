@@ -278,7 +278,7 @@ describe('ComparisonSourcePickerComponent', () => {
 
     component.runTable.setFilter('testedModel', 'Model 1');
     fixture.detectChanges();
-    expect(component.isRunSelected(15)).toBeTrue();
+    expect(component.isRunSelected(15)).toBe(true);
 
     component.runTable.setPage(2, component.runs);
     fixture.detectChanges();
@@ -297,7 +297,7 @@ describe('ComparisonSourcePickerComponent', () => {
     const failed = boxes
       .map(element => element.nativeElement as HTMLInputElement)
       .find(element => element.disabled)!;
-    expect(failed).withContext('the failed run must be disabled, not hidden').toBeTruthy();
+    expect(failed, 'the failed run must be disabled, not hidden').toBeTruthy();
     expect(failed.getAttribute('aria-label')).toContain('only a completed run can be compared');
   });
 
@@ -352,7 +352,7 @@ describe('ComparisonSourcePickerComponent', () => {
     component.suiteIdChange.subscribe(value => emitted.push(value));
 
     const select = fixture.debugElement.query(By.css('#csp-suite'));
-    expect(select).withContext('the suite scope select belongs to the picker').toBeTruthy();
+    expect(select, 'the suite scope select belongs to the picker').toBeTruthy();
 
     component.onSuiteChange(6);
     component.onSuiteChange(null);
@@ -549,10 +549,10 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(component.conditionLabel('run:1')).toBe('—');
     expect(component.conditionOrdinal('run:1')).toBeNull();
     expect(conditionDetailFor(component.comparabilityIndex, 'run:1', [1])).toBeNull();
-    expect(component.hasConditionDetail('run:1')).toBeFalse();
+    expect(component.hasConditionDetail('run:1')).toBe(false);
     // The failed run is still unselectable for its own reason, not because of the index.
-    expect(component.isRunSelectable(component.runs[0])).toBeTrue();
-    expect(component.isRunSelectable(component.runs[1])).toBeFalse();
+    expect(component.isRunSelectable(component.runs[0])).toBe(true);
+    expect(component.isRunSelectable(component.runs[1])).toBe(false);
   });
 
   it('shows a muted dash while the index is loading, even if a stale index is present', () => {
@@ -564,11 +564,11 @@ describe('ComparisonSourcePickerComponent', () => {
   it('filters the run table to the largest condition when showCompatibleRunsOnly is toggled on', () => {
     render({ runs: runs(3), comparabilityIndex: buildIndex() });
 
-    expect(component.showCompatibleRunsOnly).toBeFalse();
+    expect(component.showCompatibleRunsOnly).toBe(false);
     component.toggleShowCompatibleRunsOnly();
     fixture.detectChanges();
 
-    expect(component.showCompatibleRunsOnly).toBeTrue();
+    expect(component.showCompatibleRunsOnly).toBe(true);
     // The run table sorts by id descending by default, so the surviving rows come back 2 then 1.
     expect(component.runTable.view(component.runs).map(r => r.id)).toEqual([2, 1]);
   });
@@ -594,14 +594,21 @@ describe('ComparisonSourcePickerComponent', () => {
      * blob that was written and the anchor names the file it was written under, which between them
      * are everything a download can be asserted on without a real file system.
      */
-    function captureSaves(): { blobs: Blob[]; names: string[] } {
-      const saved: { blobs: Blob[]; names: string[] } = { blobs: [], names: [] };
-      spyOn(URL, 'createObjectURL').and.callFake((source: Blob | MediaSource) => {
+    function captureSaves(): {
+      blobs: Blob[];
+      names: string[];
+    } {
+      const saved: {
+        blobs: Blob[];
+        names: string[];
+      } = { blobs: [], names: [] };
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((source: Blob | MediaSource) => {
         saved.blobs.push(source as Blob);
         return 'blob:comparison-source-picker-test';
       });
-      spyOn(URL, 'revokeObjectURL').and.stub();
-      spyOn(HTMLAnchorElement.prototype, 'click').and.callFake(function (this: HTMLAnchorElement) {
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {
+      });
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
         saved.names.push(this.download);
       });
       return saved;
@@ -613,13 +620,13 @@ describe('ComparisonSourcePickerComponent', () => {
       // Runs 1 and 2 and the group are the reference condition itself; run 3 is not.
       expect(detailButtons().length).toBe(1);
       expect(detailButtons()[0].getAttribute('aria-label')).toBe('Comparability detail for run 3');
-      expect(component.hasConditionDetail('run:1')).toBeFalse();
-      expect(component.hasConditionDetail('run:3')).toBeTrue();
+      expect(component.hasConditionDetail('run:1')).toBe(false);
+      expect(component.hasConditionDetail('run:3')).toBe(true);
     });
 
     it('opens the dialog populated with that entry\'s rows', () => {
       render({ runs: runs(3), comparabilityIndex: buildIndex() });
-      const showModal = spyOn(conditionDialog(), 'showModal');
+      const showModal = vi.spyOn(conditionDialog(), 'showModal').mockReturnValue(undefined);
 
       detailButtons()[0].click();
       fixture.detectChanges();
@@ -629,8 +636,8 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(component.conditionDetailTitle).toBe('Run 3 — Condition B');
       // Full-screen, like the wizard it is nested in — its backdrop is too thin to be an honest
       // click target, so it carries no closedby and no light-dismiss handler.
-      expect(conditionDialog().classList.contains('gh-dialog-fullscreen')).toBeTrue();
-      expect(conditionDialog().hasAttribute('closedby')).toBeFalse();
+      expect(conditionDialog().classList.contains('gh-dialog-fullscreen')).toBe(true);
+      expect(conditionDialog().hasAttribute('closedby')).toBe(false);
 
       const rows = fixture.debugElement
         .queryAll(By.css('dialog.csp-condition-dialog tbody tr'))
@@ -643,18 +650,18 @@ describe('ComparisonSourcePickerComponent', () => {
     });
 
     it('copies the detail as Markdown with the values in full', async () => {
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       Object.defineProperty(navigator, 'clipboard', {
         value: { writeText }, configurable: true, writable: true
       });
       try {
         render({ runs: runs(3), comparabilityIndex: buildIndex() });
-        spyOn(conditionDialog(), 'showModal');
+        vi.spyOn(conditionDialog(), 'showModal').mockReturnValue(undefined);
         detailButtons()[0].click();
 
         await component.copyConditionDetail();
 
-        const written = writeText.calls.mostRecent().args[0] as string;
+        const written = vi.mocked(writeText).mock.lastCall![0] as string;
         expect(written).toContain('Run 3 — Condition B');
         expect(written).toContain('| serviceTier');
         expect(written).toContain('priority');
@@ -684,7 +691,7 @@ describe('ComparisonSourcePickerComponent', () => {
         ]
       });
       render({ runs: [...runs(3), buildRun({ id: 46 })], comparabilityIndex: index });
-      spyOn(conditionDialog(), 'showModal');
+      vi.spyOn(conditionDialog(), 'showModal').mockReturnValue(undefined);
       // The run table sorts by id descending by default, so run 46 renders — and opens — first.
       detailButtons()[0].click();
       fixture.detectChanges();
@@ -705,20 +712,19 @@ describe('ComparisonSourcePickerComponent', () => {
 
       trigger.click();
       fixture.detectChanges();
-      expect(dialog.open).toBeTrue();
+      expect(dialog.open).toBe(true);
 
       // A synthetic key event cannot drive a dialog's own close request, so Escape is exercised as
       // the two events it produces: a cancel the handler must not prevent, then the close itself.
       const cancel = new Event('cancel', { cancelable: true });
       dialog.dispatchEvent(cancel);
-      expect(cancel.defaultPrevented)
-        .withContext('a refused close request leaves the reader trapped').toBeFalse();
+      expect(cancel.defaultPrevented, 'a refused close request leaves the reader trapped').toBe(false);
 
       const closed = nextClose(dialog);
       dialog.close();
       await closed;
 
-      expect(dialog.open).toBeFalse();
+      expect(dialog.open).toBe(false);
       expect(document.activeElement).toBe(trigger);
     });
 
@@ -742,12 +748,12 @@ describe('ComparisonSourcePickerComponent', () => {
       render({ runs: [], groups: [buildGroup({ id: 2 })], comparabilityIndex: index });
       component.selectSourceTab('groups');
       fixture.detectChanges();
-      spyOn(conditionDialog(), 'showModal');
+      vi.spyOn(conditionDialog(), 'showModal').mockReturnValue(undefined);
 
       detailButtons()[0].click();
       fixture.detectChanges();
 
-      expect(component.conditionDetail?.selfInconsistent).toBeTrue();
+      expect(component.conditionDetail?.selfInconsistent).toBe(true);
       const chips = fixture.debugElement
         .queryAll(By.css('dialog.csp-condition-dialog .csp-key-chips li'))
         .map(element => (element.nativeElement as HTMLElement).textContent?.trim());
@@ -758,7 +764,7 @@ describe('ComparisonSourcePickerComponent', () => {
 
     it('keeps the detail dialog close event off the wizard', () => {
       const event = new Event('close');
-      const stopPropagation = spyOn(event, 'stopPropagation');
+      const stopPropagation = vi.spyOn(event, 'stopPropagation').mockReturnValue(undefined);
 
       component.onConditionDialogClose(event);
 
@@ -819,16 +825,16 @@ describe('ComparisonSourcePickerComponent', () => {
 
   it('opens About conditions as a modal dialog from its trigger', () => {
     render({ comparabilityIndex: buildIndex() });
-    const showModal = spyOn(legendDialog(), 'showModal');
+    const showModal = vi.spyOn(legendDialog(), 'showModal').mockReturnValue(undefined);
 
     (fixture.debugElement.query(By.css('#csp-legend-trigger'))
       .nativeElement as HTMLButtonElement).click();
 
     expect(showModal).toHaveBeenCalled();
-    expect(component.legendOpen).toBeTrue();
+    expect(component.legendOpen).toBe(true);
     // Full-screen, so its backdrop is only a thin ring: no light dismiss.
-    expect(legendDialog().classList.contains('gh-dialog-fullscreen')).toBeTrue();
-    expect(legendDialog().hasAttribute('closedby')).toBeFalse();
+    expect(legendDialog().classList.contains('gh-dialog-fullscreen')).toBe(true);
+    expect(legendDialog().hasAttribute('closedby')).toBe(false);
     expect((fixture.debugElement.query(By.css('#csp-legend-title')).nativeElement as HTMLElement)
       .textContent?.trim()).toBe('About conditions');
   });
@@ -845,7 +851,7 @@ describe('ComparisonSourcePickerComponent', () => {
     await closed;
     fixture.detectChanges();
 
-    expect(component.legendOpen).toBeFalse();
+    expect(component.legendOpen).toBe(false);
     expect(fixture.debugElement.query(By.css('.csp-legend-inner'))).toBeNull();
     expect(document.activeElement?.id).toBe('csp-legend-trigger');
   });
@@ -861,7 +867,7 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(chips.length).toBe(
       index.mustMatchKeyNames.length + index.modelAxisKeyNames.length + index.degradingKeyNames.length);
     // A comma would mean a joined string was handed to the browser as one breakable-anywhere token.
-    expect(chips.some(text => text.includes(','))).toBeFalse();
+    expect(chips.some(text => text.includes(','))).toBe(false);
   });
 
   it('pins the charted condition first, tagged and open, and lists the others newest first', () => {
@@ -884,7 +890,7 @@ describe('ComparisonSourcePickerComponent', () => {
       .toEqual(['Condition A', 'Condition C', 'Condition B']);
     expect(items[0].querySelector('.csp-cond-charted')?.textContent?.trim()).toBe('Charted');
     expect(items[1].querySelector('.csp-cond-charted')).toBeNull();
-    expect(items[0].open).toBeTrue();
+    expect(items[0].open).toBe(true);
     expect(component.openConditionOrdinal).toBe(1);
     expect(summaries[2]).toContain('differs on 1 setting');
   });
@@ -894,9 +900,9 @@ describe('ComparisonSourcePickerComponent', () => {
     openLegend();
     const [reference, other] = conditionItems();
 
-    expect(conditionItems().every(item => item.getAttribute('name') === 'csp-conditions')).toBeTrue();
+    expect(conditionItems().every(item => item.getAttribute('name') === 'csp-conditions')).toBe(true);
     expect(conditionBodies().length).toBe(1);
-    expect(reference.contains(conditionBodies()[0])).toBeTrue();
+    expect(reference.contains(conditionBodies()[0])).toBe(true);
 
     toggle(other, 'open');
     // The closing item's event arrives after the opening one's and must not clear the new state.
@@ -904,7 +910,7 @@ describe('ComparisonSourcePickerComponent', () => {
 
     expect(component.openConditionOrdinal).toBe(2);
     expect(conditionBodies().length).toBe(1);
-    expect(other.contains(conditionBodies()[0])).toBeTrue();
+    expect(other.contains(conditionBodies()[0])).toBe(true);
 
     toggle(other, 'closed');
     expect(component.openConditionOrdinal).toBeNull();
@@ -960,7 +966,7 @@ describe('ComparisonSourcePickerComponent', () => {
 
     const detailDialog = fixture.debugElement.query(By.css('dialog.csp-condition-dialog'))
       .nativeElement as HTMLDialogElement;
-    const showModal = spyOn(detailDialog, 'showModal');
+    const showModal = vi.spyOn(detailDialog, 'showModal').mockReturnValue(undefined);
     const fullDetail = body.querySelector('.csp-cond-actions button') as HTMLButtonElement;
     expect(fullDetail.getAttribute('aria-label')).toBe('Full detail for Condition B');
 
@@ -973,7 +979,7 @@ describe('ComparisonSourcePickerComponent', () => {
   it('keeps technical details off on every open', () => {
     render({ comparabilityIndex: buildIndex() });
     openLegend();
-    expect(component.showTechnicalDetails).toBeFalse();
+    expect(component.showTechnicalDetails).toBe(false);
     expect(fixture.debugElement.query(By.css('.csp-methods-key'))).toBeNull();
 
     component.toggleTechnicalDetails();
@@ -984,7 +990,7 @@ describe('ComparisonSourcePickerComponent', () => {
     component.onLegendDialogClose(new Event('close'));
     openLegend();
 
-    expect(component.showTechnicalDetails).toBeFalse();
+    expect(component.showTechnicalDetails).toBe(false);
     expect(fixture.debugElement.query(By.css('.csp-methods-key'))).toBeNull();
   });
 
@@ -1083,7 +1089,7 @@ describe('ComparisonSourcePickerComponent', () => {
 
       const values = fixture.debugElement.queryAll(By.css('.csp-legend-values dd code'))
         .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
-      expect(values.some(text => text.includes('NetHack Wiki Suite (#5)'))).toBeTrue();
+      expect(values.some(text => text.includes('NetHack Wiki Suite (#5)'))).toBe(true);
     });
 
     it('shows a hash as twelve characters, with the full digest a technical detail', () => {
@@ -1095,7 +1101,7 @@ describe('ComparisonSourcePickerComponent', () => {
       component.toggleTechnicalDetails();
 
       const disclosure = fixture.debugElement.query(By.css('details.csp-methods-disclosure'));
-      expect(disclosure).withContext('the full digest must remain reachable by hand').toBeTruthy();
+      expect(disclosure, 'the full digest must remain reachable by hand').toBeTruthy();
       expect(textOf('details.csp-methods-disclosure code')).toBe(FULL_DIGEST);
     });
 
@@ -1104,10 +1110,9 @@ describe('ComparisonSourcePickerComponent', () => {
 
       const values = fixture.debugElement.queryAll(By.css('.csp-legend-values dd code'))
         .map(element => (element.nativeElement as HTMLElement).textContent ?? '');
-      expect(values.some(text => text.includes(UNBREAKABLE_TOKEN)))
-        .withContext('the prompt-options value must render inside its own code box').toBeTrue();
+      expect(values.some(text => text.includes(UNBREAKABLE_TOKEN)), 'the prompt-options value must render inside its own code box').toBe(true);
       // Pretty-printed rather than the minified blob the wire carries.
-      expect(values.some(text => text.includes('"temperature": 0.2'))).toBeTrue();
+      expect(values.some(text => text.includes('"temperature": 0.2'))).toBe(true);
     });
 
     it('renders a JSON value that does not parse as the raw string', () => {
@@ -1131,11 +1136,11 @@ describe('ComparisonSourcePickerComponent', () => {
       expect((none.nativeElement as HTMLElement).textContent).toContain('—');
       expect((none.nativeElement as HTMLElement).querySelector('.visually-hidden')?.textContent)
         .toBe('no value');
-      expect(component.isNoValue('(none)')).toBeTrue();
+      expect(component.isNoValue('(none)')).toBe(true);
     });
 
     it('copies the methods statement with full values, never the abbreviations', async () => {
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       installClipboard({ writeText });
       renderLegend();
       const footerButtons = fixture.debugElement
@@ -1145,7 +1150,7 @@ describe('ComparisonSourcePickerComponent', () => {
 
       await component.copyMethodsStatement();
 
-      const written = writeText.calls.mostRecent().args[0] as string;
+      const written = vi.mocked(writeText).mock.lastCall![0] as string;
       expect(written).toContain('Reference condition: Condition A (3 sources, 3 runs');
       expect(written).toContain('Signature: sig-a');
       expect(written).toContain('The exam');
@@ -1157,7 +1162,7 @@ describe('ComparisonSourcePickerComponent', () => {
     });
 
     it('copies a hash row in full rather than the twelve characters it shows', async () => {
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       installClipboard({ writeText });
       const index = buildIndex();
       render({ comparabilityIndex: index });
@@ -1169,7 +1174,7 @@ describe('ComparisonSourcePickerComponent', () => {
     });
 
     it('copies a condition signature in full', async () => {
-      const writeText = jasmine.createSpy('writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockName('writeText').mockResolvedValue(undefined);
       installClipboard({ writeText });
       render({ comparabilityIndex: buildIndex() });
 
@@ -1191,7 +1196,7 @@ describe('ComparisonSourcePickerComponent', () => {
 
   it('keeps the legend close event off the wizard', () => {
     const event = new Event('close');
-    const stopPropagation = spyOn(event, 'stopPropagation');
+    const stopPropagation = vi.spyOn(event, 'stopPropagation').mockReturnValue(undefined);
 
     component.onLegendDialogClose(event);
 
@@ -1311,7 +1316,7 @@ describe('ComparisonSourcePickerComponent', () => {
       render({ runs: runs(3), comparabilityIndex: buildIndex() });
       const dialog = fixture.debugElement.query(By.css('dialog.csp-condition-dialog'))
         .nativeElement as HTMLDialogElement;
-      spyOn(dialog, 'showModal');
+      vi.spyOn(dialog, 'showModal').mockReturnValue(undefined);
       const trigger = document.createElement('button');
       // Detached from the document: the row it named has since been paged, filtered or
       // refreshed away.

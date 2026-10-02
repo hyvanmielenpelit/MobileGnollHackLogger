@@ -28,12 +28,12 @@ describe('ConfigFilterModel', () => {
 
     it('determines if filter is active', () => {
       const f = createEmptyFilter();
-      expect(isFilterActive(f)).toBeFalse();
+      expect(isFilterActive(f)).toBe(false);
       f.roles = [ROLE_CHAT];
-      expect(isFilterActive(f)).toBeTrue();
+      expect(isFilterActive(f)).toBe(true);
       f.roles = [];
       f.providers = ['OpenAI'];
-      expect(isFilterActive(f)).toBeTrue();
+      expect(isFilterActive(f)).toBe(true);
     });
   });
 
@@ -45,25 +45,25 @@ describe('ConfigFilterModel', () => {
 
     it('matches everything when filter is empty', () => {
       const f = createEmptyFilter();
-      expect(matchesFilter(chatConfig, f)).toBeTrue();
-      expect(matchesFilter(chatAndTitleConfig, f)).toBeTrue();
-      expect(matchesFilter(titleOnlyAnthropic, f)).toBeTrue();
-      expect(matchesFilter(benchmarkGoogle, f)).toBeTrue();
+      expect(matchesFilter(chatConfig, f)).toBe(true);
+      expect(matchesFilter(chatAndTitleConfig, f)).toBe(true);
+      expect(matchesFilter(titleOnlyAnthropic, f)).toBe(true);
+      expect(matchesFilter(benchmarkGoogle, f)).toBe(true);
     });
 
     it('filters by role in "any" mode (OR)', () => {
       const f: ConfigFilter = { roles: [ROLE_CHAT, ROLE_BENCHMARK], roleMatchMode: 'any', providers: [] };
-      expect(matchesFilter(chatConfig, f)).toBeTrue();
-      expect(matchesFilter(chatAndTitleConfig, f)).toBeTrue();
-      expect(matchesFilter(benchmarkGoogle, f)).toBeTrue();
-      expect(matchesFilter(titleOnlyAnthropic, f)).toBeFalse();
+      expect(matchesFilter(chatConfig, f)).toBe(true);
+      expect(matchesFilter(chatAndTitleConfig, f)).toBe(true);
+      expect(matchesFilter(benchmarkGoogle, f)).toBe(true);
+      expect(matchesFilter(titleOnlyAnthropic, f)).toBe(false);
     });
 
     it('filters by role in "all" mode (AND)', () => {
       const f: ConfigFilter = { roles: [ROLE_CHAT, ROLE_TITLE], roleMatchMode: 'all', providers: [] };
-      expect(matchesFilter(chatConfig, f)).toBeFalse();
-      expect(matchesFilter(titleOnlyAnthropic, f)).toBeFalse();
-      expect(matchesFilter(chatAndTitleConfig, f)).toBeTrue();
+      expect(matchesFilter(chatConfig, f)).toBe(false);
+      expect(matchesFilter(titleOnlyAnthropic, f)).toBe(false);
+      expect(matchesFilter(chatAndTitleConfig, f)).toBe(true);
     });
 
     it('differentiates any vs all for role filter [1, 4] with modelRole 3 (1 | 2)', () => {
@@ -71,22 +71,22 @@ describe('ConfigFilterModel', () => {
       const anyFilter: ConfigFilter = { roles: [ROLE_CHAT, ROLE_BENCHMARK], roleMatchMode: 'any', providers: [] };
       const allFilter: ConfigFilter = { roles: [ROLE_CHAT, ROLE_BENCHMARK], roleMatchMode: 'all', providers: [] };
 
-      expect(matchesFilter(config, anyFilter)).toBeTrue(); // has Chat (1)
-      expect(matchesFilter(config, allFilter)).toBeFalse(); // lacks Benchmark (4)
+      expect(matchesFilter(config, anyFilter)).toBe(true); // has Chat (1)
+      expect(matchesFilter(config, allFilter)).toBe(false); // lacks Benchmark (4)
     });
 
     it('filters by provider in OR mode', () => {
       const f: ConfigFilter = { roles: [], roleMatchMode: 'any', providers: ['Anthropic', 'Google'] };
-      expect(matchesFilter(titleOnlyAnthropic, f)).toBeTrue();
-      expect(matchesFilter(benchmarkGoogle, f)).toBeTrue();
-      expect(matchesFilter(chatConfig, f)).toBeFalse(); // OpenAI
+      expect(matchesFilter(titleOnlyAnthropic, f)).toBe(true);
+      expect(matchesFilter(benchmarkGoogle, f)).toBe(true);
+      expect(matchesFilter(chatConfig, f)).toBe(false); // OpenAI
     });
 
     it('combines role and provider facets using AND across facets', () => {
       const f: ConfigFilter = { roles: [ROLE_CHAT], roleMatchMode: 'any', providers: ['Google'] };
-      expect(matchesFilter(chatConfig, f)).toBeFalse(); // Chat but OpenAI
-      expect(matchesFilter(benchmarkGoogle, f)).toBeFalse(); // Google but Benchmark
-      expect(matchesFilter(chatAndTitleConfig, f)).toBeTrue(); // Chat & Google
+      expect(matchesFilter(chatConfig, f)).toBe(false); // Chat but OpenAI
+      expect(matchesFilter(benchmarkGoogle, f)).toBe(false); // Google but Benchmark
+      expect(matchesFilter(chatAndTitleConfig, f)).toBe(true); // Chat & Google
     });
   });
 
@@ -188,23 +188,23 @@ describe('ConfigFilterComponent', () => {
 
   it('disables match-mode radios when fewer than 2 roles are selected', () => {
     const matchModeFieldset = fixture.nativeElement.querySelector('fieldset.match-mode');
-    expect(matchModeFieldset.hasAttribute('disabled')).toBeTrue();
+    expect(matchModeFieldset.hasAttribute('disabled')).toBe(true);
 
     const oneRole = { roles: [ROLE_CHAT], roleMatchMode: 'any' as const, providers: [] };
     component.filter = oneRole;
     component.ngOnChanges({ filter: new SimpleChange(null, oneRole, false) });
     fixture.detectChanges();
-    expect(matchModeFieldset.hasAttribute('disabled')).toBeTrue();
+    expect(matchModeFieldset.hasAttribute('disabled')).toBe(true);
 
     const twoRoles = { roles: [ROLE_CHAT, ROLE_TITLE], roleMatchMode: 'any' as const, providers: [] };
     component.filter = twoRoles;
     component.ngOnChanges({ filter: new SimpleChange(oneRole, twoRoles, false) });
     fixture.detectChanges();
-    expect(matchModeFieldset.hasAttribute('disabled')).toBeFalse();
+    expect(matchModeFieldset.hasAttribute('disabled')).toBe(false);
   });
 
   it('emits new filter on checkbox toggle without mutating input', () => {
-    spyOn(component.filterChange, 'emit');
+    vi.spyOn(component.filterChange, 'emit').mockReturnValue(undefined);
     const initialFilter = createEmptyFilter();
     component.filter = initialFilter;
 
@@ -226,7 +226,7 @@ describe('ConfigFilterComponent', () => {
   });
 
   it('emits updated match mode when changed', () => {
-    spyOn(component.filterChange, 'emit');
+    vi.spyOn(component.filterChange, 'emit').mockReturnValue(undefined);
     component.filter = { roles: [ROLE_CHAT, ROLE_TITLE], roleMatchMode: 'any', providers: [] };
     component.setRoleMatchMode('all');
     expect(component.filterChange.emit).toHaveBeenCalledWith({
@@ -250,7 +250,7 @@ describe('ConfigFilterComponent', () => {
   });
 
   it('renders chips as buttons with aria-label and emits removed filter on click', () => {
-    spyOn(component.filterChange, 'emit');
+    vi.spyOn(component.filterChange, 'emit').mockReturnValue(undefined);
     const filter = { roles: [ROLE_CHAT], roleMatchMode: 'any' as const, providers: ['Anthropic'] };
     component.filter = filter;
     component.ngOnChanges({ filter: new SimpleChange(null, filter, false) });
@@ -270,16 +270,16 @@ describe('ConfigFilterComponent', () => {
   });
 
   it('disables Clear All Filters when activeCount is 0, emits empty filter on click when active', () => {
-    spyOn(component.filterChange, 'emit');
+    vi.spyOn(component.filterChange, 'emit').mockReturnValue(undefined);
     const clearBtn = fixture.nativeElement.querySelector('.panel-actions button.btn-gh:not(.btn-gh-cancel)');
-    expect(clearBtn.disabled).toBeTrue();
+    expect(clearBtn.disabled).toBe(true);
 
     const filter = { roles: [ROLE_CHAT], roleMatchMode: 'any' as const, providers: [] };
     component.filter = filter;
     component.ngOnChanges({ filter: new SimpleChange(null, filter, false) });
     fixture.detectChanges();
 
-    expect(clearBtn.disabled).toBeFalse();
+    expect(clearBtn.disabled).toBe(false);
     clearBtn.click();
     expect(component.filterChange.emit).toHaveBeenCalledWith(createEmptyFilter());
   });

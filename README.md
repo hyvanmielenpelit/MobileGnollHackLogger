@@ -245,7 +245,8 @@ Right-click on the `Overseer` project → **Manage User Secrets**, and paste:
   ```bash
   dotnet run --project Overseer
   ```
-  The Angular dev server will start automatically via the SPA proxy.
+  The host serves the Angular client from `Overseer/wwwroot` as last built by `npm run build` in
+  `Overseer/ClientApp`; run that build after client changes.
 
 ### Publishing
 

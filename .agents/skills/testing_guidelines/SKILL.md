@@ -252,12 +252,20 @@ Run commands from the `Overseer/ClientApp/` directory:
     npm run test:headless
     ```
     This is the command for this repository's implementation plans and verification runs, and it is also stated in **`AGENTS.md`**, which is loaded into every context window.
-    *(Alternatively: `npx ng test --no-watch --browsers=ChromeHeadless` or `npm test -- --no-watch --browsers=ChromeHeadless`)*
+    *(Alternatively: `npx ng test --no-watch` or `npm test -- --no-watch`)*
 
-*   **Run Specific Test File (Headless)**:
+    The specs run with Vitest in browser mode (headless Chromium through Playwright) via Angular's `@angular/build:unit-test` builder; `angular.json` makes the browser headless, so no flag is needed for that. Once per machine, `npx playwright install chromium` downloads the browser.
+
+*   **Run Specific Test File, Directory or Glob (Headless)**:
     ```bash
-    npx ng test --include="src/app/chat/chat.component.spec.ts" --no-watch --browsers=ChromeHeadless
+    npx ng test --include=src/app/chat/chat.component.spec.ts --no-watch
     ```
+
+*   **Find Slow Specs**:
+    ```bash
+    npm run test:profile
+    ```
+    Lists every test with its duration and marks those above the 200 ms `slowTestThreshold` in `vitest-base.config.ts`.
 
 *   **Production Build Type/Template Check**:
     ```bash
@@ -265,9 +273,21 @@ Run commands from the `Overseer/ClientApp/` directory:
     ```
 
 > [!WARNING]
-> **Single-Run & Headless Execution Required**: Always run tests with `--no-watch --browsers=ChromeHeadless` (or `npm run test:headless`).
-> - **Headless Chrome**: Prevents disruptive browser GUI windows from opening on the user's desktop.
-> - **No Watch**: Omitting `--no-watch` leaves Karma in continuous watch mode, causing background task execution to hang indefinitely.
+> **Single-Run Execution Required**: Always run tests with `--no-watch` (or `npm run test:headless`). In an interactive terminal, omitting it starts Vitest's watch mode, and the command never returns.
+
+**The fast inner loop is for humans.** A developer iterating on one area runs `npx ng test --include=src/app/admin/benchmark` in a terminal: watch mode re-runs the affected tests on every save (optionally narrowed with `--filter="<regex on test names>"`), and Ctrl+C stops it. An agent never starts watch mode.
+
+**Timings vary 2–3× on the development laptop** with its power and scheduling state, for the same code and the same test order. Compare timings only back to back, with nothing else running.
+
+**Do not disable chart animation to speed specs up.** It was measured slower: with animation on, Chart.js draws in a later animation frame that usually never runs before the spec ends; with it off, every chart is drawn synchronously inside the spec.
+
+### Vitest Specifics
+*   **Spies are restored after every test** by the global `afterEach(() => vi.restoreAllMocks())` in `src/test-setup.ts`, as Jasmine did for `spyOn`. A spy created in `beforeAll` does not survive the first test.
+*   **`toContain` compares with `===`.** For an object or array element, use `toContainEqual` (Jasmine's `toContain` compared deeply).
+*   **Constructor spies** (`AudioContext` and the like) need `mockImplementation(function () { return fake; })` — a `function`, not an arrow; Vitest refuses `mockReturnValue` for a `new` call.
+*   **`fakeAsync` and `tick` work** through zone.js's Vitest patch (`zone.js/plugins/vitest-patch`, loaded by `src/test-setup.ts`). A new spec may prefer `vi.useFakeTimers()`.
+*   **`errorOnUnknownElements` and `errorOnUnknownProperties` are on**, so a spec must import or stub every child component it renders.
+*   **Components are OnPush by default** (Angular 22): a property change followed by `fixture.detectChanges()` does not re-render a view that was not marked for check. Drive state through the DOM event that changes it, or call `markForCheck()` on the component's `ChangeDetectorRef`.
 
 ### Angular Test Configuration Best Practices
 *   **Router Dependencies**: Standalone components using `RouterModule`, `<a routerLink>`, or `ActivatedRoute` must include `provideRouter([])` in `TestBed.configureTestingModule({ providers: [provideRouter([])] })`.

@@ -121,7 +121,7 @@ describe('anonymizeComparisonForSubject', () => {
 
     for (const peer of [peerA, peerB, unlettered]) {
       for (const text of [peer.label, peer.modelDisplayName, peer.modelId, peer.provider, peer.sourceName!]) {
-        expect(json.toLowerCase()).withContext(text).not.toContain(text.toLowerCase());
+        expect(json.toLowerCase(), text).not.toContain(text.toLowerCase());
       }
     }
   });

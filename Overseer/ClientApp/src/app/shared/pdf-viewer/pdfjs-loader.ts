@@ -45,7 +45,7 @@ export function loadPdfJs(): Promise<PdfJsModules> {
 }
 
 /**
- * How the PDF viewer obtains pdf.js. Specs provide a factory returning fakes, so Karma never loads
+ * How the PDF viewer obtains pdf.js. Specs provide a factory returning fakes, so the test runner never loads
  * pdf.js or its worker:
  *
  * ```ts

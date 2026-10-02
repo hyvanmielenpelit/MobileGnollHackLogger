@@ -134,10 +134,7 @@ describe('figure-export', () => {
   it('draws the title, badges, detail, key, highlight, every note and the footer into the image', () => {
     const drawn: string[] = [];
     const real = HTMLCanvasElement.prototype.getContext;
-    spyOn(HTMLCanvasElement.prototype, 'getContext').and.callFake(function (
-      this: HTMLCanvasElement,
-      ...args: any[]
-    ) {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement, ...args: any[]) {
       const context = (real as any).apply(this, args);
       if (context && args[0] === '2d' && !(context as any).__spied) {
         (context as any).__spied = true;
@@ -187,10 +184,7 @@ describe('figure-export', () => {
   function plotTopOf(plot: HTMLCanvasElement, compose: () => void): number {
     const real = CanvasRenderingContext2D.prototype.drawImage;
     const tops: number[] = [];
-    spyOn(CanvasRenderingContext2D.prototype, 'drawImage').and.callFake(function (
-      this: CanvasRenderingContext2D,
-      ...args: any[]
-    ) {
+    vi.spyOn(CanvasRenderingContext2D.prototype, 'drawImage').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
       if (args[0] === plot) {
         tops.push(args[2]);
       }
@@ -229,24 +223,15 @@ describe('figure-export', () => {
     const realFill = CanvasRenderingContext2D.prototype.fill;
     const realStroke = CanvasRenderingContext2D.prototype.stroke;
     const realFillText = CanvasRenderingContext2D.prototype.fillText;
-    spyOn(CanvasRenderingContext2D.prototype, 'fill').and.callFake(function (
-      this: CanvasRenderingContext2D,
-      ...args: any[]
-    ) {
+    vi.spyOn(CanvasRenderingContext2D.prototype, 'fill').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
       events.push({ op: 'fill', style: String(this.fillStyle) });
       return (realFill as any).apply(this, args);
     } as any);
-    spyOn(CanvasRenderingContext2D.prototype, 'stroke').and.callFake(function (
-      this: CanvasRenderingContext2D,
-      ...args: any[]
-    ) {
+    vi.spyOn(CanvasRenderingContext2D.prototype, 'stroke').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
       events.push({ op: 'stroke', style: String(this.strokeStyle) });
       return (realStroke as any).apply(this, args);
     } as any);
-    spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
-      this: CanvasRenderingContext2D,
-      ...args: any[]
-    ) {
+    vi.spyOn(CanvasRenderingContext2D.prototype, 'fillText').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
       events.push({ op: 'fillText', style: String(this.fillStyle), text: args[0] });
       return (realFillText as any).apply(this, args);
     } as any);
@@ -270,14 +255,14 @@ describe('figure-export', () => {
     ];
     for (const badge of expected) {
       const textIndex = events.findIndex(event => event.op === 'fillText' && event.text === badge.text);
-      expect(textIndex).withContext(badge.text).toBeGreaterThan(1);
+      expect(textIndex, badge.text).toBeGreaterThan(1);
       const [fill, stroke, text] = events.slice(textIndex - 2, textIndex + 1);
 
-      expect(fill.op).withContext(`${badge.text}: filled before stroked`).toBe('fill');
-      expect(stroke.op).withContext(`${badge.text}: stroked before its text`).toBe('stroke');
-      expect(fill.style).withContext(`${badge.text} fill`).toBe(normalized(badge.fill));
-      expect(stroke.style).withContext(`${badge.text} border`).toBe(normalized(badge.border));
-      expect(text.style).withContext(`${badge.text} text`).toBe(normalized(badge.ink));
+      expect(fill.op, `${badge.text}: filled before stroked`).toBe('fill');
+      expect(stroke.op, `${badge.text}: stroked before its text`).toBe('stroke');
+      expect(fill.style, `${badge.text} fill`).toBe(normalized(badge.fill));
+      expect(stroke.style, `${badge.text} border`).toBe(normalized(badge.border));
+      expect(text.style, `${badge.text} text`).toBe(normalized(badge.ink));
     }
     // The neutral pill reads gold, as on the card, not the body grey.
     expect(normalized(expected[0].ink)).not.toBe(normalized('#d4d4d8'));
@@ -292,17 +277,11 @@ describe('figure-export', () => {
       const rotations: number[] = [];
       const realFillText = CanvasRenderingContext2D.prototype.fillText;
       const realRotate = CanvasRenderingContext2D.prototype.rotate;
-      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'fillText').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         texts.push({ text: String(args[0]), x: args[1], y: args[2] });
         return (realFillText as any).apply(this, args);
       } as any);
-      spyOn(CanvasRenderingContext2D.prototype, 'rotate').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        angle: number
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'rotate').mockImplementation(function (this: CanvasRenderingContext2D, angle: number) {
         rotations.push(angle);
         return realRotate.call(this, angle);
       } as any);
@@ -449,10 +428,7 @@ describe('figure-export', () => {
     function spyDrawImage(): any[][] {
       const calls: any[][] = [];
       const real = CanvasRenderingContext2D.prototype.drawImage;
-      spyOn(CanvasRenderingContext2D.prototype, 'drawImage').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'drawImage').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         calls.push(args);
         return (real as any).apply(this, args);
       } as any);
@@ -500,10 +476,7 @@ describe('figure-export', () => {
     function spyTexts(): { text: string; x: number; y: number }[] {
       const texts: { text: string; x: number; y: number }[] = [];
       const realFillText = CanvasRenderingContext2D.prototype.fillText;
-      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'fillText').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         texts.push({ text: String(args[0]), x: args[1], y: args[2] });
         return (realFillText as any).apply(this, args);
       } as any);
@@ -620,7 +593,7 @@ describe('figure-export', () => {
         const measured = measureFigureChrome({ ...source, betterBadgePlacement }, 400);
         expect(measured.logo).toEqual({ width: 16, height: 16 });
         expect(measured.direction!.width).toBeGreaterThan(16);
-        expect(measured.direction!.placement.kind).withContext(betterBadgePlacement).toBe('badgeFlow');
+        expect(measured.direction!.placement.kind, betterBadgePlacement).toBe('badgeFlow');
       }
     });
 
@@ -791,7 +764,7 @@ describe('figure-export', () => {
     it('draws every key glyph, a provider dot in its own color, and measures the height exactly', () => {
       const fills: string[] = [];
       const realFill = CanvasRenderingContext2D.prototype.fill;
-      spyOn(CanvasRenderingContext2D.prototype, 'fill').and.callFake(function (this: CanvasRenderingContext2D, ...args: any[]) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'fill').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         fills.push(String(this.fillStyle));
         return (realFill as any).apply(this, args);
       } as any);
@@ -834,9 +807,9 @@ describe('figure-export', () => {
       for (const resolution of groupedPresets) {
         const { layout, refusal } = resolveFigureLayout(sourceOf(), resolution, 1, 1);
 
-        expect(refusal).withContext(resolution.id).toBeNull();
-        expect(layout!.pixelWidth).withContext(resolution.id).toBe(resolution.widthPx);
-        expect(layout!.pixelHeight).withContext(resolution.id).toBe(resolution.heightPx);
+        expect(refusal, resolution.id).toBeNull();
+        expect(layout!.pixelWidth, resolution.id).toBe(resolution.widthPx);
+        expect(layout!.pixelHeight, resolution.id).toBe(resolution.heightPx);
       }
     });
 
@@ -845,24 +818,15 @@ describe('figure-export', () => {
       for (const resolution of groupedPresets) {
         const { layout } = resolveFigureLayout(sourceOf(), resolution, 1, 1);
 
-        expect(layout!.layoutWidth)
-          .withContext(resolution.id)
-          .toBeGreaterThanOrEqual(FIGURE_EXPORT_LAYOUT_WIDTH - epsilon);
-        expect(layout!.layoutHeight)
-          .withContext(resolution.id)
-          .toBeGreaterThanOrEqual(FIGURE_EXPORT_LAYOUT_HEIGHT - epsilon);
+        expect(layout!.layoutWidth, resolution.id).toBeGreaterThanOrEqual(FIGURE_EXPORT_LAYOUT_WIDTH - epsilon);
+        expect(layout!.layoutHeight, resolution.id).toBeGreaterThanOrEqual(FIGURE_EXPORT_LAYOUT_HEIGHT - epsilon);
 
         // Smallest such box: one of the two minimums is met exactly, never both overshot.
-        const slack = Math.min(
-          layout!.layoutWidth / FIGURE_EXPORT_LAYOUT_WIDTH,
-          layout!.layoutHeight / FIGURE_EXPORT_LAYOUT_HEIGHT
-        );
-        expect(slack).withContext(resolution.id).toBeCloseTo(1, 9);
+        const slack = Math.min(layout!.layoutWidth / FIGURE_EXPORT_LAYOUT_WIDTH, layout!.layoutHeight / FIGURE_EXPORT_LAYOUT_HEIGHT);
+        expect(slack, resolution.id).toBeCloseTo(1, 9);
 
         // One density on both axes, so the composition carries the target's own shape.
-        expect(layout!.layoutWidth / layout!.layoutHeight)
-          .withContext(resolution.id)
-          .toBeCloseTo(resolution.widthPx / resolution.heightPx, 9);
+        expect(layout!.layoutWidth / layout!.layoutHeight, resolution.id).toBeCloseTo(resolution.widthPx / resolution.heightPx, 9);
       }
     });
 
@@ -914,12 +878,10 @@ describe('figure-export', () => {
       expect(FIGURE_EXPORT_PRESET_GROUPS.map(group => group.label))
         .toEqual(['16:9', '16:10', '4:3', '3:2', '1:1', '21:9', 'Print']);
       // The size that followed the page's own canvases is gone: every size is explicit.
-      expect(FIGURE_EXPORT_PRESETS.some(candidate => candidate.id === 'onscreen')).toBeFalse();
-      expect(FIGURE_EXPORT_PRESETS.every(candidate => candidate.widthPx > 0 && candidate.heightPx > 0)).toBeTrue();
+      expect(FIGURE_EXPORT_PRESETS.some(candidate => candidate.id === 'onscreen')).toBe(false);
+      expect(FIGURE_EXPORT_PRESETS.every(candidate => candidate.widthPx > 0 && candidate.heightPx > 0)).toBe(true);
       for (const group of FIGURE_EXPORT_PRESET_GROUPS) {
-        expect(group.presets.every(preset => preset.group === group.label))
-          .withContext(group.label)
-          .toBeTrue();
+        expect(group.presets.every(preset => preset.group === group.label), group.label).toBe(true);
       }
     });
 
@@ -931,16 +893,16 @@ describe('figure-export', () => {
           const context = `${resolution.id} at ${density}`;
           const { layout, refusal } = resolveFigureLayout(sourceOf(), resolution, density, 1);
 
-          expect(refusal).withContext(context).toBeNull();
-          expect(layout!.pixelWidth).withContext(context).toBe(Math.round(resolution.widthPx * density));
-          expect(layout!.pixelHeight).withContext(context).toBe(Math.round(resolution.heightPx * density));
+          expect(refusal, context).toBeNull();
+          expect(layout!.pixelWidth, context).toBe(Math.round(resolution.widthPx * density));
+          expect(layout!.pixelHeight, context).toBe(Math.round(resolution.heightPx * density));
 
           // The composition is what the type size is measured in, so none of it may move.
-          expect(layout!.layoutWidth).withContext(context).toBe(base.layoutWidth);
-          expect(layout!.layoutHeight).withContext(context).toBe(base.layoutHeight);
-          expect(layout!.plotWidth).withContext(context).toBe(base.plotWidth);
-          expect(layout!.plotHeight).withContext(context).toBe(base.plotHeight);
-          expect(layout!.density).withContext(context).toBeCloseTo(base.density * density, 9);
+          expect(layout!.layoutWidth, context).toBe(base.layoutWidth);
+          expect(layout!.layoutHeight, context).toBe(base.layoutHeight);
+          expect(layout!.plotWidth, context).toBe(base.plotWidth);
+          expect(layout!.plotHeight, context).toBe(base.plotHeight);
+          expect(layout!.density, context).toBeCloseTo(base.density * density, 9);
         }
       }
     });
@@ -1029,11 +991,11 @@ describe('figure-export', () => {
         const base = resolveFigureLayout(sourceOf(), resolution, 1, 1).layout!;
         const scaled = resolveFigureLayout(sourceOf(), resolution, 1, 1.25);
 
-        expect(scaled.refusal).withContext(resolution.id).toBeNull();
-        expect(scaled.layout!.pixelWidth).withContext(resolution.id).toBe(base.pixelWidth);
-        expect(scaled.layout!.pixelHeight).withContext(resolution.id).toBe(base.pixelHeight);
-        expect(scaled.layout!.layoutWidth).withContext(resolution.id).toBeCloseTo(base.layoutWidth / 1.25, 9);
-        expect(scaled.layout!.density).withContext(resolution.id).toBeCloseTo(base.density * 1.25, 9);
+        expect(scaled.refusal, resolution.id).toBeNull();
+        expect(scaled.layout!.pixelWidth, resolution.id).toBe(base.pixelWidth);
+        expect(scaled.layout!.pixelHeight, resolution.id).toBe(base.pixelHeight);
+        expect(scaled.layout!.layoutWidth, resolution.id).toBeCloseTo(base.layoutWidth / 1.25, 9);
+        expect(scaled.layout!.density, resolution.id).toBeCloseTo(base.density * 1.25, 9);
       }
     });
   });
@@ -1133,24 +1095,15 @@ describe('figure-export', () => {
       const realFill = CanvasRenderingContext2D.prototype.fill;
       const realStroke = CanvasRenderingContext2D.prototype.stroke;
       const realFillText = CanvasRenderingContext2D.prototype.fillText;
-      spyOn(CanvasRenderingContext2D.prototype, 'fill').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'fill').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         events.push({ op: 'fill', style: String(this.fillStyle) });
         return (realFill as any).apply(this, args);
       } as any);
-      spyOn(CanvasRenderingContext2D.prototype, 'stroke').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'stroke').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         events.push({ op: 'stroke', style: String(this.strokeStyle) });
         return (realStroke as any).apply(this, args);
       } as any);
-      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'fillText').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         events.push({ op: 'fillText', style: String(this.fillStyle), text: args[0] });
         return (realFillText as any).apply(this, args);
       } as any);
@@ -1173,11 +1126,11 @@ describe('figure-export', () => {
       ];
       for (const badge of expected) {
         const textIndex = events.findIndex(event => event.op === 'fillText' && event.text === badge.text);
-        expect(textIndex).withContext(badge.text).toBeGreaterThan(1);
+        expect(textIndex, badge.text).toBeGreaterThan(1);
         const [fill, stroke, text] = events.slice(textIndex - 2, textIndex + 1);
-        expect(fill.style).withContext(`${badge.text} fill`).toBe(normalized(badge.fill));
-        expect(stroke.style).withContext(`${badge.text} border`).toBe(normalized(badge.border));
-        expect(text.style).withContext(`${badge.text} text`).toBe(normalized(badge.ink));
+        expect(fill.style, `${badge.text} fill`).toBe(normalized(badge.fill));
+        expect(stroke.style, `${badge.text} border`).toBe(normalized(badge.border));
+        expect(text.style, `${badge.text} text`).toBe(normalized(badge.ink));
       }
       const title = events.find(event => event.op === 'fillText' && (event.text ?? '').startsWith('P1'));
       expect(title).toBeDefined();
@@ -1189,10 +1142,7 @@ describe('figure-export', () => {
       const title = 'Intelligence against speed across every model in the comparable set, at the heaviest weight';
       const fonts: { text: string; font: string }[] = [];
       const realFillText = CanvasRenderingContext2D.prototype.fillText;
-      spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'fillText').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         fonts.push({ text: String(args[0]), font: this.font });
         return (realFillText as any).apply(this, args);
       } as any);
@@ -1207,7 +1157,7 @@ describe('figure-export', () => {
       const headingFont = scratch.font;
       const drawnTitle = fonts.filter(entry => measured.titleLines.includes(entry.text));
       expect(drawnTitle.map(entry => entry.text)).toEqual(measured.titleLines);
-      expect(drawnTitle.every(entry => entry.font === headingFont)).toBeTrue();
+      expect(drawnTitle.every(entry => entry.font === headingFont)).toBe(true);
 
       // An explicit size subtracts exactly the chrome the composition draws.
       const { layout } = resolveFigureLayout({ ...sourceOf({ title }), theme }, preset('fullhd'), 1, 1);
@@ -1294,8 +1244,8 @@ describe('figure-export', () => {
       const broken = ['Total run cost including grading roles', '(USD)'];
       const unbroken = ['Total run cost including grading roles (USD)'];
       for (const density of [1, 2]) {
-        expect(await render(200, density)).withContext(`short at ${density}`).not.toBeNull();
-        expect(await render(700, density)).withContext(`tall at ${density}`).not.toBeNull();
+        expect(await render(200, density), `short at ${density}`).not.toBeNull();
+        expect(await render(700, density), `tall at ${density}`).not.toBeNull();
       }
       expect(seen.length).toBe(4);
       expect(seen[0].text).toEqual(broken);
@@ -1346,7 +1296,7 @@ describe('figure-export', () => {
       // Three columns and two rows, 10 px apart.
       expect(sizes.length).toBe(5);
       expect(sizes[0]).toEqual({ width: Math.floor((920 - 20) / 3), height: Math.floor((380 - 10) / 2) });
-      expect(sizes.every(size => size.width === sizes[0].width && size.height === sizes[0].height)).toBeTrue();
+      expect(sizes.every(size => size.width === sizes[0].width && size.height === sizes[0].height)).toBe(true);
     });
 
     it('composes the stitched plot like any other, with the chrome measured exactly', async () => {
@@ -1510,7 +1460,7 @@ describe('figure-export', () => {
       expect(fit.layout.pixelWidth).toBe(1920);
       expect(fit.layout.pixelHeight).toBe(1080);
       expect(fit.rasterZoom).toBe(1);
-      expect(fit.rasterCapped).toBeFalse();
+      expect(fit.rasterCapped).toBe(false);
       expect(fit.layout.layoutWidth).toBe(full.layoutWidth);
       expect(fit.layout.plotHeight).toBe(full.plotHeight);
     });
@@ -1529,7 +1479,7 @@ describe('figure-export', () => {
 
       const fit = previewLayoutFor(huge, { width: 800, height: 600, devicePixelRatio: 1 }, 4)!;
 
-      expect(fit.rasterCapped).toBeTrue();
+      expect(fit.rasterCapped).toBe(true);
       expect(fit.layout.pixelWidth * fit.layout.pixelHeight).toBeLessThanOrEqual(7680 * 4320 + 8000);
       expect(fit.layout.pixelWidth).toBe(fit.layout.pixelHeight);
       expect(fit.cssWidth).toBe(32000);
@@ -1548,73 +1498,61 @@ describe('figure-export', () => {
   it('reports a PNG fallback rather than naming a PNG file .webp', async () => {
     const canvas = sourceCanvas(120, 80);
     // A browser with no WebP encoder answers a WebP request with a PNG rather than failing.
-    spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+    vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
       callback(new Blob(['fake'], { type: 'image/png' }));
     });
 
     const result = await encodeFigureImage(canvas, 'webp');
 
     expect(result.format).toBe('png');
-    expect(result.fellBackToPng).toBeTrue();
+    expect(result.fellBackToPng).toBe(true);
     expect(figureExportFilename('p1-panels', result.format)).toMatch(/\.png$/);
   });
 
   it('reports no fallback when WebP really was encoded', async () => {
     const canvas = sourceCanvas(120, 80);
-    spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+    vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
       callback(new Blob(['fake'], { type: 'image/webp' }));
     });
 
     const result = await encodeFigureImage(canvas, 'webp');
 
     expect(result.format).toBe('webp');
-    expect(result.fellBackToPng).toBeFalse();
+    expect(result.fellBackToPng).toBe(false);
   });
 
   describe('WebP quality encoding', () => {
     it('passes quality divided by 100 to toBlob for WebP', async () => {
       const canvas = sourceCanvas(120, 80);
-      const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+      const blobSpy = vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
         callback(new Blob(['fake'], { type: 'image/webp' }));
       });
 
       await encodeFigureImage(canvas, 'webp', 85);
 
-      expect(blobSpy).toHaveBeenCalledWith(
-        jasmine.any(Function),
-        'image/webp',
-        0.85
-      );
+      expect(blobSpy).toHaveBeenCalledWith(expect.any(Function), 'image/webp', 0.85);
     });
 
     it('passes 1.0 to toBlob for WebP quality 100', async () => {
       const canvas = sourceCanvas(120, 80);
-      const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+      const blobSpy = vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
         callback(new Blob(['fake'], { type: 'image/webp' }));
       });
 
       await encodeFigureImage(canvas, 'webp', 100);
 
-      expect(blobSpy).toHaveBeenCalledWith(
-        jasmine.any(Function),
-        'image/webp',
-        1.0
-      );
+      expect(blobSpy).toHaveBeenCalledWith(expect.any(Function), 'image/webp', 1.0);
     });
 
     it('passes undefined to toBlob for PNG regardless of quality parameter', async () => {
       const canvas = sourceCanvas(120, 80);
-      const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+      const blobSpy = vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
         callback(new Blob(['fake'], { type: 'image/png' }));
       });
 
       await encodeFigureImage(canvas, 'png', 85);
 
-      expect(blobSpy).toHaveBeenCalledWith(
-        jasmine.any(Function),
-        'image/png',
-        undefined
-      );
+      expect(blobSpy).toHaveBeenCalledWith(expect.any(Function), 'image/png', undefined);
     });
 
     // 85 is the project-wide WebP quality (`.agents/AGENTS.md` § Image Conventions).
@@ -1624,17 +1562,13 @@ describe('figure-export', () => {
 
     it('uses DEFAULT_WEBP_QUALITY when no quality is provided', async () => {
       const canvas = sourceCanvas(120, 80);
-      const blobSpy = spyOn(canvas, 'toBlob').and.callFake((callback: BlobCallback) => {
+      const blobSpy = vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
         callback(new Blob(['fake'], { type: 'image/webp' }));
       });
 
       await encodeFigureImage(canvas, 'webp');
 
-      expect(blobSpy).toHaveBeenCalledWith(
-        jasmine.any(Function),
-        'image/webp',
-        webpEncoderQuality(DEFAULT_WEBP_QUALITY)
-      );
+      expect(blobSpy).toHaveBeenCalledWith(expect.any(Function), 'image/webp', webpEncoderQuality(DEFAULT_WEBP_QUALITY));
     });
   });
 
@@ -1693,7 +1627,7 @@ describe('figure-export', () => {
     });
 
     it('writes the blob as a clipboard item and reports it copied', async () => {
-      const write = jasmine.createSpy('write').and.returnValue(Promise.resolve());
+      const write = vi.fn().mockName('write').mockResolvedValue(undefined);
       withClipboard({ write });
       const blob = new Blob(['png'], { type: 'image/png' });
 
@@ -1705,8 +1639,7 @@ describe('figure-export', () => {
       withClipboard({ write: () => Promise.reject(new Error('Document is not focused.')) });
 
       // Never throws: the caller's only sane response to a refusal is an inline message.
-      await expectAsync(copyImageToClipboard(new Blob(['png'], { type: 'image/png' })))
-        .toBeResolvedTo('denied');
+      await expect(copyImageToClipboard(new Blob(['png'], { type: 'image/png' }))).resolves.toEqual('denied');
     });
 
     it('reports an absent clipboard API as unsupported', async () => {

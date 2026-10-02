@@ -39,9 +39,7 @@ describe('PrivacyComponent', () => {
   it('should render every declared section id exactly once', () => {
     for (const section of component.sections) {
       const matches = host.querySelectorAll(`section[id="${section.id}"]`);
-      expect(matches.length)
-        .withContext(`section id ${section.id}`)
-        .toBe(1);
+      expect(matches.length, `section id ${section.id}`).toBe(1);
     }
 
     expect(host.querySelectorAll('section[id]').length).toBe(component.sections.length);
@@ -55,7 +53,7 @@ describe('PrivacyComponent', () => {
     expect(linkedIds.length).toBe(sectionIds.length);
     expect(linkedIds).toEqual(sectionIds);
     for (const id of linkedIds) {
-      expect(id.length).withContext('a table of contents link must name a section').toBeGreaterThan(0);
+      expect(id.length, 'a table of contents link must name a section').toBeGreaterThan(0);
     }
   });
 
@@ -85,7 +83,7 @@ describe('PrivacyComponent', () => {
     const text = textOf(map);
     for (const label of ['The message you type', 'Documents and images you attach',
       'The call to the AI provider', 'Error telemetry', 'Cost and token accounting']) {
-      expect(text).withContext(label).toContain(label);
+      expect(text, label).toContain(label);
     }
   });
 
@@ -112,7 +110,7 @@ describe('PrivacyComponent', () => {
     ];
 
     for (const entry of nonNegotiable) {
-      expect(text).withContext(entry).toContain(entry);
+      expect(text, entry).toContain(entry);
     }
   });
 
@@ -146,7 +144,7 @@ describe('PrivacyComponent', () => {
 
     const text = textOf(subprocessors);
     for (const name of ['OpenAI', 'Anthropic', 'Google', 'Sentry', 'Azure Communication Services', 'GitHub']) {
-      expect(text).withContext(name).toContain(name);
+      expect(text, name).toContain(name);
     }
 
     const fontsNote = subprocessors.querySelector('.fonts-note') as HTMLElement;
@@ -168,7 +166,7 @@ describe('PrivacyComponent', () => {
 
     items.forEach((item, index) => {
       const flag = item.querySelector('.operator-gap-flag') as HTMLElement;
-      expect(flag).withContext(`placeholder ${index} flag`).toBeTruthy();
+      expect(flag, `placeholder ${index} flag`).toBeTruthy();
       expect(textOf(flag)).toBe('Not supplied by the operator');
       expect(textOf(item as HTMLElement)).toContain(component.operatorGaps[index].title);
     });
@@ -186,7 +184,7 @@ describe('PrivacyComponent', () => {
       'Where data is stored and processed, and in which regions inference runs',
       'How long error telemetry is kept'
     ]) {
-      expect(text).withContext(expected).toContain(expected);
+      expect(text, expected).toContain(expected);
     }
   });
 
@@ -195,10 +193,8 @@ describe('PrivacyComponent', () => {
     expect(tables.length).toBeGreaterThan(0);
 
     for (const table of tables) {
-      expect(table.parentElement?.classList.contains('privacy-table-scroll'))
-        .withContext('every table sits in a horizontally scrolling wrapper')
-        .toBeTrue();
-      expect(table.querySelector('caption')).withContext('every table is named').toBeTruthy();
+      expect(table.parentElement?.classList.contains('privacy-table-scroll'), 'every table sits in a horizontally scrolling wrapper').toBe(true);
+      expect(table.querySelector('caption'), 'every table is named').toBeTruthy();
     }
   });
 
@@ -206,6 +202,6 @@ describe('PrivacyComponent', () => {
     expect(host.querySelectorAll('[title]').length).toBe(0);
 
     const emoji = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
-    expect(emoji.test(host.innerHTML)).toBeFalse();
+    expect(emoji.test(host.innerHTML)).toBe(false);
   });
 });

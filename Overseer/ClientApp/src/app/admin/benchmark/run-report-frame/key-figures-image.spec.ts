@@ -263,8 +263,8 @@ describe('key figures image', () => {
       });
       expect(raw.value).toBe('85 / 100');
       expect(raw.notes).toEqual([]);
-      expect(raw.main).toBeFalse();
-      expect(raw.headline).toBeFalse();
+      expect(raw.main).toBe(false);
+      expect(raw.headline).toBe(false);
 
       const text = JSON.stringify(readKeyFigureCells(root));
       expect(text).not.toContain('Copy as image');
@@ -358,8 +358,12 @@ describe('key figures image', () => {
     });
 
     it('survives storage that throws', () => {
-      spyOn(localStorage, 'getItem').and.throwError('denied');
-      spyOn(localStorage, 'setItem').and.throwError('denied');
+      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
+      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
       expect(readStoredKeyFigureExclusions()).toEqual([]);
       expect(() => storeKeyFigureExclusions(['panel'])).not.toThrow();
     });
@@ -447,12 +451,13 @@ describe('key figures image', () => {
           for (const [kind, cells] of [['with main', cellsOf(count)], ['without main', plainCellsOf(count)]] as const) {
             const context = `${count} cards ${kind}`;
             const layout = chooseStripLayout(cells, STRIP_TEXT, wrap);
-            expect(layout.width).withContext(context).toBeGreaterThanOrEqual(layout.height);
-            expect(layout.placements.length).withContext(context).toBe(count);
+            expect(layout.width, context).toBeGreaterThanOrEqual(layout.height);
+            expect(layout.placements.length, context).toBe(count);
             if (layout.width / layout.naturalHeight <= 1.1) {
-              expect(layout.height).withContext(context).toBe(layout.width);
-            } else {
-              expect(layout.height).withContext(context).toBe(layout.naturalHeight);
+              expect(layout.height, context).toBe(layout.width);
+            }
+            else {
+              expect(layout.height, context).toBe(layout.naturalHeight);
             }
           }
         }
@@ -470,7 +475,7 @@ describe('key figures image', () => {
       const layout = chooseStripLayout(cellsOf(7), STRIP_TEXT, noWrap);
       expect(layout.facts.rows.map(row => row.label)).toEqual(['MODEL', 'STARTED']);
       expect(layout.facts.height).toBe(18 + 4 + 18);
-      expect(layout.facts.stacked).toBeFalse();
+      expect(layout.facts.stacked).toBe(false);
     });
 
     it('draws a headline value at the main card size without the main card', () => {
@@ -578,17 +583,17 @@ describe('key figures image', () => {
       const layout = layoutFactRows([textRow('Model', `${'x'.repeat(80)} tail`)], 300, halfWidth, SIZES);
       const [first, second] = layout.rows[0].lines;
       expect(first.length).toBe(1);
-      expect(first[0].text.endsWith('…')).toBeTrue();
+      expect(first[0].text.endsWith('…')).toBe(true);
       expect(first[0].width).toBeLessThanOrEqual(300 - layout.valueX);
       expect(second.map(item => item.text)).toEqual(['tail']);
     });
 
     it('stacks labels above values when the value column would be under 60 % of the width', () => {
       const wide = layoutFactRows([textRow('Scoring profile', 'Default')], 300, halfWidth, SIZES);
-      expect(wide.stacked).toBeFalse();
+      expect(wide.stacked).toBe(false);
 
       const narrow = layoutFactRows([textRow('Scoring profile', 'Default')], 200, halfWidth, SIZES);
-      expect(narrow.stacked).toBeTrue();
+      expect(narrow.stacked).toBe(true);
       expect(narrow.valueX).toBe(0);
       expect(narrow.rows[0].height).toBe(17 + 18);
     });
@@ -757,8 +762,12 @@ describe('key figures image', () => {
     });
 
     it('survives storage that throws', () => {
-      spyOn(localStorage, 'getItem').and.throwError('denied');
-      spyOn(localStorage, 'setItem').and.throwError('denied');
+      vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
+      vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+        throw new Error('denied');
+      });
       expect(readStoredImageDetailExclusions()).toEqual(['board']);
       expect(() => storeImageDetailExclusions(['prompt'])).not.toThrow();
     });
@@ -802,8 +811,8 @@ describe('key figures image', () => {
 
     beforeEach(() => {
       root = fixtureRoot();
-      spyOn(keyFiguresImageIo, 'loadImage').and.callFake(() => Promise.reject(new Error('404')));
-      spyOn(keyFiguresImageIo, 'now').and.returnValue(NOW);
+      vi.spyOn(keyFiguresImageIo, 'loadImage').mockImplementation(() => Promise.reject(new Error('404')));
+      vi.spyOn(keyFiguresImageIo, 'now').mockReturnValue(NOW);
     });
 
     afterEach(() => {
@@ -829,51 +838,51 @@ describe('key figures image', () => {
     });
 
     it('downloads the strip as a PNG even when no logo loads', async () => {
-      const save = spyOn(keyFiguresImageIo, 'save');
+      const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
       const message = await exportKeyFiguresImage('download', root, null, CONTEXT);
 
       expect(message).toBe('Image downloaded.');
       expect(save).toHaveBeenCalledTimes(1);
-      const [blob, fileName] = save.calls.mostRecent().args;
+      const [blob, fileName] = vi.mocked(save).mock.lastCall!;
       expect(blob.type).toBe('image/png');
       expect(blob.size).toBeGreaterThan(0);
       expect(fileName).toBe('gnollbench_run72_snapshot-tommi2-2026-09-17_gpt-5.5-high_key-figures_20260928_123456.png');
     });
 
     it('copies one card and names it in the message', async () => {
-      const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('copied');
+      const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('copied');
       const card = root.querySelectorAll<HTMLElement>('.score-card')[5];
       const message = await exportKeyFiguresImage('copy', root, card, CONTEXT);
 
       expect(message).toBe('Speed Index copied as an image.');
       expect(copy).toHaveBeenCalledTimes(1);
-      expect(copy.calls.mostRecent().args[0].type).toBe('image/png');
+      expect(vi.mocked(copy).mock.lastCall![0].type).toBe('image/png');
     });
 
     it('downloads only the cells the filter accepts, and composes nothing when none is left', async () => {
-      const save = spyOn(keyFiguresImageIo, 'save');
+      const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
       expect(await exportKeyFiguresImage('download', root, null, CONTEXT, key => key === 'mean-time'))
         .toBe('Image downloaded.');
       expect(save).toHaveBeenCalledTimes(1);
 
-      save.calls.reset();
+      save.mockClear();
       expect(await exportKeyFiguresImage('download', root, null, CONTEXT, () => false))
         .toBe("None of this run's key figures is selected; use Choose figures.");
       expect(save).not.toHaveBeenCalled();
     });
 
     it('exports one card whatever the filter says', async () => {
-      const save = spyOn(keyFiguresImageIo, 'save');
+      const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
       const card = root.querySelectorAll<HTMLElement>('.score-card')[0];
       expect(await exportKeyFiguresImage('download', root, card, CONTEXT, () => false)).toBe('Image downloaded.');
       expect(save).toHaveBeenCalledTimes(1);
     });
 
     it('reports a copy the browser refuses or cannot make', async () => {
-      const copy = spyOn(keyFiguresImageIo, 'copy').and.resolveTo('unsupported');
+      const copy = vi.spyOn(keyFiguresImageIo, 'copy').mockResolvedValue('unsupported');
       expect(await exportKeyFiguresImage('copy', root, null, CONTEXT))
         .toBe('This browser cannot copy images here; use Download instead.');
-      copy.and.resolveTo('denied');
+      copy.mockResolvedValue('denied');
       expect(await exportKeyFiguresImage('copy', root, null, CONTEXT)).toBe('Could not copy the image.');
     });
   });

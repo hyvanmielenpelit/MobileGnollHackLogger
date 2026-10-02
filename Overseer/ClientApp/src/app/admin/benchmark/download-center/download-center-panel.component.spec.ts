@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ChangeDetectionStrategy, Component, ViewChild } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
@@ -87,7 +88,9 @@ function publishResult(overrides: Partial<ReportChartPublishResult> = {}): Repor
   return { published: [], failed: [], skipped: [], canceled: false, storageNotConfigured: null, ...overrides };
 }
 
-type FakeActions = DownloadCenterChartActions & { publish: jasmine.Spy };
+type FakeActions = DownloadCenterChartActions & {
+  publish: Mock;
+};
 
 function chartActions(overrides: Partial<DownloadCenterChartActions> = {}): FakeActions {
   return {
@@ -97,7 +100,7 @@ function chartActions(overrides: Partial<DownloadCenterChartActions> = {}): Fake
     advisory: null,
     storageMissing: false,
     comparisonKeyMatches: (d: BenchmarkReportDocumentListItemDto) => d.comparisonKey === 'cmp-1',
-    publish: jasmine.createSpy('publish').and.resolveTo(publishResult()),
+    publish: vi.fn().mockName('publish').mockResolvedValue(publishResult()),
     ...overrides
   } as FakeActions;
 }
@@ -246,7 +249,7 @@ describe('DownloadCenterPanelComponent', () => {
 
       expect(request.request.params.get('comparison')).toBe('run:1,run:2,group:4');
       expect(request.request.params.get('origin')).toBe('reportPack');
-      expect(request.request.params.has('take')).toBeFalse();
+      expect(request.request.params.has('take')).toBe(false);
       http.expectNone(r => /report-documents\/\d+$/.test(r.url));
       expect(panel().rows.map(r => r.key)).toEqual(['doc:12', 'doc:11', 'report:1', 'report:2']);
     });
@@ -255,7 +258,7 @@ describe('DownloadCenterPanelComponent', () => {
       const request = render([doc(11, ExecutiveSummary)], library('none', 'all'));
 
       expect(request.request.params.get('take')).toBe(String(REPORT_LIBRARY_ALL_TAKE));
-      expect(request.request.params.has('comparison')).toBeFalse();
+      expect(request.request.params.has('comparison')).toBe(false);
     });
 
     it('preselects nothing from the launcher and every row from the wizard', () => {
@@ -269,7 +272,7 @@ describe('DownloadCenterPanelComponent', () => {
       expectList().flush([doc(11, ExecutiveSummary), doc(12, TechnicalReport)]);
       fixture.detectChanges();
       expect(panel().selectedCount).toBe(3);
-      expect(rowEl('doc:11').querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBeTrue();
+      expect(rowEl('doc:11').querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
     });
 
     it('lists again on the reload token, keeping the choices made on the rows still listed', () => {
@@ -282,8 +285,8 @@ describe('DownloadCenterPanelComponent', () => {
       fixture.detectChanges();
 
       expect(panel().rows.map(r => r.key)).toEqual(['doc:13', 'doc:11', 'report:1']);
-      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:11')!)).toBeTrue();
-      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:13')!)).toBeFalse();
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:11')!)).toBe(true);
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:13')!)).toBe(false);
     });
 
     it('says when a comparison has no reports', () => {
@@ -318,7 +321,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(list.getAttribute('aria-labelledby')).toBe('mc-dc-documents-title');
       const items = Array.from(list.children);
       expect(items.length).toBe(3);
-      expect(items.every(item => item.tagName === 'LI' && item.firstElementChild!.matches('article.dc-card'))).toBeTrue();
+      expect(items.every(item => item.tagName === 'LI' && item.firstElementChild!.matches('article.dc-card'))).toBe(true);
 
       const card = rowEl('doc:11');
       const title = card.querySelector<HTMLElement>('h5.dc-card-title')!;
@@ -331,11 +334,11 @@ describe('DownloadCenterPanelComponent', () => {
       expect(check.getAttribute('aria-label')).toBe('Include Executive Summary: Gemini Flash');
       const label = title.querySelector<HTMLLabelElement>('label.dc-doc-label')!;
       expect(label.htmlFor).toBe(check.id);
-      expect(check.checked).toBeTrue();
+      expect(check.checked).toBe(true);
       label.click();
       fixture.detectChanges();
-      expect(check.checked).toBeFalse();
-      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:11')!)).toBeFalse();
+      expect(check.checked).toBe(false);
+      expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:11')!)).toBe(false);
 
       const actions = card.querySelector('.dc-card-actions')!;
       expect(actions.getAttribute('role')).toBe('group');
@@ -418,7 +421,7 @@ describe('DownloadCenterPanelComponent', () => {
       const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
       input.dispatchEvent(escape);
       fixture.detectChanges();
-      expect(escape.defaultPrevented).toBeTrue();
+      expect(escape.defaultPrevented).toBe(true);
       expect(heard).toEqual([]);
       expect(input.value).toBe('');
       expect(rowKeys().length).toBe(5);
@@ -457,7 +460,7 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('filters by creation time in single mode, against the Download Center clock', () => {
-      spyOn(downloadCenterIo, 'now').and.returnValue(new Date('2026-09-24T00:00:00Z'));
+      vi.spyOn(downloadCenterIo, 'now').mockReturnValue(new Date('2026-09-24T00:00:00Z'));
       render([doc(11, ExecutiveSummary, { createdAtUtc: '2026-09-01T16:00:00Z' }), doc(12, TechnicalReport), doc(13, InternalBrief)]);
 
       const created = facetOptions('created');
@@ -504,7 +507,7 @@ describe('DownloadCenterPanelComponent', () => {
       fixture.detectChanges();
 
       expect(q('ul.dc-filter-chips')).toBeNull();
-      expect(panel().showSelectedOnly).toBeTrue();
+      expect(panel().showSelectedOnly).toBe(true);
       expect(byId<HTMLInputElement>('mc-dc-search')!.value).toBe('');
       expect(document.activeElement).toBe(byId('mc-dc-search'));
       expect(rowKeys().length).toBe(5);
@@ -570,7 +573,7 @@ describe('DownloadCenterPanelComponent', () => {
       q<HTMLButtonElement>('.dc-clear-selection')!.click();
       fixture.detectChanges();
       expect(panel().selectedCount).toBe(0);
-      expect(panel().showSelectedOnly).toBeFalse();
+      expect(panel().showSelectedOnly).toBe(false);
     });
 
     it('keeps the filter bar flush with the top of the scroller from 36rem, and lets it scroll away below', async () => {
@@ -617,25 +620,25 @@ describe('DownloadCenterPanelComponent', () => {
   describe('View and Delete', () => {
     it('views a pack document at its highest disclosure, peers named, with the Peer names row', () => {
       const service = TestBed.inject(AdminBenchmarkService);
-      const pdf = spyOn(service, 'getReportDocumentPdf').and.returnValue(of({ bytes: new Uint8Array([1]), fileName: null }));
+      const pdf = vi.spyOn(service, 'getReportDocumentPdf').mockReturnValue(of({ bytes: new Uint8Array([1]), fileName: null }));
       render([doc(11, TechnicalReport, { allowedDisclosures: [Detailed, Summary] })]);
-      const open = spyOn(panel().pdfViewer!, 'open');
+      const open = vi.spyOn(panel().pdfViewer!, 'open').mockReturnValue(undefined);
 
       const rid = panel().rowId(panel().rows[0]);
       const button = byId<HTMLButtonElement>(`${rid}-view`)!;
       expect(button.getAttribute('aria-label')).toBe('View Gemini Flash — Report for AI Researchers and Developers, 2026-09-21 16:00 UTC');
       expect(button.getAttribute('interestfor')).toBe(`${rid}-view-tip`);
-      expect(button.hasAttribute('title')).toBeFalse();
+      expect(button.hasAttribute('title')).toBe(false);
       button.click();
 
-      const request = open.calls.mostRecent().args[0] as PdfViewerRequest;
+      const request = vi.mocked(open).mock.lastCall![0] as PdfViewerRequest;
       expect(request.variants).toEqual([{ key: 'summary', label: 'Summary' }, { key: 'detailed', label: 'Detailed' }]);
       expect(request.initialVariant).toBe('detailed');
       expect(request.secondaryVariants?.label).toBe('Peer names');
       expect(request.secondaryVariants?.initial).toBe('named');
       expect(request.fallbackFileName).toBe('run-1_vs-2-models_gemini-flash_Researcher_Report.pdf');
       request.load('summary', 'anonymized').subscribe();
-      expect(pdf).toHaveBeenCalledWith(11, Summary, BenchmarkReportPeerNaming.Anonymized, jasmine.any(String));
+      expect(pdf).toHaveBeenCalledWith(11, Summary, BenchmarkReportPeerNaming.Anonymized, expect.any(String));
 
       panel().pdfViewer!.closed.emit();
       expect(document.activeElement).toBe(button);
@@ -643,18 +646,18 @@ describe('DownloadCenterPanelComponent', () => {
 
     it('views a run report row as the run report PDF', () => {
       const service = TestBed.inject(AdminBenchmarkService);
-      const pdf = spyOn(service, 'getRunReportPdf').and.returnValue(of({ bytes: new Uint8Array([1]), fileName: null }));
+      const pdf = vi.spyOn(service, 'getRunReportPdf').mockReturnValue(of({ bytes: new Uint8Array([1]), fileName: null }));
       render([doc(11, ExecutiveSummary)]);
-      const open = spyOn(panel().pdfViewer!, 'open');
+      const open = vi.spyOn(panel().pdfViewer!, 'open').mockReturnValue(undefined);
 
       const rid = panel().rowId(panel().rows.find(r => r.key === 'report:1')!);
       byId<HTMLButtonElement>(`${rid}-view`)!.click();
 
-      const request = open.calls.mostRecent().args[0] as PdfViewerRequest;
+      const request = vi.mocked(open).mock.lastCall![0] as PdfViewerRequest;
       expect(request.title).toBe('Run report, run #1');
       expect(request.variants).toBeUndefined();
       request.load(null).subscribe();
-      expect(pdf).toHaveBeenCalledWith(1, jasmine.any(String));
+      expect(pdf).toHaveBeenCalledWith(1, expect.any(String));
       // A run report is never deleted here.
       expect(byId(`${rid}-delete`)).toBeNull();
     });
@@ -674,7 +677,7 @@ describe('DownloadCenterPanelComponent', () => {
 
       byId<HTMLButtonElement>('mc-dc-doc-12-delete')!.click();
       fixture.detectChanges();
-      expect(confirm.open).toBeTrue();
+      expect(confirm.open).toBe(true);
       expect(text('.dc-delete-text')).toContain('Gemini Flash — Report for AI Researchers and Developers');
 
       const canceled = new Promise<void>(resolve => confirm.addEventListener('close', () => resolve(), { once: true }));
@@ -710,7 +713,7 @@ describe('DownloadCenterPanelComponent', () => {
       http.expectOne(r => r.method === 'DELETE').flush({ error: 'The document is being rendered.' }, { status: 409, statusText: 'Conflict' });
       fixture.detectChanges();
 
-      expect(q<HTMLDialogElement>('dialog.dc-delete-dialog')!.open).toBeTrue();
+      expect(q<HTMLDialogElement>('dialog.dc-delete-dialog')!.open).toBe(true);
       expect(text('.dc-delete-dialog .gh-field-error')).toBe('The document is being rendered.');
       expect(rowKeys()).toContain('doc:11');
     });
@@ -723,7 +726,7 @@ describe('DownloadCenterPanelComponent', () => {
 
       for (const selector of ['dialog.dc-delete-dialog', 'dialog.dc-charts-dialog', 'dialog.pdfv']) {
         const dialog = q<HTMLDialogElement>(selector)!;
-        expect(dialog).withContext(selector).not.toBeNull();
+        expect(dialog, selector).not.toBeNull();
         dialog.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
         dialog.dispatchEvent(new Event('close', { bubbles: true }));
       }
@@ -796,10 +799,10 @@ describe('DownloadCenterPanelComponent', () => {
       expect(button.getAttribute('aria-disabled')).toBe('true');
       expect(byId(button.getAttribute('aria-describedby')!)!.textContent!.trim()).toBe('Choose one or more report documents first.');
       button.click();
-      expect(q<HTMLDialogElement>('dialog.dc-charts-dialog')!.open).toBeFalse();
+      expect(q<HTMLDialogElement>('dialog.dc-charts-dialog')!.open).toBe(false);
 
       check('doc:11');
-      expect(button.hasAttribute('aria-disabled')).toBeFalse();
+      expect(button.hasAttribute('aria-disabled')).toBe(false);
     });
 
     it('opens Update charts on the chosen documents\' types, prefilled from their figures, with the advisory', () => {
@@ -813,7 +816,7 @@ describe('DownloadCenterPanelComponent', () => {
       q<HTMLButtonElement>('.dc-update-charts')!.click();
       fixture.detectChanges();
 
-      expect(q<HTMLDialogElement>('dialog.dc-charts-dialog')!.open).toBeTrue();
+      expect(q<HTMLDialogElement>('dialog.dc-charts-dialog')!.open).toBe(true);
       expect(text('.dc-charts-advisory')).toContain('The dark theme prints poorly.');
       const picker = fixture.debugElement.query(By.directive(ReportChartPickerComponent)).componentInstance as ReportChartPickerComponent;
       expect(picker.audiences).toEqual([ExecutiveSummary, InternalBrief]);
@@ -834,14 +837,19 @@ describe('DownloadCenterPanelComponent', () => {
       q<HTMLButtonElement>('.dc-charts-cancel')!.click();
       await closed;
 
-      expect(dialog.open).toBeFalse();
+      expect(dialog.open).toBe(false);
       expect(actions.publish).not.toHaveBeenCalled();
     });
 
     it('publishes the chosen documents with the draft selection, skipping a document on other prices with its reason', async () => {
       const actions = chartActions();
       let finish!: (result: ReportChartPublishResult) => void;
-      actions.publish.and.callFake((_targets: unknown, _selection: unknown, onProgress?: (p: { done: number; total: number; step: string; documentId: number | null }) => void) => {
+      actions.publish.mockImplementation((_targets: unknown, _selection: unknown, onProgress?: (p: {
+        done: number;
+        total: number;
+        step: string;
+        documentId: number | null;
+      }) => void) => {
         onProgress?.({ done: 0, total: 1, step: 'Drawing Intelligence for Executive Summary: Gemini Flash', documentId: 11 });
         return new Promise<ReportChartPublishResult>(resolve => finish = resolve);
       });
@@ -860,7 +868,7 @@ describe('DownloadCenterPanelComponent', () => {
       fixture.detectChanges();
 
       expect(actions.publish).toHaveBeenCalledTimes(1);
-      const [targets, selection] = actions.publish.calls.mostRecent().args;
+      const [targets, selection] = vi.mocked(actions.publish).mock.lastCall!;
       expect(targets).toEqual([{
         documentId: 11, audience: ExecutiveSummary, subjectKey: 'run:1',
         peerLetters: { 'run:2': 'A', 'group:4': 'B' }, label: 'Executive Summary: Gemini Flash'
@@ -887,7 +895,7 @@ describe('DownloadCenterPanelComponent', () => {
 
     it('lists a document whose charts failed', async () => {
       const actions = chartActions();
-      actions.publish.and.resolveTo(publishResult({ failed: [{ documentId: 11, message: 'the server answered 500' }] }));
+      actions.publish.mockResolvedValue(publishResult({ failed: [{ documentId: 11, message: 'the server answered 500' }] }));
       render([doc(11, ExecutiveSummary)], library(), actions);
       q<HTMLButtonElement>('.dc-update-charts')!.click();
       fixture.detectChanges();
@@ -902,7 +910,7 @@ describe('DownloadCenterPanelComponent', () => {
 
     it('closes the overlay and shows the server\'s message when chart storage is not configured', async () => {
       const actions = chartActions();
-      actions.publish.and.resolveTo(publishResult({ storageNotConfigured: 'Chart storage is not configured: set Benchmark:ReportChartsPath.' }));
+      actions.publish.mockResolvedValue(publishResult({ storageNotConfigured: 'Chart storage is not configured: set Benchmark:ReportChartsPath.' }));
       render([doc(11, ExecutiveSummary)], library(), actions);
       q<HTMLButtonElement>('.dc-update-charts')!.click();
       fixture.detectChanges();

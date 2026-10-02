@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
@@ -23,8 +24,8 @@ describe('ModelsComponent', () => {
     .compileComponents();
 
     settingsService = TestBed.inject(SettingsService);
-    spyOn(settingsService, 'getUserModels').and.returnValue(of([]));
-    spyOn(settingsService, 'getSettings').and.returnValue(of({
+    vi.spyOn(settingsService, 'getUserModels').mockReturnValue(of([]));
+    vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({
       hasApiKey: true,
       spoilerFreeMode: true
     }));
@@ -43,8 +44,8 @@ describe('ModelsComponent', () => {
 
     beforeEach(() => {
       mockDialog = {
-        showModal: jasmine.createSpy('showModal'),
-        close: jasmine.createSpy('close')
+        showModal: vi.fn().mockName('showModal'),
+        close: vi.fn().mockName('close')
       };
       component.deleteModelConfirmDialog = { nativeElement: mockDialog };
     });
@@ -53,8 +54,8 @@ describe('ModelsComponent', () => {
       component.modelToDeleteId = 42;
       component.titleModelSelection = 'u_42';
       
-      const deleteSpy = spyOn(settingsService, 'deleteUserModel').and.returnValue(of({ message: 'Deleted' }));
-      (settingsService.getSettings as jasmine.Spy).and.returnValue(of({
+      const deleteSpy = vi.spyOn(settingsService, 'deleteUserModel').mockReturnValue(of({ message: 'Deleted' }));
+      (settingsService.getSettings as Mock).mockReturnValue(of({
         hasApiKey: true,
         spoilerFreeMode: true,
         titleGenerationModelId: 99
@@ -63,7 +64,7 @@ describe('ModelsComponent', () => {
       component.confirmDelete();
 
       expect(deleteSpy).toHaveBeenCalledWith(42);
-      expect(component.saving).toBeFalse();
+      expect(component.saving).toBe(false);
       expect(component.titleModelSelection).toBe('u_99');
       expect(mockDialog.close).toHaveBeenCalled();
     });
@@ -71,34 +72,30 @@ describe('ModelsComponent', () => {
     it('should handle inner getSettings failure (TypeError: Failed to fetch) gracefully after model deletion', () => {
       component.modelToDeleteId = 42;
       
-      spyOn(settingsService, 'deleteUserModel').and.returnValue(of({ message: 'Deleted' }));
-      (settingsService.getSettings as jasmine.Spy).and.returnValue(
-        throwError(() => new TypeError('Failed to fetch'))
-      );
+      vi.spyOn(settingsService, 'deleteUserModel').mockReturnValue(of({ message: 'Deleted' }));
+      (settingsService.getSettings as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
         component.confirmDelete();
       }).not.toThrow();
 
-      expect(component.saving).toBeFalse();
+      expect(component.saving).toBe(false);
       expect(mockDialog.close).toHaveBeenCalled();
     });
 
     it('should catch TypeError: Failed to fetch on deleteUserModel, close modal, and reset saving to false', () => {
-      const consoleError = spyOn(console, 'error');
+      const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       component.modelToDeleteId = 42;
 
-      spyOn(settingsService, 'deleteUserModel').and.returnValue(
-        throwError(() => new TypeError('Failed to fetch'))
-      );
+      vi.spyOn(settingsService, 'deleteUserModel').mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
         component.confirmDelete();
       }).not.toThrow();
 
-      expect(component.saving).toBeFalse();
+      expect(component.saving).toBe(false);
       expect(mockDialog.close).toHaveBeenCalled();
-      expect(consoleError).toHaveBeenCalledWith('Failed to delete model', jasmine.any(TypeError));
+      expect(consoleError).toHaveBeenCalledWith('Failed to delete model', expect.any(TypeError));
     });
   });
 
@@ -107,8 +104,8 @@ describe('ModelsComponent', () => {
 
     beforeEach(() => {
       mockEditDialog = {
-        showModal: jasmine.createSpy('showModal'),
-        close: jasmine.createSpy('close')
+        showModal: vi.fn().mockName('showModal'),
+        close: vi.fn().mockName('close')
       };
       component.editModelDialog = { nativeElement: mockEditDialog };
     });
@@ -121,8 +118,8 @@ describe('ModelsComponent', () => {
         displayName: 'Gemini 3.6 Flash'
       };
 
-      const updateSpy = spyOn(settingsService, 'updateUserModel').and.returnValue(of({}));
-      spyOn(component, 'loadModels');
+      const updateSpy = vi.spyOn(settingsService, 'updateUserModel').mockReturnValue(of({}));
+      vi.spyOn(component, 'loadModels').mockReturnValue(undefined);
 
       component.onEditSave({
         displayName: 'Gemini 3.7 Flash',
@@ -152,7 +149,7 @@ describe('ModelsComponent', () => {
       );
       expect(component.loadModels).toHaveBeenCalled();
       expect(mockEditDialog.close).toHaveBeenCalled();
-      expect(component.saving).toBeFalse();
+      expect(component.saving).toBe(false);
       expect(component.editingModel).toBeNull();
     });
   });

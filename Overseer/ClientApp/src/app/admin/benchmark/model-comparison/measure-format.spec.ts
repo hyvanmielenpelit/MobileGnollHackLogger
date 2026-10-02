@@ -31,9 +31,9 @@ describe('measure-format', () => {
     });
     expect(MAX_MEASURE_DECIMALS).toBe(6);
     for (const measure of NUMBER_MEASURES) {
-      expect(MEASURE_NAMES[measure]).withContext(measure).toBeTruthy();
-      expect(MEASURE_SHORT_NAMES[measure]).withContext(measure).toBeTruthy();
-      expect(Number.isFinite(MEASURE_EXAMPLES[measure])).withContext(measure).toBeTrue();
+      expect(MEASURE_NAMES[measure], measure).toBeTruthy();
+      expect(MEASURE_SHORT_NAMES[measure], measure).toBeTruthy();
+      expect(Number.isFinite(MEASURE_EXAMPLES[measure]), measure).toBe(true);
     }
   });
 
@@ -49,7 +49,7 @@ describe('measure-format', () => {
       costPerQuestion: '$0.0042'
     };
     for (const measure of NUMBER_MEASURES) {
-      expect(formatMeasureSample(measure, DEFAULT_MEASURE_DECIMALS[measure])).withContext(measure).toBe(expected[measure]);
+      expect(formatMeasureSample(measure, DEFAULT_MEASURE_DECIMALS[measure]), measure).toBe(expected[measure]);
     }
     expect(formatMeasureSample('meanModelTime', 2, { value: 850, unit: 'ms' })).toBe('850 ms');
     expect(formatMeasureSample('meanModelTime', 2, { value: 870, unit: 's' })).toBe('0.87 s');
@@ -73,7 +73,7 @@ describe('measure-format', () => {
     expect(normalizeMeasureDecimals(-2, 4)).toBe(0);
     expect(normalizeMeasureDecimals(-0.4, 4)).toBe(0);
     for (const value of ['2', null, undefined, Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, {}, [2], true]) {
-      expect(normalizeMeasureDecimals(value, 4)).withContext(String(value)).toBe(4);
+      expect(normalizeMeasureDecimals(value, 4), String(value)).toBe(4);
     }
   });
 
@@ -111,7 +111,7 @@ describe('measure-format', () => {
   it('writes a non-finite value as an empty string', () => {
     for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
       for (const measure of NUMBER_MEASURES) {
-        expect(formatMeasure(value, measure, 2, 's')).withContext(`${measure} ${value}`).toBe('');
+        expect(formatMeasure(value, measure, 2, 's'), `${measure} ${value}`).toBe('');
       }
     }
   });
@@ -126,7 +126,7 @@ describe('measure-format', () => {
 
   it('shows at least whole milliseconds: settings 0-3 read alike on a millisecond display', () => {
     for (const decimals of [0, 1, 2, 3]) {
-      expect(formatMeasure(850.3, 'meanModelTime', decimals, 'ms')).withContext(String(decimals)).toBe('850 ms');
+      expect(formatMeasure(850.3, 'meanModelTime', decimals, 'ms'), String(decimals)).toBe('850 ms');
     }
     expect(formatMeasure(850.3, 'meanModelTime', 4, 'ms')).toBe('850.3 ms');
     expect(formatMeasure(850.3, 'meanModelTime', 6, 'ms')).toBe('850.300 ms');

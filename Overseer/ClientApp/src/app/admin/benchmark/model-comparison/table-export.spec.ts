@@ -175,14 +175,18 @@ describe('table-export', () => {
    * Stands a fake writer in for the dynamically imported one and hands back what it was called
    * with. The holder exists for exactly this: a bare `import()` offers no seam to intercept.
    */
-  function captureXlsx(): { sheets: any[] } {
-    const captured: { sheets: any[] } = { sheets: [] };
-    spyOn(xlsxWriterModule, 'load').and.returnValue(Promise.resolve({
+  function captureXlsx(): {
+    sheets: any[];
+  } {
+    const captured: {
+      sheets: any[];
+    } = { sheets: [] };
+    vi.spyOn(xlsxWriterModule, 'load').mockResolvedValue({
       default: (given: any) => {
         captured.sheets = given;
         return { toBlob: () => Promise.resolve(new Blob(['xlsx-bytes'])) };
       }
-    } as any));
+    } as any);
     return captured;
   }
 
@@ -198,7 +202,7 @@ describe('table-export', () => {
       .toEqual(new Set(COMPARISON_TABLE_COLUMNS.map(column => column.key)));
     expect(built.rows.length).toBe(2);
     for (const row of built.rows) {
-      expect(COMPARISON_TABLE_COLUMNS.every(column => column.key in row.cells)).toBeTrue();
+      expect(COMPARISON_TABLE_COLUMNS.every(column => column.key in row.cells)).toBe(true);
     }
   });
 
@@ -275,7 +279,7 @@ describe('table-export', () => {
 
     expect(row.cells['scheduledChange'].raw).toBeNull();
     expect(row.cells['differsOn'].raw).toBeNull();
-    expect(row.cells['speedIndexSaturated'].raw).toBeFalse();
+    expect(row.cells['speedIndexSaturated'].raw).toBe(false);
 
     const keys = populatedColumnKeys(model().rows.map(r => r.cells));
 
@@ -298,7 +302,7 @@ describe('table-export', () => {
     expect(new Set(TABLE_DISPLAY_COLUMNS.map(column => column.key)).size).toBe(31);
     const singles = TABLE_DISPLAY_COLUMNS.filter(column => column.renderer === 'text');
     expect(singles.length).toBe(22);
-    expect(singles.every(column => column.parts.length === 1 && column.parts[0] === column.key && column.sortPart === column.key)).toBeTrue();
+    expect(singles.every(column => column.parts.length === 1 && column.parts[0] === column.key && column.sortPart === column.key)).toBe(true);
     const primaries = TABLE_DISPLAY_COLUMNS.filter(column => column.renderer !== 'text').map(column => column.parts[0]);
     const covered = new Set([...singles.map(column => column.key), ...primaries.filter(part => !singles.some(s => s.key === part))]);
     expect(covered).toEqual(new Set(COMPARISON_TABLE_COLUMNS.map(column => column.key)));
@@ -412,8 +416,8 @@ describe('table-export', () => {
     expect(repaired.order.length).toBe(31);
     expect(repaired.shown).toEqual(['notes', 'model']);
     expect(normalizeTableColumnConfig(null)).toEqual({ order: DEFAULT_TABLE_COLUMNS.order, shown: DEFAULT_TABLE_COLUMNS.shown });
-    expect(sameTableColumnConfig(normalizeTableColumnConfig('x'), DEFAULT_TABLE_COLUMNS)).toBeTrue();
-    expect(sameTableColumnConfig(repaired, DEFAULT_TABLE_COLUMNS)).toBeFalse();
+    expect(sameTableColumnConfig(normalizeTableColumnConfig('x'), DEFAULT_TABLE_COLUMNS)).toBe(true);
+    expect(sameTableColumnConfig(repaired, DEFAULT_TABLE_COLUMNS)).toBe(false);
   });
 
   describe('migrating a saved layout', () => {
@@ -449,7 +453,7 @@ describe('table-export', () => {
 
     it('falls back to the defaults for a missing or garbage value', () => {
       for (const value of [null, undefined, 'x', 7, [], {}]) {
-        expect(sameTableColumnConfig(migrateTableColumnConfig(value), DEFAULT_TABLE_COLUMNS)).withContext(String(value)).toBeTrue();
+        expect(sameTableColumnConfig(migrateTableColumnConfig(value), DEFAULT_TABLE_COLUMNS), String(value)).toBe(true);
       }
     });
   });
@@ -464,7 +468,7 @@ describe('table-export', () => {
       explanation: 'Line one\nline two'
     })]));
 
-    expect(text.startsWith('\uFEFF')).toBeTrue();
+    expect(text.startsWith('\uFEFF')).toBe(true);
     expect(text).toContain('\r\n');
     expect(text).toContain('"Gemini ""Flash"", medium"');
     // A line break inside a field is legal, and stays inside the quotes rather than ending a record.
@@ -504,7 +508,7 @@ describe('table-export', () => {
     const built = model([buildEntry({ explanation: 'before\tafter' })]);
     const text = toTsv(built);
 
-    expect(text.startsWith('\uFEFF')).toBeTrue();
+    expect(text.startsWith('\uFEFF')).toBe(true);
     const columns = dataLines(text)[0].split('\t');
     expect(columns.length).toBe(29);
     expect(columns[columnIndex(built, 'explanation')]).toBe('before after');
@@ -544,7 +548,7 @@ describe('table-export', () => {
       .toEqual(model().columns.map(column => column.key));
     // Numbers, not the strings the human formats carry.
     expect(parsed.rows[0]['costPerQuestion']).toBe(0.0432);
-    expect(parsed.rows[0]['speedIndexSaturated']).toBeFalse();
+    expect(parsed.rows[0]['speedIndexSaturated']).toBe(false);
     expect(parsed.provenance.pricingBasis).toBe('Current catalog, as of 2026-09-07');
     expect(parsed.provenance.notices.length).toBe(1);
   });
@@ -585,7 +589,7 @@ describe('table-export', () => {
     // A frozen header, so twenty-nine columns stay identifiable after a scroll.
     expect(captured.sheets[0].stickyRowsCount).toBe(1);
     expect(captured.sheets[0].data.length).toBe(3);
-    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 29)).toBeTrue();
+    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 29)).toBe(true);
     expect(captured.sheets[1].sheet).toBe('Provenance');
 
     expect(blob.size).toBeGreaterThan(0);
@@ -756,10 +760,7 @@ describe('table-export', () => {
 
       const fills: { x: number; width: number }[] = [];
       const realFillRect = CanvasRenderingContext2D.prototype.fillRect;
-      spyOn(CanvasRenderingContext2D.prototype, 'fillRect').and.callFake(function (
-        this: CanvasRenderingContext2D,
-        ...args: any[]
-      ) {
+      vi.spyOn(CanvasRenderingContext2D.prototype, 'fillRect').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
         fills.push({ x: args[0], width: args[2] });
         return (realFillRect as any).apply(this, args);
       } as any);
@@ -820,12 +821,10 @@ describe('table-export', () => {
         const context = `at ${textScale}`;
 
         const fitted = resolveTableImageLayout(built, { size: box(widthPx, heightPx, textScale) });
-        expect(fitted.refusal).withContext(context).toBeNull();
-        expect(fitted.layout!.pixelWidth).withContext(context).toBe(widthPx);
-        expect(fitted.layout!.pixelHeight).withContext(context).toBe(heightPx);
-        expect(resolveTableImageLayout(built, { size: box(widthPx, heightPx - 1, textScale) }).refusal)
-          .withContext(context)
-          .toContain(`need at least ${heightPx} px of height`);
+        expect(fitted.refusal, context).toBeNull();
+        expect(fitted.layout!.pixelWidth, context).toBe(widthPx);
+        expect(fitted.layout!.pixelHeight, context).toBe(heightPx);
+        expect(resolveTableImageLayout(built, { size: box(widthPx, heightPx - 1, textScale) }).refusal, context).toContain(`need at least ${heightPx} px of height`);
       }
     });
 
@@ -835,15 +834,9 @@ describe('table-export', () => {
         const { widthPx, heightPx } = measureTableImage(built, { textScale });
         const context = `at ${textScale}`;
 
-        expect(resolveTableImageLayout(built, { size: box(widthPx, heightPx, textScale) }).refusal)
-          .withContext(context)
-          .toBeNull();
-        expect(resolveTableImageLayout(built, { size: box(widthPx - 1, heightPx, textScale) }).refusal)
-          .withContext(context)
-          .toContain(`need at least ${widthPx} px of width`);
-        expect(resolveTableImageLayout(built, { size: box(widthPx, heightPx - 1, textScale) }).refusal)
-          .withContext(context)
-          .toContain(`need at least ${heightPx} px of height`);
+        expect(resolveTableImageLayout(built, { size: box(widthPx, heightPx, textScale) }).refusal, context).toBeNull();
+        expect(resolveTableImageLayout(built, { size: box(widthPx - 1, heightPx, textScale) }).refusal, context).toContain(`need at least ${widthPx} px of width`);
+        expect(resolveTableImageLayout(built, { size: box(widthPx, heightPx - 1, textScale) }).refusal, context).toContain(`need at least ${heightPx} px of height`);
       }
     });
 
@@ -874,7 +867,7 @@ describe('table-export', () => {
 
       expect(canvas.width).toBe(1);
       expect(canvas.height).toBe(1);
-      await expectAsync(encodeComparisonTable(built, 'png', { size })).toBeRejectedWithError(/selected columns/);
+      await expect(encodeComparisonTable(built, 'png', { size })).rejects.toThrowError(/selected columns/);
     });
 
     describe('with the logo', () => {
@@ -892,17 +885,11 @@ describe('table-export', () => {
         const images: any[][] = [];
         const realFillText = CanvasRenderingContext2D.prototype.fillText;
         const realDrawImage = CanvasRenderingContext2D.prototype.drawImage;
-        spyOn(CanvasRenderingContext2D.prototype, 'fillText').and.callFake(function (
-          this: CanvasRenderingContext2D,
-          ...args: any[]
-        ) {
+        vi.spyOn(CanvasRenderingContext2D.prototype, 'fillText').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
           texts.push({ text: String(args[0]), y: args[2] });
           return (realFillText as any).apply(this, args);
         } as any);
-        spyOn(CanvasRenderingContext2D.prototype, 'drawImage').and.callFake(function (
-          this: CanvasRenderingContext2D,
-          ...args: any[]
-        ) {
+        vi.spyOn(CanvasRenderingContext2D.prototype, 'drawImage').mockImplementation(function (this: CanvasRenderingContext2D, ...args: any[]) {
           images.push(args);
           return (realDrawImage as any).apply(this, args);
         } as any);
@@ -978,8 +965,7 @@ describe('table-export', () => {
         const natural = measureTableImage(built, { textScale: 1 });
         const size = box(natural.widthPx, natural.heightPx);
         expect(resolveTableImageLayout(built, { size }).refusal).toBeNull();
-        await expectAsync(encodeComparisonTable(built, 'png', { size, logo: logoOf(96) }))
-          .toBeRejectedWithError(/px of height/);
+        await expect(encodeComparisonTable(built, 'png', { size, logo: logoOf(96) })).rejects.toThrowError(/px of height/);
       });
     });
   });
@@ -994,9 +980,9 @@ describe('table-export', () => {
 
       const payload = tableClipboardPayload(built, 'xlsx');
 
-      expect(payload.text.startsWith('﻿')).toBeFalse();
+      expect(payload.text.startsWith('﻿')).toBe(false);
       expect(payload.text).toBe(toTsv(built).slice(1));
-      expect(payload.html!.startsWith('<table')).toBeTrue();
+      expect(payload.html!.startsWith('<table')).toBe(true);
       expect(payload.html).toContain('<th>Model</th>');
       expect(payload.html).toContain('&lt;b&gt;Flash&lt;/b&gt;');
       expect(payload.html).not.toContain('<b>');
@@ -1020,10 +1006,10 @@ describe('table-export', () => {
       const csv = tableClipboardPayload(built, 'csv');
       const tsv = tableClipboardPayload(built, 'tsv');
 
-      expect(csv.text.startsWith('﻿')).toBeFalse();
+      expect(csv.text.startsWith('﻿')).toBe(false);
       expect(csv.text).toBe(toCsv(built).slice(1));
       expect(csv.html).toBeUndefined();
-      expect(tsv.text.startsWith('﻿')).toBeFalse();
+      expect(tsv.text.startsWith('﻿')).toBe(false);
       expect(tsv.text).toBe(toTsv(built).slice(1));
       expect(tableClipboardPayload(built, 'md')).toEqual({ text: toMarkdown(built) });
       expect(tableClipboardPayload(built, 'json')).toEqual({ text: toJson(built) });
@@ -1137,8 +1123,8 @@ describe('table-export', () => {
       const text = toMarkdown(withDiagnostics(model(), diagnostics()));
 
       // The comparison table and its notices come first, unchanged, then one blank line and the block.
-      expect(text.startsWith(`${plain}\n## Assessor Panel Diagnostics\n`)).toBeTrue();
-      expect(text.endsWith('\n')).toBeTrue();
+      expect(text.startsWith(`${plain}\n## Assessor Panel Diagnostics\n`)).toBe(true);
+      expect(text.endsWith('\n')).toBe(true);
       expect(text).toContain('- Member A: GPT-4.1 (OpenAI)');
       expect(text).toContain('- Member B: Claude Sonnet 4 (Anthropic)');
       expect(text).toContain('- Reference reader: Gemini 2.5 Pro (Google)');
@@ -1185,8 +1171,7 @@ describe('table-export', () => {
       expect(text).toContain('| Member A | OpenAI | OpenAI | Same family | 12 | 3 | 9 | 0 | 25% |');
       expect(text).toContain('- Member A (OpenAI) family overturn gap: +17 pp');
       expect(text).toContain('- Member B (Anthropic) family overturn gap: withheld: too few ruled charges');
-      expect(text.endsWith('### Caveats\n\n- The published score is the panel mean.\n- The reference reader never scores.\n'))
-        .toBeTrue();
+      expect(text.endsWith('### Caveats\n\n- The published score is the panel mean.\n- The reference reader never scores.\n')).toBe(true);
     });
 
     it('leaves every other format, and the comparison table\'s columns, as they are', () => {

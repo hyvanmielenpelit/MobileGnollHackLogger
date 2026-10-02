@@ -4,7 +4,7 @@ This project was generated with [Angular CLI](https://github.com/angular/angular
 
 ## Development server
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+The Overseer host serves the client from `../wwwroot` as last built by `npm run build`. Optionally, `npm start` serves a development build over HTTPS on `https://localhost:44447`, proxying the API to the running host. See [`docs/overseer/commands.md`](../../docs/overseer/commands.md).
 
 ## Code scaffolding
 
@@ -16,7 +16,7 @@ Run `ng build` to build the project. The build artifacts will be stored in the `
 
 ## Running unit tests
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+Run `npm run test:headless` to run the unit tests once with Vitest in headless Chromium. Watch mode, single areas and profiling are in [`docs/overseer/commands.md`](../../docs/overseer/commands.md).
 
 ## Running end-to-end tests
 

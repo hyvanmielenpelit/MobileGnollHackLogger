@@ -17,7 +17,7 @@ describe('TableSettingsPanelComponent', () => {
 
   function control<T extends HTMLElement>(id: string): T {
     const element = host().querySelector<T>(`#${id}`);
-    expect(element).withContext(id).not.toBeNull();
+    expect(element, id).not.toBeNull();
     return element!;
   }
 
@@ -73,7 +73,7 @@ describe('TableSettingsPanelComponent', () => {
   it('locks the model column with a reason and tags it always shown', () => {
     render();
     const model = fixture.componentInstance.items.find(item => item.key === TABLE_MODEL_COLUMN_KEY)!;
-    expect(model.locked).toBeTrue();
+    expect(model.locked).toBe(true);
     expect(model.lockedReason).toBe('Every table needs its model column.');
     expect(model.tags).toContain('always shown');
   });
@@ -215,12 +215,12 @@ describe('TableSettingsPanelComponent', () => {
     const described: [HTMLElement, string][] = [[fieldset, component.rowShadingHint], [rules, component.rowRulesHint]];
     for (const [element, hint] of described) {
       const tipId = element.getAttribute('aria-describedby')!;
-      expect(control<HTMLElement>(tipId).textContent!.trim()).withContext(tipId).toBe(hint);
+      expect(control<HTMLElement>(tipId).textContent!.trim(), tipId).toBe(hint);
     }
 
     render(DEFAULT_TABLE_COLUMNS, { rowShading: 'light', rowRules: true });
     expect(radios.filter(radio => radio.checked).map(radio => radio.value)).toEqual(['light']);
-    expect(rules.checked).toBeTrue();
+    expect(rules.checked).toBe(true);
   });
 
   it('disables the row style reset at defaults and resets it', () => {
@@ -240,8 +240,8 @@ describe('TableSettingsPanelComponent', () => {
 
   it('opens the Columns section by default and persists an explicit toggle', () => {
     render();
-    expect(control<HTMLDetailsElement>('mc-table-columns-section').open).toBeTrue();
-    expect(control<HTMLDetailsElement>('mc-table-image-layout-section').open).toBeFalse();
+    expect(control<HTMLDetailsElement>('mc-table-columns-section').open).toBe(true);
+    expect(control<HTMLDetailsElement>('mc-table-image-layout-section').open).toBe(false);
 
     const imageSection = control<HTMLDetailsElement>('mc-table-image-layout-section');
     imageSection.open = true;
@@ -257,7 +257,7 @@ describe('TableSettingsPanelComponent', () => {
     // The open state is read when the component is created, so this one is created after the write.
     fixture = TestBed.createComponent(TableSettingsPanelComponent);
     render();
-    expect(control<HTMLDetailsElement>('mc-table-columns-section').open).toBeFalse();
-    expect(control<HTMLDetailsElement>('mc-table-image-layout-section').open).toBeTrue();
+    expect(control<HTMLDetailsElement>('mc-table-columns-section').open).toBe(false);
+    expect(control<HTMLDetailsElement>('mc-table-image-layout-section').open).toBe(true);
   });
 });

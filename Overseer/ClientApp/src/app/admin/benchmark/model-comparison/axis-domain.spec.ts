@@ -93,8 +93,8 @@ describe('axis-domain', () => {
       ];
       for (const input of cases) {
         const domain = linearDomain(input);
-        expect(domain.ticks.length).withContext(JSON.stringify(input)).toBeLessThanOrEqual(7);
-        expect(domain.ticks.length).withContext(JSON.stringify(input)).toBeGreaterThanOrEqual(2);
+        expect(domain.ticks.length, JSON.stringify(input)).toBeLessThanOrEqual(7);
+        expect(domain.ticks.length, JSON.stringify(input)).toBeGreaterThanOrEqual(2);
         for (const tick of domain.ticks) {
           expect(tick).toBeGreaterThanOrEqual(domain.min);
           expect(tick).toBeLessThanOrEqual(domain.max);
@@ -109,11 +109,11 @@ describe('axis-domain', () => {
         for (const decades of [1.2, 1.5, 2, 2.3, 2.65, 3, 3.5, 4, 4.5, 5]) {
           const domain = logDomain({ lows: [base], highs: [base * 10 ** decades] });
           const context = `${base} over ${decades} decades`;
-          expect(domain.ticks.length).withContext(context).toBeGreaterThanOrEqual(3);
-          expect(domain.ticks.length).withContext(context).toBeLessThanOrEqual(7);
+          expect(domain.ticks.length, context).toBeGreaterThanOrEqual(3);
+          expect(domain.ticks.length, context).toBeLessThanOrEqual(7);
           for (const tick of domain.ticks) {
-            expect(tick).withContext(context).toBeGreaterThanOrEqual(domain.min);
-            expect(tick).withContext(context).toBeLessThanOrEqual(domain.max);
+            expect(tick, context).toBeGreaterThanOrEqual(domain.min);
+            expect(tick, context).toBeLessThanOrEqual(domain.max);
           }
         }
       }

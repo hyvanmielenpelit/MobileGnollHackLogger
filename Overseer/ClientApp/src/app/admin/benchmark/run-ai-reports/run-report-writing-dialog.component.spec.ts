@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed, discardPeriodicTasks, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
@@ -141,13 +142,16 @@ const CONTEXT: RunReportWritingContext = {
 describe('RunReportWritingDialogComponent', () => {
   let fixture: ComponentFixture<RunReportWritingDialogComponent>;
   let component: RunReportWritingDialogComponent;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
+  let service: MockedObject<AdminBenchmarkService>;
   let ticker: FakePollTicker;
   let host: HTMLElement;
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj<AdminBenchmarkService>('AdminBenchmarkService',
-      ['getRunReportJob', 'cancelRunReportJob', 'getRun']);
+    service = {
+      getRunReportJob: vi.fn().mockName("AdminBenchmarkService.getRunReportJob"),
+      cancelRunReportJob: vi.fn().mockName("AdminBenchmarkService.cancelRunReportJob"),
+      getRun: vi.fn().mockName("AdminBenchmarkService.getRun")
+    } as unknown as MockedObject<AdminBenchmarkService>;
     ticker = new FakePollTicker();
 
     await TestBed.configureTestingModule({
@@ -197,29 +201,23 @@ describe('RunReportWritingDialogComponent', () => {
   }
 
   it('opens modal, sized as a benchmark dialog, and focuses its title', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView()));
+    service.getRunReportJob.mockReturnValue(of(jobView()));
     open();
-    expect(dialog().open).toBeTrue();
+    expect(dialog().open).toBe(true);
     expect(dialog().getAttribute('closedby')).toBe('closerequest');
     expect(dialog().getAttribute('aria-labelledby')).toBe('rwTitle');
     expect(document.activeElement).toBe(el('#rwTitle'));
     expect(text('#rwTitle')).toBe('Writing AI Reports · Run #42');
     expect(text('.dialog-subtitle')).toBe('Core Mechanics · GPT-6 Sol');
     expect(el('.rw-close')?.getAttribute('aria-label')).toBe('Close the report writing progress. The writing continues.');
-    expect(el('.rw-close')?.hasAttribute('title')).toBeFalse();
+    expect(el('.rw-close')?.hasAttribute('title')).toBe(false);
     stop();
   }));
 
   it('announces phase changes in the live region and keeps the ticking elapsed time outside it', fakeAsync(() => {
     const finished: (BenchmarkRunReportJobDto | null)[] = [];
     component.finished.subscribe(value => finished.push(value));
-    service.getRunReportJob.and.returnValues(
-      of(jobView({ phase: 'Queued', slotAcquiredAtUtc: null, jobsAhead: 1, blockingJobLabel: 'Report Pack: GPT-6 Sol' })),
-      of(jobView({ phase: 'Preparing' })),
-      of(jobView({}, { documents: [doc(ExecutiveSummary, 'Writing'), doc(TechnicalReport, 'Pending')] })),
-      of(jobView({}, { documents: [doc(ExecutiveSummary, 'Repairing'), doc(TechnicalReport, 'Pending')] })),
-      of(finishedView())
-    );
+    service.getRunReportJob.mockReturnValueOnce(of(jobView({ phase: 'Queued', slotAcquiredAtUtc: null, jobsAhead: 1, blockingJobLabel: 'Report Pack: GPT-6 Sol' }))).mockReturnValueOnce(of(jobView({ phase: 'Preparing' }))).mockReturnValueOnce(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Writing'), doc(TechnicalReport, 'Pending')] }))).mockReturnValueOnce(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Repairing'), doc(TechnicalReport, 'Pending')] }))).mockReturnValueOnce(of(finishedView()));
     open();
 
     const status = el('[role="status"].rw-status')!;
@@ -227,7 +225,7 @@ describe('RunReportWritingDialogComponent', () => {
     expect(status.textContent?.trim()).toBe('Queued behind a Report Pack for GPT-6 Sol (1 job ahead)');
 
     const elapsed = el('.rw-elapsed')!;
-    expect(status.contains(elapsed)).toBeFalse();
+    expect(status.contains(elapsed)).toBe(false);
     expect(elapsed.closest('[role="status"], [aria-live]')).toBeNull();
     expect(elapsed.textContent?.trim()).toBe('10 s');
     tick(1000);
@@ -250,7 +248,7 @@ describe('RunReportWritingDialogComponent', () => {
     expect(Array.from(host.querySelectorAll('.run-stage-name')).map(n => n.textContent?.trim()))
       .toEqual(['Queued', 'Preparing', 'Executive Summary', 'Report for AI Researchers and Developers', 'Done']);
     expect(el('progress.job-progress')?.getAttribute('aria-label')).toBe('Writing progress');
-    expect(el('progress.job-progress')?.hasAttribute('value')).toBeFalse();
+    expect(el('progress.job-progress')?.hasAttribute('value')).toBe(false);
 
     tick(2000);
     fixture.detectChanges();
@@ -263,16 +261,16 @@ describe('RunReportWritingDialogComponent', () => {
     expect(host.querySelectorAll('.run-stage.is-done').length).toBe(5);
     expect(finished.length).toBe(1);
 
-    const calls = service.getRunReportJob.calls.count();
+    const calls = vi.mocked(service.getRunReportJob).mock.calls.length;
     tick(10000);
-    expect(service.getRunReportJob.calls.count()).toBe(calls);
+    expect(vi.mocked(service.getRunReportJob).mock.calls.length).toBe(calls);
     expect(ticker.running).toBe(0);
     expect(finished.length).toBe(1);
     stop();
   }));
 
   it('says how many jobs are ahead when no blocking job is named', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView({ phase: 'Queued', slotAcquiredAtUtc: null, jobsAhead: 2 })));
+    service.getRunReportJob.mockReturnValue(of(jobView({ phase: 'Queued', slotAcquiredAtUtc: null, jobsAhead: 2 })));
     open();
     expect(text('.rw-status')).toBe('Queued (2 jobs ahead)');
     stop();
@@ -285,7 +283,7 @@ describe('RunReportWritingDialogComponent', () => {
   });
 
   it('shows the writer, the counts, and an unknown cost as Unknown', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView({}, { costUsd: null, inputTokens: 12345 })));
+    service.getRunReportJob.mockReturnValue(of(jobView({}, { costUsd: null, inputTokens: 12345 })));
     open();
     expect(text('.rw-cost-label')).toBe('Cost so far');
     expect(text('.rw-cost')).toBe('Unknown');
@@ -298,31 +296,32 @@ describe('RunReportWritingDialogComponent', () => {
   }));
 
   it('asks before canceling, then cancels and shows Canceling… until the job settles', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Writing'), doc(TechnicalReport, 'Pending')] })));
-    service.cancelRunReportJob.and.returnValue(of(jobView({ cancelRequestedAtUtc: '2026-09-29T12:00:09Z' })));
+    service.getRunReportJob.mockReturnValue(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Writing'), doc(TechnicalReport, 'Pending')] })));
+    service.cancelRunReportJob.mockReturnValue(of(jobView({ cancelRequestedAtUtc: '2026-09-29T12:00:09Z' })));
     open();
 
     el<HTMLButtonElement>('.rw-cancel')!.click();
     fixture.detectChanges();
-    expect(confirmDialog().open).toBeTrue();
+    expect(confirmDialog().open).toBe(true);
     expect(service.cancelRunReportJob).not.toHaveBeenCalled();
     expect(text('.rw-confirm-dialog .dialog-body'))
       .toBe('Cancel the writing? The document being written is discarded; documents already written are kept. Tokens already used are still charged.');
 
     el<HTMLButtonElement>('.rw-confirm-cancel')!.click();
     fixture.detectChanges();
-    expect(confirmDialog().open).toBeFalse();
-    expect(service.cancelRunReportJob).toHaveBeenCalledOnceWith(42);
+    expect(confirmDialog().open).toBe(false);
+    expect(service.cancelRunReportJob).toHaveBeenCalledTimes(1);
+    expect(service.cancelRunReportJob).toHaveBeenCalledWith(42);
     const button = el<HTMLButtonElement>('.rw-cancel')!;
     expect(button.textContent?.trim()).toBe('Canceling…');
     expect(button.getAttribute('aria-disabled')).toBe('true');
 
     button.click();
     fixture.detectChanges();
-    expect(confirmDialog().open).toBeFalse();
+    expect(confirmDialog().open).toBe(false);
     expect(service.cancelRunReportJob).toHaveBeenCalledTimes(1);
 
-    service.getRunReportJob.and.returnValue(of(jobView({
+    service.getRunReportJob.mockReturnValue(of(jobView({
       phase: 'Finished',
       status: BenchmarkRunReportDocumentsStatus.Canceled,
       message: 'Canceled. The Executive Summary was written and is kept.',
@@ -342,21 +341,21 @@ describe('RunReportWritingDialogComponent', () => {
   }));
 
   it('keeps writing when the confirmation is declined', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView()));
+    service.getRunReportJob.mockReturnValue(of(jobView()));
     open();
     el<HTMLButtonElement>('.rw-cancel')!.click();
     fixture.detectChanges();
     el<HTMLButtonElement>('.rw-keep-writing')!.click();
     fixture.detectChanges();
-    expect(confirmDialog().open).toBeFalse();
+    expect(confirmDialog().open).toBe(false);
     expect(service.cancelRunReportJob).not.toHaveBeenCalled();
     expect(text('.rw-cancel')).toBe('Cancel Writing');
     stop();
   }));
 
   it('shows a refused cancellation inline', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView()));
-    service.cancelRunReportJob.and.returnValue(throwError(() => new HttpErrorResponse({
+    service.getRunReportJob.mockReturnValue(of(jobView()));
+    service.cancelRunReportJob.mockReturnValue(throwError(() => new HttpErrorResponse({
       status: 409, error: { error: 'No report writing is in progress for this run.' }
     })));
     open();
@@ -370,22 +369,22 @@ describe('RunReportWritingDialogComponent', () => {
   }));
 
   it('runs in the background without canceling, and stops polling', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView()));
+    service.getRunReportJob.mockReturnValue(of(jobView()));
     open();
     expect(text('.rw-background')).toBe('Run in Background');
     el<HTMLButtonElement>('.rw-background')!.click();
     fixture.detectChanges();
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
     expect(service.cancelRunReportJob).not.toHaveBeenCalled();
-    const calls = service.getRunReportJob.calls.count();
+    const calls = vi.mocked(service.getRunReportJob).mock.calls.length;
     tick(10000);
-    expect(service.getRunReportJob.calls.count()).toBe(calls);
+    expect(vi.mocked(service.getRunReportJob).mock.calls.length).toBe(calls);
     expect(ticker.running).toBe(0);
     discardPeriodicTasks();
   }));
 
   it('stops its own close and cancel events from reaching the dialog around it', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView()));
+    service.getRunReportJob.mockReturnValue(of(jobView()));
     open();
     const reached: string[] = [];
     host.addEventListener('cancel', () => reached.push('cancel'));
@@ -404,7 +403,7 @@ describe('RunReportWritingDialogComponent', () => {
     component.viewRequested.subscribe(id => viewed.push(id));
     component.downloadsRequested.subscribe(button => downloads.push(button));
     const view = finishedView();
-    service.getRunReportJob.and.returnValue(of(view));
+    service.getRunReportJob.mockReturnValue(of(view));
     open();
 
     expect(finished).toEqual([view]);
@@ -436,14 +435,12 @@ describe('RunReportWritingDialogComponent', () => {
 
     el<HTMLButtonElement>('.rw-done')!.click();
     fixture.detectChanges();
-    expect(dialog().open).toBeFalse();
+    expect(dialog().open).toBe(false);
     discardPeriodicTasks();
   }));
 
   it('shows a failed document’s error inline', fakeAsync(() => {
-    service.getRunReportJob.and.returnValue(of(jobView(
-      { phase: 'Finished', status: BenchmarkRunReportDocumentsStatus.Failed, message: 'The writer failed.', finishedAtUtc: '2026-09-29T12:01:00Z' },
-      { documents: [doc(ExecutiveSummary, 'Failed', { errorMessage: 'The model refused.' }), doc(TechnicalReport, 'Canceled')] })));
+    service.getRunReportJob.mockReturnValue(of(jobView({ phase: 'Finished', status: BenchmarkRunReportDocumentsStatus.Failed, message: 'The writer failed.', finishedAtUtc: '2026-09-29T12:01:00Z' }, { documents: [doc(ExecutiveSummary, 'Failed', { errorMessage: 'The model refused.' }), doc(TechnicalReport, 'Canceled')] })));
     open();
     expect(text('.rw-status')).toBe('Failed: The writer failed.');
     expect(text('.rw-document-row .rw-document-error')).toBe('The model refused.');
@@ -452,9 +449,8 @@ describe('RunReportWritingDialogComponent', () => {
   }));
 
   it('backs off 2, 4, 8, 16 and 30 s after failed polls, and recovers', fakeAsync(() => {
-    const failure = (): ReturnType<AdminBenchmarkService['getRunReportJob']> =>
-      throwError(() => new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway' }));
-    service.getRunReportJob.and.callFake(failure);
+    const failure = (): ReturnType<AdminBenchmarkService['getRunReportJob']> => throwError(() => new HttpErrorResponse({ status: 502, statusText: 'Bad Gateway' }));
+    service.getRunReportJob.mockImplementation(failure);
     open();
     expect(service.getRunReportJob).toHaveBeenCalledTimes(1);
     expect(text('.rw-poll-trouble')).toBe('Lost contact with Overseer. Retrying in 2 s…');
@@ -476,7 +472,7 @@ describe('RunReportWritingDialogComponent', () => {
     expect(component.consecutiveFailures).toBe(6);
     expect(component.lastError).toEqual({ httpStatus: 502, message: 'Bad Gateway' });
 
-    service.getRunReportJob.and.returnValue(of(jobView()));
+    service.getRunReportJob.mockReturnValue(of(jobView()));
     tick(30000);
     fixture.detectChanges();
     expect(el('.rw-poll-trouble')).toBeNull();
@@ -487,21 +483,21 @@ describe('RunReportWritingDialogComponent', () => {
   }));
 
   it('keeps the diagnostics closed by default and copies them', fakeAsync(() => {
-    const copy = spyOn(runReportWritingIo, 'copy').and.returnValue(Promise.resolve(true));
-    service.getRunReportJob.and.returnValue(of(jobView()));
+    const copy = vi.spyOn(runReportWritingIo, 'copy').mockResolvedValue(true);
+    service.getRunReportJob.mockReturnValue(of(jobView()));
     open();
     const details = el<HTMLDetailsElement>('details.rw-diagnostics')!;
-    expect(details.open).toBeFalse();
+    expect(details.open).toBe(false);
     expect(text('details.rw-diagnostics summary')).toBe('Diagnostics');
     const button = el<HTMLButtonElement>('.rw-copy-diagnostics')!;
     expect(button.getAttribute('aria-label')).toBe('Copy the report writing diagnostics for run 42');
-    expect(button.hasAttribute('title')).toBeFalse();
+    expect(button.hasAttribute('title')).toBe(false);
 
     button.click();
     flushMicrotasks();
     fixture.detectChanges();
     expect(copy).toHaveBeenCalledTimes(1);
-    const copied = copy.calls.mostRecent().args[0];
+    const copied = vi.mocked(copy).mock.lastCall![0];
     expect(copied).toContain('Overseer AI report writing diagnostics');
     expect(copied).toContain('Run: #42');
     expect(copied).not.toContain('user-abc');
@@ -512,8 +508,8 @@ describe('RunReportWritingDialogComponent', () => {
   }));
 
   it('shows an inline error when copying fails', fakeAsync(() => {
-    spyOn(runReportWritingIo, 'copy').and.returnValue(Promise.resolve(false));
-    service.getRunReportJob.and.returnValue(of(jobView()));
+    vi.spyOn(runReportWritingIo, 'copy').mockResolvedValue(false);
+    service.getRunReportJob.mockReturnValue(of(jobView()));
     open();
     el<HTMLButtonElement>('.rw-copy-diagnostics')!.click();
     flushMicrotasks();
@@ -526,20 +522,20 @@ describe('RunReportWritingDialogComponent', () => {
 
   it('reports a rejected clipboard write as a failed copy', async () => {
     if (!navigator.clipboard) {
-      expect(await runReportWritingIo.copy('x')).toBeFalse();
+      expect(await runReportWritingIo.copy('x')).toBe(false);
       return;
     }
-    spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.reject(new Error('denied')));
-    expect(await runReportWritingIo.copy('x')).toBeFalse();
+    vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
+    expect(await runReportWritingIo.copy('x')).toBe(false);
   });
 
   it('downloads the diagnostics under a UTC-stamped name with LF line endings', fakeAsync(() => {
-    const download = spyOn(runReportWritingIo, 'download');
-    service.getRunReportJob.and.returnValue(of(jobView()));
+    const download = vi.spyOn(runReportWritingIo, 'download').mockReturnValue(undefined);
+    service.getRunReportJob.mockReturnValue(of(jobView()));
     open();
     el<HTMLButtonElement>('.rw-download-diagnostics')!.click();
     expect(download).toHaveBeenCalledTimes(1);
-    const [fileName, content] = download.calls.mostRecent().args;
+    const [fileName, content] = vi.mocked(download).mock.lastCall!;
     expect(fileName).toMatch(/^run-42_ai-report-writing-diagnostics_\d{8}-\d{6}\.txt$/);
     expect(content).toContain('Overseer AI report writing diagnostics');
     expect(content).not.toContain('\r');
@@ -549,8 +545,8 @@ describe('RunReportWritingDialogComponent', () => {
   it('falls back to the stored run status when the job is unknown on the first poll', fakeAsync(() => {
     const finished: (BenchmarkRunReportJobDto | null)[] = [];
     component.finished.subscribe(value => finished.push(value));
-    service.getRunReportJob.and.returnValue(of(null));
-    service.getRun.and.returnValue(of({
+    service.getRunReportJob.mockReturnValue(of(null));
+    service.getRun.mockReturnValue(of({
       id: 42,
       suiteName: 'Core Mechanics',
       reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Completed,
@@ -561,7 +557,8 @@ describe('RunReportWritingDialogComponent', () => {
     expect(text('.rw-status')).toBe(RUN_REPORT_JOB_UNKNOWN_NOTE);
     expect(RUN_REPORT_JOB_UNKNOWN_NOTE).toBe('Live details of this job are not available on this server. ' +
       'Overseer may have restarted while it ran. The stored status is shown below.');
-    expect(service.getRun).toHaveBeenCalledOnceWith(42);
+    expect(service.getRun).toHaveBeenCalledTimes(1);
+    expect(service.getRun).toHaveBeenCalledWith(42);
     expect(text('.rw-fallback-status')).toBe('Completed');
     expect(finished).toEqual([null]);
     expect(el('.run-stage-rail')).toBeNull();
@@ -577,8 +574,8 @@ describe('RunReportWritingDialogComponent', () => {
   it('falls back when a job that was seen is no longer known after the start grace', fakeAsync(() => {
     const finished: (BenchmarkRunReportJobDto | null)[] = [];
     component.finished.subscribe(value => finished.push(value));
-    service.getRunReportJob.and.returnValue(of(jobView()));
-    service.getRun.and.returnValue(of({
+    service.getRunReportJob.mockReturnValue(of(jobView()));
+    service.getRun.mockReturnValue(of({
       id: 42,
       reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing,
       reportDocumentsMessage: null
@@ -589,7 +586,7 @@ describe('RunReportWritingDialogComponent', () => {
     fixture.detectChanges();
     expect(finished).toEqual([]);
 
-    service.getRunReportJob.and.returnValue(of(null));
+    service.getRunReportJob.mockReturnValue(of(null));
     tick(2000);
     fixture.detectChanges();
     expect(text('.rw-status')).toBe(RUN_REPORT_JOB_UNKNOWN_NOTE);
@@ -601,20 +598,18 @@ describe('RunReportWritingDialogComponent', () => {
   it('keeps polling on a 204 while the stored status is Pending and the dialog opened under 30 s ago', fakeAsync(() => {
     const finished: (BenchmarkRunReportJobDto | null)[] = [];
     component.finished.subscribe(value => finished.push(value));
-    service.getRunReportJob.and.returnValues(
-      of(null),
-      of(null),
-      of(jobView({ phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null }))
-    );
-    service.getRun.and.returnValue(of({
+    service.getRunReportJob.mockReturnValueOnce(of(null)).mockReturnValueOnce(of(null)).mockReturnValueOnce(of(jobView({ phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null })));
+    service.getRun.mockReturnValue(of({
       id: 42,
       reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending,
       reportDocumentsMessage: null
     } as unknown as BenchmarkRunDetailDto));
     open();
 
-    expect(service.getRun).toHaveBeenCalledOnceWith(42);
-    expect(component.unknownJob).toBeFalse();
+    expect(service.getRun).toHaveBeenCalledTimes(1);
+
+    expect(service.getRun).toHaveBeenCalledWith(42);
+    expect(component.unknownJob).toBe(false);
     expect(text('.rw-status')).toBe('Checking the report writing job…');
     expect(el('.rw-fallback')).toBeNull();
     expect(ticker.running).toBe(1);
@@ -623,7 +618,7 @@ describe('RunReportWritingDialogComponent', () => {
     fixture.detectChanges();
     expect(service.getRunReportJob).toHaveBeenCalledTimes(2);
     expect(service.getRun).toHaveBeenCalledTimes(2);
-    expect(component.unknownJob).toBeFalse();
+    expect(component.unknownJob).toBe(false);
 
     tick(2000);
     fixture.detectChanges();
@@ -637,18 +632,18 @@ describe('RunReportWritingDialogComponent', () => {
   it('settles on a 204 once 30 s have passed, even while the stored status says Writing', fakeAsync(() => {
     const finished: (BenchmarkRunReportJobDto | null)[] = [];
     component.finished.subscribe(value => finished.push(value));
-    service.getRunReportJob.and.returnValue(of(null));
-    service.getRun.and.returnValue(of({
+    service.getRunReportJob.mockReturnValue(of(null));
+    service.getRun.mockReturnValue(of({
       id: 42,
       reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Writing,
       reportDocumentsMessage: null
     } as unknown as BenchmarkRunDetailDto));
     open();
-    expect(component.unknownJob).toBeFalse();
+    expect(component.unknownJob).toBe(false);
 
     tick(RUN_REPORT_JOB_START_GRACE_MS - 2000);
     fixture.detectChanges();
-    expect(component.unknownJob).toBeFalse();
+    expect(component.unknownJob).toBe(false);
     expect(finished).toEqual([]);
 
     tick(2000);
@@ -658,9 +653,9 @@ describe('RunReportWritingDialogComponent', () => {
     expect(finished).toEqual([null]);
     expect(ticker.running).toBe(0);
 
-    const calls = service.getRunReportJob.calls.count();
+    const calls = vi.mocked(service.getRunReportJob).mock.calls.length;
     tick(10000);
-    expect(service.getRunReportJob.calls.count()).toBe(calls);
+    expect(vi.mocked(service.getRunReportJob).mock.calls.length).toBe(calls);
     stop();
   }));
 
@@ -682,8 +677,8 @@ describe('RunReportWritingDialogComponent', () => {
       writerDisplayName: '', startedByUserId: null, startedAtUtc: '', status: '', totalModelCalls: 0,
       inputTokens: 0, outputTokens: 0, costUsd: null, documents: [], log: []
     });
-    service.getRunReportJob.and.returnValue(of(starting));
-    service.cancelRunReportJob.and.returnValue(throwError(() => new HttpErrorResponse({
+    service.getRunReportJob.mockReturnValue(of(starting));
+    service.cancelRunReportJob.mockReturnValue(throwError(() => new HttpErrorResponse({
       status: 409, error: { error: 'No report writing is in progress for this run.' }
     })));
     open();
@@ -708,13 +703,13 @@ describe('RunReportWritingDialogComponent', () => {
     fixture.detectChanges();
     expect(text('.rw-cancel-error')).toBe('No report writing is in progress for this run.');
     expect(text('.rw-cancel')).toBe('Cancel Writing');
-    expect(dialog().open).toBeTrue();
+    expect(dialog().open).toBe(true);
 
-    const calls = service.getRunReportJob.calls.count();
-    service.getRunReportJob.and.returnValue(of(jobView({ phase: 'Preparing' })));
+    const calls = vi.mocked(service.getRunReportJob).mock.calls.length;
+    service.getRunReportJob.mockReturnValue(of(jobView({ phase: 'Preparing' })));
     tick(2000);
     fixture.detectChanges();
-    expect(service.getRunReportJob.calls.count()).toBeGreaterThan(calls);
+    expect(vi.mocked(service.getRunReportJob).mock.calls.length).toBeGreaterThan(calls);
     expect(text('.rw-status')).toBe('Preparing the fact sheet');
     expect(text('.rw-stat-writer .model-name')).toBe('Claude Opus writer');
     stop();

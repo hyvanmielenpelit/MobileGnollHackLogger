@@ -35,7 +35,7 @@ describe('ApiKeysComponent', () => {
 
   it('should open delete confirm dialog when requestDeleteKey is called', () => {
     const dialogEl = document.createElement('dialog');
-    spyOn(dialogEl, 'showModal');
+    vi.spyOn(dialogEl, 'showModal').mockReturnValue(undefined);
     component.deleteConfirmDialog = { nativeElement: dialogEl };
 
     component.requestDeleteKey('OpenAI');
@@ -46,7 +46,7 @@ describe('ApiKeysComponent', () => {
 
   it('should close delete confirm dialog and reset deletingProvider when closeDeleteConfirmDialog is called', () => {
     const dialogEl = document.createElement('dialog');
-    spyOn(dialogEl, 'close');
+    vi.spyOn(dialogEl, 'close').mockReturnValue(undefined);
     component.deleteConfirmDialog = { nativeElement: dialogEl };
     component.deletingProvider = 'OpenAI';
 
@@ -58,27 +58,27 @@ describe('ApiKeysComponent', () => {
 
   it('should call deleteApiKeyForProvider and update key status when confirmDeleteKey is called', () => {
     const dialogEl = document.createElement('dialog');
-    spyOn(dialogEl, 'close');
+    vi.spyOn(dialogEl, 'close').mockReturnValue(undefined);
     component.deleteConfirmDialog = { nativeElement: dialogEl };
     component.deletingProvider = 'Anthropic';
     component.keyStatuses['Anthropic'] = true;
 
-    spyOn(settingsService, 'deleteApiKeyForProvider').and.returnValue(of({}));
+    vi.spyOn(settingsService, 'deleteApiKeyForProvider').mockReturnValue(of({}));
 
     component.confirmDeleteKey();
 
     expect(dialogEl.close).toHaveBeenCalled();
     expect(settingsService.deleteApiKeyForProvider).toHaveBeenCalledWith('Anthropic');
-    expect(component.keyStatuses['Anthropic']).toBeFalse();
+    expect(component.keyStatuses['Anthropic']).toBe(false);
     expect(component.savingProvider).toBe('');
   });
 
   it('should load parallel execution mode and save on change', () => {
-    spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+    vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
       { provider: 'OpenAI', hasKey: true, parallelExecutionMode: 0 },
       { provider: 'Anthropic', hasKey: false, parallelExecutionMode: 1 }
     ]));
-    const saveModeSpy = spyOn(settingsService, 'saveApiKeyParallelMode').and.returnValue(of({}));
+    const saveModeSpy = vi.spyOn(settingsService, 'saveApiKeyParallelMode').mockReturnValue(of({}));
 
     component.loadStatuses();
 
@@ -92,7 +92,7 @@ describe('ApiKeysComponent', () => {
   });
 
   it('should report no advanced summary when every setting is at its default', () => {
-    spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+    vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
       {
         provider: 'OpenAI', hasKey: true, parallelExecutionMode: 2,
         confidentialityPosture: 'Unknown', userTrustsForConfidential: null
@@ -105,7 +105,7 @@ describe('ApiKeysComponent', () => {
   });
 
   it('should list the non-default advanced settings in the summary', () => {
-    spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+    vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
       {
         provider: 'OpenAI', hasKey: true, parallelExecutionMode: 0,
         confidentialityPosture: 'Unknown', userTrustsForConfidential: false
@@ -118,7 +118,7 @@ describe('ApiKeysComponent', () => {
   });
 
   it('should offer a personal key only the postures it can describe', () => {
-    spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+    vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
       { provider: 'OpenAI', hasKey: true, confidentialityPosture: 'Unknown' },
       { provider: 'Google', hasKey: true, confidentialityPosture: 'SelfHosted' }
     ]));
@@ -133,7 +133,7 @@ describe('ApiKeysComponent', () => {
   });
 
   it('should name the saved posture in the badge, and an undeclared one as an absence', () => {
-    spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+    vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
       { provider: 'OpenAI', hasKey: true, confidentialityPosture: 'Unknown' },
       { provider: 'Google', hasKey: true, confidentialityPosture: 'NoTraining' }
     ]));
@@ -145,27 +145,26 @@ describe('ApiKeysComponent', () => {
   });
 
   it('should open the About dialog from the summary without toggling the disclosure', () => {
-    spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+    vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
       { provider: 'OpenAI', hasKey: true }
     ]));
 
     component.loadStatuses();
     fixture.detectChanges();
 
-    const openSpy = spyOn(component, 'openAdvancedInfo');
-    const disclosure: HTMLDetailsElement =
-      fixture.nativeElement.querySelector('details.advanced-settings');
+    const openSpy = vi.spyOn(component, 'openAdvancedInfo').mockReturnValue(undefined);
+    const disclosure: HTMLDetailsElement = fixture.nativeElement.querySelector('details.advanced-settings');
     const infoButton = disclosure.querySelector('summary .btn-info') as HTMLButtonElement;
 
     infoButton.click();
     fixture.detectChanges();
 
     expect(openSpy).toHaveBeenCalled();
-    expect(disclosure.open).toBeFalse();
+    expect(disclosure.open).toBe(false);
   });
 
   it('should render the advanced settings disclosure closed', () => {
-    spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+    vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
       { provider: 'OpenAI', hasKey: true }
     ]));
 
@@ -176,7 +175,7 @@ describe('ApiKeysComponent', () => {
       Array.from(fixture.nativeElement.querySelectorAll('details.advanced-settings'));
     expect(disclosures.length).toBeGreaterThan(0);
     for (const disclosure of disclosures) {
-      expect(disclosure.open).toBeFalse();
+      expect(disclosure.open).toBe(false);
     }
   });
 
@@ -208,7 +207,7 @@ describe('ApiKeysComponent', () => {
     }
 
     function showNoKeys() {
-      spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+      vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
         { provider: 'Anthropic', hasKey: false }, { provider: 'Google', hasKey: false }, { provider: 'OpenAI', hasKey: false }
       ]));
       component.loadStatuses();
@@ -235,7 +234,7 @@ describe('ApiKeysComponent', () => {
 
     it('shows an invalid refusal under the input with its detail, and keeps the key', async () => {
       showNoKeys();
-      const save = spyOn(settingsService, 'saveApiKey').and.returnValue(throwError(() => new HttpErrorResponse({
+      const save = vi.spyOn(settingsService, 'saveApiKey').mockReturnValue(throwError(() => new HttpErrorResponse({
         status: 400,
         error: {
           verdict: 'invalid',
@@ -255,7 +254,7 @@ describe('ApiKeysComponent', () => {
       const input = card('Anthropic').querySelector('#key-Anthropic') as HTMLInputElement;
       expect(input.getAttribute('aria-describedby')).toBe(error.id);
       expect(input.value).toBe(FAKE_KEY);
-      expect(component.keyStatuses['Anthropic']).toBeFalse();
+      expect(component.keyStatuses['Anthropic']).toBe(false);
 
       // Typing clears the error.
       input.value = FAKE_KEY + 'x';
@@ -266,7 +265,7 @@ describe('ApiKeysComponent', () => {
 
     it('shows a plain 400 message the same way', () => {
       showNoKeys();
-      spyOn(settingsService, 'saveApiKey').and.returnValue(throwError(() => new HttpErrorResponse({
+      vi.spyOn(settingsService, 'saveApiKey').mockReturnValue(throwError(() => new HttpErrorResponse({
         status: 400, error: { message: 'Unknown provider.' }
       })));
 
@@ -278,13 +277,11 @@ describe('ApiKeysComponent', () => {
 
     it('opens the verification dialog on a 409; Save Anyway resends and the key shows Not verified', async () => {
       showNoKeys();
-      const save = spyOn(settingsService, 'saveApiKey').and.returnValues(
-        throwError(() => new HttpErrorResponse({ status: 409, error: unverifiable })),
-        of({ verification: { status: 'NotVerified', checkedAtUtc: '2026-09-29T10:00:00Z', message: unverifiable.detail!.text }, warning: null }));
+      const save = vi.spyOn(settingsService, 'saveApiKey').mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: unverifiable }))).mockReturnValueOnce(of({ verification: { status: 'NotVerified', checkedAtUtc: '2026-09-29T10:00:00Z', message: unverifiable.detail!.text }, warning: null }));
 
       clickSave('OpenAI');
 
-      expect(verificationDialog().open).toBeTrue();
+      expect(verificationDialog().open).toBe(true);
       const terms = Array.from(verificationDialog().querySelectorAll('.kv-detail dt')).map(dt => dt.textContent!.trim());
       expect(terms).toEqual(['Check', 'Response', "Provider's message", 'Time']);
       expect(verificationDialog().textContent).toContain('HTTP 502 Bad Gateway');
@@ -295,8 +292,8 @@ describe('ApiKeysComponent', () => {
       await closing;
       fixture.detectChanges();
 
-      expect(save.calls.mostRecent().args).toEqual(['OpenAI', FAKE_KEY, true]);
-      expect(component.keyStatuses['OpenAI']).toBeTrue();
+      expect(vi.mocked(save).mock.lastCall).toEqual(['OpenAI', FAKE_KEY, true]);
+      expect(component.keyStatuses['OpenAI']).toBe(true);
       const label = card('OpenAI').querySelector('.key-verification') as HTMLElement;
       expect(label.textContent!.trim()).toBe('Not verified');
       const tip = fixture.nativeElement.querySelector('#' + label.getAttribute('interestfor')) as HTMLElement;
@@ -307,7 +304,7 @@ describe('ApiKeysComponent', () => {
 
     it('shows a returned warning as an amber alert and a Verified label', () => {
       showNoKeys();
-      spyOn(settingsService, 'saveApiKey').and.returnValue(of({
+      vi.spyOn(settingsService, 'saveApiKey').mockReturnValue(of({
         verification: { status: 'Verified', checkedAtUtc: '2026-09-29T10:00:00Z', message: 'Rate limited' },
         warning: 'Google answered 429: the key works but is rate-limited.'
       }));
@@ -320,10 +317,10 @@ describe('ApiKeysComponent', () => {
     });
 
     it('Verify Again updates the label in place and announces the outcome', () => {
-      spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+      vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
         { provider: 'Anthropic', hasKey: true, verification: { status: 'NotVerified', checkedAtUtc: '2026-09-29T09:00:00Z', message: 'No response' } }
       ]));
-      const verify = spyOn(settingsService, 'verifyApiKey').and.returnValue(of({
+      const verify = vi.spyOn(settingsService, 'verifyApiKey').mockReturnValue(of({
         verification: { status: 'Verified', checkedAtUtc: '2026-09-29T10:00:00Z', message: null }
       }));
       component.loadStatuses();
@@ -340,7 +337,7 @@ describe('ApiKeysComponent', () => {
     });
 
     it('shows no label on a key saved before keys were checked', () => {
-      spyOn(settingsService, 'getApiKeys').and.returnValue(of([
+      vi.spyOn(settingsService, 'getApiKeys').mockReturnValue(of([
         { provider: 'Anthropic', hasKey: true, verification: { status: null, checkedAtUtc: null, message: null } }
       ]));
       component.loadStatuses();

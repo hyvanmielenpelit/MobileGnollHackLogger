@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
@@ -110,10 +111,10 @@ function batteryRun(overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkB
 describe('BatteryProgressDialogComponent', () => {
   let fixture: ComponentFixture<BatteryProgressDialogComponent>;
   let component: BatteryProgressDialogComponent;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
+  let service: MockedObject<AdminBenchmarkService>;
 
   function open(run: BenchmarkBatteryRunDto): void {
-    service.getBatteryRun.and.returnValue(of(run));
+    service.getBatteryRun.mockReturnValue(of(run));
     fixture.componentRef.setInput('batteryRunId', run.id);
     fixture.componentRef.setInput('visible', true);
     fixture.detectChanges();
@@ -142,12 +143,16 @@ describe('BatteryProgressDialogComponent', () => {
   }
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj<AdminBenchmarkService>('AdminBenchmarkService', [
-      'getBatteryRun', 'resumeBatteryRun', 'cancelBatteryRun', 'getBatteryAttachCandidates', 'attachBatteryMember'
-    ]);
-    service.getBatteryRun.and.returnValue(of(batteryRun()));
-    service.resumeBatteryRun.and.returnValue(of({ batteryRunId: 7 }));
-    service.cancelBatteryRun.and.returnValue(of(void 0));
+    service = {
+      getBatteryRun: vi.fn().mockName("AdminBenchmarkService.getBatteryRun"),
+      resumeBatteryRun: vi.fn().mockName("AdminBenchmarkService.resumeBatteryRun"),
+      cancelBatteryRun: vi.fn().mockName("AdminBenchmarkService.cancelBatteryRun"),
+      getBatteryAttachCandidates: vi.fn().mockName("AdminBenchmarkService.getBatteryAttachCandidates"),
+      attachBatteryMember: vi.fn().mockName("AdminBenchmarkService.attachBatteryMember")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    service.getBatteryRun.mockReturnValue(of(batteryRun()));
+    service.resumeBatteryRun.mockReturnValue(of({ batteryRunId: 7 }));
+    service.cancelBatteryRun.mockReturnValue(of(void 0));
 
     await TestBed.configureTestingModule({
       imports: [BatteryProgressDialogComponent],
@@ -211,7 +216,7 @@ describe('BatteryProgressDialogComponent', () => {
     expect(button('.bp-continue')).toBeNull();
     expect(button('.bp-cancel-battery')).not.toBeNull();
 
-    const resumed = jasmine.createSpy('resumed');
+    const resumed = vi.fn().mockName('resumed');
     component.batteryResumed.subscribe(resumed);
     button('.bp-rerun')!.click();
     fixture.detectChanges();
@@ -249,7 +254,7 @@ describe('BatteryProgressDialogComponent', () => {
       slots: [slot(0, 1, member()), slot(1, 1, null)], members: [member()]
     });
     open(run);
-    service.resumeBatteryRun.and.returnValue(throwError(() => ({ status: 409, error: 'The harness version changed.' })));
+    service.resumeBatteryRun.mockReturnValue(throwError(() => ({ status: 409, error: 'The harness version changed.' })));
 
     button('.bp-continue')!.click();
     fixture.detectChanges();
@@ -261,7 +266,7 @@ describe('BatteryProgressDialogComponent', () => {
 
   it('cancels a running battery', () => {
     open(batteryRun());
-    const canceled = jasmine.createSpy('canceled');
+    const canceled = vi.fn().mockName('canceled');
     component.batteryCanceled.subscribe(canceled);
 
     button('.bp-cancel-battery')!.click();
@@ -273,8 +278,8 @@ describe('BatteryProgressDialogComponent', () => {
 
   it('opens a member run progress and closes itself', () => {
     open(batteryRun());
-    const runProgress = jasmine.createSpy('runProgress');
-    const closed = jasmine.createSpy('closed');
+    const runProgress = vi.fn().mockName('runProgress');
+    const closed = vi.fn().mockName('closed');
     component.openRunProgress.subscribe(runProgress);
     component.closed.subscribe(closed);
 
@@ -293,7 +298,7 @@ describe('BatteryProgressDialogComponent', () => {
       members: [member(), member({ memberId: 9, suiteIndex: 1, runId: 109 })]
     });
     open(run);
-    const analysis = jasmine.createSpy('analysis');
+    const analysis = vi.fn().mockName('analysis');
     component.openAnalysis.subscribe(analysis);
 
     expect(button('.bp-cancel-battery')).toBeNull();
@@ -310,7 +315,7 @@ describe('BatteryProgressDialogComponent', () => {
     tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
     expect(service.getBatteryRun).toHaveBeenCalledTimes(2);
 
-    service.getBatteryRun.and.returnValue(of(batteryRun({ status: 'Completed' })));
+    service.getBatteryRun.mockReturnValue(of(batteryRun({ status: 'Completed' })));
     tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
     expect(service.getBatteryRun).toHaveBeenCalledTimes(3);
 
@@ -386,7 +391,7 @@ describe('BatteryProgressDialogComponent', () => {
 
     it('lists the slot\'s candidates with their eligibility, attaches the chosen one and reloads the grid', () => {
       open(stoppedRun());
-      service.getBatteryAttachCandidates.and.returnValue(of([
+      service.getBatteryAttachCandidates.mockReturnValue(of([
         candidate(),
         candidate({
           runId: 202, eligible: false,
@@ -395,12 +400,12 @@ describe('BatteryProgressDialogComponent', () => {
       ]));
       const attached = member({ memberId: 10, suiteIndex: 1, round: 2, runId: 201, origin: 'Attached', qualityIndex: 68 });
       const base = stoppedRun();
-      service.attachBatteryMember.and.returnValue(of(stoppedRun({
+      service.attachBatteryMember.mockReturnValue(of(stoppedRun({
         completedMemberCount: 2,
         slots: [base.slots[0], base.slots[1], base.slots[2], slot(1, 2, attached)],
         members: [...base.members, attached]
       })));
-      const attachedEvent = jasmine.createSpy('memberAttached');
+      const attachedEvent = vi.fn().mockName('memberAttached');
       component.memberAttached.subscribe(attachedEvent);
 
       attachButton(1, 2)!.click();
@@ -429,8 +434,8 @@ describe('BatteryProgressDialogComponent', () => {
 
     it('shows why the server refused the attach and keeps the list open', () => {
       open(stoppedRun());
-      service.getBatteryAttachCandidates.and.returnValue(of([candidate()]));
-      service.attachBatteryMember.and.returnValue(throwError(() => ({
+      service.getBatteryAttachCandidates.mockReturnValue(of([candidate()]));
+      service.attachBatteryMember.mockReturnValue(throwError(() => ({
         status: 400, error: 'Suite 2, round 1 already holds a usable member (run #300).'
       })));
 
@@ -445,7 +450,7 @@ describe('BatteryProgressDialogComponent', () => {
 
     it('says when no run of the suite tested the configuration, keeps one live region, and closes', () => {
       open(stoppedRun());
-      service.getBatteryAttachCandidates.and.returnValue(of([]));
+      service.getBatteryAttachCandidates.mockReturnValue(of([]));
 
       attachButton(0, 2)!.click();
       fixture.detectChanges();

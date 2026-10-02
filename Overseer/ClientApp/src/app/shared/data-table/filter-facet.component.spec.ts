@@ -109,9 +109,9 @@ describe('FilterFacetComponent', () => {
     await toggled;
     fixture.detectChanges();
 
-    expect(escape.defaultPrevented).toBeTrue();
+    expect(escape.defaultPrevented).toBe(true);
     expect(host.outerKeys).toEqual([]);
-    expect(popover().matches(':popover-open')).toBeFalse();
+    expect(popover().matches(':popover-open')).toBe(false);
     expect(document.activeElement).toBe(trigger());
 
     trigger().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -128,7 +128,7 @@ describe('FilterFacetComponent', () => {
     expect(labels).toEqual(['Executive Summary, 4 documents', 'Run report, 1 document', 'Tool-call log, 0 documents']);
     const empty = el.querySelectorAll('.gh-facet-option')[2];
     expect(empty.classList).toContain('is-empty');
-    expect(empty.querySelector('input')!.disabled).toBeFalse();
+    expect(empty.querySelector('input')!.disabled).toBe(false);
   });
 
   it('emits the selection on each change and offers Clear while something is selected', () => {
@@ -160,7 +160,7 @@ describe('FilterFacetComponent', () => {
 
     const radios = inputs();
     expect(radios.map(radio => radio.type)).toEqual(['radio', 'radio', 'radio', 'radio']);
-    expect(radios.every(radio => radio.name === 't-facet-document')).toBeTrue();
+    expect(radios.every(radio => radio.name === 't-facet-document')).toBe(true);
     expect(flat(radios[0].closest('label'))).toBe('Any time');
     expect(radios.map(radio => radio.checked)).toEqual([false, false, true, false]);
 
@@ -207,7 +207,7 @@ describe('FilterFacetComponent', () => {
     const ids = Array.from(el.querySelectorAll('[id]')).map(node => node.id);
     expect(ids.length).toBeGreaterThan(0);
     for (const id of ids) {
-      expect(id.startsWith('t-facet-document')).withContext(id).toBeTrue();
+      expect(id.startsWith('t-facet-document'), id).toBe(true);
     }
   });
 });

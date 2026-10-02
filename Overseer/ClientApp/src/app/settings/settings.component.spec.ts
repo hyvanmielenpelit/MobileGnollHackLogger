@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter, ActivatedRoute, ParamMap, convertToParamMap } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
@@ -62,22 +63,22 @@ describe('SettingsComponent', () => {
         showChatCost: false,
         requestTimeout: 60
       };
-      spyOn(settingsService, 'getSettings').and.returnValue(of(mockSettings));
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of(mockSettings));
 
       fixture = TestBed.createComponent(SettingsComponent);
       component = fixture.componentInstance;
       fixture.detectChanges();
 
-      expect(component.spoilerFreeMode).toBeFalse();
-      expect(component.showSourceCodeReferences).toBeTrue();
-      expect(component.showParallelBadge).toBeFalse();
-      expect(component.parallelBadgeEnabled).toBeTrue();
-      expect(component.showContextWindowUsage).toBeFalse();
-      expect(component.showChatCost).toBeFalse();
+      expect(component.spoilerFreeMode).toBe(false);
+      expect(component.showSourceCodeReferences).toBe(true);
+      expect(component.showParallelBadge).toBe(false);
+      expect(component.parallelBadgeEnabled).toBe(true);
+      expect(component.showContextWindowUsage).toBe(false);
+      expect(component.showChatCost).toBe(false);
       expect(component.showThoughtsAndTools).toBe(1);
-      expect(component.enableSubAgents).toBeFalse();
-      expect(component.enableClientTools).toBeFalse();
-      expect(component.enableGameActions).toBeTrue();
+      expect(component.enableSubAgents).toBe(false);
+      expect(component.enableClientTools).toBe(false);
+      expect(component.enableGameActions).toBe(true);
       expect(component.maxResultLength).toBe(5000);
       expect(component.maxCallsPerSession).toBe(10);
       expect(component.maxToolIterations).toBe(3);
@@ -86,9 +87,7 @@ describe('SettingsComponent', () => {
     });
 
     it('should catch TypeError: Failed to fetch on getSettings without unhandled error', () => {
-      spyOn(settingsService, 'getSettings').and.returnValue(
-        throwError(() => new TypeError('Failed to fetch'))
-      );
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
         fixture = TestBed.createComponent(SettingsComponent);
@@ -100,7 +99,7 @@ describe('SettingsComponent', () => {
 
   describe('auto-save', () => {
     beforeEach(() => {
-      spyOn(settingsService, 'getSettings').and.returnValue(of({
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({
         hasApiKey: true,
         spoilerFreeMode: true,
         showThoughtsAndTools: 0,
@@ -118,7 +117,7 @@ describe('SettingsComponent', () => {
     });
 
     it('should default showChatCost to true and bind it to its checkbox', async () => {
-      expect(component.showChatCost).toBeTrue();
+      expect(component.showChatCost).toBe(true);
 
       // ngModel writes the value to the DOM asynchronously, so let it settle first.
       await fixture.whenStable();
@@ -127,29 +126,29 @@ describe('SettingsComponent', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const checkbox = compiled.querySelector('input[name="showChatCost"]') as HTMLInputElement;
       expect(checkbox).toBeTruthy();
-      expect(checkbox.checked).toBeTrue();
+      expect(checkbox.checked).toBe(true);
     });
 
     it('should forward showChatCost as the sixteenth saveSettings argument', fakeAsync(() => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.showChatCost = false;
       component.onSettingChange();
       tick();
 
       expect(saveSpy).toHaveBeenCalled();
-      expect(saveSpy.calls.mostRecent().args[15]).toBeFalse();
+      expect(vi.mocked(saveSpy).mock.lastCall![15]).toBe(false);
     }));
 
     it('should not trigger save on initial data load', fakeAsync(() => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
       tick(1000);
       expect(saveSpy).not.toHaveBeenCalled();
     }));
 
     it('should trigger immediate save on boolean setting change', fakeAsync(() => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
-      const thoughtsSpy = spyOn(settingsService.showThoughtsAndToolsUpdated, 'next');
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
+      const thoughtsSpy = vi.spyOn(settingsService.showThoughtsAndToolsUpdated, 'next').mockReturnValue(undefined);
 
       component.spoilerFreeMode = false;
       component.onSettingChange();
@@ -161,7 +160,7 @@ describe('SettingsComponent', () => {
     }));
 
     it('should debounce numeric input changes by 500ms', fakeAsync(() => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.maxResultLength = 12000;
       component.onNumberInputChange();
@@ -175,7 +174,7 @@ describe('SettingsComponent', () => {
     }));
 
     it('should batch rapid successive numeric changes into a single save', fakeAsync(() => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.maxResultLength = 10000;
       component.onNumberInputChange();
@@ -193,7 +192,7 @@ describe('SettingsComponent', () => {
     }));
 
     it('should set validationErrors and prevent save on blur with out-of-range value', fakeAsync(() => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.requestTimeout = 999999;
       component.onNumberInputBlur('requestTimeout');
@@ -204,9 +203,7 @@ describe('SettingsComponent', () => {
     }));
 
     it('should catch save error, set saveState to error, and keep pipeline alive for subsequent saves', fakeAsync(() => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(
-        throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' }))
-      );
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' })));
 
       component.spoilerFreeMode = false;
       component.onSettingChange();
@@ -216,7 +213,7 @@ describe('SettingsComponent', () => {
       expect(component.saveState).toBe('error');
 
       // Subsequent valid save should work
-      saveSpy.and.returnValue(of({ message: 'Saved' } as any));
+      saveSpy.mockReturnValue(of({ message: 'Saved' } as any));
       component.spoilerFreeMode = true;
       component.onSettingChange();
       tick();
@@ -226,16 +223,16 @@ describe('SettingsComponent', () => {
     }));
 
     it('canDeactivate should resolve immediately when no changes are pending', async () => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
       const canLeave = await component.canDeactivate();
 
-      expect(canLeave).toBeTrue();
+      expect(canLeave).toBe(true);
       expect(saveSpy).not.toHaveBeenCalled();
     });
 
     it('canDeactivate should await in-flight save when changes are pending', async () => {
       const saveSubject = new Subject<any>();
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(saveSubject.asObservable());
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(saveSubject.asObservable());
 
       component.spoilerFreeMode = false;
       component.onSettingChange();
@@ -247,18 +244,18 @@ describe('SettingsComponent', () => {
       });
 
       expect(saveSpy).toHaveBeenCalled();
-      expect(resolved).toBeFalse();
+      expect(resolved).toBe(false);
 
       saveSubject.next({ message: 'Saved' });
       saveSubject.complete();
 
       const result = await canDeactivatePromise;
-      expect(result).toBeTrue();
-      expect(resolved).toBeTrue();
+      expect(result).toBe(true);
+      expect(resolved).toBe(true);
     });
 
     it('canDeactivate should revert invalid fields to last saved before saving', async () => {
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.lastSavedRequestTimeout = 60;
       component.requestTimeout = 999999;
@@ -266,7 +263,7 @@ describe('SettingsComponent', () => {
 
       const result = await component.canDeactivate();
 
-      expect(result).toBeTrue();
+      expect(result).toBe(true);
       expect(component.requestTimeout).toBe(60);
       expect(saveSpy).toHaveBeenCalled();
     });
@@ -277,7 +274,7 @@ describe('SettingsComponent', () => {
 
     beforeEach(() => {
       chatService = TestBed.inject(ChatService);
-      spyOn(settingsService, 'getSettings').and.returnValue(of({
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({
         hasApiKey: true
       } as any));
       fixture = TestBed.createComponent(SettingsComponent);
@@ -285,10 +282,10 @@ describe('SettingsComponent', () => {
     });
 
     it('should load chat metrics on loadChatMetrics', () => {
-      spyOn(chatService, 'getSessions').and.returnValue(of({
+      vi.spyOn(chatService, 'getSessions').mockReturnValue(of({
         body: { activeCount: 45, pinnedCount: 3, maxQuota: 50, maxPinned: 5 }
       } as any));
-      spyOn(chatService, 'getTrashSessions').and.returnValue(of([
+      vi.spyOn(chatService, 'getTrashSessions').mockReturnValue(of([
         { id: 1, title: 'Trash 1' },
         { id: 2, title: 'Trash 2' }
       ] as any));
@@ -314,11 +311,11 @@ describe('SettingsComponent', () => {
     });
 
     it('should bulk delete active chats and reload metrics', () => {
-      const closeSpy = jasmine.createSpy('close');
+      const closeSpy = vi.fn().mockName('close');
       component.settingsBulkDeleteDialog = { nativeElement: { close: closeSpy } } as any;
-      spyOn(chatService, 'bulkDeleteSessions').and.returnValue(of({ count: 42 }));
-      const metricsSpy = spyOn(component, 'loadChatMetrics');
-      const toastSpy = spyOn(component, 'showToast');
+      vi.spyOn(chatService, 'bulkDeleteSessions').mockReturnValue(of({ count: 42 }));
+      const metricsSpy = vi.spyOn(component, 'loadChatMetrics').mockReturnValue(undefined);
+      const toastSpy = vi.spyOn(component, 'showToast').mockReturnValue(undefined);
 
       component.includePinnedInBulkDelete = true;
       component.confirmSettingsBulkDelete();
@@ -330,11 +327,11 @@ describe('SettingsComponent', () => {
     });
 
     it('should unpin all chats and reload metrics', () => {
-      const closeSpy = jasmine.createSpy('close');
+      const closeSpy = vi.fn().mockName('close');
       component.settingsUnpinAllDialog = { nativeElement: { close: closeSpy } } as any;
-      spyOn(chatService, 'unpinAllSessions').and.returnValue(of({ count: 3 }));
-      const metricsSpy = spyOn(component, 'loadChatMetrics');
-      const toastSpy = spyOn(component, 'showToast');
+      vi.spyOn(chatService, 'unpinAllSessions').mockReturnValue(of({ count: 3 }));
+      const metricsSpy = vi.spyOn(component, 'loadChatMetrics').mockReturnValue(undefined);
+      const toastSpy = vi.spyOn(component, 'showToast').mockReturnValue(undefined);
 
       component.confirmSettingsUnpinAll();
 
@@ -345,7 +342,7 @@ describe('SettingsComponent', () => {
     });
 
     it('should open trash modal on openSettingsTrashDialog', () => {
-      const openSpy = jasmine.createSpy('open');
+      const openSpy = vi.fn().mockName('open');
       component.settingsTrashModal = { open: openSpy } as any;
 
       component.openSettingsTrashDialog();
@@ -354,8 +351,8 @@ describe('SettingsComponent', () => {
     });
 
     it('should handle session restored from trash modal and reload metrics', () => {
-      const metricsSpy = spyOn(component, 'loadChatMetrics');
-      const toastSpy = spyOn(component, 'showToast');
+      const metricsSpy = vi.spyOn(component, 'loadChatMetrics').mockReturnValue(undefined);
+      const toastSpy = vi.spyOn(component, 'showToast').mockReturnValue(undefined);
 
       component.onSettingsSessionRestored(123);
 
@@ -364,8 +361,8 @@ describe('SettingsComponent', () => {
     });
 
     it('should handle trash emptied from trash modal and reload metrics', () => {
-      const metricsSpy = spyOn(component, 'loadChatMetrics');
-      const toastSpy = spyOn(component, 'showToast');
+      const metricsSpy = vi.spyOn(component, 'loadChatMetrics').mockReturnValue(undefined);
+      const toastSpy = vi.spyOn(component, 'showToast').mockReturnValue(undefined);
 
       component.onSettingsTrashEmptied();
 
@@ -402,7 +399,7 @@ describe('SettingsComponent', () => {
     };
 
     function createWith(settings: Partial<UserAiSettings>) {
-      spyOn(settingsService, 'getSettings').and.returnValue(of({
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({
         hasApiKey: true,
         spoilerFreeMode: true,
         confidentialFirstUseNoticeAcknowledged: true,
@@ -427,8 +424,8 @@ describe('SettingsComponent', () => {
 
       expect(component.confidentialPersistence).toBe('Encrypted');
       expect(component.confidentialRetentionDays).toBe(7);
-      expect(component.confidentialDisablePromptCache).toBeFalse();
-      expect(component.confidentialImmediatePurge).toBeFalse();
+      expect(component.confidentialDisablePromptCache).toBe(false);
+      expect(component.confidentialImmediatePurge).toBe(false);
       expect(component.confidentialModelGate).toBe('AskWhenUnclear');
       expect(component.confidentialFloor).toEqual(defaultFloor);
     });
@@ -444,8 +441,8 @@ describe('SettingsComponent', () => {
 
       expect(component.confidentialPersistence).toBe('Encrypted');
       expect(component.confidentialRetentionDays).toBe(30);
-      expect(component.confidentialDisableToolEgress).toBeTrue();
-      expect(component.confidentialPromiseWeakened).toBeFalse();
+      expect(component.confidentialDisableToolEgress).toBe(true);
+      expect(component.confidentialPromiseWeakened).toBe(false);
     });
 
     it('should not offer an option the floor forbids', () => {
@@ -472,7 +469,7 @@ describe('SettingsComponent', () => {
 
     it('should show a saved "Never stored" preference as Encrypted at rest and save it as Encrypted', fakeAsync(() => {
       createWith({ confidentialFloor: null, confidentialPersistence: 'Ephemeral' });
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       expect(component.confidentialPersistence).toBe('Encrypted');
       expect(component.selectedPersistenceHint).toContain('enveloped');
@@ -481,32 +478,32 @@ describe('SettingsComponent', () => {
       component.onSettingChange();
       tick();
 
-      expect((saveSpy.calls.mostRecent().args[16] as any).confidentialPersistence).toBe('Encrypted');
+      expect((vi.mocked(saveSpy).mock.lastCall![16] as any).confidentialPersistence).toBe('Encrypted');
     }));
 
     it('should report only the settings the floor has maximised as fixed by an administrator', () => {
       createWith({ confidentialFloor: defaultFloor });
 
-      expect(component.toolEgressFixedByAdmin).toBeTrue();
+      expect(component.toolEgressFixedByAdmin).toBe(true);
       // Encrypted is the strictest Storage choice a saved chat has, so the floor leaves nothing to choose.
-      expect(component.persistenceFixedByAdmin).toBeTrue();
-      expect(component.retentionFixedByAdmin).toBeFalse();
-      expect(component.titleGenerationFixedByAdmin).toBeFalse();
-      expect(component.promptCacheFixedByAdmin).toBeFalse();
-      expect(component.immediatePurgeFixedByAdmin).toBeFalse();
-      expect(component.modelGateFixedByAdmin).toBeFalse();
+      expect(component.persistenceFixedByAdmin).toBe(true);
+      expect(component.retentionFixedByAdmin).toBe(false);
+      expect(component.titleGenerationFixedByAdmin).toBe(false);
+      expect(component.promptCacheFixedByAdmin).toBe(false);
+      expect(component.immediatePurgeFixedByAdmin).toBe(false);
+      expect(component.modelGateFixedByAdmin).toBe(false);
     });
 
     it('should report every setting as fixed under the strictest floor', () => {
       createWith({ confidentialFloor: strictestFloor });
 
-      expect(component.persistenceFixedByAdmin).toBeTrue();
-      expect(component.retentionFixedByAdmin).toBeTrue();
-      expect(component.toolEgressFixedByAdmin).toBeTrue();
-      expect(component.titleGenerationFixedByAdmin).toBeTrue();
-      expect(component.promptCacheFixedByAdmin).toBeTrue();
-      expect(component.immediatePurgeFixedByAdmin).toBeTrue();
-      expect(component.modelGateFixedByAdmin).toBeTrue();
+      expect(component.persistenceFixedByAdmin).toBe(true);
+      expect(component.retentionFixedByAdmin).toBe(true);
+      expect(component.toolEgressFixedByAdmin).toBe(true);
+      expect(component.titleGenerationFixedByAdmin).toBe(true);
+      expect(component.promptCacheFixedByAdmin).toBe(true);
+      expect(component.immediatePurgeFixedByAdmin).toBe(true);
+      expect(component.modelGateFixedByAdmin).toBe(true);
       expect(component.persistenceOptions.map(o => o.value)).toEqual(['Encrypted']);
       expect(component.modelGateOptions.map(o => o.value)).toEqual(['VerifiedPostureOnly']);
     });
@@ -514,13 +511,13 @@ describe('SettingsComponent', () => {
     it('should report the promise as not kept when storage is readable', () => {
       createWith({ confidentialFloor: null, confidentialPersistence: 'Plaintext', confidentialDisableToolEgress: true });
 
-      expect(component.confidentialPromiseWeakened).toBeTrue();
+      expect(component.confidentialPromiseWeakened).toBe(true);
     });
 
     it('should report the promise as not kept when tool egress stays allowed', () => {
       createWith({ confidentialFloor: null, confidentialPersistence: 'Encrypted', confidentialDisableToolEgress: false });
 
-      expect(component.confidentialPromiseWeakened).toBeTrue();
+      expect(component.confidentialPromiseWeakened).toBe(true);
     });
 
     it('should forward the eight confidentiality fields as the seventeenth saveSettings argument', fakeAsync(() => {
@@ -534,14 +531,14 @@ describe('SettingsComponent', () => {
         confidentialModelGate: 'AskWhenUnclear',
         confidentialFloor: defaultFloor
       });
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.confidentialImmediatePurge = false;
       component.onSettingChange();
       tick();
 
       expect(saveSpy).toHaveBeenCalled();
-      expect(saveSpy.calls.mostRecent().args[16]).toEqual({
+      expect(vi.mocked(saveSpy).mock.lastCall![16]).toEqual({
         confidentialPersistence: 'Encrypted',
         confidentialRetentionDays: 14,
         confidentialDisableToolEgress: true,
@@ -573,21 +570,21 @@ describe('SettingsComponent', () => {
 
     it('should send the floor-clamped value rather than a weaker one the user still holds', fakeAsync(() => {
       createWith({ confidentialFloor: defaultFloor });
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.confidentialDisableToolEgress = false;
       component.confidentialPersistence = 'Plaintext';
       component.onSettingChange();
       tick();
 
-      const payload = saveSpy.calls.mostRecent().args[16] as any;
-      expect(payload.confidentialDisableToolEgress).toBeTrue();
+      const payload = vi.mocked(saveSpy).mock.lastCall![16] as any;
+      expect(payload.confidentialDisableToolEgress).toBe(true);
       expect(payload.confidentialPersistence).toBe('Encrypted');
     }));
 
     it('should reject a retention window longer than the floor and block the save', fakeAsync(() => {
       createWith({ confidentialRetentionDays: 30, confidentialFloor: defaultFloor });
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.confidentialRetentionDays = 90;
       component.onNumberInputBlur();
@@ -599,14 +596,14 @@ describe('SettingsComponent', () => {
 
     it('should revert an invalid retention window to the last saved value on navigation', async () => {
       createWith({ confidentialRetentionDays: 30, confidentialFloor: defaultFloor });
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.confidentialRetentionDays = 4000;
       component.onNumberInputChange();
 
       const canLeave = await component.canDeactivate();
 
-      expect(canLeave).toBeTrue();
+      expect(canLeave).toBe(true);
       expect(component.confidentialRetentionDays).toBe(30);
       expect(component.validationErrors['confidentialRetentionDays']).toBeUndefined();
       expect(saveSpy).toHaveBeenCalled();
@@ -614,25 +611,23 @@ describe('SettingsComponent', () => {
 
     it('should record the first-use acknowledgement and stop showing the notice', () => {
       createWith({ confidentialFirstUseNoticeAcknowledged: false, confidentialFloor: defaultFloor });
-      expect(component.confidentialNoticeAcknowledged).toBeFalse();
-      const ackSpy = spyOn(settingsService, 'acknowledgeConfidentialNotice').and.returnValue(of({} as any));
+      expect(component.confidentialNoticeAcknowledged).toBe(false);
+      const ackSpy = vi.spyOn(settingsService, 'acknowledgeConfidentialNotice').mockReturnValue(of({} as any));
 
       component.acknowledgeConfidentialNotice();
 
       expect(ackSpy).toHaveBeenCalled();
-      expect(component.confidentialNoticeAcknowledged).toBeTrue();
-      expect(component.isAcknowledgingConfidentialNotice).toBeFalse();
+      expect(component.confidentialNoticeAcknowledged).toBe(true);
+      expect(component.isAcknowledgingConfidentialNotice).toBe(false);
     });
 
     it('should show an inline message and keep the notice when the acknowledgement fails', () => {
       createWith({ confidentialFirstUseNoticeAcknowledged: false, confidentialFloor: defaultFloor });
-      spyOn(settingsService, 'acknowledgeConfidentialNotice').and.returnValue(
-        throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' }))
-      );
+      vi.spyOn(settingsService, 'acknowledgeConfidentialNotice').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' })));
 
       component.acknowledgeConfidentialNotice();
 
-      expect(component.confidentialNoticeAcknowledged).toBeFalse();
+      expect(component.confidentialNoticeAcknowledged).toBe(false);
       expect(component.confidentialNoticeError).toContain('could not be recorded');
     });
 
@@ -712,8 +707,8 @@ describe('SettingsComponent', () => {
       const persistence = compiled.querySelector('#confidentialPersistence') as HTMLSelectElement;
       const egress = compiled.querySelector('input[name="confidentialDisableToolEgress"]') as HTMLInputElement;
 
-      expect(persistence.disabled).toBeTrue();
-      expect(egress.disabled).toBeTrue();
+      expect(persistence.disabled).toBe(true);
+      expect(egress.disabled).toBe(true);
       expect(compiled.querySelectorAll('.confidential-floor-note').length).toBe(7);
     });
   });
@@ -733,7 +728,7 @@ describe('SettingsComponent', () => {
     };
 
     function createWith(settings: Partial<UserAiSettings>) {
-      spyOn(settingsService, 'getSettings').and.returnValue(of({
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({
         hasApiKey: true,
         spoilerFreeMode: true,
         confidentialFirstUseNoticeAcknowledged: true,
@@ -747,15 +742,15 @@ describe('SettingsComponent', () => {
     it('should default the seven secret classes on and e-mail and phone off', () => {
       createWith({});
 
-      expect(component.dlp.dlpMaskApiKeys).toBeTrue();
-      expect(component.dlp.dlpMaskPrivateKeys).toBeTrue();
-      expect(component.dlp.dlpMaskTokens).toBeTrue();
-      expect(component.dlp.dlpMaskPasswords).toBeTrue();
-      expect(component.dlp.dlpMaskCreditCards).toBeTrue();
-      expect(component.dlp.dlpMaskIbans).toBeTrue();
-      expect(component.dlp.dlpMaskSsns).toBeTrue();
-      expect(component.dlp.dlpMaskEmails).toBeFalse();
-      expect(component.dlp.dlpMaskPhoneNumbers).toBeFalse();
+      expect(component.dlp.dlpMaskApiKeys).toBe(true);
+      expect(component.dlp.dlpMaskPrivateKeys).toBe(true);
+      expect(component.dlp.dlpMaskTokens).toBe(true);
+      expect(component.dlp.dlpMaskPasswords).toBe(true);
+      expect(component.dlp.dlpMaskCreditCards).toBe(true);
+      expect(component.dlp.dlpMaskIbans).toBe(true);
+      expect(component.dlp.dlpMaskSsns).toBe(true);
+      expect(component.dlp.dlpMaskEmails).toBe(false);
+      expect(component.dlp.dlpMaskPhoneNumbers).toBe(false);
       expect(component.dlpFloor).toBeNull();
     });
 
@@ -773,15 +768,15 @@ describe('SettingsComponent', () => {
         dlpFloor: noFloor
       });
 
-      expect(component.dlp.dlpMaskApiKeys).toBeFalse();
-      expect(component.dlp.dlpMaskPrivateKeys).toBeFalse();
-      expect(component.dlp.dlpMaskTokens).toBeTrue();
-      expect(component.dlp.dlpMaskPasswords).toBeFalse();
-      expect(component.dlp.dlpMaskCreditCards).toBeFalse();
-      expect(component.dlp.dlpMaskIbans).toBeTrue();
-      expect(component.dlp.dlpMaskSsns).toBeFalse();
-      expect(component.dlp.dlpMaskEmails).toBeTrue();
-      expect(component.dlp.dlpMaskPhoneNumbers).toBeTrue();
+      expect(component.dlp.dlpMaskApiKeys).toBe(false);
+      expect(component.dlp.dlpMaskPrivateKeys).toBe(false);
+      expect(component.dlp.dlpMaskTokens).toBe(true);
+      expect(component.dlp.dlpMaskPasswords).toBe(false);
+      expect(component.dlp.dlpMaskCreditCards).toBe(false);
+      expect(component.dlp.dlpMaskIbans).toBe(true);
+      expect(component.dlp.dlpMaskSsns).toBe(false);
+      expect(component.dlp.dlpMaskEmails).toBe(true);
+      expect(component.dlp.dlpMaskPhoneNumbers).toBe(true);
     });
 
     it('should raise a class the operator forces on even when the user preference is off', () => {
@@ -790,10 +785,10 @@ describe('SettingsComponent', () => {
         dlpFloor: { ...noFloor, emails: true }
       });
 
-      expect(component.dlp.dlpMaskEmails).toBeTrue();
-      expect(component.effectiveDlp('dlpMaskEmails')).toBeTrue();
-      expect(component.isDlpFixedByAdmin('dlpMaskEmails')).toBeTrue();
-      expect(component.isDlpFixedByAdmin('dlpMaskPhoneNumbers')).toBeFalse();
+      expect(component.dlp.dlpMaskEmails).toBe(true);
+      expect(component.effectiveDlp('dlpMaskEmails')).toBe(true);
+      expect(component.isDlpFixedByAdmin('dlpMaskEmails')).toBe(true);
+      expect(component.isDlpFixedByAdmin('dlpMaskPhoneNumbers')).toBe(false);
     });
 
     it('should render all nine switches', async () => {
@@ -848,10 +843,10 @@ describe('SettingsComponent', () => {
       const keys = compiled.querySelector('input[name="dlpMaskApiKeys"]') as HTMLInputElement;
       const emails = compiled.querySelector('input[name="dlpMaskEmails"]') as HTMLInputElement;
 
-      expect(keys.checked).toBeTrue();
-      expect(keys.disabled).toBeFalse();
-      expect(emails.checked).toBeFalse();
-      expect(emails.disabled).toBeFalse();
+      expect(keys.checked).toBe(true);
+      expect(keys.disabled).toBe(false);
+      expect(emails.checked).toBe(false);
+      expect(emails.disabled).toBe(false);
     });
 
     it('should render a forced class as on and disabled, with the operator note', async () => {
@@ -863,8 +858,8 @@ describe('SettingsComponent', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const phones = compiled.querySelector('input[name="dlpMaskPhoneNumbers"]') as HTMLInputElement;
 
-      expect(phones.checked).toBeTrue();
-      expect(phones.disabled).toBeTrue();
+      expect(phones.checked).toBe(true);
+      expect(phones.disabled).toBe(true);
       expect(phones.getAttribute('aria-describedby')).toContain('dlpMaskPhoneNumbersFloor');
 
       const notes = compiled.querySelectorAll('.dlp-floor-note');
@@ -927,7 +922,7 @@ describe('SettingsComponent', () => {
 
     it('should not post masking settings during the initial load', fakeAsync(() => {
       createWith({ dlpFloor: noFloor });
-      const dlpSpy = spyOn(settingsService, 'saveDlpSettings').and.returnValue(of({} as any));
+      const dlpSpy = vi.spyOn(settingsService, 'saveDlpSettings').mockReturnValue(of({} as any));
 
       tick(1000);
 
@@ -936,14 +931,14 @@ describe('SettingsComponent', () => {
 
     it('should post all nine classes to the DLP endpoint as soon as one is switched', fakeAsync(() => {
       createWith({ dlpFloor: noFloor });
-      const dlpSpy = spyOn(settingsService, 'saveDlpSettings').and.returnValue(of({} as any));
+      const dlpSpy = vi.spyOn(settingsService, 'saveDlpSettings').mockReturnValue(of({} as any));
 
       component.dlp.dlpMaskEmails = true;
       component.onDlpChange();
       tick();
 
       expect(dlpSpy).toHaveBeenCalledTimes(1);
-      expect(dlpSpy.calls.mostRecent().args[0]).toEqual({
+      expect(vi.mocked(dlpSpy).mock.lastCall![0]).toEqual({
         dlpMaskApiKeys: true,
         dlpMaskPrivateKeys: true,
         dlpMaskTokens: true,
@@ -959,8 +954,8 @@ describe('SettingsComponent', () => {
 
     it('should not post masking settings through the main settings save', fakeAsync(() => {
       createWith({ dlpFloor: noFloor });
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
-      spyOn(settingsService, 'saveDlpSettings').and.returnValue(of({} as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
+      vi.spyOn(settingsService, 'saveDlpSettings').mockReturnValue(of({} as any));
 
       component.dlp.dlpMaskEmails = true;
       component.onDlpChange();
@@ -971,21 +966,19 @@ describe('SettingsComponent', () => {
 
     it('should send the forced value rather than the weaker one the user still holds', fakeAsync(() => {
       createWith({ dlpFloor: { ...noFloor, ssns: true } });
-      const dlpSpy = spyOn(settingsService, 'saveDlpSettings').and.returnValue(of({} as any));
+      const dlpSpy = vi.spyOn(settingsService, 'saveDlpSettings').mockReturnValue(of({} as any));
 
       component.dlp.dlpMaskSsns = false;
       component.onDlpChange();
       tick();
 
-      const payload = dlpSpy.calls.mostRecent().args[0] as any;
-      expect(payload.dlpMaskSsns).toBeTrue();
+      const payload = vi.mocked(dlpSpy).mock.lastCall![0] as any;
+      expect(payload.dlpMaskSsns).toBe(true);
     }));
 
     it('should report a failed masking save and keep the pipeline alive', fakeAsync(() => {
       createWith({ dlpFloor: noFloor });
-      const dlpSpy = spyOn(settingsService, 'saveDlpSettings').and.returnValue(
-        throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' }))
-      );
+      const dlpSpy = vi.spyOn(settingsService, 'saveDlpSettings').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' })));
 
       component.dlp.dlpMaskEmails = true;
       component.onDlpChange();
@@ -994,7 +987,7 @@ describe('SettingsComponent', () => {
       expect(dlpSpy).toHaveBeenCalledTimes(1);
       expect(component.saveState).toBe('error');
 
-      dlpSpy.and.returnValue(of({} as any));
+      dlpSpy.mockReturnValue(of({} as any));
       component.dlp.dlpMaskEmails = false;
       component.onDlpChange();
       tick();
@@ -1005,15 +998,15 @@ describe('SettingsComponent', () => {
 
     it('should not fire the main settings save when only a masking class changed', async () => {
       createWith({ dlpFloor: noFloor });
-      const dlpSpy = spyOn(settingsService, 'saveDlpSettings').and.returnValue(of({} as any));
-      const saveSpy = spyOn(settingsService, 'saveSettings').and.returnValue(of({ message: 'Saved' } as any));
+      const dlpSpy = vi.spyOn(settingsService, 'saveDlpSettings').mockReturnValue(of({} as any));
+      const saveSpy = vi.spyOn(settingsService, 'saveSettings').mockReturnValue(of({ message: 'Saved' } as any));
 
       component.dlp.dlpMaskPhoneNumbers = true;
       component.onDlpChange();
 
       const canLeave = await component.canDeactivate();
 
-      expect(canLeave).toBeTrue();
+      expect(canLeave).toBe(true);
       expect(dlpSpy).toHaveBeenCalledTimes(1);
       expect(saveSpy).not.toHaveBeenCalled();
     });
@@ -1021,7 +1014,7 @@ describe('SettingsComponent', () => {
     it('canDeactivate should await an in-flight masking save', async () => {
       createWith({ dlpFloor: noFloor });
       const dlpSubject = new Subject<any>();
-      spyOn(settingsService, 'saveDlpSettings').and.returnValue(dlpSubject.asObservable());
+      vi.spyOn(settingsService, 'saveDlpSettings').mockReturnValue(dlpSubject.asObservable());
 
       component.dlp.dlpMaskPhoneNumbers = true;
       component.onDlpChange();
@@ -1032,14 +1025,14 @@ describe('SettingsComponent', () => {
         return res;
       });
 
-      expect(resolved).toBeFalse();
+      expect(resolved).toBe(false);
 
       dlpSubject.next({});
       dlpSubject.complete();
 
       const result = await canDeactivatePromise;
-      expect(result).toBeTrue();
-      expect(resolved).toBeTrue();
+      expect(result).toBe(true);
+      expect(resolved).toBe(true);
     });
   });
 
@@ -1061,7 +1054,7 @@ describe('SettingsComponent', () => {
       }).compileComponents();
 
       settingsService = TestBed.inject(SettingsService);
-      spyOn(settingsService, 'getSettings').and.returnValue(of({ hasApiKey: true } as any));
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({ hasApiKey: true } as any));
 
       fixture = TestBed.createComponent(SettingsComponent);
       component = fixture.componentInstance;
@@ -1150,10 +1143,10 @@ describe('SettingsComponent', () => {
 
     it('.settings-body carries section-open only when a section is named', () => {
       const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.settings-body')?.classList.contains('section-open')).toBeFalse();
+      expect(compiled.querySelector('.settings-body')?.classList.contains('section-open')).toBe(false);
 
       emitSection('masking');
-      expect(compiled.querySelector('.settings-body')?.classList.contains('section-open')).toBeTrue();
+      expect(compiled.querySelector('.settings-body')?.classList.contains('section-open')).toBe(true);
     });
   });
 
@@ -1207,10 +1200,8 @@ describe('SettingsComponent', () => {
       }).compileComponents();
 
       settingsService = TestBed.inject(SettingsService);
-      spyOn(settingsService, 'getSettings').and.returnValue(of({ hasApiKey: true } as any));
-      spyOn(settingsService, 'getProvidedModelsForConfidential').and.returnValue(
-        of(providedModels.map(m => ({ ...m })))
-      );
+      vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({ hasApiKey: true } as any));
+      vi.spyOn(settingsService, 'getProvidedModelsForConfidential').mockReturnValue(of(providedModels.map(m => ({ ...m }))));
 
       fixture = TestBed.createComponent(SettingsComponent);
       component = fixture.componentInstance;
@@ -1259,7 +1250,7 @@ describe('SettingsComponent', () => {
     });
 
     it('saves a changed decision with that row id and value, undecided included', async () => {
-      const trustSpy = spyOn(settingsService, 'setProvidedModelConfidentialTrust').and.returnValue(of({} as any));
+      const trustSpy = vi.spyOn(settingsService, 'setProvidedModelConfidentialTrust').mockReturnValue(of({} as any));
       await enterSection();
 
       component.onProvidedModelTrustChange(component.providedModels[0], 'yes');
@@ -1276,9 +1267,7 @@ describe('SettingsComponent', () => {
     });
 
     it('leaves a row on its stored decision and shows the error when the save fails', async () => {
-      spyOn(settingsService, 'setProvidedModelConfidentialTrust').and.returnValue(
-        throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Model not found.' } }))
-      );
+      vi.spyOn(settingsService, 'setProvidedModelConfidentialTrust').mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404, error: { error: 'Model not found.' } })));
       await enterSection();
 
       component.onProvidedModelTrustChange(component.providedModels[1], 'no');
@@ -1287,7 +1276,7 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
 
       expect(component.providedModelTrusts[9]).toBe('yes');
-      expect(component.providedModels[1].userTrustsForConfidential).toBeTrue();
+      expect(component.providedModels[1].userTrustsForConfidential).toBe(true);
 
       const compiled = fixture.nativeElement as HTMLElement;
       const errors = compiled.querySelectorAll('[role="alert"]');
@@ -1315,7 +1304,7 @@ describe('SettingsComponent', () => {
           decidedUtc: null
         }
       ];
-      (settingsService.getProvidedModelsForConfidential as jasmine.Spy).and.returnValue(of(withUnknown));
+      (settingsService.getProvidedModelsForConfidential as Mock).mockReturnValue(of(withUnknown));
       await enterSection();
 
       const rows = (fixture.nativeElement as HTMLElement)
@@ -1342,8 +1331,8 @@ describe('SettingsComponent', () => {
     it('opens and closes the "How this works" dialog', async () => {
       await enterSection();
 
-      const showModal = jasmine.createSpy('showModal');
-      const close = jasmine.createSpy('close');
+      const showModal = vi.fn().mockName('showModal');
+      const close = vi.fn().mockName('close');
       component.systemModelsInfoDialog = { nativeElement: { showModal, close } } as any;
 
       const compiled = fixture.nativeElement as HTMLElement;

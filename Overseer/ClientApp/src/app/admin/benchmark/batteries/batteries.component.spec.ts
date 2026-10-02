@@ -1,3 +1,4 @@
+import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 
@@ -259,7 +260,7 @@ function comparison(): BenchmarkBatteryComparison {
 describe('BenchmarkBatteriesComponent', () => {
   let fixture: ComponentFixture<BenchmarkBatteriesComponent>;
   let component: BenchmarkBatteriesComponent;
-  let service: jasmine.SpyObj<AdminBenchmarkService>;
+  let service: MockedObject<AdminBenchmarkService>;
 
   function el(): HTMLElement {
     return fixture.nativeElement as HTMLElement;
@@ -271,7 +272,7 @@ describe('BenchmarkBatteriesComponent', () => {
 
   function click(selector: string): void {
     const target = el().querySelector(selector) as HTMLElement | null;
-    expect(target).withContext(selector).not.toBeNull();
+    expect(target, selector).not.toBeNull();
     target!.click();
     fixture.detectChanges();
   }
@@ -290,22 +291,32 @@ describe('BenchmarkBatteriesComponent', () => {
   }
 
   beforeEach(async () => {
-    service = jasmine.createSpyObj<AdminBenchmarkService>('AdminBenchmarkService', [
-      'getBatteries', 'getSuites', 'getBatteryRuns', 'getBatteryRun', 'getBatteryAnalysis', 'analyseBatteryRun',
-      'getBatteryLeaderboard', 'getBatteryReportUrl', 'archiveBattery', 'deleteBattery', 'createBattery',
-      'updateBattery', 'getQuestions'
-    ]);
-    service.getBatteries.and.returnValue(of([battery()]));
-    service.getSuites.and.returnValue(of([dto<BenchmarkSuiteDto>({ id: 11, name: 'Gameplay Help', questionCount: 10, assessedQuestionCount: 10, difficultyFullyAssessed: true })]));
-    service.getBatteryRuns.and.returnValue(of([run(), run({ id: 6, batteryName: 'Old Battery', batteryId: null, testedModelLabel: 'Model Y' })]));
-    service.getBatteryRun.and.returnValue(of(run()));
-    service.getBatteryAnalysis.and.returnValue(of(analysis()));
-    service.analyseBatteryRun.and.returnValue(of(analysis()));
-    service.getBatteryLeaderboard.and.returnValue(of(leaderboard()));
-    service.getBatteryReportUrl.and.callFake((id: number) => `/api/admin/benchmark/batteries/runs/${id}/report`);
-    service.archiveBattery.and.callFake((id: number, archived?: boolean) => of(battery({ id, isArchived: archived ?? true })));
-    service.deleteBattery.and.returnValue(of(void 0));
-    service.getQuestions.and.returnValue(of([]));
+    service = {
+      getBatteries: vi.fn().mockName("AdminBenchmarkService.getBatteries"),
+      getSuites: vi.fn().mockName("AdminBenchmarkService.getSuites"),
+      getBatteryRuns: vi.fn().mockName("AdminBenchmarkService.getBatteryRuns"),
+      getBatteryRun: vi.fn().mockName("AdminBenchmarkService.getBatteryRun"),
+      getBatteryAnalysis: vi.fn().mockName("AdminBenchmarkService.getBatteryAnalysis"),
+      analyseBatteryRun: vi.fn().mockName("AdminBenchmarkService.analyseBatteryRun"),
+      getBatteryLeaderboard: vi.fn().mockName("AdminBenchmarkService.getBatteryLeaderboard"),
+      getBatteryReportUrl: vi.fn().mockName("AdminBenchmarkService.getBatteryReportUrl"),
+      archiveBattery: vi.fn().mockName("AdminBenchmarkService.archiveBattery"),
+      deleteBattery: vi.fn().mockName("AdminBenchmarkService.deleteBattery"),
+      createBattery: vi.fn().mockName("AdminBenchmarkService.createBattery"),
+      updateBattery: vi.fn().mockName("AdminBenchmarkService.updateBattery"),
+      getQuestions: vi.fn().mockName("AdminBenchmarkService.getQuestions")
+    } as unknown as MockedObject<AdminBenchmarkService>;
+    service.getBatteries.mockReturnValue(of([battery()]));
+    service.getSuites.mockReturnValue(of([dto<BenchmarkSuiteDto>({ id: 11, name: 'Gameplay Help', questionCount: 10, assessedQuestionCount: 10, difficultyFullyAssessed: true })]));
+    service.getBatteryRuns.mockReturnValue(of([run(), run({ id: 6, batteryName: 'Old Battery', batteryId: null, testedModelLabel: 'Model Y' })]));
+    service.getBatteryRun.mockReturnValue(of(run()));
+    service.getBatteryAnalysis.mockReturnValue(of(analysis()));
+    service.analyseBatteryRun.mockReturnValue(of(analysis()));
+    service.getBatteryLeaderboard.mockReturnValue(of(leaderboard()));
+    service.getBatteryReportUrl.mockImplementation((id: number) => `/api/admin/benchmark/batteries/runs/${id}/report`);
+    service.archiveBattery.mockImplementation((id: number, archived?: boolean) => of(battery({ id, isArchived: archived ?? true })));
+    service.deleteBattery.mockReturnValue(of(void 0));
+    service.getQuestions.mockReturnValue(of([]));
 
     await TestBed.configureTestingModule({
       imports: [BenchmarkBatteriesComponent],
@@ -326,8 +337,8 @@ describe('BenchmarkBatteriesComponent', () => {
   });
 
   it('shows the empty states', () => {
-    service.getBatteries.and.returnValue(of([]));
-    service.getBatteryRuns.and.returnValue(of([]));
+    service.getBatteries.mockReturnValue(of([]));
+    service.getBatteryRuns.mockReturnValue(of([]));
     create();
 
     expect(text('.bb-empty-batteries')).toContain('No batteries yet');
@@ -378,7 +389,7 @@ describe('BenchmarkBatteriesComponent', () => {
     incomplete.completedSuiteCount = 1;
     incomplete.overallIndex = null;
     incomplete.suites = [incomplete.suites[0], { ...incomplete.suites[1], complete: false, index: null }];
-    service.getBatteryAnalysis.and.returnValue(of(analysis({
+    service.getBatteryAnalysis.mockReturnValue(of(analysis({
       complete: false,
       result: incomplete,
       excludedMembers: [{ suiteIndex: 1, round: 1, runId: 102, reason: 'index withheld (a question failed at the provider)' }]
@@ -397,7 +408,7 @@ describe('BenchmarkBatteriesComponent', () => {
   });
 
   it('offers Compute when no analysis exists', () => {
-    service.getBatteryAnalysis.and.returnValue(of(null));
+    service.getBatteryAnalysis.mockReturnValue(of(null));
     create();
     click('tr[data-run-id="7"] .bb-view-analysis');
 
@@ -407,7 +418,7 @@ describe('BenchmarkBatteriesComponent', () => {
   });
 
   it('downloads the report of the selected battery run', () => {
-    const open = spyOn(window, 'open');
+    const open = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
     create();
     click('tr[data-run-id="7"] .bb-view-analysis');
     click('.bb-download-report');
@@ -428,7 +439,7 @@ describe('BenchmarkBatteriesComponent', () => {
   it('shows the refusal text when a comparison is refused', () => {
     create();
     click('tr[data-run-id="7"] .bb-view-analysis');
-    service.analyseBatteryRun.and.returnValue(throwError(() => ({
+    service.analyseBatteryRun.mockReturnValue(throwError(() => ({
       status: 400,
       error: 'Not comparable: HarnessVersion and CandidateSystemPromptSha256 differ.'
     })));
@@ -445,7 +456,7 @@ describe('BenchmarkBatteriesComponent', () => {
   it('shows D, its interval, the randomization p and Holm-adjusted per-suite p', () => {
     create();
     click('tr[data-run-id="7"] .bb-view-analysis');
-    service.analyseBatteryRun.and.returnValue(of(analysis({ batteryRunId: 7, comparedWithBatteryRunId: 8, comparison: comparison() })));
+    service.analyseBatteryRun.mockReturnValue(of(analysis({ batteryRunId: 7, comparedWithBatteryRunId: 8, comparison: comparison() })));
 
     select('#bb-compare-baseline', '8');
     select('#bb-compare-treatment', '7');
@@ -464,7 +475,7 @@ describe('BenchmarkBatteriesComponent', () => {
 
   it('emits openBatteryRun from Show progress', () => {
     create();
-    const opened = jasmine.createSpy('opened');
+    const opened = vi.fn().mockName('opened');
     component.openBatteryRun.subscribe(opened);
     click('tr[data-run-id="7"] .bb-show-progress');
     expect(opened).toHaveBeenCalledWith(7);
@@ -472,7 +483,7 @@ describe('BenchmarkBatteriesComponent', () => {
 
   it('archives a battery and emits batteriesChanged', () => {
     create();
-    const changed = jasmine.createSpy('changed');
+    const changed = vi.fn().mockName('changed');
     component.batteriesChanged.subscribe(changed);
     click('.bb-card .bb-archive');
 
@@ -482,7 +493,7 @@ describe('BenchmarkBatteriesComponent', () => {
 
   it('deletes a battery after confirmation', () => {
     create();
-    const changed = jasmine.createSpy('changed');
+    const changed = vi.fn().mockName('changed');
     component.batteriesChanged.subscribe(changed);
     click('.bb-card .bb-delete');
     expect(text('#bbDeleteTitle')).toBe('Delete battery?');
@@ -494,13 +505,13 @@ describe('BenchmarkBatteriesComponent', () => {
   });
 
   it('refuses to delete a battery with a battery run in progress', () => {
-    service.getBatteries.and.returnValue(of([battery({ hasActiveBatteryRun: true })]));
+    service.getBatteries.mockReturnValue(of([battery({ hasActiveBatteryRun: true })]));
     create();
     const deleteButton = el().querySelector('.bb-card .bb-delete') as HTMLButtonElement;
     expect(deleteButton.getAttribute('aria-disabled')).toBe('true');
     deleteButton.click();
     fixture.detectChanges();
-    expect((el().querySelector('.bb-delete-dialog') as HTMLDialogElement).open).toBeFalse();
+    expect((el().querySelector('.bb-delete-dialog') as HTMLDialogElement).open).toBe(false);
   });
 
   it('focuses the analysis heading from showAnalysis', () => {
