@@ -86,7 +86,7 @@ In Angular/RxJS, any observable subscription (`observable.subscribe(...)`) that 
 
 ### Pinned SDK options
 
-`UseSentry` in `Program.cs` sets `SendDefaultPii = false` (no IP, name or address on any event) and `MaxRequestBodySize = RequestSize.None` (no request payloads — and for `/api/chat/send` the payload *is* the user's message and their attachments).
+`UseSentry` in `Program.cs` sets `SendDefaultPii = false` (no IP, name or address on any event) and `MaxRequestBodySize = RequestSize.None` (no request payloads — and for `/api/chat/send` the payload *is* the user's message and their attachments). Those are server options: the Angular client uses the SDK 11 `dataCollection` defaults, so client events carry the user's IP address — `docs/overseer/sentry-logging-architecture.md` §2.1, *Angular client*, has what the client sends.
 
 Both are already the defaults of the `Sentry.AspNetCore` version pinned in `Overseer/Overseer.csproj`. **Read the version from that file, never from this skill**: a version number written into a document drifts silently. They are pinned so an SDK upgrade cannot widen the surface without `Program.cs` changing; the substantive protection is the scrubbing above.
 

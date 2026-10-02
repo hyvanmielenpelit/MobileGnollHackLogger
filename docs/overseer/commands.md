@@ -106,10 +106,16 @@ npx ng test --include=src/app/admin/benchmark --filter="diagnostics"
 npm run test:profile
 ```
 
-The 200 ms threshold is `slowTestThreshold` in `vitest-base.config.ts`. Files run in parallel, so
-the largest file sets the floor of a full run. As measured on 2026-10-02, two files hold most of
-the execution time: `benchmark.component.spec.ts` (about 720 specs, each creating the whole
-`AdminBenchmarkComponent`) and `model-comparison.component.spec.ts` (about 290 specs).
+The 200 ms threshold is `slowTestThreshold` in `vitest-base.config.ts`. Files run in parallel, one
+per browser page (up to 12 on a 32-thread machine), but the tests of one file run one after another
+on one page, so the largest file sets the floor of a full run. Large component specs are therefore
+split by area into `<name>.<area>.spec.ts` files that share a `<name>.testing.ts` setup module, and
+keep the outer `describe` name so every full test name stays the same: `benchmark.component.*.spec.ts`
+(12 files, sharing `benchmark.component.testing.ts`) and `model-comparison.component.*.spec.ts`
+(6 files, sharing `model-comparison.component.testing.ts`). As measured on 2026-10-02, after that
+split, the largest file sums to about 19 s of a 36 s Vitest run (3,915 specs, 129 files), and no
+file stands out: the slowest are the `AdminBenchmarkComponent` parts, whose every spec creates the
+whole component.
 
 > [!NOTE]
 > **Do not turn chart animation off to speed specs up.** Forcing `prefers-reduced-motion` made the

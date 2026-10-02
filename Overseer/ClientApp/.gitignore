@@ -35,6 +35,7 @@ yarn-error.log
 /coverage
 __screenshots__/
 /.vitest-attachments
+/.vitest
 /libpeerconnection.log
 testem.log
 /typings

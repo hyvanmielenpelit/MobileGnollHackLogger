@@ -77,6 +77,18 @@ plan -- `package.json` is the source of truth.
   would need `frame-src blob:` -- and phones do not render a PDF inline in a frame) and over Angular
   wrapper packages around pdf.js (they bundle a full viewer UI of their own and fight the
   application's styling).
+- **`@angular/cdk`** -- declared only because `ng2-charts` peers it; the client imports nothing from
+  it. It is part of the Angular framework set, so its range moves with `@angular/core` and the
+  others, to the same version.
+
+### Upgrading
+- **The Angular set** (`@angular/*`, including `@angular/cdk`, `@angular/build` and
+  `@angular/cli`): edit the ranges in `package.json`, then `npm update`. `npm install <pkg>@<ver>`
+  fails with `ERESOLVE`, because the framework packages pin their siblings exactly.
+- **A Sentry SDK major** (`@sentry/angular`): before taking it, read its migration guide for any
+  change to what the SDK collects (IP addresses, headers, cookies, bodies, stack traces), and record
+  the decision in `docs/overseer/sentry-logging-architecture.md` § 2.1, which lists what the client
+  sends. Keep `docs/overseer/data-privacy-framework.md` § 3.8 consistent with it.
 
 ### Held-back Upgrades
 `npm outdated` will keep listing these; do not force them.

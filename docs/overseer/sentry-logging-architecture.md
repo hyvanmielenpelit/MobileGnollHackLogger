@@ -60,6 +60,17 @@ A core rule of Overseer's logging architecture is the strict separation between 
 
 Both are already the defaults of the `Sentry.AspNetCore` version pinned in `Overseer/Overseer.csproj` — read the version from that file, never from a document, because a number written down here drifts silently. They are set anyway so that an SDK upgrade, or an option set from configuration elsewhere, cannot widen the reported surface without this file changing. The pinning is bookkeeping; the substantive protection is the scrubbing in §2 item 4.
 
+#### Angular client
+
+`Sentry.init` in `Overseer/ClientApp/src/main.ts` sets `sendClientReports: false` and removes the `BrowserSession` integration, so the client sends no session or client-report envelopes. It leaves `dataCollection` and `attachStacktrace` at the defaults of the `@sentry/angular` major in `Overseer/ClientApp/package.json` (SDK 11), by decision on 2026-10-02. Under those defaults:
+
+- **Client events carry the user's IP address.** `dataCollection.userInfo` is on, so the client asks Sentry's ingestion to infer the address (`infer_ip: "auto"`), and `SentryTunnelController` forwards the browser's address as `X-Forwarded-For`. `AuthSentryEventProcessor` and `SendDefaultPii = false` apply to server events only; they never see a client event passing through the tunnel.
+- **The page's `Referer` and `User-Agent` are attached** as request headers by the default `httpContextIntegration`, with the page URL. A browser exposes no other request headers to the SDK.
+- **Cookies and HTTP bodies are not collected**: only `httpClientIntegration` collects them, and it is not enabled.
+- **Messages and non-`Error` exceptions carry a synthetic stack trace** (`attachStacktrace`), which can change how Sentry groups them.
+
+**Re-check on change.** If `httpClientIntegration` is ever added, the SDK 11 defaults would collect cookies and HTTP bodies of failed requests as well: decide on `dataCollection` at that point, and on every Sentry SDK major, record here what its defaults collect.
+
 ## 3. Zero DSN Exposure & Secure Tunneling
 
 The Sentry DSN is considered sensitive in Overseer to prevent unauthenticated actors from forging crash reports or staging Indirect Prompt Injection attacks against the AI triage assistant.

@@ -158,6 +158,7 @@ describe('DownloadCenterPanelComponent', () => {
       }
     });
     fixture.destroy();
+    vi.useRealTimers();
     localStorage.removeItem(DOWNLOAD_CENTER_STORAGE_KEY);
     localStorage.removeItem(DOWNLOAD_CENTER_VIEW_STORAGE_KEY);
     localStorage.removeItem(REPORT_CHART_STORAGE_KEY);
@@ -194,10 +195,19 @@ describe('DownloadCenterPanelComponent', () => {
     fixture.detectChanges();
   }
 
-  /** Waits out the search debounce, then renders. */
-  async function pauseTyping(): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS + 20));
+  /**
+   * Fakes the clock the search debounce runs on, until `afterEach`. Only `setTimeout` and
+   * `clearTimeout`: everything else keeps the real clock.
+   */
+  function useSearchClock(): void {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  }
+
+  /** Runs out the search debounce on the clock `useSearchClock` fakes, then renders. */
+  function pauseTyping(): Promise<void> {
+    vi.advanceTimersByTime(DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS);
     fixture.detectChanges();
+    return Promise.resolve();
   }
 
   function library(preselect: 'all' | 'none' = 'all', scope: 'comparison' | 'all' = 'comparison'): DownloadCenterContext {
@@ -392,6 +402,7 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('searches title, subject, suite and writer once typing pauses, and clears on Escape without closing a dialog', async () => {
+      useSearchClock();
       render(twoSuites());
       const label = q(`label[for="mc-dc-search"]`)!;
       expect(label.classList).toContain('visually-hidden');
@@ -476,6 +487,7 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('shows the active filters as removable chips, and Clear all keeps Show selected only', async () => {
+      useSearchClock();
       render(twoSuites());
       pickFacet('document', 'Executive Summary');
       pickFacet('document', 'Run report');

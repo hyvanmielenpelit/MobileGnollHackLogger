@@ -130,6 +130,25 @@ describe('SnapshotViewerComponent', () => {
     fixture.detectChanges();
   }
 
+  /**
+   * Puts `setTimeout` on a fake clock, so the debounce the text editor starts on an edit runs in
+   * `settleEdits` rather than after its real delay.
+   */
+  function useEditClock() {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  }
+
+  /** Runs the timers the edits started, returns to the real clock and waits for the fixture. */
+  async function settleEdits() {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+    await fixture.whenStable();
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   function discardLabel(): string {
     return (host.querySelector('.discard-label')?.textContent ?? '').trim();
   }
@@ -346,8 +365,9 @@ describe('SnapshotViewerComponent', () => {
       clickTab('delete');
       expect(deletePanel().querySelector('.delete-unsaved')).toBeNull();
 
+      useEditClock();
       editText();
-      await fixture.whenStable();
+      await settleEdits();
       typeInto(nameInput(), 'Renamed');
       expect(deletePanel().querySelector('.delete-unsaved')!.textContent!.trim())
         .toBe('Unsaved changes to the snapshot text and metadata will be lost.');
@@ -729,8 +749,9 @@ describe('SnapshotViewerComponent', () => {
     }
 
     async function editBoth() {
+      useEditClock();
       editText();
-      await fixture.whenStable();
+      await settleEdits();
       typeInto(nameInput(), 'Renamed');
     }
 
@@ -782,8 +803,9 @@ describe('SnapshotViewerComponent', () => {
 
     it('sends nothing when the name is empty, and opens the Metadata tab on the name', async () => {
       await openReady();
+      useEditClock();
       editText();
-      await fixture.whenStable();
+      await settleEdits();
       typeInto(nameInput(), '  ');
 
       saveAllButton().click();
@@ -828,6 +850,7 @@ describe('SnapshotViewerComponent', () => {
     it('reverts at once when only the tab in view is dirty', async () => {
       await openReady();
       const board = textEditor().currentText();
+      useEditClock();
       editText();
       revertAllButton().click();
       fixture.detectChanges();
@@ -835,7 +858,7 @@ describe('SnapshotViewerComponent', () => {
       expect(textEditor().currentText()).toBe(board);
       expect(component.editingTextDirty).toBe(false);
 
-      await fixture.whenStable();
+      await settleEdits();
       clickTab('metadata');
       typeInto(nameInput(), 'Renamed');
       revertAllButton().click();
@@ -848,6 +871,7 @@ describe('SnapshotViewerComponent', () => {
     it('asks before reverting an edit on the other tab; Keep editing keeps it, Revert reverts both', async () => {
       await openReady();
       const board = textEditor().currentText();
+      useEditClock();
       editText();
       clickTab('metadata');
 
@@ -862,7 +886,7 @@ describe('SnapshotViewerComponent', () => {
       expect(component.editingTextDirty).toBe(true);
       expect(document.activeElement).toBe(nameInput());
 
-      await fixture.whenStable();
+      await settleEdits();
       typeInto(nameInput(), 'Renamed');
       revertAllButton().click();
       fixture.detectChanges();

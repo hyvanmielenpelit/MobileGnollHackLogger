@@ -298,7 +298,10 @@ unaffected. The limits start permissive; tighten with evidence, not on principle
 See `docs/overseer/sentry-logging-architecture.md` §2 for the full rules. In summary:
 `AuthSentryEventProcessor` scrubs credential-bearing headers, named query values and the whole
 user record from every event that survives the drop rules, and `SendDefaultPii = false` /
-`MaxRequestBodySize = None` are pinned so an SDK change cannot widen the surface.
+`MaxRequestBodySize = None` are pinned so an SDK change cannot widen the surface. Those pins
+cover server events only: client events from the Angular application use the Sentry 11
+`dataCollection` defaults and carry the user's IP address (see `sentry-logging-architecture.md`
+§2.1, *Angular client*).
 
 ### 3.9 Game-snapshot detection no longer reads message content
 

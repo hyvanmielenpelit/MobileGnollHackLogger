@@ -238,27 +238,36 @@ describe('SuiteDescriptionGenerationDialogComponent', () => {
   });
 
   it('should auto-open diagnostics on a failed result and copy the log excerpt', async () => {
-    serviceMock.generateSuiteDescription.mockReturnValue(of(buildResult({
-      status: 'Failed',
-      description: null,
-      errorMessage: 'The model returned no usable text.',
-      log: [
-        { timestampUtc: '2026-09-16T08:01:00Z', message: 'Empty response.', severity: 'error', rawExcerpt: 'HTTP 200, empty body' }
-      ]
-    })));
-    open();
-    click('.sdg-start-btn');
+    vi.useFakeTimers();
+    try {
+      serviceMock.generateSuiteDescription.mockReturnValue(of(buildResult({
+        status: 'Failed',
+        description: null,
+        errorMessage: 'The model returned no usable text.',
+        log: [
+          { timestampUtc: '2026-09-16T08:01:00Z', message: 'Empty response.', severity: 'error', rawExcerpt: 'HTTP 200, empty body' }
+        ]
+      })));
+      open();
+      click('.sdg-start-btn');
 
-    expect(query<HTMLDetailsElement>('details.job-diagnostics')!.open).toBe(true);
-    expect(query('.sdg-alert')!.textContent).toContain('The model returned no usable text.');
+      expect(query<HTMLDetailsElement>('details.job-diagnostics')!.open).toBe(true);
+      expect(query('.sdg-alert')!.textContent).toContain('The model returned no usable text.');
 
-    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
-    click('.diagnostics-toolbar .action-btn');
-    await fixture.whenStable();
-    fixture.detectChanges();
+      const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+      click('.diagnostics-toolbar .action-btn');
+      await fixture.whenStable();
+      fixture.detectChanges();
 
-    expect(writeText).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(writeText).mock.lastCall![0] as string).toContain('Excerpt: HTTP 200, empty body');
+      expect(writeText).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(writeText).mock.lastCall![0] as string).toContain('Excerpt: HTTP 200, empty body');
+
+      vi.advanceTimersByTime(2000);
+      fixture.detectChanges();
+    }
+    finally {
+      vi.useRealTimers();
+    }
   });
 
   it('should unsubscribe on Cancel and read the status as Cancelled', () => {

@@ -283,11 +283,15 @@ Run commands from the `Overseer/ClientApp/` directory:
 
 ### Vitest Specifics
 *   **Spies are restored after every test** by the global `afterEach(() => vi.restoreAllMocks())` in `src/test-setup.ts`, as Jasmine did for `spyOn`. A spy created in `beforeAll` does not survive the first test.
+*   **`clearMocks` is on by default** (Vitest 5), so a `vi.fn()`'s calls never carry from one test into the next. Do not count calls across tests on a mock created at module or `describe` level, and do not turn `clearMocks` off to make such a test pass.
 *   **`toContain` compares with `===`.** For an object or array element, use `toContainEqual` (Jasmine's `toContain` compared deeply).
 *   **Constructor spies** (`AudioContext` and the like) need `mockImplementation(function () { return fake; })` — a `function`, not an arrow; Vitest refuses `mockReturnValue` for a `new` call.
 *   **`fakeAsync` and `tick` work** through zone.js's Vitest patch (`zone.js/plugins/vitest-patch`, loaded by `src/test-setup.ts`). A new spec may prefer `vi.useFakeTimers()`.
 *   **`errorOnUnknownElements` and `errorOnUnknownProperties` are on**, so a spec must import or stub every child component it renders.
 *   **Components are OnPush by default** (Angular 22): a property change followed by `fixture.detectChanges()` does not re-render a view that was not marked for check. Drive state through the DOM event that changes it, or call `markForCheck()` on the component's `ChangeDetectorRef`.
+*   **`overrideComponent` recompiles the component in the JIT compiler before every test**, because TestBed restores the original definition after each one. Scope an override to the `describe` (or spec file) that needs it, and never override a large component such as `AdminBenchmarkComponent` to stub its children. A shared override in `model-comparison.component.spec.ts` cost about 40 of its 54 seconds.
+*   **Keep a spec file's summed time under about 15 s.** Files run in parallel, but one file's tests run one after another on one page, so the largest file sets the floor of the whole run. Split a large component's specs by area into `<name>.<area>.spec.ts` files that share a `<name>.testing.ts` setup module (`benchmark.component.testing.ts`, `model-comparison.component.testing.ts`), keep the outer `describe` name so every full test name stays the same, and prove a split by comparing the sorted full names from `npx ng test --no-watch --reporters=json --output-file=<file>` before and after: they must be identical.
+*   **Wait on a component's timers with fake timers**, never with a real `setTimeout` or with `fixture.whenStable()`, which waits out every timer started inside the zone in real time. Where the component also polls with `setInterval`, fake only the timeouts: `vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })`, and restore the real clock in `afterEach` or a `finally`.
 
 ### Angular Test Configuration Best Practices
 *   **Router Dependencies**: Standalone components using `RouterModule`, `<a routerLink>`, or `ActivatedRoute` must include `provideRouter([])` in `TestBed.configureTestingModule({ providers: [provideRouter([])] })`.

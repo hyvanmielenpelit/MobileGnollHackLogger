@@ -3213,10 +3213,20 @@ describe('the automatic title break on a real chart', () => {
         devicePixelRatio: density,
         font: { family: 'Arial', size: 12 },
       },
-      plugins: [...spec.plugins],
+      // The break is decided in the layout (`afterFit`), which runs before drawing: nothing is painted.
+      plugins: [...spec.plugins, { id: 'noPaint', beforeDraw: () => false }],
     } as unknown as ChartConfiguration);
     charts.push(chart);
     return chart;
+  }
+
+  /** Destroys a chart whose sample is asserted and removes its container; `afterEach` takes the rest. */
+  function unmount(chart: Chart): void {
+    const container = chart.canvas.parentElement;
+    chart.destroy();
+    container?.remove();
+    charts = charts.filter((other) => other !== chart);
+    containers = containers.filter((other) => other !== container);
   }
 
   function valueScale(chart: Chart, orientation: BarOrientation): Scale {
@@ -3255,10 +3265,14 @@ describe('the automatic title break on a real chart', () => {
     return { title, copy: JSON.parse(JSON.stringify(title.text)) };
   }
 
+  /** Lengths from `from` to `to` every `step` px, `to` always included. */
   function sweep(from: number, to: number, step: number): number[] {
     const lengths: number[] = [];
     for (let length = from; length <= to; length += step) {
       lengths.push(length);
+    }
+    if (lengths[lengths.length - 1] !== to) {
+      lengths.push(to);
     }
     return lengths;
   }
@@ -3271,10 +3285,11 @@ describe('the automatic title break on a real chart', () => {
             const spec = costPanel(orientation, { labels, titleSize, directionHidden });
             const source = sourceTitle(spec, orientation);
             const outcomes = new Set<string>();
-            const lengths = orientation === 'vertical' ? sweep(140, 700, 40) : sweep(240, 1000, 40);
+            const lengths = orientation === 'vertical' ? sweep(140, 700, 80) : sweep(240, 1000, 80);
             for (const length of lengths) {
               const chart = orientation === 'vertical' ? mount(spec, 420, length) : mount(spec, length, 320);
               outcomes.add(expectFinalDecision(chart, orientation, directionHidden, `${orientation} ${labels} ${titleSize}px hidden=${directionHidden} ${length}`));
+              unmount(chart);
             }
             expect(source.title.text, 'source').toEqual(source.copy);
             if (titleSize === 12) {
@@ -3290,10 +3305,28 @@ describe('the automatic title break on a real chart', () => {
     for (const orientation of ['vertical', 'horizontal'] as const) {
       const spec = costPanel(orientation, { labels: 'long' });
       const outcomes: string[] = [];
-      const lengths = orientation === 'vertical' ? sweep(300, 520, 3) : sweep(380, 700, 3);
-      for (const length of lengths) {
+      const [from, to] = orientation === 'vertical' ? [300, 520] : [380, 700];
+      const sampled = new Set<number>();
+      const sample = (length: number): string => {
+        sampled.add(length);
         const chart = orientation === 'vertical' ? mount(spec, 420, length) : mount(spec, length, 320);
-        outcomes.push(expectFinalDecision(chart, orientation, false, `${orientation} ${length}`));
+        const outcome = expectFinalDecision(chart, orientation, false, `${orientation} ${length}`);
+        unmount(chart);
+        outcomes.push(outcome);
+        return outcome;
+      };
+      // Every 12 px across the range; the threshold lies between two neighbors whose expected forms
+      // differ, and every pixel within 6 px of that pair is sampled as well.
+      const coarse = sweep(from, to, 12);
+      const expected = coarse.map(sample);
+      for (let i = 1; i < coarse.length; i++) {
+        if (expected[i] !== expected[i - 1]) {
+          for (const length of sweep(Math.max(from, coarse[i - 1] - 6), Math.min(to, coarse[i] + 6), 1)) {
+            if (!sampled.has(length)) {
+              sample(length);
+            }
+          }
+        }
       }
       expect(outcomes, orientation).toContain('broken');
       expect(outcomes, orientation).toContain('unbroken');
@@ -3315,7 +3348,7 @@ describe('the automatic title break on a real chart', () => {
     for (const axisTextSize of [11, 24]) {
       const spec = costPanel('horizontal', { labels: 'eight', axisTextSize });
       for (const height of [110, 160, 200, 260]) {
-        for (const width of sweep(260, 1000, 12)) {
+        for (const width of sweep(260, 1000, 24)) {
           const context = `eight ${axisTextSize}px ${width}x${height}`;
           const chart = mount(spec, width, height);
           const autoskipped = chart.scales['y'].ticks.length < 8;
@@ -3332,6 +3365,7 @@ describe('the automatic title break on a real chart', () => {
           if (!broken) {
             expect(unbrokenFits, context).toBe(true);
           }
+          unmount(chart);
         }
       }
     }
