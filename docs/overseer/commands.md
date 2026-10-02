@@ -65,9 +65,19 @@ npx ng build --watch --configuration development
 ### Frontend Unit Testing (Vitest)
 
 The specs run with [Vitest](https://vitest.dev/) in browser mode, in headless Chromium driven by
-Playwright, through Angular's `@angular/build:unit-test` builder. `angular.json` sets the browser,
-`src/test-setup.ts` loads zone.js's Vitest patch (for `fakeAsync`) and restores spies after every
-test, and `vitest-base.config.ts` holds the little the builder does not configure itself.
+Playwright, through Angular's `@angular/build:unit-test` builder. `src/test-setup.ts` loads
+zone.js's Vitest patch (for `fakeAsync`) and restores spies after every test, and
+`vitest-base.config.mts` holds what the builder does not configure itself: the browser, its
+headless mode, launch options and 800×600 viewport included. `angular.json` names no browser,
+because the builder's `browsers` option would replace the provider and drop its launch options;
+for the same reason `CHROME_BIN`, which only that option honors, has no effect.
+
+The browser is Playwright's full Chromium build in its new headless mode
+(`launchOptions: { channel: 'chromium' }`), not the default headless shell. Under the headless
+shell, parallel runs intermittently delayed `canvas.toBlob` callbacks by about 7 s, enough for a
+spec that encodes several images to exceed the 15 s test timeout; measured on 2026-10-03, the
+headless shell stalled in 9 of 15 full runs (two of them failed on that timeout) and the full
+build in none of 6, without being slower.
 
 Once per machine, download Playwright's Chromium (into `%LOCALAPPDATA%\ms-playwright`, outside the
 repository):
@@ -106,7 +116,7 @@ npx ng test --include=src/app/admin/benchmark --filter="diagnostics"
 npm run test:profile
 ```
 
-The 200 ms threshold is `slowTestThreshold` in `vitest-base.config.ts`. Files run in parallel, one
+The 200 ms threshold is `slowTestThreshold` in `vitest-base.config.mts`. Files run in parallel, one
 per browser page (up to 12 on a 32-thread machine), but the tests of one file run one after another
 on one page, so the largest file sets the floor of a full run. Large component specs are therefore
 split by area into `<name>.<area>.spec.ts` files that share a `<name>.testing.ts` setup module, and
@@ -115,7 +125,10 @@ keep the outer `describe` name so every full test name stays the same: `benchmar
 (6 files, sharing `model-comparison.component.testing.ts`). As measured on 2026-10-02, after that
 split, the largest file sums to about 19 s of a 36 s Vitest run (3,915 specs, 129 files), and no
 file stands out: the slowest are the `AdminBenchmarkComponent` parts, whose every spec creates the
-whole component.
+whole component. Once the largest file ends well before the run does, splitting it further does not
+shorten the run, so check the file finish order (`startTime` and `endTime` per file in the JSON
+report) before splitting: on 2026-10-03 the largest file, `benchmark.component.run-report.spec.ts`
+(about 18–28 s), ended 6–11 s before every run's end, behind a tail of smaller files.
 
 > [!NOTE]
 > **Do not turn chart animation off to speed specs up.** Forcing `prefers-reduced-motion` made the

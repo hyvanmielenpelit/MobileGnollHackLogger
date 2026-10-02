@@ -254,7 +254,7 @@ Run commands from the `Overseer/ClientApp/` directory:
     This is the command for this repository's implementation plans and verification runs, and it is also stated in **`AGENTS.md`**, which is loaded into every context window.
     *(Alternatively: `npx ng test --no-watch` or `npm test -- --no-watch`)*
 
-    The specs run with Vitest in browser mode (headless Chromium through Playwright) via Angular's `@angular/build:unit-test` builder; `angular.json` makes the browser headless, so no flag is needed for that. Once per machine, `npx playwright install chromium` downloads the browser.
+    The specs run with Vitest in browser mode (headless Chromium through Playwright) via Angular's `@angular/build:unit-test` builder; `vitest-base.config.mts` configures the browser (headless, 800×600 viewport, Playwright's full Chromium build in its new headless mode through `launchOptions: { channel: 'chromium' }`), so no flag is needed for that. `angular.json` deliberately names no browser: the builder's `browsers` option would replace that provider and silently drop its launch options, and `CHROME_BIN` has no effect without it. Keep the `channel`: under the default headless shell, parallel runs intermittently delayed `canvas.toBlob` callbacks by about 7 s and failed image-encoding specs on the 15 s timeout. Once per machine, `npx playwright install chromium` downloads the browser.
 
 *   **Run Specific Test File, Directory or Glob (Headless)**:
     ```bash
@@ -265,7 +265,7 @@ Run commands from the `Overseer/ClientApp/` directory:
     ```bash
     npm run test:profile
     ```
-    Lists every test with its duration and marks those above the 200 ms `slowTestThreshold` in `vitest-base.config.ts`.
+    Lists every test with its duration and marks those above the 200 ms `slowTestThreshold` in `vitest-base.config.mts`.
 
 *   **Production Build Type/Template Check**:
     ```bash
@@ -290,7 +290,7 @@ Run commands from the `Overseer/ClientApp/` directory:
 *   **`errorOnUnknownElements` and `errorOnUnknownProperties` are on**, so a spec must import or stub every child component it renders.
 *   **Components are OnPush by default** (Angular 22): a property change followed by `fixture.detectChanges()` does not re-render a view that was not marked for check. Drive state through the DOM event that changes it, or call `markForCheck()` on the component's `ChangeDetectorRef`.
 *   **`overrideComponent` recompiles the component in the JIT compiler before every test**, because TestBed restores the original definition after each one. Scope an override to the `describe` (or spec file) that needs it, and never override a large component such as `AdminBenchmarkComponent` to stub its children. A shared override in `model-comparison.component.spec.ts` cost about 40 of its 54 seconds.
-*   **Keep a spec file's summed time under about 15 s.** Files run in parallel, but one file's tests run one after another on one page, so the largest file sets the floor of the whole run. Split a large component's specs by area into `<name>.<area>.spec.ts` files that share a `<name>.testing.ts` setup module (`benchmark.component.testing.ts`, `model-comparison.component.testing.ts`), keep the outer `describe` name so every full test name stays the same, and prove a split by comparing the sorted full names from `npx ng test --no-watch --reporters=json --output-file=<file>` before and after: they must be identical.
+*   **Keep a spec file's summed time under about 15 s.** Files run in parallel, but one file's tests run one after another on one page, so the largest file sets the floor of the whole run. Split a large component's specs by area into `<name>.<area>.spec.ts` files that share a `<name>.testing.ts` setup module (`benchmark.component.testing.ts`, `model-comparison.component.testing.ts`), keep the outer `describe` name so every full test name stays the same, and prove a split by comparing the sorted full names from `npx ng test --no-watch --reporters=json --output-file=<file>` before and after: they must be identical. Split only a file that ends the run: once the largest file ends well before the run does (on 2026-10-03, `benchmark.component.run-report.spec.ts` ended 6–11 s before every run's end), splitting it further does not shorten the run, so check the per-file `startTime` and `endTime` in that JSON report first.
 *   **Wait on a component's timers with fake timers**, never with a real `setTimeout` or with `fixture.whenStable()`, which waits out every timer started inside the zone in real time. Where the component also polls with `setInterval`, fake only the timeouts: `vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })`, and restore the real clock in `afterEach` or a `finally`.
 
 ### Angular Test Configuration Best Practices
