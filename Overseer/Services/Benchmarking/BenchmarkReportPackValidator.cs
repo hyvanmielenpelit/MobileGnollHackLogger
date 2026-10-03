@@ -36,8 +36,11 @@ public sealed class BenchmarkReportCleanResult
 /// <c>for</c> and <c>triage</c> from their fixed sets.</item>
 /// <item>Tokens: <c>{{key}}</c> names a fact, <c>{{peer:X}}</c> a peer letter, <c>{{subject}}</c> the subject;
 /// written exactly, without inner spaces; no stray braces.</item>
-/// <item>No bare digit once tokens, known names and <c>Q&lt;n&gt;</c> / <c>R&lt;n&gt;</c> references are masked.</item>
-/// <item>Every question number exists in the subject's exam; topics cover every question where required.</item>
+/// <item>No bare digit once tokens, known names and <c>Q&lt;n&gt;</c> / <c>R&lt;n&gt;</c> references (on a battery
+/// sheet also <c>S&lt;suite&gt;-Q&lt;n&gt;</c>) are masked.</item>
+/// <item>Every question number exists in the subject's exam; topics cover every question where required
+/// (on a battery sheet, every question given in detail). A battery sheet's questions are referred to as
+/// <c>S&lt;suite&gt;-Q&lt;n&gt;</c>, never as a bare <c>Q&lt;n&gt;</c>.</item>
 /// <item>Every evidence id and <c>R&lt;n&gt;</c> reference exists; strengths, weaknesses and leads cite
 /// one, and so do the recommendations of the Report for AI Researchers and Developers.</item>
 /// <item>A strength cites no weakness row and a weakness no strength row; a finding citing only
@@ -219,6 +222,12 @@ public static class BenchmarkReportPackValidator
     private static readonly Regex QuestionRefRegex = new(@"(?<![\p{L}\p{N}_])Q(\d+)(?![\p{L}\p{N}_])", RegexOptions.Compiled);
     private static readonly Regex RowRefRegex = new(@"(?<![\p{L}\p{N}_])R(\d+)(?![\p{L}\p{N}_])", RegexOptions.Compiled);
     private static readonly Regex QuestionIdRegex = new(@"^Q(\d+)$", RegexOptions.Compiled);
+
+    /// <summary>A battery question's suite-qualified reference, <c>S2-Q7</c>, in prose.</summary>
+    private static readonly Regex BatteryRefRegex = new(@"(?<![\p{L}\p{N}_])S\d+-Q\d+(?![\p{L}\p{N}_])", RegexOptions.Compiled);
+
+    /// <summary>A battery question's suite-qualified reference as an evidence id.</summary>
+    private static readonly Regex BatteryIdRegex = new(@"^S\d+-Q\d+$", RegexOptions.Compiled);
     private static readonly Regex DigitWordRegex = new(@"\S*\d\S*", RegexOptions.Compiled);
     private static readonly Regex WordRegex = new(@"[\p{L}\p{N}]+", RegexOptions.Compiled);
     private static readonly Regex ParagraphSplitRegex = new(@"\n[ \t]*\n", RegexOptions.Compiled);
@@ -397,7 +406,7 @@ public static class BenchmarkReportPackValidator
             notes.AddRange(TopicIssues(ctx, topic, location));
             if (!topicSeen.Add(topic.Question) && ctx.Questions.Contains(topic.Question))
             {
-                Issue(notes, 4, location, $"{Q(topic.Question)} already has a topic in an earlier entry.");
+                Issue(notes, 4, location, $"{ctx.Reference(topic.Question)} already has a topic in an earlier entry.");
             }
         }
         CheckTopicCoverage(ctx, topicSeen, notes, dropped: false);
@@ -414,7 +423,7 @@ public static class BenchmarkReportPackValidator
                 notes.AddRange(NoteIssues(ctx, note, location));
                 if (!noteSeen.Add(note.Question) && ctx.Questions.Contains(note.Question))
                 {
-                    Issue(notes, 4, location, $"{Q(note.Question)} already has a note in an earlier entry.");
+                    Issue(notes, 4, location, $"{ctx.Reference(note.Question)} already has a note in an earlier entry.");
                 }
                 if (!string.IsNullOrWhiteSpace(note.Note)) noted.Add(note.Question);
             }
@@ -549,7 +558,7 @@ public static class BenchmarkReportPackValidator
             var issues = TopicIssues(ctx, topic, location);
             if (!issues.Any(Blocks) && topicSeen.Contains(topic.Question))
             {
-                issues.Add(Note(4, location, $"{Q(topic.Question)} already has a topic in an earlier entry."));
+                issues.Add(Note(4, location, $"{ctx.Reference(topic.Question)} already has a topic in an earlier entry."));
             }
 
             if (issues.Any(Blocks))
@@ -575,7 +584,7 @@ public static class BenchmarkReportPackValidator
                 var issues = NoteIssues(ctx, note, location);
                 if (!issues.Any(Blocks) && noteSeen.Contains(note.Question))
                 {
-                    issues.Add(Note(4, location, $"{Q(note.Question)} already has a note in an earlier entry."));
+                    issues.Add(Note(4, location, $"{ctx.Reference(note.Question)} already has a note in an earlier entry."));
                 }
 
                 if (issues.Any(Blocks))
@@ -657,23 +666,50 @@ public static class BenchmarkReportPackValidator
 
         // Rule 3: bare digits.
         string masked = ctx.MaskKnownNames(stripped);
+        if (ctx.Battery) masked = BatteryRefRegex.Replace(masked, " ");
         masked = QuestionRefRegex.Replace(masked, " ");
         masked = RowRefRegex.Replace(masked, " ");
         var digit = DigitWordRegex.Match(masked);
         if (digit.Success)
         {
-            Issue(notes, 3, location, $"Contains the digit form \"{digit.Value}\": place figures only as {{{{key}}}} tokens, write counts as number words, and refer to questions as Q<n>.");
+            Issue(notes, 3, location, ctx.Battery
+                ? $"Contains the digit form \"{digit.Value}\": place figures only as {{{{key}}}} tokens, write counts as number words, and refer to questions as S<suite>-Q<n>."
+                : $"Contains the digit form \"{digit.Value}\": place figures only as {{{{key}}}} tokens, write counts as number words, and refer to questions as Q<n>.");
         }
 
         // Rule 4: question references.
-        var missingQuestions = QuestionRefRegex.Matches(stripped)
-            .Where(m => !int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) || !ctx.Questions.Contains(n))
-            .Select(m => m.Value)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        if (missingQuestions.Count > 0)
+        if (ctx.Battery)
         {
-            Issue(notes, 4, location, $"{string.Join(", ", missingQuestions)} {(missingQuestions.Count == 1 ? "is" : "are")} not a question of the subject's exam.");
+            var unknownReferences = BatteryRefRegex.Matches(stripped)
+                .Select(m => m.Value)
+                .Where(r => !ctx.IsReference(r))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (unknownReferences.Count > 0)
+            {
+                Issue(notes, 4, location, $"{string.Join(", ", unknownReferences)} {(unknownReferences.Count == 1 ? "is" : "are")} not a question of the battery.");
+            }
+
+            var plainReferences = QuestionRefRegex.Matches(BatteryRefRegex.Replace(stripped, " "))
+                .Select(m => m.Value)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (plainReferences.Count > 0)
+            {
+                Issue(notes, 4, location, $"{string.Join(", ", plainReferences)} {(plainReferences.Count == 1 ? "names" : "name")} no suite: in a battery report, refer to a question as S<suite>-Q<n>, as its QUESTIONS row does.");
+            }
+        }
+        else
+        {
+            var missingQuestions = QuestionRefRegex.Matches(stripped)
+                .Where(m => !int.TryParse(m.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) || !ctx.Questions.Contains(n))
+                .Select(m => m.Value)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (missingQuestions.Count > 0)
+            {
+                Issue(notes, 4, location, $"{string.Join(", ", missingQuestions)} {(missingQuestions.Count == 1 ? "is" : "are")} not a question of the subject's exam.");
+            }
         }
 
         // Rule 5: row references.
@@ -1017,9 +1053,16 @@ public static class BenchmarkReportPackValidator
         foreach (string id in evidence)
         {
             var qMatch = QuestionIdRegex.Match(id);
-            if (qMatch.Success)
+            if (ctx.Battery && BatteryIdRegex.IsMatch(id))
             {
-                if (!int.TryParse(qMatch.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) || !ctx.Questions.Contains(n))
+                if (!ctx.IsReference(id)) badQuestionIds.Add(id);
+            }
+            else if (qMatch.Success)
+            {
+                // A battery question is cited by its suite-qualified reference only.
+                if (ctx.Battery
+                    || !int.TryParse(qMatch.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n)
+                    || !ctx.Questions.Contains(n))
                 {
                     badQuestionIds.Add(id);
                 }
@@ -1036,18 +1079,24 @@ public static class BenchmarkReportPackValidator
 
         if (badQuestionIds.Count > 0)
         {
-            Issue(notes, 4, location, $"Evidence {string.Join(", ", badQuestionIds.Distinct(StringComparer.Ordinal))} {(badQuestionIds.Count == 1 ? "refers" : "refer")} to no question of the subject's exam.");
+            Issue(notes, 4, location, ctx.Battery
+                ? $"Evidence {string.Join(", ", badQuestionIds.Distinct(StringComparer.Ordinal))} {(badQuestionIds.Count == 1 ? "refers" : "refer")} to no question of the battery: cite S<suite>-Q<n> as its QUESTIONS row shows it."
+                : $"Evidence {string.Join(", ", badQuestionIds.Distinct(StringComparer.Ordinal))} {(badQuestionIds.Count == 1 ? "refers" : "refer")} to no question of the subject's exam.");
         }
         if (unknownIds.Count > 0)
         {
-            Issue(notes, 5, location, $"Unknown evidence id{Plural(unknownIds.Count)} {string.Join(", ", unknownIds.Distinct(StringComparer.Ordinal))}: cite a fact key, Q<n> or a finding row id from the data.");
+            Issue(notes, 5, location, ctx.Battery
+                ? $"Unknown evidence id{Plural(unknownIds.Count)} {string.Join(", ", unknownIds.Distinct(StringComparer.Ordinal))}: cite a fact key or S<suite>-Q<n> from the data."
+                : $"Unknown evidence id{Plural(unknownIds.Count)} {string.Join(", ", unknownIds.Distinct(StringComparer.Ordinal))}: cite a fact key, Q<n> or a finding row id from the data.");
         }
 
         bool requiresEvidence = kind is ItemKind.Strength or ItemKind.Weakness or ItemKind.Lead
             || (kind == ItemKind.Recommendation && RecommendationsRequireEvidence(ctx.Spec.Audience));
         if (requiresEvidence && evidence.Count == 0)
         {
-            Issue(notes, 5, location, "Cites no evidence: give at least one fact key, Q<n> or finding row id.");
+            Issue(notes, 5, location, ctx.Battery
+                ? "Cites no evidence: give at least one fact key or S<suite>-Q<n>."
+                : "Cites no evidence: give at least one fact key, Q<n> or finding row id.");
         }
 
         if (kind is ItemKind.Strength or ItemKind.Weakness)
@@ -1123,10 +1172,10 @@ public static class BenchmarkReportPackValidator
     {
         if (!ctx.Spec.RequiresQuestionTopics) return;
 
-        var missing = ctx.OrderedQuestions.Where(n => !covered.Contains(n)).ToList();
+        var missing = ctx.QuestionsNeedingTopic.Where(n => !covered.Contains(n)).ToList();
         if (missing.Count > 0)
         {
-            notes.Add(Note(4, "questionTopics", $"No topic for {string.Join(", ", missing.Select(Q))}: every question of the exam needs one.", dropped));
+            notes.Add(Note(4, "questionTopics", $"No topic for {string.Join(", ", missing.Select(ctx.Reference))}: {(ctx.Battery ? "every question given in detail needs one." : "every question of the exam needs one.")}", dropped));
         }
     }
 
@@ -1137,7 +1186,7 @@ public static class BenchmarkReportPackValidator
         if (missing.Count > 0)
         {
             Issue(notes, MissingQuestionNoteRule, "questionNotes",
-                $"No note for {string.Join(", ", missing.Select(Q))}: every question listed under QUESTIONS NEEDING A NOTE needs one.");
+                $"No note for {string.Join(", ", missing.Select(ctx.Reference))}: every question listed under QUESTIONS NEEDING A NOTE needs one.");
         }
     }
 
@@ -1262,6 +1311,15 @@ public static class BenchmarkReportPackValidator
             OrderedQuestions = sheet.Questions.Select(q => q.Number).Distinct().OrderBy(n => n).ToList();
             Questions = new HashSet<int>(OrderedQuestions);
             QuestionsNeedingNote = BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet);
+            QuestionsNeedingTopic = BenchmarkReportPackPrompt.QuestionsNeedingTopic(sheet);
+            Battery = sheet.Battery != null;
+            _referenceByNumber = new Dictionary<int, string>();
+            _numberByReference = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var q in sheet.Questions.Where(q => !string.IsNullOrWhiteSpace(q.Reference)))
+            {
+                _referenceByNumber.TryAdd(q.Number, q.Reference!);
+                _numberByReference.TryAdd(q.Reference!, q.Number);
+            }
             _overlappingPeers = new HashSet<string>(
                 sheet.Peers
                     .Select(p => p.Letter)
@@ -1311,7 +1369,7 @@ public static class BenchmarkReportPackValidator
             {
                 foreach (var q in run.Questions)
                 {
-                    string qn = Q(q.Number);
+                    string qn = Reference(q.Number);
                     AddShingles(q.QuestionText, $"the question text of {qn}");
                     AddShingles(q.ExpectedPoints, $"the rubric of {qn}");
                     AddShingles(q.AnswerExcerpt, $"the answer excerpt of {qn}");
@@ -1339,8 +1397,22 @@ public static class BenchmarkReportPackValidator
         private readonly HashSet<string> _overlappingPeers;
         private readonly HashSet<string> _pairedExcludesZeroPeers;
         private readonly Dictionary<string, string> _zeroDisplays;
+        private readonly Dictionary<int, string> _referenceByNumber;
+        private readonly Dictionary<string, int> _numberByReference;
 
         public BenchmarkReportAudienceSpec Spec { get; }
+
+        /// <summary>The sheet is a battery's: its questions are referred to as <c>S&lt;suite&gt;-Q&lt;n&gt;</c>.</summary>
+        public bool Battery { get; }
+
+        /// <summary>The questions that need a topic where the document requires topics.</summary>
+        public IReadOnlyList<int> QuestionsNeedingTopic { get; }
+
+        /// <summary>How the document refers to a question: its battery reference, else <c>Q&lt;n&gt;</c>.</summary>
+        public string Reference(int number) => _referenceByNumber.TryGetValue(number, out string? reference) ? reference : Q(number);
+
+        /// <summary>The text is a battery question's reference, exactly as its QUESTIONS row shows it.</summary>
+        public bool IsReference(string text) => _numberByReference.ContainsKey(text);
 
         /// <summary>The display of an available fact whose display starts with <c>0</c>; null for any other key.</summary>
         public string? ZeroDisplay(string key) => _zeroDisplays.TryGetValue(key, out string? display) ? display : null;

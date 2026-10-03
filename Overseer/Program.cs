@@ -287,6 +287,8 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.IBenchmarkRunReportWri
 // Singleton: it writes a run's documents after the run completes, outliving every request, and
 // opens its own scope per job.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRunReportDocumentService>();
+// Singleton for the same reason: it writes a battery run's documents after the battery finishes.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkBatteryReportDocumentService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportRenderService>();
 // Singleton: its per-document write locks must be shared by every request.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportChartStore>();
@@ -295,8 +297,11 @@ QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 Overseer.Services.Benchmarking.Pdf.BenchmarkPdfResources.EnsureRegistered();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysisService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryAnalysisService>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryLeaderboardService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparabilityIndexService>();
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkPairedComparisonCache>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkPairedTestsService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunLauncher>();
 builder.Services.AddScoped<Overseer.Services.SystemConfigUsageGuard>();
 // Singleton: it drives a series across many requests and outlives every one of them, creating its
@@ -556,6 +561,15 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         await Overseer.Services.Benchmarking.BenchmarkRunReportDocumentService.SettleInterruptedAsync(db);
     }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark run-report document settlement failed."); }
+
+    // The same holds for a battery run's battery-completion documents.
+    try
+    {
+        var db = benchmarkCleanupScope.ServiceProvider
+            .GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+        await Overseer.Services.Benchmarking.BenchmarkBatteryReportDocumentService.SettleInterruptedAsync(db);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark battery-report document settlement failed."); }
 
     // Report documents stored without a comparison key get one from their stored comparison request.
     try

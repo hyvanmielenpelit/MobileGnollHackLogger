@@ -184,6 +184,39 @@
   color: #a1a1aa;
 }
 
+.bbe-count-need {
+  color: #fbbf24;
+}
+
+/* The reason the save button is unavailable sits at the start of the footer, the buttons at its end. */
+.dialog-footer {
+  container: bbe-footer / inline-size;
+  align-items: center;
+}
+
+.bbe-save-reason {
+  flex: 1 1 0;
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  min-inline-size: 0;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #aaa;
+
+  svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+}
+
+/* A narrow dialog: the reason takes a row of its own above the buttons. */
+@container bbe-footer (inline-size < 40rem) {
+  .bbe-save-reason {
+    flex-basis: 100%;
+  }
+}
+
 .bbe-scheme {
   margin-block-end: 12px;
 }

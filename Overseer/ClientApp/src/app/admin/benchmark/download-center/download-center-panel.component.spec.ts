@@ -1,6 +1,6 @@
 import type { Mock } from "vitest";
 import { ChangeDetectionStrategy, Component, ViewChild } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, TestRequest, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -12,7 +12,10 @@ import {
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportDocumentOrigin,
-  BenchmarkReportPeerNaming
+  BenchmarkReportPeerNaming,
+  BenchmarkRunReportDocumentsStatus,
+  BenchmarkRunReportJobDto,
+  BenchmarkRunReportJobPhase
 } from '../../../services/admin-benchmark.service';
 import type { PdfViewerRequest } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { REPORT_LIBRARY_ALL_TAKE } from '../report-pack/report-document-format';
@@ -20,6 +23,7 @@ import { REPORT_CHART_STORAGE_KEY, ReportChartPublishResult, ReportChartSelectio
 import { ReportChartPickerComponent } from '../report-pack/report-chart-picker.component';
 import {
   CHART_SKIP_REASONS,
+  DOWNLOAD_CENTER_REPORT_JOB_POLL_MS,
   DOWNLOAD_CENTER_SEARCH_DEBOUNCE_MS,
   DOWNLOAD_CENTER_STORAGE_KEY,
   DOWNLOAD_CENTER_VIEW_STORAGE_KEY,
@@ -976,5 +980,180 @@ describe('DownloadCenterPanelComponent', () => {
       expect(rowEl('doc:11').querySelector('.dc-charts-state')!.textContent!.trim()).toBe('None');
       expect(hostComponent.changes).toBe(1);
     });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The battery context
+  // -------------------------------------------------------------------------------------------
+
+  describe('battery context', () => {
+    const JOB_URL = '/api/admin/benchmark/batteries/runs/7/report-documents/job';
+    const REPORT_URL = '/api/admin/benchmark/batteries/runs/7/report';
+    const BATTERY: DownloadCenterContext = { kind: 'battery', batteryRunId: 7, label: 'Core Battery · Gemini Flash' };
+
+    /** A document about battery run 7: a battery-completion one unless `origin` says otherwise. */
+    function batteryDoc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
+      return doc(id, audience, {
+        subjectKey: 'battery:7',
+        subjectLabel: 'Gemini Flash',
+        subjectRunIds: [101, 102],
+        suiteId: null,
+        suiteName: '',
+        // A battery-completion document; the client enum lists the first two origins only.
+        origin: 3 as number as BenchmarkReportDocumentOrigin,
+        comparisonKey: null,
+        comparisonEntryCount: 1,
+        peerCount: 0,
+        peerLetters: {},
+        ...overrides
+      });
+    }
+
+    function job(phase: BenchmarkRunReportJobPhase, status = BenchmarkRunReportDocumentsStatus.Writing): BenchmarkRunReportJobDto {
+      return {
+        runId: 7, status, message: null, phase,
+        queuedAtUtc: '2026-10-03T08:00:00Z', slotAcquiredAtUtc: null, finishedAtUtc: null, cancelRequestedAtUtc: null,
+        jobsAhead: null, blockingJobLabel: null, audiences: [ExecutiveSummary, TechnicalReport],
+        writerConfigId: 7, writerDisplayName: 'Claude Opus writer', writerProvider: 'Anthropic', writerModelId: 'claude-opus',
+        writerThinkingLevel: null, job: null as unknown as BenchmarkRunReportJobDto['job'], serverTimeUtc: '2026-10-03T08:00:10Z'
+      };
+    }
+
+    function flushJob(view: BenchmarkRunReportJobDto | null): void {
+      const request = http.expectOne(JOB_URL);
+      expect(request.request.method).toBe('GET');
+      if (view) {
+        request.flush(view);
+      } else {
+        request.flush(null, { status: 204, statusText: 'No Content' });
+      }
+    }
+
+    /** Renders the battery context and answers its document list and its job request. */
+    function openBattery(documents: BenchmarkReportDocumentListItemDto[], view: BenchmarkRunReportJobDto | null = null): TestRequest {
+      hostComponent.context = BATTERY;
+      fixture.detectChanges();
+      const list = expectList();
+      list.flush(documents);
+      flushJob(view);
+      fixture.detectChanges();
+      return list;
+    }
+
+    it('lists the analysis report and every document about the battery run, by subject, and no member run\'s files', () => {
+      const list = openBattery([
+        batteryDoc(21, ExecutiveSummary),
+        batteryDoc(22, TechnicalReport),
+        batteryDoc(23, InternalBrief, { origin: BenchmarkReportDocumentOrigin.ReportPack, peerCount: 2 })
+      ]);
+
+      expect(list.request.params.get('subject')).toBe('battery:7');
+      expect(list.request.params.has('runId')).toBe(false);
+      expect(list.request.params.has('origin')).toBe(false);
+      expect([...rowKeys()].sort()).toEqual(['battery-report:7', 'doc:21', 'doc:22', 'doc:23']);
+      expect(panel().rows.some(row => row.runId !== null)).toBe(false);
+
+      const report = rowEl('battery-report:7');
+      expect(flat(report.querySelector('.dc-card-type'))).toBe('Battery analysis report');
+      expect(flat(report.querySelector('.dc-card-title'))).toBe('Battery analysis report, battery run #7');
+      expect(flat(report.querySelector('.dc-doc-detail'))).toBe('Core Battery · Gemini Flash');
+      expect(report.querySelector('.gh-tag-internal')).not.toBeNull();
+      expect(report.querySelector('.dc-view-btn')).toBeNull();
+      expect(report.querySelector('.dc-delete-btn')).toBeNull();
+      expect(panel().rows.find(row => row.key === 'battery-report:7')!.formats).toEqual(['md']);
+
+      // A battery-completion document is not deleted here; a Report Pack document about the battery run is.
+      expect(rowEl('doc:21').querySelector('.dc-view-btn')).not.toBeNull();
+      expect(rowEl('doc:21').querySelector('.dc-delete-btn')).toBeNull();
+      expect(rowEl('doc:23').querySelector('.dc-delete-btn')).not.toBeNull();
+    });
+
+    it('names a battery run\'s documents after it', () => {
+      const unprefixed = reportDocumentFileStem(batteryDoc(21, ExecutiveSummary, { subjectKey: 'group:4' }), '');
+      expect(reportDocumentFileStem(batteryDoc(21, ExecutiveSummary), '')).toBe(`battery-run-7_${unprefixed}`);
+      const researcher = reportDocumentFileStem(batteryDoc(22, TechnicalReport), '');
+      expect(researcher.startsWith('battery-run-7_')).toBe(true);
+      expect(researcher.endsWith('_Researcher_Report')).toBe(true);
+      expect(reportDocumentFileStem(batteryDoc(23, ExecutiveSummary, { peerCount: 2 }), '')).toBe(`battery-run-7_vs-2-models_${unprefixed}`);
+    });
+
+    it('downloads the analysis report as Markdown under the server\'s name, marked internal', async () => {
+      const saveText = vi.spyOn(downloadCenterIo, 'saveText').mockReturnValue(undefined);
+      openBattery([batteryDoc(21, ExecutiveSummary)]);
+      check('doc:21');
+      expect(panel().isIncluded(panel().rows.find(row => row.key === 'battery-report:7')!)).toBe(true);
+
+      const done = panel().download();
+      const request = http.expectOne(r => r.method === 'GET' && r.url === REPORT_URL);
+      expect(request.request.responseType).toBe('text');
+      request.flush('# Battery run #7\n', {
+        headers: { 'Content-Disposition': 'attachment; filename="Core_Battery_battery-run-7_20261002_090000.md"' }
+      });
+      await done;
+      fixture.detectChanges();
+
+      expect(saveText).toHaveBeenCalledTimes(1);
+      const [fileName, content, mime] = vi.mocked(saveText).mock.lastCall!;
+      expect(fileName).toBe('Core_Battery_battery-run-7_20261002_090000_INTERNAL.md');
+      expect(content).toBe('# Battery run #7\n');
+      expect(mime).toBe('text/markdown;charset=utf-8');
+      expect(text('.dc-status')).toBe('Downloaded 1 file.');
+    });
+
+    it('lists the analysis report alone, with a notice, when the documents cannot be loaded', () => {
+      hostComponent.context = BATTERY;
+      fixture.detectChanges();
+      expectList().flush({ error: 'Boom' }, { status: 500, statusText: 'Server Error' });
+      flushJob(null);
+      fixture.detectChanges();
+
+      expect(rowKeys()).toEqual(['battery-report:7']);
+      expect(text('.dc-notice')).toBe('The report documents of this battery run could not be loaded; the analysis report is still listed.');
+    });
+
+    it('shows nothing about writing when the battery run has no job', () => {
+      openBattery([batteryDoc(21, ExecutiveSummary)]);
+
+      expect(panel().reportJobPhase).toBeNull();
+      expect(q('.dc-report-job-notice')).toBeNull();
+      http.expectNone(JOB_URL);
+    });
+
+    it('shows a notice while the reports are being written and polls the job every 5 s', fakeAsync(() => {
+      openBattery([], job('Queued', BenchmarkRunReportDocumentsStatus.Pending));
+
+      expect(text('.dc-report-job-notice')).toBe(
+        'The AI-written reports of this battery run are being written (waiting for the report writer). They appear here when they are done.');
+      expect(q('.dc-report-job-status')!.getAttribute('role')).toBe('status');
+
+      tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS - 1);
+      http.expectNone(JOB_URL);
+      tick(1);
+      flushJob(job('Writing'));
+      fixture.detectChanges();
+      expect(text('.dc-report-job-notice')).toContain('(writing)');
+
+      // Finished: the battery run's documents are listed again, and the notice goes.
+      tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
+      flushJob(job('Finished', BenchmarkRunReportDocumentsStatus.Completed));
+      const reload = expectList();
+      expect(reload.request.params.get('subject')).toBe('battery:7');
+      reload.flush([batteryDoc(21, ExecutiveSummary), batteryDoc(22, TechnicalReport)]);
+      fixture.detectChanges();
+
+      expect(q('.dc-report-job-notice')).toBeNull();
+      expect([...rowKeys()].sort()).toEqual(['battery-report:7', 'doc:21', 'doc:22']);
+      tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS * 2);
+      http.expectNone(JOB_URL);
+    }));
+
+    it('stops polling the job when the panel is deactivated', fakeAsync(() => {
+      openBattery([], job('Writing'));
+      expect(q('.dc-report-job-notice')).not.toBeNull();
+
+      panel().deactivate();
+      tick(DOWNLOAD_CENTER_REPORT_JOB_POLL_MS * 2);
+      http.expectNone(JOB_URL);
+    }));
   });
 });

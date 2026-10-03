@@ -30,6 +30,21 @@ import { BenchmarkShellBridge } from './benchmark-shell-bridge.service';
 /** How a start request ended: started, or held for a same-provider acknowledgment. */
 export type BenchmarkStartOutcome = { kind: 'started' } | { kind: 'sameProvider'; warning: SameProviderWarningDto };
 
+/** A series or battery poller that keeps failing to reach the server, for the shell's Lost contact notice. */
+export interface BenchmarkLostContactNotice {
+  readonly kind: 'series' | 'battery';
+  /** The series id or battery run id the poller follows. */
+  readonly id: number;
+  /** Consecutive failed polls. */
+  readonly failureCount: number;
+  /** When the streak's first failed poll was made (client clock, ms). */
+  readonly sinceMs: number;
+  /** The gap before the next attempt; null once the poller has given up. */
+  readonly retryIntervalMs: number | null;
+  /** The failures lasted {@link BenchmarkActiveRunMonitor.LOST_CONTACT_GIVE_UP_MS} and polling stopped. */
+  readonly gaveUp: boolean;
+}
+
 /** Starts runs, series and battery runs, follows them with their pollers, and signals their completion on every sub-tab. */
 @Injectable()
 export class BenchmarkActiveRunMonitor implements OnDestroy {
@@ -60,9 +75,29 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
    * A single failed poll is noise — a dropped request, a momentary 502 — and stopping the tab's
    * only view of a run over one of those is worse than the failure itself. Five in a row, at the
    * run poller's 2 s cadence, is ~10 s of the server genuinely not answering, which is when
-   * polling gives up rather than looping silently forever.
+   * polling gives up rather than looping silently forever. This is the run poller's limit; the
+   * series and battery pollers back off instead (see {@link LOST_CONTACT_BACKOFF_MS}).
    */
   private static readonly MAX_CONSECUTIVE_POLL_FAILURES = 5;
+
+  /**
+   * The gaps between a series or battery poller's attempts while its polls keep failing: 5, 10, 20
+   * and 40 s, then 60 s for as long as the failures last. A series or battery runs for hours, and a
+   * server restart or a network drop of a few minutes must not end the tab's view of it.
+   */
+  static readonly LOST_CONTACT_BACKOFF_MS: readonly number[] = [5000, 10000, 20000, 40000, 60000];
+
+  /** How long a series or battery poller keeps failing before it stops. */
+  static readonly LOST_CONTACT_GIVE_UP_MS = 10 * 60_000;
+
+  /** The consecutive failures that raise the Lost contact notice; a single failed poll is noise. */
+  static readonly LOST_CONTACT_NOTICE_AFTER_FAILURES = 2;
+
+  /**
+   * Set while the series or battery poller is failing to reach the server, and kept after it gives
+   * up. Cleared by that poller's next successful poll or restart.
+   */
+  lostContact: BenchmarkLostContactNotice | null = null;
 
   runElapsedInterval: any = null;
 
@@ -71,6 +106,12 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   lastRunPollError: string | null = null;
 
   runPollFailureCount = 0;
+
+  /**
+   * The member run whose poller gave up on failures while its series or battery poller kept going;
+   * that poller's next successful poll restarts it.
+   */
+  private runPollGaveUpRunId: number | null = null;
 
   runQuestionsLoadError: string | null = null;
 
@@ -140,6 +181,11 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
 
   private seriesPollFailureCount = 0;
 
+  private seriesPollFailureSinceMs = 0;
+
+  /** While the series poller is failing, ticks before this time (client clock, ms) are skipped. */
+  private seriesNextPollDueAtMs = 0;
+
   private seriesVisibilityChangeHandler: (() => void) | null = null;
 
   /**
@@ -170,6 +216,11 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   private batteryPollTickerHandle: BenchmarkPollTickerHandle | null = null;
 
   private batteryPollFailureCount = 0;
+
+  private batteryPollFailureSinceMs = 0;
+
+  /** While the battery poller is failing, ticks before this time (client clock, ms) are skipped. */
+  private batteryNextPollDueAtMs = 0;
 
   private batteryVisibilityChangeHandler: (() => void) | null = null;
 
@@ -413,11 +464,16 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   startSeriesPolling(seriesId: number): void {
     this.stopSeriesPolling();
     this.seriesPollFailureCount = 0;
+    this.seriesNextPollDueAtMs = 0;
+    this.clearLostContact('series');
     this.lockedSeriesId = seriesId;
     this.backgroundActivity.acquireForSeries(seriesId);
     this.lastSeriesPollAttemptAtMs = Date.now();
     this.pollSeries(seriesId);
     this.seriesPollTickerHandle = this.pollTicker.start(BenchmarkActiveRunMonitor.SERIES_POLL_INTERVAL_MS, () => {
+      if (Date.now() < this.seriesNextPollDueAtMs) {
+        return;
+      }
       if (typeof document !== 'undefined' && document.hidden) {
         const hiddenPollDue = (this.launcher.completionSound || this.launcher.completionNotification)
           && (Date.now() - this.lastSeriesPollAttemptAtMs) >= BenchmarkActiveRunMonitor.HIDDEN_POLL_INTERVAL_MS;
@@ -462,6 +518,8 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     this.benchmarkService.getRunSeries(seriesId).subscribe({
       next: (series) => {
         this.seriesPollFailureCount = 0;
+        this.seriesNextPollDueAtMs = 0;
+        this.clearLostContact('series');
         this.activeSeries = series;
         // Chimes once per series actually watched live: seriesIsLive keeps re-adding the id while
         // it runs, and the transition into Completed/Cancelled/Failed or Stopped (which needs the
@@ -477,9 +535,10 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
           }
         }
         // The member currently running is what the single-run banner and dialog describe, so the
-        // run poller follows the series rather than being started again per member.
+        // run poller follows the series rather than being started again per member. A member poller
+        // that gave up on failures is restarted here once the server answers again.
         const running = series.members.find(m => formatStatus(m.status) === 'Running');
-        if (running && running.runId !== this.activeRunId) {
+        if (running && (running.runId !== this.activeRunId || running.runId === this.runPollGaveUpRunId)) {
           this.activeRunId = running.runId;
           this.startPolling(running.runId);
         }
@@ -493,10 +552,17 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
       },
       error: (err) => {
         console.error('Failed to poll benchmark run series', err);
-        this.seriesPollFailureCount++;
-        if (this.seriesPollFailureCount >= BenchmarkActiveRunMonitor.MAX_CONSECUTIVE_POLL_FAILURES) {
-          this.stopSeriesPolling();
+        if (this.seriesPollFailureCount === 0) {
+          this.seriesPollFailureSinceMs = Date.now();
         }
+        this.seriesPollFailureCount++;
+        const nextDueAtMs = this.noteLostContact('series', seriesId, this.seriesPollFailureCount, this.seriesPollFailureSinceMs);
+        if (nextDueAtMs === null) {
+          this.stopSeriesPolling();
+        } else {
+          this.seriesNextPollDueAtMs = nextDueAtMs;
+        }
+        this.viewSync.notify();
       }
     });
   }
@@ -613,11 +679,16 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   startBatteryPolling(batteryRunId: number): void {
     this.stopBatteryPolling();
     this.batteryPollFailureCount = 0;
+    this.batteryNextPollDueAtMs = 0;
+    this.clearLostContact('battery');
     this.lockedBatteryRunId = batteryRunId;
     this.backgroundActivity.acquireForBattery(batteryRunId);
     this.lastBatteryPollAttemptAtMs = Date.now();
     this.pollBatteryRun(batteryRunId);
     this.batteryPollTickerHandle = this.pollTicker.start(BenchmarkActiveRunMonitor.SERIES_POLL_INTERVAL_MS, () => {
+      if (Date.now() < this.batteryNextPollDueAtMs) {
+        return;
+      }
       if (typeof document !== 'undefined' && document.hidden) {
         const hiddenPollDue = (this.launcher.completionSound || this.launcher.completionNotification)
           && (Date.now() - this.lastBatteryPollAttemptAtMs) >= BenchmarkActiveRunMonitor.HIDDEN_POLL_INTERVAL_MS;
@@ -662,6 +733,8 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     this.benchmarkService.getBatteryRun(batteryRunId).subscribe({
       next: (batteryRun) => {
         this.batteryPollFailureCount = 0;
+        this.batteryNextPollDueAtMs = 0;
+        this.clearLostContact('battery');
         this.activeBatteryRun = batteryRun;
         // One signal per battery run watched live, at whatever end it reaches except a cancel. Its
         // members' own completions are accounted for here, so none of them signals afterwards.
@@ -678,7 +751,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         }
         // The run banner and dialog follow the member in flight, as they do for a series.
         const runningId = batteryRun.currentRunId;
-        if (runningId != null && runningId !== this.activeRunId) {
+        if (runningId != null && (runningId !== this.activeRunId || runningId === this.runPollGaveUpRunId)) {
           this.activeRunId = runningId;
           this.startPolling(runningId);
         }
@@ -691,10 +764,17 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
       },
       error: (err) => {
         console.error('Failed to poll benchmark battery run', err);
-        this.batteryPollFailureCount++;
-        if (this.batteryPollFailureCount >= BenchmarkActiveRunMonitor.MAX_CONSECUTIVE_POLL_FAILURES) {
-          this.stopBatteryPolling();
+        if (this.batteryPollFailureCount === 0) {
+          this.batteryPollFailureSinceMs = Date.now();
         }
+        this.batteryPollFailureCount++;
+        const nextDueAtMs = this.noteLostContact('battery', batteryRunId, this.batteryPollFailureCount, this.batteryPollFailureSinceMs);
+        if (nextDueAtMs === null) {
+          this.stopBatteryPolling();
+        } else {
+          this.batteryNextPollDueAtMs = nextDueAtMs;
+        }
+        this.viewSync.notify();
       }
     });
   }
@@ -703,6 +783,44 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   get batteryIsLive(): boolean {
     const status = this.activeBatteryRun?.status;
     return status === 'Pending' || status === 'Running' || status === 'WaitingForCap';
+  }
+
+  // --- Lost contact ---
+
+  /**
+   * Records a series or battery poller's failed poll and returns when its next attempt is due
+   * (client clock, ms), or null once the failures have lasted {@link LOST_CONTACT_GIVE_UP_MS}. The
+   * notice appears once {@link LOST_CONTACT_NOTICE_AFTER_FAILURES} polls in a row have failed.
+   */
+  private noteLostContact(kind: 'series' | 'battery', id: number, failureCount: number, sinceMs: number): number | null {
+    const now = Date.now();
+    const backoff = BenchmarkActiveRunMonitor.LOST_CONTACT_BACKOFF_MS;
+    const retryIntervalMs = backoff[Math.min(failureCount, backoff.length) - 1];
+    const gaveUp = now - sinceMs >= BenchmarkActiveRunMonitor.LOST_CONTACT_GIVE_UP_MS;
+    if (gaveUp || failureCount >= BenchmarkActiveRunMonitor.LOST_CONTACT_NOTICE_AFTER_FAILURES) {
+      this.lostContact = { kind, id, failureCount, sinceMs, retryIntervalMs: gaveUp ? null : retryIntervalMs, gaveUp };
+    }
+    return gaveUp ? null : now + retryIntervalMs;
+  }
+
+  private clearLostContact(kind: 'series' | 'battery'): void {
+    if (this.lostContact?.kind === kind) {
+      this.lostContact = null;
+    }
+  }
+
+  /** The Lost contact notice's sentence, or null while both pollers reach the server. */
+  get lostContactText(): string | null {
+    const notice = this.lostContact;
+    if (!notice) return null;
+    const subject = notice.kind === 'battery' ? `Battery Run #${notice.id}` : `Series #${notice.id}`;
+    const giveUpMinutes = BenchmarkActiveRunMonitor.LOST_CONTACT_GIVE_UP_MS / 60_000;
+    if (notice.gaveUp) {
+      return `Lost contact with the server for ${giveUpMinutes} minutes, so this page stopped following ${subject}. `
+        + 'It may still be running on the server; reload the page to reattach.';
+    }
+    return `Lost contact with the server: the last ${notice.failureCount} polls for ${subject} failed. `
+      + `Retrying every ${notice.retryIntervalMs! / 1000} s for up to ${giveUpMinutes} minutes.`;
   }
 
   /** Opens the Battery Progress dialog on the live battery run, or on one the Multi-Suite tab names. */
@@ -787,6 +905,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   startPolling(runId: number) {
     this.stopPolling();
     this.runPollFailureCount = 0;
+    this.runPollGaveUpRunId = null;
     if (this.activeRunReportJob?.runId !== runId) {
       this.activeRunReportJob = null;
     }
@@ -1104,6 +1223,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
           this.rerunLaunchPending = false;
           this.rerunLaunchedAtMs = null;
           this.stopPolling();
+          this.runPollGaveUpRunId = runId;
         }
       }
     });

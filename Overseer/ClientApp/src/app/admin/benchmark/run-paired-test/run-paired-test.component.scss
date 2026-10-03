@@ -1,0 +1,72 @@
+:host {
+  display: block;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.rpt {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  p {
+    margin: 0;
+  }
+}
+
+.rpt-lead,
+.rpt-status,
+.rpt-changed {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.rpt-status:empty {
+  display: none;
+}
+
+.rpt-empty {
+  color: #a1a1aa;
+}
+
+/* One column, at most 36 rem wide: the baseline, the treatment, then Compare at its own width. */
+.rpt-form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 36rem;
+}
+
+.rpt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+
+  label,
+  .rpt-treatment-label {
+    font-size: var(--text-secondary);
+    font-weight: 600;
+  }
+}
+
+.rpt-treatment {
+  font-variant-numeric: tabular-nums;
+}
+
+.rpt-kind {
+  font-weight: 600;
+}
+
+.rpt-changed code {
+  font-family: var(--font-mono);
+}
+
+.rpt-changed-label {
+  margin-inline-end: 4px;
+}
+
+.rpt-result {
+  margin-top: 4px;
+}

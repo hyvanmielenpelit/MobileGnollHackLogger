@@ -281,6 +281,25 @@ public sealed class BenchmarkReportQuestion
 
     /// <summary>For a group: how many of its runs scored this item.</summary>
     public int RunCount { get; set; }
+
+    /// <summary>
+    /// A battery question's suite-qualified reference, <c>S2-Q7</c>: the suite's number in the battery
+    /// and the question's number within that suite. Null on a run or group sheet, whose questions are
+    /// <c>Q&lt;n&gt;</c>.
+    /// </summary>
+    public string? Reference { get; set; }
+
+    /// <summary>A battery question's suite number, from 1 in the battery's suite order; null on a run or group sheet.</summary>
+    public int? Suite { get; set; }
+
+    /// <summary>A battery question's rounds with a critical error, from the persisted item row; null on a run or group sheet.</summary>
+    public int? CriticalErrorCount { get; set; }
+
+    /// <summary>
+    /// A battery question whose text, rubric, answer excerpt and grader comments the writer was given;
+    /// null on a run or group sheet, where every question is given in full.
+    /// </summary>
+    public bool? Detailed { get; set; }
 }
 
 /// <summary>
@@ -334,7 +353,7 @@ public sealed class BenchmarkReportFactSheet
 {
     public string SubjectKey { get; set; } = string.Empty;
 
-    /// <summary><c>Run</c> or <c>Group</c>.</summary>
+    /// <summary><c>Run</c>, <c>Group</c> or <c>Battery</c>.</summary>
     public string SubjectKind { get; set; } = string.Empty;
 
     public string SubjectLabel { get; set; } = string.Empty;
@@ -372,8 +391,9 @@ public sealed class BenchmarkReportFactSheet
     public List<string> KnownNames { get; set; } = new();
 
     /// <summary>
-    /// The comparison's own "no pairwise significance test" statement, printed verbatim by the
-    /// renderer and shown to the writer.
+    /// The "no pairwise significance test" statement for the comparison's entries, in the documents' own
+    /// fixed wording (<see cref="Overseer.Services.Benchmarking.BenchmarkReportFacts.NoSignificanceStatement(int)"/>);
+    /// shown to the writer, and its presence makes the renderer print its own sentence.
     /// </summary>
     public string NoSignificanceSummary { get; set; } = string.Empty;
 
@@ -400,6 +420,44 @@ public sealed class BenchmarkReportFactSheet
     /// and on a document stored before format version 7.
     /// </summary>
     public List<BenchmarkReportPairedDifference> PairedDifferences { get; set; } = new();
+
+    /// <summary>The battery run a battery subject's sheet describes; null on a run or group sheet.</summary>
+    public BenchmarkReportBatterySubject? Battery { get; set; }
+}
+
+/// <summary>The battery run behind a battery subject: its definition as run, and its suites in order.</summary>
+public sealed class BenchmarkReportBatterySubject
+{
+    public long BatteryRunId { get; set; }
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The definition's revision; null when the definition snapshot cannot be read.</summary>
+    public int? Revision { get; set; }
+
+    /// <summary>The weighting scheme in words, e.g. <c>Questions and difficulty</c>.</summary>
+    public string Scheme { get; set; } = string.Empty;
+
+    public int SuiteCount { get; set; }
+    public int RunsPerSuite { get; set; }
+
+    /// <summary>The usable member runs behind the result.</summary>
+    public int MemberRunCount { get; set; }
+
+    /// <summary>In suite order.</summary>
+    public List<BenchmarkReportBatterySuite> Suites { get; set; } = new();
+}
+
+/// <summary>One suite of a battery subject.</summary>
+public sealed class BenchmarkReportBatterySuite
+{
+    /// <summary>The suite's number in the battery, from 1: the <c>S</c> of a question reference and the <c>n</c> of <c>suite.&lt;n&gt;.*</c>.</summary>
+    public int Number { get; set; }
+
+    public long? SuiteId { get; set; }
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>The suite's questions on the sheet.</summary>
+    public int QuestionCount { get; set; }
 }
 
 /// <summary>
@@ -631,7 +689,7 @@ public sealed class BenchmarkReportQuestionNote
 /// <summary>One validation problem, and whether the offending item was dropped (stored as ValidationNotesJson).</summary>
 public sealed class BenchmarkReportValidationNote
 {
-    /// <summary>The D7 rule number, 1–19.</summary>
+    /// <summary>The D7 rule number, 1–19, or 20 for a battery prompt that left out question detail to stay within its budget.</summary>
     public int Rule { get; set; }
 
     /// <summary>Where: <c>headline</c>, <c>sections.abstract</c>, <c>weaknesses[1]</c>, ….</summary>
@@ -647,14 +705,18 @@ public sealed class BenchmarkReportValidationNote
 // API DTOs
 // ---------------------------------------------------------------------------------------------
 
-/// <summary>Preview and start request. The first three fields mirror <see cref="BenchmarkModelComparisonRequest"/>.</summary>
+/// <summary>Preview and start request. The first four fields mirror <see cref="BenchmarkModelComparisonRequest"/>.</summary>
 public class BenchmarkReportPackRequest
 {
     public List<long> RunIds { get; set; } = new();
     public List<long> GroupIds { get; set; } = new();
+
+    /// <summary>Battery runs, each one comparison entry; a request naming any of them names no run or group.</summary>
+    public List<long> BatteryRunIds { get; set; } = new();
+
     public BenchmarkModelComparisonPricingBasis PricingBasis { get; set; } = BenchmarkModelComparisonPricingBasis.Current;
 
-    /// <summary>The comparison entry key of the subject, <c>run:&lt;id&gt;</c> or <c>group:&lt;id&gt;</c>.</summary>
+    /// <summary>The comparison entry key of the subject, <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c> or <c>battery:&lt;id&gt;</c>.</summary>
     public string SubjectKey { get; set; } = string.Empty;
 
     public List<BenchmarkReportAudience> Audiences { get; set; } = new();
@@ -777,7 +839,7 @@ public class BenchmarkReportDocumentListItemDto
     public Guid PackId { get; set; }
     public BenchmarkReportAudience Audience { get; set; }
 
-    /// <summary>A report pack's document (1), or one written after its run completed (2).</summary>
+    /// <summary>A report pack's document (1), one written after its run completed (2), or one written after its battery run finished (3).</summary>
     public BenchmarkReportDocumentOrigin Origin { get; set; }
 
     public string Title { get; set; } = string.Empty;

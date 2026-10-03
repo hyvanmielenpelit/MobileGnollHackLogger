@@ -26,6 +26,7 @@ import {
   BenchmarkRunGroupTierPreviewDto,
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
+import { RUN_HISTORY_LIMIT } from '../benchmark.models';
 
 // ---------------------------------------------------------------------------------------------
 // The shapes of BenchmarkGroupAnalysisDto.result and .comparison.
@@ -557,7 +558,7 @@ export class MultiRunComponent implements OnInit, OnChanges {
     if (this.suiteId == null) return;
     this.loadingRuns = true;
     this.runsError = null;
-    this.benchmarkService.getRuns(this.suiteId, 200).subscribe({
+    this.benchmarkService.getRuns(this.suiteId, RUN_HISTORY_LIMIT).subscribe({
       next: (runs) => {
         this.availableRuns = runs ?? [];
         this.loadingRuns = false;

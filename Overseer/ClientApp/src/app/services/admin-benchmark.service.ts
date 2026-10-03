@@ -12,7 +12,6 @@ import {
   BenchmarkModelComparisonQuery,
   MODEL_COMPARABILITY_INDEX_ENDPOINT,
   MODEL_COMPARISON_ENDPOINT,
-  comparabilityIndexQueryParams,
   modelComparisonQueryParams
 } from '../admin/benchmark/model-comparison/model-comparison.models';
 
@@ -2053,6 +2052,10 @@ export interface BenchmarkBatteryDto {
   batteryRunCount: number;
   /** A battery run of this battery is Pending, Running or WaitingForCap; delete is refused. */
   hasActiveBatteryRun: boolean;
+  /** Ranked rows on the current definition's leaderboard; absent from an older server. */
+  rankedResultCount?: number;
+  /** The newest analysis of any battery run of the current definition, ranked or not. */
+  latestAnalysisAtUtc?: string | null;
   suites: BenchmarkBatterySuiteDto[];
   /** One preview per scheme, the declared one marked. */
   weightPreviews: BenchmarkBatteryWeightPreviewDto[];
@@ -2147,6 +2150,12 @@ export interface BenchmarkBatteryRunSuiteDto {
   suiteId: number;
   suiteName: string;
   customWeight?: number | null;
+  /** The instrument hashes recorded for the suite at start; null means not recorded. */
+  candidateSystemPromptSha256?: string | null;
+  toolGuidesSha256?: string | null;
+  knowledgeBaseHeadSha?: string | null;
+  wikiHeadSha?: string | null;
+  sourceCodeHeadSha?: string | null;
 }
 
 /** One run in one (suite, round) slot of a battery run. */
@@ -2235,6 +2244,8 @@ export interface BenchmarkBatteryRunDto {
   latestAnalysisId?: number | null;
   latestAnalysisAtUtc?: string | null;
   latestAnalysisComplete?: boolean | null;
+  /** The latest analysis's comparability class; null while it is incomplete. */
+  comparabilityClassSha256?: string | null;
   overallIndex?: number | null;
   overallIndexHalfWidth?: number | null;
   overallIndexLower?: number | null;
@@ -2245,6 +2256,22 @@ export interface BenchmarkBatteryRunDto {
   analysisStale: boolean;
   /** The latest analysis lists an excluded member, so a recompute may change it. */
   analysisHasExcludedMembers: boolean;
+  /** The model under test as the newest usable member ran it, else as the start request names it. */
+  testedProvider?: string | null;
+  testedModelId?: string | null;
+  testedThinkingLevel?: string | null;
+  testedReasoningMode?: string | null;
+  testedServiceTier?: string | null;
+  assessorLabel?: string | null;
+  /** Panel runs only. */
+  coAssessorLabel?: string | null;
+  scoringProfileName?: string | null;
+  verboseMode?: boolean;
+  /** The battery-completion documents' writer; null when none was chosen. */
+  reportWriterModelConfigurationId?: number | null;
+  reportDocumentsStatus?: BenchmarkRunReportDocumentsStatus;
+  /** Why the documents failed or were skipped; null otherwise. */
+  reportDocumentsMessage?: string | null;
 }
 
 /** Computes a battery analysis, optionally paired against a baseline battery run. */
@@ -2308,6 +2335,11 @@ export interface BenchmarkBatteryLeaderboardRowDto {
   overallSpeedIndex?: number | null;
   totalCost?: number | null;
   passCost?: number | null;
+  testedProvider?: string | null;
+  testedModelId?: string | null;
+  testedThinkingLevel?: string | null;
+  testedReasoningMode?: string | null;
+  testedServiceTier?: string | null;
 }
 
 /** The battery runs whose results may stand in one ranked list. */
@@ -2546,7 +2578,8 @@ export enum BenchmarkReportPeerNaming {
 /** Where a stored document came from: Model Comparison's Report Pack, or a run's completion. */
 export enum BenchmarkReportDocumentOrigin {
   ReportPack = 1,
-  RunCompletion = 2
+  RunCompletion = 2,
+  BatteryCompletion = 3
 }
 
 /** Where a run's two AI-written (run-completion) documents stand. */
@@ -2654,8 +2687,10 @@ export function reportPeerNamingParam(naming: BenchmarkReportPeerNaming): Benchm
 export interface BenchmarkReportPackRequest {
   runIds: number[];
   groupIds: number[];
+  /** Battery results; never mixed with runs or groups. Absent reads as none. */
+  batteryRunIds?: number[];
   pricingBasis: BenchmarkReportPackPricingBasis;
-  /** The comparison entry key of the subject, `run:<id>` or `group:<id>`. */
+  /** The comparison entry key of the subject, `run:<id>`, `group:<id>` or `battery:<id>`. */
   subjectKey: string;
   audiences: BenchmarkReportAudience[];
   writerModelConfigurationId: number;
@@ -2855,10 +2890,12 @@ export interface BenchmarkReportDocumentQuery {
   /** A comparison's entry keys (`run:<id>`, `group:<id>`): the documents written for exactly that set. */
   comparison?: readonly string[] | null;
   origin?: BenchmarkReportDocumentOriginParam | null;
+  /** Documents about exactly this subject: `run:<id>`, `group:<id>` or `battery:<id>`. */
+  subject?: string | null;
 }
 
 /** The list endpoint's `origin` query value. */
-export type BenchmarkReportDocumentOriginParam = 'reportPack' | 'runCompletion';
+export type BenchmarkReportDocumentOriginParam = 'reportPack' | 'runCompletion' | 'batteryCompletion';
 
 /** A text file fetched from the server, with the name its `Content-Disposition` gave it. */
 export interface BenchmarkTextFile {
@@ -2933,6 +2970,134 @@ export function fileNameFromContentDisposition(header: string | null | undefined
   return fallback;
 }
 
+// Paired tests: the wizard's Paired tests view, the run report's and the battery report's Paired Test tabs.
+
+/** Which pairs the wizard's Paired tests view tests. */
+export type BenchmarkPairedComparisonMode = 'Reference' | 'AllPairs';
+
+/** The wizard's paired tests over the same sources as the comparison, which the server compares again. */
+export interface BenchmarkPairedComparisonRequest {
+  runIds: number[];
+  groupIds: number[];
+  batteryRunIds: number[];
+  pricingBasis: BenchmarkReportPackPricingBasis;
+  /** Ignored with two comparable entries. */
+  mode: BenchmarkPairedComparisonMode;
+  /** The entry every other one is tested against in Reference mode; null takes the highest Intelligence Index. */
+  referenceKey?: string | null;
+  /** Bypasses the server's ten-minute response cache. */
+  recompute?: boolean;
+}
+
+/** One suite of a battery Intelligence test (M7). */
+export interface BenchmarkPairedSuiteDetailDto {
+  suiteIndex: number;
+  suiteName: string;
+  pairedItems: number;
+  weightedDifference?: number | null;
+  wilcoxonPValue?: number | null;
+  /** Holm-adjusted across the suites with a Wilcoxon p. */
+  holmAdjustedPValue?: number | null;
+  note?: string | null;
+}
+
+/** One paired test: treatment B against baseline A on the questions both answered. */
+export interface BenchmarkPairedTestDto {
+  baselineKey: string;
+  treatmentKey: string;
+  pairedItems: number;
+  unpairedItems: number;
+  revisionMismatched: number;
+  /** B − A for a difference; B ÷ A, the geometric-mean ratio, for a ratio. */
+  effect?: number | null;
+  effectLower?: number | null;
+  effectUpper?: number | null;
+  effectKind: 'Difference' | 'Ratio';
+  dz?: number | null;
+  pValue?: number | null;
+  adjustedPValue?: number | null;
+  method: string;
+  direction: 'Higher' | 'Lower' | 'None';
+  /** The adjusted p-value is below 0.05. */
+  established: boolean;
+  verdict: string;
+  notTestedReason?: string | null;
+  note?: string | null;
+  /** A battery Intelligence row only. */
+  suites?: BenchmarkPairedSuiteDetailDto[] | null;
+}
+
+/** One measure's family of paired tests. */
+export interface BenchmarkPairedMeasureDto {
+  /** `Intelligence`, `Accuracy`, `Completeness`, `Conciseness`, `Readability`, `Speed` or `Cost`. */
+  measure: string;
+  label: string;
+  category: 'Intelligence' | 'QualityDimension' | 'Speed' | 'Cost';
+  primary: boolean;
+  /** The tests actually made: pairs with a p-value. */
+  familySize: number;
+  adjustment: 'None' | 'Holm';
+  /** Ready to render: "Single comparison — no adjustment needed", "Holm-adjusted across 3 tests". */
+  adjustmentNote: string;
+  notTestedReason?: string | null;
+  caption?: string | null;
+  pairs: BenchmarkPairedTestDto[];
+}
+
+/** The wizard's paired tests: one family per measure. */
+export interface BenchmarkPairedComparisonDto {
+  computedAtUtc: string;
+  subjectKind: 'Runs' | 'Batteries';
+  pricingBasis: string;
+  mode: BenchmarkPairedComparisonMode;
+  referenceKey?: string | null;
+  /** The comparable entries that took part, in the comparison's order. */
+  entryKeys: string[];
+  /** The most comparable entries All pairs is offered for. */
+  allPairsLimit: number;
+  singleRunCaveat?: string | null;
+  /** That each measure is its own family and the measures are not adjusted for each other. */
+  measuresNote: string;
+  measures: BenchmarkPairedMeasureDto[];
+}
+
+/** The kind of paired comparison two runs, or two battery results, make. */
+export type BenchmarkPairKind = 'ModelComparison' | 'Verification' | 'Replicate';
+
+/** One pair tested on every measure, unadjusted: two runs on one suite, or two battery results of one definition. */
+export interface BenchmarkPairComparisonDto {
+  computedAtUtc: string;
+  subjectKind: 'Run' | 'Battery';
+  treatmentId: number;
+  baselineId: number;
+  treatmentKey: string;
+  baselineKey: string;
+  treatmentLabel: string;
+  baselineLabel: string;
+  kind: BenchmarkPairKind;
+  kindLabel: string;
+  explanation: string;
+  /** The model-axis keys of a model comparison, the instrument key of a verification. */
+  changedKeys: string[];
+  differences: BenchmarkComparabilityDifferenceDto[];
+  speedDegraded: boolean;
+  speedDegradingKeys: string[];
+  costDegraded: boolean;
+  costDegradingKeys: string[];
+  singleRunCaveat?: string | null;
+  pricingBasis: string;
+  measures: BenchmarkPairedMeasureDto[];
+}
+
+/** The kind of paired comparison one candidate baseline would make with a run. */
+export interface BenchmarkRunPairKindDto {
+  runId: number;
+  kind: BenchmarkPairKind | 'NotComparable';
+  kindLabel: string;
+  changedKeys: string[];
+  /** For `NotComparable`, the reason. */
+  explanation: string;
+}
 /** The root of the battery endpoints (`AdminBenchmarkBatteriesController`). */
 const BATTERIES_ENDPOINT = '/api/admin/benchmark/batteries';
 
@@ -3450,13 +3615,29 @@ export class AdminBenchmarkService {
     return this.http.post<BenchmarkBatteryDto>(`${BATTERIES_ENDPOINT}/${id}/archive`, { archived });
   }
 
-  /** Battery runs, newest first; only those of one battery when `batteryId` is given. */
-  getBatteryRuns(batteryId?: number): Observable<BenchmarkBatteryRunDto[]> {
+  /**
+   * Battery runs, newest first; only those of one battery when `batteryId` is given. `take` is
+   * clamped by the server to 1000; without it the server returns 50.
+   */
+  getBatteryRuns(batteryId?: number, take?: number): Observable<BenchmarkBatteryRunDto[]> {
     let params = new HttpParams();
     if (batteryId != null) {
       params = params.set('batteryId', String(batteryId));
     }
+    if (take != null) {
+      params = params.set('take', String(take));
+    }
     return this.http.get<BenchmarkBatteryRunDto[]>(`${BATTERIES_ENDPOINT}/runs`, { params });
+  }
+
+  /**
+   * Deletes a battery run with its analyses. Its member runs stay as single runs unless
+   * `deleteMembers`; a run that is also a member of another battery run is always kept. 409 while
+   * the battery run is live.
+   */
+  deleteBatteryRun(id: number, deleteMembers = false): Observable<void> {
+    const params = new HttpParams().set('deleteMembers', String(deleteMembers));
+    return this.http.delete<void>(`${BATTERIES_ENDPOINT}/runs/${id}`, { params });
   }
 
   /**
@@ -3548,15 +3729,43 @@ export class AdminBenchmarkService {
   }
 
   /**
+   * The wizard's paired tests over the given sources. 400 `{ error }` or a string for a mixed
+   * request, fewer than two comparable entries, All pairs above the limit, or an unknown reference.
+   */
+  getPairedComparison(request: BenchmarkPairedComparisonRequest): Observable<BenchmarkPairedComparisonDto> {
+    return this.http.post<BenchmarkPairedComparisonDto>('/api/admin/benchmark/model-comparison/paired', request);
+  }
+
+  /** This run (the treatment) against `baselineRunId` on every measure. 400 when the pair is not comparable. */
+  getRunPairedComparison(
+    runId: number, baselineRunId: number, pricingBasis = BenchmarkReportPackPricingBasis.Current
+  ): Observable<BenchmarkPairComparisonDto> {
+    return this.http.post<BenchmarkPairComparisonDto>(
+      `/api/admin/benchmark/runs/${runId}/paired-comparison`, { baselineRunId, pricingBasis });
+  }
+
+  /** The kind of paired comparison each candidate baseline would make with this run, in request order. */
+  getRunPairKinds(runId: number, runIds: readonly number[]): Observable<BenchmarkRunPairKindDto[]> {
+    return this.http.post<BenchmarkRunPairKindDto[]>(
+      `/api/admin/benchmark/runs/${runId}/paired-comparison/kinds`, { runIds: [...runIds] });
+  }
+
+  /** A battery result (the treatment) against a baseline of the same definition on every measure. */
+  getBatteryPairedComparison(
+    batteryRunId: number, baselineBatteryRunId: number, pricingBasis = BenchmarkReportPackPricingBasis.Current
+  ): Observable<BenchmarkPairComparisonDto> {
+    return this.http.post<BenchmarkPairComparisonDto>(
+      '/api/admin/benchmark/model-comparison/paired/battery', { batteryRunId, baselineBatteryRunId, pricingBasis });
+  }
+
+  /**
    * The comparability index over the named runs and analysis groups: which of them fall into the
    * same condition, ahead of a Compare that would otherwise silently exclude the smaller one.
+   * Posted, because several hundred ids would not fit in a query string.
    */
   getComparabilityIndex(query: BenchmarkComparabilityIndexQuery): Observable<BenchmarkComparabilityIndexDto> {
-    let params = new HttpParams();
-    for (const [key, value] of comparabilityIndexQueryParams(query)) {
-      params = params.append(key, value);
-    }
-    return this.http.get<BenchmarkComparabilityIndexDto>(MODEL_COMPARABILITY_INDEX_ENDPOINT, { params });
+    const body = { runIds: [...(query.runIds ?? [])], groupIds: [...(query.groupIds ?? [])] };
+    return this.http.post<BenchmarkComparabilityIndexDto>(MODEL_COMPARABILITY_INDEX_ENDPOINT, body);
   }
 
   // Report packs. Preview makes no model call; start begins a background job.
@@ -3595,6 +3804,7 @@ export class AdminBenchmarkService {
     if (query.take != null) params = params.set('take', query.take);
     if (query.comparison != null) params = params.set('comparison', query.comparison.join(','));
     if (query.origin != null) params = params.set('origin', query.origin);
+    if (query.subject != null) params = params.set('subject', query.subject);
     return this.http.get<BenchmarkReportDocumentListItemDto[]>('/api/admin/benchmark/report-documents', { params });
   }
 
@@ -3660,6 +3870,38 @@ export class AdminBenchmarkService {
   /** Deletes one of the run's AI-written documents. 204; 409 `{ error }` while the run's reports are being written. */
   deleteRunReportDocument(runId: number, documentId: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/runs/${runId}/report-documents/${documentId}`);
+  }
+
+  /**
+   * Writes a finished, analyzed battery run's missing battery-completion documents with the given
+   * writer, which becomes the battery run's report writer. 202 once queued; refusals as
+   * `writeRunReportDocuments`'s, with 400 also for a battery run without a complete, current analysis.
+   */
+  writeBatteryReportDocuments(batteryRunId: number, request: WriteRunReportDocumentsRequest): Observable<WriteRunReportDocumentsResponse> {
+    return this.http.post<WriteRunReportDocumentsResponse>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents`, request);
+  }
+
+  /** The battery run's report-writing job, or null (204) when this server process knows none. */
+  getBatteryReportJob(batteryRunId: number): Observable<BenchmarkRunReportJobDto | null> {
+    return this.http.get<BenchmarkRunReportJobDto>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents/job`,
+      { observe: 'response' }).pipe(
+      map(response => response.status === 204 ? null : response.body ?? null)
+    );
+  }
+
+  /** Asks the battery run's report-writing job to stop. 202 with the job view; 409 `{ error }` when none is in progress. */
+  cancelBatteryReportJob(batteryRunId: number): Observable<BenchmarkRunReportJobDto> {
+    return this.http.post<BenchmarkRunReportJobDto>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents/cancel`, {});
+  }
+
+  /** What writing the battery run's documents with this writer would cost, and whether it is refused or warned. No model call. */
+  estimateBatteryReports(batteryRunId: number, request: BenchmarkRunReportEstimateRequest): Observable<BenchmarkRunReportEstimateDto> {
+    return this.http.post<BenchmarkRunReportEstimateDto>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents/estimate`, request);
+  }
+
+  /** Deletes one of the battery run's AI-written documents. 204; 409 `{ error }` while they are being written. */
+  deleteBatteryReportDocument(batteryRunId: number, documentId: number): Observable<void> {
+    return this.http.delete<void>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents/${documentId}`);
   }
 
   /**

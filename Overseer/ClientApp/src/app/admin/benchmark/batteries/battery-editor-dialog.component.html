@@ -47,7 +47,7 @@
         <div class="bbe-details">
           <div class="form-group">
             <label for="bbeName">Name</label>
-            <input id="bbeName" type="text" class="gh-input" maxlength="128" autocomplete="off"
+            <input #nameInput id="bbeName" type="text" class="gh-input" maxlength="128" autocomplete="off"
                    [value]="name" (input)="onNameInput($event)"
                    [attr.aria-invalid]="attemptedSave && nameError ? 'true' : null"
                    [attr.aria-describedby]="attemptedSave && nameError ? 'bbeNameError' : null">
@@ -69,21 +69,17 @@
         <section class="bbe-suites" aria-labelledby="bbeSuitesTitle">
           <div class="bbe-section-head">
             <h4 class="gh-section-title" id="bbeSuitesTitle">Suites</h4>
-            <span class="bbe-suites-count">{{ checkedRows.length }} of {{ rows.length }} selected</span>
+            <!-- The words, not the warning color, say that more suites are needed. -->
+            <span class="bbe-suites-count">{{ checkedRows.length }} of {{ rows.length }} selected@if (tooFewSuites) {<span class="bbe-count-need"> · {{ minSuites }} needed</span>}</span>
           </div>
-          <p class="bbe-hint" id="bbeSuitesHint">Select the suites; the order of the selected ones is the order they run in.</p>
+          <p class="bbe-hint" id="bbeSuitesHint">Select at least two suites. The order of the selected ones is the order they run in.</p>
           <app-reorderable-list [items]="items" [checkable]="true" idPrefix="bbe-suites"
                                 listLabel="Suites in run order" itemNoun="suite"
+                                describedBy="bbeSuitesHint"
                                 (orderChange)="onOrderChange($event)"
                                 (checkedChange)="onCheckedChange($event)"></app-reorderable-list>
           @if (rows.length === 0) {
             <p class="bbe-hint">There are no suites yet. Create a suite in Manage Suites first.</p>
-          }
-          @if (attemptedSave && suiteCountError) {
-            <p class="gh-field-error" id="bbeSuiteCountError">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-              {{ suiteCountError }}
-            </p>
           }
         </section>
 
@@ -114,7 +110,7 @@
               </label>
             }
           </fieldset>
-          @if (customWeightError && (attemptedSave || previewRows.length > 0)) {
+          @if (showCustomError) {
             <p class="gh-field-error" id="bbeCustomError">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
               {{ customWeightError }}
@@ -167,6 +163,7 @@
                             <input type="number" class="gh-input bbe-custom-input" min="0" step="any" inputmode="decimal"
                                    [id]="'bbe-custom-' + row.suiteId"
                                    [value]="row.customWeight ?? ''"
+                                   [attr.aria-describedby]="showCustomError ? 'bbeCustomError' : null"
                                    (input)="onCustomWeightInput(row.suiteId, $event)">
                           </dd>
                         </div>
@@ -202,8 +199,19 @@
     </div>
 
     <div class="dialog-footer">
+      @if (tooFewSuites) {
+        <p class="bbe-save-reason" id="bbeSaveReason">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          Select at least two suites to {{ editing ? 'save' : 'create' }} the battery.
+        </p>
+      }
       <button type="button" class="btn-gh btn-gh-cancel" [disabled]="saving" (click)="close()">Cancel</button>
-      <button type="button" class="btn-gh bbe-save" [disabled]="saving" (click)="save()">
+      <!-- aria-disabled rather than disabled while too few suites are checked, so it stays focusable
+           and reads its reason; disabled only while saving. -->
+      <button type="button" class="btn-gh bbe-save" [disabled]="saving"
+              [attr.aria-disabled]="tooFewSuites ? 'true' : null"
+              [attr.aria-describedby]="tooFewSuites ? 'bbeSaveReason' : null"
+              (click)="save()">
         {{ saving ? 'Saving…' : (editing ? 'Save Battery' : 'Create Battery') }}
       </button>
     </div>

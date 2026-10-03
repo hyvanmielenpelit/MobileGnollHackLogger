@@ -290,7 +290,7 @@ describe('BatteryProgressDialogComponent', () => {
     expect(runProgress).toHaveBeenCalledWith(103);
   });
 
-  it('offers Open Analysis once finished', () => {
+  it('offers Open Analysis once finished, closing and emitting the battery run id for the Battery Run Report', () => {
     const run = batteryRun({
       status: 'Completed', completedAtUtc: '2026-10-01T12:00:00Z', completedSuiteCount: 2,
       runsPerSuite: 1, requestedMemberCount: 2, completedMemberCount: 2,
@@ -299,12 +299,16 @@ describe('BatteryProgressDialogComponent', () => {
     });
     open(run);
     const analysis = vi.fn().mockName('analysis');
+    const closed = vi.fn().mockName('closed');
     component.openAnalysis.subscribe(analysis);
+    component.closed.subscribe(closed);
 
     expect(button('.bp-cancel-battery')).toBeNull();
     button('.bp-open-analysis')!.click();
     fixture.detectChanges();
 
+    expect(closed).toHaveBeenCalled();
+    expect(analysis).toHaveBeenCalledTimes(1);
     expect(analysis).toHaveBeenCalledWith(7);
   });
 

@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { of, throwError, Subject } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
+import { BenchmarkShellBridge } from './state/benchmark-shell-bridge.service';
 import {
   AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryReusePreviewDto, BenchmarkBatteryRunDto
 } from '../../services/admin-benchmark.service';
@@ -700,15 +701,25 @@ describe('AdminBenchmarkComponent', () => {
         expect(ctx.monitor.returnToBatteryOnClose).toBe(false);
       });
 
-      it('should switch to the Multi-Suite tab and show the analysis the dialog asks for', () => {
+      it('should replace the progress dialog with the Battery Run Report the dialog asks for', () => {
         attachBattery({ status: 'Completed' });
         ctx.monitor.openBatteryDialog(9);
+        const before = component.activeSubTab;
+        const open = vi.spyOn(component.batteryRunReport!, 'open').mockImplementation(() => {});
 
         component.onOpenBatteryAnalysis(9);
 
-        expect(component.activeSubTab).toBe('multisuite');
+        expect(open).toHaveBeenCalledWith(9);
+        expect(component.activeSubTab).toBe(before);
         expect(ctx.monitor.batteryDialogVisible).toBe(false);
-        expect(component.batteriesPanel).toBeTruthy();
+      });
+
+      it('should open the Battery Run Report when a sub-tab asks through the bridge', () => {
+        const open = vi.spyOn(component.batteryRunReport!, 'open').mockImplementation(() => {});
+
+        fixture.debugElement.injector.get(BenchmarkShellBridge).openBatteryRunReport(12);
+
+        expect(open).toHaveBeenCalledWith(12);
       });
     });
 
@@ -804,6 +815,7 @@ describe('AdminBenchmarkComponent', () => {
         }
       ]));
       fixture.detectChanges();
+      ctx.workspace.setShowBatteryMembers(true);
 
       (fixture.nativeElement.querySelector('#bm-tab-history') as HTMLButtonElement).click();
       fixture.detectChanges();

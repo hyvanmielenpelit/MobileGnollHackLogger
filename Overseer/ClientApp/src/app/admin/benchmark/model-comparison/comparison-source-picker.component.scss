@@ -62,6 +62,12 @@
   }
 }
 
+/* The scope's one-line caveat: battery results span suites, so it leaves them alone. */
+.csp-scope-hint {
+  font-size: 0.75rem;
+  color: #8b8b90;
+}
+
 /* --- The kind-of-source tabs --- */
 
 .csp-tab-total {
@@ -117,6 +123,16 @@
   align-items: center;
   gap: 8px 10px;
   margin-inline-start: auto;
+}
+
+/* Why this kind cannot join the selection: visible, since it explains aria-disabled checkboxes. */
+.csp-mix-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-inline-start: 3px solid var(--primary-color);
+  background: rgba(224, 186, 109, 0.08);
+  font-size: 0.8125rem;
+  color: #d8d6cb;
 }
 
 /* --- About conditions --- */
@@ -746,6 +762,35 @@
   &:has(input:disabled) {
     cursor: default;
   }
+
+  &:has(input[aria-disabled="true"]) {
+    cursor: not-allowed;
+  }
+}
+
+/* --- Battery results --- */
+
+.csp-battery-name {
+  display: block;
+}
+
+.csp-battery-revision {
+  font-size: 11px;
+  color: #898781;
+  letter-spacing: 0.02em;
+}
+
+.csp-class-cell {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.csp-class-hash {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: #c3c2b7;
 }
 
 /* --- Selection summary --- */

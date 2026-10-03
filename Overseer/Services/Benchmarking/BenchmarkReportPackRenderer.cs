@@ -102,6 +102,11 @@ public static class BenchmarkReportJson
 /// <c>[[figure:&lt;key&gt;]]</c> line per chart at the anchor <see cref="BenchmarkReportChartPlacement"/>
 /// gives it; the PDF and Word writers draw the chart there.</para>
 ///
+/// <para>A battery sheet (<see cref="BenchmarkReportFactSheet.Battery"/>) names the battery instead of a
+/// suite, adds the suites of the composite (and in the Report for AI Researchers and Developers the
+/// battery profile, its weighting sensitivity and leave-one-suite-out figures), refers to every question
+/// as <c>S&lt;suite&gt;-Q&lt;n&gt;</c>, and prints question details only for the questions given in detail.</para>
+///
 /// <para>A document stored under an earlier format version renders with what it stored: a missing
 /// role, count or fact falls back to the wording that version printed, a missing slot or column is
 /// left out, and its single-grader support labels are read in their provider wording.</para>
@@ -248,6 +253,10 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
 
         KeyFigures(sb, ctx, "## Key figures");
+        if (ctx.Battery)
+        {
+            BatterySuites(sb, ctx, "## The suites of this battery");
+        }
         if (ctx.ComparesPeers)
         {
             HowItCompares(sb, ctx);
@@ -287,6 +296,10 @@ public static class BenchmarkReportPackRenderer
 
         KeyFigures(sb, ctx, "## Key figures");
         SetupAndMethod(sb, ctx);
+        if (ctx.Battery)
+        {
+            BatteryProfile(sb, ctx);
+        }
         if (ctx.Standalone)
         {
             StandaloneResults(sb, ctx);
@@ -341,6 +354,10 @@ public static class BenchmarkReportPackRenderer
         Slot(sb, ctx, BenchmarkReportSlots.ModelResult);
         KeyFigures(sb, ctx, "### Key figures");
         IntervalSpanLine(sb, ctx);
+        if (ctx.Battery)
+        {
+            BatterySuites(sb, ctx, "### The suites of this battery");
+        }
         Figures(sb, ctx, BenchmarkReportChartAnchor.ModelResult);
         Heading(sb, "### Strengths");
         Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.", strengths: true);
@@ -398,10 +415,20 @@ public static class BenchmarkReportPackRenderer
         Line(sb, "*" + Stamp(ctx.Document.Audience, ctx.Options.Disclosure) + "*");
         Line(sb);
         Line(sb, "- **Date:** " + ctx.Document.CreatedAtUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-        Line(sb, "- **Suite:** " + sheet.SuiteName);
-        Line(sb, "- **Questions:** " + D(ctx, "suite.questions"));
-        Line(sb, "- **Runs:** " + Inv(sheet.SubjectRunIds.Count) + " (" + (sheet.SubjectRunIds.Count == 1 ? "run " : "runs ")
-            + string.Join(", ", sheet.SubjectRunIds.Select(id => id.ToString(CultureInfo.InvariantCulture))) + ")");
+        if (sheet.Battery is { } battery)
+        {
+            // A battery's member runs are listed under the Reproducibility appendix, not here.
+            Line(sb, "- **Battery:** " + BatteryDescription(battery));
+            Line(sb, "- **Questions:** " + D(ctx, "suite.questions"));
+            Line(sb, "- **Member runs:** " + Inv(sheet.SubjectRunIds.Count) + " (battery run " + Inv(battery.BatteryRunId) + ")");
+        }
+        else
+        {
+            Line(sb, "- **Suite:** " + sheet.SuiteName);
+            Line(sb, "- **Questions:** " + D(ctx, "suite.questions"));
+            Line(sb, "- **Runs:** " + Inv(sheet.SubjectRunIds.Count) + " (" + (sheet.SubjectRunIds.Count == 1 ? "run " : "runs ")
+                + string.Join(", ", sheet.SubjectRunIds.Select(id => id.ToString(CultureInfo.InvariantCulture))) + ")");
+        }
         if (ctx.Standalone)
         {
             Line(sb, "- **Peers:** " + PeersText(ctx));
@@ -699,10 +726,18 @@ public static class BenchmarkReportPackRenderer
         int runs = sheet.SubjectRunIds.Count;
 
         Heading(sb, "## Setup and method");
-        Line(sb, "- **Suite:** " + sheet.SuiteName + ", " + D(ctx, "suite.questions") + " questions.");
+        if (sheet.Battery is { } battery)
+        {
+            Line(sb, "- **Battery:** " + BatteryDescription(battery) + "; " + D(ctx, "suite.questions") + " questions in all.");
+        }
+        else
+        {
+            Line(sb, "- **Suite:** " + sheet.SuiteName + ", " + D(ctx, "suite.questions") + " questions.");
+        }
         Line(sb, "- **" + Label("config.chat") + ":** " + D(ctx, "config.chat"));
         Line(sb, "- **Model under test:** " + sheet.SubjectLabel + " (" + sheet.SubjectProvider + ", " + sheet.SubjectModelId
-            + "), thinking level " + (sheet.SubjectThinkingLevel ?? "not set") + "; " + Inv(runs) + (runs == 1 ? " run." : " runs."));
+            + "), thinking level " + (sheet.SubjectThinkingLevel ?? "not set") + "; " + Inv(runs)
+            + (ctx.Battery ? (runs == 1 ? " member run." : " member runs.") : (runs == 1 ? " run." : " runs.")));
         Line(sb, "- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted "
             + D(ctx, "scoring.weights") + ". Each dimension is graded on behaviorally anchored levels scored "
             + D(ctx, "scoring.levels") + ". A critical error caps the answer's quality at " + D(ctx, "scoring.criticalErrorCap") + ".");
@@ -728,11 +763,25 @@ public static class BenchmarkReportPackRenderer
             + "critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the "
             + "difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with "
             + "tool time excluded. Cost per question is the model under test's spend divided by the questions asked.");
-        Line(sb, ctx.Standalone
-            ? "- **Comparability:** this report describes the model on its own, measured under the instrument condition with signature `"
-                + D(ctx, "comparison.signature") + "`."
-            : "- **Comparability:** every model in this report was measured under one instrument condition, signature `"
-                + D(ctx, "comparison.signature") + "`.");
+        if (ctx.Battery)
+        {
+            Line(sb, "- **Battery composite:** the Overall Index is the sum over the suites of each suite's weight times its "
+                + "Intelligence Index, under the battery's weighting scheme; it is not comparable with a single suite's index. "
+                + "Speed and cost are pooled over the member runs, and cost per run is per battery pass, one run of every suite.");
+            Line(sb, ctx.Standalone
+                ? "- **Comparability:** this report describes the battery result on its own, measured in the comparability class `"
+                    + D(ctx, "comparison.signature") + "`."
+                : "- **Comparability:** every battery result in this report ran the same battery definition in one comparability class, `"
+                    + D(ctx, "comparison.signature") + "`.");
+        }
+        else
+        {
+            Line(sb, ctx.Standalone
+                ? "- **Comparability:** this report describes the model on its own, measured under the instrument condition with signature `"
+                    + D(ctx, "comparison.signature") + "`."
+                : "- **Comparability:** every model in this report was measured under one instrument condition, signature `"
+                    + D(ctx, "comparison.signature") + "`.");
+        }
         Line(sb, "- **" + Label("comparison.pricingBasis") + ":** " + PricingBasisText(sheet).Text);
         Line(sb, "- **Versions:** harness " + D(ctx, "run.harnessVersion") + ", scoring method " + D(ctx, "scoring.methodVersion") + ".");
         Line(sb);
@@ -765,7 +814,8 @@ public static class BenchmarkReportPackRenderer
         {
             var cells = new List<string>
             {
-                entry.EntryKey.StartsWith("group:", StringComparison.Ordinal) ? "group" : "run",
+                entry.EntryKey.StartsWith("group:", StringComparison.Ordinal) ? "group"
+                    : entry.EntryKey.StartsWith("battery:", StringComparison.Ordinal) ? "battery" : "run",
                 Inv(entry.RunCount),
                 Cell((peer == null ? ctx.Sheet.SubjectThinkingLevel : peer.ThinkingLevel) ?? "not set")
             };
@@ -956,6 +1006,128 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
     }
 
+    /// <summary><c>Core knowledge, revision 3: 12 suites, 10 runs per suite, weighting scheme Questions and difficulty</c>.</summary>
+    private static string BatteryDescription(BenchmarkReportBatterySubject battery)
+        => battery.Name
+           + (battery.Revision is int revision ? ", revision " + Inv(revision) : string.Empty)
+           + ": " + Inv(battery.SuiteCount) + (battery.SuiteCount == 1 ? " suite, " : " suites, ")
+           + Inv(battery.RunsPerSuite) + (battery.RunsPerSuite == 1 ? " run per suite" : " runs per suite")
+           + ", weighting scheme " + battery.Scheme;
+
+    /// <summary>The composite in one sentence, and each suite's weight and index with its interval.</summary>
+    private static void BatterySuites(StringBuilder sb, Context ctx, string heading)
+    {
+        var battery = ctx.Sheet.Battery!;
+        Heading(sb, heading);
+        Line(sb, "This result is a battery of " + Inv(battery.SuiteCount) + (battery.SuiteCount == 1 ? " suite" : " suites")
+            + ", each run " + Inv(battery.RunsPerSuite) + (battery.RunsPerSuite == 1 ? " time" : " times")
+            + ". Its Intelligence Index is the battery's Overall Index: the suites' indices weighted under the "
+            + battery.Scheme + " scheme. It is not comparable with a single suite's Intelligence Index.");
+        Line(sb);
+        Line(sb, "| Suite | Weight | " + Label("quality.index") + " |");
+        Line(sb, "|---|---|---|");
+        foreach (var suite in battery.Suites.OrderBy(s => s.Number))
+        {
+            string prefix = "suite." + Inv(suite.Number) + ".";
+            string index = IsAvailable(ctx, prefix + "index")
+                ? Cell(D(ctx, prefix + "index")) + (IsAvailable(ctx, prefix + "interval") ? " (" + Cell(D(ctx, prefix + "interval")) + ")" : string.Empty)
+                : NoValue;
+            Line(sb, "| S" + Inv(suite.Number) + " · " + Cell(suite.Name) + " | " + Num(ctx, prefix + "weight") + " | " + index + " |");
+        }
+        Line(sb);
+    }
+
+    /// <summary>
+    /// The battery's profile: each suite's row of the persisted analysis, the battery-wide figures, the
+    /// index under the other weighting schemes and with each suite left out.
+    /// </summary>
+    private static void BatteryProfile(StringBuilder sb, Context ctx)
+    {
+        var battery = ctx.Sheet.Battery!;
+        Heading(sb, "## Battery profile");
+        Line(sb, "The Overall Index is the sum over the suites of each suite's weight times its Intelligence Index, under the "
+            + battery.Scheme + " scheme. It is not comparable with a single suite's Intelligence Index.");
+        Line(sb);
+        Line(sb, "| Suite | Weight | " + Label("quality.index") + " | " + Label("quality.interval") + " | Contribution | "
+            + Label("quality.scoredItems") + " | Runs | Speed Index | Cost per run, graders included | Critical-error rate |");
+        Line(sb, "|---|---|---|---|---|---|---|---|---|---|");
+        foreach (var suite in battery.Suites.OrderBy(s => s.Number))
+        {
+            string prefix = "suite." + Inv(suite.Number) + ".";
+            Line(sb, "| S" + Inv(suite.Number) + " · " + Cell(suite.Name)
+                + " | " + Num(ctx, prefix + "weight")
+                + " | " + Num(ctx, prefix + "index")
+                + " | " + Num(ctx, prefix + "interval")
+                + " | " + Num(ctx, prefix + "contribution")
+                + " | " + Num(ctx, prefix + "scoredItems")
+                + " | " + Num(ctx, prefix + "runs")
+                + " | " + Num(ctx, prefix + "speedIndex")
+                + " | " + Num(ctx, prefix + "costPerRun")
+                + " | " + Num(ctx, prefix + "criticalErrorRate")
+                + " |");
+        }
+        Line(sb);
+        Line(sb, "*A suite's cost per run is its mean over its member runs, graders included, at the prices stored with each run.*");
+        Line(sb);
+
+        foreach (var (key, label) in new[]
+        {
+            ("battery.rounds", "Complete rounds"),
+            ("battery.suiteIndexSd", "Standard deviation of the suite indices"),
+            ("battery.suiteIndexRange", "Range of the suite indices"),
+            ("battery.pooledIdentity", "Pooled identity"),
+            ("battery.criticalErrorRate", "Critical-error rate"),
+            ("battery.speedIndex", "Speed Index"),
+            ("battery.excludedMembers", "Member runs left out of the analysis")
+        })
+        {
+            Line(sb, "- **" + label + ":** " + (Fact(ctx, key) is { } fact ? (fact.Available ? Shown(ctx, fact) : NotAvailableText(fact)) : BenchmarkReportFacts.NotAvailable));
+        }
+        Line(sb);
+
+        var sensitivity = ctx.Sheet.Facts
+            .Where(f => f.Available && f.Key.StartsWith("sensitivity.", StringComparison.Ordinal))
+            .OrderBy(f => f.Key, StringComparer.Ordinal)
+            .ToList();
+        if (sensitivity.Count > 0)
+        {
+            Heading(sb, "### Weighting sensitivity");
+            foreach (var fact in sensitivity)
+            {
+                Line(sb, "- " + OneLine(fact.Display));
+            }
+            Line(sb);
+        }
+
+        var leaveOneOut = ctx.Sheet.Facts
+            .Where(f => f.Key.StartsWith("loo.", StringComparison.Ordinal))
+            .OrderBy(f => NumberAfter(f.Key, "loo."))
+            .ToList();
+        if (leaveOneOut.Count > 0)
+        {
+            Heading(sb, "### Leave one suite out");
+            foreach (var fact in leaveOneOut)
+            {
+                Line(sb, "- S" + Inv(NumberAfter(fact.Key, "loo.")) + ": " + (fact.Available ? OneLine(fact.Display) : NotAvailableText(fact)));
+            }
+            Line(sb);
+        }
+    }
+
+    /// <summary>The battery analysis's caveats, in their stored order.</summary>
+    private static List<BenchmarkReportFact> BatteryCaveats(Context ctx)
+        => ctx.Sheet.Facts
+            .Where(f => f.Available && f.Key.StartsWith("battery.caveat.", StringComparison.Ordinal))
+            .OrderBy(f => NumberAfter(f.Key, "battery.caveat."))
+            .ToList();
+
+    /// <summary>The number that follows <paramref name="prefix"/> in a key; <see cref="int.MaxValue"/> when none does.</summary>
+    private static int NumberAfter(string key, string prefix)
+        => key.StartsWith(prefix, StringComparison.Ordinal)
+           && int.TryParse(key.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out int n)
+            ? n
+            : int.MaxValue;
+
     /// <summary>The difficulty-band table's heading: its bands are the assessed ones.</summary>
     private const string DifficultyBandsHeading = "Difficulty bands (assessed)";
 
@@ -982,11 +1154,22 @@ public static class BenchmarkReportPackRenderer
         Line(sb, "|---|---|");
         foreach (var fact in facts)
         {
-            Line(sb, "| " + Cell(Label(fact.Key)) + " | " + Cell(fact.Display) + " |");
+            Line(sb, "| " + Cell(SpeedAndCostLabel(ctx, fact.Key)) + " | " + Cell(fact.Display) + " |");
         }
         Line(sb);
 
         Figures(sb, ctx, BenchmarkReportChartAnchor.SpeedAndCost);
+    }
+
+    /// <summary>A Speed and cost row's label: a battery's per-run costs are per battery pass.</summary>
+    private static string SpeedAndCostLabel(Context ctx, string key)
+    {
+        if (ctx.Battery)
+        {
+            if (key == "cost.perRun") return "Cost per battery pass";
+            if (key == "cost.totalRunPerRun") return "Total cost per battery pass, graders included";
+        }
+        return Label(key);
     }
 
     /// <summary>The facts of the Speed and cost table, in order.</summary>
@@ -1020,6 +1203,12 @@ public static class BenchmarkReportPackRenderer
         string refutedHeader = sentences ? "Refuted answer sentences" : "Refuted claims";
 
         Heading(sb, heading);
+        if (ctx.Battery)
+        {
+            BatteryQuestionTable(sb, ctx, questions, sentences, refutedHeader);
+            BatteryNotesAndDetails(sb, ctx, questions, withDetails);
+            return;
+        }
         if (ctx.Standalone)
         {
             Line(sb, "| Q | Topic | Assessed band | Authored | Score | Critical error | " + refutedHeader + " | Tool calls | Model time |");
@@ -1040,7 +1229,7 @@ public static class BenchmarkReportPackRenderer
                 ? string.Empty
                 : " | " + (q.PeerMean.HasValue ? BenchmarkReportFormat.Whole(q.PeerMean.Value) : NoValue)
                   + " | " + difference;
-            Line(sb, "| Q" + Inv(q.Number)
+            Line(sb, "| " + ctx.QuestionLabel(q.Number)
                 + " | " + Cell(Topic(ctx, q.Number) ?? NoValue)
                 + " | " + q.Band
                 + " | " + (string.IsNullOrWhiteSpace(q.AuthoredBand) ? NoValue : Cell(q.AuthoredBand))
@@ -1081,7 +1270,68 @@ public static class BenchmarkReportPackRenderer
         {
             string? topic = Topic(ctx, q.Number);
             var note = ctx.Writer.QuestionNotes.FirstOrDefault(n => n.Question == q.Number);
-            Line(sb, "**Q" + Inv(q.Number) + "**" + (topic != null ? " (" + topic + ")" : string.Empty) + ": "
+            Line(sb, "**" + ctx.QuestionLabel(q.Number) + "**" + (topic != null ? " (" + topic + ")" : string.Empty) + ": "
+                + (note != null ? Prose(ctx, note.Note) : "No note was written for this question."));
+            Line(sb);
+        }
+
+        if (withDetails && ctx.Options.Disclosure >= BenchmarkReportDisclosure.Detailed)
+        {
+            QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 3);
+        }
+    }
+
+    /// <summary>
+    /// A battery's per-question table: each question by its suite-qualified reference, with its mean
+    /// score over the runs that scored it, those runs, and the rounds with a critical error.
+    /// </summary>
+    private static void BatteryQuestionTable(
+        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool sentences, string refutedHeader)
+    {
+        Line(sb, "| Question | Topic | Assessed band | Authored | Mean score | Runs scored | Critical errors | " + refutedHeader + " | Tool calls | Model time |");
+        Line(sb, "|---|---|---|---|---|---|---|---|---|---|");
+        foreach (var q in questions)
+        {
+            Line(sb, "| " + ctx.QuestionLabel(q.Number)
+                + " | " + Cell(Topic(ctx, q.Number) ?? NoValue)
+                + " | " + q.Band
+                + " | " + (string.IsNullOrWhiteSpace(q.AuthoredBand) ? NoValue : Cell(q.AuthoredBand))
+                + " | " + (q.Score.HasValue ? BenchmarkReportFormat.Whole(q.Score.Value) : NoValue)
+                + " | " + Inv(q.RunCount)
+                + " | " + Inv(q.CriticalErrorCount ?? (q.CriticalError ? 1 : 0))
+                + " | " + Inv(sentences ? q.RefutedAnswerSentences!.Value : q.RefutedClaims)
+                + " | " + BenchmarkReportFormat.CompactDecimal(q.ToolCalls)
+                + " | " + (q.ModelTimeMs.HasValue ? BenchmarkReportFormat.Seconds(q.ModelTimeMs.Value) : NoValue)
+                + " |");
+        }
+        Line(sb);
+        Line(sb, "*Each question's mean score is over the member runs that scored it; its critical errors count those runs with a critical error.*");
+        Line(sb);
+    }
+
+    /// <summary>
+    /// A battery's notes, on the questions given in detail that scored below
+    /// <see cref="BenchmarkReportPackPrompt.StandaloneNoteScore"/> or carried a critical error, and, with
+    /// <paramref name="withDetails"/> at Detailed and Full, the questions given in detail.
+    /// </summary>
+    private static void BatteryNotesAndDetails(
+        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool withDetails)
+    {
+        var needingNote = BenchmarkReportPackPrompt.QuestionsNeedingNote(ctx.Sheet);
+        var noted = questions.Where(q => needingNote.Contains(q.Number)).ToList();
+        string below = BenchmarkReportFormat.Whole(BenchmarkReportPackPrompt.StandaloneNoteScore);
+
+        Heading(sb, "### Questions given in detail that scored below " + below + " or had a critical error");
+        if (noted.Count == 0)
+        {
+            Line(sb, "No question given in detail scored below " + below + " or had a critical error.");
+            Line(sb);
+        }
+        foreach (var q in noted)
+        {
+            string? topic = Topic(ctx, q.Number);
+            var note = ctx.Writer.QuestionNotes.FirstOrDefault(n => n.Question == q.Number);
+            Line(sb, "**" + ctx.QuestionLabel(q.Number) + "**" + (topic != null ? " (" + topic + ")" : string.Empty) + ": "
                 + (note != null ? Prose(ctx, note.Note) : "No note was written for this question."));
             Line(sb);
         }
@@ -1104,10 +1354,19 @@ public static class BenchmarkReportPackRenderer
         string prefix = new('#', level);
         Heading(sb, prefix + (grading ? " Question details" : " Questions and answers"));
 
+        if (ctx.Battery)
+        {
+            questions = questions.Where(q => ContentFor(ctx, q.Number).Count > 0).ToList();
+            Line(sb, questions.Count == 0
+                ? "*No question was given in detail. Every question is listed under Per-question results.*"
+                : "*Only the questions given in detail are shown, each with one answer: from the run whose score was the median of its rounds. Every question is listed under Per-question results.*");
+            Line(sb);
+        }
+
         foreach (var q in questions)
         {
             string? topic = Topic(ctx, q.Number);
-            Heading(sb, prefix + "# Q" + Inv(q.Number) + (topic != null ? ": " + topic : string.Empty));
+            Heading(sb, prefix + "# " + ctx.QuestionLabel(q.Number) + (topic != null ? ": " + topic : string.Empty));
 
             var blocks = ContentFor(ctx, q.Number);
             if (blocks.Count == 0)
@@ -1233,10 +1492,13 @@ public static class BenchmarkReportPackRenderer
 
         if (ctx.Options.Disclosure == BenchmarkReportDisclosure.Full)
         {
-            // tools.failed exists only where the runs recorded per-call rows (harness 17 and later).
-            Line(sb, IsAvailable(ctx, "tools.failed")
-                ? "*Per-call arguments and results are in each run's Tool-call log until the retention sweep prunes them.*"
-                : "*These runs did not record per-call arguments or results.*");
+            // tools.failed exists only where the runs recorded per-call rows (harness 17 and later); a
+            // battery sheet never states it, since its per-call rows stay with the member runs.
+            Line(sb, ctx.Battery
+                ? "*Per-call arguments and results are in each member run's Tool-call log until the retention sweep prunes them.*"
+                : IsAvailable(ctx, "tools.failed")
+                    ? "*Per-call arguments and results are in each run's Tool-call log until the retention sweep prunes them.*"
+                    : "*These runs did not record per-call arguments or results.*");
             Line(sb);
         }
     }
@@ -1258,7 +1520,9 @@ public static class BenchmarkReportPackRenderer
         var rows = OrderedRows(sheet);
         if (rows.Count == 0)
         {
-            Line(sb, "No synthesis findings were recorded.");
+            Line(sb, ctx.Battery
+                ? "A battery report lists no synthesis findings; each member run's report has its own."
+                : "No synthesis findings were recorded.");
             Line(sb);
             return;
         }
@@ -1287,7 +1551,7 @@ public static class BenchmarkReportPackRenderer
                 finding += ": " + text;
             }
             string questions = row.Questions.Count > 0
-                ? string.Join(", ", row.Questions.OrderBy(n => n).Select(n => "Q" + Inv(n)))
+                ? string.Join(", ", row.Questions.OrderBy(n => n).Select(ctx.QuestionLabel))
                 : NoValue;
             Line(sb, "| " + row.Id + " | " + Cell(finding) + " | " + questions + " | " + row.SupportLabel + " |"
                 + (recurrence ? " " + Inv(row.Recurrence) + " of " + Inv(runCount) + " runs |" : string.Empty));
@@ -1373,6 +1637,17 @@ public static class BenchmarkReportPackRenderer
         {
             Line(sb, "- Comparability: " + sheet.SubjectExplanation);
         }
+        if (ctx.Battery)
+        {
+            Line(sb, "- Composite: the Overall Index weights the suites under the battery's scheme; another scheme or "
+                + "another set of suites gives another figure, and it is not comparable with a single suite's index.");
+            Line(sb, "- Detail: the writer was given the full text of at most a few questions per suite, each with one answer, "
+                + "and the other questions as one-line rows.");
+            foreach (var fact in BatteryCaveats(ctx))
+            {
+                Line(sb, "- Battery analysis: " + OneLine(fact.Display));
+            }
+        }
         if (WriterIndependenceCaveat(ctx) is string caveat)
         {
             Line(sb, "- " + caveat);
@@ -1398,6 +1673,11 @@ public static class BenchmarkReportPackRenderer
                 + (string.IsNullOrWhiteSpace(g.ThinkingLevel) ? string.Empty : ", thinking level " + g.ThinkingLevel)))));
         LabeledLine(sb, ctx, "run.harnessVersion");
         LabeledLine(sb, ctx, "scoring.methodVersion");
+        if (ctx.Battery)
+        {
+            Line(sb, "- **Battery definition SHA-256 prefix:** `" + D(ctx, "battery.definitionSha256") + "`");
+            Line(sb, "- **Battery comparability class SHA-256 prefix:** `" + D(ctx, "battery.classSha256") + "`");
+        }
         Line(sb, "- **" + Label("comparison.signature") + ":** `" + D(ctx, "comparison.signature") + "`");
         Line(sb, "- **" + Label("run.promptSha256") + ":** `" + D(ctx, "run.promptSha256") + "`");
         Line(sb, "- **" + Label("run.toolGuidesSha256") + ":** `" + D(ctx, "run.toolGuidesSha256") + "`");
@@ -1623,7 +1903,7 @@ public static class BenchmarkReportPackRenderer
 
         foreach (string id in ids)
         {
-            if (QuestionNumber(id) != null || rows.Any(r => string.Equals(r.Id, id, StringComparison.Ordinal))) continue;
+            if (QuestionNumber(ctx, id) != null || rows.Any(r => string.Equals(r.Id, id, StringComparison.Ordinal))) continue;
 
             var fact = Fact(ctx, id);
             parts.Add(FactLabel(ctx, id) + (fact == null ? string.Empty : ": " + (fact.Available ? Shown(ctx, fact) : BenchmarkReportFacts.NotAvailable)));
@@ -1634,7 +1914,7 @@ public static class BenchmarkReportPackRenderer
         {
             var listed = ByScore(ctx, numbers, highestFirst: !listsRefutations).Take(EvidenceQuestionLimit).ToList();
             int more = numbers.Count - listed.Count;
-            parts.Add(string.Join(", ", listed.Select(n => "Q" + Inv(n) + " (" + ScoreText(ctx, n) + ")"))
+            parts.Add(string.Join(", ", listed.Select(n => ctx.QuestionLabel(n) + " (" + ScoreText(ctx, n) + ")"))
                 + (more > 0 ? " and " + Inv(more) + " more" : string.Empty));
         }
 
@@ -1646,7 +1926,7 @@ public static class BenchmarkReportPackRenderer
             .OrderBy(g => g.Key == AnswerSentence ? 0 : 1))
         {
             parts.Add("the claim verifier refuted " + group.Key + " on "
-                + BenchmarkReportFormat.LetterList(group.Select(x => "Q" + Inv(x.Number)).ToList()));
+                + BenchmarkReportFormat.LetterList(group.Select(x => ctx.QuestionLabel(x.Number)).ToList()));
         }
 
         if (parts.Count > 0)
@@ -1702,7 +1982,7 @@ public static class BenchmarkReportPackRenderer
     private static List<int> CitedQuestions(Context ctx, BenchmarkReportWriterItem item, IReadOnlyList<string> ids)
     {
         var numbers = new List<int>(item.Questions ?? new List<int>());
-        numbers.AddRange(ids.Select(QuestionNumber).Where(n => n.HasValue).Select(n => n!.Value));
+        numbers.AddRange(ids.Select(id => QuestionNumber(ctx, id)).Where(n => n.HasValue).Select(n => n!.Value));
 
         if (numbers.Count == 0)
         {
@@ -1716,11 +1996,18 @@ public static class BenchmarkReportPackRenderer
         return numbers.Distinct().OrderBy(n => n).ToList();
     }
 
-    /// <summary>The number of a <c>Q&lt;n&gt;</c> evidence id, or null for any other id.</summary>
-    private static int? QuestionNumber(string id)
-        => id.Length > 1 && id[0] == 'Q' && int.TryParse(id.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out int n)
+    /// <summary>
+    /// The number of a <c>Q&lt;n&gt;</c> evidence id, or on a battery sheet of an <c>S&lt;suite&gt;-Q&lt;n&gt;</c>
+    /// one; null for any other id.
+    /// </summary>
+    private static int? QuestionNumber(Context ctx, string id)
+    {
+        if (ctx.Battery) return ctx.QuestionNumberOf(id);
+
+        return id.Length > 1 && id[0] == 'Q' && int.TryParse(id.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out int n)
             ? n
             : null;
+    }
 
     private static void Slot(StringBuilder sb, Context ctx, string slot)
     {
@@ -2100,5 +2387,38 @@ public static class BenchmarkReportPackRenderer
 
         /// <summary>The evaluation terms belong to every audience but the Internal Improvement Brief.</summary>
         public bool PrintsEvaluationTerms => Document.Audience != BenchmarkReportAudience.InternalBrief;
+
+        /// <summary>The sheet is a battery result's.</summary>
+        public bool Battery => Sheet.Battery != null;
+
+        private Dictionary<int, string>? _labels;
+        private Dictionary<string, int>? _numbers;
+
+        /// <summary>How the document names a question: its battery reference <c>S2-Q7</c>, else <c>Q7</c>.</summary>
+        public string QuestionLabel(int number)
+        {
+            EnsureReferences();
+            return _labels!.TryGetValue(number, out string? label) ? label : "Q" + Inv(number);
+        }
+
+        /// <summary>The number of a battery question's reference; null for any other text.</summary>
+        public int? QuestionNumberOf(string reference)
+        {
+            EnsureReferences();
+            return _numbers!.TryGetValue(reference, out int number) ? number : null;
+        }
+
+        private void EnsureReferences()
+        {
+            if (_labels != null) return;
+
+            _labels = new Dictionary<int, string>();
+            _numbers = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var q in Sheet.Questions.Where(q => !string.IsNullOrWhiteSpace(q.Reference)))
+            {
+                _labels.TryAdd(q.Number, q.Reference!);
+                _numbers.TryAdd(q.Reference!, q.Number);
+            }
+        }
     }
 }

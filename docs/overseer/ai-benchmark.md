@@ -44,7 +44,9 @@ The launcher's *Test Setup* fieldset opens with **Run Target**, a radio group:
 
 *Start* then starts a battery run (`POST /api/admin/benchmark/batteries/runs`) instead of a run or a
 series, and a battery banner follows it. Run Target and the battery are remembered across reloads; the
-reuse choice is not. Batteries are defined on the **Multi-Suite** tab. Everything about batteries is in
+reuse choice is not. A *Report Writer* chosen in battery mode writes the battery's two documents once it
+has finished and been analyzed, and the member runs write none. Batteries are defined on the
+**Multi-Suite** tab, and battery runs are listed in **Run History**. Everything about batteries is in
 [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
 
 ### Run Progress Dialog
@@ -5615,7 +5617,8 @@ request, the API's cap, and filters them in the browser. The *Filter by Suite* s
 list for one suite, is gone; the *Suite* facet replaces it and combines with the other facets without a
 reload. When exactly 200 runs come back the status line adds *· Only the newest 200 runs are loaded*.
 What the select could still reach — one suite's runs older than the newest 200 — is not reachable from
-this list.
+this list. (Raised to the newest 1,000 on 2026-10-03, beside the newest 500 battery runs; see *Battery
+Reports, Battery Runs in Run History and Paired Tests*.)
 
 **The run report header is compact.**
 
@@ -5940,8 +5943,8 @@ New: the **Multi-Suite** tab (fourth, after *Multi-Run Analysis*; *Manage Suites
 and *Model Comparison* move one place right), the launcher's **Run Target** (§ 1), a battery banner and
 progress dialog, a *Battery #id · suite s/K* badge on member runs in Run History, the endpoints under
 `/api/admin/benchmark/batteries` (§ 6), `maxMembersPerBattery` on `GET runs/limits`, and the
-configuration key `Benchmark:Battery:MaxMembers` (default 60), the most launches one battery run may
-plan. Deleting a suite is refused while an active battery run contains it; deleting a system AI
+configuration key `Benchmark:Battery:MaxMembers` (default 60, raised to 120 on 2026-10-03), the most
+launches one battery run may plan. Deleting a suite is refused while an active battery run contains it; deleting a system AI
 configuration is refused while an active battery run names it, and the delete dialog counts the
 stopped battery runs that do.
 
@@ -5958,6 +5961,182 @@ the series' drive task releases it when it ends. While a series or a battery is 
    verification and re-run failed questions. They take the same run gate, and could do the same.
 
 A stopped series or battery holds no claim, so repairs work while it is stopped.
+
+### Battery Reports, Battery Runs in Run History and Paired Tests (2026-10-03) — No Version Bump
+
+*Nothing is graded or keyed differently: `HarnessVersion` and `ScoringMethodVersion` do not move, and
+no existing document renders differently. One EF Core migration, `AddBatteryReportDocuments`, adds the
+battery run's report-writer columns.*
+
+The batteries of 2026-10-02 get the surroundings a single run has: a report dialog, a place in Run
+History, AI-written documents and a place in Model Comparison. The wizard also gains **paired tests**,
+for runs, groups and battery results alike. Batteries are described in full in
+[`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 4 (the UI) and § 7 (the documents and
+the paired test, with the decisions behind them); the battery documents' mechanics are
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 14.
+
+**Run History lists battery runs.** A battery run is a card of its own beside the single runs, ordered by
+start time, newest first: *Battery run #N*, its status, *k of K suites*, *R runs per suite* and *Analysis
+stale* or *Not analyzed* in the kicker; the model as the title; the battery, revision, assessors, start
+time and user; *Intelligence* (the Overall Index ± half-width, or *Incomplete (k of K suites)*),
+*Speed*, *Duration* and *Cost*; the *DEF* and *CLASS* hashes; and **View details** (the Battery Run
+Report), **Download Markdown report**, **Show progress** (while live or resumable) and **Delete battery
+run**.
+
+- **Member runs are hidden by default.** **Show battery member runs**, a pressed-state toggle beside
+  **Refresh**, shows them with their *Battery #id · suite s/K* badge. It is a view setting, not a filter:
+  it is not a chip, **Clear all** leaves it alone, and it is remembered per browser
+  (`localStorage['overseer.benchmark.runHistory.members']`). While it is off, the facet counts cover
+  only the cards shown.
+- **A Kind facet**, *Single run* / *Battery run*, joins the facets, and the search, the facets and the
+  sorts read battery cards too (a battery card's *Flags* are *Analysis stale*, *Incomplete* and *Not
+  analyzed*). The status line counts a battery run as one run.
+- **Delete battery run** asks first. Its analyses and AI documents go with it; **Also delete its M
+  member runs**, unchecked by default, deletes the members too, otherwise they stay in Run History as
+  single runs.
+- The *INSTRUMENT CHANGED* badge and the other helpers still read the run list in server order, so
+  interleaved battery cards move no badge.
+
+**The Multi-Suite tab** holds the battery definitions only, as full-width cards with a stacked weight
+bar and a four-row suite table, and a filter bar from four batteries. Its *Battery Runs* table, the
+inline analysis, the leaderboard and *Compare two results* are gone: battery runs are in Run History,
+and the leaderboard and the **Battery Run Report** are full-screen dialogs. The report mirrors the
+single-run report — header, *Run details*, actions, key figures, an AI Reports tab — over eleven tabs,
+among them a **Paired Test** tab. **New Battery**'s *Create Battery* stays unavailable, with the reason
+on screen, until two suites are checked.
+
+**AI-written battery documents.** A battery run started with a *Report Writer* gets its Executive
+Summary and Report for AI Researchers and Developers once it has finished and been analyzed; its member
+runs are launched with no writer. They can also be written on request from the Battery Run Report's AI
+Reports tab, and they are listed with the battery's Markdown report by the Download Center's `battery`
+context.
+
+**Battery results in Model Comparison.** The wizard's source picker has a third kind tab, **Battery
+results**, after *Single runs* and *Analysis groups*. A battery entry (`battery:<id>`) is one point: its
+Overall Index and combined interval, its Overall Speed Index, and cost recomputed from its member runs
+under the chosen pricing basis, **per battery pass** (one run of every suite). The baseline condition is
+the largest group of results sharing a definition hash and comparability class; a result outside it,
+or one that is unfinished, unanalyzed, stale or incomplete, is Excluded with the reason. **A comparison
+holds either battery results or runs and groups, never both**: the picker makes the other kinds'
+checkboxes unavailable, with *"A comparison holds either battery results or runs and groups. Clear the
+selection to switch."*, and the server refuses a mixed request with 400. Charts, the table, figure
+downloads and the Report Pack (step 3) work for battery results unchanged; the leaderboard's **Open in
+Model Comparison** opens the wizard with its class's results selected.
+
+**Paired tests.** A fifth view of step 2, **Paired tests**, and an eleventh tab of the run report,
+**Paired Test**; see *Paired Tests* below.
+
+**Limits.**
+
+| Limit | Before | Now |
+|---|---|---|
+| Daily, hourly and battery-member caps (`Benchmark:Compliance:MaxRunsPerDay`, `MaxRunsPerHour`, `Benchmark:Battery:MaxMembers`) | 20 / 5 / 60 | **120 / 30 / 120**, in `appsettings.json` and the code fallbacks. `maxRunCountPerSeries` follows the daily cap. A User Secrets key overrides both |
+| Battery start or resume into a full cap window | Refused even with *Allow cap wait* | With *Allow cap wait*, an hourly or daily cap denial starts or resumes the battery in `WaitingForCap` |
+| Run History and the multi-run lists | Newest 200 runs | Newest **1,000** (`RUN_HISTORY_LIMIT`, and the server's clamp on `GET runs`); *· Only the newest 1000 runs are loaded* when that many came back |
+| Battery runs | `GET batteries/runs` at most 200 | At most **1,000**; Run History asks for **500** (`BATTERY_RUN_HISTORY_LIMIT`) and notes *· newest 500 battery runs* |
+| Comparability index | `GET` only, at most 200 runs and 100 groups | Also **`POST model-comparison/comparability`** with the same body, which the client uses; at most **1,000** runs and **500** groups. Several hundred ids no longer fit in a query string |
+| Plotted models per chart (`MAX_PLOTTED_ENTRIES`) | 8 | **12** |
+| `GET runs/groups` | About two queries per group | Two set queries, with identical output |
+| Series and battery pollers on failure | Gave up after 5 failures (about 25 s) | Back off 5, 10, 20, 40, then 60 s; stop only after **10 minutes** of failures. After two failures in a row an amber *Lost contact* notice in the series or battery banner says how often it retries, and once it gives up, that a reload reattaches |
+
+*Deliberately unchanged:* one run and one battery at a time, `MAX_COMPARISON_SOURCES` (24), the
+four concurrent model calls, per-question budgets and timeouts, and the single report-writer slot.
+
+### Paired Tests
+
+**The question they answer:** is model A better than model B **on the same questions**, and on which
+measures? With more than two models: which differ from a reference, or which pairs differ, with the
+family-wise error controlled. Until now the only paired test was Multi-Run Analysis's *Compare with
+group*, which needs two analysis groups built first; the Model Comparison charts and table carry no
+test.
+
+**One method family.** `BenchmarkPairedTests` re-implements nothing: it is built on
+`BenchmarkGroupStatistics` (`Compare`, `WilcoxonSignedRank`, `CohensDz`, `StudentTCritical95`) and
+`BenchmarkBatteryStatistics` (M7 and `HolmAdjust`). Each pair is **treatment B against baseline A**:
+
+| Measure | Run and group entries (one suite) | Battery entries |
+|---|---|---|
+| **Intelligence** (the primary test) | `BenchmarkGroupStatistics.Compare`, exactly as *Compare with group*: items paired by question id and equal item revision, on per-item mean quality; the mean difference with a *t* interval, **Wilcoxon signed-rank p**, and Cohen's *d*z | M7 (`ai-benchmark-multi-suite.md`): the stratified sign-flip p on the weighted composite difference *D*, with its *t*(ν) interval, and the per-suite Holm-adjusted Wilcoxon p as detail. Deterministic, from M7's fixed seed |
+| **Quality dimensions** (Accuracy, Completeness, Conciseness, Readability) | The same pairing on the per-item mean of the dimension; Wilcoxon p, mean difference with a *t* interval | Pooled over (suite, question) pairs, and unweighted across suites, unlike the Overall Index (a caption says so) |
+| **Speed** | Per-question mean candidate model time; Wilcoxon on **log(B / A)**. The effect is the **geometric-mean ratio**, exp(mean log ratio), with a *t* interval on the log scale — *"B takes 0.82× A's time (0.71–0.95)"* | The same, pooled over (suite, question) pairs |
+| **Cost** | The same as speed, on the per-question candidate cost, each answer priced from its own token counts under the comparison's pricing basis | The same, pooled |
+
+A pair with a zero time or cost on a side has no ratio and is left out, with a note.
+
+**Not tested, with the reason shown**, rather than tested with a known flaw:
+
+- the comparison flags the axis as **degraded** (`SpeedDegraded`, `CostDegraded`), because the paired
+  difference would carry the differing key's effect, not the models';
+- fewer than **5** pairs (`PairedMinimumQuestions`, the Report Pack's minimum);
+- the per-answer data is **missing** — answers without token counts, an entry with no scored dimension,
+  a run whose price card does not resolve. Nothing is approximated.
+
+**Families and adjustment.** Each measure is its own family over the pairs tested, and the view says
+that the measures are separate questions, not adjusted for each other.
+
+- **Two entries:** one test per measure, no adjustment — *"Single comparison — no adjustment needed"*;
+  the adjusted p equals the raw p.
+- **Against a reference** (the default with three or more): k − 1 tests, **Holm**-adjusted (Holm 1979).
+  The reference is the first entry highlighted on step 2, else the one with the highest Intelligence
+  Index, and a select changes it.
+- **All pairs:** k(k − 1)/2 tests, Holm-adjusted, offered up to **12** comparable entries (66 tests); above
+  that it is unavailable, with the reason, and the server answers 400. Unadjusted all-pairs testing was
+  rejected: it is what made the charts refuse pairwise significance in the first place.
+
+**Verdicts** come from one formatter shared by every view: *Higher on the same questions* / *Lower on the
+same questions* (*Faster* / *Slower* for speed, *Cheaper* / *More expensive* for cost) when the adjusted p
+is below 0.05, otherwise *No difference established* — **never *equal*** — and *Not tested*. Each verdict
+is a word and a shape (a filled dot, a ring, a dash); color only repeats it.
+
+**The single-run caveat.** When any entry has a single run (for a battery result, one run in some suite),
+a paired test captures question sampling only, not run-to-run variation, so it can look more certain than
+it is. The caveat is shown beside the results whenever it applies.
+
+**Where they are.**
+
+- **The wizard's Paired tests view**, step 2's fifth view tab (*columns* glyph), for runs, groups or
+  battery results. It is unavailable, with the reason, while fewer than two entries are comparable; with
+  one, it says comparing needs a second comparable entry and where a single model's result lives (its run
+  report or battery run report, with the index's interval and the stand-alone AI documents). The sidebar
+  shows only **Data** (Models and Prices). The toolbar holds the *Against a reference* / *All pairs* mode
+  (hidden with two entries), the **Reference** select, an icon-only **Recompute**, and **Copy as
+  Markdown** and **Download** (Markdown, or CSV, by the Download tab's table format;
+  `paired-tests_<yyyyMMdd-HHmmss>`). The body is the family line, the caveat, then one disclosure per
+  section — *Intelligence* (*primary test*), *Quality dimensions*, *Speed*, *Cost* — whose open state is
+  remembered per browser. *Against a reference* is a table (model, against, paired questions, the
+  difference or ratio with its interval, an interval strip on a scale centered on 0 or 1, *d*z, p,
+  adjusted p, verdict); *All pairs* is a lower-triangle matrix whose cells open the pair's full result,
+  followed by the same pairs as a list. The results are fetched when the view is first shown and on
+  Recompute; a change of selection, prices, mode or reference cancels a request in flight. The *About*
+  dialog's *Not shown as charts* now points *Pairwise significance* here, and the excluded measure's own
+  text says the charts and table carry no test.
+- **The run report's Paired Test tab**, the eleventh, after *Calibration*: this run is the treatment
+  against another finished run on the same suite, chosen from Run History's loaded runs, newest first,
+  grouped by the **kind** of comparison it would make, which the server decides from the 27
+  comparability keys:
+  - **Model comparison** — every must-match key agrees and a model-axis key differs;
+  - **Verification of a change** — the candidate is identical and exactly one instrument key differs,
+    named in the result;
+  - **Replicate** — no quality-relevant key differs;
+  - **Not comparable** — a fundamental key other than the item revisions differs, or any other mix;
+    such runs are left out of the select and counted. Differing item revisions only reduce the paired
+    set.
+
+  **Compare** shows every measure as one unadjusted pair. The tab covers what the wizard cannot:
+  **verification of a change**, since the wizard Excludes entries that differ on an instrument key.
+- **The Battery Run Report's Paired Test tab** keeps M7 as its Intelligence test and adds the dimension,
+  speed and cost rows (`ai-benchmark-multi-suite.md` § 7.3).
+
+**Cost and caching.** *All pairs* over twelve battery results is 66 M7 resamplings, seconds of work, so
+the wizard's responses are kept in memory for **10 minutes** per (comparison key, pricing basis, mode,
+reference); **Recompute** bypasses the cache. Answers are loaded only for the comparable entries, and
+nothing is computed on a chart redraw.
+
+**Why documents do not cite them yet.** Report Pack, run-completion and battery-completion documents
+keep their own frozen *no significance test* statement (`BenchmarkReportFacts.NoSignificanceStatement`,
+`ai-benchmark-report-pack.md` § 2), decoupled from the wizard's *Pairwise significance* text so that
+changing the wizard moved no golden render and no stored document. Having documents cite the
+family-adjusted tests is a follow-up: it changes what a document states, and so its format.
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
@@ -7249,7 +7428,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 
 ### Runs & Scoring
 - `POST /api/admin/benchmark/runs`: Start a benchmark run (gated by hourly/daily caps and same-provider acknowledgement). An optional `reportWriterModelConfigurationId` names the run's report writer (§ *Harness Version 42 Updates*); a writer from the candidate's provider needs `acknowledgeSameProviderReportWriter`, and without it the start answers 409 with a `SameProviderWarningDto` of role `reportWriter`, after the assessor's own same-provider check.
-- `GET /api/admin/benchmark/runs`: List historical runs with filtering.
+- `GET /api/admin/benchmark/runs`: List historical runs, newest first; optional `?suiteId=` and `?take=` (default 50, at most 1,000, which Run History asks for).
 - `GET /api/admin/benchmark/runs/{id}`: Full run detail with question answers, compliance purpose statement, and assessment.
 - `GET /api/admin/benchmark/runs/active`: Return `{ runId }` for the run currently executing, or 204 when idle. Lets a client that reloaded mid-run reattach to it; the client then calls `GET .../runs/{id}` for the detail.
 - `POST /api/admin/benchmark/runs/{id}/rescore`: Recompute indices for an existing run against a scoring profile (ungated arithmetic).
@@ -7284,14 +7463,24 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 All under `/api/admin/benchmark/batteries`; the full table, with bodies and status codes, is [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 5.
 - `GET …/batteries`, `POST …/batteries`, `GET`/`PUT`/`DELETE …/batteries/{id}`: Battery definitions. An edit to the scheme, suites, order or weights increments `Revision`; the definition hash ignores the order. Delete answers 409 while one of the battery's runs is active.
 - `POST …/batteries/{id}/archive`: Hide a battery from the launcher, or show it again with `{ "archived": false }`.
-- `GET …/batteries/runs` (`?batteryId=&take=`), `GET …/batteries/runs/{id}`, `GET …/batteries/runs/active` (204 when none): Battery runs with their suite × round member grid.
-- `POST …/batteries/runs`: Start a battery run. 202 `{ batteryRunId }`; 409 for a conflict or an unacknowledged same-provider grader; 404 for an unknown battery; 429 at the spend guard; 400 for an invalid request or more launches than `Benchmark:Battery:MaxMembers` (or than the daily cap without *Allow cap wait*).
+- `GET …/batteries/runs` (`?batteryId=&take=`, `take` at most 1,000), `GET …/batteries/runs/{id}`, `GET …/batteries/runs/active` (204 when none): Battery runs with their suite × round member grid.
+- `POST …/batteries/runs`: Start a battery run. 202 `{ batteryRunId }`; 409 for a conflict or an unacknowledged same-provider grader or report writer; 404 for an unknown battery; 429 at the spend guard, except that with *Allow cap wait* an hourly or daily cap denial starts the battery run in `WaitingForCap`; 400 for an invalid request, a refused report writer or more launches than `Benchmark:Battery:MaxMembers` (or than the daily cap without *Allow cap wait*).
 - `POST …/batteries/runs/{id}/cancel`: Cancel; 400 for a battery run already Completed, Cancelled or Failed. `POST …/batteries/runs/{id}/resume` with `{ mode: "Continue" | "RerunUnderCurrentInstrument" }`; 409 with the moved hashes when the instrument changed.
+- `DELETE …/batteries/runs/{id}?deleteMembers=false`: Delete a battery run with its analyses and battery-completion documents; with `deleteMembers=true`, its member runs too, through the single-run delete. 204; 409 while it is driven or live.
+- `POST …/batteries/runs/{id}/report-documents` (and `…/estimate`, `GET …/job`, `POST …/cancel`, `DELETE …/{documentId}`): The battery run's AI-written battery-completion documents, shaped like a run's run-completion endpoints below; see `ai-benchmark-report-pack.md` §§ 9 and 14.
 - `POST …/batteries/runs/reuse-preview`, `POST …/batteries/runs/{id}/members`, `GET …/batteries/runs/{id}/members/candidates?suiteIndex=&round=`: Preview which earlier runs a start would reuse, attach a run to a slot, and list the candidates for one slot.
 - `POST …/batteries/runs/{id}/analysis` (optional `{ compareWithBatteryRunId }`), `GET …/batteries/runs/{id}/analysis` (204 when none), `GET …/batteries/runs/{id}/report`: The composite analysis, the paired comparison, and the Markdown report from the persisted analysis.
 - `GET …/batteries/leaderboard?definitionSha256=`: The latest analysis of every battery run of one definition, ranked within each comparability class.
 
 > While a series or a battery is running it holds the orchestrator claim, and `POST runs`, `reassess`, `calibrate`, `answers/{answerId}/rerun`, `rerun-synthesis`, `retry-failed-assessments`, `retry-claim-verification` and `rerun-failed` all answer **409** with *"A benchmark series is running; wait for it or cancel it."* or *"A battery is running; wait for it or cancel it."*
+
+#### Model Comparison and Paired Tests
+- `GET /api/admin/benchmark/model-comparison?runIds=&groupIds=&batteryRunIds=&pricingBasis=`: The comparison (one point per entry). `batteryRunIds` may not be combined with runs or groups (400, *"A comparison holds either battery results or runs and analysis groups."*); the response carries `subjectKind` (`Runs` or `Batteries`) and `baselineBatteryName`.
+- `GET` or `POST /api/admin/benchmark/model-comparison/comparability`: The comparability index for a picker, the same body either way; the client uses POST, since several hundred ids do not fit in a query string. At most 1,000 runs and 500 groups.
+- `POST /api/admin/benchmark/model-comparison/paired`: The wizard's paired tests (*Paired Tests* above). Body `{ runIds, groupIds, batteryRunIds, pricingBasis, mode: "Reference" | "AllPairs", referenceKey?, recompute? }`; the comparison is recomputed from the same sources, so the entries and degrade flags are the wizard's. Returns `{ computedAtUtc, subjectKind, pricingBasis, mode, referenceKey, entryKeys, allPairsLimit, singleRunCaveat, measuresNote, measures[] }`, each measure a family with its pairs. 400 for a mixed request, for fewer than two comparable entries (*"Comparing needs two comparable entries."*) and for *All pairs* above 12. Cached for 10 minutes; `recompute: true` bypasses the cache.
+- `POST /api/admin/benchmark/model-comparison/paired/battery`: The Battery Run Report's Paired Test rows, body `{ batteryRunId, baselineBatteryRunId, pricingBasis }`, judged by M7's eligibility rule. 404 for an unknown battery run; 400 *Not comparable: …*.
+- `POST /api/admin/benchmark/runs/{id}/paired-comparison`: The run report's Paired Test tab, body `{ baselineRunId, pricingBasis }`; this run is the treatment. Returns the kind (`ModelComparison`, `Verification` or `Replicate`), its explanation, the changed keys, every differing key, the degrade flags, the single-run caveat and the measures as one unadjusted pair. 400 when the runs are not comparable, a run has not finished, or the suites differ; 404 for an unknown run.
+- `POST /api/admin/benchmark/runs/{id}/paired-comparison/kinds`: Body `{ runIds }`, at most 1,000: the kind each candidate baseline would make with this run, in request order, so the tab can group its select. Reads no answer text.
 
 #### Rubric Gap Author
 - `POST /api/admin/benchmark/rubric-gap-author`, `GET .../{jobId}`, `GET .../active`, `POST .../{jobId}/cancel`: An AI job that **drafts** proposed rubric additions from verified claim clusters, using read-only tools to confirm each citation. It writes nothing.
@@ -7310,7 +7499,7 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running report-pack job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel a report-pack job.
-- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` and `peersChangedSinceGeneration` from its runs' scoring fingerprints, its comparison key, peer count, pricing basis and peer letters, and its charts' `chartCount`, `chartFigureKeys` and `chartSettingsHash` read from the chart manifest. The filters are in `ai-benchmark-report-pack.md` § 9.
+- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&subject=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` and `peersChangedSinceGeneration` from its runs' scoring fingerprints, its comparison key, peer count, pricing basis and peer letters, and its charts' `chartCount`, `chartFigureKeys` and `chartSettingsHash` read from the chart manifest. `origin` takes `reportPack`, `runCompletion` or `batteryCompletion`, `comparison` takes `run:`/`group:` keys or `battery:` keys, and `subject` one `run:`, `group:` or `battery:` key matched exactly. The filters are in `ai-benchmark-report-pack.md` § 9.
 - `GET /api/admin/benchmark/report-documents/{id}`: Document detail: metadata, validation notes and the facts JSON.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`: Render a stored document as `text/markdown; charset=utf-8`, deterministically and with no model call. 400 for a refused combination (the Internal Brief renders at `full` only).
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its `BenchmarkReportDocumentRuns` rows cascade and its chart folder is removed. Deleting a run never deletes a document. Deleting a run's run-completion document returns the run's status to NotRequested when no job is in progress.
@@ -7367,7 +7556,7 @@ Compliance review must be revisited if:
 Report Pack documents (see [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md)) can be sent to a model's provider. A provider copy is an Executive Summary or a Technical Report rendered at **Summary** or **Detailed** disclosure, with **anonymized peers** by default; the Internal Improvement Brief and every Full rendering are internal only.
 - **Suite text never reaches a provider below Detailed, and rubrics never do.** Summary describes questions by topic; Detailed quotes every question, with answer excerpts, and carries a *do not publish* stamp. A rubric is the suite's answer key: once it leaves the team, the questions it grades can no longer measure any model that may have seen it.
 - **Peers are anonymized by default** because a document naming competing models beside ranked results reads as a comparison between them. Sent to one provider privately it is not a publication, but a copy that is forwarded or quoted becomes one, and publishing benchmark results or comparisons externally as competitive claims is re-evaluation trigger 1 above. Naming peers in a provider copy is an explicit option with a warning, and an operator who uses it should treat the copy as potentially public.
-- The documents state interval overlap descriptively and make no significance claim, and each repeats the comparison's *Pairwise significance* excluded-measure statement, so a quoted sentence cannot be read as a claim the benchmark did not test.
+- The documents state interval overlap descriptively and make no significance claim, and each states, in its own frozen wording (`BenchmarkReportFacts.NoSignificanceStatement`), that no pair of models was tested for significance, so a quoted sentence cannot be read as a claim the benchmark did not test. Since 2026-10-03 that wording no longer copies the Model Comparison wizard's *Pairwise significance* text, which now points to the wizard's Paired tests view; documents do not yet cite those tests.
 
 ---
 

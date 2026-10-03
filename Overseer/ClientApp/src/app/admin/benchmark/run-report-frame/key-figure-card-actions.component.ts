@@ -32,15 +32,27 @@ export class KeyFigureCardActionsComponent implements OnInit {
   /** While an export runs: both buttons are `aria-disabled` and refuse the click. */
   @Input() busy = false;
 
+  /** What the card belongs to in the accessible names, as in `… of battery run 7`; null reads `run {runId}`. */
+  @Input() subjectLabel: string | null = null;
+
+  /** The subject part of the tooltip ids, slugged, as in `battery7`; null reads `run{runId}`. */
+  @Input() subjectKey: string | null = null;
+
   @Output() readonly exportRequested = new EventEmitter<KeyFigureCardExportRequest>();
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
   }
 
+  /** `run 72`, or the host's {@link subjectLabel}. */
+  get subject(): string {
+    return this.subjectLabel ?? `run ${this.runId}`;
+  }
+
   /** `kfc-copy-run72-intelligence-index`: the tooltip's id and, prefixed with `--`, the anchor name. */
   tipId(action: KeyFiguresAction): string {
-    return `kfc-${action}-run${this.runId}-${keyFigureSlug(this.cardLabel)}`;
+    const subject = this.subjectKey != null ? keyFigureSlug(this.subjectKey) : `run${this.runId}`;
+    return `kfc-${action}-${subject}-${keyFigureSlug(this.cardLabel)}`;
   }
 
   request(action: KeyFiguresAction): void {

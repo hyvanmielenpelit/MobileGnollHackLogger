@@ -132,6 +132,8 @@ export interface ModelComparisonContext {
   readonly pricedOn: string;
   /** Suite name, for figure titles. */
   readonly suiteName: string;
+  /** What one candidate-cost figure covers; absent reads as a suite run. */
+  readonly costUnit?: 'suite run' | 'battery pass';
 }
 
 /** `GPT-5.6 Luna (max)`; the name alone when there is no thinking level. */
@@ -265,7 +267,7 @@ export interface IdentityGlyph {
 }
 
 /** The hard ceiling on plotted entries. */
-export const MAX_PLOTTED_ENTRIES = 8;
+export const MAX_PLOTTED_ENTRIES = 12;
 
 /**
  * Assigns each plottable entry its identity glyph, in the order the service returned them.
@@ -2748,8 +2750,8 @@ export function buildSmallMultiples(
   const costTitle =
     costMeasure === 'candidateSuite'
       ? context.questionsAskedPerRun != null
-        ? `Candidate cost per suite run (USD, ${formatQuestionsAsked(context.questionsAskedPerRun)})`
-        : 'Candidate cost per suite run (USD)'
+        ? `Candidate cost per ${context.costUnit ?? 'suite run'} (USD, ${formatQuestionsAsked(context.questionsAskedPerRun)})`
+        : `Candidate cost per ${context.costUnit ?? 'suite run'} (USD)`
       : 'Total run cost including grading roles (USD)';
 
   // One label list for all three panels. A two-line tick block on one panel alone would shrink
@@ -3023,7 +3025,7 @@ function prepareProfile(
     cost: {
       title: costMeasure === 'candidateSuite' ? 'Cost (candidate, suite)' : 'Cost (total run)',
       noun: 'cost',
-      suffix: costMeasure === 'candidateSuite' ? ' per suite run' : ' per run, all roles',
+      suffix: costMeasure === 'candidateSuite' ? ` per ${options.context.costUnit ?? 'suite run'}` : ' per run, all roles',
       lowerIsBetter: true,
       scale: 'log',
       format: (v) => formatMeasure(v, costKey, numbers[costKey]),

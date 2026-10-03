@@ -87,6 +87,21 @@ public class BenchmarkBatteryRun
     [MaxLength(2048)]
     public string? ErrorMessage { get; set; }
 
+    // Report writer.
+    //
+    // Null means no AI-written battery-completion documents are written automatically. When set, the
+    // configuration writes the battery run's Executive Summary and Report for AI Researchers and
+    // Developers once, after the battery finishes and its analysis is complete. Members are launched
+    // with no writer. Attribution only, not a foreign key.
+    public long? ReportWriterModelConfigurationId { get; set; }
+
+    /// <summary>Where the battery run's two battery-completion documents stand.</summary>
+    public BenchmarkRunReportDocumentsStatus ReportDocumentsStatus { get; set; } = BenchmarkRunReportDocumentsStatus.NotRequested;
+
+    /// <summary>Why the documents failed or were skipped; null otherwise.</summary>
+    [MaxLength(1000)]
+    public string? ReportDocumentsMessage { get; set; }
+
     public List<BenchmarkBatteryRunMember> Members { get; set; } = new();
 }
 

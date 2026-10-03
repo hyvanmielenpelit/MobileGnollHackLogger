@@ -1,0 +1,329 @@
+/* Battery leaderboard dialog: layout and component-local presentation only. The dialog frame
+ * (.gh-dialog-fullscreen), the buttons, the tabs, .gh-datatable, .gh-disclosure, .gh-tag, the
+ * badges and .gh-tooltip come from styles.scss. */
+
+.battery-leaderboard-dialog {
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .dialog-header {
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px;
+    margin: 0;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border-glass);
+  }
+
+  .dialog-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 16px 24px 20px;
+    font-size: var(--text-body);
+    line-height: var(--leading-body);
+  }
+
+  @media (max-width: 600px) {
+    .dialog-header,
+    .dialog-body {
+      padding-inline: 16px;
+    }
+  }
+}
+
+/* --- Header ------------------------------------------------------------------------------ */
+
+.bl-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+/* The run report's size; .gnollbench-emblem stays 28 px elsewhere. */
+.bl-emblem {
+  width: 64px;
+  height: 64px;
+
+  @media (max-width: 600px) {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+.bl-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+
+  h3 {
+    margin: 0;
+    overflow-wrap: anywhere;
+
+    &:focus {
+      outline: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 3px;
+    }
+  }
+
+  .bl-subtitle {
+    margin: 0;
+    font-size: var(--text-secondary);
+    color: #aaa;
+  }
+}
+
+.bl-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bl-definition-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.bl-definition {
+  font-family: var(--font-mono);
+}
+
+.bl-hash-full {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.bl-header-controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-inline-start: auto;
+}
+
+.bl-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* --- Body -------------------------------------------------------------------------------- */
+
+.bl-loading,
+.bl-note,
+.bl-class-meta,
+.bl-differs,
+.bl-cap-note {
+  margin: 0 0 8px;
+}
+
+.bl-note,
+.bl-cap-note {
+  font-size: var(--text-secondary);
+  color: #bbb;
+}
+
+.bl-cap-note {
+  color: #e8d9a8;
+}
+
+.bl-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+
+  .bl-error-text {
+    margin: 0;
+    flex: 1 1 16rem;
+  }
+}
+
+.bl-empty p {
+  margin: 0 0 6px;
+  color: #bbb;
+}
+
+.bl-tabs {
+  margin-bottom: 12px;
+
+  .gh-tab {
+    gap: 6px;
+  }
+}
+
+.bl-tab-count {
+  min-inline-size: 1.5em;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.bl-panel:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 3px;
+}
+
+.bl-class-meta {
+  font-size: var(--text-secondary);
+  color: #aaa;
+  font-size-adjust: from-font;
+}
+
+.bl-class-hash {
+  font-family: var(--font-mono);
+}
+
+.bl-differs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+/* Bounded so the sticky header has a block size to stick within. */
+.bl-table-scroll {
+  max-block-size: max(16rem, 100dvh - 20rem);
+  margin-bottom: 16px;
+}
+
+.bl-table {
+  width: 100%;
+
+  .bl-num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .bl-rank {
+    font-weight: 600;
+  }
+
+  .bl-overlap {
+    margin-inline-start: 4px;
+    color: #aaa;
+    font-weight: 400;
+  }
+
+  .bl-model {
+    font-weight: 400;
+    text-align: start;
+
+    > * {
+      margin-inline-end: 4px;
+    }
+  }
+
+  .bl-model-name {
+    font-weight: 700;
+  }
+
+  .bl-index {
+    font-weight: 600;
+  }
+
+  .bl-interval {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bl-analyzed {
+    white-space: nowrap;
+  }
+
+  .bl-actions-cell {
+    text-align: end;
+  }
+}
+
+/* --- Interval strip ---------------------------------------------------------------------- */
+
+.bl-strip {
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  inline-size: 10rem;
+  block-size: 12px;
+  margin-inline-start: 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #9ca3af;
+
+  .bl-strip-bar {
+    position: absolute;
+    inset-block: 4px;
+    min-inline-size: 2px;
+    border-radius: 2px;
+    background: currentColor;
+    opacity: 0.55;
+  }
+
+  .bl-strip-dot {
+    position: absolute;
+    inset-block-start: 50%;
+    inline-size: 8px;
+    block-size: 8px;
+    border-radius: 50%;
+    background: currentColor;
+    transform: translate(-50%, -50%);
+  }
+
+  .bl-strip-chevron {
+    position: absolute;
+    inset-block-start: 50%;
+  }
+
+  .bl-strip-chevron-low {
+    transform: translate(-100%, -50%);
+  }
+
+  .bl-strip-chevron-high {
+    transform: translate(0, -50%);
+  }
+
+  &.is-top {
+    color: var(--primary-color);
+  }
+}
+
+@media (max-width: 48rem) {
+  .bl-strip {
+    display: none;
+  }
+}
+
+/* --- Incomplete runs --------------------------------------------------------------------- */
+
+.bl-incomplete {
+  margin-top: 8px;
+
+  .bl-num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+  }
+}

@@ -3,7 +3,8 @@
 This document describes Overseer's **battery**: a named, fixed set of two or more benchmark suites
 with declared weights, run for one model one suite after another and combined into one **Overall
 Intelligence Index** with an honest uncertainty interval. It covers what a battery is, how a battery
-run executes, the admin UI, the API, and the full statistical method.
+run executes, the admin UI, the API, the full statistical method, and the report and AI-written
+documents of a battery run.
 
 It is the third document of a set. [`ai-benchmark.md`](ai-benchmark.md) describes the single-run
 harness, and [`ai-benchmark-multi-run.md`](ai-benchmark-multi-run.md) describes series, groups,
@@ -22,9 +23,13 @@ Implementation:
 | Sequential execution, stop, resume, cancel, restart reconciliation | `Overseer/Services/Benchmarking/BenchmarkBatteryOrchestrator.cs` |
 | Loading members, per-suite statistics, persisting the analysis | `Overseer/Services/Benchmarking/BenchmarkBatteryAnalysisService.cs` |
 | The Markdown report | `Overseer/Services/Benchmarking/BenchmarkBatteryReportBuilder.cs` |
+| Leaderboard rows, the keys that separate comparability classes, ranked-result counts | `Overseer/Services/Benchmarking/BenchmarkBatteryLeaderboardService.cs` |
+| Battery results as Model Comparison entries | `Overseer/Services/Benchmarking/BenchmarkBatteryModelComparison.cs` |
+| The Paired Test tab's dimension, speed and cost rows | `Overseer/Services/Benchmarking/BenchmarkPairedTests.cs` |
+| The AI-written battery documents: fact sheet, scheduling, endpoints | `BenchmarkBatteryReportFacts.cs`, `BenchmarkBatteryReportDocumentService.cs`, `Overseer/Controllers/AdminBenchmarkBatteryReportsController.cs` |
 | The API | `Overseer/Controllers/AdminBenchmarkBatteriesController.cs` |
 | Data model | `GnollHackServer.Data/BenchmarkBattery.cs`, `BenchmarkBatteryRun.cs`, `BenchmarkBatteryAnalysis.cs` |
-| Client | `Overseer/ClientApp/src/app/admin/benchmark/batteries/` and the launcher in `benchmark.component.*` |
+| Client | `Overseer/ClientApp/src/app/admin/benchmark/batteries/` (cards, editor, leaderboard, Battery Run Report, AI Reports, progress), the battery cards of `history-tab/`, and the launcher in `run-tab/` and `state/` |
 
 ---
 
@@ -150,19 +155,33 @@ The start checks, in order, and stops at the first refusal:
    suite still present, no suite twice, and under *Custom* a finite positive weight for every suite
    (**400**).
 4. The planned launches — suites × runs per suite, less any attached slots — do not exceed
-   `Benchmark:Battery:MaxMembers` (default 60), and do not exceed the daily run cap `MaxRunsPerDay`
-   unless **Allow cap wait** is set — **400**, naming the bound. Unlike a series, a battery larger
-   than the daily cap is accepted with *Allow cap wait*: the cap is never bypassed, every launch still
-   passes the spend guard, and such a battery simply runs for more than a day.
-5. The spend guard (`BenchmarkComplianceGuard.CanSpendAsync`) — **429**.
+   `Benchmark:Battery:MaxMembers` (default **120**), and do not exceed the daily run cap
+   `Benchmark:Compliance:MaxRunsPerDay` (default **120**; the hourly cap `MaxRunsPerHour` defaults to
+   **30**) unless **Allow cap wait** is set — **400**, naming the bound. Unlike a series, a battery
+   larger than the daily cap is accepted with *Allow cap wait*: the cap is never bypassed, every launch
+   still passes the spend guard, and such a battery simply runs for more than a day. The code fallbacks
+   in `BenchmarkComplianceGuard` match the `appsettings.json` values; a User Secrets key under
+   `Benchmark:Compliance` or `Benchmark:Battery` overrides both.
+5. The spend guard (`BenchmarkComplianceGuard.CheckSpendAsync`) — **429**. With **Allow cap wait**, an
+   **hourly or daily run-cap** denial does not refuse: the battery run is created in `WaitingForCap`, and
+   the drive loop's cap wait (§ 3.4) takes over. Every other denial still answers 429. The guard says
+   which kind of denial it made (`BenchmarkSpendDenialKind`: `HourlyCap`, `DailyCap`, `Other`).
 6. The launcher's own request validation **for every suite**, on a copy of the request with that
    suite's id. A suite with a question that has no assessed difficulty fails here, before any spend,
    and the message names the suite. Same-provider grader warnings come back as **409** with the
    `SameProviderWarningDto`, exactly as for a series start, and the launcher's acknowledgment dialogs
-   resend.
+   resend. A start that is to wait on the cap validates through a guard that admits the cap denial, so
+   every other rule is still checked up front.
+7. The **report writer**, when the run settings name one (`Run.ReportWriterModelConfigurationId`): the
+   checks a single run's launch makes, against the tested configuration — the model under test, an
+   unusable configuration or an endpoint the policy refuses — **400**; a writer of the candidate's
+   provider without `acknowledgeSameProviderReportWriter` — **409** with the `SameProviderWarningDto`
+   of role `reportWriter`.
 
 Then the stored request is resolved (`RunCount` forced to 1, `AllowCapWait` copied from the battery
-request, `AllowSourceCodeReferences` defaulting to false), the definition is snapshotted, and the five
+request, `AllowSourceCodeReferences` defaulting to false, the report writer and its acknowledgment
+cleared), the writer is stored on the battery run as `ReportWriterModelConfigurationId`, so every member
+is launched without one (§ 7.2), the definition is snapshotted, and the five
 instrument hashes a run of each suite would carry now (`CandidateSystemPromptSha256`,
 `ToolGuidesSha256`, `KnowledgeBaseHeadSha`, `WikiHeadSha`, `SourceCodeHeadSha`) are recorded per
 suite in `SuiteFingerprintsJson`. Attached members are validated and inserted (§ 3.6), the row is
@@ -174,7 +193,8 @@ lost to a race deletes the row again and refuses the start with **409**. The res
 
 For each slot the drive loop launches a member from a freshly deserialized copy of the stored request
 with the slot's suite id. A cap denial parks the battery run in `WaitingForCap` with a bounded retry
-when *Allow cap wait* is set, and otherwise stops it with `RunCapReached`. A launch that does not
+when *Allow cap wait* is set — every 2 minutes, for at most 26 hours, then `RunCapReached` with its
+usable members intact — and otherwise stops it with `RunCapReached`. A launch that does not
 start stops it with `SpendDenied` or `MemberFailed` and leaves the slot free.
 
 When the member finishes:
@@ -229,7 +249,9 @@ usable member. Resume has two modes:
   starts over.
 
 Both are refused with **400** when the status is not resumable or the stored request is no longer
-valid for a suite still to be launched, and with **429** at the spend guard. *Continue* is also refused
+valid for a suite still to be launched, and with **429** at the spend guard — except that a battery run
+started with *Allow cap wait* resumes in `WaitingForCap` on an hourly or daily run-cap denial, as a
+start does (§ 3.3). *Continue* is also refused
 with **400** when a member it would keep was graded under a scoring method version other than this
 build's; *Re-run under the current instrument* is the way forward then.
 
@@ -301,6 +323,12 @@ A stopped series or battery holds no claim, so repairs such as *Re-run Failed Qu
   reference is cleared and the battery becomes broken (§ 1).
 - **A battery** cannot be deleted while one of its battery runs is `Pending`, `Running` or
   `WaitingForCap` (**409**). Otherwise its battery runs are kept with their own snapshots.
+- **A battery run** (Run History's **Delete battery run**, § 4.6) cannot be deleted while it is driven
+  or live (**409**). Its analyses, member rows and battery-completion documents (with their chart
+  files) go with it, and a report job of it is canceled. Its member runs stay, as ordinary runs,
+  unless *Also delete its member runs* is checked: then each one, superseded members included, is
+  deleted through the single-run delete, except a run that also serves another battery run, and the
+  delete is refused (**409**) while one of them is in flight.
 - **A system AI configuration** cannot be deleted while an active battery run's start request names
   it; stopped battery runs that name it are counted in the delete dialog (*N stopped battery runs
   name this configuration and can no longer be resumed.*).
@@ -346,6 +374,12 @@ Battery**. It polls through the shared poll ticker and holds the best-effort Web
 `overseer-benchmark-live:battery:<id>`, as a series does. The completion chime and desktop
 notification fire **once, when the battery run finishes**, never per member.
 
+While the battery poll keeps failing it backs off — 5, 10, 20 and 40 s, then every 60 s — instead of
+giving up after a few failures, and after two failures in a row an amber *Lost contact* notice in the
+banner says how often it retries. It stops only after 10 minutes of failures, and the notice then
+says the battery may still be running on the server and that a reload reattaches. A successful poll
+clears it. A series poller behaves the same way.
+
 ### 4.3 The battery progress dialog
 
 Full-screen. The title is *Battery Run #id*, the heading *name — revision n*, a progress bar counts
@@ -356,35 +390,125 @@ marker on attached members. An *Index withheld* cell says what to do: *Re-run Fa
 run, then Recompute — or Continue to replace it.* Empty, superseded and index-withheld cells offer
 **Attach existing run**, which lists the candidate runs for that slot, newest first, each eligible or
 with the reason it is not. The footer holds **Run in Background** (or **Close**), **Cancel Battery**,
-**Re-run under Current Instrument**, **Continue** and, once finished, **Open Analysis**.
+**Re-run under Current Instrument**, **Continue** and, once finished, **Open Analysis**, which opens the
+Battery Run Report (§ 4.7). The dialog is opened from the banner's **Show Battery Progress**, a Run
+History battery card's **Show progress** and the Battery Run Report's *Show progress* action.
 
 ### 4.4 The Multi-Suite tab
 
-The fourth benchmark tab, after *Multi-Run Analysis*:
+The fourth benchmark tab, after *Multi-Run Analysis*. It holds the battery **definitions** only:
+battery runs are listed in Run History (§ 4.6), and the analysis, the leaderboard and the paired test
+are dialogs (§§ 4.5 and 4.7).
 
-1. **Batteries** — one card per battery (name, suites, scheme, revision, runs) with **Edit**,
-   **Leaderboard**, **Archive** / **Restore** and **Delete**, and **New Battery**. *Show archived (n)*
-   reveals archived batteries.
-2. **Battery Runs** — a sortable, filterable table: *Battery*, *Model*, *Status*, *Suites* (k/K),
-   *Overall Index* ± half-width, *Overall Speed*, *Total Cost*, *Started*, with actions to view the
-   analysis and show the progress dialog.
-3. **Analysis of Battery Run #id** — the headline (or *Incomplete (k of K suites)*), *Uncertainty* (both
-   components and ν), *Suite profile*, *Weighting sensitivity*, *Leave one suite out*, *Dimensions*,
-   *Speed*, *Cost*, *Caveats*, *Excluded members* with their reasons, **Download Report** and
-   **Compute** / **Recompute**. *Recompute* is always available, and is called out when the analysis is
-   stale **or** lists an excluded member: a run repaired in place keeps its id, so staleness alone
-   cannot show the repair.
-4. **Leaderboard** — the battery runs sharing one definition hash, **one ranked table per
-   comparability class** (M9), each headed *Harness h · scoring method m* and, when several classes
-   exist, *· differs in …* naming the keys that separate them. A note says that overlapping intervals
-   are not a ranking. Battery runs whose latest analysis is incomplete are listed below, unranked.
-   Results of different classes are never placed in one order.
-5. **Compare two results** — a *Baseline* and a *Treatment* chosen from the leaderboard: two results of
-   one table compare two models, the same model in two tables verifies a change. It shows the
-   difference *D* (treatment − baseline), its interval and degrees of freedom, the randomization p and
-   method, and per-suite rows with Holm-adjusted p — or *Not comparable.* with the refusal text.
+**Head.** *Batteries* with an info tip, the polite status line (*Showing 3 of 3 batteries*), **Show
+archived (n)** — a pressed-state toggle shown while an archived battery exists, a view setting that
+*Clear all* leaves alone — and **New Battery**.
 
-### 4.5 The battery editor
+**Filter bar**, shown with more than three batteries or while a filter is active: a search over name,
+description and suite names; **Sort by** *Recently modified* (the default), *Name (A–Z)*, *Most runs* or
+*Most suites*, remembered per browser in `localStorage['overseer.benchmark.batteries.view']`; the
+facets *Suite* and *Weighting*, the chips and **Clear all**. Ten cards show at first, then **Show N
+more** / **Show all N**.
+
+**One full-width card per battery**, so a battery of 2 suites and one of 12 never make a ragged grid:
+a tall card pushes only itself down.
+
+- **Kicker:** `#id`, *Revision n*, the weighting scheme, and the states as words — *Archived*,
+  *Running*, *Broken* (validation errors or a deleted suite) and *Difficulties incomplete*.
+- **Title** and the description, then a meta line: *Modified* date · *by* user · *definition*
+  `ee1a4cfe`, with the full hash in an info tip. Validation errors stay visible under it.
+- **Metrics:** *Suites*, *Questions* (summed over the suites), *Runs*, and *Ranked results* — the
+  battery runs on the current definition's leaderboard, that is with a complete, current analysis.
+- **Actions:** **Leaderboard** (first), **Edit**, **Archive** / **Restore** and **Delete**, which is
+  unavailable, with its reason, while a battery run of the battery is in progress.
+- **Suites:** a stacked **weight bar** — one segment per suite in run order, its width the declared
+  weight, a hatched gray segment for a deleted suite — over a compact table: *#*, *Suite*, *Questions*,
+  *Weight* and *Status* (*Not assessed* or *Deleted*). The table shows the first **4** suites; **Show
+  all K suites** / **Show fewer** reveals the rest, so a card is at most four suite rows tall unless
+  asked.
+
+Below 60 rem of list width the metrics move under the head, and below 30 rem the card is one column.
+
+### 4.5 The leaderboard dialog
+
+**Leaderboard** on a card opens a full-screen dialog, *Leaderboard: name*, for the battery's current
+definition hash. Its header carries the badges *Revision n*, the scheme, *K suites*, *R runs per
+suite* (when every result shares it) and *definition* `ee1a4cfe`, and the actions **Open in Model
+Comparison** and an icon-only **Refresh**.
+
+- **One ranked table per comparability class** (M9). With several classes they are tabs, *Class A*,
+  *Class B*…, each with its count, most results first. Each class is headed *Harness h · scoring
+  method m · class `a1b2c3d4`* and, where classes differ, *Differs from other classes on* with one tag
+  per separating key. A visible note says that each table ranks one class and that overlapping
+  intervals are not a ranking. Results of different classes are never placed in one order.
+- **Columns:** *Rank* (the index rank; *≈* marks an interval that overlaps the row above), *Model*
+  with its provider and thinking badges, *Overall Index* ± half-width, *95 % interval* with an interval
+  strip on one scale for the whole class, *Speed*, *Pass cost*, *R*, *Analyzed*, and an icon-only
+  **View the report of battery run #N**, which opens the Battery Run Report over the dialog. *Model*,
+  *Overall Index*, *Speed*, *Pass cost* and *Analyzed* sort; the rank stays the index rank.
+- **Incomplete battery runs (n) — not ranked** is a closed disclosure below.
+- **Open in Model Comparison** opens the Model Comparison wizard with the shown class's results
+  selected as battery results, at most `MAX_COMPARISON_SOURCES` (24): beyond that the newest are left
+  out, with a note. It is unavailable, with its reason, while the class has fewer than two results.
+
+The paired test is not in this dialog: it is the Battery Run Report's **Paired Test** tab (§ 7.3).
+
+### 4.6 Battery runs in Run History
+
+Run History lists **battery runs as cards of their own**, beside single runs, ordered by start time,
+newest first. It loads the newest 1,000 runs and, in parallel, the newest 500 battery runs; the status
+line counts a battery run as one run and adds *· newest 500 battery runs* when that many came back.
+
+- **Member runs are hidden by default.** **Show battery member runs**, a pressed-state toggle in the
+  list head, shows them, each with its *Battery #id · suite s/K* badge. It is a view setting, not a
+  filter: it is not a chip, and *Clear all* leaves it alone. The choice is remembered per browser in
+  `localStorage['overseer.benchmark.runHistory.members']`.
+- **The Kind facet** offers *Single run* and *Battery run*. The other facets and the sorts read a
+  battery card too: its suite names, tested model, assessor, status, and the flags *Analysis stale*,
+  *Incomplete* and *Not analyzed*.
+- **A battery card** has the kicker *Battery run #N*, the status, *k of K suites*, *R runs per suite*
+  and *Analysis stale* or *Not analyzed*; the model as its title; the battery name, revision,
+  assessors, start time and user; the metrics *Intelligence* (the Overall Index ± half-width, or *N/A*
+  with *Incomplete (k of K suites)*), *Speed*, *Duration* and *Cost*; and the *DEF* and *CLASS* hashes.
+- **Its actions:** **View details** opens the Battery Run Report (§ 4.7); **Download Markdown report**
+  downloads the deterministic report (§ 7.1), unavailable until there is an analysis; **Show progress**
+  appears while the battery run is live or resumable; **Delete battery run** is unavailable while it is
+  live.
+- **Delete** asks *Delete battery run #N?*, says that its analyses and AI documents go with it, and
+  offers **Also delete its M member runs**, unchecked: unchecked, the member runs stay in Run History as
+  single runs (§ 3.8).
+
+### 4.7 The Battery Run Report
+
+A full-screen dialog, `#batteryRunReportDialog`, hosted by the benchmark shell beside the single-run
+report and **built to mirror it**: the same report frame, header, actions, tab row, key-figure cards
+and AI Reports tab. It is opened from a Run History battery card's **View details**, from the
+leaderboard and from the progress dialog's **Open Analysis**.
+
+- **Header.** The GnollBench emblem and *Battery Run #N*; *Model* and *Assessor(s)* always shown; a
+  *Run details* disclosure, closed by default, with *Prompt*, *Scoring profile*, *Started*, **Battery**
+  (name · revision · scheme) and **Suites** (*k of K complete · R runs per suite*).
+- **Battery run actions:** **Downloads** opens the Download Center on the battery run: the Markdown
+  analysis report and every document whose subject is the battery run, with no member-run files.
+  **Actions** is a popover of *Recompute analysis* (*Compute analysis* before the first one),
+  *Continue battery*, *Re-run under current instrument* and *Show progress*, each unavailable with its
+  reason. **Copy diagnostics** copies the definition, status, stop reason, members by suite and round,
+  excluded members and caveats. **Close** sits apart.
+- **Eleven tabs**, every panel rendered and the chosen one remembered per browser:
+
+  | Tab | Content |
+  |---|---|
+  | **Summary** | *Key figures* with **Choose figures**, **Copy** and **Download** (`battery-run-<id>_…` PNG files), then the recompute callout and the caveats. *Recompute* is called out when the analysis is stale **or** lists an excluded member: a run repaired in place keeps its id, so staleness alone cannot show the repair |
+  | **Integrity** | Excluded members with their reasons, the pooled identity, the composite verdict (M8), stale and incomplete notices; the tab carries a *Notice* tag while any of them holds |
+  | **Suites** | The suite profile — weight, index, contribution, interval, scored items, speed, cost per run, critical-error rate — with a link per member run that opens its single-run report on top |
+  | **Robustness** | Uncertainty (item sampling, reproducibility, combined, ν), weighting sensitivity, leave one suite out |
+  | **Members** | The suite × round grid of member runs, each with its status, index and **Open run report** |
+  | **Dimensions**, **Speed**, **Cost** | The composite figures of M5 and M6; *Cost* adds token and tool usage |
+  | **Configuration** | Definition and class hashes, weights and scheme, the start settings and each suite's instrument fingerprints |
+  | **Paired Test** | This battery run against another result of the same definition (§ 7.3) |
+  | **AI Reports** | The battery's two AI-written documents (§ 7.2) |
+
+### 4.8 The battery editor
 
 **New Battery** / **Edit**: name, optional description, a reorderable list of every suite with a
 checkbox each (checked suites, in list order, are the battery and its run order), and **Weighting**,
@@ -396,11 +520,19 @@ the per-suite masses the server sends, so it needs no round trip. A suite whose 
 about: its preview uses the fallback weight 50 per unassessed question, and the launcher will refuse
 it. Editing an existing battery creates a new revision; existing results keep theirs.
 
-### 4.6 Elsewhere
+**The two-suite requirement is stated before it can fail.** The hint above the list reads *Select at
+least two suites. The order of the selected ones is the order they run in.*, the count reads *0 of 7
+selected · 2 needed* until two are checked, and while fewer than two are checked **Create Battery**
+(**Save Battery** when editing) is `aria-disabled` — focusable, inert — and described by a footer line,
+*Select at least two suites to create the battery.* (*…to save the battery.*). A missing name is still an error only after a click, and
+the click moves focus to the name field, or to the first invalid custom weight.
 
-- **Run History** — a member run's card carries *Battery #id · suite s/K* in its kicker.
+### 4.9 Elsewhere
+
 - **Delete configuration** (Admin → System Configs) — an active battery run naming the configuration
   blocks the delete, and the impact list counts the stopped battery runs that name it.
+- **Model Comparison** — battery results are a third source kind of the wizard, never mixed with runs
+  or groups (`ai-benchmark.md`, *Battery Reports, Battery Runs in Run History and Paired Tests*).
 
 ---
 
@@ -410,17 +542,18 @@ All routes are under `api/admin/benchmark/batteries` and require the `AdminOnly`
 
 | Method | Route | Purpose |
 |---|---|---|
-| GET | `` | List batteries, with per-suite question counts, assessment readiness, difficulty mass, a weight preview under every scheme, `BrokenSuiteNames`, `ValidationErrors`, the battery-run count and whether one is active |
+| GET | `` | List batteries, with per-suite question counts, assessment readiness, difficulty mass, a weight preview under every scheme, `BrokenSuiteNames`, `ValidationErrors`, the battery-run count, whether one is active, and `RankedResultCount` and `LatestAnalysisAtUtc` from the current definition's leaderboard |
 | POST | `` | Create (body `{ name, description?, weightingScheme, suiteIds, customWeights? }`). 400 for a blank, over-128-character or taken name, a missing suite, or an invalid definition |
 | GET | `{id}` | One battery |
 | PUT | `{id}` | Edit. A change to the scheme, suites, order or weights increments `Revision`; the hash is recomputed and moves only when the scheme, the suite set or a weight changed |
 | DELETE | `{id}` | Delete. 409 while one of its battery runs is active; otherwise its battery runs keep their snapshots |
 | POST | `{id}/archive` | Archive, or restore with the body `{ "archived": false }` |
-| GET | `runs` | Battery runs, newest first; optional `?batteryId=` and `?take=` (default 50, at most 200) |
-| POST | `runs` | Start (body `StartBenchmarkBatteryRunRequest`: `batteryId`, `runsPerSuite`, `allowCapWait`, `run` — the ordinary run request — and optional `attach`). 202 `{ batteryRunId }`; 409 conflict or unacknowledged same-provider grader; 404 unknown battery; 429 spend guard; 400 invalid request or too many launches (§ 3.3) |
+| GET | `runs` | Battery runs, newest first; optional `?batteryId=` and `?take=` (default 50, at most 1000; Run History asks for 500). Each carries the tested model's identity, the assessor labels, the scoring profile and the report-documents status |
+| POST | `runs` | Start (body `StartBenchmarkBatteryRunRequest`: `batteryId`, `runsPerSuite`, `allowCapWait`, `run` — the ordinary run request, whose `reportWriterModelConfigurationId` becomes the battery run's writer — and optional `attach`). 202 `{ batteryRunId }`; 409 conflict or an unacknowledged same-provider grader or report writer; 404 unknown battery; 429 spend guard, except a run-cap denial with `allowCapWait`, which starts the battery run in `WaitingForCap`; 400 invalid request, a refused report writer or too many launches (§ 3.3) |
 | GET | `runs/active` | The battery run being driven, else the newest live or stopped one; 204 when none |
 | GET | `runs/{id}` | Detail: status, stop reason and its text, `Resumable`, the suite × round slot grid with each member's run status, index, origin, usability and reason, the current position, and the latest analysis' headline and staleness |
 | POST | `runs/{id}/cancel` | Cancel. 400 for a battery run already `Completed`, `Cancelled` or `Failed` |
+| DELETE | `runs/{id}?deleteMembers=false` | Delete a battery run with its analyses, member rows and battery-completion documents, canceling a report job of it. With `deleteMembers=true` each member run is deleted through the single-run delete, except one that serves another battery run. 204; 404 unknown; 409 while it is driven or live, or while a member run to delete is in flight (§ 3.8) |
 | POST | `runs/{id}/resume` | Body `{ mode: "Continue" \| "RerunUnderCurrentInstrument" }`. 202; 409 with `{ instrumentChanged, batteryRunId, changedHashes, message }` when the instrument moved; otherwise mapped as the start |
 | POST | `runs/reuse-preview` | For a start request not yet sent: per slot, the run that would be reused, or the reason none qualifies. Writes nothing |
 | POST | `runs/{id}/members` | Attach a run to a slot (body `{ suiteIndex, round, runId }`), refused with its reason |
@@ -428,7 +561,29 @@ All routes are under `api/admin/benchmark/batteries` and require the `AdminOnly`
 | POST | `runs/{id}/analysis` | Compute and persist the analysis; body `{ compareWithBatteryRunId }` adds the paired comparison against that baseline (M7). 400 with the explanation when the members do not form one composite or the comparison is not eligible |
 | GET | `runs/{id}/analysis` | The latest analysis, or 204 |
 | GET | `runs/{id}/report` | The Markdown report from the latest persisted analysis, `{battery}_{model}_battery_R{n}_{yyyyMMdd_HHmmss}.md`. 400 when there is no analysis yet |
-| GET | `leaderboard?definitionSha256=` | The latest analysis of every battery run with that hash, ranked within each comparability class, incomplete ones apart. 400 without a hash |
+| GET | `leaderboard?definitionSha256=` | The latest analysis of every battery run with that hash, ranked within each comparability class, incomplete ones apart; each row with the tested model's provider, model id, thinking level, reasoning mode and service tier. 400 without a hash |
+
+**A battery run's AI-written documents** (§ 7.2) have their own controller,
+`AdminBenchmarkBatteryReportsController`, under `runs/{batteryRunId}/report-documents`, with the
+request and response shapes of a run's run-completion documents:
+
+| Method | Route | Purpose |
+|---|---|---|
+| POST | `runs/{id}/report-documents` | Write the finished battery run's missing documents (body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`); the writer becomes the battery run's writer. 202 with the Pending status and the documents to write. Refusals, in order: no body 400; unknown 404; not finished, or no complete, current analysis 400; a job Pending or Writing 409; an audience other than the two 400; a document already written 409; an unusable writer or the model under test 400; an unacknowledged same-provider writer 409 with the warning; the endpoint policy 400; the spend cap 429 |
+| POST | `runs/{id}/report-documents/estimate` | Per-document and total cost for a writer, with its refusal or warning. No model call |
+| GET | `runs/{id}/report-documents/job` | The current or last job (`BenchmarkRunReportJobDto`, labeled *Battery run #N*); 204 when this process knows none |
+| POST | `runs/{id}/report-documents/cancel` | Cancel the job; documents already written are kept. 202; 409 when nothing is in progress |
+| DELETE | `runs/{id}/report-documents/{documentId}` | Delete one of the battery run's own battery-completion documents. 204; 404 when it is not one; 409 while its documents are being written |
+
+The stored documents are listed and rendered by the shared report-document endpoints, with
+`subject=battery:<id>` and `origin=batteryCompletion` (`ai-benchmark-report-pack.md` § 9).
+
+**Paired tests** live outside this controller, in `AdminBenchmarkController`:
+`POST /api/admin/benchmark/model-comparison/paired/battery` (body `{ batteryRunId,
+baselineBatteryRunId, pricingBasis }`) returns the dimension, speed and cost rows of the Battery Run
+Report's **Paired Test** tab, with M7 as the Intelligence row, judged by the M7 eligibility rule; 404
+for an unknown battery run, 400 with *Not comparable: …* for a refused pair. The wizard's
+`POST model-comparison/paired` takes `batteryRunIds` as well (`ai-benchmark.md`, *Paired Tests*).
 
 Elsewhere: `GET /api/admin/benchmark/runs/limits` carries `maxMembersPerBattery`, the run summary DTO
 carries `batteryRunId`, `batteryName`, `batterySuitePosition` and `batterySuiteCount`, and the
@@ -707,8 +862,11 @@ the suites that have one. A suite whose differences are all zero has no p and is
 rather than counted as 1. Per-item comparisons stay exploratory under Benjamini–Hochberg (1995) inside
 each suite, as in `ai-benchmark-multi-run.md` § 8.1.
 
-**No all-pairs significance matrix.** Comparisons are pairwise and on demand, so a leaderboard never
-manufactures findings by multiplicity.
+**No significance matrix on the leaderboard.** The leaderboard ranks and tests nothing pairwise, so it
+never manufactures findings by multiplicity. The Battery Run Report's **Paired Test** tab tests one
+pair on demand, unadjusted (§ 7.3). Testing several battery results at once is the Model Comparison
+wizard's **Paired tests** view, which uses this same M7 test for the Intelligence rows and adjusts each
+family with Holm (`ai-benchmark.md`, *Paired Tests*).
 
 *Rejected for comparison:* Bradley–Terry scores and mean win rate (as in HELM) depend on the set of
 models compared; a two-parameter IRT model needs far more respondents — models — than Overseer will ever
@@ -776,7 +934,9 @@ grader stochasticity, and a battery cannot separate them any better than a group
 
 ---
 
-## 7. The Report
+## 7. The Report, the AI-Written Documents and the Paired Test
+
+### 7.1 The Markdown report
 
 `GET runs/{id}/report` renders the latest **persisted** analysis as Markdown, so it stays reproducible
 after a member run is deleted. It is arithmetic only, with no AI-written prose
@@ -798,6 +958,63 @@ A practical reading order:
    help — more questions will.
 5. **Compare with the paired comparison, not with two point estimates**, and state the acceptance
    criterion for a verification before the treatment battery run is made.
+
+### 7.2 The AI-written battery documents
+
+A finished, analyzed battery run can have the two documents a single run has: the **Executive
+Summary** and the **Report for AI Researchers and Developers**, written by a report writer model in the
+stand-alone form. The Markdown report of § 7.1 stays, unchanged and deterministic. The mechanics —
+fact sheet, prompt, validation, cover, file names, endpoints — are in
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 14.
+
+**Decision D2 (2026-10-03): AI-written battery documents are allowed, under the Report Pack rule.**
+Before, a battery's report was arithmetic only, by the same non-goal as the multi-run report
+(`ai-benchmark-multi-run.md` § 11): a narrative would add cost, a new AI path and a second place for a
+summary to contradict its evidence. That non-goal is reversed for batteries, because the Report Pack
+has since removed the risk it guarded against. *Numbers come from code, words come from the writer,
+rendering involves no AI*: every figure is a fact-sheet token computed from the persisted analysis, the
+validator checks the prose and drops what still fails after one repair turn, and a stored document is
+immutable, so a battery document cannot contradict its own figures any more than a run's can. A battery
+result is also the figure a model is chosen by, so it is the result most worth explaining to a reader
+outside the team. The deterministic Markdown report is kept as the reproducible instrument.
+
+**Decision D3 (2026-10-03): the battery's writer writes the battery's two documents; the members write
+none.** A run request's report writer, sent with a battery start, is checked at start against the
+tested model (§ 3.3), stored on the battery run, and cleared from every member's request.
+`BenchmarkBatteryReportDocumentService.ScheduleIfDue` runs after the automatic analysis and writes the
+two documents once the battery run has finished, its latest analysis is complete and current, it names
+a writer, and it has no battery-completion document yet. *Why:* a battery of K suites and R rounds would
+otherwise queue up to 2·K·R member documents for the single report-writer slot, each about one run of
+one suite, when the reader needs one account of the composite. A member's own documents can still be
+written on demand from that run's **AI Reports** tab.
+
+The Battery Run Report's **AI Reports** tab lists the two documents, written or not, with **View**,
+**Delete**, *Write missing reports* (the writer picker starts on the battery run's own writer), the cost
+estimate, the same-provider confirmation and **Show Progress**, as a single run's tab does.
+
+### 7.3 The paired test
+
+**Decision D7 (2026-10-03): the paired battery test lives in the Battery Run Report's Paired Test
+tab.** This battery run is the treatment. The baseline is chosen from the same definition's ranked
+results — complete, current analyses — grouped by comparability class.
+
+- **Intelligence** is M7, unchanged: **Compare** recomputes and stores this battery run's analysis with
+  the comparison (`POST runs/{id}/analysis` with `compareWithBatteryRunId`), and the tab shows *D*, its
+  interval and degrees of freedom, the randomization p and method, and the per-suite rows with
+  Holm-adjusted Wilcoxon p, with a verdict word and shape.
+- **Quality dimensions, speed and cost** follow from `BenchmarkPairedTests`
+  (`POST model-comparison/paired/battery`, § 5), the method the wizard uses: each dimension pooled over
+  (suite, question) pairs and unweighted across suites, and speed and cost as Wilcoxon on log ratios.
+  A degraded axis is not tested.
+- The line under the form names what the pair would be: a **model comparison** (another model, same
+  class), a **verification of a change** (the same model, another class) or a **replicate** (the same
+  model, same class). M7 accepts only the first two, so for a replicate **Compare** is disabled and the
+  line says why.
+
+*Why here:* it covers **verification of a change** — the same model before and after a prompt, guide
+or harness change — which the Model Comparison wizard cannot test, because there entries that differ
+on an instrument key are Excluded from the condition. The wizard's *Paired tests* view answers the
+other question, several models on one condition, with family-wise adjustment.
 
 ---
 

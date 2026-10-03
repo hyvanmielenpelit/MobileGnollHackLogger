@@ -64,15 +64,38 @@ public class BenchmarkBatteryOrchestratorTests
             })
             .Build();
 
+    /// <summary>A compliance guard that refuses every spend for a reason that is not a run cap.</summary>
+    private sealed class OtherDenialGuard : BenchmarkComplianceGuard
+    {
+        public const string Reason = "Benchmark spending is suspended.";
+
+        public OtherDenialGuard(IConfiguration configuration, ApplicationDbContext dbContext)
+            : base(configuration, dbContext)
+        {
+        }
+
+        public override Task<BenchmarkSpendCheck> CheckSpendAsync(ApplicationDbContext? db = null, CancellationToken ct = default)
+            => Task.FromResult(BenchmarkSpendCheck.Deny(BenchmarkSpendDenialKind.Other, Reason));
+    }
+
     /// <summary>A scope factory over one shared in-memory database, as the series tests build it.</summary>
-    private static (IServiceScopeFactory Factory, string DbName) CreateScopeFactory(IConfiguration config)
+    private static (IServiceScopeFactory Factory, string DbName) CreateScopeFactory(
+        IConfiguration config,
+        bool denySpendForAnotherReason = false)
     {
         string dbName = Guid.NewGuid().ToString();
 
         var services = new ServiceCollection();
         services.AddSingleton(config);
         services.AddScoped(_ => CreateDbContext(dbName));
-        services.AddScoped<BenchmarkComplianceGuard>();
+        if (denySpendForAnotherReason)
+        {
+            services.AddScoped<BenchmarkComplianceGuard, OtherDenialGuard>();
+        }
+        else
+        {
+            services.AddScoped<BenchmarkComplianceGuard>();
+        }
         services.AddSingleton<BenchmarkRunManager>();
         services.AddSingleton<BenchmarkDifficultyJobManager>();
         services.AddSingleton<Overseer.Services.Privacy.EndpointPolicy>();
@@ -128,9 +151,10 @@ public class BenchmarkBatteryOrchestratorTests
     private static async Task<Fixture> CreateFixtureAsync(
         IConfiguration? config = null,
         bool suiteBAssessed = true,
-        bool archived = false)
+        bool archived = false,
+        bool denySpendForAnotherReason = false)
     {
-        var (factory, dbName) = CreateScopeFactory(config ?? CreateConfig());
+        var (factory, dbName) = CreateScopeFactory(config ?? CreateConfig(), denySpendForAnotherReason);
         using var db = CreateDbContext(dbName);
 
         var suiteA = Suite("Suite A");
@@ -185,7 +209,8 @@ public class BenchmarkBatteryOrchestratorTests
         Fixture fixture,
         BenchmarkRunSeriesStatus status,
         int runsPerSuite = 1,
-        string? fingerprintsJson = null)
+        string? fingerprintsJson = null,
+        bool allowCapWait = false)
     {
         using var db = CreateDbContext(fixture.DbName);
         var battery = await db.BenchmarkBatteries.Include(b => b.Suites).SingleAsync(b => b.Id == fixture.Battery.Id);
@@ -206,6 +231,7 @@ public class BenchmarkBatteryOrchestratorTests
             Status = status,
             StopReason = status == BenchmarkRunSeriesStatus.Stopped ? BenchmarkRunSeriesStopReason.MemberFailed : null,
             StartRequestJson = JsonSerializer.Serialize(stored),
+            AllowCapWait = allowCapWait,
             SuiteFingerprintsJson = fingerprintsJson,
             AutoCreatedGroupIdsJson = "{\"0\":5}",
             StartedAtUtc = DateTime.UtcNow.AddHours(-2)
@@ -262,6 +288,32 @@ public class BenchmarkBatteryOrchestratorTests
         db.BenchmarkBatteryRunMembers.Add(member);
         await db.SaveChangesAsync();
         return member;
+    }
+
+    /// <summary>A run started five minutes ago, which fills an hourly or a daily cap of one.</summary>
+    private static async Task FillCapAsync(Fixture fixture)
+    {
+        using var db = CreateDbContext(fixture.DbName);
+        db.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            BenchmarkSuiteId = fixture.SuiteA.Id,
+            SuiteName = fixture.SuiteA.Name,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            Status = BenchmarkRunStatus.Completed
+        }));
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>A third admissible configuration, for the report writer.</summary>
+    private static async Task AddConfigurationAsync(Fixture fixture, long id, string provider, string modelId, string displayName)
+    {
+        using var db = CreateDbContext(fixture.DbName);
+        db.SystemAiApiConfigurations.Add(new SystemAiApiConfiguration
+        {
+            Id = id, Provider = provider, ModelId = modelId, DisplayName = displayName,
+            IsEnabled = true, EncryptedApiKey = "encrypted-writer-key", ModelRole = 4
+        });
+        await db.SaveChangesAsync();
     }
 
     // --- Start refusals -----------------------------------------------------------------------
@@ -412,26 +464,136 @@ public class BenchmarkBatteryOrchestratorTests
     }
 
     [Fact]
-    public async Task Start_IsRefused_WhenTheSpendGuardDenies()
+    public async Task Start_IsRefused_WhenTheCapIsFull_WithoutCapWait()
     {
         var ct = TestContext.Current.CancellationToken;
-        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 1, maxRunsPerHour: 1));
-        using (var db = CreateDbContext(fixture.DbName))
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1));
+        await FillCapAsync(fixture);
+
+        var result = await fixture.Orchestrator.StartAsync(StartRequest(fixture.Battery.Id), "user", ct);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.SpendDenied, result.Outcome);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Empty(await readback.BenchmarkBatteryRuns.ToListAsync(ct));
+    }
+
+    /// <summary>
+    /// With cap wait, a full hourly or daily cap starts the battery run waiting on the cap, and the
+    /// drive loop launches nothing until the window has room.
+    /// </summary>
+    [Theory]
+    [InlineData(1, 10)]
+    [InlineData(10, 1)]
+    public async Task Start_WhenTheCapIsFull_WithCapWait_StartsWaitingForCap(int maxRunsPerHour, int maxRunsPerDay)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: maxRunsPerDay, maxRunsPerHour: maxRunsPerHour));
+        await FillCapAsync(fixture);
+
+        var result = await fixture.Orchestrator.StartAsync(
+            StartRequest(fixture.Battery.Id, allowCapWait: true), "user", ct);
+        Assert.Equal(BenchmarkBatteryStartOutcome.Started, result.Outcome);
+
+        try
         {
-            db.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
-            {
-                BenchmarkSuiteId = fixture.SuiteA.Id,
-                SuiteName = fixture.SuiteA.Name,
-                StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
-                Status = BenchmarkRunStatus.Completed
-            }));
-            await db.SaveChangesAsync(ct);
+            Assert.Equal(BenchmarkRunManager.BatteryOwner(result.BatteryRunId!.Value), fixture.RunManager.OrchestratorOwner);
+
+            using var readback = CreateDbContext(fixture.DbName);
+            var row = await readback.BenchmarkBatteryRuns.SingleAsync(b => b.Id == result.BatteryRunId.Value, ct);
+            Assert.Equal(BenchmarkRunSeriesStatus.WaitingForCap, row.Status);
+            Assert.Equal(1, await readback.BenchmarkRuns.CountAsync(ct));
         }
+        finally
+        {
+            await fixture.Orchestrator.CancelAsync(result.BatteryRunId!.Value, ct);
+        }
+    }
+
+    /// <summary>A start that waits on the cap still validates every suite before anything is written.</summary>
+    [Fact]
+    public async Task Start_WhenTheCapIsFull_WithCapWait_StillValidatesEverySuite()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1), suiteBAssessed: false);
+        await FillCapAsync(fixture);
+
+        var result = await fixture.Orchestrator.StartAsync(
+            StartRequest(fixture.Battery.Id, allowCapWait: true), "user", ct);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.Invalid, result.Outcome);
+        Assert.Equal(1, result.SuiteIndex);
+        Assert.Contains("assessed difficulty", result.Error);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Empty(await readback.BenchmarkBatteryRuns.ToListAsync(ct));
+    }
+
+    [Fact]
+    public async Task Start_IsRefused_OnASpendDenialThatIsNotACap_EvenWithCapWait()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(denySpendForAnotherReason: true);
 
         var result = await fixture.Orchestrator.StartAsync(
             StartRequest(fixture.Battery.Id, allowCapWait: true), "user", ct);
 
         Assert.Equal(BenchmarkBatteryStartOutcome.SpendDenied, result.Outcome);
+        Assert.Equal(OtherDenialGuard.Reason, result.Error);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Empty(await readback.BenchmarkBatteryRuns.ToListAsync(ct));
+    }
+
+    [Fact]
+    public async Task SpendCheck_NamesTheCapThatRefused()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var hourly = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1));
+        await FillCapAsync(hourly);
+        using (var db = CreateDbContext(hourly.DbName))
+        {
+            var guard = new BenchmarkComplianceGuard(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1), db);
+            var check = await guard.CheckSpendAsync(ct: ct);
+            Assert.False(check.Allowed);
+            Assert.Equal(BenchmarkSpendDenialKind.HourlyCap, check.DenialKind);
+            Assert.True(check.IsCapDenial);
+            Assert.Equal((check.Allowed, check.DenialReason), await guard.CanSpendAsync(ct: ct));
+        }
+
+        var daily = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 1, maxRunsPerHour: 10));
+        await FillCapAsync(daily);
+        using (var db = CreateDbContext(daily.DbName))
+        {
+            var check = await new BenchmarkComplianceGuard(CreateConfig(maxRunsPerDay: 1, maxRunsPerHour: 10), db).CheckSpendAsync(ct: ct);
+            Assert.Equal(BenchmarkSpendDenialKind.DailyCap, check.DenialKind);
+            Assert.True(check.IsCapDenial);
+        }
+
+        using (var db = CreateDbContext(hourly.DbName))
+        {
+            var check = await new BenchmarkComplianceGuard(CreateConfig(), db).CheckSpendAsync(ct: ct);
+            Assert.True(check.Allowed);
+            Assert.Equal(BenchmarkSpendDenialKind.None, check.DenialKind);
+            Assert.False(check.IsCapDenial);
+        }
+
+        Assert.False(BenchmarkSpendCheck.Deny(BenchmarkSpendDenialKind.Other, "no").IsCapDenial);
+    }
+
+    /// <summary>The code fallbacks of the run caps and the battery member cap, with no configuration.</summary>
+    [Fact]
+    public void Caps_FallBackTo120RunsPerDay_30PerHour_And120BatteryMembers()
+    {
+        var guard = new BenchmarkComplianceGuard(new ConfigurationBuilder().Build(), null!);
+
+        Assert.Equal(120, guard.MaxRunsPerDay);
+        Assert.Equal(30, guard.MaxRunsPerHour);
+        Assert.Equal(120, guard.MaxBatteryMembers);
     }
 
     /// <summary>
@@ -549,6 +711,149 @@ public class BenchmarkBatteryOrchestratorTests
         {
             await fixture.Orchestrator.CancelAsync(result.BatteryRunId!.Value, ct);
         }
+    }
+
+    // --- Report writer ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// The writer is the battery run's: stored on the row, and absent from the request every member
+    /// is launched from, so no member writes documents of its own.
+    /// </summary>
+    [Fact]
+    public async Task Start_StoresTheReportWriterOnTheBatteryRun_AndLaunchesMembersWithoutOne()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        await AddConfigurationAsync(fixture, 3, "Google", "gemini-3-pro", "Writer Model");
+
+        var request = StartRequest(fixture.Battery.Id);
+        request.Run.ReportWriterModelConfigurationId = 3;
+
+        var result = await fixture.Orchestrator.StartAsync(request, "user", ct);
+        Assert.Equal(BenchmarkBatteryStartOutcome.Started, result.Outcome);
+
+        try
+        {
+            using var readback = CreateDbContext(fixture.DbName);
+            var row = await readback.BenchmarkBatteryRuns.SingleAsync(b => b.Id == result.BatteryRunId!.Value, ct);
+
+            Assert.Equal(3, row.ReportWriterModelConfigurationId);
+            Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, row.ReportDocumentsStatus);
+            Assert.Null(row.ReportDocumentsMessage);
+
+            var raw = JsonSerializer.Deserialize<StartBenchmarkRunRequest>(row.StartRequestJson);
+            Assert.Null(raw!.ReportWriterModelConfigurationId);
+            Assert.Null(BenchmarkBatteryOrchestrator.RequestForSuite(row, fixture.SuiteB.Id)!.ReportWriterModelConfigurationId);
+        }
+        finally
+        {
+            await fixture.Orchestrator.CancelAsync(result.BatteryRunId!.Value, ct);
+        }
+    }
+
+    [Fact]
+    public async Task Start_WithoutAReportWriter_StoresNone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1));
+        await FillCapAsync(fixture);
+
+        var result = await fixture.Orchestrator.StartAsync(StartRequest(fixture.Battery.Id, allowCapWait: true), "user", ct);
+        Assert.True(result.Started);
+
+        try
+        {
+            using var readback = CreateDbContext(fixture.DbName);
+            var row = await readback.BenchmarkBatteryRuns.SingleAsync(b => b.Id == result.BatteryRunId!.Value, ct);
+            Assert.Null(row.ReportWriterModelConfigurationId);
+            Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, row.ReportDocumentsStatus);
+        }
+        finally
+        {
+            await fixture.Orchestrator.CancelAsync(result.BatteryRunId!.Value, ct);
+        }
+    }
+
+    /// <summary>A battery run stored before it held its own writer still launches its members without one.</summary>
+    [Fact]
+    public void StoredRequest_CarryingAWriter_IsReadWithoutIt()
+    {
+        var batteryRun = new BenchmarkBatteryRun
+        {
+            StartRequestJson = "{\"SuiteId\":1,\"TestedModelConfigurationId\":1,\"AssessorModelConfigurationId\":2," +
+                               "\"ReportWriterModelConfigurationId\":3,\"AcknowledgeSameProviderReportWriter\":true}"
+        };
+
+        var forSuite = BenchmarkBatteryOrchestrator.RequestForSuite(batteryRun, 10);
+
+        Assert.NotNull(forSuite);
+        Assert.Null(forSuite!.ReportWriterModelConfigurationId);
+        Assert.False(forSuite.AcknowledgeSameProviderReportWriter);
+    }
+
+    [Fact]
+    public async Task Start_WithTheModelUnderTestAsWriter_IsInvalid_AndWritesNothing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+
+        var request = StartRequest(fixture.Battery.Id);
+        request.Run.ReportWriterModelConfigurationId = 1;
+
+        var result = await fixture.Orchestrator.StartAsync(request, "user", ct);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.Invalid, result.Outcome);
+        Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, result.Error);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Empty(await readback.BenchmarkBatteryRuns.ToListAsync(ct));
+    }
+
+    [Fact]
+    public async Task Start_WithAnUnusableWriter_IsInvalid()
+    {
+        var fixture = await CreateFixtureAsync();
+
+        var request = StartRequest(fixture.Battery.Id);
+        request.Run.ReportWriterModelConfigurationId = 4242;
+
+        var result = await fixture.Orchestrator.StartAsync(request, "user", TestContext.Current.CancellationToken);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.Invalid, result.Outcome);
+        Assert.Equal(BenchmarkRunReportDocumentService.InvalidWriterMessage, result.Error);
+    }
+
+    /// <summary>
+    /// A writer of the candidate's provider is asked about once, at battery start, with the warning's
+    /// role naming the writer; the acknowledgment on the run settings lets the start through.
+    /// </summary>
+    [Fact]
+    public async Task Start_WithAWriterOfTheCandidatesProvider_AsksForTheAcknowledgment_ThenStarts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        await AddConfigurationAsync(fixture, 3, "Anthropic", "claude-sonnet-5", "Writer Model");
+
+        var request = StartRequest(fixture.Battery.Id);
+        request.Run.ReportWriterModelConfigurationId = 3;
+
+        var asked = await fixture.Orchestrator.StartAsync(request, "user", ct);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.SameProviderNotAcknowledged, asked.Outcome);
+        Assert.Equal("reportWriter", asked.SameProviderWarning!.Role);
+        Assert.Null(asked.SuiteIndex);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+        using (var readback = CreateDbContext(fixture.DbName))
+        {
+            Assert.Empty(await readback.BenchmarkBatteryRuns.ToListAsync(ct));
+        }
+
+        request.Run.AcknowledgeSameProviderReportWriter = true;
+        var started = await fixture.Orchestrator.StartAsync(request, "user", ct);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.Started, started.Outcome);
+        await fixture.Orchestrator.CancelAsync(started.BatteryRunId!.Value, ct);
     }
 
     // --- Attaching existing runs ------------------------------------------------------------------
@@ -855,6 +1160,67 @@ public class BenchmarkBatteryOrchestratorTests
         var result = await fixture.Orchestrator.ResumeAsync(4242, BenchmarkBatteryResumeMode.Continue, TestContext.Current.CancellationToken);
 
         Assert.Equal(BenchmarkBatteryStartOutcome.NotFound, result.Outcome);
+    }
+
+    /// <summary>A battery run started with cap wait resumes into a full hourly or daily cap waiting on it.</summary>
+    [Theory]
+    [InlineData(1, 10)]
+    [InlineData(10, 1)]
+    public async Task Resume_WhenTheCapIsFull_WithCapWait_ResumesWaitingForCap(int maxRunsPerHour, int maxRunsPerDay)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: maxRunsPerDay, maxRunsPerHour: maxRunsPerHour));
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Stopped, allowCapWait: true);
+        await FillCapAsync(fixture);
+
+        var result = await fixture.Orchestrator.ResumeAsync(batteryRun.Id, BenchmarkBatteryResumeMode.Continue, ct);
+        Assert.Equal(BenchmarkBatteryStartOutcome.Started, result.Outcome);
+
+        try
+        {
+            using var readback = CreateDbContext(fixture.DbName);
+            var row = await readback.BenchmarkBatteryRuns.SingleAsync(b => b.Id == batteryRun.Id, ct);
+            Assert.Equal(BenchmarkRunSeriesStatus.WaitingForCap, row.Status);
+            Assert.Null(row.StopReason);
+            Assert.Null(row.ErrorMessage);
+            Assert.Equal(1, await readback.BenchmarkRuns.CountAsync(ct));
+        }
+        finally
+        {
+            await fixture.Orchestrator.CancelAsync(batteryRun.Id, ct);
+        }
+    }
+
+    [Fact]
+    public async Task Resume_WhenTheCapIsFull_WithoutCapWait_IsSpendDenied()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1));
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Stopped);
+        await FillCapAsync(fixture);
+
+        var result = await fixture.Orchestrator.ResumeAsync(batteryRun.Id, BenchmarkBatteryResumeMode.Continue, ct);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.SpendDenied, result.Outcome);
+        Assert.False(fixture.Orchestrator.IsDriving(batteryRun.Id));
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
+
+        using var readback = CreateDbContext(fixture.DbName);
+        Assert.Equal(BenchmarkRunSeriesStatus.Stopped, (await readback.BenchmarkBatteryRuns.SingleAsync(b => b.Id == batteryRun.Id, ct)).Status);
+    }
+
+    [Fact]
+    public async Task Resume_IsRefused_OnASpendDenialThatIsNotACap_EvenWithCapWait()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(denySpendForAnotherReason: true);
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Stopped, allowCapWait: true);
+
+        var result = await fixture.Orchestrator.ResumeAsync(batteryRun.Id, BenchmarkBatteryResumeMode.Continue, ct);
+
+        Assert.Equal(BenchmarkBatteryStartOutcome.SpendDenied, result.Outcome);
+        Assert.Equal(OtherDenialGuard.Reason, result.Error);
+        Assert.Null(fixture.RunManager.OrchestratorOwner);
     }
 
     [Fact]

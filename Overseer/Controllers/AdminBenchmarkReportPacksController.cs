@@ -71,15 +71,17 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
     /// <summary>
     /// The subject, its peers, the estimated cost of each document, the same-provider warning and any
-    /// refusal. Computes the fact sheet and the prompts; makes no model call.
+    /// refusal. Computes the fact sheet and the prompts; makes no model call. Battery results mixed with
+    /// runs or groups are a 400.
     /// </summary>
     [HttpPost("report-packs/preview")]
     public async Task<IActionResult> Preview([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
     {
         if (request == null) return BadRequest(new { error = "A request body is required." });
+        if (BenchmarkReportPackPreparation.MixesSources(request)) return BadRequest(new { error = BenchmarkBatteryModelComparison.MixedSourcesError });
 
         int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
-        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(_db, _comparisonService, request, excerptChars, ct);
+        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(_db, _comparisonService, request, excerptChars, ct, _configuration);
         if (prep == null)
         {
             return Ok(new BenchmarkReportPackPreviewDto { SubjectKey = request.SubjectKey ?? string.Empty, Refusal = refusal });
@@ -121,14 +123,16 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     }
 
     /// <summary>
-    /// Starts a job. Refusals, in order: unknown or Excluded subject (400); unusable writer (400);
-    /// the writer is the subject's model (400); no document (400); spend cap (429); same provider,
-    /// unacknowledged (409 with the warning); a job already running (409 with its state).
+    /// Starts a job. Refusals, in order: battery results mixed with runs or groups (400); unknown or
+    /// Excluded subject (400); unusable writer (400); the writer is the subject's model (400); no
+    /// document (400); spend cap (429); same provider, unacknowledged (409 with the warning); a job
+    /// already running (409 with its state).
     /// </summary>
     [HttpPost("report-packs")]
     public async Task<IActionResult> Start([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
     {
         if (request == null) return BadRequest(new { error = "A request body is required." });
+        if (BenchmarkReportPackPreparation.MixesSources(request)) return BadRequest(new { error = BenchmarkBatteryModelComparison.MixedSourcesError });
 
         var (_, subject, refusal) = await BenchmarkReportPackPreparation.CompareAsync(_comparisonService, request, ct);
         if (refusal != null) return BadRequest(new { error = refusal });
@@ -175,7 +179,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             SubjectKey = subject.Key,
             SubjectLabel = subject.Label,
             SuiteId = subject.SuiteId,
-            SuiteName = subject.SuiteName ?? string.Empty,
+            SuiteName = subject.SuiteName ?? subject.BatteryName ?? string.Empty,
             WriterConfigId = writer.Id,
             WriterDisplayName = writer.DisplayName,
             WriterSnapshotId = snapshot.Id,
@@ -184,6 +188,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             {
                 RunIds = (request.RunIds ?? new List<long>()).ToList(),
                 GroupIds = (request.GroupIds ?? new List<long>()).ToList(),
+                BatteryRunIds = (request.BatteryRunIds ?? new List<long>()).ToList(),
                 PricingBasis = request.PricingBasis,
                 SubjectKey = subject.Key,
                 Audiences = audiences,
@@ -381,7 +386,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
         int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
         var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
-            _db, _comparisonService, BenchmarkRunReportDocumentService.RunRequest(runId, audiences, writer?.Id ?? 0), excerptChars, ct);
+            _db, _comparisonService, BenchmarkRunReportDocumentService.RunRequest(runId, audiences, writer?.Id ?? 0), excerptChars, ct, _configuration);
         if (prep == null)
         {
             estimate.Refusal ??= prepRefusal ?? "The reports could not be prepared.";

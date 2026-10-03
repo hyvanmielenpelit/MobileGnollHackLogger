@@ -441,6 +441,42 @@ describe('ReportPackPanelComponent', () => {
     fixture.destroy();
   }));
 
+  it('offers battery results as subjects and sends their ids for a comparison of battery results', fakeAsync(() => {
+    const batteryEntries = [
+      entry('battery:4', 'Gemini Flash', { sourceKind: 'Battery', sourceId: 4 }),
+      entry('battery:9', 'Claude Opus', { sourceKind: 'Battery', sourceId: 9, provider: 'Anthropic' })
+    ];
+    openPanel({
+      context: {
+        runIds: [],
+        groupIds: [],
+        batteryRunIds: [4, 9],
+        pricingBasis: 'Current',
+        entries: batteryEntries,
+        entryKeys: ['battery:4', 'battery:9'],
+        suiteId: null,
+        suiteName: 'Core Battery'
+      }
+    });
+
+    const select = q<HTMLSelectElement>('#rp-subject')!;
+    expect(Array.from(select.options).map(option => option.value)).toEqual(['battery:4', 'battery:9']);
+    expect(component.subjectKey).toBe('battery:4');
+
+    const request = chooseWriter(7, previewDto({ subjectKey: 'battery:4' }));
+    expect(request.request.body).toEqual({
+      runIds: [],
+      groupIds: [],
+      batteryRunIds: [4, 9],
+      pricingBasis: 1,
+      subjectKey: 'battery:4',
+      audiences: [ExecutiveSummary, TechnicalReport],
+      writerModelConfigurationId: 7,
+      acknowledgeSameProvider: false
+    });
+    fixture.destroy();
+  }));
+
   it('keeps the estimate panel in place while empty, and busy while estimating', fakeAsync(() => {
     openPanel();
     const panel = q('#rp-estimate')!;

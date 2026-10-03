@@ -9,10 +9,12 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services.Privacy;
 using Sentry;
 
 /// <summary>
@@ -171,6 +173,11 @@ public class BenchmarkBatteryOrchestrator
     /// records, in planner order, and inserted with the row as <c>Attached</c> members. One that does
     /// not qualify refuses the whole start. A battery run whose every slot is attached launches
     /// nothing: it is finished here, its analysis included, without taking the claim.</para>
+    ///
+    /// <para>With <see cref="StartBenchmarkBatteryRunRequest.AllowCapWait"/>, a run-cap denial starts
+    /// the battery run in <c>WaitingForCap</c>, and the drive loop waits for headroom. The report
+    /// writer belongs to the battery run: it is checked here against the tested configuration and
+    /// stored on the row, and every member is launched without one.</para>
     /// </summary>
     public async Task<BenchmarkBatteryStartResult> StartAsync(
         StartBenchmarkBatteryRunRequest request,
@@ -254,19 +261,28 @@ public class BenchmarkBatteryOrchestrator
         }
 
         int launches = definition.Suites.Count * request.RunsPerSuite - attach.Count;
+
+        // With AllowCapWait a run-cap denial starts the battery run waiting on the cap; any other
+        // denial refuses it.
+        bool waitForCap = false;
         if (launches > 0)
         {
-            var (canSpend, denialReason) = await guard.CanSpendAsync(db, ct);
-            if (!canSpend)
+            var spend = await guard.CheckSpendAsync(db, ct);
+            if (!spend.Allowed)
             {
-                return BenchmarkBatteryStartResult.Fail(
-                    BenchmarkBatteryStartOutcome.SpendDenied,
-                    denialReason ?? "The benchmark spend guard refused this battery run.");
+                if (!request.AllowCapWait || !spend.IsCapDenial)
+                {
+                    return BenchmarkBatteryStartResult.Fail(
+                        BenchmarkBatteryStartOutcome.SpendDenied,
+                        spend.DenialReason ?? "The benchmark spend guard refused this battery run.");
+                }
+
+                waitForCap = true;
             }
         }
 
         var attachedSlots = attach.Select(a => (a.SuiteIndex, a.Round)).ToHashSet();
-        var launcher = scope.ServiceProvider.GetRequiredService<BenchmarkRunLauncher>();
+        var launcher = ValidatingLauncher(scope.ServiceProvider, admitCapDenials: waitForCap);
         foreach (var suite in definition.Suites)
         {
             if (Enumerable.Range(1, request.RunsPerSuite).All(round => attachedSlots.Contains((suite.Index, round))))
@@ -277,6 +293,7 @@ public class BenchmarkBatteryOrchestrator
             var suiteRequest = CloneRequest(request.Run);
             suiteRequest.SuiteId = suite.SuiteId;
             suiteRequest.RunCount = 1;
+            ClearReportWriter(suiteRequest);
 
             var invalid = await launcher.ValidateRequestAsync(suiteRequest, ct);
             if (invalid != null)
@@ -289,6 +306,12 @@ public class BenchmarkBatteryOrchestrator
                     SuiteIndex = suite.Index
                 };
             }
+        }
+
+        var writerRefusal = await ReportWriterRefusalAsync(scope.ServiceProvider, db, guard, request.Run, ct);
+        if (writerRefusal != null)
+        {
+            return writerRefusal;
         }
 
         var stored = ResolveStoredRequest(request, definition);
@@ -315,9 +338,10 @@ public class BenchmarkBatteryOrchestrator
             RequestedMemberCount = definition.Suites.Count * request.RunsPerSuite,
             CompletedMemberCount = attachedMembers.Count,
             FailedMemberCount = 0,
-            Status = BenchmarkRunSeriesStatus.Pending,
+            Status = waitForCap ? BenchmarkRunSeriesStatus.WaitingForCap : BenchmarkRunSeriesStatus.Pending,
             StartRequestJson = JsonSerializer.Serialize(stored),
             AllowCapWait = request.AllowCapWait,
+            ReportWriterModelConfigurationId = request.Run.ReportWriterModelConfigurationId,
             SuiteFingerprintsJson = WriteFingerprints(fingerprints),
             StartedByUserId = string.IsNullOrEmpty(userId) ? null : userId,
             StartedAtUtc = DateTime.UtcNow,
@@ -499,6 +523,96 @@ public class BenchmarkBatteryOrchestrator
             => BenchmarkBatteryStartOutcome.SameProviderNotAcknowledged,
         _ => BenchmarkBatteryStartOutcome.Invalid
     };
+
+    /// <summary>
+    /// The refusal of the battery run's report writer, or null when none is set or it passes: the
+    /// writer checks a single run's launch makes (<see cref="BenchmarkRunReportDocumentService.WriterRefusal"/>,
+    /// the endpoint policy, then <see cref="BenchmarkRunReportDocumentService.WriterWarning"/> unless
+    /// <see cref="StartBenchmarkRunRequest.AcknowledgeSameProviderReportWriter"/>), against the tested
+    /// configuration.
+    /// </summary>
+    private static async Task<BenchmarkBatteryStartResult?> ReportWriterRefusalAsync(
+        IServiceProvider services,
+        ApplicationDbContext db,
+        BenchmarkComplianceGuard guard,
+        StartBenchmarkRunRequest run,
+        CancellationToken ct)
+    {
+        if (!run.ReportWriterModelConfigurationId.HasValue) return null;
+
+        var testedConfig = await db.SystemAiApiConfigurations.FindAsync(new object?[] { run.TestedModelConfigurationId }, ct);
+        if (testedConfig == null)
+        {
+            return BenchmarkBatteryStartResult.Fail(
+                BenchmarkBatteryStartOutcome.Invalid,
+                "The report writer cannot be checked: the tested model configuration no longer exists.");
+        }
+
+        var writerConfig = await db.SystemAiApiConfigurations.FindAsync(
+            new object?[] { run.ReportWriterModelConfigurationId.Value }, ct);
+
+        string? refusal = BenchmarkRunReportDocumentService.WriterRefusal(writerConfig, testedConfig, guard);
+        if (refusal != null)
+        {
+            return BenchmarkBatteryStartResult.Fail(BenchmarkBatteryStartOutcome.Invalid, refusal);
+        }
+
+        var endpoint = services.GetRequiredService<EndpointPolicy>()
+            .Validate(writerConfig!.BaseUrl, writerConfig.CustomHeadersJson, writerConfig.ApiVersion);
+        if (!endpoint.IsValid)
+        {
+            return BenchmarkBatteryStartResult.Fail(
+                BenchmarkBatteryStartOutcome.Invalid,
+                $"Report writer configuration '{writerConfig.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpoint.Error}");
+        }
+
+        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writerConfig, testedConfig, guard);
+        if (warning != null && !run.AcknowledgeSameProviderReportWriter)
+        {
+            return new BenchmarkBatteryStartResult
+            {
+                Outcome = BenchmarkBatteryStartOutcome.SameProviderNotAcknowledged,
+                SameProviderWarning = BenchmarkRunReportDocumentService.WriterWarningDto(writerConfig, testedConfig, warning)
+            };
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The launcher that validates the members of a start or resume. When the battery run is to wait
+    /// on the cap, its guard admits a run-cap denial, so every other rule is still checked up front.
+    /// </summary>
+    private static BenchmarkRunLauncher ValidatingLauncher(IServiceProvider services, bool admitCapDenials)
+        => admitCapDenials
+            ? ActivatorUtilities.CreateInstance<BenchmarkRunLauncher>(
+                services,
+                new CapAdmittingComplianceGuard(
+                    services.GetRequiredService<IConfiguration>(),
+                    services.GetRequiredService<ApplicationDbContext>()))
+            : services.GetRequiredService<BenchmarkRunLauncher>();
+
+    /// <summary>A compliance guard that allows a spend the hourly or daily run cap refuses; any other denial stands.</summary>
+    private sealed class CapAdmittingComplianceGuard : BenchmarkComplianceGuard
+    {
+        public CapAdmittingComplianceGuard(IConfiguration configuration, ApplicationDbContext dbContext)
+            : base(configuration, dbContext)
+        {
+        }
+
+        public override async Task<BenchmarkSpendCheck> CheckSpendAsync(ApplicationDbContext? db = null, CancellationToken ct = default)
+        {
+            var check = await base.CheckSpendAsync(db, ct);
+            return check.IsCapDenial ? BenchmarkSpendCheck.Allow : check;
+        }
+    }
+
+    /// <summary>Members are launched with no report writer; the battery run's own writer writes its documents.</summary>
+    private static void ClearReportWriter(StartBenchmarkRunRequest request)
+    {
+        request.ReportWriterModelConfigurationId = null;
+        request.AcknowledgeSameProviderReportWriter = false;
+    }
 
     /// <summary>
     /// The five instrument hashes a run of <paramref name="request"/> on suite
@@ -941,6 +1055,9 @@ public class BenchmarkBatteryOrchestrator
     /// <para><see cref="BenchmarkBatteryResumeMode.RerunUnderCurrentInstrument"/> supersedes every
     /// member, attached ones included, forgets the auto-created groups (they stay as ordinary
     /// groups), re-records every suite's fingerprint and starts over.</para>
+    ///
+    /// <para>A battery run started with <c>AllowCapWait</c> resumes in <c>WaitingForCap</c> on a
+    /// run-cap denial.</para>
     /// </summary>
     public async Task<BenchmarkBatteryStartResult> ResumeAsync(
         long batteryRunId,
@@ -1027,11 +1144,19 @@ public class BenchmarkBatteryOrchestrator
                 "or start a new battery run.");
         }
 
-        var (canSpend, denialReason) = await guard.CanSpendAsync(db, ct);
-        if (!canSpend)
+        // With AllowCapWait a run-cap denial resumes the battery run waiting on the cap; any other
+        // denial refuses it.
+        bool waitForCap = false;
+        var spend = await guard.CheckSpendAsync(db, ct);
+        if (!spend.Allowed)
         {
-            return Refuse(BenchmarkBatteryStartOutcome.SpendDenied, batteryRun.Id,
-                denialReason ?? "The benchmark spend guard refused this resume.");
+            if (!batteryRun.AllowCapWait || !spend.IsCapDenial)
+            {
+                return Refuse(BenchmarkBatteryStartOutcome.SpendDenied, batteryRun.Id,
+                    spend.DenialReason ?? "The benchmark spend guard refused this resume.");
+            }
+
+            waitForCap = true;
         }
 
         var keptSlots = kept.Select(s => (s.Member.SuiteIndex, s.Member.Round)).ToHashSet();
@@ -1039,7 +1164,7 @@ public class BenchmarkBatteryOrchestrator
             .Where(suite => Enumerable.Range(1, batteryRun.RunsPerSuite).Any(round => !keptSlots.Contains((suite.Index, round))))
             .ToList();
 
-        var launcher = scope.ServiceProvider.GetRequiredService<BenchmarkRunLauncher>();
+        var launcher = ValidatingLauncher(scope.ServiceProvider, admitCapDenials: waitForCap);
         foreach (var suite in remainingSuites)
         {
             var suiteRequest = RequestForSuite(batteryRun, suite.SuiteId)!;
@@ -1131,7 +1256,7 @@ public class BenchmarkBatteryOrchestrator
         }
 
         batteryRun.CompletedMemberCount = RecomputeCompletedMemberCount(state, suiteCount, batteryRun.RunsPerSuite);
-        batteryRun.Status = BenchmarkRunSeriesStatus.Pending;
+        batteryRun.Status = waitForCap ? BenchmarkRunSeriesStatus.WaitingForCap : BenchmarkRunSeriesStatus.Pending;
         batteryRun.StopReason = null;
         batteryRun.ErrorMessage = null;
         batteryRun.CompletedAtUtc = null;
@@ -1505,7 +1630,7 @@ public class BenchmarkBatteryOrchestrator
 
     /// <summary>
     /// Blocks until the spend guard allows the next member, or decides the battery run cannot
-    /// proceed. Returns false when the caller should stop driving.
+    /// proceed. Only a run-cap denial is waited on. Returns false when the caller should stop driving.
     /// </summary>
     private async Task<bool> WaitForCapAsync(
         ApplicationDbContext db,
@@ -1519,13 +1644,20 @@ public class BenchmarkBatteryOrchestrator
         {
             ct.ThrowIfCancellationRequested();
 
-            var (canSpend, denialReason) = await guard.CanSpendAsync(db, ct);
-            if (canSpend) return true;
+            var spend = await guard.CheckSpendAsync(db, ct);
+            if (spend.Allowed) return true;
+
+            if (!spend.IsCapDenial)
+            {
+                await StopAsync(db, batteryRun, BenchmarkRunSeriesStopReason.SpendDenied,
+                    spend.DenialReason ?? "The benchmark spend guard refused the next member.", ct);
+                return false;
+            }
 
             if (!batteryRun.AllowCapWait)
             {
                 await StopAsync(db, batteryRun, BenchmarkRunSeriesStopReason.RunCapReached,
-                    denialReason ?? "The run cap blocked the next member.", ct);
+                    spend.DenialReason ?? "The run cap blocked the next member.", ct);
                 return false;
             }
 
@@ -1730,7 +1862,12 @@ public class BenchmarkBatteryOrchestrator
             problem = ex.Message;
         }
 
-        if (problem == null) return;
+        if (problem == null)
+        {
+            // The battery-completion documents follow a complete, current analysis when a writer was chosen.
+            _ = services.GetService<BenchmarkBatteryReportDocumentService>()?.ScheduleIfDue(batteryRunId);
+            return;
+        }
 
         _logger.LogWarning("Benchmark battery run {BatteryRunId} has no analysis: {Problem}", batteryRunId, problem);
 
@@ -1939,8 +2076,8 @@ public class BenchmarkBatteryOrchestrator
 
     /// <summary>
     /// The stored start request of a battery run, as each member is launched from it: resolved
-    /// (<c>AllowSourceCodeReferences</c> null reads as disallowed, the run count is 1). Null when it
-    /// cannot be read. A fresh object on every call.
+    /// (<c>AllowSourceCodeReferences</c> null reads as disallowed, the run count is 1, no report
+    /// writer). Null when it cannot be read. A fresh object on every call.
     /// </summary>
     internal static StartBenchmarkRunRequest? DeserializeRequest(BenchmarkBatteryRun batteryRun)
     {
@@ -1953,6 +2090,7 @@ public class BenchmarkBatteryOrchestrator
             {
                 request.AllowSourceCodeReferences ??= false;
                 request.RunCount = 1;
+                ClearReportWriter(request);
             }
             return request;
         }
@@ -1972,8 +2110,9 @@ public class BenchmarkBatteryOrchestrator
 
     /// <summary>
     /// The request a battery run stores: a copy of the operator's run settings with the run count
-    /// forced to 1, the battery's cap preference, source code references resolved, and the first
-    /// suite's id (ignored; each launch substitutes its own).
+    /// forced to 1, the battery's cap preference, source code references resolved, no report writer
+    /// (the battery run holds its own), and the first suite's id (ignored; each launch substitutes its
+    /// own).
     /// </summary>
     internal static StartBenchmarkRunRequest ResolveStoredRequest(
         StartBenchmarkBatteryRunRequest request,
@@ -1983,6 +2122,7 @@ public class BenchmarkBatteryOrchestrator
         stored.RunCount = 1;
         stored.AllowCapWait = request.AllowCapWait;
         stored.AllowSourceCodeReferences ??= false;
+        ClearReportWriter(stored);
         stored.SuiteId = definition.Suites.Count > 0 ? definition.Suites[0].SuiteId : stored.SuiteId;
         return stored;
     }

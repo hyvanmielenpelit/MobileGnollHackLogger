@@ -28,6 +28,9 @@ public enum BenchmarkReportDocumentOrigin
 
     /// <summary>Written once after a run completed, about that run on its own, with no peers.</summary>
     RunCompletion = 2,
+
+    /// <summary>Written once after a battery run finished and was analyzed, about that battery run on its own, with no peers.</summary>
+    BatteryCompletion = 3,
 }
 
 /// <summary>
@@ -79,7 +82,7 @@ public class BenchmarkReportDocument
     /// <summary>A report pack's document, or one written after a run completed. Rows written before the column existed are report-pack documents.</summary>
     public BenchmarkReportDocumentOrigin Origin { get; set; } = BenchmarkReportDocumentOrigin.ReportPack;
 
-    /// <summary>The comparison entry key of the subject: <c>run:&lt;id&gt;</c> or <c>group:&lt;id&gt;</c>.</summary>
+    /// <summary>The comparison entry key of the subject: <c>run:&lt;id&gt;</c>, <c>group:&lt;id&gt;</c> or <c>battery:&lt;id&gt;</c>.</summary>
     [MaxLength(64)]
     public string SubjectKey { get; set; } = default!;
 

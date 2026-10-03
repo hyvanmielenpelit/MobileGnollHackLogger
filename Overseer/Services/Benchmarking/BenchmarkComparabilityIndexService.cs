@@ -33,13 +33,13 @@ using Overseer.Models;
 public class BenchmarkComparabilityIndexService
 {
     /// <summary>
-    /// The most runs one index may cover. The runs table itself is capped at 200 rows, so this is
+    /// The most runs one index may cover. The runs table itself is capped at 1000 rows, so this is
     /// the whole of what a picker can offer and the query is bounded by construction.
     /// </summary>
-    public const int MaxRunIds = 200;
+    public const int MaxRunIds = 1000;
 
     /// <summary>The most groups one index may cover.</summary>
-    public const int MaxGroupIds = 100;
+    public const int MaxGroupIds = 500;
 
     /// <summary>The condition label of a group whose own runs do not describe one point.</summary>
     public const string SelfInconsistentLabel = "Self-inconsistent";
@@ -117,7 +117,7 @@ public class BenchmarkComparabilityIndexService
             .Distinct()
             .ToList();
 
-        // Without the answer graph: the index covers up to 200 runs, and the comparability keys need
+        // Without the answer graph: the index covers up to 1000 runs, and the comparability keys need
         // three columns out of it, not the whole thing.
         var runs = wantedRunIds.Count == 0
             ? new List<BenchmarkRun>()

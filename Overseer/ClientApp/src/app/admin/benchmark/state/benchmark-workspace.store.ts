@@ -8,6 +8,7 @@ import {
   BenchmarkFootprintDto,
   BenchmarkRunLimitsDto,
   BenchmarkBatteryDto,
+  BenchmarkBatteryRunDto,
   BenchmarkRunGroupDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
@@ -18,7 +19,7 @@ import {
   ModelPickerOption,
   toModelPickerOptions
 } from '../../../shared/model-picker/model-picker.component';
-import { Observable, Subject, catchError, map, of } from 'rxjs';
+import { Observable, Subject, catchError, combineLatest, map, of, take } from 'rxjs';
 import {
   SnapshotExport
 } from '../question-yaml/question-yaml-format';
@@ -28,9 +29,14 @@ import {
   RUN_HISTORY_FLAGS,
   RUN_HISTORY_CHANGES,
   RUN_HISTORY_STARTED_RANGES,
-  RUN_HISTORY_LIMIT
+  RUN_HISTORY_LIMIT,
+  RUN_HISTORY_MEMBERS_STORAGE_KEY,
+  RUN_HISTORY_KINDS,
+  BATTERY_RUN_HISTORY_LIMIT,
+  HistoryItem
 } from '../benchmark.models';
 import { formatStatusLabel, instrumentChangeOf, runDurationMs } from '../benchmark-run-format';
+import { batteryRunStatusLabel } from '../batteries/battery.models';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 
 /**
@@ -94,54 +100,112 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
 
   loadingHistory = false;
 
+  /** The newest battery runs, which Run History lists beside single runs. */
+  batteryRuns: BenchmarkBatteryRunDto[] = [];
+
+  /** The battery run list did not load with the last history load; Run History shows single runs only. */
+  batteryRunsFailed = false;
+
+  /** Run History lists runs that are members of a battery run; off by default. */
+  showBatteryMembers = readStoredShowMembers();
+
+  private historyItemsMemo: {
+    runs: readonly BenchmarkRunSummaryDto[];
+    batteries: readonly BenchmarkBatteryRunDto[];
+    members: boolean;
+    items: HistoryItem[];
+    positions: Map<HistoryItem, number>;
+  } | null = null;
+
+  /**
+   * Run History's cards: `historyRuns` in server order, merged with `batteryRuns` by start time,
+   * newest first. Member runs are left out while `showBatteryMembers` is off. Memoized on its
+   * inputs, so the card list sees one array until they change.
+   */
+  get historyItems(): HistoryItem[] {
+    return this.historyItemsState().items;
+  }
+
+  /** Shows or hides battery member runs. Not a filter: Clear all leaves it as it is. */
+  setShowBatteryMembers(show: boolean): void {
+    if (this.showBatteryMembers === show) {
+      return;
+    }
+    this.showBatteryMembers = show;
+    try {
+      localStorage.setItem(RUN_HISTORY_MEMBERS_STORAGE_KEY, show ? '1' : '0');
+    } catch {
+      // Storage unavailable; the choice lasts for this page.
+    }
+    this.historyList.resetBatch();
+    this.historyList.invalidate();
+  }
+
+  private historyItemsState(): NonNullable<BenchmarkWorkspaceStore['historyItemsMemo']> {
+    const memo = this.historyItemsMemo;
+    if (memo && memo.runs === this.historyRuns && memo.batteries === this.batteryRuns &&
+        memo.members === this.showBatteryMembers) {
+      return memo;
+    }
+    const items = mergeHistoryItems(this.historyRuns, this.batteryRuns, this.showBatteryMembers);
+    const positions = new Map<HistoryItem, number>();
+    items.forEach((item, index) => positions.set(item, items.length - index));
+    const next = { runs: this.historyRuns, batteries: this.batteryRuns, members: this.showBatteryMembers, items, positions };
+    this.historyItemsMemo = next;
+    return next;
+  }
+
   /**
    * Sort and filter state for the Run History card list. `historyRuns` itself stays in the
    * server's own order — `instrumentChangeOf` and `completedRunsOfSelectedSuite` both locate a
    * run by its position in that list, and a user-chosen sort would make either misread the data.
    * `view()` never mutates its input, so both keep reading `historyRuns` unaffected by this.
    */
-  readonly historyTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
+  readonly historyTable = new TableState<HistoryItem>('id', 'desc').registerAccessors(
     {
-      id: r => r.id,
-      suiteName: r => r.suiteName,
-      testedModelDisplayNameUsed: r => r.testedModelDisplayNameUsed,
-      assessorModelDisplayNameUsed: r => r.assessorModelDisplayNameUsed,
-      status: r => formatStatusLabel(r.status),
+      // The card's position in `historyItems`, newest highest.
+      id: item => this.historyItemsState().positions.get(item) ?? 0,
+      suiteName: item => item.kind === 'run' ? item.run.suiteName : item.battery.batteryName,
+      testedModelDisplayNameUsed: item => item.kind === 'run' ? item.run.testedModelDisplayNameUsed : item.battery.testedModelLabel,
+      assessorModelDisplayNameUsed: item => item.kind === 'run' ? item.run.assessorModelDisplayNameUsed : item.battery.assessorLabel,
+      status: item => this.historyStatusOf(item),
       // Null sorts last automatically, which is right for a run that never scored.
-      qualityIndex: r => r.qualityIndex ?? r.finalScore,
-      speedIndex: r => r.speedIndex,
+      qualityIndex: item => item.kind === 'run' ? item.run.qualityIndex ?? item.run.finalScore : item.battery.overallIndex,
+      speedIndex: item => item.kind === 'run' ? item.run.speedIndex : item.battery.overallSpeedIndex,
       // The same expression the Duration metric displays, so the list sorts by what it shows.
-      durationMs: r => runDurationMs(r),
-      estimatedCost: r => r.estimatedCandidateCost ?? r.estimatedCost,
-      startedAtUtc: r => new Date(r.startedAtUtc)
+      durationMs: item => item.kind === 'run' ? runDurationMs(item.run) : batteryRunDurationMs(item.battery),
+      estimatedCost: item => item.kind === 'run' ? item.run.estimatedCandidateCost ?? item.run.estimatedCost : item.battery.totalCost,
+      startedAtUtc: item => new Date(this.historyStartedText(item))
     },
     {
-      search: customFilter((r, value) => this.historySearchText(r).includes(value.toLowerCase())),
-      suite: anyOfFilter(r => r.suiteName || null),
-      tested: anyOfFilter(r => r.testedModelDisplayNameUsed || null),
-      assessor: anyOfFilter(r => r.assessorModelDisplayNameUsed || null),
+      search: customFilter((item, value) => this.historySearchText(item).includes(value.toLowerCase())),
+      kind: anyOfFilter(item => historyKindOf(item)),
+      suite: anyOfFilter(item => this.historySuitesOf(item)),
+      tested: anyOfFilter(item => this.historyTestedOf(item)),
+      assessor: anyOfFilter(item => this.historyAssessorOf(item)),
       // Keyed on the same label the status badge shows, so the facet and the card always agree.
-      status: anyOfFilter(r => formatStatusLabel(r.status)),
-      flags: anyOfFilter(r => this.historyFlagsOf(r)),
-      changes: anyOfFilter(r => this.historyChangeOf(r)),
-      started: customFilter((r, value) => this.historyStartedWithin(r, value))
+      status: anyOfFilter(item => this.historyStatusOf(item)),
+      flags: anyOfFilter(item => this.historyFlagsOf(item)),
+      changes: anyOfFilter(item => this.historyChangeOf(item)),
+      started: customFilter((item, value) => this.historyStartedWithin(item, value))
     }
   );
 
   /** The Run History card list over `historyTable`: the search, Sort by, the facets, the chips and the batch. */
-  readonly historyList = new CardListState<BenchmarkRunSummaryDto>(this.historyTable, {
+  readonly historyList = new CardListState<HistoryItem>(this.historyTable, {
     idPrefix: 'rh',
     sorts: RUN_HISTORY_SORTS,
     defaultSort: 'newest',
     storageKey: RUN_HISTORY_VIEW_STORAGE_KEY,
     facets: [
-      { column: 'suite', label: 'Suite', values: r => r.suiteName || null },
-      { column: 'tested', label: 'Tested model', values: r => r.testedModelDisplayNameUsed || null },
-      { column: 'assessor', label: 'Assessor', values: r => r.assessorModelDisplayNameUsed || null },
+      { column: 'kind', label: 'Kind', values: item => historyKindOf(item), order: RUN_HISTORY_KINDS },
+      { column: 'suite', label: 'Suite', values: item => this.historySuitesOf(item) },
+      { column: 'tested', label: 'Tested model', values: item => this.historyTestedOf(item) },
+      { column: 'assessor', label: 'Assessor', values: item => this.historyAssessorOf(item) },
       // The order of historyStatusOptions: the default string order.
-      { column: 'status', label: 'Status', values: r => formatStatusLabel(r.status), order: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
-      { column: 'flags', label: 'Flags', values: r => this.historyFlagsOf(r), order: RUN_HISTORY_FLAGS },
-      { column: 'changes', label: 'Changes', values: r => this.historyChangeOf(r), order: RUN_HISTORY_CHANGES }
+      { column: 'status', label: 'Status', values: item => this.historyStatusOf(item), order: (a, b) => (a < b ? -1 : a > b ? 1 : 0) },
+      { column: 'flags', label: 'Flags', values: item => this.historyFlagsOf(item), order: RUN_HISTORY_FLAGS },
+      { column: 'changes', label: 'Changes', values: item => this.historyChangeOf(item), order: RUN_HISTORY_CHANGES }
     ],
     singleFacets: [
       {
@@ -149,16 +213,32 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
         label: 'Started',
         anyLabel: 'Any time',
         options: RUN_HISTORY_STARTED_RANGES,
-        matches: (r, range) => this.historyStartedWithin(r, range),
-        listedWhen: rows => rows.filter(r => this.historyStartedAt(r) !== null).length >= 2
+        matches: (item, range) => this.historyStartedWithin(item, range),
+        listedWhen: rows => rows.filter(item => this.historyStartedAt(item) !== null).length >= 2
       }
     ],
     // A debounced search applies outside any event handler, so the view is checked by hand.
     onChange: () => this.viewSync.notify()
   });
 
-  /** What the search matches a run against, lower-cased. */
-  private historySearchText(run: BenchmarkRunSummaryDto): string {
+  /** What the search matches a card against, lower-cased. */
+  private historySearchText(item: HistoryItem): string {
+    if (item.kind === 'battery') {
+      const battery = item.battery;
+      return [
+        `battery #${battery.id}`,
+        `#${battery.id}`,
+        battery.batteryName,
+        ...battery.suites.map(suite => suite.suiteName),
+        battery.testedModelLabel,
+        battery.testedModelId,
+        battery.testedProvider,
+        battery.assessorLabel,
+        batteryRunStatusLabel(battery.status),
+        battery.definitionSha256
+      ].filter(part => !!part).join(' ').toLowerCase();
+    }
+    const run = item.run;
     return [
       `#${run.id}`,
       run.suiteName,
@@ -176,9 +256,40 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
     ].filter(part => !!part).join(' ').toLowerCase();
   }
 
-  /** The Flags facet's values of a run, from its counts; `None` when it has none of them. */
-  private historyFlagsOf(run: BenchmarkRunSummaryDto): string[] {
+  private historySuitesOf(item: HistoryItem): string | string[] | null {
+    if (item.kind === 'run') {
+      return item.run.suiteName || null;
+    }
+    const names = item.battery.suites.map(suite => suite.suiteName).filter(name => !!name);
+    return names.length > 0 ? names : null;
+  }
+
+  private historyTestedOf(item: HistoryItem): string | null {
+    return (item.kind === 'run' ? item.run.testedModelDisplayNameUsed : item.battery.testedModelLabel) || null;
+  }
+
+  private historyAssessorOf(item: HistoryItem): string | null {
+    return (item.kind === 'run' ? item.run.assessorModelDisplayNameUsed : item.battery.assessorLabel) || null;
+  }
+
+  private historyStatusOf(item: HistoryItem): string {
+    return item.kind === 'run' ? formatStatusLabel(item.run.status) : batteryRunStatusLabel(item.battery.status);
+  }
+
+  /** The Flags facet's values of a card; `None` when it has none of them. */
+  private historyFlagsOf(item: HistoryItem): string[] {
     const flags: string[] = [];
+    if (item.kind === 'battery') {
+      const battery = item.battery;
+      if (battery.latestAnalysisId == null) {
+        flags.push('Not analyzed');
+      } else {
+        if (battery.analysisStale) flags.push('Analysis stale');
+        if (battery.latestAnalysisComplete === false) flags.push('Incomplete');
+      }
+      return flags.length > 0 ? flags : ['None'];
+    }
+    const run = item.run;
     if ((run.degradedAnswerCount ?? 0) > 0) flags.push('Degraded answers');
     if ((run.unansweredQuestionCount ?? 0) > 0) flags.push('Unanswered questions');
     if ((run.terminalFailureAnswerCount ?? 0) > 0) flags.push('Failed at the provider');
@@ -187,24 +298,32 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
     return flags.length > 0 ? flags : ['None'];
   }
 
-  /** The Changes facet's value of a run, from `instrumentChangeOf`. */
-  private historyChangeOf(run: BenchmarkRunSummaryDto): string {
-    const change = this.instrumentChangeOf(run);
+  /** The Changes facet's value of a run, from `instrumentChangeOf`; none for a battery run. */
+  private historyChangeOf(item: HistoryItem): string | null {
+    if (item.kind === 'battery') {
+      return null;
+    }
+    const change = this.instrumentChangeOf(item.run);
     return change ? (change.kind === 'options' ? 'Options changed' : 'Instrument changed') : 'No change';
   }
 
-  private historyStartedAt(run: BenchmarkRunSummaryDto): Date | null {
-    if (!run.startedAtUtc) {
+  private historyStartedText(item: HistoryItem): string {
+    return item.kind === 'run' ? item.run.startedAtUtc : item.battery.startedAtUtc;
+  }
+
+  private historyStartedAt(item: HistoryItem): Date | null {
+    const text = this.historyStartedText(item);
+    if (!text) {
       return null;
     }
-    const started = parseServerUtcDate(run.startedAtUtc);
+    const started = parseServerUtcDate(text);
     return Number.isNaN(started.getTime()) ? null : started;
   }
 
-  /** Whether a run started within the Started facet's range `range` of now. */
-  private historyStartedWithin(run: BenchmarkRunSummaryDto, range: string): boolean {
+  /** Whether a card started within the Started facet's range `range` of now. */
+  private historyStartedWithin(item: HistoryItem, range: string): boolean {
     const hours = RUN_HISTORY_STARTED_RANGES.find(r => r.value === range)?.hours;
-    const started = this.historyStartedAt(run);
+    const started = this.historyStartedAt(item);
     if (hours === undefined || !started) {
       return false;
     }
@@ -376,13 +495,25 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
 
   // --- History ---
 
-  /** Loads the newest runs of every suite; `afterLoad` runs once they are rendered. */
+  /**
+   * Loads the newest runs of every suite and, in parallel, the newest battery runs; `afterLoad`
+   * runs once they are rendered. A failed battery list leaves Run History with single runs only.
+   */
   loadHistory(afterLoad?: () => void) {
     this.loadingHistory = true;
-    // The endpoint clamps to 200 regardless, so asking for exactly that loads every run it will return.
-    this.benchmarkService.getRuns(undefined, RUN_HISTORY_LIMIT).subscribe({
-      next: (data) => {
+    // The endpoint clamps to RUN_HISTORY_LIMIT regardless, so asking for exactly that loads every run it will return.
+    const batteries$ = this.benchmarkService.getBatteryRuns(undefined, BATTERY_RUN_HISTORY_LIMIT).pipe(
+      map(list => ({ list: list ?? [], failed: false })),
+      catchError(err => {
+        console.error('Failed to load battery runs', err);
+        return of({ list: [] as BenchmarkBatteryRunDto[], failed: true });
+      })
+    );
+    combineLatest({ runs: this.benchmarkService.getRuns(undefined, RUN_HISTORY_LIMIT), batteries: batteries$ }).pipe(take(1)).subscribe({
+      next: ({ runs: data, batteries }) => {
         this.historyRuns = data;
+        this.batteryRuns = batteries.list;
+        this.batteryRunsFailed = batteries.failed;
         this.historyList.invalidate();
         this.loadingHistory = false;
         this.historyLoaded$.next();
@@ -456,4 +587,67 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
   ngOnDestroy(): void {
     this.historyList.dispose();
   }
+}
+
+/** The stored *Show battery member runs* choice; off when none is stored or storage is unavailable. */
+function readStoredShowMembers(): boolean {
+  try {
+    return localStorage.getItem(RUN_HISTORY_MEMBERS_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+/** The Kind facet's value of a card. */
+export function historyKindOf(item: HistoryItem): string {
+  return item.kind === 'run' ? RUN_HISTORY_KINDS[0] : RUN_HISTORY_KINDS[1];
+}
+
+/** Completed minus started, or 0 while the battery run has not completed. */
+export function batteryRunDurationMs(battery: BenchmarkBatteryRunDto): number {
+  if (!battery.completedAtUtc) {
+    return 0;
+  }
+  const elapsed = parseServerUtcDate(battery.completedAtUtc).getTime() - parseServerUtcDate(battery.startedAtUtc).getTime();
+  return Number.isFinite(elapsed) ? Math.max(0, elapsed) : 0;
+}
+
+function startedMs(text: string | null | undefined): number {
+  if (!text) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const ms = parseServerUtcDate(text).getTime();
+  return Number.isNaN(ms) ? Number.NEGATIVE_INFINITY : ms;
+}
+
+/**
+ * `runs` in their own order, with each battery run placed before the first run that started no
+ * later than it did; `batteries` arrive newest first. Runs with a `batteryRunId` are left out
+ * unless `showMembers`.
+ */
+export function mergeHistoryItems(
+  runs: readonly BenchmarkRunSummaryDto[],
+  batteries: readonly BenchmarkBatteryRunDto[],
+  showMembers: boolean
+): HistoryItem[] {
+  const sorted = batteries
+    .slice()
+    .sort((a, b) => startedMs(b.startedAtUtc) - startedMs(a.startedAtUtc) || b.id - a.id);
+  const items: HistoryItem[] = [];
+  let next = 0;
+  const pushBattery = (battery: BenchmarkBatteryRunDto) => items.push({ kind: 'battery', key: `battery:${battery.id}`, battery });
+  for (const run of runs) {
+    if (!showMembers && run.batteryRunId != null) {
+      continue;
+    }
+    const runStarted = startedMs(run.startedAtUtc);
+    while (next < sorted.length && startedMs(sorted[next].startedAtUtc) >= runStarted) {
+      pushBattery(sorted[next++]);
+    }
+    items.push({ kind: 'run', key: `run:${run.id}`, run });
+  }
+  while (next < sorted.length) {
+    pushBattery(sorted[next++]);
+  }
+  return items;
 }

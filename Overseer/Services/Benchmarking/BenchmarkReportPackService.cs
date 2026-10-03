@@ -30,6 +30,13 @@ public sealed class BenchmarkReportPackPreparation
     /// <summary>The peers' runs that still exist, in run-id order; never a subject run.</summary>
     public IReadOnlyList<BenchmarkRun> PeerRuns { get; init; } = Array.Empty<BenchmarkRun>();
 
+    /// <summary>
+    /// What the preparation itself recorded, stored with every document it writes: for a battery
+    /// subject, the question detail left out to keep the prompt within its budget. Empty for a run or
+    /// group subject.
+    /// </summary>
+    public IReadOnlyList<BenchmarkReportValidationNote> Notes { get; init; } = Array.Empty<BenchmarkReportValidationNote>();
+
     public const int DefaultAnswerExcerptChars = 600;
     public const int DefaultMaxOutputTokens = 16000;
 
@@ -38,6 +45,49 @@ public sealed class BenchmarkReportPackPreparation
 
     public static int MaxOutputTokens(IConfiguration configuration)
         => Math.Max(1024, configuration.GetValue<int?>("Benchmark:ReportPack:MaxOutputTokens") ?? DefaultMaxOutputTokens);
+
+    /// <summary>The questions per suite a battery prompt gives in full detail at most.</summary>
+    public static int BatteryDetailQuestionsPerSuite(IConfiguration? configuration)
+        => Math.Max(0, configuration?.GetValue<int?>(BenchmarkBatteryReportFacts.DetailQuestionsPerSuiteKey)
+            ?? BenchmarkBatteryReportFacts.DefaultDetailQuestionsPerSuite);
+
+    /// <summary>The characters a battery writer prompt may hold before question detail is left out.</summary>
+    public static int BatteryMaxPromptChars(IConfiguration? configuration)
+        => Math.Max(0, configuration?.GetValue<int?>(BenchmarkBatteryReportFacts.MaxPromptCharsKey)
+            ?? BenchmarkBatteryReportFacts.DefaultMaxPromptChars);
+
+    /// <summary>The subject key of a battery run: <c>battery:&lt;id&gt;</c>.</summary>
+    public static string BatterySubjectKeyOf(long batteryRunId) => BenchmarkBatteryModelComparison.KeyOf(batteryRunId);
+
+    /// <summary>How a battery run's job is named where a job is listed: <c>Battery run #9</c>.</summary>
+    public static string BatteryJobLabel(long batteryRunId)
+        => "Battery run #" + batteryRunId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The report-pack request a battery run's battery-completion job writes, and its estimate prices:
+    /// the battery result alone, as its own subject.
+    /// </summary>
+    public static BenchmarkReportPackRequest BatteryRequest(long batteryRunId, IEnumerable<BenchmarkReportAudience> audiences, long writerConfigId)
+    {
+        ArgumentNullException.ThrowIfNull(audiences);
+        return new BenchmarkReportPackRequest
+        {
+            RunIds = new List<long>(),
+            GroupIds = new List<long>(),
+            BatteryRunIds = new List<long> { batteryRunId },
+            SubjectKey = BatterySubjectKeyOf(batteryRunId),
+            Audiences = audiences.ToList(),
+            WriterModelConfigurationId = writerConfigId
+        };
+    }
+
+    /// <summary>The request names battery results together with runs or analysis groups, which no comparison holds.</summary>
+    public static bool MixesSources(BenchmarkReportPackRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return (request.BatteryRunIds?.Count ?? 0) > 0
+               && ((request.RunIds?.Count ?? 0) > 0 || (request.GroupIds?.Count ?? 0) > 0);
+    }
 
     /// <summary>
     /// The comparison and its subject entry. Refused when the comparison cannot be computed, the
@@ -50,6 +100,7 @@ public sealed class BenchmarkReportPackPreparation
         {
             RunIds = request.RunIds ?? new List<long>(),
             GroupIds = request.GroupIds ?? new List<long>(),
+            BatteryRunIds = request.BatteryRunIds ?? new List<long>(),
             PricingBasis = request.PricingBasis
         }, ct);
         if (comparison == null)
@@ -69,16 +120,28 @@ public sealed class BenchmarkReportPackPreparation
         return (comparison, subject, null);
     }
 
-    /// <summary>The comparison, the fact sheet and the content snapshot. Makes no model call.</summary>
+    /// <summary>
+    /// The comparison, the fact sheet and the content snapshot. Makes no model call. A battery subject
+    /// takes its detail cap and prompt budget from <paramref name="configuration"/>, else the defaults.
+    /// </summary>
     public static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareAsync(
         ApplicationDbContext db,
         BenchmarkModelComparisonService comparisonService,
         BenchmarkReportPackRequest request,
         int answerExcerptChars,
-        CancellationToken ct)
+        CancellationToken ct,
+        IConfiguration? configuration = null)
     {
+        if (MixesSources(request)) return (null, BenchmarkBatteryModelComparison.MixedSourcesError);
+
         var (comparison, subject, refusal) = await CompareAsync(comparisonService, request, ct);
         if (refusal != null) return (null, refusal);
+
+        if (string.Equals(subject!.SourceKind, BenchmarkBatteryModelComparison.SourceKind, StringComparison.Ordinal))
+        {
+            return await PrepareBatteryAsync(db, comparison!, subject, answerExcerptChars,
+                BatteryDetailQuestionsPerSuite(configuration), BatteryMaxPromptChars(configuration), ct);
+        }
 
         var runIds = comparison!.Entries
             .Where(e => !e.Excluded)
@@ -135,6 +198,82 @@ public sealed class BenchmarkReportPackPreparation
         }, null);
     }
 
+    /// <summary>
+    /// A battery subject: its battery results reloaded with their persisted analyses, the subject's
+    /// member runs with their answers, the battery fact sheet and the content of the questions given in
+    /// detail. The peers' member runs are loaded without answers, for their fingerprints only.
+    /// </summary>
+    private static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareBatteryAsync(
+        ApplicationDbContext db,
+        BenchmarkModelComparisonDto comparison,
+        BenchmarkModelComparisonEntryDto subject,
+        int answerExcerptChars,
+        int detailQuestionsPerSuite,
+        int maxPromptChars,
+        CancellationToken ct)
+    {
+        var batteryRunIds = comparison.Entries
+            .Where(e => e.BatteryRunId.HasValue)
+            .Select(e => e.BatteryRunId!.Value)
+            .Distinct()
+            .ToList();
+        var (sources, error) = await BenchmarkBatteryModelComparison.LoadAsync(db, batteryRunIds, ct);
+        if (sources == null) return (null, error ?? "The battery results could not be loaded.");
+
+        var subjectRunIds = subject.RunIds.Distinct().ToList();
+        var subjectRuns = await db.BenchmarkRuns
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Include(r => r.Answers)
+            .Where(r => subjectRunIds.Contains(r.Id))
+            .OrderBy(r => r.Id)
+            .ToListAsync(ct);
+        if (subjectRuns.Count == 0)
+        {
+            return (null, "The subject's runs no longer exist.");
+        }
+
+        var built = BenchmarkBatteryReportFacts.Build(new BenchmarkBatteryReportFactsInput
+        {
+            Comparison = comparison,
+            SubjectKey = subject.Key,
+            Sources = sources,
+            Runs = subjectRuns.ToDictionary(r => r.Id),
+            AnswerExcerptChars = answerExcerptChars,
+            DetailQuestionsPerSuite = detailQuestionsPerSuite,
+            MaxPromptChars = maxPromptChars
+        });
+        if (built.Sheet == null || built.Content == null)
+        {
+            return (null, built.Refusal ?? "The fact sheet could not be computed.");
+        }
+
+        var subjectIds = subjectRuns.Select(r => r.Id).ToHashSet();
+        var peerRunIds = built.Sheet.Peers
+            .SelectMany(p => p.RunIds)
+            .Distinct()
+            .Where(id => !subjectIds.Contains(id))
+            .ToList();
+        var peerRuns = peerRunIds.Count == 0
+            ? new List<BenchmarkRun>()
+            : await db.BenchmarkRuns
+                .AsNoTracking()
+                .Where(r => peerRunIds.Contains(r.Id))
+                .OrderBy(r => r.Id)
+                .ToListAsync(ct);
+
+        return (new BenchmarkReportPackPreparation
+        {
+            Comparison = comparison,
+            Subject = subject,
+            Sheet = built.Sheet,
+            Content = built.Content,
+            SubjectRuns = subjectRuns,
+            PeerRuns = peerRuns,
+            Notes = built.Notes
+        }, null);
+    }
+
     /// <summary>A stand-in configuration carrying only the subject's provider and model id, for the compliance checks.</summary>
     public static SystemAiApiConfiguration SubjectIdentity(BenchmarkModelComparisonEntryDto subject)
         => new() { Provider = subject.Provider, ModelId = subject.ModelId, DisplayName = subject.ModelDisplayName };
@@ -154,6 +293,16 @@ public interface IBenchmarkRunReportWriter
     /// and its writer; the job must already hold the report-pack slot.
     /// </summary>
     Task WriteRunCompletionDocumentsAsync(BenchmarkReportPackJob job, CancellationToken ct);
+
+    /// <summary>
+    /// Writes every document on the job's list about the battery run on its own, one after another,
+    /// stored with <see cref="BenchmarkReportDocumentOrigin.BatteryCompletion"/>. The job's request is
+    /// replaced by <see cref="BenchmarkReportPackPreparation.BatteryRequest"/> for the battery run, the
+    /// job's documents and its writer; the job must already hold the report-pack slot. A writer that
+    /// writes run-completion documents only refuses with <see cref="NotSupportedException"/>.
+    /// </summary>
+    Task WriteBatteryCompletionDocumentsAsync(long batteryRunId, BenchmarkReportPackJob job, CancellationToken ct)
+        => Task.FromException(new NotSupportedException("This report writer does not write battery-completion documents."));
 }
 
 /// <summary>
@@ -218,6 +367,20 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         return RunJobAsync(job, BenchmarkReportDocumentOrigin.RunCompletion, ct);
     }
 
+    public Task WriteBatteryCompletionDocumentsAsync(long batteryRunId, BenchmarkReportPackJob job, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+
+        job.Request = BenchmarkReportPackPreparation.BatteryRequest(
+            batteryRunId, job.Documents.Select(d => d.Audience), job.WriterConfigId);
+        job.SubjectKey = job.Request.SubjectKey;
+        if (string.IsNullOrWhiteSpace(job.SubjectLabel))
+        {
+            job.SubjectLabel = BenchmarkReportPackPreparation.BatteryJobLabel(batteryRunId);
+        }
+        return RunJobAsync(job, BenchmarkReportDocumentOrigin.BatteryCompletion, ct);
+    }
+
     /// <summary>Prepares the job's subject once, then writes and stores each document with <paramref name="origin"/>.</summary>
     private async Task RunJobAsync(BenchmarkReportPackJob job, BenchmarkReportDocumentOrigin origin, CancellationToken ct)
     {
@@ -228,13 +391,17 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
             int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
 
-            var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(_db, _comparisonService, job.Request, excerptChars, ct);
+            var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(_db, _comparisonService, job.Request, excerptChars, ct, _configuration);
             if (prep == null)
             {
                 FailAll(job, refusal ?? "The report pack could not be prepared.");
                 return;
             }
             job.AddLog($"Fact sheet computed: {prep.Sheet.Facts.Count} facts, {prep.Sheet.Peers.Count} peers, {prep.Sheet.Questions.Count} questions, {prep.Sheet.Rows.Count} findings.");
+            foreach (var note in prep.Notes)
+            {
+                job.AddLog(note.Message, "warning");
+            }
 
             var liveConfig = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == job.WriterConfigId, ct);
             if (liveConfig == null || !liveConfig.IsEnabled)
@@ -402,7 +569,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             return false;
         }
 
-        var notes = new List<BenchmarkReportValidationNote>();
+        var notes = new List<BenchmarkReportValidationNote>(prep.Notes);
         if (issues.Count > 0)
         {
             var cleaned = BenchmarkReportPackValidator.DropInvalid(audience, output, prep.Sheet, prep.Content);
@@ -425,6 +592,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
         var requestRunIds = job.Request.RunIds.OrderBy(id => id).ToList();
         var requestGroupIds = job.Request.GroupIds.OrderBy(id => id).ToList();
+        var requestBatteryRunIds = (job.Request.BatteryRunIds ?? new List<long>()).OrderBy(id => id).ToList();
         var document = new BenchmarkReportDocument
         {
             PackId = job.PackId,
@@ -437,9 +605,10 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             {
                 RunIds = requestRunIds,
                 GroupIds = requestGroupIds,
+                BatteryRunIds = requestBatteryRunIds,
                 PricingBasis = job.Request.PricingBasis
             }),
-            ComparisonKey = BenchmarkReportComparisonKey.From(requestRunIds, requestGroupIds),
+            ComparisonKey = BenchmarkReportComparisonKey.From(requestRunIds, requestGroupIds, requestBatteryRunIds),
             SuiteId = prep.Sheet.SuiteId,
             SuiteName = Truncate(prep.Sheet.SuiteName, 256),
             WriterConfigId = config.Id,

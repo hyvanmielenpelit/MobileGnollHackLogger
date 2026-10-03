@@ -331,17 +331,17 @@ describe('model-comparison-charts', () => {
     });
   });
 
-  describe('the eight-entry cap', () => {
-    it('plots eight and pushes the ninth into the table with a visible notice', () => {
-      const nine = Array.from({ length: 9 }, (_, i) =>
+  describe('the twelve-entry cap', () => {
+    it('plots twelve and pushes the thirteenth into the table with a visible notice', () => {
+      const thirteen = Array.from({ length: 13 }, (_, i) =>
         makeEntry({ key: `m${i}`, label: `Model ${i}`, intelligenceIndex: 90 - i }),
       );
-      const selection = selectPlottedEntries(nine, DEFAULT_MODEL_SORT, 'speedIndex', 'candidateSuite', CONTEXT);
+      const selection = selectPlottedEntries(thirteen, DEFAULT_MODEL_SORT, 'speedIndex', 'candidateSuite', CONTEXT);
 
-      expect(MAX_PLOTTED_ENTRIES).toBe(8);
-      expect(selection.plotted.length).toBe(8);
-      expect(selection.overflow.map((e) => e.key)).toEqual(['m8']);
-      expect(selection.notices.join(' ')).toContain('Model 8');
+      expect(MAX_PLOTTED_ENTRIES).toBe(12);
+      expect(selection.plotted.length).toBe(12);
+      expect(selection.overflow.map((e) => e.key)).toEqual(['m12']);
+      expect(selection.notices.join(' ')).toContain('Model 12');
     });
 
     it('never lets an excluded entry reach a chart', () => {
@@ -378,13 +378,13 @@ describe('model-comparison-charts', () => {
     });
 
     it('lets the plot cap follow the custom order', () => {
-      const nine = Array.from({ length: 9 }, (_, i) =>
+      const thirteen = Array.from({ length: 13 }, (_, i) =>
         makeEntry({ key: `m${i}`, label: `Model ${i}`, intelligenceIndex: 90 - i }));
-      const customOrder = ['m8', ...nine.slice(0, 8).map((e) => e.key)];
+      const customOrder = ['m12', ...thirteen.slice(0, 12).map((e) => e.key)];
       const selection = selectPlottedEntries(
-        nine, { key: 'custom', direction: 'desc', customOrder }, 'speedIndex', 'candidateSuite', CONTEXT);
-      expect(selection.plotted[0].key).toBe('m8');
-      expect(selection.overflow.map((e) => e.key)).toEqual(['m7']);
+        thirteen, { key: 'custom', direction: 'desc', customOrder }, 'speedIndex', 'candidateSuite', CONTEXT);
+      expect(selection.plotted[0].key).toBe('m12');
+      expect(selection.overflow.map((e) => e.key)).toEqual(['m11']);
     });
 
     it('keeps the default sort unchanged', () => {

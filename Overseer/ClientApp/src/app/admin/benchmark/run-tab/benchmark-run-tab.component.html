@@ -27,6 +27,13 @@
         </div>
       </div>
     }
+    @if (monitor.lostContact?.kind === 'series' && monitor.lostContactText) {
+      <div class="alert alert-warning mb-10 lost-contact-notice" role="status">
+        <div class="alert-content">
+          <div class="alert-body">{{ monitor.lostContactText }}</div>
+        </div>
+      </div>
+    }
     <div class="banner-progress" role="status">
       @if (seriesIsWaitingForCap) {
         <span class="series-state-chip state-waiting">Waiting for run cap</span>
@@ -81,6 +88,13 @@
       <div class="alert alert-warning mb-10" role="alert" aria-live="polite">
         <div class="alert-content">
           <div class="alert-body">{{ monitor.batteryErrorMessage }}</div>
+        </div>
+      </div>
+    }
+    @if (monitor.lostContact?.kind === 'battery' && monitor.lostContactText) {
+      <div class="alert alert-warning mb-10 lost-contact-notice" role="status">
+        <div class="alert-content">
+          <div class="alert-body">{{ monitor.lostContactText }}</div>
         </div>
       </div>
     }
@@ -650,8 +664,16 @@
                               [options]="workspace.benchmarkPickerOptions" [selectedKey]="launcher.reportWriterConfigId"
                               (selectionChange)="selectReportWriterModel($event.model)"></app-model-picker>
             <app-info-tip trigger="click" tipId="bmReportWriterModelHint" subject="Report Writer">
-              <p>After the run is scored, this model writes an Executive Summary and a Report for AI Researchers
-                and Developers once. Downloads render them without calling it again.</p>
+              @if (launcher.isBatteryTarget) {
+                <p>Once the battery finishes and is analyzed, this model writes the battery's two documents, an
+                  Executive Summary and a Report for AI Researchers and Developers, once. Downloads render them
+                  without calling it again.</p>
+                <p>The member runs write none. A member's own documents can still be written on demand from its
+                  run's AI Reports tab.</p>
+              } @else {
+                <p>After the run is scored, this model writes an Executive Summary and a Report for AI Researchers
+                  and Developers once. Downloads render them without calling it again.</p>
+              }
               <p>Use a strong model from another provider than the model under test, such as the one you use as
                 an assessor.</p>
             </app-info-tip>

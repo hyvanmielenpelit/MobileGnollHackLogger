@@ -1,6 +1,7 @@
 import { OnDestroy, inject, Injectable } from '@angular/core';
 import {
   AdminBenchmarkService,
+  BenchmarkBatteryRunDto,
   BenchmarkRunSummaryDto,
   BenchmarkRunGroupDto,
   BenchmarkComparabilityIndexDto,
@@ -11,6 +12,7 @@ import {
   ModelComparisonSelection
 } from '../model-comparison/comparison-source-picker.component';
 import {
+  BenchmarkModelComparisonQuery,
   ComparisonSelectedSource,
   ComparisonSelectionNotice,
   selectionNotices
@@ -19,6 +21,16 @@ import { Subscription } from 'rxjs';
 import { BenchmarkComparisonSelection } from '../benchmark.models';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
+import type { ComparisonWizardPreset } from './benchmark-shell-bridge.service';
+
+/** The most runs the comparability index is asked about; the server's own cap. */
+export const MAX_COMPARABILITY_INDEX_RUNS = 1000;
+
+/** The most analysis groups the comparability index is asked about; the server's own cap. */
+export const MAX_COMPARABILITY_INDEX_GROUPS = 500;
+
+/** The stored selection. A record written before battery results has no `batteryRunIds`. */
+type StoredComparisonSelection = BenchmarkComparisonSelection & { batteryRunIds?: number[] };
 
 /** The Model Comparison selection, its comparison and comparability index, and their persistence. */
 @Injectable()
@@ -63,6 +75,9 @@ export class BenchmarkComparisonState implements OnDestroy {
 
   comparisonGroupIds: number[] = [];
 
+  /** Selected battery results. Never non-empty beside runs or groups: the server refuses the mix. */
+  comparisonBatteryRunIds: number[] = [];
+
   /** The picker's suite scope. Null offers every suite; independent of the Run Benchmark selection. */
   comparisonSuiteId: number | null = null;
 
@@ -79,8 +94,14 @@ export class BenchmarkComparisonState implements OnDestroy {
       indexError: this.comparabilityIndexError,
       runIds: this.comparisonRunIds,
       groupIds: this.comparisonGroupIds,
+      batteryRunIds: this.comparisonBatteryRunIds,
       pricingBasis: this.comparisonPricingBasis
     });
+  }
+
+  /** Every selected source, battery results included. */
+  get comparisonSelectedCount(): number {
+    return this.comparisonRunIds.length + this.comparisonGroupIds.length + this.comparisonBatteryRunIds.length;
   }
 
   /**
@@ -125,8 +146,16 @@ export class BenchmarkComparisonState implements OnDestroy {
   }
 
   /**
-   * Every selected source as the wizard's selection band names it, runs before groups, in
-   * selection order.
+   * The battery runs Run History loaded. A battery spans several suites, so the suite scope does
+   * not narrow them.
+   */
+  get comparisonBatteryRunOptions(): BenchmarkBatteryRunDto[] {
+    return this.workspace.batteryRuns;
+  }
+
+  /**
+   * Every selected source as the wizard's selection band names it, runs, then groups, then
+   * battery results, each in selection order.
    *
    * Read off the current option lists rather than the raw ids: an id the suite scope no longer
    * offers is skipped rather than rendered as a placeholder, because the picker has already
@@ -135,6 +164,7 @@ export class BenchmarkComparisonState implements OnDestroy {
   get comparisonSelectedSources(): ComparisonSelectedSource[] {
     const runOptions = this.comparisonRunOptions;
     const groupOptions = this.comparisonGroupOptions;
+    const batteryOptions = this.comparisonBatteryRunOptions;
     const runs: ComparisonSelectedSource[] = this.comparisonRunIds
       .map(id => runOptions.find(run => run.id === id))
       .filter((run): run is BenchmarkRunSummaryDto => run != null)
@@ -155,7 +185,17 @@ export class BenchmarkComparisonState implements OnDestroy {
         provider: null,
         detail: group.runCount === 1 ? '1 run' : `${group.runCount} runs`
       }));
-    return [...runs, ...groups];
+    const batteries: ComparisonSelectedSource[] = this.comparisonBatteryRunIds
+      .map(id => batteryOptions.find(battery => battery.id === id))
+      .filter((battery): battery is BenchmarkBatteryRunDto => battery != null)
+      .map(battery => ({
+        kind: 'battery',
+        id: battery.id,
+        label: battery.testedModelLabel?.trim() || battery.batteryName,
+        provider: battery.testedProvider ?? null,
+        detail: `Battery run ${battery.id}`
+      }));
+    return [...runs, ...groups, ...batteries];
   }
 
   onComparisonSelectionChange(selection: ModelComparisonSelection): void {
@@ -163,6 +203,7 @@ export class BenchmarkComparisonState implements OnDestroy {
     this.cancelComparison();
     this.comparisonRunIds = [...selection.runIds];
     this.comparisonGroupIds = [...selection.groupIds];
+    this.comparisonBatteryRunIds = [...(selection.batteryRunIds ?? [])];
     this.persistComparisonSelection();
     // The payload on hand describes the previous set of sources, so it is dropped rather than left
     // beside a changed selection. It is also what the wizard reads to know Compare has not run for
@@ -183,8 +224,29 @@ export class BenchmarkComparisonState implements OnDestroy {
         : [...this.comparisonRunIds],
       groupIds: source.kind === 'group'
         ? this.comparisonGroupIds.filter(id => id !== source.id)
-        : [...this.comparisonGroupIds]
+        : [...this.comparisonGroupIds],
+      batteryRunIds: source.kind === 'battery'
+        ? this.comparisonBatteryRunIds.filter(id => id !== source.id)
+        : [...this.comparisonBatteryRunIds]
     });
+  }
+
+  /**
+   * Replaces the selection with a preset's battery results, so the wizard opens on step 1 with
+   * them selected: runs and groups are cleared (the server refuses the mix), and the comparison on
+   * hand is dropped, which is what returns the wizard to step 1. Ids are de-duplicated in order.
+   * The host calls this before opening the wizard.
+   */
+  applyComparisonPreset(preset: ComparisonWizardPreset): void {
+    const batteryRunIds = [...new Set(preset.batteryRunIds)];
+    this.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds });
+    // The picker's rows are the battery runs Run History loads, which a shortcut from another tab
+    // may not have loaded yet.
+    const loaded = new Set(this.workspace.batteryRuns.map(battery => battery.id));
+    if (batteryRunIds.some(id => !loaded.has(id))) {
+      this.workspace.loadHistory();
+    }
+    this.viewSync.notify();
   }
 
   /**
@@ -192,7 +254,7 @@ export class BenchmarkComparisonState implements OnDestroy {
    *
    * Leaving a hidden out-of-scope id selected is how a figure ends up carrying a model the picker
    * does not show. Refetches only if something survives: a request with an empty selection is
-   * refused server-side anyway.
+   * refused server-side anyway. Battery results are outside the scope and are left as they are.
    */
   onComparisonSuiteChange(suiteId: number | null): void {
     this.comparisonSuiteId = suiteId;
@@ -224,7 +286,7 @@ export class BenchmarkComparisonState implements OnDestroy {
   onComparisonPricingBasisChange(basis: BenchmarkModelComparisonPricingBasis): void {
     this.comparisonPricingBasis = basis;
     this.persistComparisonSelection();
-    if (this.comparisonRunIds.length + this.comparisonGroupIds.length > 0) {
+    if (this.comparisonSelectedCount > 0) {
       this.runComparison();
     }
   }
@@ -232,6 +294,7 @@ export class BenchmarkComparisonState implements OnDestroy {
   clearComparisonSelection(): void {
     this.comparisonRunIds = [];
     this.comparisonGroupIds = [];
+    this.comparisonBatteryRunIds = [];
     this.comparison = null;
     this.comparisonError = null;
     this.persistComparisonSelection();
@@ -239,8 +302,8 @@ export class BenchmarkComparisonState implements OnDestroy {
   }
 
   runComparison(): void {
-    if (this.comparisonRunIds.length + this.comparisonGroupIds.length === 0) {
-      this.comparisonError = 'Select at least one run or analysis group to compare.';
+    if (this.comparisonSelectedCount === 0) {
+      this.comparisonError = 'Select at least one run, analysis group or battery result to compare.';
       this.viewSync.notify();
       return;
     }
@@ -250,12 +313,22 @@ export class BenchmarkComparisonState implements OnDestroy {
     this.comparisonError = null;
     this.viewSync.notify();
 
+    // Battery results travel only when selected, so a run comparison's request is unchanged by them.
+    const query: BenchmarkModelComparisonQuery = this.comparisonBatteryRunIds.length > 0
+      ? {
+        runIds: [...this.comparisonRunIds],
+        groupIds: [...this.comparisonGroupIds],
+        batteryRunIds: [...this.comparisonBatteryRunIds],
+        pricingBasis: this.comparisonPricingBasis
+      }
+      : {
+        runIds: [...this.comparisonRunIds],
+        groupIds: [...this.comparisonGroupIds],
+        pricingBasis: this.comparisonPricingBasis
+      };
+
     this.comparisonSubscription?.unsubscribe();
-    this.comparisonSubscription = this.benchmarkService.compareModels({
-      runIds: [...this.comparisonRunIds],
-      groupIds: [...this.comparisonGroupIds],
-      pricingBasis: this.comparisonPricingBasis
-    }).subscribe({
+    this.comparisonSubscription = this.benchmarkService.compareModels(query).subscribe({
       next: (result) => {
         if (token !== this.comparisonToken) { return; }
         this.comparison = result;
@@ -346,11 +419,11 @@ export class BenchmarkComparisonState implements OnDestroy {
    *
    * A failure is non-fatal: the Condition column falls back to a dash and Compare still works. The
    * index is a disclosure aid, and a picker made unusable because an aid failed is worse than one
-   * that discloses less.
+   * that discloses less. Battery results are not part of the index.
    */
   loadComparabilityIndex(): void {
-    const runIds = this.comparisonRunOptions.slice(0, 200).map(run => run.id);
-    const groupIds = this.comparisonGroupOptions.slice(0, 100).map(group => group.id);
+    const runIds = this.comparisonRunOptions.slice(0, MAX_COMPARABILITY_INDEX_RUNS).map(run => run.id);
+    const groupIds = this.comparisonGroupOptions.slice(0, MAX_COMPARABILITY_INDEX_GROUPS).map(group => group.id);
     if (runIds.length + groupIds.length === 0) {
       this.comparabilityIndex = null;
       this.comparabilityIndexLoading = false;
@@ -388,9 +461,10 @@ export class BenchmarkComparisonState implements OnDestroy {
 
   private persistComparisonSelection(): void {
     try {
-      const selection: BenchmarkComparisonSelection = {
+      const selection: StoredComparisonSelection = {
         runIds: this.comparisonRunIds,
         groupIds: this.comparisonGroupIds,
+        batteryRunIds: this.comparisonBatteryRunIds,
         suiteId: this.comparisonSuiteId,
         pricingBasis: this.comparisonPricingBasis
       };
@@ -419,7 +493,7 @@ export class BenchmarkComparisonState implements OnDestroy {
       return;                                   // every default stands
     }
 
-    const raw = parsed as Partial<BenchmarkComparisonSelection> | null;
+    const raw = parsed as Partial<StoredComparisonSelection> | null;
     if (!raw || typeof raw !== 'object') { return; }
 
     const ids = (value: unknown): number[] => Array.isArray(value)
@@ -432,6 +506,12 @@ export class BenchmarkComparisonState implements OnDestroy {
     this.comparisonPricingBasis = raw.pricingBasis === 'AsRun' ? 'AsRun' : 'Current';
     this.comparisonRunIds = ids(raw.runIds);
     this.comparisonGroupIds = ids(raw.groupIds);
+    // A record written before battery results restores none. A record that somehow mixes the two
+    // keeps the runs and groups, since the server refuses the mix.
+    const batteryRunIds = ids(raw.batteryRunIds);
+    this.comparisonBatteryRunIds = this.comparisonRunIds.length + this.comparisonGroupIds.length > 0
+      ? []
+      : batteryRunIds;
     this.pruneComparisonSelection();
   }
 
@@ -444,6 +524,10 @@ export class BenchmarkComparisonState implements OnDestroy {
     if (this.workspace.runGroups.length > 0) {
       const known = new Set(this.comparisonGroupOptions.map(group => group.id));
       this.comparisonGroupIds = this.comparisonGroupIds.filter(id => known.has(id));
+    }
+    if (this.workspace.batteryRuns.length > 0) {
+      const known = new Set(this.comparisonBatteryRunOptions.map(battery => battery.id));
+      this.comparisonBatteryRunIds = this.comparisonBatteryRunIds.filter(id => known.has(id));
     }
   }
 

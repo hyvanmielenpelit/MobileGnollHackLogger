@@ -91,6 +91,25 @@ export function statusBadgeClass(status: string | number): string {
   return 'badge-status-' + formatStatus(status).toLowerCase().replace(/\s+/g, '');
 }
 
+/**
+ * A battery run's status (`BenchmarkRunSeriesStatus`) as one of the run status badge classes.
+ * Waiting for the run cap reads as pending, and a stopped battery run, which can be resumed, as
+ * completed with errors.
+ */
+export function batteryStatusBadgeClass(status: string | null | undefined): string {
+  switch (status) {
+    case 'Running': return 'badge-status-running';
+    case 'Completed': return 'badge-status-completed';
+    case 'CompletedWithErrors':
+    case 'Stopped': return 'badge-status-completedwitherrors';
+    case 'Cancelled': return 'badge-status-canceled';
+    case 'Failed': return 'badge-status-failed';
+    case 'Pending':
+    case 'WaitingForCap':
+    default: return 'badge-status-pending';
+  }
+}
+
 export function getScoreBadgeClass(score: number | null | undefined): string {
   if (score == null) return 'badge-score-na';
   if (score >= 80) return 'badge-score-high';

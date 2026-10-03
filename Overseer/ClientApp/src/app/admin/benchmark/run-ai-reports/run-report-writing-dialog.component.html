@@ -1,28 +1,29 @@
 <!--
   THE AI REPORT WRITING PROGRESS DIALOG
 
-  Opened from inside the run report dialog, so its own close and cancel events, and those of the
-  confirmation nested in it, stop here. Closing it never cancels the job.
+  Opened from inside the run report or battery run report dialog, so its own close and cancel
+  events, and those of the confirmation nested in it, stop here. Closing it never cancels the job.
+  Every id takes the idPrefix input, so two hosts' dialogs can share a document.
 -->
-<dialog #rwDialog class="gh-dialog run-writing-dialog" aria-labelledby="rwTitle" closedby="closerequest"
+<dialog #rwDialog class="gh-dialog run-writing-dialog" [attr.aria-labelledby]="idPrefix + 'Title'" closedby="closerequest"
         (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
   <div class="dialog-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3 #rwHeading id="rwTitle" tabindex="-1">Writing AI Reports · Run #{{ runId }}</h3>
+        <h3 #rwHeading [id]="idPrefix + 'Title'" tabindex="-1">Writing AI Reports · {{ subjectLabel }}</h3>
         @if (context?.runLabel) {
           <p class="dialog-subtitle">{{ context?.runLabel }}</p>
         }
       </div>
       <button type="button" class="btn-icon-action rw-close"
               aria-label="Close the report writing progress. The writing continues."
-              interestfor="rw-close-tip" style="anchor-name: --rw-close-tip" (click)="close()">
+              [attr.interestfor]="idPrefix + '-close-tip'" [attr.style]="'anchor-name: --' + idPrefix + '-close-tip'" (click)="close()">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
       </button>
-      <div popover="hint" class="gh-tooltip" id="rw-close-tip" style="position-anchor: --rw-close-tip">
+      <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-close-tip'" [attr.style]="'position-anchor: --' + idPrefix + '-close-tip'">
         {{ isFinished ? 'Close' : 'Run in background' }}
       </div>
     </div>
@@ -44,10 +45,10 @@
                 <dt>Stored report status</dt>
                 <dd class="rw-fallback-status">{{ fallbackStatusWord }}</dd>
               </div>
-              @if (fallbackRun?.reportDocumentsMessage) {
+              @if (fallbackStatus?.reportDocumentsMessage) {
                 <div>
                   <dt>Message</dt>
-                  <dd>{{ fallbackRun?.reportDocumentsMessage }}</dd>
+                  <dd>{{ fallbackStatus?.reportDocumentsMessage }}</dd>
                 </div>
               }
             </dl>
@@ -182,24 +183,24 @@
         <div class="gh-disclosure-body">
           <div class="rw-diagnostics-toolbar">
             <button type="button" class="action-btn rw-copy-diagnostics"
-                    [attr.aria-label]="'Copy the report writing diagnostics for run ' + runId"
-                    interestfor="rw-copy-diagnostics-tip" style="anchor-name: --rw-copy-diagnostics-tip"
+                    [attr.aria-label]="'Copy the report writing diagnostics for ' + diagnosticsSubject"
+                    [attr.interestfor]="idPrefix + '-copy-diagnostics-tip'" [attr.style]="'anchor-name: --' + idPrefix + '-copy-diagnostics-tip'"
                     (click)="copyDiagnostics()">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
             </button>
-            <div popover="hint" class="gh-tooltip" id="rw-copy-diagnostics-tip"
-                 style="position-anchor: --rw-copy-diagnostics-tip">Copy diagnostics</div>
+            <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-copy-diagnostics-tip'"
+                 [attr.style]="'position-anchor: --' + idPrefix + '-copy-diagnostics-tip'">Copy diagnostics</div>
             <button type="button" class="action-btn rw-download-diagnostics"
-                    [attr.aria-label]="'Download the report writing diagnostics for run ' + runId"
-                    interestfor="rw-download-diagnostics-tip" style="anchor-name: --rw-download-diagnostics-tip"
+                    [attr.aria-label]="'Download the report writing diagnostics for ' + diagnosticsSubject"
+                    [attr.interestfor]="idPrefix + '-download-diagnostics-tip'" [attr.style]="'anchor-name: --' + idPrefix + '-download-diagnostics-tip'"
                     (click)="downloadDiagnostics()">
               <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
             </button>
-            <div popover="hint" class="gh-tooltip" id="rw-download-diagnostics-tip"
-                 style="position-anchor: --rw-download-diagnostics-tip">Download diagnostics</div>
+            <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-download-diagnostics-tip'"
+                 [attr.style]="'position-anchor: --' + idPrefix + '-download-diagnostics-tip'">Download diagnostics</div>
             <p class="rw-copy-status" role="status" aria-live="polite">{{ copyStatus }}</p>
           </div>
           @if (copyError) {
@@ -264,11 +265,11 @@
   </div>
 
   <!-- CANCEL CONFIRMATION -->
-  <dialog #rwConfirmDialog class="gh-dialog rw-confirm-dialog" aria-labelledby="rwConfirmTitle"
+  <dialog #rwConfirmDialog class="gh-dialog rw-confirm-dialog" [attr.aria-labelledby]="idPrefix + 'ConfirmTitle'"
           (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
     <div class="dialog-content">
       <div class="dialog-header">
-        <h3 id="rwConfirmTitle">Cancel Writing</h3>
+        <h3 [id]="idPrefix + 'ConfirmTitle'">Cancel Writing</h3>
       </div>
       <div class="dialog-body">
         <p>Cancel the writing? The document being written is discarded; documents already written are kept. Tokens already used are still charged.</p>

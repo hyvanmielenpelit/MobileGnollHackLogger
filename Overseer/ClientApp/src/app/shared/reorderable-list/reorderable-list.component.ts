@@ -143,6 +143,8 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
   @Input() dividerText = '';
   /** Unique in the document; letters, digits and hyphens. Every element id and anchor name starts with it. */
   @Input() idPrefix = 'rl';
+  /** Ids of elements outside the list that also describe every row's checkbox, space-separated. */
+  @Input() describedBy: string | null = null;
 
   @Output() orderChange = new EventEmitter<string[]>();
   @Output() checkedChange = new EventEmitter<{ key: string; checked: boolean }>();
@@ -260,9 +262,12 @@ export class ReorderableListComponent implements OnInit, OnChanges, AfterViewChe
     return id;
   }
 
-  /** The checkbox's description: the row's tags and, when locked, the reason. */
+  /** The checkbox's description: `describedBy`, the row's tags and, when locked, the reason. */
   checkboxDescribedBy(item: ReorderableListItem, rowId: string): string | null {
     const ids: string[] = [];
+    if (this.describedBy?.trim()) {
+      ids.push(this.describedBy.trim());
+    }
     if (item.tags?.length) {
       ids.push(`${rowId}-tags`);
     }

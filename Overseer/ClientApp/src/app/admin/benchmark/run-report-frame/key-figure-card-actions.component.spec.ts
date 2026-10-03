@@ -21,6 +21,25 @@ class CardHostComponent {
   requests: KeyFigureCardExportRequest[] = [];
 }
 
+@Component({
+  standalone: true,
+  imports: [KeyFigureCardActionsComponent],
+  changeDetection: ChangeDetectionStrategy.Eager,
+  template: `
+    <div class="score-card" style="position: relative;">
+      <span class="score-label">Total Cost</span>
+      <span class="score-subvalue">$3.21</span>
+      <app-key-figure-card-actions [runId]="7" cardLabel="Total Cost" subjectLabel="battery run 7" subjectKey="battery7" />
+    </div>
+    <div class="score-card" style="position: relative;">
+      <span class="score-label">Total Cost</span>
+      <span class="score-subvalue">$1.08</span>
+      <app-key-figure-card-actions [runId]="7" cardLabel="Total Cost" />
+    </div>
+  `
+})
+class SubjectHostComponent {}
+
 describe('KeyFigureCardActionsComponent', () => {
   let fixture: ComponentFixture<CardHostComponent>;
   let host: HTMLElement;
@@ -103,5 +122,41 @@ describe('KeyFigureCardActionsComponent', () => {
     expect(style.display).toBe('flex');
     expect(style.visibility).toBe('visible');
     expect(buttons().every(button => button.tabIndex === 0)).toBe(true);
+  });
+});
+
+describe('KeyFigureCardActionsComponent with a host subject', () => {
+  let host: HTMLElement;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [SubjectHostComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(SubjectHostComponent);
+    host = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+  });
+
+  const buttonsOf = (index: number): HTMLButtonElement[] =>
+    Array.from(host.querySelectorAll('app-key-figure-card-actions')[index].querySelectorAll<HTMLButtonElement>('button'));
+
+  it('names both buttons for the subject the host gives', () => {
+    const [copy, download] = buttonsOf(0);
+    expect(copy.getAttribute('aria-label')).toBe('Copy Total Cost of battery run 7 as an image');
+    expect(download.getAttribute('aria-label')).toBe('Download Total Cost of battery run 7 as a PNG image');
+  });
+
+  it('keys its tooltips by the subject, apart from a run with the same id', () => {
+    const ids = [
+      ['kfc-copy-battery7-total-cost', 'kfc-download-battery7-total-cost'],
+      ['kfc-copy-run7-total-cost', 'kfc-download-run7-total-cost']
+    ];
+    ids.forEach((pair, index) => {
+      buttonsOf(index).forEach((button, action) => {
+        const id = pair[action];
+        expect(button.getAttribute('interestfor')).toBe(id);
+        expect(button.getAttribute('style')).toContain(`anchor-name: --${id}`);
+        expect(host.querySelectorAll(`#${id}`).length).toBe(1);
+        expect(host.querySelector(`#${id}`)?.getAttribute('style')).toContain(`position-anchor: --${id}`);
+      });
+    });
   });
 });

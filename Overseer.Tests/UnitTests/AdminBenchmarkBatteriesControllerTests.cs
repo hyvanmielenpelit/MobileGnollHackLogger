@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -23,8 +24,10 @@ using Xunit;
 /// <summary>
 /// The battery API: definitions (create, edit, revision and hash), the start refusal of a broken
 /// battery, the outcome-to-status mapping, attaching existing runs (reuse preview, attach,
-/// candidates), delete while a battery run is active, the battery-run grid, the leaderboard, and the <see cref="AdminBenchmarkController"/> additions (re-run refusal
-/// under an orchestrator claim, the stop-reason text, the run-summary battery fields).
+/// candidates), delete while a battery run is active, deleting a battery run with and without its
+/// member runs, the battery-run grid and identity, the list sizes, the leaderboard and the
+/// ranked-result counts, and the <see cref="AdminBenchmarkController"/> additions (re-run refusal
+/// under an orchestrator claim, the stop-reason text, the run-summary battery fields, the run list size).
 /// </summary>
 public class AdminBenchmarkBatteriesControllerTests
 {
@@ -107,7 +110,9 @@ public class AdminBenchmarkBatteriesControllerTests
         var controller = new AdminBenchmarkBatteriesController(
             db,
             orchestrator,
-            new BenchmarkBatteryAnalysisService(db, NullLogger<BenchmarkBatteryAnalysisService>.Instance))
+            new BenchmarkBatteryAnalysisService(db, NullLogger<BenchmarkBatteryAnalysisService>.Instance),
+            new BenchmarkBatteryLeaderboardService(db),
+            runManager)
         {
             ControllerContext = UserContext()
         };
@@ -593,6 +598,142 @@ public class AdminBenchmarkBatteriesControllerTests
         Assert.Equal("Pair", kept.BatteryName);
     }
 
+    // --- Deleting a battery run ------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(BenchmarkRunSeriesStatus.Pending)]
+    [InlineData(BenchmarkRunSeriesStatus.Running)]
+    [InlineData(BenchmarkRunSeriesStatus.WaitingForCap)]
+    public async Task DeleteBatteryRun_IsRefusedWhileLive_AndDeletesNothing(BenchmarkRunSeriesStatus status)
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, status);
+        var member = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+
+        Assert.IsType<ConflictObjectResult>(await f.Controller.DeleteBatteryRun(batteryRun.Id, deleteMembers: true, ct));
+
+        Assert.True(await f.Db.BenchmarkBatteryRuns.AnyAsync(r => r.Id == batteryRun.Id, ct));
+        Assert.True(await f.Db.BenchmarkBatteryRunMembers.AnyAsync(m => m.BenchmarkBatteryRunId == batteryRun.Id, ct));
+        Assert.True(await f.Db.BenchmarkRuns.AnyAsync(r => r.Id == member.Id, ct));
+    }
+
+    [Fact]
+    public async Task DeleteBatteryRun_OfAnUnknownBatteryRun_Returns404()
+    {
+        var f = await CreateFixtureAsync();
+        Assert.IsType<NotFoundResult>(await f.Controller.DeleteBatteryRun(4242, deleteMembers: false, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DeleteBatteryRun_WithoutMembers_RemovesItsAnalysesAndMemberRows_AndKeepsTheMemberRuns()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        var first = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        var second = await SeedMemberAsync(f, batteryRun, suiteIndex: 1);
+        await SeedAnalysisAsync(f, batteryRun, 70, new string('1', 64), DateTime.UtcNow.AddMinutes(-5));
+        var other = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        await SeedAnalysisAsync(f, other, 65, new string('1', 64), DateTime.UtcNow);
+
+        Assert.IsType<NoContentResult>(await f.Controller.DeleteBatteryRun(batteryRun.Id, deleteMembers: false, ct));
+
+        Assert.False(await f.Db.BenchmarkBatteryRuns.AnyAsync(r => r.Id == batteryRun.Id, ct));
+        Assert.False(await f.Db.BenchmarkBatteryAnalyses.AnyAsync(a => a.BenchmarkBatteryRunId == batteryRun.Id, ct));
+        Assert.False(await f.Db.BenchmarkBatteryRunMembers.AnyAsync(m => m.BenchmarkBatteryRunId == batteryRun.Id, ct));
+
+        var remaining = await f.Db.BenchmarkRuns.Select(r => r.Id).OrderBy(id => id).ToListAsync(ct);
+        Assert.Equal(new[] { first.Id, second.Id }.OrderBy(id => id), remaining);
+        Assert.True(await f.Db.BenchmarkBatteryAnalyses.AnyAsync(a => a.BenchmarkBatteryRunId == other.Id, ct));
+    }
+
+    [Fact]
+    public async Task DeleteBatteryRun_RemovesItsBatteryCompletionDocuments_AndKeepsAnotherBatteryRunsDocuments()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        var other = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        f.Db.BenchmarkReportDocuments.AddRange(
+            BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.ExecutiveSummary),
+            BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.TechnicalReport),
+            BatteryReportHarness.BatteryDocument(other.Id, BenchmarkReportAudience.ExecutiveSummary));
+        await f.Db.SaveChangesAsync(ct);
+
+        var options = (DbContextOptions<ApplicationDbContext>)Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions
+            .GetService<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptions>(f.Db);
+        var charts = TestChartStores.Unconfigured();
+        var services = new ServiceCollection();
+        services.AddScoped(_ => new ApplicationDbContext(options));
+        services.AddScoped(sp => new BenchmarkReportRenderService(
+            sp.GetRequiredService<ApplicationDbContext>(), charts, NullLogger<BenchmarkReportRenderService>.Instance));
+        await using var provider = services.BuildServiceProvider();
+        var documents = new BenchmarkBatteryReportDocumentService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new BenchmarkReportPackJobManager(TimeSpan.FromMilliseconds(10)),
+            NullLogger<BenchmarkBatteryReportDocumentService>.Instance);
+
+        Assert.IsType<NoContentResult>(await f.Controller.DeleteBatteryRun(batteryRun.Id, deleteMembers: false, ct, documents));
+
+        var subjects = await f.Db.BenchmarkReportDocuments.AsNoTracking().Select(d => d.SubjectKey).ToListAsync(ct);
+        Assert.Equal(new[] { BenchmarkBatteryReportDocumentService.SubjectKeyOf(other.Id) }, subjects);
+    }
+
+    [Fact]
+    public async Task DeleteBatteryRun_WithMembers_DeletesItsMemberRuns_ButKeepsARunServingAnotherBatteryRun()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.CompletedWithErrors);
+        var own = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        var shared = await SeedMemberAsync(f, batteryRun, suiteIndex: 1);
+        var loose = await SeedLooseRunAsync(f);
+
+        var other = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Stopped);
+        f.Db.BenchmarkBatteryRunMembers.Add(new BenchmarkBatteryRunMember
+        {
+            BenchmarkBatteryRunId = other.Id,
+            BenchmarkRunId = shared.Id,
+            SuiteIndex = 1,
+            Round = 1,
+            Origin = BenchmarkBatteryMemberOrigin.Attached
+        });
+        await f.Db.SaveChangesAsync(ct);
+
+        Assert.IsType<NoContentResult>(await f.Controller.DeleteBatteryRun(batteryRun.Id, deleteMembers: true, ct));
+
+        Assert.False(await f.Db.BenchmarkBatteryRuns.AnyAsync(r => r.Id == batteryRun.Id, ct));
+        Assert.False(await f.Db.BenchmarkRuns.AnyAsync(r => r.Id == own.Id, ct));
+
+        var remaining = await f.Db.BenchmarkRuns.Select(r => r.Id).OrderBy(id => id).ToListAsync(ct);
+        Assert.Equal(new[] { shared.Id, loose.Id }.OrderBy(id => id), remaining);
+        Assert.True(await f.Db.BenchmarkBatteryRunMembers.AnyAsync(
+            m => m.BenchmarkBatteryRunId == other.Id && m.BenchmarkRunId == shared.Id, ct));
+    }
+
+    [Fact]
+    public async Task DeleteBatteryRun_WithMembers_IsRefusedWhileAMemberRunIsInFlight()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Stopped);
+        var member = await SeedMemberAsync(f, batteryRun, suiteIndex: 0, status: BenchmarkRunStatus.Running, qualityIndex: null);
+
+        using var cts = new CancellationTokenSource();
+        Assert.True(f.RunManager.TryStart(member.Id, cts, out _));
+        try
+        {
+            Assert.IsType<ConflictObjectResult>(await f.Controller.DeleteBatteryRun(batteryRun.Id, deleteMembers: true, ct));
+            Assert.True(await f.Db.BenchmarkBatteryRuns.AnyAsync(r => r.Id == batteryRun.Id, ct));
+            Assert.True(await f.Db.BenchmarkRuns.AnyAsync(r => r.Id == member.Id, ct));
+        }
+        finally
+        {
+            f.RunManager.Complete(member.Id);
+        }
+    }
+
     // --- Battery run projection --------------------------------------------------------------------
 
     [Fact]
@@ -637,6 +778,120 @@ public class AdminBenchmarkBatteriesControllerTests
         Assert.Equal(BenchmarkBatteryPlanner.IndexWithheldReason, withheld.UnusableReason);
         Assert.True(dto.Resumable);
         Assert.Equal(1, dto.CompletedSuiteCount);
+    }
+
+    private static async Task SetAddedAtAsync(Fixture fixture, BenchmarkRun run, DateTime addedAtUtc, bool superseded = false)
+    {
+        var row = await fixture.Db.BenchmarkBatteryRunMembers.SingleAsync(m => m.BenchmarkRunId == run.Id);
+        row.AddedAtUtc = addedAtUtc;
+        row.Superseded = superseded;
+        await fixture.Db.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task BatteryRun_TakesItsIdentityFromTheNewestUsableMember_AndCarriesItsReportFields()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var now = DateTime.UtcNow;
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        batteryRun.ReportWriterModelConfigurationId = 9;
+        batteryRun.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Failed;
+        batteryRun.ReportDocumentsMessage = "The writer refused.";
+        await f.Db.SaveChangesAsync(ct);
+
+        var older = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        await SetAddedAtAsync(f, older, now.AddMinutes(-10));
+
+        var newest = await SeedMemberAsync(f, batteryRun, suiteIndex: 1);
+        newest.TestedModelSnapshot = BenchmarkModelSnapshots.Model(
+            provider: "OpenAI", modelId: "gpt-6", displayName: "GPT 6",
+            thinkingLevel: "high", reasoningMode: "enabled", serviceTier: "flex");
+        newest.AssessorModelSnapshot = BenchmarkModelSnapshots.Model("Google", "gemini-3.7-pro", "Gemini Grader");
+        newest.CoAssessorModelSnapshot = BenchmarkModelSnapshots.Model("Anthropic", "claude-co-reader", "Co Reader");
+        newest.ScoringProfile = new BenchmarkScoringProfile { Name = "Strict" };
+        newest.CandidatePromptOptionsJson = "{\"verboseMode\":true}";
+        await f.Db.SaveChangesAsync(ct);
+        await SetAddedAtAsync(f, newest, now.AddMinutes(-5));
+
+        // Newer still, but superseded: never the identity while a usable member exists.
+        var superseded = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        superseded.TestedModelSnapshot = BenchmarkModelSnapshots.Model("Google", "superseded-model");
+        await f.Db.SaveChangesAsync(ct);
+        await SetAddedAtAsync(f, superseded, now, superseded: true);
+
+        var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct)).Value);
+
+        Assert.Equal("OpenAI", dto.TestedProvider);
+        Assert.Equal("gpt-6", dto.TestedModelId);
+        Assert.Equal("high", dto.TestedThinkingLevel);
+        Assert.Equal("enabled", dto.TestedReasoningMode);
+        Assert.Equal("flex", dto.TestedServiceTier);
+        Assert.Equal("Gemini Grader", dto.AssessorLabel);
+        Assert.Equal("Co Reader", dto.CoAssessorLabel);
+        Assert.Equal("Strict", dto.ScoringProfileName);
+        Assert.True(dto.VerboseMode);
+
+        Assert.Equal((long?)9, dto.ReportWriterModelConfigurationId);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Failed, dto.ReportDocumentsStatus);
+        Assert.Equal("The writer refused.", dto.ReportDocumentsMessage);
+    }
+
+    [Fact]
+    public async Task BatteryRun_WithoutMembers_TakesItsIdentityFromTheStartRequestsConfigurations()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        f.Db.SystemAiApiConfigurations.AddRange(
+            new SystemAiApiConfiguration
+            {
+                Id = 1,
+                DisplayName = "Opus Configured",
+                Provider = "Anthropic",
+                ModelId = "claude-opus-5",
+                ThinkingLevel = "max",
+                ServiceTier = "priority"
+            },
+            new SystemAiApiConfiguration { Id = 2, DisplayName = "Assessor Configured", Provider = "Google", ModelId = "gemini-3.7-pro" });
+        await f.Db.SaveChangesAsync(ct);
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Pending);
+
+        var dto = Assert.IsType<BenchmarkBatteryRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct)).Value);
+
+        Assert.Equal("Anthropic", dto.TestedProvider);
+        Assert.Equal("claude-opus-5", dto.TestedModelId);
+        Assert.Equal("max", dto.TestedThinkingLevel);
+        Assert.Null(dto.TestedReasoningMode);
+        Assert.Equal("priority", dto.TestedServiceTier);
+        Assert.Equal("Assessor Configured", dto.AssessorLabel);
+        Assert.Null(dto.CoAssessorLabel);
+        Assert.Null(dto.ScoringProfileName);
+        Assert.False(dto.VerboseMode);
+        Assert.Null(dto.ReportWriterModelConfigurationId);
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.NotRequested, dto.ReportDocumentsStatus);
+    }
+
+    [Fact]
+    public async Task BatteryRunList_ReturnsTheNewest50ByDefault_AndUpTo1000WhenAsked()
+    {
+        Assert.Equal(50, AdminBenchmarkBatteriesController.DefaultRunListSize);
+        Assert.Equal(1000, AdminBenchmarkBatteriesController.MaxRunListSize);
+
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        for (int i = 0; i < 201; i++)
+        {
+            await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
+        }
+
+        List<BenchmarkBatteryRunDto> ReadRuns(IActionResult result)
+            => Assert.IsAssignableFrom<IEnumerable<BenchmarkBatteryRunDto>>(Assert.IsType<OkObjectResult>(result).Value).ToList();
+
+        Assert.Equal(50, ReadRuns(await f.Controller.GetBatteryRuns(null, null, ct)).Count);
+        Assert.Equal(201, ReadRuns(await f.Controller.GetBatteryRuns(null, 5000, ct)).Count);
+        Assert.Single(ReadRuns(await f.Controller.GetBatteryRuns(null, 0, ct)));
     }
 
     // --- Leaderboard -------------------------------------------------------------------------------
@@ -724,6 +979,70 @@ public class AdminBenchmarkBatteriesControllerTests
         Assert.IsType<BadRequestObjectResult>(await f.Controller.GetLeaderboard(" ", TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task LeaderboardRows_CarryTheTestedModelsIdentity()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        string hash = new string('a', 64);
+        var batteryRun = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed, hash);
+        var member = await SeedMemberAsync(f, batteryRun, suiteIndex: 0);
+        member.TestedModelSnapshot = BenchmarkModelSnapshots.Model(
+            provider: "Anthropic", modelId: "claude-opus-5", displayName: "Opus Under Test",
+            thinkingLevel: "high", reasoningMode: "adaptive", serviceTier: "standard");
+        await f.Db.SaveChangesAsync(ct);
+        await SeedAnalysisAsync(f, batteryRun, 72, new string('1', 64), DateTime.UtcNow);
+
+        var board = Assert.IsType<BenchmarkBatteryLeaderboardDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetLeaderboard(hash, ct)).Value);
+
+        var row = Assert.Single(Assert.Single(board.Classes).Rows);
+        Assert.Equal("Anthropic", row.TestedProvider);
+        Assert.Equal("claude-opus-5", row.TestedModelId);
+        Assert.Equal("high", row.TestedThinkingLevel);
+        Assert.Equal("adaptive", row.TestedReasoningMode);
+        Assert.Equal("standard", row.TestedServiceTier);
+    }
+
+    [Fact]
+    public async Task BatteryList_CountsTheRankedResultsOfTheCurrentDefinition_AsTheLeaderboardRanksThem()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var created = ReadBattery(await f.Controller.CreateBattery(CreateRequest("Pair", f.SuiteA.Id, f.SuiteB.Id), ct));
+        string hash = created.DefinitionSha256;
+        string classOne = new string('1', 64);
+        string classTwo = new string('2', 64);
+        var now = DateTime.UtcNow;
+
+        Assert.Equal(0, created.RankedResultCount);
+        Assert.Null(created.LatestAnalysisAtUtc);
+
+        var r1 = await SeedBatteryRunAsync(f, created.Id, BenchmarkRunSeriesStatus.Completed, hash);
+        var r2 = await SeedBatteryRunAsync(f, created.Id, BenchmarkRunSeriesStatus.Completed, hash);
+        var r3 = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed, hash);
+        var r4 = await SeedBatteryRunAsync(f, created.Id, BenchmarkRunSeriesStatus.Stopped, hash);
+        var r5 = await SeedBatteryRunAsync(f, created.Id, BenchmarkRunSeriesStatus.Completed, new string('b', 64));
+
+        await SeedAnalysisAsync(f, r1, 60, classOne, now.AddHours(-3));
+        await SeedAnalysisAsync(f, r2, 70, classOne, now.AddHours(-2));
+        await SeedAnalysisAsync(f, r3, 80, classTwo, now.AddHours(-1));
+        await SeedAnalysisAsync(f, r4, 50, classOne, now.AddHours(-4));
+        await SeedAnalysisAsync(f, r4, null, null, now.AddMinutes(-30));
+        await SeedAnalysisAsync(f, r5, 99, classOne, now);
+
+        var dto = Assert.IsAssignableFrom<IEnumerable<BenchmarkBatteryDto>>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatteries(ct)).Value).Single();
+
+        // r4's latest analysis is incomplete, and r5 ran an earlier definition.
+        Assert.Equal(3, dto.RankedResultCount);
+        Assert.Equal((DateTime?)now.AddMinutes(-30), dto.LatestAnalysisAtUtc);
+
+        var board = Assert.IsType<BenchmarkBatteryLeaderboardDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetLeaderboard(hash, ct)).Value);
+        Assert.Equal(dto.RankedResultCount, board.Classes.Sum(c => c.Rows.Count));
+    }
+
     // --- AdminBenchmarkController additions --------------------------------------------------------
 
     private static AdminBenchmarkController CreateBenchmarkController(ApplicationDbContext db, BenchmarkRunManager runManager)
@@ -791,5 +1110,32 @@ public class AdminBenchmarkBatteriesControllerTests
         var alone = summaries.Single(s => s.Id == loose.Id);
         Assert.Null(alone.BatteryRunId);
         Assert.Null(alone.BatterySuitePosition);
+    }
+
+    [Fact]
+    public async Task RunList_ReturnsTheNewest50ByDefault_AndMoreThan200WhenAsked()
+    {
+        var f = await CreateFixtureAsync();
+        var ct = TestContext.Current.CancellationToken;
+        var start = DateTime.UtcNow.AddDays(-1);
+        f.Db.BenchmarkRuns.AddRange(Enumerable.Range(0, 201).Select(i => new BenchmarkRun
+        {
+            BenchmarkSuiteId = f.SuiteA.Id,
+            SuiteName = f.SuiteA.Name,
+            TestedModelSnapshot = BenchmarkModelSnapshots.Candidate(),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Assessor(),
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = start.AddMinutes(i)
+        }));
+        await f.Db.SaveChangesAsync(ct);
+
+        var controller = CreateBenchmarkController(f.Db, new BenchmarkRunManager());
+
+        List<BenchmarkRunSummaryDto> ReadRuns(IActionResult result)
+            => Assert.IsAssignableFrom<IEnumerable<BenchmarkRunSummaryDto>>(Assert.IsType<OkObjectResult>(result).Value).ToList();
+
+        Assert.Equal(50, ReadRuns(await controller.GetRuns(null, null)).Count);
+        Assert.Equal(201, ReadRuns(await controller.GetRuns(null, 1000)).Count);
+        Assert.Equal(201, ReadRuns(await controller.GetRuns(null, 5000)).Count);
     }
 }

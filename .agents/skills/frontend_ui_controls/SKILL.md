@@ -212,7 +212,9 @@ you already read the label, it is noise; drop it.
 | zap | Generate Questions, **Generate** (the Model Comparison wizard's Reports step) and its **Write Anyway** confirmation, **Write Report** / **Write Reports** (the run report's AI Reports tab) and its **Write Anyway** confirmation | AI generation: content is produced by a model, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
-| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher) | A guided route through several steps: the wizard finds the way, the admin follows it |
+| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher), **Open in Model Comparison** (the battery leaderboard dialog; opens the same wizard) | A guided route through several steps: the wizard finds the way, the admin follows it |
+| award (a medal over two ribbon tails) | **Leaderboard** (`.btn-ghost`, first in each battery card's actions on the Multi-Suite tab) | "Rankings": it opens the ranked results of the battery's definition |
+| columns (two columns side by side) | **Paired tests** (the Model Comparison wizard's fifth step-2 view tab) | Two models side by side, compared on the same questions |
 | clipboard | Check Rubrics | A checklist to go through; the rubric is what is being inspected |
 | check | Verify All | The same tick the "Reviewed" badge shows, so the button reads as "mark reviewed" |
 | star | Set Default | The marker used for the default item elsewhere in the UI; the icon *is* the concept |
@@ -404,6 +406,21 @@ class.*
 to a dialog-mode one titled About the run history (§4b), because its five `<dl>` entries overflowed
 the popup. The head is one `align-items: center` row and the heading's text box is trimmed to its
 caps. No new button class or glyph.*
+
+*Changed 2026-10-03 (battery cards, leaderboard dialog and paired tests): a battery card's actions gain
+**Leaderboard** first, with a new glyph,* award *(Feather: a medal over two ribbon tails), meaning
+"rankings" — it opens the full-screen leaderboard dialog; no other control uses it. The card's **Edit**
+keeps its* pencil *(Feather* edit-3*), **Delete** keeps* trash *on a `btn-ghost-danger`, and **Archive** /
+**Restore** stay text-only. The leaderboard's **Open in Model Comparison** takes* compass*, since it opens
+the same wizard as **Open Comparison Wizard**, and its icon-only **Refresh**, rotate. The Model
+Comparison wizard's step-2 view row gains a fifth tab, **Paired tests**, with the new* columns *glyph (two
+columns side by side): the row's other tabs all carry icons, so the new one needs one (§5, all or none).
+Its toolbar's icon-only **Recompute**, **Copy as Markdown** and **Download** reuse* rotate*,* copy *and*
+file-with-arrow*. Run History's battery cards reuse* eye *(**View details**),* file-with-arrow *(**Download
+Markdown report**), the* activity *glyph the battery progress button already used (**Show progress**) and*
+trash *(**Delete battery run**). The Battery Run Report's header mirrors the run report's: **Downloads**
+(*file-with-arrow*), **Actions** (*rotate* plus a* chevron*, a §4f popover) and icon-only **Copy
+diagnostics** (*copy*). The paired tests' **Compare** buttons are text-only `.btn-gh`: a plain commit.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1314,7 +1331,8 @@ never receive it.
 ### 8h. Card lists
 
 The Download Center's documents (`app-download-center-panel`) are the first card list; **Run
-History** (`benchmark.component`, `#bm-panel-history`) is the second. Use one **when every row is a
+History** (`history-tab/`, `#bm-panel-history`) is the second; the **Multi-Suite** tab's battery
+definitions (`app-benchmark-batteries`) are the third. Use one **when every row is a
 small form** — two selects, a group of checkboxes, several actions — rather than values to compare
 down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
 kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
@@ -1385,11 +1403,11 @@ active while its string is non-blank. `setSort(column, direction)` serves a Sort
 `filterRowsExcept(rows, column)` applies every active filter but one column's — what a facet counts its
 options against. `hasActiveFilters` and `clearFilters()` cover both kinds.
 
-**`CardListState` — the state every card list shares** (`shared/data-table/card-list-state.ts`). Both
-card lists build on it: the Download Center behind a private `list` getter (built on first use,
-because its `idPrefix` is an input), Run History as `historyList`. **A third card
-list uses it too, rather than copying either host**; if it needs something the class lacks, extend the
-class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
+**`CardListState` — the state every card list shares** (`shared/data-table/card-list-state.ts`). All
+three card lists build on it: the Download Center behind a private `list` getter (built on first use,
+because its `idPrefix` is an input), Run History as `historyList`, the batteries tab as `list`
+(`idPrefix: 'bb'`, `overseer.benchmark.batteries.view`). **A further card list uses it too, rather than
+copying a host**; if it needs something the class lacks, extend the class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
 beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
 unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps
 the filter registrations, the sort accessors and the filtering.
@@ -1481,6 +1499,40 @@ keeps the count on a reload of the same list and after a delete, because the hos
 explicit button is predictable for keyboard and screen-reader users. The list's **one polite live
 region** is the status line in its header (`.gh-list-status`, *Showing 10 of 23 documents*, *·
 filtered from 40* while a filter is active).
+
+**Two kinds of card in one list: Run History's battery runs** (2026-10-03). Run History lists single
+runs and battery runs together. The list is **a union over `HistoryItem`** —
+`{ kind: 'run', key, run } | { kind: 'battery', key, battery }` — built and memoized by the workspace
+store (`historyItems`, from `mergeHistoryItems`), ordered by start time, newest first; `historyList` and
+every `historyTable` accessor (search, facets, flags, sorts) read either kind, and a **Kind** facet
+(*Single run* / *Battery run*) filters by it. Rules this pattern carries:
+
+- **Keep the source list in its own order.** Helpers that depend on the server's run order
+  (`instrumentChangeOf`, `completedRunsOfSelectedSuite`) keep reading `historyRuns`; the union is for
+  rendering and filtering only, so an interleaved battery card moves no *INSTRUMENT CHANGED* badge.
+- **A different kind is a different card, in the same grid.** `article.rh-card.rh-card-battery` shares
+  `.rh-card`'s grid and container queries, and its kicker badge (*Battery run #N*,
+  `.rh-battery-run-badge`) is distinct from a member run's *Battery #id · suite s/K*, so the two are
+  never confused. Its actions follow §4 (icon-only, `aria-disabled` with a tooltip reason when
+  unavailable); its delete is its own confirmation, with an unchecked *Also delete its M member runs*.
+- **A toggle that hides rows is not a filter.** **Show battery member runs** is a `gh-filter-toggle`
+  with `aria-pressed`, off by default, in the list head beside **Refresh**: member runs are left out of
+  `historyItems` while it is off. It is **not a chip**, **Clear all** keeps it (as the Download Center
+  keeps *Show selected only*), and it is stored per browser behind `try/catch`
+  (`overseer.benchmark.runHistory.members`). Facet counts cover the rows it lets through.
+- **The status line counts each card once** — a battery run is one run — and adds a note per endpoint
+  whose limit was reached (*· Only the newest 1000 runs are loaded*, *· newest 500 battery runs*).
+
+**The Multi-Suite tab's battery cards** are the third list, with the same filter bar, chips, status line
+and batches, shown with more than three batteries or while a filter is active. **Show archived (n)** is
+a `gh-filter-toggle` view setting, not a chip, kept by **Clear all**. The cards are **full width, one per
+row**, not a fixed-width grid: a grid of 22 rem cards turns ragged when one battery has 2 suites and its
+neighbor 12, while a full-width card pushes only itself down. Each card's grid is
+`"head metrics actions" / "suites suites suites"` in the `bb-cards` inline-size container (metrics under
+the head below 60 rem, one column below 30 rem); its metrics are fixed 7.5 rem columns behind a hairline,
+as Run History's are; and its suite table shows four rows, the rest in a hidden `<tbody>` behind a
+link-style **Show all K suites** / **Show fewer** (`aria-expanded`, `aria-controls`, focus stays on it), so
+a card is never taller than four suite rows unless asked.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with

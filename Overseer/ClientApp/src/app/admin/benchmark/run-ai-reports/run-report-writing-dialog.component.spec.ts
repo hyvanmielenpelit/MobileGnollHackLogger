@@ -1,4 +1,4 @@
-import type { MockedObject } from "vitest";
+import type { Mock, MockedObject } from "vitest";
 import { ComponentFixture, TestBed, discardPeriodicTasks, fakeAsync, flushMicrotasks, tick } from '@angular/core/testing';
 import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
@@ -16,6 +16,7 @@ import { BenchmarkPollTickerHandle, BenchmarkPollTickerService } from '../../../
 import {
   RUN_REPORT_JOB_START_GRACE_MS,
   RUN_REPORT_JOB_UNKNOWN_NOTE,
+  ReportJobSource,
   RunReportWritingContext,
   RunReportWritingDialogComponent,
   describeBlockingJob,
@@ -714,4 +715,133 @@ describe('RunReportWritingDialogComponent', () => {
     expect(text('.rw-stat-writer .model-name')).toBe('Claude Opus writer');
     stop();
   }));
+
+  describe('with a custom job source', () => {
+    let getJob: Mock;
+    let cancel: Mock;
+    let getStoredStatus: Mock;
+
+    function batteryContext(withStoredStatus = true): RunReportWritingContext {
+      getJob = vi.fn().mockName('source.getJob');
+      cancel = vi.fn().mockName('source.cancel');
+      getStoredStatus = vi.fn().mockName('source.getStoredStatus');
+      const source: ReportJobSource = {
+        getJob: () => getJob(),
+        cancel: () => cancel(),
+        subjectLabel: 'Battery run #7',
+        fileStem: 'battery-run-7',
+        ...(withStoredStatus ? { getStoredStatus: () => getStoredStatus() } : {})
+      };
+      return {
+        runId: 7,
+        runLabel: 'Core Battery · GPT-6 Sol',
+        estimateUsd: null,
+        run: { runId: 7, suiteName: 'Core Battery', candidateLabel: 'GPT-6 Sol', provider: 'OpenAI', modelId: 'gpt-6-sol' },
+        source
+      };
+    }
+
+    it('follows the source\'s job, names its subject and cancels through it', fakeAsync(() => {
+      const context = batteryContext();
+      getJob.mockReturnValue(of(jobView({ runId: 7 })));
+      cancel.mockReturnValue(of(jobView({ runId: 7, cancelRequestedAtUtc: '2026-09-29T12:00:09Z' })));
+      open(context);
+
+      expect(text('#rwTitle')).toBe('Writing AI Reports · Battery run #7');
+      expect(text('.dialog-subtitle')).toBe('Core Battery · GPT-6 Sol');
+      expect(getJob).toHaveBeenCalledTimes(1);
+      expect(service.getRunReportJob).not.toHaveBeenCalled();
+      tick(2000);
+      expect(getJob).toHaveBeenCalledTimes(2);
+
+      expect(el('.rw-copy-diagnostics')?.getAttribute('aria-label')).toBe('Copy the report writing diagnostics for battery run #7');
+      expect(el('.rw-download-diagnostics')?.getAttribute('aria-label')).toBe('Download the report writing diagnostics for battery run #7');
+
+      el<HTMLButtonElement>('.rw-cancel')!.click();
+      el<HTMLButtonElement>('.rw-confirm-cancel')!.click();
+      fixture.detectChanges();
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(service.cancelRunReportJob).not.toHaveBeenCalled();
+      expect(text('.rw-cancel')).toBe('Canceling…');
+      stop();
+    }));
+
+    it('names the subject in the diagnostics and their file', fakeAsync(() => {
+      const download = vi.spyOn(runReportWritingIo, 'download').mockReturnValue(undefined);
+      const context = batteryContext();
+      getJob.mockReturnValue(of(jobView({ runId: 7 })));
+      open(context);
+
+      const diagnostics = component.diagnosticsText();
+      expect(diagnostics).toContain('== Subject ==');
+      expect(diagnostics).toContain('Subject: Battery run #7');
+      expect(diagnostics).not.toContain('Run: #7');
+
+      el<HTMLButtonElement>('.rw-download-diagnostics')!.click();
+      const [fileName] = vi.mocked(download).mock.lastCall!;
+      expect(fileName).toMatch(/^battery-run-7_ai-report-writing-diagnostics_\d{8}-\d{6}\.txt$/);
+      stop();
+    }));
+
+    it('settles on the source\'s stored status when its job is unknown, never reading a run', fakeAsync(() => {
+      const finished: (BenchmarkRunReportJobDto | null)[] = [];
+      component.finished.subscribe(value => finished.push(value));
+      const context = batteryContext();
+      getJob.mockReturnValue(of(null));
+      getStoredStatus.mockReturnValue(of({
+        reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Failed,
+        reportDocumentsMessage: 'The writer timed out.'
+      }));
+      open(context);
+
+      expect(getStoredStatus).toHaveBeenCalledTimes(1);
+      expect(service.getRun).not.toHaveBeenCalled();
+      expect(text('.rw-status')).toBe(RUN_REPORT_JOB_UNKNOWN_NOTE);
+      expect(text('.rw-fallback-status')).toBe('Failed');
+      expect(text('.rw-fallback-facts')).toContain('The writer timed out.');
+      expect(finished).toEqual([null]);
+      stop();
+    }));
+
+    it('keeps polling on a 204 while the source\'s stored status is Pending within the start grace', fakeAsync(() => {
+      const context = batteryContext();
+      getJob.mockReturnValueOnce(of(null)).mockReturnValueOnce(of(jobView({ runId: 7, phase: 'Queued', slotAcquiredAtUtc: null })));
+      getStoredStatus.mockReturnValue(of({ reportDocumentsStatus: BenchmarkRunReportDocumentsStatus.Pending }));
+      open(context);
+
+      expect(component.unknownJob).toBe(false);
+      expect(ticker.running).toBe(1);
+      tick(2000);
+      fixture.detectChanges();
+      expect(text('.rw-status')).toBe('Queued');
+      stop();
+    }));
+
+    it('settles at once on a 204 when the source reads no stored status', fakeAsync(() => {
+      const context = batteryContext(false);
+      getJob.mockReturnValue(of(null));
+      open(context);
+
+      expect(component.unknownJob).toBe(true);
+      expect(service.getRun).not.toHaveBeenCalled();
+      expect(text('.rw-fallback-status')).toBe('not recorded');
+      stop();
+    }));
+
+    it('takes its element ids from idPrefix', fakeAsync(() => {
+      fixture.componentRef.setInput('idPrefix', 'bai1Rw');
+      fixture.detectChanges();
+      const context = batteryContext();
+      getJob.mockReturnValue(of(jobView({ runId: 7 })));
+      open(context);
+
+      expect(dialog().getAttribute('aria-labelledby')).toBe('bai1RwTitle');
+      expect(el('#bai1RwTitle')).not.toBeNull();
+      expect(el('#rwTitle')).toBeNull();
+      expect(el('.rw-close')?.getAttribute('interestfor')).toBe('bai1Rw-close-tip');
+      expect(el('#bai1Rw-close-tip')?.getAttribute('style')).toContain('position-anchor: --bai1Rw-close-tip');
+      expect(confirmDialog().getAttribute('aria-labelledby')).toBe('bai1RwConfirmTitle');
+      stop();
+    }));
+  });
 });

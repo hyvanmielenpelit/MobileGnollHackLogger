@@ -36,16 +36,21 @@ export type BenchmarkModelComparisonPricingBasis = 'AsRun' | 'Current';
 /** `Comparable`, `Degraded` or `Excluded`, as the server spells them. */
 export type BenchmarkModelComparisonState = 'Comparable' | 'Degraded' | 'Excluded';
 
-/** What to compare: single runs at R = 1, and analysis groups at one point each. */
+/**
+ * What to compare: single runs at R = 1 and analysis groups at one point each, or battery results
+ * at one point each. The server refuses a request that mixes battery results with the other two.
+ */
 export interface BenchmarkModelComparisonQuery {
   readonly runIds: readonly number[];
   readonly groupIds: readonly number[];
+  /** Battery runs, one point each. Absent reads as none. */
+  readonly batteryRunIds?: readonly number[];
   readonly pricingBasis: BenchmarkModelComparisonPricingBasis;
 }
 
 /**
- * The query string for one comparison request, as repeated `runIds` / `groupIds` parameters plus the
- * basis — the shape `[FromQuery] BenchmarkModelComparisonRequest` binds from.
+ * The query string for one comparison request, as repeated `runIds` / `groupIds` / `batteryRunIds`
+ * parameters plus the basis — the shape `[FromQuery] BenchmarkModelComparisonRequest` binds from.
  */
 export function modelComparisonQueryParams(query: BenchmarkModelComparisonQuery): [string, string][] {
   const params: [string, string][] = [];
@@ -54,6 +59,9 @@ export function modelComparisonQueryParams(query: BenchmarkModelComparisonQuery)
   }
   for (const groupId of query.groupIds) {
     params.push(['groupIds', String(groupId)]);
+  }
+  for (const batteryRunId of query.batteryRunIds ?? []) {
+    params.push(['batteryRunIds', String(batteryRunId)]);
   }
   params.push(['pricingBasis', query.pricingBasis]);
   return params;
@@ -149,17 +157,31 @@ export interface BenchmarkModelComparisonTableDto {
 
 /** One model, as configured, on one comparison. */
 export interface BenchmarkModelComparisonEntryDto {
-  /** `run:12` or `group:3` — stable across a refresh, and what every figure keys its series by. */
+  /** `run:12`, `group:3` or `battery:4` — stable across a refresh, and what every figure keys its series by. */
   key: string;
-  /** `Run` or `Group`. */
+  /** `Run`, `Group` or `Battery`. */
   sourceKind: string;
+  /** The run, group or battery run id. */
   sourceId: number;
+  /** The group's or the battery's name. */
   sourceName?: string | null;
+  /** A battery entry's usable member runs. */
   runIds: number[];
   /** R: runs behind this point. */
   runCount: number;
+  /** Null on a battery entry, which spans several suites. */
   suiteId?: number | null;
   suiteName?: string | null;
+
+  /** The battery run; null on run and group entries. */
+  batteryRunId?: number | null;
+  batteryName?: string | null;
+  batteryDefinitionSha256?: string | null;
+  batteryComparabilityClassSha256?: string | null;
+  /** K, the battery's suites. */
+  suiteCount?: number | null;
+  /** The battery's replicate rounds per suite. */
+  runsPerSuite?: number | null;
 
   provider: string;
   modelId: string;
@@ -207,14 +229,21 @@ export interface BenchmarkModelComparisonExcludedMeasureDto {
   instead: string;
 }
 
+/** What a comparison's entries are: runs and analysis groups, or battery results. */
+export type BenchmarkModelComparisonSubjectKind = 'Runs' | 'Batteries';
+
 /** A cross-model comparison: one point per model, the basis they were costed on, and the refusals. */
 export interface BenchmarkModelComparisonDto {
   pricingBasis: string;
   /** Ready for a figure subtitle, including the date the basis was taken. */
   pricingBasisLabel: string;
   computedAtUtc: string;
+  /** Absent from an older server, which compares runs and groups only. */
+  subjectKind?: BenchmarkModelComparisonSubjectKind;
   baselineSuiteId?: number | null;
   baselineSuiteName?: string | null;
+  /** The baseline battery's name when the entries are battery results; else null. */
+  baselineBatteryName?: string | null;
   /** The entries that define the baseline condition — those that may be charted. */
   baselineEntryKeys: string[];
   /** The baseline's value for every must-match key, so a report can print the condition. */
@@ -461,23 +490,19 @@ export function conditionOf(index: BenchmarkComparabilityIndexDto | null, key: s
 }
 
 /**
- * The distinct condition ordinals the given runs and groups span, ascending, ignoring keys with
- * no assigned condition. A caller checks `length > 1` to know the selection crosses conditions.
+ * The distinct condition ordinals the given sources span, ascending, ignoring keys with no
+ * assigned condition. A caller checks `length > 1` to know the selection crosses conditions.
+ * Battery results are not part of the index, so their keys never add a condition.
  */
 export function selectedConditions(
   index: BenchmarkComparabilityIndexDto | null,
   runIds: readonly number[],
-  groupIds: readonly number[]
+  groupIds: readonly number[],
+  batteryRunIds: readonly number[] = []
 ): number[] {
   const ordinals = new Set<number>();
-  for (const runId of runIds) {
-    const ordinal = conditionOf(index, `run:${runId}`);
-    if (ordinal != null) {
-      ordinals.add(ordinal);
-    }
-  }
-  for (const groupId of groupIds) {
-    const ordinal = conditionOf(index, `group:${groupId}`);
+  for (const key of selectionKeys(runIds, groupIds, batteryRunIds)) {
+    const ordinal = conditionOf(index, key);
     if (ordinal != null) {
       ordinals.add(ordinal);
     }
@@ -511,13 +536,13 @@ export interface ComparisonSelectionNotice {
 
 /** One selected source as the wizard's selection band names it. Built by the host from its option lists. */
 export interface ComparisonSelectedSource {
-  readonly kind: 'run' | 'group';
+  readonly kind: 'run' | 'group' | 'battery';
   readonly id: number;
-  /** Run: the tested model's display name. Group: the group's name. */
+  /** Run and battery result: the tested model's display name. Group: the group's name. */
   readonly label: string;
-  /** Run: the tested model's provider. Groups carry none. */
+  /** Run and battery result: the tested model's provider. Groups carry none. */
   readonly provider: string | null;
-  /** Run: "#48". Group: "3 runs". */
+  /** Run: "#48". Group: "3 runs". Battery result: "Battery run 4". */
   readonly detail: string;
 }
 
@@ -528,6 +553,8 @@ export interface ComparisonSelectionState {
   readonly indexError: string | null;
   readonly runIds: readonly number[];
   readonly groupIds: readonly number[];
+  /** Selected battery results; the index does not cover them. Absent reads as none. */
+  readonly batteryRunIds?: readonly number[];
   readonly pricingBasis: BenchmarkModelComparisonPricingBasis;
 }
 
@@ -548,11 +575,16 @@ export function orderedNotices(
   );
 }
 
-/** Every selected source as the index keys it, runs before groups. */
-function selectionKeys(runIds: readonly number[], groupIds: readonly number[]): string[] {
+/** Every selected source as the comparison keys it: runs, then groups, then battery results. */
+export function selectionKeys(
+  runIds: readonly number[],
+  groupIds: readonly number[],
+  batteryRunIds: readonly number[] = []
+): string[] {
   return [
     ...runIds.map(id => `run:${id}`),
-    ...groupIds.map(id => `group:${id}`)
+    ...groupIds.map(id => `group:${id}`),
+    ...batteryRunIds.map(id => `battery:${id}`)
   ];
 }
 
@@ -574,7 +606,10 @@ function selectedEntries(
  * index entry and the comparison entry both satisfy it.
  */
 export function sourceLabel(entry: { sourceKind: string; sourceId: number }): string {
-  return entry.sourceKind === 'Group' ? `Analysis group ${entry.sourceId}` : `Run ${entry.sourceId}`;
+  if (entry.sourceKind === 'Group') {
+    return `Analysis group ${entry.sourceId}`;
+  }
+  return entry.sourceKind === 'Battery' ? `Battery run ${entry.sourceId}` : `Run ${entry.sourceId}`;
 }
 
 const ISO_DATE_SEGMENT = /^\d{4}-\d{2}-\d{2}$/;
@@ -744,9 +779,15 @@ function degradingKeysNotice(state: ComparisonSelectionState): ComparisonSelecti
  *
  * Pure, and the only place any of this wording lives: the picker owns the checkboxes, the wizard
  * owns the band, and the host owns both, so neither view may hold its own copy of a sentence.
+ *
+ * A selection of battery results says nothing about the index: battery results are not in it, and
+ * the server compares them by battery definition and comparability class instead.
  */
 export function selectionNotices(state: ComparisonSelectionState): ComparisonSelectionNotice[] {
   const notices: ComparisonSelectionNotice[] = [];
+  if ((state.batteryRunIds?.length ?? 0) > 0) {
+    return notices;
+  }
   const keys = selectionKeys(state.runIds, state.groupIds);
 
   const indexError = state.indexError?.trim() ?? '';
@@ -1284,6 +1325,19 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
   }));
 }
 
+/** What one candidate cost per pass covers: one run of the suite, or one pass over a battery's suites. */
+export type ComparisonCostUnit = 'suite run' | 'battery pass';
+
+/** The chart context, with the unit the cost axis titles name after "per". */
+export interface ComparisonChartContext extends ModelComparisonContext {
+  readonly costUnit: ComparisonCostUnit;
+}
+
+/** `battery pass` for a comparison of battery results, else `suite run`. */
+export function costUnitOf(dto: Pick<BenchmarkModelComparisonDto, 'subjectKind'> | null | undefined): ComparisonCostUnit {
+  return dto?.subjectKind === 'Batteries' ? 'battery pass' : 'suite run';
+}
+
 /**
  * The set-level facts the figures put in their chrome.
  *
@@ -1291,9 +1345,10 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
  * differ: an entry's failed, skipped or ungraded answers leave questions out of its index alone.
  * `examItemCount` is shared, because the suite is a Fundamental key; the max tolerates a payload
  * without the field, which reads as 0 (unknown). `questionsAskedPerRun` is null when the charted
- * entries asked different numbers of questions, or none reported it.
+ * entries asked different numbers of questions, or none reported it. `costUnit` is what a
+ * candidate cost per pass covers.
  */
-export function toChartContext(dto: BenchmarkModelComparisonDto | null): ModelComparisonContext {
+export function toChartContext(dto: BenchmarkModelComparisonDto | null): ComparisonChartContext {
   const charted = dto?.entries.filter(entry => !entry.excluded && entry.quality != null) ?? [];
   const scored = charted.map(entry => entry.quality?.itemCount ?? 0);
   const asked = charted
@@ -1307,7 +1362,9 @@ export function toChartContext(dto: BenchmarkModelComparisonDto | null): ModelCo
     pricingBasisLabel: dto?.pricingBasisLabel || dto?.pricingBasis || 'Unknown pricing basis',
     pricingBasis: dto?.pricingBasis ?? '',
     pricedOn: dto?.computedAtUtc ?? '',
-    suiteName: dto?.baselineSuiteName ?? '',
+    // A comparison of battery results spans several suites, so its figures name the battery.
+    suiteName: dto?.baselineSuiteName ?? dto?.baselineBatteryName ?? '',
+    costUnit: costUnitOf(dto),
   };
 }
 

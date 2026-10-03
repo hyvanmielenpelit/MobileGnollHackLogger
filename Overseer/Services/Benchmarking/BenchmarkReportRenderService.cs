@@ -75,12 +75,21 @@ public class BenchmarkReportRenderService
 
     /// <summary>
     /// Newest first; filtered by suite, by a run the subject includes (peer runs never match), by a
-    /// comparison key, by origin, or any combination.
+    /// comparison key, by origin, by subject key, or any combination.
     /// </summary>
     public async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(long? suiteId, long? runId, int? take, CancellationToken ct)
         => await ListAsync(new BenchmarkReportDocumentListFilter { SuiteId = suiteId, RunId = runId, Take = take }, ct);
 
-    public async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(BenchmarkReportDocumentListFilter filter, CancellationToken ct)
+    public Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(BenchmarkReportDocumentListFilter filter, CancellationToken ct)
+        => ListAsync(filter, subjectKey: null, ct);
+
+    /// <summary>
+    /// As <see cref="ListAsync(BenchmarkReportDocumentListFilter, CancellationToken)"/>, also filtered by
+    /// <paramref name="subjectKey"/> (<c>run:1</c>, <c>group:4</c>, <c>battery:7</c>), matched exactly
+    /// against each document's subject key; null does not filter.
+    /// </summary>
+    public async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(
+        BenchmarkReportDocumentListFilter filter, string? subjectKey, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(filter);
         int limit = Math.Clamp(filter.Take ?? 200, 1, MaxListSize);
@@ -94,6 +103,7 @@ public class BenchmarkReportRenderService
         if (runId != null) query = query.Where(d => d.Runs.Any(r => r.RunId == runId && !r.IsPeer));
         if (comparisonKey != null) query = query.Where(d => d.ComparisonKey == comparisonKey);
         if (origin != null) query = query.Where(d => d.Origin == origin);
+        if (subjectKey != null) query = query.Where(d => d.SubjectKey == subjectKey);
 
         var rows = await query
             .OrderByDescending(d => d.CreatedAtUtc).ThenByDescending(d => d.Id)
@@ -155,7 +165,8 @@ public class BenchmarkReportRenderService
         }
         if (request != null)
         {
-            item.ComparisonEntryCount = (request.RunIds?.Distinct().Count() ?? 0) + (request.GroupIds?.Distinct().Count() ?? 0);
+            item.ComparisonEntryCount = (request.RunIds?.Distinct().Count() ?? 0) + (request.GroupIds?.Distinct().Count() ?? 0)
+                + (request.BatteryRunIds?.Distinct().Count() ?? 0);
             item.PricingBasis = request.PricingBasis.ToString();
         }
 
@@ -373,7 +384,9 @@ public class BenchmarkReportRenderService
     /// <summary>
     /// Removes a stored document; false for an unknown id. Deleting a run's own run-completion
     /// document also settles the run's documents status
-    /// (<see cref="BenchmarkRunReportDocumentService.SettleAfterDeleteAsync"/>).
+    /// (<see cref="BenchmarkRunReportDocumentService.SettleAfterDeleteAsync"/>), and deleting a battery
+    /// run's own battery-completion document settles the battery run's
+    /// (<see cref="BenchmarkBatteryReportDocumentService.SettleAfterDocumentDeleteAsync"/>).
     /// </summary>
     public static async Task<bool> DeleteDocumentAsync(ApplicationDbContext db, long id, CancellationToken ct)
     {
@@ -385,6 +398,10 @@ public class BenchmarkReportRenderService
             && BenchmarkRunReportDocumentService.TryParseSubjectKey(d.SubjectKey, out long subjectRunId)
                 ? subjectRunId
                 : null;
+        long? batteryRunId = d.Origin == BenchmarkReportDocumentOrigin.BatteryCompletion
+            && BenchmarkBatteryReportDocumentService.TryParseSubjectKey(d.SubjectKey, out long subjectBatteryRunId)
+                ? subjectBatteryRunId
+                : null;
 
         db.BenchmarkReportDocuments.Remove(d);
         await db.SaveChangesAsync(ct);
@@ -392,6 +409,10 @@ public class BenchmarkReportRenderService
         if (runId != null)
         {
             await BenchmarkRunReportDocumentService.SettleAfterDeleteAsync(db, runId.Value, ct);
+        }
+        if (batteryRunId != null)
+        {
+            await BenchmarkBatteryReportDocumentService.SettleAfterDocumentDeleteAsync(db, batteryRunId.Value, ct);
         }
         return true;
     }

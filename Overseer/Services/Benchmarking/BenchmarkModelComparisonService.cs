@@ -119,16 +119,19 @@ public static class BenchmarkModelComparison
             new BenchmarkModelComparisonExcludedMeasureDto
             {
                 Measure = "Pairwise significance",
-                Reason = "A proper test compares two models question by question. The Multi-Run "
-                    + "Analysis comparison does that with Wilcoxon signed-rank (primary), a paired "
-                    + "t-test and Cohen's dz, and controls the per-question differences with "
-                    + "Benjamini-Hochberg.",
+                Reason = "A proper test compares two models question by question, and testing several "
+                    + "pairs at once needs a family-wise correction, or chance differences read as "
+                    + "significant. The Paired tests view does both: a Wilcoxon signed-rank test per "
+                    + "measure (the stratified sign-flip test for battery results), Holm-adjusted "
+                    + "across the pairs it tests.",
                 Summary = chartableCount == 2
-                    ? "This view runs no significance test, so a gap between the two models may be noise."
-                    : $"Testing every pair among these {chartableCount} models at once would flag "
-                        + "chance differences as significant, so this view tests none.",
-                Instead = "Put each model's runs in an analysis group, open one in the Multi-Run "
-                    + "Analysis tab and choose the other under Compare with group."
+                    ? "The charts and table carry no significance test, so a gap between the two models "
+                        + "may be noise."
+                    : $"The charts and table carry no significance test across these {chartableCount} "
+                        + "models, so a gap between any two of them may be noise.",
+                Instead = "Open the Paired tests view of this comparison: it tests each measure question "
+                    + "by question, against a reference model or across all pairs, with the family-wise "
+                    + "error controlled."
             }
         };
     }
@@ -194,6 +197,7 @@ public static class BenchmarkModelComparison
 
         return new BenchmarkModelComparisonDto
         {
+            SubjectKind = BenchmarkModelComparisonSubjectKinds.Runs,
             PricingBasis = basis.ToString(),
             PricingBasisLabel = DescribeBasis(basis, today),
             ComputedAtUtc = computedAtUtc,
@@ -360,7 +364,7 @@ public static class BenchmarkModelComparison
     /// The identity fields, read from the newest run so a point is labelled by the configuration it
     /// most recently ran under. A poolable set agrees on all of them anyway.
     /// </summary>
-    private static BenchmarkModelComparisonEntryDto Identity(
+    internal static BenchmarkModelComparisonEntryDto Identity(
         BenchmarkModelComparisonSource source, bool thinkingLevelInLabel)
     {
         var ordered = source.Runs.OrderBy(r => r.StartedAtUtc).ToList();
@@ -409,8 +413,15 @@ public static class BenchmarkModelComparison
     /// than the requested one — so a figure here is the same figure an operator already read on the
     /// individual run whenever the basis is <c>AsRun</c>.
     /// </summary>
-    private static List<BenchmarkGroupRunCost> BuildCosts(
-        BenchmarkModelComparisonSource source, out bool pricingResolved, out ModelPricing? card)
+    /// <param name="servedTiers">
+    /// The served service tier per run id, for runs loaded without their answers; when null, each
+    /// run's tier is resolved from its own answers.
+    /// </param>
+    internal static List<BenchmarkGroupRunCost> BuildCosts(
+        BenchmarkModelComparisonSource source,
+        out bool pricingResolved,
+        out ModelPricing? card,
+        IReadOnlyDictionary<long, string?>? servedTiers = null)
     {
         var costs = new List<BenchmarkGroupRunCost>();
         pricingResolved = source.Runs.Count > 0;
@@ -427,7 +438,7 @@ public static class BenchmarkModelComparison
 
             card ??= pricing;
 
-            string? servedTier = BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers);
+            string? servedTier = ServedTier(run, servedTiers);
             decimal candidate = ModelPricingService.ComputeCostFromTotals(
                 pricing,
                 run.TotalInputTokens, run.TotalOutputTokens,
@@ -457,7 +468,10 @@ public static class BenchmarkModelComparison
     /// every role they are handed, so a grading role there would turn every candidate figure into a
     /// total.
     /// </summary>
-    private static (double? Mean, double? Sd, string? Reason) BuildTotalRunCost(BenchmarkModelComparisonSource source)
+    /// <param name="servedTiers">As for <see cref="BuildCosts"/>.</param>
+    internal static (double? Mean, double? Sd, string? Reason) BuildTotalRunCost(
+        BenchmarkModelComparisonSource source,
+        IReadOnlyDictionary<long, string?>? servedTiers = null)
     {
         var totals = new List<double>(source.Runs.Count);
 
@@ -479,8 +493,7 @@ public static class BenchmarkModelComparison
                 return (null, null, $"Run {run.Id} has no resolvable pricing.");
             }
 
-            var roleCosts = ModelPricingService.ComputeRunRoleCosts(
-                run, pricing, BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers));
+            var roleCosts = ModelPricingService.ComputeRunRoleCosts(run, pricing, ServedTier(run, servedTiers));
             if (roleCosts.Incomplete)
             {
                 return (null, null, $"A grading role of run {run.Id} that spent tokens has no price card.");
@@ -498,6 +511,11 @@ public static class BenchmarkModelComparison
 
         return (mean, sd, null);
     }
+
+    private static string? ServedTier(BenchmarkRun run, IReadOnlyDictionary<long, string?>? servedTiers)
+        => servedTiers == null
+            ? BenchmarkRunFinalizer.ResolveServedServiceTier(run.Answers)
+            : servedTiers.GetValueOrDefault(run.Id);
 
     /// <summary>
     /// The degraded flags a point's own statistics are computed under: its internal comparability
@@ -646,7 +664,7 @@ public static class BenchmarkModelComparison
     /// schedule is not returned: the base card has already absorbed it, so it is history rather than
     /// a warning about a conclusion that is about to expire.
     /// </summary>
-    private static ScheduledPricingChange? UpcomingScheduledChange(ModelPricing? card, DateOnly today)
+    internal static ScheduledPricingChange? UpcomingScheduledChange(ModelPricing? card, DateOnly today)
     {
         var scheduled = card?.ScheduledChange;
         if (scheduled == null) return null;
@@ -657,7 +675,7 @@ public static class BenchmarkModelComparison
         return scheduled;
     }
 
-    private static string DescribeBasis(BenchmarkModelComparisonPricingBasis basis, DateOnly today)
+    internal static string DescribeBasis(BenchmarkModelComparisonPricingBasis basis, DateOnly today)
         => basis == BenchmarkModelComparisonPricingBasis.Current
             ? $"Priced from the catalog as of {today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)}. "
               + "Comparable across dates; not what was actually spent."
@@ -670,9 +688,11 @@ public static class BenchmarkModelComparison
 
 /// <summary>
 /// Loads the runs and groups a cross-model comparison names, resolves a price card for each on the
-/// requested basis, and hands them to <see cref="BenchmarkModelComparison"/>.
+/// requested basis, and hands them to <see cref="BenchmarkModelComparison"/>; battery results go to
+/// <see cref="BenchmarkBatteryModelComparison"/> instead.
 ///
-/// <para>This is the only place the comparison meets the database. Everything scientific happens in
+/// <para>This class and <see cref="BenchmarkBatteryModelComparison.LoadAsync"/> are the only places
+/// the comparison meets the database. Everything scientific happens in
 /// <see cref="BenchmarkGroupStatistics"/> and everything about <i>which points may share a chart</i>
 /// happens in <see cref="BenchmarkCrossModelComparability"/>, both of which are pure. What this
 /// class adds is the one thing neither can do: refusing to build a point out of a group whose own
@@ -686,15 +706,18 @@ public class BenchmarkModelComparisonService
     private readonly ApplicationDbContext _db;
     private readonly ModelPricingService? _pricingService;
     private readonly ILogger<BenchmarkModelComparisonService>? _logger;
+    private readonly BenchmarkBatteryLeaderboardService _leaderboard;
 
     public BenchmarkModelComparisonService(
         ApplicationDbContext db,
         ILogger<BenchmarkModelComparisonService>? logger = null,
-        ModelPricingService? pricingService = null)
+        ModelPricingService? pricingService = null,
+        BenchmarkBatteryLeaderboardService? leaderboard = null)
     {
         _db = db;
         _logger = logger;
         _pricingService = pricingService;
+        _leaderboard = leaderboard ?? new BenchmarkBatteryLeaderboardService(db);
     }
 
     public async Task<(BenchmarkModelComparisonDto? Result, string? Error)> CompareAsync(
@@ -702,14 +725,25 @@ public class BenchmarkModelComparisonService
     {
         var runIds = (request?.RunIds ?? new List<long>()).Distinct().ToList();
         var groupIds = (request?.GroupIds ?? new List<long>()).Distinct().ToList();
+        var batteryRunIds = (request?.BatteryRunIds ?? new List<long>()).Distinct().ToList();
 
-        if (runIds.Count == 0 && groupIds.Count == 0)
+        if (runIds.Count == 0 && groupIds.Count == 0 && batteryRunIds.Count == 0)
         {
-            return (null, "A comparison needs at least one run or group.");
+            return (null, "A comparison needs at least one run, group or battery result.");
+        }
+
+        if (batteryRunIds.Count > 0 && (runIds.Count > 0 || groupIds.Count > 0))
+        {
+            return (null, BenchmarkBatteryModelComparison.MixedSourcesError);
         }
 
         var basis = request?.PricingBasis ?? BenchmarkModelComparisonPricingBasis.Current;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        if (batteryRunIds.Count > 0)
+        {
+            return await CompareBatteriesAsync(batteryRunIds, basis, today, ct);
+        }
 
         var groups = groupIds.Count == 0
             ? new List<BenchmarkRunGroup>()
@@ -790,6 +824,93 @@ public class BenchmarkModelComparisonService
             result.Entries.Count, basis, result.ComparableCount, result.ExcludedCount);
 
         return (result, null);
+    }
+
+    /// <summary>
+    /// A comparison of battery results: each read from its latest battery analysis, its cost
+    /// recomputed from its member runs on <paramref name="basis"/>, and the entries outside the
+    /// baseline condition named with the keys that set their comparability class apart.
+    /// </summary>
+    private async Task<(BenchmarkModelComparisonDto? Result, string? Error)> CompareBatteriesAsync(
+        IReadOnlyList<long> batteryRunIds,
+        BenchmarkModelComparisonPricingBasis basis,
+        DateOnly today,
+        CancellationToken ct)
+    {
+        var (loaded, error) = await BenchmarkBatteryModelComparison.LoadAsync(_db, batteryRunIds, ct);
+        if (loaded == null) return (null, error);
+
+        var runs = loaded
+            .SelectMany(s => s.Runs)
+            .GroupBy(r => r.Id)
+            .Select(g => g.First())
+            .ToList();
+        var runPricing = await ResolveRunPricingAsync(runs, basis, today);
+        var sources = loaded.Select(s => s.WithPricing(runPricing)).ToList();
+
+        var distinguishing = await DistinguishingKeysAsync(sources, ct);
+        var result = BenchmarkBatteryModelComparison.Build(sources, distinguishing, basis, today, DateTime.UtcNow);
+
+        _logger?.LogInformation(
+            "Computed a battery comparison over {EntryCount} entries on the {Basis} pricing basis: "
+            + "{ComparableCount} charted, {ExcludedCount} excluded.",
+            result.Entries.Count, basis, result.ComparableCount, result.ExcludedCount);
+
+        return (result, null);
+    }
+
+    /// <summary>
+    /// Per entry key of a measurable battery result outside the baseline's comparability class but on
+    /// its definition, the must-match keys that distinguish its class from the baseline's.
+    /// </summary>
+    private async Task<Dictionary<string, IReadOnlyList<string>>> DistinguishingKeysAsync(
+        IReadOnlyList<BenchmarkBatteryComparisonSource> sources, CancellationToken ct)
+    {
+        var keys = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+
+        var baseline = BenchmarkBatteryModelComparison.ChooseBaseline(sources);
+        if (baseline == null) return keys;
+
+        var baselineRepresentative = sources
+            .Where(s => baseline.EntryKeys.Contains(s.Key, StringComparer.Ordinal))
+            .Select(s => s.Analysis!)
+            .OrderByDescending(a => a.ComputedAtUtc)
+            .ThenByDescending(a => a.Id)
+            .First();
+
+        var otherClasses = sources
+            .Where(s => s.Refusal == null
+                        && string.Equals(s.DefinitionSha256, baseline.DefinitionSha256, StringComparison.Ordinal)
+                        && !string.Equals(s.ComparabilityClassSha256, baseline.ComparabilityClassSha256, StringComparison.Ordinal))
+            .GroupBy(s => s.ComparabilityClassSha256!, StringComparer.Ordinal);
+
+        foreach (var cls in otherClasses)
+        {
+            var representative = cls
+                .Select(s => s.Analysis!)
+                .OrderByDescending(a => a.ComputedAtUtc)
+                .ThenByDescending(a => a.Id)
+                .First();
+
+            var distinguishing = await _leaderboard.DistinguishingKeysAsync(
+                new Dictionary<string, BenchmarkBatteryAnalysis>(StringComparer.Ordinal)
+                {
+                    [baseline.ComparabilityClassSha256] = baselineRepresentative,
+                    [cls.Key] = representative
+                },
+                ct);
+
+            IReadOnlyList<string> classKeys = distinguishing.TryGetValue(cls.Key, out var found)
+                ? found
+                : Array.Empty<string>();
+
+            foreach (var source in cls)
+            {
+                keys[source.Key] = classKeys;
+            }
+        }
+
+        return keys;
     }
 
     /// <summary>A point over <paramref name="members"/>, measured on the exam they sat.</summary>

@@ -1,0 +1,1071 @@
+<!--
+  BATTERY RUN REPORT: the single-run report's frame for one battery run. Its close event runs
+  onDialogClosed however it closes, by the header's Close, by Escape or from code, so polling always
+  stops. The header renders while the battery run loads or fails to load, so Close is always there.
+-->
+<dialog #brrDialog class="gh-dialog gh-dialog-fullscreen battery-run-report-dialog" id="batteryRunReportDialog"
+        aria-labelledby="brrTitle" (cancel)="onCancel($event)" (close)="onDialogClosed($event)">
+  @if (batteryRunId != null) {
+    <app-run-report-frame layout="single" [busy]="loading || analysisLoading">
+      <div runReportHeader class="rr-identity">
+        <!-- Decorative: the title beside it names the battery run. -->
+        <img class="gnollbench-emblem rr-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="64" height="64">
+        <div class="dialog-title-group">
+          <div class="dialog-title-row">
+            <h3 #brrTitle id="brrTitle" tabindex="-1">Battery Run #{{ batteryRunId }}</h3>
+            @if (detail) {
+              <div class="dialog-title-badges">
+                <span class="status-badge" [class]="statusBadgeClass(detail.status)">{{ statusLabel(detail.status) }}</span>
+                @if (analysisStale) {
+                  <span class="gh-tag gh-tag-changed brr-stale-tag">Analysis stale</span>
+                }
+              </div>
+            }
+          </div>
+          @if (detail) {
+            <app-run-facts class="rr-run-facts rr-run-facts-primary" [rows]="primaryFacts" />
+            <!-- The secondary facts, open or closed as the viewer last left them. The summary holds text only. -->
+            <details class="gh-disclosure rr-run-details" id="brr-run-details"
+                     [open]="headerDetailsOpen" (toggle)="onHeaderDetailsToggle($event)">
+              <summary>
+                <span class="rr-run-details-title">Run details</span>
+                <span class="rr-run-details-readout" aria-hidden="true">{{ factsReadout }}</span>
+              </summary>
+              <app-run-facts class="rr-run-facts rr-run-details-facts" layout="stacked" [rows]="detailFacts" />
+            </details>
+          }
+        </div>
+      </div>
+
+      <!-- The battery run's actions, then Close, which is a dialog control rather than a run action. -->
+      <div runReportActions class="rr-header-controls">
+        @if (detail) {
+          <!-- A group, not a toolbar: every action is its own Tab stop, with no arrow-key roving. -->
+          <div class="brr-actions" role="group" aria-label="Battery run actions">
+            <button type="button" class="btn-ghost" id="brr-downloads-trigger" (click)="openDownloads()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+              Downloads
+            </button>
+
+            <button #actionsTrigger type="button" class="btn-ghost" id="brr-actions-trigger"
+                    popovertarget="brr-actions-popover" [attr.aria-expanded]="actionsOpen"
+                    [attr.style]="'anchor-name: --brr-actions'">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              Actions
+              @if (actionsOpen) {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="18 15 12 9 6 15"></polyline></svg>
+              } @else {
+                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              }
+            </button>
+            <!-- Right after its trigger, so Tab moves from the trigger into the items and on. -->
+            <div #actionsPopover popover="auto" id="brr-actions-popover" class="gh-action-popover"
+                 role="group" aria-label="Analysis and battery run actions"
+                 [attr.style]="'position-anchor: --brr-actions'"
+                 (toggle)="onActionsToggle($event)" (keydown)="onActionsPopoverKeydown($event)">
+              @for (action of reportActions; track action.key) {
+                <button type="button" class="gh-action-popover-item" [attr.data-action]="action.key"
+                        [attr.aria-disabled]="action.reason ? 'true' : null"
+                        (click)="onAction(action)">
+                  <span>{{ action.label }}</span>
+                  @if (action.reason) {
+                    <span class="gh-action-popover-item-reason">{{ action.reason }}</span>
+                  }
+                </button>
+              }
+            </div>
+
+            <button type="button" class="action-btn" id="brr-copy-diagnostics-btn"
+                    [attr.aria-label]="'Copy diagnostics of battery run ' + detail.id"
+                    interestfor="brr-copy-diagnostics-tip" [attr.style]="'anchor-name: --brr-copy-diagnostics'"
+                    (click)="copyDiagnostics()">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+            <div popover="hint" class="gh-tooltip" id="brr-copy-diagnostics-tip"
+                 [attr.style]="'position-anchor: --brr-copy-diagnostics'">Copy diagnostics</div>
+            <span class="brr-status" role="status">{{ copyStatus }}</span>
+          </div>
+        }
+
+        <button type="button" class="btn-icon-action rr-close" aria-label="Close battery run report" (click)="close()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <!-- One tab per part of the report; every panel stays rendered and only the chosen one shows. -->
+      @if (detail) {
+        <div runReportTabs class="gh-tabs gh-tabs-secondary rr-tabs" role="tablist" aria-label="Battery run report sections">
+          @for (t of tabs; track t.key; let i = $index) {
+            <button type="button" role="tab" class="gh-tab" [id]="'brr-tab-' + t.key"
+                    [attr.aria-controls]="'brr-panel-' + t.key"
+                    [attr.aria-selected]="tab === t.key"
+                    [attr.tabindex]="tab === t.key ? 0 : -1"
+                    (keydown)="onTabKeydown($event, i)" (click)="selectTab(t.key)">
+              {{ t.label }}
+              @if (t.key === 'integrity' && hasIntegrityNotice) {
+                <span class="gh-tag rr-tab-flag">Notice</span>
+              }
+            </button>
+          }
+        </div>
+      }
+
+      <div runReportBody>
+        @if (!detail) {
+          @if (loadError) {
+            <div class="alert alert-danger brr-load-error" role="alert">
+              <span>{{ loadError }}</span>
+              <button type="button" class="btn-ghost" id="brr-retry-load" (click)="retryLoad()">Try again</button>
+            </div>
+          } @else {
+            <p class="text-muted brr-loading" role="status">Loading battery run…</p>
+          }
+        } @else {
+          <!-- The run-wide alerts sit above the panels, on every tab. -->
+          @if (actionError) {
+            <div class="alert alert-danger brr-action-error" role="alert">{{ actionError }}</div>
+          }
+          @if (analysisError) {
+            <div class="alert alert-danger bb-analysis-error" role="alert">{{ analysisError }}</div>
+          }
+
+          <!-- ===================================================================================
+               SUMMARY
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel" id="brr-panel-summary" aria-labelledby="brr-tab-summary" tabindex="0"
+               [hidden]="tab !== 'summary'">
+            <div class="rr-figures-head">
+              <h4 class="gh-section-title" id="brrFiguresTitle">Key figures</h4>
+              <div class="rr-figure-actions" role="group" aria-label="Key figures actions">
+                <button type="button" class="action-btn" id="brr-figures-copy-btn"
+                        [attr.aria-label]="'Copy key figures of battery run ' + detail.id + ' as an image' + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' key figures' : '')"
+                        [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
+                        interestfor="brr-figures-copy-tip" [attr.style]="'anchor-name: --brr-figures-copy-tip'"
+                        (click)="copyKeyFigures()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" id="brr-figures-copy-tip"
+                     [attr.style]="'position-anchor: --brr-figures-copy-tip'">Copy key figures as an image</div>
+                <button type="button" class="action-btn" id="brr-figures-download-btn"
+                        [attr.aria-label]="'Download key figures of battery run ' + detail.id + ' as a PNG image' + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' key figures' : '')"
+                        [attr.aria-disabled]="keyFiguresExporting ? 'true' : null"
+                        interestfor="brr-figures-download-tip" [attr.style]="'anchor-name: --brr-figures-download-tip'"
+                        (click)="downloadKeyFigures()">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" id="brr-figures-download-tip"
+                     [attr.style]="'position-anchor: --brr-figures-download-tip'">Download key figures as PNG</div>
+                <button #keyFiguresChooserTrigger type="button" class="btn-ghost" id="brr-figures-choose-btn"
+                        aria-haspopup="dialog"
+                        [attr.aria-label]="'Choose key figures for battery run ' + detail.id + (keyFiguresSelectionLabel ? ', ' + keyFiguresSelectionLabel + ' selected' : '')"
+                        interestfor="brr-figures-choose-tip" [attr.style]="'anchor-name: --brr-figures-choose-tip'"
+                        (click)="openKeyFiguresChooser(keyFiguresChooserTrigger)">
+                  Choose figures
+                  @if (keyFiguresSelectionLabel) {
+                    <span class="rr-figures-choose-count" aria-hidden="true">({{ keyFiguresSelectionLabel }})</span>
+                  }
+                </button>
+                <div popover="hint" class="gh-tooltip" id="brr-figures-choose-tip"
+                     [attr.style]="'position-anchor: --brr-figures-choose-tip'">Choose which key figures to show and export</div>
+              </div>
+            </div>
+
+            <!-- Every card stays rendered, hidden when unselected: the chooser and the export read them all. -->
+            <div class="rr-figures" role="group" aria-labelledby="brrFiguresTitle" [hidden]="selectedKeyFigureCount === 0">
+              <div class="score-card main-score" data-figure="intelligence" [hidden]="!isKeyFigureShown('intelligence')">
+                <span class="score-label">Overall Intelligence Index</span>
+                @if (headline; as overall) {
+                  <span class="score-value" [class]="scoreClass(overall.pointEstimate)">{{ formatNumber(overall.pointEstimate) }} / 100</span>
+                  <span class="score-note">± {{ formatNumber(overall.combinedHalfWidth) }} · 95 % interval {{ formatInterval(overall.combinedLower, overall.combinedUpper) }}</span>
+                  @if (result; as r) {
+                    <span class="score-note">{{ schemeLabel(r.scheme) }} · {{ r.suiteCount }} suites</span>
+                  }
+                } @else if (result; as r) {
+                  <span class="score-value text-muted">Incomplete</span>
+                  <span class="score-note">{{ r.completedSuiteCount }} of {{ r.suiteCount }} suites have a usable result</span>
+                } @else {
+                  <span class="score-value text-muted">Not analyzed</span>
+                  <span class="score-note">{{ analysisLoading ? 'Loading the analysis' : 'No analysis has been computed' }}</span>
+                }
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Overall Intelligence Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <div class="score-card" data-figure="critical-errors" [hidden]="!isKeyFigureShown('critical-errors')">
+                <span class="score-label">Critical-Error Rate</span>
+                <span class="score-subvalue" [class.text-muted]="result?.criticalErrorRate == null">{{ formatPercent(result?.criticalErrorRate) }}</span>
+                <span class="score-note">of the scored answers, every suite pooled</span>
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Critical-Error Rate" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <div class="score-card" data-figure="answered" [hidden]="!isKeyFigureShown('answered')">
+                <span class="score-label">Scored Items</span>
+                @if (answeredFigure; as answered) {
+                  <span class="score-subvalue">{{ answered.scored }} / {{ answered.exam }}</span>
+                } @else {
+                  <span class="score-subvalue text-muted">—</span>
+                }
+                <span class="score-note">scored items of the exam items, {{ detail.suiteCount }} suites</span>
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Scored Items" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <div class="score-card" data-figure="speed" [hidden]="!isKeyFigureShown('speed')">
+                <span class="score-label">Overall Speed Index</span>
+                @if (speedIndex != null) {
+                  <span class="score-subvalue score-headline" [class]="scoreClass(speedIndex)">
+                    {{ formatNumber(speedIndex) }} / 100
+                    @if (result?.speed?.degraded) {
+                      <span class="degraded-tag" [attr.title]="result?.speed?.degradedReason || 'A speed-affecting setting differs between suites'">*</span>
+                    }
+                  </span>
+                } @else {
+                  <span class="score-subvalue score-headline text-muted">Not computed</span>
+                  @if (result?.speed?.speedIndexWithheldBySuiteIndex?.length) {
+                    <span class="score-note">withheld by {{ suiteNames(result?.speed?.speedIndexWithheldBySuiteIndex) }}</span>
+                  }
+                }
+                @if (result?.speed?.degraded) {
+                  <span class="score-note">advisory: {{ result?.speed?.degradedReason || 'a speed-affecting setting differs between suites' }}</span>
+                }
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Overall Speed Index" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <div class="score-card" data-figure="mean-time" [hidden]="!isKeyFigureShown('mean-time')">
+                <span class="score-label">Mean Time per Question</span>
+                <span class="score-subvalue" [class.text-muted]="result?.speed?.modelTimeMeanMs == null">{{ formatMs(result?.speed?.modelTimeMeanMs) }}</span>
+                <span class="score-note">model time per answer · median {{ formatMs(result?.speed?.modelTimeP50Ms) }}</span>
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Mean Time per Question" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <div class="score-card" data-figure="wall-time" [hidden]="!isKeyFigureShown('wall-time')">
+                <span class="score-label">Battery Duration</span>
+                <span class="score-subvalue" [class.text-muted]="durationMs == null">{{ formatMs(durationMs) }}</span>
+                <span class="score-note">{{ isLive ? 'so far; the battery run is still running' : 'start to finish, every member run' }}</span>
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Battery Duration" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <div class="score-card" data-figure="model-cost" [hidden]="!isKeyFigureShown('model-cost')">
+                <span class="score-label">Candidate Cost</span>
+                <span class="score-subvalue" [class.text-muted]="candidateCost == null">{{ formatCost(candidateCost) }}</span>
+                <span class="score-note">{{ candidateCostShare || 'the model under test, every member run' }}</span>
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Candidate Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+              <div class="score-card" data-figure="estimated-cost" [hidden]="!isKeyFigureShown('estimated-cost')">
+                <span class="score-label">Total Cost</span>
+                <span class="score-subvalue" [class.text-muted]="totalCost == null">
+                  {{ formatCost(totalCost) }}
+                  @if (result?.cost?.degraded) {
+                    <span class="degraded-tag" [attr.title]="result?.cost?.degradedReason || 'A cost-affecting setting differs between suites'">*</span>
+                  }
+                </span>
+                @if (result?.cost; as cost) {
+                  @if (cost.available) {
+                    <span class="score-note">one battery pass {{ formatCost(cost.passCost) }} · per question {{ formatCost(cost.costPerQuestion) }}</span>
+                  } @else {
+                    <span class="score-note">unknown: {{ cost.withheldReason || 'a suite has unresolved prices' }}</span>
+                  }
+                } @else {
+                  <span class="score-note">every role, every member run</span>
+                }
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Total Cost" [busy]="keyFiguresExporting" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
+            </div>
+            @if (selectedKeyFigureCount === 0) {
+              <p class="rr-figures-empty">No key figures are selected. Use Choose figures to show them.</p>
+            }
+
+            @if (analysis) {
+              <p class="bb-analysis-meta">
+                Analysis computed {{ formatDate(analysis.computedAtUtc) }} · harness {{ analysis.harnessVersion || '—' }}
+                · scoring method {{ analysis.scoringMethodVersion }} · {{ analysis.runCount }} member runs
+              </p>
+            }
+
+            @if (analysisLoading && !analysis) {
+              <p class="text-muted">Loading analysis…</p>
+            } @else if (!analysis && !analysisError) {
+              <div class="brr-callout bb-no-analysis">
+                <p>No analysis has been computed for this battery run yet.</p>
+                <button type="button" class="btn-ghost bb-recompute" [attr.aria-disabled]="recomputing ? 'true' : null"
+                        (click)="recompute()">{{ recomputing ? 'Computing…' : 'Compute' }}</button>
+              </div>
+            }
+
+            @if (recomputeCalledOut) {
+              <div class="alert alert-warning bb-recompute-callout" role="note">
+                <p>
+                  @if (analysisStale) {
+                    The battery run's usable members changed after this analysis was computed.
+                  }
+                  @if (excludedCount > 0 || detail.analysisHasExcludedMembers) {
+                    This analysis leaves out members that were not usable. A run repaired in place keeps its id, so
+                    the analysis cannot tell it changed.
+                  }
+                  Recompute to bring it up to date.
+                </p>
+                <button type="button" class="btn-ghost bb-recompute" [attr.aria-disabled]="recomputing ? 'true' : null"
+                        (click)="recompute()">{{ recomputing ? 'Computing…' : 'Recompute' }}</button>
+              </div>
+            }
+
+            @if ((result?.caveats?.length ?? 0) > 0) {
+              <h5 class="bb-sub-title">Caveats</h5>
+              <ul class="bb-caveats">
+                @for (caveat of result?.caveats ?? []; track $index) {
+                  <li>{{ caveat }}</li>
+                }
+              </ul>
+            }
+          </div>
+
+          <!-- ===================================================================================
+               INTEGRITY
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel rr-panel-medium" id="brr-panel-integrity" aria-labelledby="brr-tab-integrity" tabindex="0"
+               [hidden]="tab !== 'integrity'">
+            @if (hasIntegrityNotice) {
+              <div class="alert alert-warning brr-integrity-notice" role="alert">
+                <div class="alert-content">
+                  <div class="alert-heading"><strong>Battery Run Integrity Notice</strong></div>
+                  <ul class="alert-body brr-notice-list">
+                    @for (notice of integrityNotices; track notice) {
+                      <li>{{ notice }}</li>
+                    }
+                  </ul>
+                </div>
+              </div>
+            }
+            <h4 class="gh-section-title">Integrity</h4>
+            <dl class="bb-facts brr-integrity-facts">
+              <div>
+                <dt>Members</dt>
+                <dd>{{ detail.completedMemberCount }} of {{ detail.requestedMemberCount }} usable · {{ detail.failedMemberCount }} failed</dd>
+              </div>
+              <div>
+                <dt>Suites complete</dt>
+                <dd>{{ detail.completedSuiteCount }} of {{ detail.suiteCount }}</dd>
+              </div>
+              <div>
+                <dt>Analysis</dt>
+                <dd>
+                  @if (analysis) {
+                    {{ analysis.complete ? 'Complete' : 'Incomplete' }} · {{ analysisStale ? 'stale' : 'current' }} · computed {{ formatDate(analysis.computedAtUtc) }}
+                  } @else {
+                    Not computed
+                  }
+                </dd>
+              </div>
+              @if (result; as r) {
+                <div>
+                  <dt>Pooled identity</dt>
+                  <dd>
+                    @if (!r.complete) {
+                      Not checked: the battery is incomplete.
+                    } @else if (r.pooledIdentityHolds) {
+                      Holds: under the default scheme the Overall Index equals the difficulty-weighted mean over every question of every suite.
+                    } @else {
+                      Approximate: some exam question has no scored answer, or an exam is shorter than its members' question count.
+                    }
+                  </dd>
+                </div>
+                <div>
+                  <dt>Speed across suites</dt>
+                  <dd>{{ r.speed?.degraded ? 'Degraded: ' + (r.speed?.degradedReason || 'a speed-affecting setting differs between suites.') : 'Comparable' }}</dd>
+                </div>
+                <div>
+                  <dt>Cost across suites</dt>
+                  <dd>{{ r.cost?.degraded ? 'Degraded: ' + (r.cost?.degradedReason || 'a cost-affecting setting differs between suites.') : 'Comparable' }}</dd>
+                </div>
+              }
+            </dl>
+
+            <h5 class="bb-sub-title">Excluded members</h5>
+            @if (excludedCount > 0) {
+              <ul class="bb-excluded">
+                @for (member of analysis?.excludedMembers ?? []; track member.runId + ':' + member.round) {
+                  <li>
+                    <span class="bb-excluded-what">{{ suiteName(member.suiteIndex) }}, round {{ member.round }}, run #{{ member.runId }}</span>:
+                    {{ member.reason }}
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="text-muted brr-none">{{ analysis ? 'No member is left out of the analysis.' : 'No analysis has been computed.' }}</p>
+            }
+          </div>
+
+          <!-- ===================================================================================
+               SUITES
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel" id="brr-panel-suites" aria-labelledby="brr-tab-suites" tabindex="0"
+               [hidden]="tab !== 'suites'">
+            <h4 class="gh-section-title">Suite profile</h4>
+            @if (result; as r) {
+              <div class="gh-datatable-scroll bb-table-scroll">
+                <table class="gh-table bb-profile-table">
+                  <caption class="visually-hidden">Suite profile: each suite's weight, index, contribution, interval, scored items, speed, cost per run, critical-error rate and member runs.</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Suite</th>
+                      <th scope="col" class="bb-num">Weight</th>
+                      <th scope="col" class="bb-num">Index</th>
+                      <th scope="col" class="bb-num">Contribution</th>
+                      <th scope="col" class="bb-num">Interval</th>
+                      <th scope="col" class="bb-num">Scored items</th>
+                      <th scope="col" class="bb-num">Speed</th>
+                      <th scope="col" class="bb-num">Cost per run</th>
+                      <th scope="col" class="bb-num">Critical errors</th>
+                      <th scope="col">Member runs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (suite of r.suites; track suite.suiteIndex) {
+                      <tr [class.is-incomplete]="!suite.complete" [attr.data-suite-index]="suite.suiteIndex">
+                        <th scope="row">
+                          {{ suite.suiteName }}
+                          @if (!suite.complete) { <span class="gh-tag bb-tag-missing">No usable result</span> }
+                          @if (suite.examIncomplete) { <span class="gh-tag gh-tag-changed">Exam incomplete</span> }
+                        </th>
+                        <td class="bb-num">{{ formatPercent(suite.weight) }}</td>
+                        <td class="bb-num">{{ formatNumber(suite.index) }}</td>
+                        <td class="bb-num">{{ formatNumber(suite.contribution) }}</td>
+                        <td class="bb-num">
+                          {{ formatInterval(suite.combinedLower, suite.combinedUpper) }}
+                          @if (suite.combinedIntervalTruncated) { <span class="visually-hidden">(truncated)</span><span aria-hidden="true">*</span> }
+                        </td>
+                        <td class="bb-num">{{ suite.scoredItemCount }}/{{ suite.examItemCount }}</td>
+                        <td class="bb-num">{{ formatNumber(suite.meanSpeedIndex) }}</td>
+                        <td class="bb-num">{{ formatCost(suite.meanCostPerRun) }}</td>
+                        <td class="bb-num">{{ formatPercent(suite.criticalErrorRate) }}</td>
+                        <td class="brr-member-links">
+                          @for (member of suiteMembers(suite.suiteIndex); track member.memberId) {
+                            <button type="button" class="btn-link brr-member-link" [attr.data-run-id]="member.runId"
+                                    (click)="openMemberRun(member.runId)">Run #{{ member.runId }}<span class="visually-hidden">, {{ suite.suiteName }},</span> · round {{ member.round }}</button>
+                          } @empty {
+                            <span class="text-muted">None yet</span>
+                          }
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              <p class="bb-note">
+                Profile unevenness: between-suite SD {{ formatNumber(r.betweenSuiteStandardDeviation) }},
+                range {{ formatNumber(r.betweenSuiteRange) }}. Each suite's own interval uses the normal 1.96 for
+                item sampling; the Overall Index uses Student's t on ν.
+              </p>
+            } @else {
+              <!-- Without an analysis the suites are still listed, with their member runs. -->
+              <ul class="brr-suite-list">
+                @for (suite of detail.suites; track suite.index) {
+                  <li [attr.data-suite-index]="suite.index">
+                    <span class="brr-suite-name">{{ suite.suiteName }}</span>
+                    @for (member of suiteMembers(suite.index); track member.memberId) {
+                      <button type="button" class="btn-link brr-member-link" [attr.data-run-id]="member.runId"
+                              (click)="openMemberRun(member.runId)">Run #{{ member.runId }}<span class="visually-hidden">, {{ suite.suiteName }},</span> · round {{ member.round }}</button>
+                    }
+                  </li>
+                }
+              </ul>
+              <p class="text-muted">The suite profile needs an analysis.</p>
+            }
+          </div>
+
+          <!-- ===================================================================================
+               ROBUSTNESS
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel" id="brr-panel-robustness" aria-labelledby="brr-tab-robustness" tabindex="0"
+               [hidden]="tab !== 'robustness'">
+            <h4 class="gh-section-title">Robustness</h4>
+            @if (result; as r) {
+              <div class="bb-headline" [class.is-incomplete]="!headline">
+                @if (headline; as overall) {
+                  <p class="bb-headline-label">Overall Intelligence Index</p>
+                  <p class="bb-headline-value">{{ formatIndexWithHalfWidth(overall.pointEstimate, overall.combinedHalfWidth) }}</p>
+                  <p class="bb-headline-interval">
+                    95 % interval {{ formatInterval(overall.combinedLower, overall.combinedUpper) }}
+                    @if (overall.combinedIntervalTruncated) { (truncated at the scale's ends) }
+                    · {{ schemeLabel(r.scheme) }}
+                  </p>
+                } @else {
+                  <p class="bb-headline-label">Overall Intelligence Index</p>
+                  <p class="bb-headline-value bb-incomplete">Incomplete ({{ r.completedSuiteCount }} of {{ r.suiteCount }} suites)</p>
+                  <p class="bb-headline-interval">
+                    The Overall Index is reported only when every suite has a usable result. The per-suite figures are shown without it.
+                  </p>
+                }
+              </div>
+
+              @if (r.overallIndex; as overall) {
+                <h5 class="bb-sub-title">Uncertainty</h5>
+                <dl class="bb-facts bb-uncertainty">
+                  <div>
+                    <dt>Item sampling</dt>
+                    <dd>
+                      @if (overall.itemSamplingStandardError != null) {
+                        SE {{ formatNumber(overall.itemSamplingStandardError, 2) }}
+                        · t({{ formatNumber(overall.effectiveDegreesOfFreedom, 1) }} df) = {{ formatNumber(overall.itemSamplingCriticalValue, 3) }}
+                        · ± {{ formatNumber(overall.itemSamplingHalfWidth) }}
+                      } @else {
+                        Withheld by {{ suiteNames(overall.itemSamplingWithheldBySuiteIndex) || 'a suite' }} (fewer than three scored items)
+                      }
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Effective degrees of freedom (ν)</dt>
+                    <dd>{{ formatNumber(overall.effectiveDegreesOfFreedom, 1) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Reproducibility</dt>
+                    <dd>
+                      {{ reproducibilitySourceLabel(overall.reproducibilitySource) }}
+                      @if (overall.reproducibilityStandardError != null) {
+                        · SE {{ formatNumber(overall.reproducibilityStandardError, 2) }}
+                        · t({{ formatNumber(overall.reproducibilityDegreesOfFreedom, 1) }} df) = {{ formatNumber(overall.reproducibilityCriticalValue, 3) }}
+                        · ± {{ formatNumber(overall.reproducibilityHalfWidth) }}
+                      }
+                    </dd>
+                  </div>
+                  @if (overall.perRoundIndices.length > 0) {
+                    <div>
+                      <dt>Per-round composites</dt>
+                      <dd>
+                        @for (round of overall.perRoundIndices; track round.round; let last = $last) {
+                          Round {{ round.round }}: {{ formatNumber(round.index) }}{{ last ? '' : ' · ' }}
+                        }
+                      </dd>
+                    </div>
+                  }
+                  <div>
+                    <dt>Combined</dt>
+                    <dd>± {{ formatNumber(overall.combinedHalfWidth) }} (both components in quadrature)</dd>
+                  </div>
+                </dl>
+              }
+
+              @if (r.weightingSensitivity.length > 0) {
+                <h5 class="bb-sub-title">Weighting sensitivity</h5>
+                <div class="gh-datatable-scroll bb-table-scroll">
+                  <table class="gh-table bb-sensitivity-table">
+                    <caption class="visually-hidden">The Overall Index under each weighting scheme.</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Weighting</th>
+                        <th scope="col" class="bb-num">Overall Index</th>
+                        <th scope="col" class="bb-num">Difference</th>
+                        <th scope="col">Weights</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of r.weightingSensitivity; track row.scheme) {
+                        <tr [class.is-declared]="row.declared">
+                          <th scope="row">
+                            {{ schemeLabel(row.scheme) }}
+                            <span class="gh-tag" [class.bb-tag-declared]="row.declared">{{ row.declared ? 'Declared' : 'Sensitivity' }}</span>
+                          </th>
+                          <td class="bb-num">{{ formatNumber(row.index) }}</td>
+                          <td class="bb-num">{{ row.declared ? '—' : formatSigned(declaredSchemeIndex != null ? row.index - declaredSchemeIndex : null) }}</td>
+                          <td class="bb-weights">
+                            @for (weight of row.weights; track $index; let i = $index; let last = $last) {
+                              {{ suiteName(i) }} {{ formatPercent(weight) }}{{ last ? '' : ' · ' }}
+                            }
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+
+              @if (r.leaveOneSuiteOut.length > 0) {
+                <h5 class="bb-sub-title">Leave one suite out</h5>
+                <div class="gh-datatable-scroll bb-table-scroll">
+                  <table class="gh-table bb-loo-table">
+                    <caption class="visually-hidden">The Overall Index with each suite omitted and the other weights renormalized.</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Suite omitted</th>
+                        <th scope="col" class="bb-num">Overall Index</th>
+                        <th scope="col" class="bb-num">Change</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of r.leaveOneSuiteOut; track row.suiteIndex) {
+                        <tr>
+                          <th scope="row">{{ row.suiteName }}</th>
+                          <td class="bb-num">{{ formatNumber(row.index) }}</td>
+                          <td class="bb-num">{{ formatSigned(row.change) }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              }
+            } @else {
+              <p class="text-muted">The robustness figures need an analysis.</p>
+            }
+          </div>
+
+          <!-- ===================================================================================
+               MEMBERS
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel" id="brr-panel-members" aria-labelledby="brr-tab-members" tabindex="0"
+               [hidden]="tab !== 'members'">
+            <h4 class="gh-section-title">Members</h4>
+            <div class="gh-datatable-scroll bb-table-scroll">
+              <table class="gh-table brr-members-table">
+                <caption class="visually-hidden">Member runs by suite and round: each slot's state, Intelligence Index and run report.</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Suite</th>
+                    @for (round of rounds; track round) {
+                      <th scope="col">Round {{ round }}</th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of memberGrid; track row.suiteIndex) {
+                    <tr>
+                      <th scope="row">{{ row.suiteName }}</th>
+                      @for (cell of row.cells; track cell.round) {
+                        <td class="brr-member-cell" [attr.data-state]="cell.state">
+                          <div class="brr-member-cell-body">
+                            <span [class]="chipClass(cell.state)">{{ slotLabels[cell.state] }}</span>
+                            @if (cell.member; as member) {
+                              <span class="brr-member-index">
+                                <span class="visually-hidden">Index </span>{{ formatNumber(member.qualityIndex) }}
+                              </span>
+                              <button type="button" class="action-btn brr-open-run" [attr.data-run-id]="member.runId"
+                                      [attr.aria-label]="'Open run report of run ' + member.runId + ', ' + row.suiteName + ', round ' + cell.round"
+                                      [attr.interestfor]="'brr-tip-run-' + member.runId"
+                                      [attr.style]="'anchor-name: --brr-tip-run-' + member.runId"
+                                      (click)="openMemberRun(member.runId)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                              </button>
+                              <div popover="hint" class="gh-tooltip" [id]="'brr-tip-run-' + member.runId"
+                                   [attr.style]="'position-anchor: --brr-tip-run-' + member.runId">Open run report #{{ member.runId }}</div>
+                            }
+                          </div>
+                          @if (cell.member?.unusableReason; as reason) {
+                            <p class="brr-member-note">{{ reason }}</p>
+                          }
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ===================================================================================
+               DIMENSIONS
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel rr-panel-narrow" id="brr-panel-dimensions" aria-labelledby="brr-tab-dimensions" tabindex="0"
+               [hidden]="tab !== 'dimensions'">
+            <h4 class="gh-section-title">Dimensions</h4>
+            @if (result; as r) {
+              <dl class="bb-facts bb-dimensions">
+                @for (dimension of r.dimensions; track dimension.dimension) {
+                  <div>
+                    <dt>{{ dimension.dimension }}</dt>
+                    <dd>
+                      @if (dimension.mean != null) {
+                        {{ formatNumber(dimension.mean) }}
+                      } @else {
+                        — <span class="bb-withheld">withheld by {{ suiteNames(dimension.withheldBySuiteIndex) }}</span>
+                      }
+                    </dd>
+                  </div>
+                }
+                <div>
+                  <dt>Critical-error rate</dt>
+                  <dd>{{ formatPercent(r.criticalErrorRate) }}</dd>
+                </div>
+              </dl>
+            } @else {
+              <p class="text-muted">The dimensions need an analysis.</p>
+            }
+          </div>
+
+          <!-- ===================================================================================
+               SPEED
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel rr-panel-narrow" id="brr-panel-speed" aria-labelledby="brr-tab-speed" tabindex="0"
+               [hidden]="tab !== 'speed'">
+            <h4 class="gh-section-title">Speed</h4>
+            @if (result?.speed; as speed) {
+              <dl class="bb-facts bb-speed">
+                <div>
+                  <dt>Overall Speed Index</dt>
+                  <dd>
+                    @if (speed.overallSpeedIndex != null) {
+                      {{ formatNumber(speed.overallSpeedIndex) }}
+                    } @else {
+                      — <span class="bb-withheld">withheld by {{ suiteNames(speed.speedIndexWithheldBySuiteIndex) }}</span>
+                    }
+                  </dd>
+                </div>
+                <div>
+                  <dt>Model time mean</dt>
+                  <dd>{{ formatMs(speed.modelTimeMeanMs) }}</dd>
+                </div>
+                <div>
+                  <dt>Model time P50 / P90 / max</dt>
+                  <dd>{{ formatMs(speed.modelTimeP50Ms) }} / {{ formatMs(speed.modelTimeP90Ms) }} / {{ formatMs(speed.modelTimeMaxMs) }}</dd>
+                </div>
+                <div>
+                  <dt>First token P50 / P90 / max</dt>
+                  <dd>{{ formatMs(speed.ttftP50Ms) }} / {{ formatMs(speed.ttftP90Ms) }} / {{ formatMs(speed.ttftMaxMs) }}</dd>
+                </div>
+                <div>
+                  <dt>Answers pooled</dt>
+                  <dd>{{ speed.pooledAnswerCount }} · total model time {{ formatMs(speed.totalModelTimeMs) }}</dd>
+                </div>
+              </dl>
+              @if (speed.degraded) {
+                <p class="bb-degraded">Degraded: {{ speed.degradedReason || 'a speed-affecting setting differs between suites.' }}</p>
+              }
+            } @else {
+              <p class="text-muted">{{ result ? 'This analysis holds no speed figures.' : 'The speed figures need an analysis.' }}</p>
+            }
+          </div>
+
+          <!-- ===================================================================================
+               COST
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel rr-panel-narrow" id="brr-panel-cost" aria-labelledby="brr-tab-cost" tabindex="0"
+               [hidden]="tab !== 'cost'">
+            <h4 class="gh-section-title">Cost</h4>
+            @if (result?.cost; as cost) {
+              @if (!cost.available) {
+                <p class="bb-withheld">
+                  Unknown: {{ cost.withheldReason || 'a suite has unresolved prices' }}
+                  @if (cost.withheldBySuiteIndex.length > 0) { ({{ suiteNames(cost.withheldBySuiteIndex) }}) }
+                </p>
+              } @else {
+                <dl class="bb-facts bb-cost">
+                  <div><dt>Total</dt><dd>{{ formatCost(cost.totalCost) }}</dd></div>
+                  <div><dt>One battery pass</dt><dd>{{ formatCost(cost.passCost) }}</dd></div>
+                  <div><dt>Per question asked</dt><dd>{{ formatCost(cost.costPerQuestion) }}</dd></div>
+                  <div><dt>Per Overall Index point</dt><dd>{{ formatCost(cost.costPerIndexPoint) }}</dd></div>
+                  @for (entry of roleCosts(cost.passCostByRole); track entry.role) {
+                    <div><dt>Pass cost: {{ entry.role }}</dt><dd>{{ formatCost(entry.cost) }}</dd></div>
+                  }
+                </dl>
+              }
+              @if (cost.degraded) {
+                <p class="bb-degraded">Degraded: {{ cost.degradedReason || 'a cost-affecting setting differs between suites.' }}</p>
+              }
+            } @else {
+              <p class="text-muted">{{ result ? 'This analysis holds no cost figures.' : 'The cost figures need an analysis.' }}</p>
+            }
+
+            @if (result?.usage; as usage) {
+              <h5 class="bb-sub-title">Tokens and tools</h5>
+              <dl class="bb-facts bb-usage">
+                <div><dt>Candidate tokens in / out</dt><dd>{{ usage.totalInputTokens }} / {{ usage.totalOutputTokens }}</dd></div>
+                <div><dt>Cache read tokens</dt><dd>{{ usage.totalCacheReadTokens }}</dd></div>
+                <div><dt>Assessment tokens in / out</dt><dd>{{ usage.totalAssessmentInputTokens }} / {{ usage.totalAssessmentOutputTokens }}</dd></div>
+                <div><dt>Claim verification tokens in / out</dt><dd>{{ usage.totalClaimVerificationInputTokens }} / {{ usage.totalClaimVerificationOutputTokens }}</dd></div>
+                <div><dt>Model calls</dt><dd>{{ usage.totalModelCalls ?? '—' }}</dd></div>
+                <div><dt>Tool calls</dt><dd>{{ usage.totalToolCalls }}</dd></div>
+                @for (entry of toolFamilies(usage.toolCallsByFamily); track entry.family) {
+                  <div><dt>Tool calls: {{ entry.family }}</dt><dd>{{ entry.count }}</dd></div>
+                }
+                <div>
+                  <dt>Claims checked</dt>
+                  <dd>{{ usage.claimsChecked }} · {{ usage.claimsSupported }} supported · {{ usage.claimsRefuted }} refuted · {{ usage.claimsIndeterminate }} indeterminate</dd>
+                </div>
+              </dl>
+            }
+          </div>
+
+          <!-- ===================================================================================
+               CONFIGURATION
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel rr-panel-medium" id="brr-panel-configuration" aria-labelledby="brr-tab-configuration" tabindex="0"
+               [hidden]="tab !== 'configuration'">
+            <h4 class="gh-section-title">Configuration</h4>
+            <dl class="bb-facts brr-config">
+              <div><dt>Battery</dt><dd>{{ detail.batteryName }} · revision {{ detail.definitionRevision }}</dd></div>
+              <div><dt>Weighting</dt><dd>{{ schemeLabel(detail.weightingScheme) }}</dd></div>
+              <div><dt>Definition</dt><dd><code class="brr-hash">{{ detail.definitionSha256 }}</code></dd></div>
+              <div><dt>Comparability class</dt><dd><code class="brr-hash">{{ treatmentClassSha || '—' }}</code></dd></div>
+              @if (analysis) {
+                <div><dt>Harness</dt><dd>{{ analysis.harnessVersion || '—' }} · scoring method {{ analysis.scoringMethodVersion }}</dd></div>
+              }
+            </dl>
+
+            <h5 class="bb-sub-title">Start settings</h5>
+            <dl class="bb-facts brr-start-settings">
+              <div><dt>Runs per suite</dt><dd>{{ detail.runsPerSuite }}</dd></div>
+              <div><dt>Wait at the run cap</dt><dd>{{ detail.allowCapWait ? 'Yes' : 'No' }}</dd></div>
+              <div><dt>Scoring profile</dt><dd>{{ detail.scoringProfileName || 'Default' }}</dd></div>
+              @if (detail.verboseMode !== undefined) {
+                <div><dt>Answer style</dt><dd>{{ detail.verboseMode ? 'Detailed' : 'Concise' }}</dd></div>
+              }
+              <div><dt>Model</dt><dd>{{ detail.testedModelLabel || detail.testedModelId || 'not recorded' }}</dd></div>
+              <div><dt>Assessor</dt><dd>{{ detail.assessorLabel || 'not recorded' }}{{ detail.coAssessorLabel ? ' · co-assessor ' + detail.coAssessorLabel : '' }}</dd></div>
+              <div><dt>Report writer</dt><dd>{{ detail.reportWriterModelConfigurationId != null ? 'Chosen at start' : 'None' }}</dd></div>
+              <div><dt>Started by</dt><dd>{{ detail.startedByUserName || '—' }}</dd></div>
+            </dl>
+
+            <h5 class="bb-sub-title">Suites</h5>
+            <div class="gh-datatable-scroll bb-table-scroll">
+              <table class="gh-table brr-config-suites">
+                <caption class="visually-hidden">The battery's suites in run order, with their declared and custom weights.</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" class="bb-num">#</th>
+                    <th scope="col">Suite</th>
+                    <th scope="col" class="bb-num">Suite id</th>
+                    <th scope="col" class="bb-num">Declared weight</th>
+                    <th scope="col" class="bb-num">Custom weight</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (suite of detail.suites; track suite.index) {
+                    <tr>
+                      <td class="bb-num">{{ suite.index + 1 }}</td>
+                      <th scope="row">{{ suite.suiteName }}</th>
+                      <td class="bb-num">{{ suite.suiteId }}</td>
+                      <td class="bb-num">{{ formatPercent(declaredWeight(suite.index)) }}</td>
+                      <td class="bb-num">{{ suite.customWeight != null ? formatNumber(suite.customWeight, 2) : '—' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            <h5 class="bb-sub-title">Instrument fingerprints</h5>
+            <div class="gh-datatable-scroll bb-table-scroll">
+              <table class="gh-table brr-config-fingerprints">
+                <caption class="visually-hidden">Each suite's instrument hashes recorded at start, shortened to eight characters, with the full hash read out.</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" class="bb-num">#</th>
+                    <th scope="col">Suite</th>
+                    @for (column of fingerprintColumns; track column.field) {
+                      <th scope="col" [attr.data-fingerprint]="column.label">{{ column.label }}<span class="visually-hidden"> ({{ column.longName }})</span></th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (suite of detail.suites; track suite.index) {
+                    <tr>
+                      <td class="bb-num">{{ suite.index + 1 }}</td>
+                      <th scope="row">{{ suite.suiteName }}</th>
+                      @for (column of fingerprintColumns; track column.field) {
+                        @let sha = suiteFingerprint(suite, column);
+                        <td [attr.data-fingerprint]="column.label">
+                          @if (sha) {
+                            <code class="brr-fp-short" [class]="column.cssClass" aria-hidden="true">{{ sha.substring(0, 8) }}</code>
+                            <span class="visually-hidden brr-fp-full">{{ sha }}</span>
+                          } @else {
+                            <span class="brr-fp-none">not recorded</span>
+                          }
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ===================================================================================
+               PAIRED TEST
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel" id="brr-panel-paired" aria-labelledby="brr-tab-paired" tabindex="0"
+               [hidden]="tab !== 'paired'">
+            <section class="bb-compare" aria-labelledby="bb-compare-title">
+              <h4 class="gh-section-title" id="bb-compare-title">Paired test</h4>
+              <p class="bb-note">
+                This battery run is the treatment. Choose a baseline from the same battery definition's analyzed
+                runs: one of the same table compares two models, the same model in another table verifies a change.
+                The difference is treatment minus baseline.
+              </p>
+
+              @if (leaderboardLoading && !leaderboard) {
+                <p class="text-muted">Loading the battery runs of this definition…</p>
+              } @else if (leaderboardError) {
+                <div class="alert alert-warning" role="alert">{{ leaderboardError }}</div>
+              } @else if (leaderboard && pairedCandidates.length === 0) {
+                <p class="text-muted bb-no-baseline">No other analyzed battery run of this definition to compare with.</p>
+              } @else if (leaderboard) {
+                <div class="bb-compare-form">
+                  <div class="form-group">
+                    <label for="bb-compare-baseline">Baseline</label>
+                    <select id="bb-compare-baseline" class="gh-input" (change)="onBaselineSelect($event)">
+                      <option value="" [selected]="compareBaselineId == null">Choose a result</option>
+                      @for (cls of pairedClasses; track cls.sha) {
+                        <optgroup [label]="cls.label">
+                          @for (row of cls.rows; track row.batteryRunId) {
+                            <option [value]="row.batteryRunId" [selected]="row.batteryRunId === compareBaselineId">{{ pairedOptionLabel(row) }}</option>
+                          }
+                        </optgroup>
+                      }
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <span class="brr-treatment-label">Treatment</span>
+                    <p class="bb-compare-treatment">
+                      #{{ detail.id }} · {{ detail.testedModelLabel || 'unknown model' }} · {{ formatNumber(headline?.pointEstimate ?? detail.overallIndex) }}
+                    </p>
+                  </div>
+                  <button type="button" class="btn-gh bb-compare-btn" [disabled]="!canCompare" (click)="compare()"
+                          aria-describedby="bb-compare-kind">
+                    {{ comparing ? 'Comparing…' : 'Compare' }}
+                  </button>
+                </div>
+                <p class="bb-note" id="bb-compare-kind">
+                  @switch (pairedKind) {
+                    @case ('model') { Model comparison: both results are in one table. }
+                    @case ('replicate') { Replicate: the same model under the same conditions. A paired battery test needs another model, or one changed instrument key, so this pair cannot be compared. }
+                    @case ('verification') { Verification of a change: the same model under two conditions. Allowed only when exactly one instrument setting differs. }
+                    @case ('unlikely') { These two results are in different tables and test different models; the comparison will probably be refused. }
+                    @default { Choose a baseline. }
+                  }
+                </p>
+              }
+
+              @if (compareRefusal) {
+                <div class="alert alert-warning bb-compare-refusal" role="alert">
+                  <strong>Not comparable.</strong> {{ compareRefusal }}
+                </div>
+              }
+
+              @if (comparison) {
+                @if (comparisonResult; as cmp) {
+                  <div class="bb-headline bb-compare-headline">
+                    <p class="bb-headline-label">Difference D (treatment − baseline)</p>
+                    <p class="bb-headline-value bb-compare-d">{{ formatSigned(cmp.compositeDifference) }}</p>
+                    <p class="bb-headline-interval">
+                      @if (cmp.compositeConfidenceHalfWidth != null) {
+                        95 % interval {{ formatInterval(cmp.compositeConfidenceLower, cmp.compositeConfidenceUpper) }}
+                        · t({{ formatNumber(cmp.compositeDegreesOfFreedom, 1) }} df) = {{ formatNumber(cmp.compositeCriticalValue, 3) }}
+                      } @else if (cmp.standardErrorWithheldBySuiteIndex.length > 0) {
+                        No interval: {{ suiteNames(cmp.standardErrorWithheldBySuiteIndex) }} has fewer than three paired items.
+                      }
+                      @if (cmp.compositeWithheldBySuiteIndex.length > 0) {
+                        No difference: {{ suiteNames(cmp.compositeWithheldBySuiteIndex) }} has no paired item.
+                      }
+                    </p>
+                    <!-- The verdict is a word and a shape: a filled dot for an established difference, a ring
+                         otherwise, a dash when not tested; the color only repeats it. -->
+                    @if (pairedIntelligenceVerdict; as verdict) {
+                      <p [class]="'brr-paired-verdict brr-paired-verdict--' + verdict.shape">
+                        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" focusable="false">
+                          @if (verdict.shape === 'untested') {
+                            <line x1="1.5" y1="5" x2="8.5" y2="5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"></line>
+                          } @else {
+                            <circle cx="5" cy="5" r="3.75" stroke="currentColor" stroke-width="1.5"
+                                    [attr.fill]="verdict.shape === 'established' ? 'currentColor' : 'none'"></circle>
+                          }
+                        </svg>
+                        {{ verdict.text }}
+                      </p>
+                    }
+                  </div>
+                  <dl class="bb-facts bb-compare-facts">
+                    <div>
+                      <dt>Randomization p</dt>
+                      <dd>
+                        {{ formatPValue(cmp.randomizationPValue) }}
+                        · {{ randomizationMethodLabel(cmp.randomizationMethod) }}
+                        @if (cmp.randomizationMethod === 'MonteCarlo') {
+                          ({{ cmp.monteCarloResamples }} resamples, seed {{ cmp.seed }}, Monte Carlo SE {{ formatNumber(cmp.monteCarloStandardError, 4) }})
+                        }
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Overall Index</dt>
+                      <dd>baseline {{ formatNumber(cmp.baselineOverallIndex) }} · treatment {{ formatNumber(cmp.treatmentOverallIndex) }}</dd>
+                    </div>
+                    <div>
+                      <dt>Paired items</dt>
+                      <dd>{{ cmp.pairedItemCount }}</dd>
+                    </div>
+                  </dl>
+                  <div class="gh-datatable-scroll bb-table-scroll">
+                    <table class="gh-table bb-compare-table">
+                      <caption class="visually-hidden">Per-suite differences with Holm-adjusted Wilcoxon p-values.</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Suite</th>
+                          <th scope="col" class="bb-num">Weight</th>
+                          <th scope="col" class="bb-num">Paired items</th>
+                          <th scope="col" class="bb-num">Difference</th>
+                          <th scope="col" class="bb-num">SE</th>
+                          <th scope="col" class="bb-num">Wilcoxon p</th>
+                          <th scope="col" class="bb-num">Holm-adjusted p</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (suite of cmp.suites; track suite.suiteIndex) {
+                          <tr>
+                            <th scope="row">
+                              {{ suite.suiteName }}
+                              @if (suite.note) { <span class="bb-row-note">{{ suite.note }}</span> }
+                            </th>
+                            <td class="bb-num">{{ formatPercent(suite.weight) }}</td>
+                            <td class="bb-num">{{ suite.pairedItemCount }}</td>
+                            <td class="bb-num">{{ formatSigned(suite.weightedDifference) }}</td>
+                            <td class="bb-num">{{ formatNumber(suite.weightedDifferenceStandardError, 2) }}</td>
+                            <td class="bb-num">{{ formatPValue(suite.wilcoxonPValue) }}</td>
+                            <td class="bb-num">{{ formatPValue(suite.holmAdjustedPValue) }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                  @if (cmp.notes.length > 0) {
+                    <ul class="bb-caveats">
+                      @for (note of cmp.notes; track $index) {
+                        <li>{{ note }}</li>
+                      }
+                    </ul>
+                  }
+                } @else {
+                  <p class="text-muted">The server returned no comparison.</p>
+                }
+
+                <!-- The same pair on the other measures. M7 above stays the Intelligence test, so the
+                     result below leaves its own Intelligence headline out. -->
+                <section class="brr-paired-measures" aria-labelledby="brr-paired-measures-title">
+                  <h5 class="brr-paired-measures-title" id="brr-paired-measures-title">Quality dimensions, speed and cost</h5>
+                  <p class="brr-paired-status" role="status">
+                    @if (pairedLoading) {
+                      Testing the quality dimensions, speed and cost…
+                    }
+                  </p>
+                  @if (pairedError) {
+                    <div class="alert alert-warning brr-paired-error" role="alert">{{ pairedError }}</div>
+                  }
+                  @if (pairedResult) {
+                    <app-paired-test-result [comparison]="pairedResult" [showPrimary]="false"
+                                            idPrefix="brr-paired-result"></app-paired-test-result>
+                  }
+                </section>
+              }
+            </section>
+          </div>
+
+          <!-- ===================================================================================
+               AI REPORTS
+               =================================================================================== -->
+          <div role="tabpanel" class="rr-panel rr-panel-medium" id="brr-panel-reports" aria-labelledby="brr-tab-reports" tabindex="0"
+               [hidden]="tab !== 'reports'">
+            <app-battery-ai-reports [batteryRun]="detail" [analysis]="analysis" [dialogOpen]="dialogOpen"
+                                    (downloadsRequested)="openDownloads($event)"
+                                    (reportStatusChange)="onReportStatusChange($event)"></app-battery-ai-reports>
+          </div>
+        }
+      </div>
+    </app-run-report-frame>
+  }
+
+  <app-key-figures-chooser idPrefix="brr-kfch"
+                           figuresHint="Shown in the Summary and in the copied or downloaded image. Remembered for every battery run report."
+                           detailsHint="The battery run's settings above the figures in the copied or downloaded image. The dialog header always lists them all. Remembered for every battery run report."
+                           (selectionChange)="onKeyFigureSelectionChange($event)"
+                           (detailSelectionChange)="onImageDetailSelectionChange($event)" />
+  <app-benchmark-download-center #brrDownloadCenter (closed)="onDownloadsClosed()"></app-benchmark-download-center>
+</dialog>

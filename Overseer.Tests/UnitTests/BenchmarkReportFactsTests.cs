@@ -218,7 +218,7 @@ public class BenchmarkReportFactsTests
     }
 
     [Fact]
-    public void TheNoSignificanceStatement_IsTheComparisonsOwn()
+    public void TheNoSignificanceStatement_IsTheDocumentsOwnFrozenText()
     {
         var comparison = Comparison(
             Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80),
@@ -226,9 +226,20 @@ public class BenchmarkReportFactsTests
 
         var sheet = BuildSheet(Input(comparison, "run:1", SimpleRun(1, "OpenAI"), SimpleRun(2, "Google")));
 
-        var measure = comparison.ExcludedMeasures.Single(m => m.Measure == "Pairwise significance");
-        Assert.Equal(measure.Summary, sheet.NoSignificanceSummary);
-        Assert.Equal(measure.Instead, sheet.NoSignificanceInstead);
+        // Documents keep this wording whatever the wizard's excluded-measure text says.
+        Assert.Equal(
+            "This view runs no significance test, so a gap between the two models may be noise.",
+            sheet.NoSignificanceSummary);
+        Assert.Equal(
+            "Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and "
+                + "choose the other under Compare with group.",
+            sheet.NoSignificanceInstead);
+
+        var three = BenchmarkReportFacts.NoSignificanceStatement(3);
+        Assert.Equal(
+            "Testing every pair among these 3 models at once would flag chance differences as "
+                + "significant, so this view tests none.",
+            three.Summary);
     }
 
     [Fact]

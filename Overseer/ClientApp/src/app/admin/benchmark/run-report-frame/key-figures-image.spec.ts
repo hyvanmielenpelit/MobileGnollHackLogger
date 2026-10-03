@@ -367,6 +367,22 @@ describe('key figures image', () => {
       expect(readStoredKeyFigureExclusions()).toEqual([]);
       expect(() => storeKeyFigureExclusions(['panel'])).not.toThrow();
     });
+
+    it('keeps a selection under another storage key apart from the run report', () => {
+      const otherKey = 'overseer.spec.otherReport.keyFigures';
+      try {
+        storeKeyFigureExclusions(['speed', ' speed ', 'panel'], otherKey);
+        expect(JSON.parse(localStorage.getItem(otherKey)!)).toEqual({ version: 1, excluded: ['speed', 'panel'] });
+        expect(localStorage.getItem(KEY_FIGURES_STORAGE_KEY)).toBeNull();
+        expect(readStoredKeyFigureExclusions(otherKey)).toEqual(['speed', 'panel']);
+        expect(readStoredKeyFigureExclusions()).toEqual([]);
+
+        storeKeyFigureExclusions(['raw-quality']);
+        expect(readStoredKeyFigureExclusions(otherKey)).toEqual(['speed', 'panel']);
+      } finally {
+        localStorage.removeItem(otherKey);
+      }
+    });
   });
 
   describe('strip layout', () => {
@@ -771,6 +787,25 @@ describe('key figures image', () => {
       expect(readStoredImageDetailExclusions()).toEqual(['board']);
       expect(() => storeImageDetailExclusions(['prompt'])).not.toThrow();
     });
+
+    it('keeps a selection under another storage key apart, with the fallback the caller passes', () => {
+      const otherKey = 'overseer.spec.otherReport.imageDetails';
+      try {
+        expect(readStoredImageDetailExclusions(otherKey)).toEqual(['board']);
+        expect(readStoredImageDetailExclusions(otherKey, [])).toEqual([]);
+
+        storeImageDetailExclusions(['suites', ' suites '], otherKey);
+        expect(JSON.parse(localStorage.getItem(otherKey)!)).toEqual({ version: 1, excluded: ['suites'] });
+        expect(localStorage.getItem(IMAGE_DETAILS_STORAGE_KEY)).toBeNull();
+        expect(readStoredImageDetailExclusions(otherKey, [])).toEqual(['suites']);
+        expect(readStoredImageDetailExclusions()).toEqual(['board']);
+
+        localStorage.setItem(otherKey, '{not json');
+        expect(readStoredImageDetailExclusions(otherKey, ['battery'])).toEqual(['battery']);
+      } finally {
+        localStorage.removeItem(otherKey);
+      }
+    });
   });
 
   describe('names and messages', () => {
@@ -781,6 +816,12 @@ describe('key figures image', () => {
         .toBe('gnollbench_run72_snapshot-tommi2-2026-09-17_gpt-5.5-high_intelligence-index_20260928_123456.png');
       expect(keyFigureCardFileName({ ...CONTEXT, suiteName: '../Suite/<x>', modelName: '' }, '../Cost/$', NOW))
         .toBe('gnollbench_run72_suitex_export_cost_20260928_123456.png');
+    });
+
+    it('names a battery run by its file stem instead of the run id', () => {
+      const battery = { ...CONTEXT, fileStem: 'battery-run-7', suiteName: 'Core Battery' };
+      expect(keyFiguresFileName(battery, NOW))
+        .toBe('gnollbench_battery-run-7_core-battery_gpt-5.5-high_key-figures_20260928_123456.png');
     });
 
     it('slugs a label for ids and anchor names', () => {

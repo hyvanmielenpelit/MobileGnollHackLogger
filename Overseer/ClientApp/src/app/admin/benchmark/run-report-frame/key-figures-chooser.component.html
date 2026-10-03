@@ -4,26 +4,26 @@
   Nested in the run report dialog, so its own close, cancel and click events stop here. Every change
   applies at once; Done and the close button only close.
 -->
-<dialog #chooserDialog class="gh-dialog kfch-dialog" aria-labelledby="kfchTitle" closedby="any"
+<dialog #chooserDialog class="gh-dialog kfch-dialog" [attr.aria-labelledby]="idPrefix + 'Title'" closedby="any"
         (click)="onDialogClick($event)" (cancel)="onDialogEvent($event)" (close)="onDialogEvent($event)">
   <div class="dialog-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3 #chooserTitle id="kfchTitle" tabindex="-1">Choose key figures</h3>
+        <h3 #chooserTitle [id]="idPrefix + 'Title'" tabindex="-1">Choose key figures</h3>
       </div>
       <button type="button" class="btn-icon-action kfch-close" aria-label="Close key figures chooser"
-              interestfor="kfch-close-tip" style="anchor-name: --kfch-close-tip" (click)="done()">
+              [attr.interestfor]="idPrefix + '-close-tip'" [attr.style]="'anchor-name: --' + idPrefix + '-close-tip'" (click)="done()">
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
       </button>
-      <div popover="hint" class="gh-tooltip" id="kfch-close-tip" style="position-anchor: --kfch-close-tip">Close</div>
+      <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-close-tip'" [attr.style]="'position-anchor: --' + idPrefix + '-close-tip'">Close</div>
     </div>
     <div class="dialog-body">
-      <div class="kfch-group" role="group" aria-labelledby="kfchCaption">
+      <div class="kfch-group" role="group" [attr.aria-labelledby]="idPrefix + 'Caption'">
         <div class="kfch-group-head">
-          <p class="kfch-caption" id="kfchCaption">Figures</p>
+          <p class="kfch-caption" [id]="idPrefix + 'Caption'">Figures</p>
           <span class="kfch-bulk">
             <button type="button" class="btn-link kfch-all" (click)="selectAll()">All<span class="visually-hidden"> key figures</span></button>
             <button type="button" class="btn-link kfch-none" (click)="selectNone()">None<span class="visually-hidden"> of the key figures</span></button>
@@ -33,7 +33,7 @@
           @for (figure of figures; track figure.key) {
             <li class="kfch-item" [attr.data-figure]="figure.key">
               <label class="checkbox-label align-start kfch-row">
-                <input type="checkbox" [id]="'kfch-' + figure.key"
+                <input type="checkbox" [id]="idPrefix + '-' + figure.key"
                        [checked]="isChecked(figure.key)"
                        (change)="onToggle(figure.key, $event)">
                 <span class="kfch-text">
@@ -48,11 +48,11 @@
         </ul>
       </div>
       <p class="kfch-count" role="status">{{ countText }}</p>
-      <p class="kfch-hint">Shown in the Summary and in the copied or downloaded image. Remembered for every run report; a figure a run does not have is left out.</p>
+      <p class="kfch-hint">{{ figuresHint }}</p>
       @if (detailRows.length > 0) {
-        <div class="kfch-group kfch-group-details" role="group" aria-labelledby="kfchDetailsCaption">
+        <div class="kfch-group kfch-group-details" role="group" [attr.aria-labelledby]="idPrefix + 'DetailsCaption'">
           <div class="kfch-group-head">
-            <p class="kfch-caption" id="kfchDetailsCaption">Image details</p>
+            <p class="kfch-caption" [id]="idPrefix + 'DetailsCaption'">Image details</p>
             <span class="kfch-bulk">
               <button type="button" class="btn-link kfch-details-all" (click)="selectAllDetails()">All<span class="visually-hidden"> image details</span></button>
               <button type="button" class="btn-link kfch-details-none" (click)="selectNoDetails()">None<span class="visually-hidden"> of the image details</span></button>
@@ -62,7 +62,7 @@
             @for (row of detailRows; track row.key) {
               <li class="kfch-item" [attr.data-detail]="row.key">
                 <label class="checkbox-label align-start kfch-row">
-                  <input type="checkbox" [id]="'kfch-detail-' + row.key"
+                  <input type="checkbox" [id]="idPrefix + '-detail-' + row.key"
                          [checked]="isDetailChecked(row.key)"
                          (change)="toggleDetail(row.key, $event)">
                   <span class="kfch-text">
@@ -77,7 +77,7 @@
           </ul>
         </div>
         <p class="kfch-count kfch-detail-count" role="status">{{ detailCountText }}</p>
-        <p class="kfch-hint kfch-detail-hint">The run's settings above the figures in the copied or downloaded image. The dialog header always lists them all. Remembered for every run report.</p>
+        <p class="kfch-hint kfch-detail-hint">{{ detailsHint }}</p>
       }
     </div>
     <div class="dialog-footer">

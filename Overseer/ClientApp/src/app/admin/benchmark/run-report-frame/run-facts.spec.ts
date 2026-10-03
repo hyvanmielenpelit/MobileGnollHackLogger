@@ -1,9 +1,10 @@
-import type { BenchmarkRunDetailDto } from '../../../services/admin-benchmark.service';
+import type { BenchmarkBatteryRunDto, BenchmarkRunDetailDto } from '../../../services/admin-benchmark.service';
 import {
   RUN_FACT_PRIMARY_KEYS,
   RunFactModel,
   RunFactRow,
   boardDeliveryFigures,
+  buildBatteryRunFacts,
   buildRunFacts,
   candidatePromptParts,
   formatCandidatePrompt,
@@ -169,6 +170,36 @@ describe('run facts', () => {
     });
   });
 
+  describe('buildBatteryRunFacts', () => {
+    const battery = (overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkBatteryRunDto => ({
+      id: 7, batteryId: 2, batteryName: 'Core Battery', definitionRevision: 3, definitionSha256: 'ee1a4cfe00',
+      weightingScheme: 'Equal', suites: [], suiteCount: 4, runsPerSuite: 2, requestedMemberCount: 8,
+      completedMemberCount: 6, failedMemberCount: 0, completedSuiteCount: 3, status: 'Completed',
+      allowCapWait: false, resumable: false, isDriving: false, startedAtUtc: '2026-10-01T10:00:00',
+      testedModelLabel: 'GPT-6.1 Sol', testedProvider: 'OpenAI', testedModelId: 'gpt-6.1-sol', testedThinkingLevel: 'high',
+      assessorLabel: 'Claude 5 Opus', scoringProfileName: 'Strict', verboseMode: false,
+      slots: [], members: [], analysisStale: false, analysisHasExcludedMembers: false,
+      ...overrides
+    } as BenchmarkBatteryRunDto);
+
+    it('lists the run facts and then the battery and its suites', () => {
+      const rows = buildBatteryRunFacts(battery());
+      expect(rows.map(r => r.key)).toEqual(['model', 'assessor', 'prompt', 'profile', 'started', 'battery', 'suites']);
+      expect(runFactPlainText(rows[0])).toBe('GPT-6.1 Sol');
+      expect(rows[1].label).toBe('Assessor');
+      expect(runFactPlainText(rows[2])).toBe('Gameplay Help · concise');
+      expect(runFactPlainText(rows[3])).toBe('Strict');
+      expect(runFactPlainText(rows[5])).toBe('Core Battery · Revision 3 · Equal per suite');
+      expect(runFactPlainText(rows[6])).toBe('3 of 4 complete · 2 runs per suite');
+    });
+
+    it('names both panel assessors and reads the battery rows into the one-line readout', () => {
+      const rows = buildBatteryRunFacts(battery({ coAssessorLabel: 'Gemini 3.8 Pro', runsPerSuite: 1 }));
+      expect(rows[1].label).toBe('Assessors');
+      expect(runFactPlainText(rows[1])).toBe('Claude 5 Opus + Gemini 3.8 Pro');
+      expect(runFactsReadout(rows)).toContain('3 of 4 complete · 1 run per suite');
+    });
+  });
   describe('runFactBadges', () => {
     it('shows no thinking badge without a configured level', () => {
       expect(runFactBadges(model()).map(b => b.kind)).toEqual(['provider']);

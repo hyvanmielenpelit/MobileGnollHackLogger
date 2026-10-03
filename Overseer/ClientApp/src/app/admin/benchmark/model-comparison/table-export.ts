@@ -692,7 +692,9 @@ export function comparisonTableCells(entry: BenchmarkModelComparisonEntryDto): R
     [TABLE_MODEL_NAME_CELL]: textCell(entry.modelDisplayName || entry.label),
     [TABLE_REASONING_CELL]: textCell(showReasoningBadge(reasoning) ? reasoning : null),
     label: textCell(entry.label),
-    source: textCell(`${entry.sourceKind} ${entry.sourceId}`),
+    source: textCell(entry.sourceKind === 'Battery'
+      ? `Battery run ${entry.sourceId}`
+      : `${entry.sourceKind} ${entry.sourceId}`),
     provider: textCell(entry.provider),
     modelId: textCell(entry.modelId),
     thinkingLevel: textCell(entry.thinkingLevel),

@@ -101,7 +101,9 @@ public sealed record BenchmarkPdfDocumentInfo
     /// <summary>
     /// A stored report-pack document rendered at the given disclosure and peer naming. A document with
     /// peers says so in its subject line, and its facts table names them under Compared with, as the
-    /// naming allows, and states the pricing basis.
+    /// naming allows, and states the pricing basis. A battery document's subject line names the
+    /// battery run (<see cref="BatterySubjectLine"/>), and its facts table the battery, the battery run
+    /// and the count of member runs in place of the suite and the runs.
     /// </summary>
     public static BenchmarkPdfDocumentInfo ForReportDocument(
         BenchmarkReportDocument document, BenchmarkReportRenderOptions options, BenchmarkPdfPaper paper)
@@ -114,6 +116,8 @@ public sealed record BenchmarkPdfDocumentInfo
         var runIds = ParseRunIds(document.SubjectRunIdsJson);
         var sheet = ParseSheet(document.FactsJson);
         bool compared = sheet != null && sheet.Peers.Count > 0;
+
+        var battery = sheet?.Battery;
 
         var facts = new List<BenchmarkPdfFact>
         {
@@ -129,16 +133,39 @@ public sealed record BenchmarkPdfDocumentInfo
         {
             facts.Add(new("Peers", PeersText(sheet, options.PeerNaming)));
         }
+        if (battery != null)
+        {
+            // A battery's member runs can number in the hundreds; the cover counts them.
+            facts.AddRange(new BenchmarkPdfFact[]
+            {
+                new("Battery", BatteryText(battery)),
+                new("Questions", QuestionsText(sheet)),
+                new("Battery run", "#" + Inv(battery.BatteryRunId)),
+                new("Member runs", Inv(runIds.Count)),
+            });
+        }
+        else
+        {
+            facts.AddRange(new BenchmarkPdfFact[]
+            {
+                new("Suite", document.SuiteName ?? string.Empty),
+                new("Questions", QuestionsText(sheet)),
+                new(runIds.Count == 1 ? "Run" : "Runs", runIds.Count == 0 ? "—" : string.Join(", ", runIds.Select(id => "#" + Inv(id)))),
+            });
+        }
         facts.AddRange(new BenchmarkPdfFact[]
         {
-            new("Suite", document.SuiteName ?? string.Empty),
-            new("Questions", QuestionsText(sheet)),
-            new(runIds.Count == 1 ? "Run" : "Runs", runIds.Count == 0 ? "—" : string.Join(", ", runIds.Select(id => "#" + Inv(id)))),
             new("Created (UTC)", Stamp(document.CreatedAtUtc)),
             new("Generated format", "version " + Inv(document.ReportFormatVersion)),
             new("Writer", WriterText(document)),
             new("Provenance", ProvenanceText),
         });
+
+        string subjectLine = battery != null
+            ? BatterySubjectLine(battery) + (compared ? " · compared with " + ModelCount(sheet!.Peers.Count) : string.Empty)
+            : compared
+                ? ComparisonSubjectLine(document.SuiteName, document.SubjectKey, runIds, sheet!.Peers.Count)
+                : SubjectLineOf(document.SuiteName, runIds);
 
         return new BenchmarkPdfDocumentInfo
         {
@@ -146,9 +173,7 @@ public sealed record BenchmarkPdfDocumentInfo
             Title = string.IsNullOrWhiteSpace(document.Title)
                 ? audience + ": " + document.SubjectLabel
                 : BenchmarkReportRenderService.CurrentTitle(document.Audience, document.Title),
-            SubjectLine = compared
-                ? ComparisonSubjectLine(document.SuiteName, document.SubjectKey, runIds, sheet!.Peers.Count)
-                : SubjectLineOf(document.SuiteName, runIds),
+            SubjectLine = subjectLine,
             Classification = full ? BenchmarkPdfClassification.Internal : BenchmarkPdfClassification.ProviderConfidential,
             ClassificationText = BenchmarkReportPackRenderer.Stamp(document.Audience, options.Disclosure),
             Facts = facts,
@@ -326,6 +351,21 @@ public sealed record BenchmarkPdfDocumentInfo
     }
 
     private static string ModelCount(int count) => Inv(count) + (count == 1 ? " model" : " models");
+
+    /// <summary><c>Battery run #9 — Core knowledge (12 suites, 10 runs per suite)</c>.</summary>
+    public static string BatterySubjectLine(BenchmarkReportBatterySubject battery)
+    {
+        ArgumentNullException.ThrowIfNull(battery);
+        return "Battery run #" + Inv(battery.BatteryRunId) + " — " + battery.Name
+            + " (" + Inv(battery.SuiteCount) + (battery.SuiteCount == 1 ? " suite, " : " suites, ")
+            + Inv(battery.RunsPerSuite) + (battery.RunsPerSuite == 1 ? " run per suite)" : " runs per suite)");
+    }
+
+    /// <summary><c>Core knowledge, revision 3 (12 suites)</c>.</summary>
+    private static string BatteryText(BenchmarkReportBatterySubject battery)
+        => battery.Name
+           + (battery.Revision is int revision ? ", revision " + Inv(revision) : string.Empty)
+           + " (" + Inv(battery.SuiteCount) + (battery.SuiteCount == 1 ? " suite)" : " suites)");
 
     /// <summary>The questions of the subject's exam, from the sheet's <c>suite.questions</c>, else its question count.</summary>
     private static string QuestionsText(BenchmarkReportFactSheet? sheet)

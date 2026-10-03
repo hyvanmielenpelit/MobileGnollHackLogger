@@ -943,24 +943,31 @@ describe('AdminBenchmarkComponent', () => {
       fixture.destroy();
     });
 
-    it('releases the background lock only on the 5th consecutive series poll error', () => {
+    it('keeps the background lock through series poll errors until ten minutes of them, showing Lost contact', () => {
       const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
       const lockService = TestBed.inject(BenchmarkBackgroundActivityService);
       const releaseSpy = vi.spyOn(lockService, 'release').mockReturnValue(undefined);
+      const start = Date.now();
+      const now = vi.spyOn(Date, 'now').mockReturnValue(start);
 
       (ctx.monitor as any).startSeriesPolling(11);
       releaseSpy.mockClear();
       benchmarkServiceMock.getRunSeries.mockReturnValue(throwError(() => ({ status: 500 })));
 
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 5; i++) {
         (ctx.monitor as any).pollSeries(11);
       }
       expect(releaseSpy).not.toHaveBeenCalled();
+      expect(ctx.monitor.lostContact?.kind).toBe('series');
+      expect(ctx.monitor.lostContactText).toContain('Lost contact');
 
+      now.mockReturnValue(start + 10 * 60_000 + 1);
       (ctx.monitor as any).pollSeries(11);
       expect(releaseSpy).toHaveBeenCalled();
       expect((ctx.monitor as any).seriesPollTickerHandle).toBeNull();
+      expect(ctx.monitor.lostContact?.gaveUp).toBe(true);
       expect(consoleError).toHaveBeenCalledWith('Failed to poll benchmark run series', expect.any(Object));
+      now.mockRestore();
       fixture.destroy();
     });
 

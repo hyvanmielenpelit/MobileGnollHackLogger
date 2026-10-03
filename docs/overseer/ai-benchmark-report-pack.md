@@ -8,9 +8,14 @@ The same machinery also writes a run's own **run-completion documents**: the Exe
 Report for AI Researchers and Developers about one run on its own, with no peers, written once after the
 run is scored by the report writer the run names (§ 11).
 
+A **battery result** — one model's composite over the suites of a battery — can be a subject too: of a
+pack from a comparison of battery results, and of its own **battery-completion documents**, written once
+after the battery run finishes and is analyzed (§ 14).
+
 This document describes the feature for developers: what each document holds, how the figures and the
 prose are kept apart, how the prose is validated, what is stored, how a stored document is rendered
-at download, and how its PDF and Word copies carry charts (§ 13). It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
+at download, how its PDF and Word copies carry charts (§ 13), and how a battery result is a subject
+(§ 14). It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
 the run report and Model Comparison. Read that first if you have not.
 
 The one design rule behind everything below: **numbers come from code, words come from the writer, and
@@ -24,11 +29,13 @@ Implementation:
 | Fact sheet, content snapshot, writer output, validation notes and DTOs | `Overseer/Models/BenchmarkReportPackModels.cs` |
 | The writer's prompts and the repair message | `BenchmarkReportPackPrompt` |
 | Parsing the writer's JSON | `BenchmarkReportPackParser` |
-| The eighteen validation rules and the drop policy | `BenchmarkReportPackValidator` |
+| The validation rules and the drop policy | `BenchmarkReportPackValidator` |
 | A comparison's identity, and its startup backfill | `BenchmarkReportComparisonKey`, `BenchmarkReportDocumentBackfill` |
 | Generation: preparation, the writer call, repair, storage | `BenchmarkReportPackService` |
 | The background job and its progress | `BenchmarkReportPackJob`, `BenchmarkReportPackJobManager` |
 | A run's run-completion documents: scheduling, the queued job, the run's status | `BenchmarkRunReportDocumentService` (singleton) |
+| A battery subject's fact sheet and content | `BenchmarkBatteryReportFacts` |
+| A battery run's battery-completion documents | `BenchmarkBatteryReportDocumentService` (singleton), `AdminBenchmarkBatteryReportsController` |
 | Deterministic Markdown rendering | `BenchmarkReportPackRenderer` (pure, static), behind `BenchmarkReportRenderService` |
 | Chart images on disk: storage, validation, manifest, loading | `BenchmarkReportChartStore` (singleton), `Overseer/Models/BenchmarkReportChartModels.cs` |
 | Which figure goes where, and the figure markers | `BenchmarkReportChartPlacement` |
@@ -40,7 +47,8 @@ Implementation:
 ## 1. Purpose and the Three Documents
 
 Step 3 of the Model Comparison wizard, **Reports**, starts a report pack (§ 12). The admin
-picks one comparison entry as the **subject** — a run or an analysis group — and a separate **report
+picks one comparison entry as the **subject** — a run, an analysis group or a battery result (§ 14) —
+and a separate **report
 writer** model, and chooses which documents to write. The other entries of the comparison are the
 subject's **peers**, lettered A, B, C… in quality-rank order.
 
@@ -81,7 +89,7 @@ a document stored under the earlier name *Technical Report* is relabeled on disp
 (`BenchmarkReportRenderService.CurrentTitle`); its file names use the label `Researcher_Report` (§ 9).
 
 **The stand-alone (peerless) form.** A comparison with only the subject — every run-completion document
-(§ 11) — has no peers. The fact sheet then marks every fact that compares the subject with peers
+(§ 11) and every battery-completion document (§ 14) — has no peers. The fact sheet then marks every fact that compares the subject with peers
 unavailable with the reason *"A stand-alone run report has no peers."*
 (`BenchmarkReportFacts.StandaloneReason`); the writer prompt says there are no peers, that `{{peer:X}}`
 tokens are unavailable and that the subject is never compared with other models; and a question needs a
@@ -156,8 +164,18 @@ says so once, in its own words, where the comparison left pairwise significance 
 is tested for significance: with N models, testing every pair would flag chance differences."* (*"The two
 models are not tested for significance, so a gap between them may be noise."* for two models), in the
 Executive Summary's *How reliable this result is* and in the researcher report's *Quality* block. The
-comparison's own *Instead* sentence addresses its operator and is never printed. The writer prompt
-carries the comparison's statement as its *NO SIGNIFICANCE TEST* block.
+writer prompt carries the statement as its *NO SIGNIFICANCE TEST* block.
+
+**The documents own this statement.** The sheet's `NoSignificanceSummary` and `NoSignificanceInstead`
+come from `BenchmarkReportFacts.NoSignificanceStatement`, whose wording is frozen in
+`BenchmarkReportFacts` (`NoSignificanceSummaryOfTwo`, `NoSignificanceInsteadText`). They no longer
+copy the comparison's *Pairwise significance* excluded measure, whose text now tells the wizard's
+operator that the charts and table carry no test and points to the wizard's **Paired tests** view
+(`ai-benchmark.md`, *Paired Tests*). Decoupling them kept every golden render and stored sheet where
+it was. The *Instead* sentence is kept on the sheet and is never printed or shown to the writer.
+**Documents do not yet cite the paired tests**: a Report Pack or run-completion document still states
+that no pair is tested, even where the wizard has tested one. Having documents cite the
+family-adjusted tests is a follow-up.
 
 **Per-peer facts.** Each peer `X` has its own facts, so the writer can say how the subject compares with
 it: `peer.X.quality.index`, `peer.X.quality.interval`, `peer.X.quality.rank`,
@@ -234,9 +252,10 @@ whether that member shares the subject's provider.
 
 ## 3. Validation, Repair and Drops
 
-`BenchmarkReportPackValidator` checks the writer's JSON against eighteen rules. Each failure is a
+`BenchmarkReportPackValidator` checks the writer's JSON against nineteen rules. Each failure is a
 `BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
-`weaknesses[1]`…) and message.
+`weaknesses[1]`…) and message. Rule 20 is not a check on the writer: it is the note a battery
+subject's preparation records when it left question detail out of the prompt (§ 14).
 
 | # | Rule |
 |---|---|
@@ -259,6 +278,7 @@ whether that member shares the subject's provider.
 | 17 | No hype or filler words (`HypeWords`: *impressive, remarkable, outstanding, stellar, exceptional, robust, seamless, leverage, delve, game-changing, cutting-edge*), as whole words ignoring case, in any prose (`HypeWordRule`) |
 | 18 | A `model_developers` recommendation mentions nothing a model developer cannot change (`OverseerOnlyTerms`: *rubric, retrieval, index, corpus, regression test, system prompt, tool guide, prompt the model, the assistant's prompt, GnollHack*, with their plural and inflected forms, as whole words ignoring case; `ModelDeveloperScopeRule`) |
 | 19 | No negation — *no, none, never, without, zero*, ignoring case — among the four words before a token whose display value starts with `0` in the same sentence, as in *"no critical errors across {{errors.critical}}"* reading *"0 of 18 answers"* (format 9). Tokens are set aside before the text is split into sentences |
+| 20 | *Not a writer check.* A battery subject's prompt exceeded `Benchmark:ReportPack:BatteryMaxPromptChars`, so the full detail of the questions it names was left out and only their rows were given (`BenchmarkBatteryReportFacts.PromptBudgetRule`, location `prompt`, § 14). Recorded before the writer call, stored with the document and logged as a warning; it neither drops anything nor marks the document *Completed with warnings* |
 
 Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
 slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
@@ -379,12 +399,14 @@ report-pack job runs or a run-completion job waits for the slot — one job at a
 
 Each document is one **immutable** `BenchmarkReportDocument` row; there is no update endpoint. It holds:
 
-- audience, subject key (`run:<id>` or `group:<id>`) and label, the subject's run ids, the comparison
-  request, and the suite;
+- audience, subject key (`run:<id>`, `group:<id>` or `battery:<id>`) and label, the subject's run ids
+  (for a battery, its usable member runs), the comparison request, and the suite;
 - `Origin` (`BenchmarkReportDocumentOrigin`): **ReportPack** (1, the default, and the value every row
   written before the column existed carries) for a document of a Report Pack job, **RunCompletion** (2)
-  for a run's own run-completion document (§ 11). An index on `(SubjectKey, Origin)` finds a run's
-  run-completion documents, and the list DTO carries `origin`;
+  for a run's own run-completion document (§ 11), **BatteryCompletion** (3) for a battery run's own
+  battery-completion document (§ 14; the column is an `int`, so the value needed no schema change). An
+  index on `(SubjectKey, Origin)` finds a run's or battery run's own documents, and the list DTO carries
+  `origin`;
 - the writer's identity and its configuration snapshot, and `SameProviderAcknowledged`;
 - `ReportFormatVersion`, the writer prompt's SHA-256 and `AnswerExcerptChars`;
 - `FactsJson` — the fact sheet;
@@ -397,7 +419,9 @@ Each document is one **immutable** `BenchmarkReportDocument` row; there is no up
 - `ValidationNotesJson`, status, tokens, duration and cost;
 - `ComparisonKey` — the identity of the comparison the document was written for: the lower-case hex
   SHA-256 of `runs=<ids>;groups=<ids>`, each list sorted, distinct and comma-joined, over the comparison
-  request's `RunIds` and `GroupIds` (`BenchmarkReportComparisonKey`, the only implementation). Documents
+  request's `RunIds` and `GroupIds`, with `;batteries=<ids>` appended only when the request names
+  battery results, so every earlier key is unchanged (`BenchmarkReportComparisonKey`, the only
+  implementation). Documents
   of the same **set of entries** share it whatever their subject; the pricing basis is not part of it, so
   changing *Prices* in the wizard keeps the same documents listed. A run-completion document carries its
   one run's key. An index on `(ComparisonKey, Origin, CreatedAtUtc)` serves the list.
@@ -1043,23 +1067,27 @@ All endpoints require the `AdminOnly` policy and sit under `api/admin/benchmark`
 - `POST /api/admin/benchmark/report-packs/preview`: The fact sheet and prompts without a model call —
   subject, peers, estimated tokens and cost per document, the same-provider warning and any refusal.
 - `POST /api/admin/benchmark/report-packs`: Start a job. Body
-  `{ runIds, groupIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`,
+  `{ runIds, groupIds, batteryRunIds, pricingBasis, subjectKey, audiences[], writerModelConfigurationId, acknowledgeSameProvider }`,
   with audiences as numbers (1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal
-  Brief). Returns 202 `{ jobId }`.
+  Brief). `batteryRunIds` names battery results, and a request naming any may name no run or group.
+  Returns 202 `{ jobId }`.
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel the job.
 
 The start's refusals, in the order they are checked:
 
-1. An unknown entry, or an Excluded subject — 400.
-2. A writer that is invalid, disabled, keyless, not of the Benchmark role, or refused by the endpoint
+1. Battery results mixed with runs or groups — 400, *"A comparison holds either battery results or runs
+   and analysis groups."* The preview refuses the mix the same way.
+2. An unknown entry, or an Excluded subject — 400.
+3. A writer that is invalid, disabled, keyless, not of the Benchmark role, or refused by the endpoint
    policy — 400.
-3. A writer that is the subject's own model — 400.
-4. No audience — 400.
-5. The spend cap — 429.
-6. A same-provider writer without `acknowledgeSameProvider` — 409, with the warning.
-7. A job already running, or a run-completion job waiting for the slot — 409, with that job.
+4. A writer that is the subject's own model — 400.
+5. No audience — 400.
+6. The spend cap — 429.
+7. A same-provider writer without `acknowledgeSameProvider` — 409, with the warning.
+8. A job already running, or a run-completion or battery-completion job waiting for the slot — 409,
+   with that job.
 
 - `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing
   run-completion documents now (§ 11). Body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`:
@@ -1094,21 +1122,50 @@ The start's refusals, in the order they are checked:
   unknown, or the document is not this run's run-completion document; 409 while the run's documents are
   being written.
 
+### Battery-completion documents (`AdminBenchmarkBatteryReportsController`)
+
+Under `api/admin/benchmark/batteries/runs/{batteryRunId}/report-documents`, with the request and
+response shapes of the run endpoints above (§ 14):
+
+- `POST …/report-documents`: Write the finished battery run's missing battery-completion documents with
+  the writer in the body, which becomes the battery run's writer. 202 with the battery run's Pending
+  status (its id in `runId`) and the documents to write. Refusals, in order: no body — 400; an unknown
+  battery run — 404; a battery run that has not finished, or whose latest analysis is missing, stale or
+  incomplete — 400; a job for it Pending or Writing — 409; an audience other than the two — 400; a
+  requested document already written, or with none requested both written — 409; a writer that is
+  unusable or the model under test — 400; a writer of the candidate's provider without
+  `acknowledgeSameProvider` — 409 with the warning; a writer refused by the endpoint policy — 400; the
+  spend cap — 429.
+- `POST …/report-documents/estimate`: The cost of writing them with a writer, by the preview's
+  arithmetic over the battery prompt, with the writer's refusal or warning; no model call.
+- `GET …/report-documents/job`: The battery run's current or last job, labeled *Battery run #N*; 204 when
+  this process knows none; 404 for an unknown battery run.
+- `POST …/report-documents/cancel`: Cancel the job; documents already written are kept. 202; 409 when
+  nothing is in progress.
+- `DELETE …/report-documents/{documentId}`: Delete one of the battery run's own battery-completion
+  documents and settle its status. 204; 404 when it is not one; 409 while its documents are being
+  written.
+
 ### Report documents (`AdminBenchmarkReportDocumentsController`)
 
-- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&take=`: List documents,
+- `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&origin=&subject=&take=`: List documents,
   newest first, without rendered text, each with `runChangedSinceGeneration`,
   `peersChangedSinceGeneration`, `comparisonKey`, `comparisonEntryCount` (the subject and its peers; a
   group counts once), `peerCount`, `pricingBasis` (`AsRun` or `Current`), `peerLetters` (each peer's entry
   key and its letter, from the fact sheet) and, from the chart manifest only (§ 13), `chartCount`,
   `chartFigureKeys` and `chartSettingsHash`. Every filter is optional:
   - `runId` matches a run of the **subject** only, never a peer's run (§ 5);
-  - `comparison=run:1,run:2,group:4` takes the comparison's entry keys, in any order, and matches the
-    documents whose `ComparisonKey` they hash to; any other form answers 400 *The comparison must be a
-    comma-separated list of run:&lt;id&gt; and group:&lt;id&gt; keys.*, and a key that matches nothing lists
-    nothing. The client sends entry keys and never hashes;
-  - `origin=reportPack|runCompletion` filters on `Origin`; absent lists every origin, and any other value
-    is a 400;
+  - `comparison=run:1,run:2,group:4` (or `battery:7,battery:9`) takes the comparison's entry keys, in
+    any order, and matches the documents whose `ComparisonKey` they hash to; any other form answers 400
+    *The comparison must be a comma-separated list of run:&lt;id&gt; and group:&lt;id&gt; keys, or of
+    battery:&lt;id&gt; keys.*, and a key that matches nothing lists nothing. The client sends entry keys
+    and never hashes;
+  - `origin=reportPack|runCompletion|batteryCompletion` filters on `Origin`; absent lists every origin,
+    and any other value is a 400;
+  - `subject=` takes **one** entry key (`run:<id>`, `group:<id>` or `battery:<id>`, a positive id,
+    exactly as written) and matches it exactly against each document's subject key; any other form is a
+    400. The Download Center's `battery` context lists a battery run's documents this way, its
+    battery-completion and Report Pack documents alike;
   - `take` defaults to 200 and is capped at 500.
 - `GET /api/admin/benchmark/report-documents/{id}`: Detail: metadata, validation notes and the facts JSON.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`:
@@ -1117,7 +1174,8 @@ The start's refusals, in the order they are checked:
 - `GET /api/admin/benchmark/report-documents/{id}/render/pdf?disclosure=&peers=&paper=a4|letter&inline=`: The same
   document as a PDF (`application/pdf`), named
   `[run-<id>_][vs-<N>-models_]<title>_<disclosure>_<peers>[_INTERNAL].pdf` (the prefixes for a `run:<id>`
-  subject and for a document with peers, § 8), with the document's charts of the requested naming drawn
+  subject and for a document with peers, § 8; a `battery:<id>` subject takes `battery-run-<id>_` in place
+  of `run-<id>_`, § 14), with the document's charts of the requested naming drawn
   in it (§ 13); the same refusals as `render`, 400 for another `paper`, 413 over the size limit. A Report
   for AI Researchers and Developers is named
   `[run-<id>_][vs-<N>-models_]<title without its "— <document name>" ending>_Researcher_Report_<disclosure>_<peers>[_INTERNAL].pdf`,
@@ -1131,8 +1189,9 @@ The start's refusals, in the order they are checked:
   for the PDF), with its charts drawn as for the PDF and the PDF endpoint's refusals.
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its run rows cascade, and its
   chart folder is removed (a folder that cannot be removed is logged and never fails the delete).
-  Deleting a run-completion document also settles its run's status (§ 11); unlike the run endpoint
-  above, this one does not refuse while the run's documents are being written.
+  Deleting a run-completion document also settles its run's status (§ 11), and a battery-completion
+  document its battery run's (§ 14); unlike the run and battery endpoints, this one does not refuse
+  while the documents are being written.
 - `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace the document's whole chart set (§ 13).
   Body `{ charts: [{ figureKey, naming, title, caption, altText, settingsHash, pngBase64 }] }`, at most
   40,000,000 bytes (`[RequestSizeLimit]`). 200 `{ documentId, chartCount, figureKeys, settingsHash }`;
@@ -1586,3 +1645,110 @@ chart image, keeping the documents (`POST /api/admin/maintenance/clear-report-ch
 contain it. Losing it loses only images: the documents and their text are intact, their PDF and Word
 copies simply have no charts, and **Update charts…** on step 4 draws them again from the comparison, with
 no AI call.
+
+---
+
+## 14. Battery Subjects and Battery-Completion Documents
+
+A **battery result** — a battery run's persisted composite over the suites of a battery
+(`ai-benchmark-multi-suite.md`) — is a subject like a run or a group, under the same rule: *numbers come
+from code, words come from the writer, rendering involves no AI*. Its subject key is `battery:<id>`. It
+is the subject of a Report Pack written from a comparison of battery results (the wizard's step 3), whose
+peers are the comparison's other battery results, and of the battery run's own **battery-completion
+documents**. Why batteries have AI-written documents at all, and why the members write none, are
+`ai-benchmark-multi-suite.md` § 7.2 (decisions D2 and D3).
+
+**The fact sheet** is `BenchmarkBatteryReportFacts.Build`, a `BenchmarkReportFactSheet` with
+`SubjectKind = "Battery"`. Every analysis figure is read from the battery's persisted
+`BenchmarkBatteryStatisticsResult` and never recomputed; the per-answer figures — tokens, tool shares,
+refuted sentences, the response-style conflict — come from the usable member runs' answer rows, as a
+run document's do. It supplies **every generic key** the renderer, the validator and the prompt read, so
+a battery document renders through the same code as a run's:
+
+- **Supplied:** `quality.*` (the Overall Index and its interval, from the comparison entry), the
+  count-weighted `dimension.*` means, `band.<b>.questions`, `speed.*` and `cost.*` (`cost.perRun` and
+  `cost.totalRunPerRun` per battery pass), `tokens.*`, the tool shares and calls per question, `style.*`,
+  `answers.scored` and `errors.critical` summed over the item rows, `claims.*`, `panel.*`, `scoring.*`,
+  `run.*`, and per peer the index, interval, rank, overlap, speed, cost and runs.
+- **Unavailable, each with its reason:** `suite.name` (a battery spans several suites);
+  `quality.rawIndex` and `quality.unweightedMean` (the Overall Index is a weighted composite);
+  `band.<b>.score`, `.peerMean` and `.difference` (a battery weights suites, not bands);
+  `tools.failed` and `tools.refusedByBudget` (per-call tool rows are not loaded);
+  `tools.callsPerQuestion.peerMean` with peers (their answers are not loaded);
+  `panel.judgeDependentPairs`; and, on a stand-alone sheet, every peer fact (*"A stand-alone battery
+  report has no peers."*). A peer has **no paired difference**: the `peer.X.paired*` facts are absent.
+- **The battery's own keys:** `battery.*` (name, revision, scheme, suite count, runs per suite, member
+  runs, rounds, definition and class hashes, pooled identity, critical-error rate, speed index, the
+  suites' SD and range, excluded members, caveats), `suite.<n>.*` (name, weight, index, contribution,
+  interval, scored items, runs, speed index, cost per run, critical-error rate; *n* from 1),
+  `sensitivity.<scheme>` and `loo.<n>`.
+
+A battery sheet has **no finding rows**: its items cite fact keys and question references as evidence.
+
+**Questions.** They are numbered across the battery, suite by suite, and referred to as **`S<n>-Q<m>`**
+— `S2-Q7` is question seven of suite two — in the prose, in `evidence` and in the rendered document;
+that form replaces `Q7` and is the only place a digit may appear in the prose. The validator applies
+rules 3, 4 and 5 to that form: a plain `Q7`, or a reference to no question of the battery, is an issue.
+Every question gets a **one-line row** — band, mean score over the runs that scored it, critical errors,
+refuted claims, tool calls. At most `Benchmark:ReportPack:BatteryDetailQuestionsPerSuite` (default
+**6**) questions per suite also get **full detail**: the question as asked, its rubric without its
+`SOURCE` paragraphs, one answer excerpt from the run whose score was the median of the question's rounds,
+and the graders' comments on it. They are chosen critical errors first, then the lowest and the highest
+mean scores, alternately. Question topics and notes are asked for the questions in detail only, and a
+question needs a note when it scored below 50 or carried a critical error.
+
+**The prompt budget.** When the largest writer prompt exceeds `Benchmark:ReportPack:BatteryMaxPromptChars`
+(default **360,000** characters, about 90,000 tokens), detail is left out in reverse priority until it
+fits, and a **rule 20** note (§ 3) names the questions that kept only their rows. The note is stored with
+the document and logged with the job; it drops nothing and does not mark the document *Completed with
+warnings*.
+
+**The prompt's BATTERY block** explains the composite (the weights, each suite's contribution, the
+interval's two components), forbids comparing it with a single suite's, run's or group's index, asks the
+writer to use the suite profile, the sensitivity and leave-one-out facts only to say how far the result
+depends on the weights or on one suite, and states that cost is per battery pass. The audience system
+prompts are not edited, and run and group documents render exactly as before.
+
+**No significance test.** A battery document carries the documents' own frozen statement
+(`BenchmarkReportFacts.NoSignificanceStatement`, § 2), independent of the Model Comparison wizard's
+*Pairwise significance* excluded-measure text, and peers carry no paired difference. It does not cite
+the battery's M7 comparison or the wizard's paired tests; that is a follow-up.
+
+**Cover and file names.** The PDF and Word subject line reads *Battery run #N — {battery} (K suites, R
+runs per suite)* (`BenchmarkPdfDocumentInfo.BatterySubjectLine`), and the facts table names the battery,
+the battery run and the member-run count. Files are named with the prefix `battery-run-<id>_` in place of
+`run-<id>_` (`BenchmarkPdfFileNames.ForReportDocument`, and the Download Center's
+`reportDocumentFileStem`).
+
+### Battery-completion documents
+
+A battery run can carry a **report writer** (`BenchmarkBatteryRun.ReportWriterModelConfigurationId`),
+chosen with the launcher's *Report Writer* field when the battery is started and checked then against the
+tested model, with the same refusal and same-provider warning as a run's (§ 4). The battery run records
+`ReportDocumentsStatus` and `ReportDocumentsMessage` with the statuses of § 11 (migration
+`AddBatteryReportDocuments`). Its members are launched with no writer.
+
+**When they are written.** `BenchmarkBatteryReportDocumentService.ScheduleIfDue(batteryRunId)` is called
+right after the battery run's automatic analysis succeeds, and returns at once. It writes when all of
+these hold: the battery run has finished; its latest analysis is complete and not stale; it names a
+writer; it has no battery-completion document yet; and no job for it is Pending or Writing. Each document
+is a one-entry comparison of the battery result, stored with `Origin = BatteryCompletion` (3) and the
+subject key `battery:<id>`; the writer call goes through `WriteBatteryCompletionDocumentsAsync` and the
+Report Pack's own path — parsing, validation, one repair turn, drops, storage.
+
+**The job** is the run-completion job's twin, keyed by battery run id: the same phases, the single
+report-pack slot (`BenchmarkReportPackJobManager.WaitForSlotAsync`), the compliance guard, the
+`BenchmarkRunReportJobDto` view labeled *Battery run #N*, cancellation and the 6-hour retention. At
+startup `SettleInterruptedAsync` marks a battery run left Pending or Writing **Failed** with *"Overseer
+restarted before the battery reports were written."* Deleting the battery run cancels its job and
+deletes its battery-completion documents with their chart files (`SettleAfterDeleteAsync`); deleting one
+document returns the battery run to NotRequested unless a job is in progress.
+
+**Writing on request.** The endpoints are in § 9. The Battery Run Report's **AI Reports** tab
+(`app-battery-ai-reports`) is the counterpart of a run's: both documents listed, **View** in the PDF
+viewer, **Delete** behind a confirmation, *Write missing reports* with the writer picker (starting on the
+battery run's own writer), the cost estimate, the same-provider confirmation and **Show Progress**. The
+Download Center, opened on a battery run (its `battery` context), lists the battery's Markdown analysis
+report and every document whose subject is `battery:<id>` — battery-completion and Report Pack alike,
+through `subject=` — with no member-run files, and shows the *being written* notice while the battery
+run's job runs, asking every 5 s.

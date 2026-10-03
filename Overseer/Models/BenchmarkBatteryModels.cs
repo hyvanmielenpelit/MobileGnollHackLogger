@@ -238,6 +238,15 @@ public class BenchmarkBatteryDto
     /// <summary>A battery run of this battery is Pending, Running or WaitingForCap; delete is refused.</summary>
     public bool HasActiveBatteryRun { get; set; }
 
+    /// <summary>
+    /// The rows the leaderboard of the current definition hash ranks: battery runs whose latest
+    /// analysis is complete and carries a comparability class.
+    /// </summary>
+    public int RankedResultCount { get; set; }
+
+    /// <summary>The newest analysis on the current definition's leaderboard; null when there is none.</summary>
+    public DateTime? LatestAnalysisAtUtc { get; set; }
+
     public List<BenchmarkBatterySuiteDto> Suites { get; set; } = new();
 
     /// <summary>One preview per scheme, the declared one marked, from the suites' current questions.</summary>
@@ -253,6 +262,14 @@ public class BenchmarkBatteryRunSuiteDto
     public long SuiteId { get; set; }
     public string SuiteName { get; set; } = string.Empty;
     public double? CustomWeight { get; set; }
+
+    // The instrument hashes recorded for this suite when the battery run started or was last
+    // resumed under the current instrument. Null means not recorded.
+    public string? CandidateSystemPromptSha256 { get; set; }
+    public string? ToolGuidesSha256 { get; set; }
+    public string? KnowledgeBaseHeadSha { get; set; }
+    public string? WikiHeadSha { get; set; }
+    public string? SourceCodeHeadSha { get; set; }
 }
 
 /// <summary>One run in one (suite, round) slot of a battery run.</summary>
@@ -369,6 +386,32 @@ public class BenchmarkBatteryRunDto
     /// <summary>The model under test, from a member run's snapshot, else the configuration's name.</summary>
     public string? TestedModelLabel { get; set; }
 
+    // What the battery run was measured with: from the newest usable member run's snapshots, else
+    // the newest member's, else the stored start request's configurations.
+    public string? TestedProvider { get; set; }
+    public string? TestedModelId { get; set; }
+    public string? TestedThinkingLevel { get; set; }
+    public string? TestedReasoningMode { get; set; }
+    public string? TestedServiceTier { get; set; }
+    public string? AssessorLabel { get; set; }
+
+    /// <summary>Panel member B; null on a single-assessor battery run.</summary>
+    public string? CoAssessorLabel { get; set; }
+
+    public string? ScoringProfileName { get; set; }
+
+    /// <summary>The candidate answered under the detailed response style.</summary>
+    public bool VerboseMode { get; set; }
+
+    /// <summary>The configuration that writes the battery run's AI-written documents; null when none was chosen.</summary>
+    public long? ReportWriterModelConfigurationId { get; set; }
+
+    /// <summary>Where the battery run's two battery-completion documents stand.</summary>
+    public BenchmarkRunReportDocumentsStatus ReportDocumentsStatus { get; set; }
+
+    /// <summary>Why the documents failed or were skipped; null otherwise.</summary>
+    public string? ReportDocumentsMessage { get; set; }
+
     // The banner position: the running member, else the next slot to launch while the battery run is
     // live. Null when neither applies.
     public int? CurrentSuiteIndex { get; set; }
@@ -392,6 +435,8 @@ public class BenchmarkBatteryRunDto
     public long? LatestAnalysisId { get; set; }
     public DateTime? LatestAnalysisAtUtc { get; set; }
     public bool? LatestAnalysisComplete { get; set; }
+    /// <summary>The latest analysis's comparability class; null while it is incomplete.</summary>
+    public string? ComparabilityClassSha256 { get; set; }
     public double? OverallIndex { get; set; }
     public double? OverallIndexHalfWidth { get; set; }
     public double? OverallIndexLower { get; set; }
@@ -466,6 +511,13 @@ public class BenchmarkBatteryLeaderboardRowDto
 
     public long? TestedModelConfigurationId { get; set; }
     public string? TestedModelLabel { get; set; }
+
+    // The tested model's settings, read as the battery run DTO reads them.
+    public string? TestedProvider { get; set; }
+    public string? TestedModelId { get; set; }
+    public string? TestedThinkingLevel { get; set; }
+    public string? TestedReasoningMode { get; set; }
+    public string? TestedServiceTier { get; set; }
 
     /// <summary>The battery run's <c>BenchmarkRunSeriesStatus</c> as text.</summary>
     public string Status { get; set; } = string.Empty;

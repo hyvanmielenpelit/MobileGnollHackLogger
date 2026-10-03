@@ -212,7 +212,15 @@ public static class BenchmarkReportFacts
     /// <summary><see cref="BenchmarkReportEntryFigures.HarnessVersion"/> of an entry whose runs differ.</summary>
     public const string MixedHarnessVersion = "mixed";
 
-    private const string PairwiseSignificanceMeasure = "Pairwise significance";
+    /// <summary>
+    /// The documents' "no pairwise significance test" statement for two models. The documents own this
+    /// text, so a change to the comparison view's wording never moves a prompt or a stored sheet.
+    /// </summary>
+    public const string NoSignificanceSummaryOfTwo = "This view runs no significance test, so a gap between the two models may be noise.";
+
+    /// <summary>Where the comparison view sends its operator instead; kept on the sheet, never printed or shown to the writer.</summary>
+    public const string NoSignificanceInsteadText =
+        "Put each model's runs in an analysis group, open one in the Multi-Run Analysis tab and choose the other under Compare with group.";
 
     private static readonly string[] Dimensions = { "accuracy", "completeness", "conciseness", "readability" };
 
@@ -320,10 +328,7 @@ public static class BenchmarkReportFacts
                 .ToList()
         };
 
-        var significance = comparison.ExcludedMeasures
-            .FirstOrDefault(m => string.Equals(m.Measure, PairwiseSignificanceMeasure, StringComparison.Ordinal));
-        sheet.NoSignificanceSummary = significance?.Summary ?? string.Empty;
-        sheet.NoSignificanceInstead = significance?.Instead ?? string.Empty;
+        (sheet.NoSignificanceSummary, sheet.NoSignificanceInstead) = NoSignificanceStatement(comparison);
 
         var facts = new FactList();
         var eligible = new List<BenchmarkModelComparisonEntryDto> { subject };
@@ -357,6 +362,28 @@ public static class BenchmarkReportFacts
         sheet.KnownNames = BuildKnownNames(sheet);
 
         return new BenchmarkReportFactsResult { Sheet = sheet };
+    }
+
+    /// <summary>
+    /// The sheet's no-significance statement and the operator's instruction for a comparison with
+    /// <paramref name="chartableCount"/> entries that are not Excluded; both empty below two.
+    /// </summary>
+    public static (string Summary, string Instead) NoSignificanceStatement(int chartableCount)
+    {
+        if (chartableCount < 2) return (string.Empty, string.Empty);
+
+        string summary = chartableCount == 2
+            ? NoSignificanceSummaryOfTwo
+            : "Testing every pair among these " + Inv(chartableCount) + " models at once would flag "
+              + "chance differences as significant, so this view tests none.";
+        return (summary, NoSignificanceInsteadText);
+    }
+
+    /// <summary><see cref="NoSignificanceStatement(int)"/> over the comparison's entries that are not Excluded.</summary>
+    public static (string Summary, string Instead) NoSignificanceStatement(BenchmarkModelComparisonDto comparison)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        return NoSignificanceStatement(comparison.Entries.Count(e => !e.Excluded));
     }
 
     /// <summary>
@@ -586,7 +613,7 @@ public static class BenchmarkReportFacts
     /// Which prices the cost figures use: <c>catalog</c> for the Current basis, with the catalog date
     /// the comparison was computed on, or <c>snapshot</c> for AsRun, each run's stored prices.
     /// </summary>
-    private static void AddPricingBasisKind(FactList facts, BenchmarkModelComparisonDto comparison)
+    internal static void AddPricingBasisKind(FactList facts, BenchmarkModelComparisonDto comparison)
     {
         if (string.Equals(comparison.PricingBasis, nameof(BenchmarkModelComparisonPricingBasis.Current), StringComparison.Ordinal))
         {
@@ -614,7 +641,7 @@ public static class BenchmarkReportFacts
         facts.Unavailable("comparison.pricedOn", "The comparison recorded an unknown pricing basis.");
     }
 
-    private static void AddQualityFacts(
+    internal static void AddQualityFacts(
         FactList facts,
         BenchmarkModelComparisonEntryDto subject,
         IReadOnlyList<(BenchmarkModelComparisonEntryDto Entry, string Letter, EntryStats Stats)> peers,
@@ -813,7 +840,7 @@ public static class BenchmarkReportFacts
         }
     }
 
-    private static void AddSpeedFacts(
+    internal static void AddSpeedFacts(
         FactList facts, BenchmarkModelComparisonEntryDto subject, IReadOnlyList<BenchmarkModelComparisonEntryDto> eligible)
     {
         string[] keys = { "speed.modelTimeP50", "speed.modelTimeMean", "speed.modelTimeP90", "speed.ttftP50", "speed.rank" };
@@ -854,7 +881,7 @@ public static class BenchmarkReportFacts
         }
     }
 
-    private static void AddCostFacts(
+    internal static void AddCostFacts(
         FactList facts, BenchmarkModelComparisonEntryDto subject, IReadOnlyList<BenchmarkModelComparisonEntryDto> eligible)
     {
         var cost = subject.Cost;
@@ -916,7 +943,7 @@ public static class BenchmarkReportFacts
     }
 
     /// <summary>The model under test's mean input and output tokens over the answers that recorded them.</summary>
-    private static void AddTokenFacts(FactList facts, EntryStats subject)
+    internal static void AddTokenFacts(FactList facts, EntryStats subject)
     {
         foreach (var (key, tokens) in new (string Key, Func<BenchmarkRunAnswer, int?> Tokens)[]
         {
@@ -961,7 +988,7 @@ public static class BenchmarkReportFacts
         facts.Add("claims.indeterminate", indeterminate, Inv(indeterminate));
     }
 
-    private static void AddToolFacts(
+    internal static void AddToolFacts(
         FactList facts, EntryStats subject, IReadOnlyList<BenchmarkRun> subjectRuns, IReadOnlyList<EntryStats> peers)
     {
         AddComparedCalls(facts, subject.ToolCallsPerQuestion, PeerMean(peers, s => s.ToolCallsPerQuestion));
@@ -1035,7 +1062,7 @@ public static class BenchmarkReportFacts
         }
     }
 
-    private static void AddPanelFacts(
+    internal static void AddPanelFacts(
         FactList facts,
         BenchmarkModelComparisonEntryDto subject,
         IReadOnlyList<BenchmarkRun> subjectRuns,
@@ -1160,7 +1187,7 @@ public static class BenchmarkReportFacts
     /// assessor's otherwise, as the run report reads it. The value is the boolean; the display reads
     /// as a clause.
     /// </summary>
-    private static void AddStyleFact(FactList facts, IReadOnlyList<BenchmarkRun> subjectRuns, EntryStats subject)
+    internal static void AddStyleFact(FactList facts, IReadOnlyList<BenchmarkRun> subjectRuns, EntryStats subject)
     {
         bool conflict;
         double gap = 0.0;
@@ -1184,7 +1211,7 @@ public static class BenchmarkReportFacts
                 : "No response-style conflict");
     }
 
-    private static void AddScoringAndProvenanceFacts(FactList facts, IReadOnlyList<BenchmarkRun> subjectRuns)
+    internal static void AddScoringAndProvenanceFacts(FactList facts, IReadOnlyList<BenchmarkRun> subjectRuns)
     {
         var scoring = ScoringOf(subjectRuns[0]);
         string weights = "Accuracy " + BenchmarkReportFormat.Percent(scoring.Accuracy * 100)
@@ -1228,7 +1255,7 @@ public static class BenchmarkReportFacts
     /// runs, and whether its 95 % interval overlaps the subject's. A figure of an axis the peer is
     /// degraded on is unavailable with the peer's explanation.
     /// </summary>
-    private static void AddPeerFacts(
+    internal static void AddPeerFacts(
         FactList facts,
         BenchmarkModelComparisonEntryDto subject,
         IReadOnlyList<(BenchmarkModelComparisonEntryDto Entry, string Letter, EntryStats Stats)> peers,
@@ -1733,7 +1760,7 @@ public static class BenchmarkReportFacts
     }
 
     /// <summary>The runs' harness version, <see cref="MixedHarnessVersion"/> when they differ; null without runs.</summary>
-    private static string? EntryHarnessVersion(IReadOnlyList<BenchmarkRun> runs)
+    internal static string? EntryHarnessVersion(IReadOnlyList<BenchmarkRun> runs)
     {
         var versions = runs
             .Select(r => string.IsNullOrWhiteSpace(r.HarnessVersion) ? "not recorded" : r.HarnessVersion.Trim())
@@ -1747,7 +1774,7 @@ public static class BenchmarkReportFacts
         };
     }
 
-    private static List<BenchmarkReportGrader> BuildGraders(IReadOnlyList<BenchmarkRun> runs, string subjectProvider)
+    internal static List<BenchmarkReportGrader> BuildGraders(IReadOnlyList<BenchmarkRun> runs, string subjectProvider)
     {
         var graders = new List<BenchmarkReportGrader>();
 
@@ -1788,7 +1815,7 @@ public static class BenchmarkReportFacts
             .ToList();
     }
 
-    private static List<string> BuildKnownNames(BenchmarkReportFactSheet sheet)
+    internal static List<string> BuildKnownNames(BenchmarkReportFactSheet sheet)
     {
         var names = new List<string?>
         {
@@ -1840,10 +1867,10 @@ public static class BenchmarkReportFacts
             .ToList();
 
     /// <summary>Competition rank: one more than the number of values strictly better.</summary>
-    private static int RankOf(double value, IReadOnlyList<double> values, bool higherIsBetter)
+    internal static int RankOf(double value, IReadOnlyList<double> values, bool higherIsBetter)
         => 1 + values.Count(v => higherIsBetter ? v > value : v < value);
 
-    private static double Median(IReadOnlyList<double> values)
+    internal static double Median(IReadOnlyList<double> values)
     {
         var sorted = values.OrderBy(v => v).ToList();
         int mid = sorted.Count / 2;
@@ -1954,7 +1981,7 @@ public static class BenchmarkReportFacts
     private static string Inv(long value) => value.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>Facts under construction; <see cref="Sorted"/> orders them by key, ordinal.</summary>
-    private sealed class FactList
+    internal sealed class FactList
     {
         private readonly List<BenchmarkReportFact> _facts = new();
 
@@ -2003,7 +2030,7 @@ public static class BenchmarkReportFacts
     }
 
     /// <summary>One entry's answers and the per-entry figures the sheet compares.</summary>
-    private sealed class EntryStats
+    internal sealed class EntryStats
     {
         /// <summary>Every answer of the entry's runs, in run-id and order-index order.</summary>
         public List<BenchmarkRunAnswer> All { get; } = new();

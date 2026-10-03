@@ -239,8 +239,8 @@
                THE SETTINGS SIDEBAR
 
                Its tabs follow the view group: Data · Theme · Charts · Download beside the charts,
-               Data · Theme · Table · Download beside the table, so no tab holds a setting that does
-               not apply to the view it is shown with. Collapsed by its toggle in the view bar,
+               Data · Theme · Table · Download beside the table, Data alone beside the paired tests,
+               so no tab holds a setting that does not apply to the view it is shown with. Collapsed by its toggle in the view bar,
                which stays rendered outside it; resized by the handle on its right edge.
                =================================================================================== -->
           <aside id="mc-fig-sidebar" class="mc-fig-sidebar" aria-label="Comparison settings"
@@ -262,7 +262,9 @@
               <div class="mc-side-panel mc-data-panel" role="tabpanel" id="mc-side-panel-data"
                    aria-labelledby="mc-side-tab-data" tabindex="0">
                 <p class="mc-field-hint">
-                  @if (isTableView(effectiveFigureTab)) {
+                  @if (isPairedView(effectiveFigureTab)) {
+                    Prices, and the paired tests' default reference: the first highlighted model.
+                  } @else if (isTableView(effectiveFigureTab)) {
                     Prices and the order of the table's rows.
                   } @else {
                     Which models the charts show, what they measure, and the order of the models.
@@ -299,7 +301,7 @@
                       <tr>
                         <th scope="col">Show</th>
                         <th scope="col">Model</th>
-                        @if (isChartView(effectiveFigureTab)) {
+                        @if (isChartView(effectiveFigureTab) || isPairedView(effectiveFigureTab)) {
                           <th scope="col">Highlight</th>
                         }
                       </tr>
@@ -333,7 +335,7 @@
                               <span class="mc-models-tag">Over the limit</span>
                             }
                           </th>
-                          @if (isChartView(effectiveFigureTab)) {
+                          @if (isChartView(effectiveFigureTab) || isPairedView(effectiveFigureTab)) {
                             <td class="mc-models-check">
                               <input type="checkbox" [id]="'mc-emph-' + domKey(row.key)"
                                      [checked]="isEmphasised(row.key)" [disabled]="!row.plotted"
@@ -424,80 +426,83 @@
                   <p class="mc-field-hint" id="mc-pricing-hint">Changing this recomputes the comparison. With prices at run time, runs from different dates are also compared on different price lists.</p>
                 </fieldset>
 
-                <fieldset class="gh-fieldset mc-data-group" aria-describedby="mc-sort-hint">
-                  <legend>Model order</legend>
-                  <p class="mc-field-hint" id="mc-sort-hint">One order for the three bar panels and the table — a row is one model across them.</p>
+                <!-- The paired tests keep the comparison's own entry order, so Model order is not offered beside them. -->
+                @if (!isPairedView(effectiveFigureTab)) {
+                  <fieldset class="gh-fieldset mc-data-group" aria-describedby="mc-sort-hint">
+                    <legend>Model order</legend>
+                    <p class="mc-field-hint" id="mc-sort-hint">One order for the three bar panels and the table — a row is one model across them.</p>
 
-                  <fieldset class="gh-choice">
-                    <legend>Order by</legend>
-                    @for (option of sortKeyOptions; track option.value) {
-                      <label class="gh-radio">
-                        <input type="radio" name="mc-sort-key" [id]="'mc-sort-key-' + option.value"
-                               [value]="option.value" [checked]="sort.key === option.value"
-                               (change)="onSortKeyChange(option.value)">
-                        {{ option.label }}
-                      </label>
-                    }
-                  </fieldset>
-
-                  <fieldset class="gh-choice" [disabled]="sort.key === 'custom'"
-                            [attr.aria-describedby]="sort.key === 'custom' ? 'mc-sort-direction-hint' : null">
-                    <legend>Direction</legend>
-                    @for (option of sortDirectionOptions; track option.value) {
-                      <label class="gh-radio">
-                        <input type="radio" name="mc-sort-direction" [id]="'mc-sort-direction-' + option.value"
-                               [value]="option.value" [checked]="sort.direction === option.value"
-                               (change)="onSortDirectionChange(option.value)">
-                        {{ option.label }}
-                      </label>
-                    }
-                  </fieldset>
-
-                  @if (sort.key === 'custom') {
-                    <p class="mc-field-hint" id="mc-sort-direction-hint">A custom order has no direction.</p>
-
-                    <!-- A row's body: the glyph, the name and the badges the Models table shows. The
-                         list adds the row's table only tag after it. -->
-                    <ng-template #customOrderItem let-item>
-                      @if (customOrderEntry(item.key); as entry) {
-                        @if (glyph(entry.key); as g) {
-                          <span [class]="'mc-glyph mc-glyph-provider-' + g.provider"
-                                aria-hidden="true"></span>
-                        }
-                        <span class="mc-model-label">{{ entry.modelDisplayName || entry.label }}</span>
-                        @if (entry.thinkingLevel) {
-                          <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
-                        }
-                        @if (showReasoningBadge(entry.reasoningMode)) {
-                          <span class="reasoning-badge">{{ entry.reasoningMode }}</span>
-                        }
-                      } @else {
-                        {{ item.label }}
+                    <fieldset class="gh-choice">
+                      <legend>Order by</legend>
+                      @for (option of sortKeyOptions; track option.value) {
+                        <label class="gh-radio">
+                          <input type="radio" name="mc-sort-key" [id]="'mc-sort-key-' + option.value"
+                                 [value]="option.value" [checked]="sort.key === option.value"
+                                 (change)="onSortKeyChange(option.value)">
+                          {{ option.label }}
+                        </label>
                       }
-                    </ng-template>
-                    <app-reorderable-list [items]="customOrderItems" [itemTemplate]="customOrderItem"
-                                          listLabel="Custom model order" itemNoun="model"
-                                          [dividerIndex]="customOrderDividerIndex"
-                                          dividerText="Charts plot the entries above this line"
-                                          idPrefix="mc-custom-order"
-                                          (orderChange)="onCustomOrderChange($event)"></app-reorderable-list>
-                    <div class="mc-order-actions">
-                      <!-- aria-disabled, so the reset stays focusable; the handler refuses on its own. -->
-                      <button type="button" class="gh-filter-clear"
-                              [attr.aria-disabled]="customOrderIsDefault ? 'true' : null"
-                              (click)="resetCustomOrder()">Reset custom order</button>
-                    </div>
-                  }
+                    </fieldset>
 
-                  @if (isTableView(effectiveFigureTab)) {
-                    @if (tableSortedBy; as sorted) {
-                      <div class="mc-table-order mc-table-order--side">
-                        <p class="mc-field-hint">The table is sorted by {{ sorted.header }}.</p>
-                        <button type="button" class="btn-ghost" (click)="useModelOrder()">Use model order</button>
+                    <fieldset class="gh-choice" [disabled]="sort.key === 'custom'"
+                              [attr.aria-describedby]="sort.key === 'custom' ? 'mc-sort-direction-hint' : null">
+                      <legend>Direction</legend>
+                      @for (option of sortDirectionOptions; track option.value) {
+                        <label class="gh-radio">
+                          <input type="radio" name="mc-sort-direction" [id]="'mc-sort-direction-' + option.value"
+                                 [value]="option.value" [checked]="sort.direction === option.value"
+                                 (change)="onSortDirectionChange(option.value)">
+                          {{ option.label }}
+                        </label>
+                      }
+                    </fieldset>
+
+                    @if (sort.key === 'custom') {
+                      <p class="mc-field-hint" id="mc-sort-direction-hint">A custom order has no direction.</p>
+
+                      <!-- A row's body: the glyph, the name and the badges the Models table shows. The
+                           list adds the row's table only tag after it. -->
+                      <ng-template #customOrderItem let-item>
+                        @if (customOrderEntry(item.key); as entry) {
+                          @if (glyph(entry.key); as g) {
+                            <span [class]="'mc-glyph mc-glyph-provider-' + g.provider"
+                                  aria-hidden="true"></span>
+                          }
+                          <span class="mc-model-label">{{ entry.modelDisplayName || entry.label }}</span>
+                          @if (entry.thinkingLevel) {
+                            <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
+                          }
+                          @if (showReasoningBadge(entry.reasoningMode)) {
+                            <span class="reasoning-badge">{{ entry.reasoningMode }}</span>
+                          }
+                        } @else {
+                          {{ item.label }}
+                        }
+                      </ng-template>
+                      <app-reorderable-list [items]="customOrderItems" [itemTemplate]="customOrderItem"
+                                            listLabel="Custom model order" itemNoun="model"
+                                            [dividerIndex]="customOrderDividerIndex"
+                                            dividerText="Charts plot the entries above this line"
+                                            idPrefix="mc-custom-order"
+                                            (orderChange)="onCustomOrderChange($event)"></app-reorderable-list>
+                      <div class="mc-order-actions">
+                        <!-- aria-disabled, so the reset stays focusable; the handler refuses on its own. -->
+                        <button type="button" class="gh-filter-clear"
+                                [attr.aria-disabled]="customOrderIsDefault ? 'true' : null"
+                                (click)="resetCustomOrder()">Reset custom order</button>
                       </div>
                     }
-                  }
-                </fieldset>
+
+                    @if (isTableView(effectiveFigureTab)) {
+                      @if (tableSortedBy; as sorted) {
+                        <div class="mc-table-order mc-table-order--side">
+                          <p class="mc-field-hint">The table is sorted by {{ sorted.header }}.</p>
+                          <button type="button" class="btn-ghost" (click)="useModelOrder()">Use model order</button>
+                        </div>
+                      }
+                    }
+                  </fieldset>
+                }
               </div>
             }
 
@@ -655,7 +660,7 @@
                           [attr.aria-controls]="'mc-fig-panel-' + tab.id"
                           [attr.aria-selected]="effectiveFigureTab === tab.id"
                           [attr.aria-disabled]="isFigureTabUnavailable(tab.id) ? 'true' : null"
-                          [attr.aria-describedby]="isFigureTabUnavailable(tab.id) ? 'mc-fig-unavailable' : null"
+                          [attr.aria-describedby]="isFigureTabUnavailable(tab.id) && !isPairedView(tab.id) ? 'mc-fig-unavailable' : null"
                           [attr.tabindex]="effectiveFigureTab === tab.id ? 0 : -1"
                           (keydown)="onFigureTabKeydown($event, i)"
                           (click)="selectFigureTab(tab.id)">
@@ -689,8 +694,16 @@
                           <polyline points="21 15 16 10 5 21"></polyline>
                         </svg>
                       }
+                      @case ('paired') {
+                        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7m0-18H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7m0-18v18"></path>
+                        </svg>
+                      }
                     }
                     {{ tab.label }}
+                    @if (isPairedView(tab.id) && isFigureTabUnavailable(tab.id)) {
+                      <span class="visually-hidden">, {{ pairedUnavailableReason }}</span>
+                    }
                   </button>
                 }
               </div>
@@ -1592,6 +1605,24 @@
                   }
                 </div>
               }
+
+              <!-- ===================================================================================
+                   THE PAIRED TESTS
+
+                   Mounted on the first visit and then hidden, never destroyed, so its mode, reference
+                   and result survive a trip to another view; it fetches only while it is shown. Hidden
+                   by an inline display, because the panel's own display: flex outranks [hidden]; the
+                   view scrolls inside the panel.
+                   =================================================================================== -->
+              @if (pairedViewMounted) {
+                <div class="mc-fig-panel mc-fig-panel--paired" role="tabpanel" id="mc-fig-panel-paired"
+                     aria-labelledby="mc-fig-tab-paired" tabindex="0"
+                     [attr.hidden]="effectiveFigureTab !== 'paired' ? '' : null">
+                  <app-paired-tests-view [comparison]="comparison" [pricingBasis]="chartPricingBasis"
+                                         [highlightedKeys]="emphasisKeys" [tableFormat]="tableFormat"
+                                         [active]="effectiveFigureTab === 'paired'"></app-paired-tests-view>
+                </div>
+              }
             </div>
           </div>
         </div>
@@ -1881,6 +1912,7 @@
         @if (comparison.excludedMeasures.length > 0) {
           <section class="mc-about-section" aria-labelledby="mc-about-measures-heading">
             <h4 id="mc-about-measures-heading">Not shown as charts</h4>
+            <p class="mc-field-hint mc-about-paired-note">Pairwise significance tests between models are in step 2's Paired tests view.</p>
             @for (measure of comparison.excludedMeasures; track $index) {
               <div class="mc-about-measure">
                 <p><strong>{{ measure.measure }}.</strong> {{ measure.summary }}</p>

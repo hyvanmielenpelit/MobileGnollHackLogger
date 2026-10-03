@@ -1,4 +1,4 @@
-<!-- The loaded runs as a filterable list of cards shown ten at a time; historyRuns stays in server order. -->
+<!-- The loaded runs and battery runs as a filterable list of cards shown ten at a time; historyRuns stays in server order. -->
 <section class="rh-list" aria-labelledby="rh-list-title">
   <div class="rh-list-head">
     <!-- Focused after a delete that leaves no card to focus. -->
@@ -29,17 +29,23 @@
     </app-info-tip>
     <!-- The list's one polite live region. -->
     <p class="gh-list-status rh-list-status" id="rh-list-status" role="status">{{ historyListStatus }}</p>
-    <button type="button" class="btn-ghost rh-refresh" (click)="workspace.loadHistory()">
-      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-      Refresh
-    </button>
+    <div class="rh-head-actions">
+      <!-- A view setting, not a filter: Clear all leaves it as it is. -->
+      <button type="button" class="gh-filter-toggle rh-show-members"
+              [attr.aria-pressed]="workspace.showBatteryMembers ? 'true' : 'false'"
+              (click)="toggleBatteryMembers()">Show battery member runs</button>
+      <button type="button" class="btn-ghost rh-refresh" (click)="workspace.loadHistory()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+        Refresh
+      </button>
+    </div>
   </div>
 
-  @if (workspace.historyRuns.length === 0) {
+  @if (historyEmpty) {
     @if (workspace.loadingHistory) {
       <p class="rh-loading">Loading benchmark history&hellip;</p>
     } @else {
-      <p class="empty-state rh-empty">No benchmark runs recorded yet. Start one from the Run Benchmark tab.</p>
+      <p class="empty-state rh-empty">No benchmark runs or battery runs recorded yet. Start one from the Run Benchmark tab; for a battery run, set Run Target to Battery.</p>
     }
   } @else {
     <!-- Search, Sort by, the facets and the active filters. -->
@@ -92,211 +98,427 @@
       }
     </div>
 
-    @if (workspace.historyTable.noMatches(workspace.historyRuns)) {
+    @if (workspace.historyItems.length === 0) {
+      <!-- Every loaded run belongs to a battery run that did not load with them. -->
+      <p class="empty-state rh-members-only">Every loaded run is a member of a battery run. Show battery member runs lists them.</p>
+    } @else if (workspace.historyTable.noMatches(workspace.historyItems)) {
       <p class="empty-state rh-no-matches">No runs match these filters.
         <button type="button" class="gh-filter-clear" (click)="clearHistoryFilters()">Clear all filters</button>
       </p>
     } @else {
       <ul class="rh-card-list" role="list" aria-labelledby="rh-list-title" [attr.aria-busy]="workspace.loadingHistory ? 'true' : null">
-        @for (run of historyView; track run.id) {
-          @let change = workspace.instrumentChangeOf(run);
-          @let progress = answerShortfallOf(run);
-          <li class="rh-card-item">
-            <article class="rh-card" [attr.data-run-id]="run.id" [attr.aria-labelledby]="'rh-run-' + run.id + '-title'">
-              <header class="rh-card-head">
-                <!-- A dot on screen between the parts, a comma for assistive technology. -->
-                <div class="rh-card-kicker">
-                  <span class="rh-card-id">#{{ run.id }}</span>
-                  <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                  <span class="status-badge" [class]="statusBadgeClass(run.status)">{{ formatStatusLabel(run.status) }}</span>
-                  @let batteryBadge = batteryBadgeLabelOf(run);
-                  @if (batteryBadge) {
+        @for (item of historyView; track item.key) {
+          @if (item.kind === 'run') {
+            @let run = item.run;
+            @let change = workspace.instrumentChangeOf(run);
+            @let progress = answerShortfallOf(run);
+            <li class="rh-card-item">
+              <article class="rh-card" [attr.data-run-id]="run.id" [attr.aria-labelledby]="'rh-run-' + run.id + '-title'">
+                <header class="rh-card-head">
+                  <!-- A dot on screen between the parts, a comma for assistive technology. -->
+                  <div class="rh-card-kicker">
+                    <span class="rh-card-id">#{{ run.id }}</span>
                     <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                    <span class="rh-battery-badge">{{ batteryBadge }}</span>
-                  }
-                  @if ((run.degradedAnswerCount ?? 0) > 0) {
-                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                    <span class="badge-degraded-count"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>{{ run.degradedAnswerCount }}<span class="visually-hidden">{{ run.degradedAnswerCount === 1 ? ' degraded answer' : ' degraded answers' }}</span></span>
-                  }
-                  @if (progress) {
-                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                    <span class="badge-progress-count"
-                          [attr.interestfor]="'tip-progress-' + run.id"
-                          [attr.style]="'anchor-name: --tip-progress-' + run.id">{{ progress.answered }} / {{ progress.total }}</span>
-                    <div popover="hint" class="gh-tooltip" [id]="'tip-progress-' + run.id"
-                         [attr.style]="'position-anchor: --tip-progress-' + run.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
-                  }
-                  @if (change) {
-                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                    <span class="instrument-changed" [class]="change.kind === 'options' ? 'options-changed' : ''"
-                          [attr.aria-label]="(change.kind === 'options' ? 'Run options changed since run ' : 'Instrument changed since run ') + change.comparedToRunId"
-                          [attr.interestfor]="'tip-instr-' + run.id"
-                          [attr.style]="'anchor-name: --tip-instr-' + run.id">{{ change.kind === 'options' ? 'OPTIONS CHANGED' : 'INSTRUMENT CHANGED' }}</span>
-                    <div popover="hint" class="gh-tooltip" [id]="'tip-instr-' + run.id"
-                         [attr.style]="'position-anchor: --tip-instr-' + run.id">{{ change.description }}</div>
-                  }
-                </div>
-                <!-- Focused after Load more and after a delete. -->
-                <h5 class="rh-card-title" [id]="'rh-run-' + run.id + '-title'" tabindex="-1">
-                  <span class="rh-card-model">{{ run.testedModelDisplayNameUsed || run.testedModelIdUsed }}</span>
-                  @for (badge of historyModelBadges(run); track badge.kind) {
-                    @switch (badge.kind) {
-                      @case ('provider') {
-                        <app-provider-badge [provider]="badge.provider" />
-                      }
-                      @case ('thinking') {
-                        <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
-                      }
-                      @case ('reasoning') {
-                        <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
-                      }
-                      @default {
-                        <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                    <span class="status-badge" [class]="statusBadgeClass(run.status)">{{ formatStatusLabel(run.status) }}</span>
+                    @let batteryBadge = batteryBadgeLabelOf(run);
+                    @if (batteryBadge) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="rh-battery-badge">{{ batteryBadge }}</span>
+                    }
+                    @if ((run.degradedAnswerCount ?? 0) > 0) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="badge-degraded-count"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>{{ run.degradedAnswerCount }}<span class="visually-hidden">{{ run.degradedAnswerCount === 1 ? ' degraded answer' : ' degraded answers' }}</span></span>
+                    }
+                    @if (progress) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="badge-progress-count"
+                            [attr.interestfor]="'tip-progress-' + run.id"
+                            [attr.style]="'anchor-name: --tip-progress-' + run.id">{{ progress.answered }} / {{ progress.total }}</span>
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-progress-' + run.id"
+                           [attr.style]="'position-anchor: --tip-progress-' + run.id">{{ progress.answered }} of {{ progress.total }} questions answered; the rest score 0</div>
+                    }
+                    @if (change) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="instrument-changed" [class]="change.kind === 'options' ? 'options-changed' : ''"
+                            [attr.aria-label]="(change.kind === 'options' ? 'Run options changed since run ' : 'Instrument changed since run ') + change.comparedToRunId"
+                            [attr.interestfor]="'tip-instr-' + run.id"
+                            [attr.style]="'anchor-name: --tip-instr-' + run.id">{{ change.kind === 'options' ? 'OPTIONS CHANGED' : 'INSTRUMENT CHANGED' }}</span>
+                      <div popover="hint" class="gh-tooltip" [id]="'tip-instr-' + run.id"
+                           [attr.style]="'position-anchor: --tip-instr-' + run.id">{{ change.description }}</div>
+                    }
+                  </div>
+                  <!-- Focused after Load more and after a delete. -->
+                  <h5 class="rh-card-title" [id]="'rh-run-' + run.id + '-title'" tabindex="-1">
+                    <span class="rh-card-model">{{ run.testedModelDisplayNameUsed || run.testedModelIdUsed }}</span>
+                    @for (badge of historyModelBadges(run); track badge.kind) {
+                      @switch (badge.kind) {
+                        @case ('provider') {
+                          <app-provider-badge [provider]="badge.provider" />
+                        }
+                        @case ('thinking') {
+                          <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                        }
+                        @case ('reasoning') {
+                          <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                        }
+                        @default {
+                          <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                        }
                       }
                     }
-                  }
-                </h5>
-                <p class="rh-card-meta">
-                  <span class="rh-card-suite">{{ run.suiteName }}</span>
-                  <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                  <span>assessed by {{ run.assessorModelDisplayNameUsed }}</span>
-                  <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                  <time class="rh-card-time" [attr.datetime]="run.startedAtUtc">{{ run.startedAtUtc | date:'yyyy-MM-dd HH:mm' }} UTC</time>
-                  @if (run.startedByUserName) {
+                  </h5>
+                  <p class="rh-card-meta">
+                    <span class="rh-card-suite">{{ run.suiteName }}</span>
                     <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
-                    <span>by {{ run.startedByUserName }}</span>
-                  }
-                </p>
-              </header>
+                    <span>assessed by {{ run.assessorModelDisplayNameUsed }}</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <time class="rh-card-time" [attr.datetime]="run.startedAtUtc">{{ run.startedAtUtc | date:'yyyy-MM-dd HH:mm' }} UTC</time>
+                    @if (run.startedByUserName) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span>by {{ run.startedByUserName }}</span>
+                    }
+                  </p>
+                </header>
 
-              <dl class="rh-metrics">
-                <div class="rh-metric" data-metric="intelligence">
-                  <dt>Intelligence</dt>
-                  <dd>
-                    @if (run.qualityIndex != null) {
-                      <span class="score-badge" [class]="getScoreBadgeClass(run.qualityIndex)">{{ run.qualityIndex }} / 100</span>
-                    } @else if (run.finalScore != null) {
-                      <span class="score-badge" [class]="getScoreBadgeClass(run.finalScore)">{{ run.finalScore }} / 100</span>
-                    } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
-                      <span class="text-muted">not computed</span>
-                      <span class="rh-metric-note">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} failed at the provider</span>
-                    } @else {
-                      <span class="text-muted">N/A</span>
-                    }
-                  </dd>
-                </div>
-                <div class="rh-metric" data-metric="speed">
-                  <dt>Speed</dt>
-                  <dd>
-                    @if (run.speedIndex != null) {
-                      <span class="score-badge" [class]="getScoreBadgeClass(run.speedIndex)">{{ run.speedIndex }} / 100</span>
-                      @if (run.speedMeasurementDegraded) {
-                        <span class="rh-metric-note rh-metric-warn">advisory timing</span>
+                <dl class="rh-metrics">
+                  <div class="rh-metric" data-metric="intelligence">
+                    <dt>Intelligence</dt>
+                    <dd>
+                      @if (run.qualityIndex != null) {
+                        <span class="score-badge" [class]="getScoreBadgeClass(run.qualityIndex)">{{ run.qualityIndex }} / 100</span>
+                      } @else if (run.finalScore != null) {
+                        <span class="score-badge" [class]="getScoreBadgeClass(run.finalScore)">{{ run.finalScore }} / 100</span>
+                      } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
+                        <span class="text-muted">not computed</span>
+                        <span class="rh-metric-note">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} failed at the provider</span>
+                      } @else {
+                        <span class="text-muted">N/A</span>
                       }
-                    } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
-                      <span class="text-muted">not computed</span>
-                      <span class="rh-metric-note">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} failed at the provider</span>
-                    } @else {
-                      <span class="text-muted">&mdash;</span>
-                    }
-                  </dd>
-                </div>
-                <div class="rh-metric" data-metric="duration">
-                  <dt>Duration</dt>
-                  <dd>
-                    <span class="rh-metric-value">{{ formatDuration(runDurationMs(run)) }}</span>
-                    @if (isAbortedRun(run)) {
-                      <span class="rh-metric-note">until stopped</span>
-                    }
-                  </dd>
-                </div>
-                <div class="rh-metric" data-metric="cost">
-                  <dt>Cost</dt>
-                  <dd>
-                    @if (run.estimatedCandidateCost != null || run.estimatedCost != null) {
-                      <span class="rh-metric-value rh-cost-primary">{{ formatCostAmount(run.estimatedCandidateCost ?? run.estimatedCost) }}</span>
-                      <span class="rh-metric-note rh-cost-catalog">catalog {{ formatRunEstimatedCost(run) }}</span>
-                      @if (run.pricingIncomplete) {
-                        <span class="rh-metric-note rh-metric-warn">pricing incomplete</span>
+                    </dd>
+                  </div>
+                  <div class="rh-metric" data-metric="speed">
+                    <dt>Speed</dt>
+                    <dd>
+                      @if (run.speedIndex != null) {
+                        <span class="score-badge" [class]="getScoreBadgeClass(run.speedIndex)">{{ run.speedIndex }} / 100</span>
+                        @if (run.speedMeasurementDegraded) {
+                          <span class="rh-metric-note rh-metric-warn">advisory timing</span>
+                        }
+                      } @else if ((run.terminalFailureAnswerCount ?? 0) > 0) {
+                        <span class="text-muted">not computed</span>
+                        <span class="rh-metric-note">{{ run.terminalFailureAnswerCount }} of {{ run.totalQuestionCount }} failed at the provider</span>
+                      } @else {
+                        <span class="text-muted">&mdash;</span>
                       }
-                    } @else {
-                      <span class="text-muted">&mdash;</span>
-                    }
-                  </dd>
-                </div>
-              </dl>
-
-              <div class="rh-card-actions" role="group" [attr.aria-label]="'Actions for run ' + run.id">
-                <button type="button" class="action-btn" (click)="bridge.viewRunDetail(run.id)"
-                        [attr.aria-label]="'View details for run ' + run.id"
-                        [attr.interestfor]="'tip-view-run-' + run.id"
-                        [attr.style]="'anchor-name: --tip-view-run-' + run.id">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" [id]="'tip-view-run-' + run.id"
-                     [attr.style]="'position-anchor: --tip-view-run-' + run.id">View details</div>
-                <button type="button" class="action-btn" (click)="downloadReport(run.id)"
-                        [attr.aria-label]="'Download Markdown report for run ' + run.id"
-                        [attr.interestfor]="'tip-dl-run-' + run.id"
-                        [attr.style]="'anchor-name: --tip-dl-run-' + run.id">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" [id]="'tip-dl-run-' + run.id"
-                     [attr.style]="'position-anchor: --tip-dl-run-' + run.id">Download Markdown report</div>
-                <button type="button" class="action-btn" (click)="downloadToolCallLog(run.id)"
-                        [attr.aria-label]="'Download tool-call log for run ' + run.id"
-                        [attr.interestfor]="'tip-tcl-run-' + run.id"
-                        [attr.style]="'anchor-name: --tip-tcl-run-' + run.id">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" [id]="'tip-tcl-run-' + run.id"
-                     [attr.style]="'position-anchor: --tip-tcl-run-' + run.id">Download tool-call log</div>
-                <button type="button" class="action-btn action-btn-danger rh-delete-btn" (click)="deleteRun(run.id)"
-                        [attr.aria-label]="'Delete run ' + run.id"
-                        [attr.interestfor]="'tip-del-run-' + run.id"
-                        [attr.style]="'anchor-name: --tip-del-run-' + run.id">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                </button>
-                <div popover="hint" class="gh-tooltip" [id]="'tip-del-run-' + run.id"
-                     [attr.style]="'position-anchor: --tip-del-run-' + run.id">Delete run</div>
-              </div>
-
-              <!-- The five hashes, shortened; the info tip at the end lists them in full. -->
-              <div class="rh-instrument-strip">
-                <dl class="rh-instrument">
-                  @for (entry of fingerprintEntries(run); track entry.label) {
-                    <div class="rh-instrument-pair">
-                      <dt>{{ entry.label }}<span class="visually-hidden"> ({{ fingerprintLongName(entry) }})</span></dt>
-                      <dd class="rh-hash" [class]="entry.cssClass">{{ entry.short }}</dd>
-                    </div>
-                  }
+                    </dd>
+                  </div>
+                  <div class="rh-metric" data-metric="duration">
+                    <dt>Duration</dt>
+                    <dd>
+                      <span class="rh-metric-value">{{ formatDuration(runDurationMs(run)) }}</span>
+                      @if (isAbortedRun(run)) {
+                        <span class="rh-metric-note">until stopped</span>
+                      }
+                    </dd>
+                  </div>
+                  <div class="rh-metric" data-metric="cost">
+                    <dt>Cost</dt>
+                    <dd>
+                      @if (run.estimatedCandidateCost != null || run.estimatedCost != null) {
+                        <span class="rh-metric-value rh-cost-primary">{{ formatCostAmount(run.estimatedCandidateCost ?? run.estimatedCost) }}</span>
+                        <span class="rh-metric-note rh-cost-catalog">catalog {{ formatRunEstimatedCost(run) }}</span>
+                        @if (run.pricingIncomplete) {
+                          <span class="rh-metric-note rh-metric-warn">pricing incomplete</span>
+                        }
+                      } @else {
+                        <span class="text-muted">&mdash;</span>
+                      }
+                    </dd>
+                  </div>
                 </dl>
-                <app-info-tip trigger="click" [tipId]="'rh-instr-' + run.id" [subject]="'Instrument of run ' + run.id">
-                  <dl>
+
+                <div class="rh-card-actions" role="group" [attr.aria-label]="'Actions for run ' + run.id">
+                  <button type="button" class="action-btn" (click)="bridge.viewRunDetail(run.id)"
+                          [attr.aria-label]="'View details for run ' + run.id"
+                          [attr.interestfor]="'tip-view-run-' + run.id"
+                          [attr.style]="'anchor-name: --tip-view-run-' + run.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-view-run-' + run.id"
+                       [attr.style]="'position-anchor: --tip-view-run-' + run.id">View details</div>
+                  <button type="button" class="action-btn" (click)="downloadReport(run.id)"
+                          [attr.aria-label]="'Download Markdown report for run ' + run.id"
+                          [attr.interestfor]="'tip-dl-run-' + run.id"
+                          [attr.style]="'anchor-name: --tip-dl-run-' + run.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-dl-run-' + run.id"
+                       [attr.style]="'position-anchor: --tip-dl-run-' + run.id">Download Markdown report</div>
+                  <button type="button" class="action-btn" (click)="downloadToolCallLog(run.id)"
+                          [attr.aria-label]="'Download tool-call log for run ' + run.id"
+                          [attr.interestfor]="'tip-tcl-run-' + run.id"
+                          [attr.style]="'anchor-name: --tip-tcl-run-' + run.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-tcl-run-' + run.id"
+                       [attr.style]="'position-anchor: --tip-tcl-run-' + run.id">Download tool-call log</div>
+                  <button type="button" class="action-btn action-btn-danger rh-delete-btn" (click)="deleteRun(run.id)"
+                          [attr.aria-label]="'Delete run ' + run.id"
+                          [attr.interestfor]="'tip-del-run-' + run.id"
+                          [attr.style]="'anchor-name: --tip-del-run-' + run.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-del-run-' + run.id"
+                       [attr.style]="'position-anchor: --tip-del-run-' + run.id">Delete run</div>
+                </div>
+
+                <!-- The five hashes, shortened; the info tip at the end lists them in full. -->
+                <div class="rh-instrument-strip">
+                  <dl class="rh-instrument">
                     @for (entry of fingerprintEntries(run); track entry.label) {
-                      @let parts = fingerprintParts(entry);
-                      <div>
-                        <dt><span class="gh-info-term">{{ parts.term }}</span></dt>
-                        <dd class="rh-hash-full">{{ parts.value }}</dd>
+                      <div class="rh-instrument-pair">
+                        <dt>{{ entry.label }}<span class="visually-hidden"> ({{ fingerprintLongName(entry) }})</span></dt>
+                        <dd class="rh-hash" [class]="entry.cssClass">{{ entry.short }}</dd>
                       </div>
                     }
                   </dl>
-                </app-info-tip>
-              </div>
-            </article>
-          </li>
+                  <app-info-tip trigger="click" [tipId]="'rh-instr-' + run.id" [subject]="'Instrument of run ' + run.id">
+                    <dl>
+                      @for (entry of fingerprintEntries(run); track entry.label) {
+                        @let parts = fingerprintParts(entry);
+                        <div>
+                          <dt><span class="gh-info-term">{{ parts.term }}</span></dt>
+                          <dd class="rh-hash-full">{{ parts.value }}</dd>
+                        </div>
+                      }
+                    </dl>
+                  </app-info-tip>
+                </div>
+              </article>
+            </li>
+          } @else if (item.kind === 'battery') {
+            @let battery = item.battery;
+            @let live = isBatteryLive(battery);
+            @let analyzed = battery.latestAnalysisId != null;
+            <li class="rh-card-item">
+              <article class="rh-card rh-card-battery" [attr.data-battery-run-id]="battery.id" [attr.aria-labelledby]="'rh-battery-' + battery.id + '-title'">
+                <header class="rh-card-head">
+                  <!-- A dot on screen between the parts, a comma for assistive technology. -->
+                  <div class="rh-card-kicker">
+                    <span class="rh-battery-run-badge">Battery run #{{ battery.id }}</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="status-badge" [class]="batteryStatusBadgeClass(battery.status)">{{ batteryRunStatusLabel(battery.status) }}</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="rh-battery-suites">{{ battery.completedSuiteCount }} of {{ battery.suiteCount }} suites</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="rh-battery-rounds">{{ battery.runsPerSuite }} {{ battery.runsPerSuite === 1 ? 'run' : 'runs' }} per suite</span>
+                    @if (!analyzed) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="gh-tag rh-battery-not-analyzed">Not analyzed</span>
+                    } @else if (battery.analysisStale) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="gh-tag gh-tag-changed rh-battery-stale">Analysis stale</span>
+                    }
+                  </div>
+                  <!-- Focused after Load more and after a delete. -->
+                  <h5 class="rh-card-title" [id]="'rh-battery-' + battery.id + '-title'" tabindex="-1">
+                    <span class="rh-card-model">{{ batteryModelName(battery) }}</span>
+                    @for (badge of batteryModelBadges(battery); track badge.kind) {
+                      @switch (badge.kind) {
+                        @case ('provider') {
+                          <app-provider-badge [provider]="badge.provider" />
+                        }
+                        @case ('thinking') {
+                          <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                        }
+                        @case ('reasoning') {
+                          <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                        }
+                        @default {
+                          <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                        }
+                      }
+                    }
+                  </h5>
+                  <p class="rh-card-meta">
+                    <span class="rh-card-suite">{{ battery.batteryName }}</span>
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span>revision {{ battery.definitionRevision }}</span>
+                    @if (battery.assessorLabel) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span>assessed by {{ battery.coAssessorLabel ? battery.assessorLabel + ' and ' + battery.coAssessorLabel : battery.assessorLabel }}</span>
+                    }
+                    <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <time class="rh-card-time" [attr.datetime]="battery.startedAtUtc">{{ battery.startedAtUtc | date:'yyyy-MM-dd HH:mm' }} UTC</time>
+                    @if (battery.startedByUserName) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span>by {{ battery.startedByUserName }}</span>
+                    }
+                  </p>
+                </header>
+
+                <dl class="rh-metrics">
+                  <div class="rh-metric" data-metric="intelligence">
+                    <dt>Intelligence</dt>
+                    <dd>
+                      @if (battery.overallIndex != null) {
+                        <span class="score-badge" [class]="getScoreBadgeClass(battery.overallIndex)">{{ formatIndexWithHalfWidth(battery.overallIndex, battery.overallIndexHalfWidth) }}</span>
+                      } @else {
+                        <span class="text-muted">N/A</span>
+                        @let incomplete = batteryIncompleteNote(battery);
+                        @if (incomplete) {
+                          <span class="rh-metric-note">{{ incomplete }}</span>
+                        }
+                      }
+                    </dd>
+                  </div>
+                  <div class="rh-metric" data-metric="speed">
+                    <dt>Speed</dt>
+                    <dd>
+                      @if (battery.overallSpeedIndex != null) {
+                        <span class="score-badge" [class]="getScoreBadgeClass(battery.overallSpeedIndex)">{{ formatNumber(battery.overallSpeedIndex) }} / 100</span>
+                      } @else {
+                        <span class="text-muted">&mdash;</span>
+                      }
+                    </dd>
+                  </div>
+                  <div class="rh-metric" data-metric="duration">
+                    <dt>Duration</dt>
+                    <dd>
+                      @if (battery.completedAtUtc) {
+                        <span class="rh-metric-value">{{ formatDuration(batteryRunDurationMs(battery)) }}</span>
+                      } @else {
+                        <span class="text-muted">&mdash;</span>
+                        @if (live) {
+                          <span class="rh-metric-note">in progress</span>
+                        }
+                      }
+                    </dd>
+                  </div>
+                  <div class="rh-metric" data-metric="cost">
+                    <dt>Cost</dt>
+                    <dd>
+                      @if (battery.totalCost != null) {
+                        <span class="rh-metric-value rh-cost-primary">{{ formatCostAmount(battery.totalCost) }}</span>
+                      } @else {
+                        <span class="text-muted">&mdash;</span>
+                      }
+                    </dd>
+                  </div>
+                </dl>
+
+                <div class="rh-card-actions" role="group" [attr.aria-label]="'Actions for battery run ' + battery.id">
+                  <button type="button" class="action-btn rh-battery-view" (click)="bridge.openBatteryRunReport(battery.id)"
+                          [attr.aria-label]="'View details for battery run ' + battery.id"
+                          [attr.interestfor]="'tip-view-battery-' + battery.id"
+                          [attr.style]="'anchor-name: --tip-view-battery-' + battery.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-view-battery-' + battery.id"
+                       [attr.style]="'position-anchor: --tip-view-battery-' + battery.id">View details</div>
+                  <button type="button" class="action-btn rh-battery-download" (click)="downloadBatteryReport(battery)"
+                          [attr.aria-disabled]="analyzed ? null : 'true'"
+                          [attr.aria-label]="'Download Markdown report for battery run ' + battery.id"
+                          [attr.interestfor]="'tip-dl-battery-' + battery.id"
+                          [attr.style]="'anchor-name: --tip-dl-battery-' + battery.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-dl-battery-' + battery.id"
+                       [attr.style]="'position-anchor: --tip-dl-battery-' + battery.id">{{ analyzed ? 'Download Markdown report' : 'Not analyzed yet: compute the analysis in View details first' }}</div>
+                  @if (canShowBatteryProgress(battery)) {
+                    <button type="button" class="action-btn rh-battery-progress" (click)="showBatteryProgress(battery)"
+                            [attr.aria-label]="'Show progress of battery run ' + battery.id"
+                            [attr.interestfor]="'tip-progress-battery-' + battery.id"
+                            [attr.style]="'anchor-name: --tip-progress-battery-' + battery.id">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    </button>
+                    <div popover="hint" class="gh-tooltip" [id]="'tip-progress-battery-' + battery.id"
+                         [attr.style]="'position-anchor: --tip-progress-battery-' + battery.id">Show progress</div>
+                  }
+                  <button type="button" class="action-btn action-btn-danger rh-delete-btn rh-battery-delete" (click)="openDeleteBatteryDialog(battery)"
+                          [attr.aria-disabled]="live ? 'true' : null"
+                          [attr.aria-label]="'Delete battery run ' + battery.id"
+                          [attr.interestfor]="'tip-del-battery-' + battery.id"
+                          [attr.style]="'anchor-name: --tip-del-battery-' + battery.id">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'tip-del-battery-' + battery.id"
+                       [attr.style]="'position-anchor: --tip-del-battery-' + battery.id">{{ live ? 'A live battery run cannot be deleted; stop it first' : 'Delete battery run' }}</div>
+                </div>
+
+                <!-- The definition and comparability class hashes, shortened; the info tip at the end gives them in full. -->
+                <div class="rh-instrument-strip">
+                  <dl class="rh-instrument">
+                    @for (entry of batteryFingerprints(battery); track entry.label) {
+                      <div class="rh-instrument-pair">
+                        <dt>{{ entry.label }}<span class="visually-hidden"> ({{ entry.longName }})</span></dt>
+                        <dd class="rh-hash" [class]="entry.cssClass">{{ entry.short }}</dd>
+                      </div>
+                    }
+                  </dl>
+                  <app-info-tip trigger="click" [tipId]="'rh-binstr-' + battery.id" [subject]="'Instrument of battery run ' + battery.id">
+                    <dl>
+                      @for (entry of batteryFingerprints(battery); track entry.label) {
+                        <div>
+                          <dt><span class="gh-info-term">{{ entry.term }}</span></dt>
+                          <dd class="rh-hash-full">{{ entry.value }}</dd>
+                        </div>
+                      }
+                    </dl>
+                  </app-info-tip>
+                </div>
+              </article>
+            </li>
+          }
         }
       </ul>
 
-      @let remaining = workspace.historyList.remainingCount(workspace.historyRuns);
+      @let remaining = workspace.historyList.remainingCount(workspace.historyItems);
       @if (remaining > 0) {
         <div class="gh-load-more rh-load-more">
-          <button type="button" class="btn-ghost rh-show-more" (click)="showMoreHistory()">Show {{ workspace.historyList.nextBatchCount(workspace.historyRuns) }} more</button>
+          <button type="button" class="btn-ghost rh-show-more" (click)="showMoreHistory()">Show {{ workspace.historyList.nextBatchCount(workspace.historyItems) }} more</button>
           @if (remaining > workspace.historyList.batch) {
-            <button type="button" class="gh-filter-clear rh-show-all" (click)="showAllHistory()">Show all {{ workspace.historyList.matching(workspace.historyRuns).length }}</button>
+            <button type="button" class="gh-filter-clear rh-show-all" (click)="showAllHistory()">Show all {{ workspace.historyList.matching(workspace.historyItems).length }}</button>
           }
         </div>
       }
     }
   }
 </section>
+
+<!-- Deleting a battery run, and optionally its member runs. -->
+<dialog #deleteBatteryDialog id="rhDeleteBatteryDialog" class="gh-dialog rh-delete-battery-dialog" aria-labelledby="rhDeleteBatteryTitle"
+        (cancel)="onDeleteBatteryCancel($event)">
+  <div class="dialog-header">
+    <h3 id="rhDeleteBatteryTitle">Delete battery run #{{ pendingBatteryDelete?.id }}?</h3>
+  </div>
+  <div class="dialog-body">
+    @if (pendingBatteryDelete; as battery) {
+      @let memberCount = batteryMemberRunCount(battery);
+      <p class="rh-delete-battery-message">
+        The battery run of <strong>{{ battery.batteryName }}</strong> is deleted with its analyses and its AI documents.
+        @if (memberCount > 0) {
+          Unless you also delete them, its member runs stay in Run History as single runs.
+        }
+      </p>
+      @if (memberCount > 0) {
+        <label class="checkbox-label rh-delete-battery-members">
+          <input type="checkbox" id="rhDeleteBatteryMembers" [checked]="deleteBatteryMembers" [disabled]="deletingBattery"
+                 (change)="onDeleteBatteryMembersChange($event)">
+          Also delete its {{ memberCount }} member {{ memberCount === 1 ? 'run' : 'runs' }}
+        </label>
+      }
+      <p class="text-danger rh-delete-battery-notice">This action is permanent and cannot be undone.</p>
+    }
+    @if (deleteBatteryError) {
+      <div class="alert alert-danger" role="alert">{{ deleteBatteryError }}</div>
+    }
+  </div>
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" [disabled]="deletingBattery" (click)="closeDeleteBatteryDialog()">Cancel</button>
+    <button type="button" class="btn-gh btn-gh-delete rh-confirm-delete-battery" [disabled]="deletingBattery" (click)="confirmDeleteBattery()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+      Delete
+    </button>
+  </div>
+</dialog>

@@ -207,10 +207,86 @@ describe('AdminBenchmarkService', () => {
     });
 
     const req = httpMock.expectOne(request => request.url === '/api/admin/benchmark/model-comparison/comparability');
-    expect(req.request.method).toBe('GET');
-    expect(req.request.params.getAll('runIds')).toEqual(['1', '2']);
-    expect(req.request.params.getAll('groupIds')).toEqual(['3']);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ runIds: [1, 2], groupIds: [3] });
     req.flush(mockIndex);
+  });
+
+  it('asks for battery runs with an optional battery and take', () => {
+    service.getBatteryRuns(undefined, 500).subscribe();
+    const all = httpMock.expectOne(request => request.url === '/api/admin/benchmark/batteries/runs');
+    expect(all.request.params.has('batteryId')).toBe(false);
+    expect(all.request.params.get('take')).toBe('500');
+    all.flush([]);
+
+    service.getBatteryRuns(4).subscribe();
+    const one = httpMock.expectOne(request => request.url === '/api/admin/benchmark/batteries/runs');
+    expect(one.request.params.get('batteryId')).toBe('4');
+    expect(one.request.params.has('take')).toBe(false);
+    one.flush([]);
+  });
+
+  it('reaches the battery report-document endpoints and lists documents by subject', () => {
+    const root = '/api/admin/benchmark/batteries/runs/9/report-documents';
+    service.writeBatteryReportDocuments(9, { reportWriterModelConfigurationId: 4 } as any).subscribe();
+    const write = httpMock.expectOne(root);
+    expect(write.request.method).toBe('POST');
+    write.flush({});
+
+    let job: unknown = 'unset';
+    service.getBatteryReportJob(9).subscribe(value => job = value);
+    httpMock.expectOne(`${root}/job`).flush(null, { status: 204, statusText: 'No Content' });
+    expect(job).toBeNull();
+
+    service.cancelBatteryReportJob(9).subscribe();
+    expect(httpMock.expectOne(`${root}/cancel`).request.method).toBe('POST');
+    service.estimateBatteryReports(9, {} as any).subscribe();
+    expect(httpMock.expectOne(`${root}/estimate`).request.method).toBe('POST');
+    service.deleteBatteryReportDocument(9, 31).subscribe();
+    expect(httpMock.expectOne(`${root}/31`).request.method).toBe('DELETE');
+    httpMock.match(() => true).forEach(req => req.flush({}));
+
+    service.listReportDocuments({ subject: 'battery:9', origin: 'batteryCompletion' }).subscribe();
+    const list = httpMock.expectOne(request => request.url === '/api/admin/benchmark/report-documents');
+    expect(list.request.params.get('subject')).toBe('battery:9');
+    expect(list.request.params.get('origin')).toBe('batteryCompletion');
+    list.flush([]);
+  });
+
+  it('posts the paired-test requests', () => {
+    service.getPairedComparison({ runIds: [1, 2], groupIds: [], batteryRunIds: [], pricingBasis: 1, mode: 'Reference', referenceKey: 'run:1' })
+      .subscribe();
+    const wizard = httpMock.expectOne('/api/admin/benchmark/model-comparison/paired');
+    expect(wizard.request.method).toBe('POST');
+    expect(wizard.request.body.referenceKey).toBe('run:1');
+    wizard.flush({});
+
+    service.getRunPairedComparison(12, 10).subscribe();
+    const run = httpMock.expectOne('/api/admin/benchmark/runs/12/paired-comparison');
+    expect(run.request.body).toEqual({ baselineRunId: 10, pricingBasis: 1 });
+    run.flush({});
+
+    service.getRunPairKinds(12, [10, 11]).subscribe();
+    expect(httpMock.expectOne('/api/admin/benchmark/runs/12/paired-comparison/kinds').request.body).toEqual({ runIds: [10, 11] });
+    httpMock.match(() => true).forEach(req => req.flush([]));
+
+    service.getBatteryPairedComparison(7, 5, 0).subscribe();
+    const battery = httpMock.expectOne('/api/admin/benchmark/model-comparison/paired/battery');
+    expect(battery.request.body).toEqual({ batteryRunId: 7, baselineBatteryRunId: 5, pricingBasis: 0 });
+    battery.flush({});
+  });
+
+  it('deletes a battery run, keeping its members unless asked', () => {
+    service.deleteBatteryRun(9).subscribe();
+    const keep = httpMock.expectOne(request => request.url === '/api/admin/benchmark/batteries/runs/9');
+    expect(keep.request.method).toBe('DELETE');
+    expect(keep.request.params.get('deleteMembers')).toBe('false');
+    keep.flush(null);
+
+    service.deleteBatteryRun(9, true).subscribe();
+    const all = httpMock.expectOne(request => request.url === '/api/admin/benchmark/batteries/runs/9');
+    expect(all.request.params.get('deleteMembers')).toBe('true');
+    all.flush(null);
   });
 
   describe('report packs', () => {

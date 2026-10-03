@@ -1,0 +1,378 @@
+/* The view scrolls itself inside the wizard's panel, which clips its overflow. */
+:host {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.mcp {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+
+  p {
+    margin: 0;
+  }
+}
+
+.mcp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.mcp-mode {
+  flex: 0 1 20rem;
+  min-width: 14rem;
+}
+
+.mcp-reference {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+
+  label {
+    margin: 0;
+    font-size: var(--text-secondary);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  select {
+    min-width: 0;
+    max-width: 22rem;
+  }
+}
+
+.mcp-export {
+  display: flex;
+  gap: 4px;
+  margin-inline-start: auto;
+}
+
+.mcp-hint,
+.mcp-note,
+.mcp-adjustment,
+.mcp-measures-note {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.mcp-status {
+  min-height: 1.25rem;
+  font-size: var(--text-secondary);
+  color: #c4c4cc;
+}
+
+.mcp-status:empty {
+  min-height: 0;
+}
+
+.mcp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+
+  &[aria-busy="true"] {
+    opacity: 0.6;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: opacity 0.15s ease;
+  }
+}
+
+.mcp-family {
+  font-weight: 600;
+}
+
+.mcp-caveat {
+  padding: 8px 12px;
+  border-inline-start: 3px solid #7aa2c8;
+  border-radius: 4px;
+  background: rgba(122, 162, 200, 0.08);
+  font-size: var(--text-secondary);
+}
+
+.mcp-needs-two {
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+}
+
+.mcp-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcp-section > .gh-disclosure-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mcp-primary-tag {
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #a1a1aa;
+}
+
+.mcp-measure {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mcp-measure-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.mcp-not-tested {
+  color: #c4c4cc;
+  font-style: italic;
+}
+
+.mcp-table-scroll {
+  overflow-x: auto;
+}
+
+.mcp-table,
+.mc-paired-matrix {
+  font-size: var(--text-secondary);
+
+  th,
+  td {
+    vertical-align: middle;
+  }
+
+  tr.is-selected > * {
+    background: color-mix(in srgb, var(--primary-color) 8%, transparent);
+  }
+}
+
+.mcp-num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mcp-effect {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mcp-interval {
+  color: #a1a1aa;
+}
+
+.mcp-model {
+  font-weight: 400;
+  text-align: start;
+}
+
+/* The model's name opens the pair's details: a text button with a visible focus ring. */
+.mcp-model-btn {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+
+  .mcp-model-name {
+    text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+    text-underline-offset: 3px;
+  }
+
+  &:hover .mcp-model-name {
+    text-decoration-color: currentColor;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}
+
+.mcp-forest-head,
+.mcp-forest {
+  width: 8rem;
+  min-width: 6rem;
+}
+
+.mcp-forest-svg {
+  display: block;
+  width: 100%;
+  height: 12px;
+  overflow: visible;
+}
+
+.mcp-forest-zero {
+  stroke: #71717a;
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.mcp-forest-interval {
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.mcp-forest-point {
+  stroke: var(--primary-color);
+  stroke-width: 3;
+}
+
+.mcp-verdict-cell {
+  white-space: nowrap;
+
+  .mcp-shape {
+    margin-inline-end: 6px;
+    vertical-align: -1px;
+  }
+}
+
+/* The shape and the word carry the verdict; the color only repeats an established one. */
+.mcp-verdict--established {
+  color: var(--primary-color);
+}
+
+.mcp-verdict--ring,
+.mcp-verdict--untested {
+  color: #c4c4cc;
+}
+
+.mc-paired-matrix {
+  width: auto;
+
+  thead th {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  tbody th {
+    font-weight: 400;
+    text-align: start;
+    white-space: nowrap;
+  }
+}
+
+.mc-paired-matrix-corner,
+.mc-paired-cell-empty {
+  background: transparent;
+}
+
+.mc-paired-cell {
+  padding: 2px;
+}
+
+.mc-paired-cell-btn {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  column-gap: 6px;
+  width: 100%;
+  min-width: 6.5rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: start;
+  cursor: pointer;
+
+  .mcp-shape {
+    grid-row: span 2;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  &[aria-expanded="true"] {
+    border-color: var(--primary-color);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    transition: background-color 0.15s ease;
+  }
+}
+
+.mc-paired-cell-effect {
+  color: #e4e4e7;
+  white-space: nowrap;
+}
+
+.mc-paired-cell-p {
+  grid-column: 2;
+  font-size: 0.75rem;
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.mcp-pair-list ul {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  font-size: var(--text-secondary);
+}
+
+.mcp-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--primary-color);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.mcp-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mcp-detail-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
+}

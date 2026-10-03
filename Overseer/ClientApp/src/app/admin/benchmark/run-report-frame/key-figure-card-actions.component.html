@@ -1,5 +1,5 @@
 <button type="button" class="action-btn kfc-copy"
-        [attr.aria-label]="'Copy ' + cardLabel + ' of run ' + runId + ' as an image'"
+        [attr.aria-label]="'Copy ' + cardLabel + ' of ' + subject + ' as an image'"
         [attr.aria-disabled]="busy ? 'true' : null"
         [attr.interestfor]="tipId('copy')"
         [attr.style]="'anchor-name: --' + tipId('copy')"
@@ -10,7 +10,7 @@
   </svg>
 </button>
 <button type="button" class="action-btn kfc-download"
-        [attr.aria-label]="'Download ' + cardLabel + ' of run ' + runId + ' as a PNG image'"
+        [attr.aria-label]="'Download ' + cardLabel + ' of ' + subject + ' as a PNG image'"
         [attr.aria-disabled]="busy ? 'true' : null"
         [attr.interestfor]="tipId('download')"
         [attr.style]="'anchor-name: --' + tipId('download')"

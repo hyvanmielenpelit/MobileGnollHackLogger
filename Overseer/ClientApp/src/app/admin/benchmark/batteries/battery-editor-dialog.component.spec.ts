@@ -110,8 +110,12 @@ describe('BatteryEditorDialogComponent', () => {
     fixture.detectChanges();
   }
 
+  function saveButton(): HTMLButtonElement {
+    return el().querySelector('.bbe-save') as HTMLButtonElement;
+  }
+
   function clickSave(): void {
-    (el().querySelector('.bbe-save') as HTMLButtonElement).click();
+    saveButton().click();
     fixture.detectChanges();
   }
 
@@ -253,15 +257,133 @@ describe('BatteryEditorDialogComponent', () => {
     expect(el().querySelectorAll('.bbe-custom-input').length).toBe(0);
   });
 
-  it('refuses to save without a name or with fewer than two suites', () => {
+  it('states the two-suite requirement before the list and describes every checkbox with it', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+
+    expect(texts('#bbeSuitesHint')).toEqual(['Select at least two suites. The order of the selected ones is the order they run in.']);
+    const boxes = Array.from(el().querySelectorAll('.rl-list input[type="checkbox"]'));
+    expect(boxes.length).toBe(3);
+    for (const box of boxes) {
+      expect((box.getAttribute('aria-describedby') ?? '').split(' ')[0]).toBe('bbeSuitesHint');
+    }
+  });
+
+  it('counts the selection and says how many are needed until two are checked', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+
+    expect(texts('.bbe-suites-count')).toEqual(['0 of 3 selected · 2 needed']);
+    expect(texts('.bbe-suites-count .bbe-count-need')).toEqual(['· 2 needed']);
+
+    checkSuite('Gameplay Help');
+    expect(texts('.bbe-suites-count')).toEqual(['1 of 3 selected · 2 needed']);
+
+    checkSuite('Board Reading');
+    expect(texts('.bbe-suites-count')).toEqual(['2 of 3 selected']);
+    expect(el().querySelector('.bbe-count-need')).toBeNull();
+  });
+
+  it('keeps Create Battery focusable but inert with fewer than two suites', () => {
     component.open(null, SUITES);
     fixture.detectChanges();
     checkSuite('Gameplay Help');
+
+    expect(saveButton().getAttribute('aria-disabled')).toBe('true');
+    expect(saveButton().disabled).toBe(false);
     clickSave();
 
     expect(service.createBattery).not.toHaveBeenCalled();
+    // Inert: the click neither shows the name error nor moves focus.
+    expect(el().querySelector('#bbeNameError')).toBeNull();
+    expect(document.activeElement).not.toBe(el().querySelector('#bbeName'));
+
+    checkSuite('Board Reading');
+    expect(saveButton().hasAttribute('aria-disabled')).toBe(false);
+    expect(saveButton().hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('says beside the button why it is unavailable, and links the reason to it', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+
+    const reason = el().querySelector('.dialog-footer p#bbeSaveReason.bbe-save-reason') as HTMLElement;
+    expect(reason).not.toBeNull();
+    expect(reason.textContent?.replace(/\s+/g, ' ').trim()).toBe('Select at least two suites to create the battery.');
+    expect(reason.querySelector('svg[aria-hidden="true"]')).not.toBeNull();
+    expect(reason.classList).not.toContain('gh-field-error');
+    expect(saveButton().getAttribute('aria-describedby')).toBe('bbeSaveReason');
+
+    checkSuite('Gameplay Help');
+    checkSuite('Board Reading');
+    expect(el().querySelector('#bbeSaveReason')).toBeNull();
+  });
+
+  it('words the reason for saving when editing a battery with one suite', () => {
+    component.open(battery({ suites: [battery().suites[0]] }), SUITES);
+    fixture.detectChanges();
+
+    expect(texts('#bbeSaveReason')).toEqual(['Select at least two suites to save the battery.']);
+    expect(saveButton().getAttribute('aria-disabled')).toBe('true');
+  });
+
+  it('shows the name error after a save attempt and moves focus to the name', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+    checkSuite('Gameplay Help');
+    checkSuite('Board Reading');
+    expect(el().querySelector('#bbeNameError')).toBeNull();
+
+    clickSave();
+
+    expect(service.createBattery).not.toHaveBeenCalled();
+    const name = el().querySelector('#bbeName') as HTMLInputElement;
     expect(el().querySelector('#bbeNameError')?.textContent).toContain('Enter a name');
-    expect(el().querySelector('#bbeSuiteCountError')?.textContent).toContain('at least two suites');
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    expect(name.getAttribute('aria-describedby')).toBe('bbeNameError');
+    expect(document.activeElement).toBe(name);
+  });
+
+  it('describes every custom weight input with the custom error while it shows', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+    checkSuite('Gameplay Help');
+    checkSuite('Board Reading');
+    chooseScheme('Custom');
+
+    const inputs = () => Array.from(el().querySelectorAll('.bbe-custom-input')) as HTMLInputElement[];
+    expect(el().querySelector('#bbeCustomError')).toBeNull();
+    for (const input of inputs()) {
+      expect(input.hasAttribute('aria-describedby')).toBe(false);
+    }
+
+    inputs()[1].value = '0';
+    inputs()[1].dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(el().querySelector('#bbeCustomError')?.textContent).toContain('custom weight above zero');
+    for (const input of inputs()) {
+      expect(input.getAttribute('aria-describedby')).toBe('bbeCustomError');
+    }
+  });
+
+  it('moves focus to the first invalid custom weight when the name is fine', () => {
+    component.open(null, SUITES);
+    fixture.detectChanges();
+    typeName('Weighted');
+    checkSuite('Gameplay Help');
+    checkSuite('Board Reading');
+    chooseScheme('Custom');
+
+    // Board Reading's weight stays valid; Gameplay Help's, second in run order, is not.
+    const second = el().querySelector('#bbe-custom-11') as HTMLInputElement;
+    second.value = '0';
+    second.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    clickSave();
+
+    expect(service.createBattery).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(el().querySelector('#bbe-custom-11'));
   });
 
   it('creates a battery with the checked suites in list order', () => {

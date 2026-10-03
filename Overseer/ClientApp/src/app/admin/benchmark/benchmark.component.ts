@@ -41,6 +41,8 @@ import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
 import { BenchmarkBatteriesComponent } from './batteries/batteries.component';
 import { BatteryProgressDialogComponent } from './batteries/battery-progress-dialog.component';
+import { BatteryRunReportDialogComponent } from './batteries/battery-run-report-dialog.component';
+import { RunPairedTestComponent } from './run-paired-test/run-paired-test.component';
 import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './cost-panel/benchmark-cost-panel.component';
 import {
   BenchmarkGraderGuideComponent,
@@ -164,7 +166,7 @@ export * from './benchmark.models';
   selector: 'app-admin-benchmark',
   standalone: true,
   imports: [
-    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent
+    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, BatteryRunReportDialogComponent, RunPairedTestComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss'],
@@ -235,7 +237,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     });
     bridge.openGraderGuide$.pipe(takeUntilDestroyed()).subscribe(request => this.openGraderGuide(request.section, request.profile));
     bridge.confirm$.pipe(takeUntilDestroyed()).subscribe(options => this.openConfirmDialog(options));
-    bridge.openComparisonWizard$.pipe(takeUntilDestroyed()).subscribe(() => this.openComparisonWizard());
+    bridge.openComparisonWizard$.pipe(takeUntilDestroyed()).subscribe(preset => {
+      if (preset) {
+        this.comparison.applyComparisonPreset(preset);
+      }
+      this.openComparisonWizard();
+    });
+    bridge.openBatteryRunReport$.pipe(takeUntilDestroyed()).subscribe(batteryRunId => this.openBatteryRunReport(batteryRunId));
     bridge.runDeleted$.pipe(takeUntilDestroyed()).subscribe(runId => {
       if (this.selectedRunDetail?.id === runId) {
         this.closeRunDetail();
@@ -321,6 +329,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   @ViewChild('multiRunPanel') multiRunPanel?: MultiRunComponent;
 
   @ViewChild('batteriesPanel') batteriesPanel?: BenchmarkBatteriesComponent;
+
+  @ViewChild('batteryRunReport') batteryRunReport?: BatteryRunReportDialogComponent;
 
   @ViewChild('graderGuide') graderGuide?: BenchmarkGraderGuideComponent;
 
@@ -1272,14 +1282,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.viewSync.notify();
   }
 
-  /** Shows a battery run's analysis on the Multi-Suite tab. */
+  /** The battery progress dialog's Open Analysis: the Battery Run Report replaces the dialog. */
   onOpenBatteryAnalysis(batteryRunId: number): void {
     this.monitor.batteryDialogVisible = false;
     this.monitor.batteryDialogRunId = null;
-    this.selectSubTab('multisuite');
-    // The panel lives inside @if (activeSubTab === 'multisuite'); flushed before it is addressed.
-    this.viewSync.notify();
-    this.batteriesPanel?.showAnalysis(batteryRunId);
+    this.openBatteryRunReport(batteryRunId);
+  }
+
+  /** Opens the Battery Run Report over whatever is showing. */
+  openBatteryRunReport(batteryRunId: number): void {
+    this.batteryRunReport?.open(batteryRunId);
   }
 
   /** The Multi-Suite tab changed a battery; the launcher's list follows. */

@@ -5,6 +5,8 @@
 //
 // This file imports nothing from the service, which imports these types from here.
 
+import type { CardListSort } from '../../../shared/data-table/card-list-state';
+
 /** `BenchmarkBatteryWeightingScheme` as the API sends it. */
 export type BatteryWeightingSchemeKey = 'DifficultyMass' | 'ItemCount' | 'Equal' | 'Custom';
 
@@ -333,6 +335,52 @@ export function isLiveBatteryRunStatus(status: string | null | undefined): boole
 
 export function isFinishedBatteryRunStatus(status: string | null | undefined): boolean {
   return status === 'Completed' || status === 'CompletedWithErrors';
+}
+
+// --- The Batteries card list -----------------------------------------------------------------
+
+/** Where the Batteries list remembers its Sort by order. */
+export const BATTERY_LIST_VIEW_STORAGE_KEY = 'overseer.benchmark.batteries.view';
+
+/** The orders the Batteries list's Sort by offers. */
+export const BATTERY_LIST_SORTS: readonly CardListSort[] = [
+  { id: 'modified', label: 'Recently modified', column: 'modified', direction: 'desc' },
+  { id: 'name', label: 'Name (A–Z)', column: 'name', direction: 'asc' },
+  { id: 'runs', label: 'Most runs', column: 'runs', direction: 'desc' },
+  { id: 'suites', label: 'Most suites', column: 'suites', direction: 'desc' }
+];
+
+export const DEFAULT_BATTERY_LIST_SORT = 'modified';
+
+/** The Batteries list shows its filter bar only above this many batteries. */
+export const BATTERY_FILTER_BAR_MIN_EXCLUSIVE = 3;
+
+/** The suite rows a battery card shows before *Show all K suites*. */
+export const BATTERY_CARD_SUITE_ROWS = 4;
+
+/** One segment of a battery card's stacked weight bar, in run order. */
+export interface BatteryWeightSegment {
+  readonly index: number;
+  /** The segment's share of the bar's width, 0–1. */
+  readonly share: number;
+  readonly deleted: boolean;
+}
+
+/**
+ * The stacked weight bar of a battery card: one segment per suite in run order, each as wide as
+ * its declared weight. Equal shares when the declared weights are undefined (one per suite), so
+ * the bar still shows the suite count and any deleted suite.
+ */
+export function batteryWeightMix(
+  suites: readonly { readonly index: number; readonly deleted: boolean }[],
+  declaredWeights: readonly number[]
+): BatteryWeightSegment[] {
+  const declared = declaredWeights.length === suites.length && declaredWeights.every(w => Number.isFinite(w) && w >= 0);
+  return suites.map((suite, position) => ({
+    index: suite.index,
+    share: declared ? declaredWeights[position] : 1 / suites.length,
+    deleted: suite.deleted
+  }));
 }
 
 /** What an *Index withheld* grid cell tells the operator to do. */

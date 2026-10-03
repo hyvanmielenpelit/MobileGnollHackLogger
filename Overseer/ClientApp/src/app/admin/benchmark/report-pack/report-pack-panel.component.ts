@@ -54,12 +54,14 @@ import { buildReportPackDiagnostics, reportPackDiagnosticsFileName, reportPackIo
 export interface ReportPackContext {
   readonly runIds: readonly number[];
   readonly groupIds: readonly number[];
+  /** The battery results of a comparison of battery results; never beside runs or groups. Absent reads as none. */
+  readonly batteryRunIds?: readonly number[];
   readonly pricingBasis: BenchmarkModelComparisonPricingBasis;
   /** Every entry of the comparison; the non-Excluded ones are the possible subjects. */
   readonly entries: readonly BenchmarkModelComparisonEntryDto[];
   /**
-   * Every entry's key (`run:<id>`, `group:<id>`), Excluded ones included: the set the server's
-   * comparison key is computed from, the same runs and groups the request carries.
+   * Every entry's key (`run:<id>`, `group:<id>`, `battery:<id>`), Excluded ones included: the set the
+   * server's comparison key is computed from, the same sources the request carries.
    */
   readonly entryKeys: readonly string[];
   readonly suiteId: number | null;
@@ -575,15 +577,20 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return ids.length > 0 ? ids.join(' ') : null;
   }
 
-  /** The request body, or null while the form is incomplete. */
+  /**
+   * The request body, or null while the form is incomplete. `batteryRunIds` is sent only for a
+   * comparison of battery results, so a run comparison's request is unchanged by it.
+   */
   buildRequest(acknowledgeSameProvider = false): BenchmarkReportPackRequest | null {
     const context = this.currentContext;
     if (!context || this.subjectKey === null || this.writerId === null) {
       return null;
     }
+    const batteryRunIds = context.batteryRunIds ?? [];
     return {
       runIds: [...context.runIds],
       groupIds: [...context.groupIds],
+      ...(batteryRunIds.length > 0 ? { batteryRunIds: [...batteryRunIds] } : {}),
       pricingBasis: context.pricingBasis === 'AsRun'
         ? BenchmarkReportPackPricingBasis.AsRun
         : BenchmarkReportPackPricingBasis.Current,

@@ -1,0 +1,273 @@
+<!-- BATTERY LEADERBOARD: header / scrolling body. Its own close and cancel events stop here, so the
+     host's dialogs and the shell never hear them. -->
+<dialog #leaderboardDialog class="gh-dialog gh-dialog-fullscreen battery-leaderboard-dialog"
+        aria-labelledby="blTitle"
+        (cancel)="onCancel($event)" (close)="onDialogClose($event)">
+  <div class="dialog-content">
+    <div class="dialog-header bl-header">
+      <div class="bl-identity">
+        <!-- Decorative: the title beside it names the dialog. -->
+        <img class="gnollbench-emblem bl-emblem" src="/img/gnollbench/gnollbench-logo-v3-256.webp" alt="" width="64" height="64">
+        <div class="bl-title-group">
+          <!-- The focus target on open, so the Close button's tooltip does not open by itself. -->
+          <h3 #leaderboardTitle id="blTitle" tabindex="-1">Leaderboard: {{ displayName }}</h3>
+          <p class="dialog-subtitle bl-subtitle">Battery results ranked by Overall Index, one table per comparability class</p>
+          <ul class="bl-badges" role="list" aria-label="Battery definition">
+            @if (revision != null) {
+              <li class="config-badge">Revision {{ revision }}</li>
+            }
+            @if (request?.schemeLabel) {
+              <li class="config-badge"><span class="visually-hidden">weighting scheme </span>{{ request?.schemeLabel }}</li>
+            }
+            @if (suiteCount != null) {
+              <li class="config-badge">{{ suiteCount }} {{ suiteCount === 1 ? 'suite' : 'suites' }}</li>
+            }
+            @if (uniformRunsPerSuite != null) {
+              <li class="config-badge">{{ uniformRunsPerSuite }} {{ uniformRunsPerSuite === 1 ? 'run' : 'runs' }} per suite</li>
+            }
+            @if (shortHash) {
+              <li class="bl-definition-item">
+                <span class="config-badge bl-definition">definition {{ shortHash }}</span>
+                <app-info-tip trigger="click" tipId="bl-definition-tip" subject="Definition hash">
+                  The SHA-256 of the battery definition, its suites, weighting scheme and weights; suite order is not part of it:
+                  <code class="bl-hash-full">{{ request?.definitionSha256 }}</code>
+                </app-info-tip>
+              </li>
+            }
+          </ul>
+        </div>
+      </div>
+
+      <div class="bl-header-controls">
+        <!-- A group, not a toolbar: every action is its own Tab stop, with no arrow-key roving. -->
+        <div class="bl-actions" role="group" aria-label="Leaderboard actions">
+          <button type="button" class="btn-ghost bl-open-comparison" id="bl-open-comparison"
+                  [attr.aria-disabled]="canOpenComparison ? null : 'true'"
+                  [attr.aria-describedby]="comparisonDroppedCount > 0 ? 'bl-comparison-cap-note' : null"
+                  [attr.interestfor]="canOpenComparison ? null : 'bl-open-comparison-tip'"
+                  [attr.style]="'anchor-name: --bl-open-comparison-tip'"
+                  (click)="openInModelComparison()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"></polygon></svg>
+            Open in Model Comparison
+          </button>
+          @if (!canOpenComparison) {
+            <div popover="hint" class="gh-tooltip" id="bl-open-comparison-tip"
+                 [attr.style]="'position-anchor: --bl-open-comparison-tip'">Needs at least two ranked results in the shown class</div>
+          }
+
+          <button type="button" class="action-btn bl-refresh" id="bl-refresh"
+                  aria-label="Refresh leaderboard"
+                  [attr.aria-disabled]="loading ? 'true' : null"
+                  interestfor="bl-refresh-tip" [attr.style]="'anchor-name: --bl-refresh-tip'"
+                  (click)="refresh()">
+            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          </button>
+          <div popover="hint" class="gh-tooltip" id="bl-refresh-tip"
+               [attr.style]="'position-anchor: --bl-refresh-tip'">Refresh</div>
+        </div>
+
+        <button type="button" class="btn-icon-action bl-close" aria-label="Close leaderboard"
+                interestfor="bl-close-tip" [attr.style]="'anchor-name: --bl-close-tip'"
+                (click)="close()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+        <div popover="hint" class="gh-tooltip" id="bl-close-tip"
+             [attr.style]="'position-anchor: --bl-close-tip'">Close</div>
+      </div>
+    </div>
+
+    <div class="dialog-body bl-body">
+      @if (loading && !leaderboard) {
+        <p class="text-muted bl-loading" role="status">Loading leaderboard…</p>
+      } @else if (loadError) {
+        <div class="alert alert-danger bl-error" role="alert">
+          <p class="bl-error-text">{{ loadError }}</p>
+          <button type="button" class="btn-ghost bl-retry" (click)="retry()">Retry</button>
+        </div>
+      } @else if (leaderboard) {
+        @if (classViews.length === 0) {
+          <div class="bl-empty">
+            @if (leaderboard.incomplete.length === 0) {
+              <p>No battery run of this definition has an analysis yet.</p>
+            } @else {
+              <p>No battery run of this definition has a complete analysis yet, so nothing is ranked.</p>
+            }
+            <p>Start one from Run Benchmark with Run Target set to Battery.</p>
+          </div>
+        } @else {
+          <p class="bl-note">Each table ranks results of one comparability class. Overlapping intervals are not a ranking.</p>
+
+          @if (classViews.length > 1) {
+            <div class="gh-tabs gh-tabs-secondary bl-tabs" role="tablist" aria-label="Comparability classes">
+              @for (view of classViews; track view.cls.comparabilityClassSha256; let i = $index) {
+                <button type="button" role="tab" class="gh-tab bl-tab" [id]="'bl-tab-' + i"
+                        aria-controls="bl-panel"
+                        [attr.aria-selected]="i === selectedIndex"
+                        [attr.tabindex]="i === selectedIndex ? 0 : -1"
+                        (keydown)="onTabKeydown($event, i)"
+                        (click)="selectClass(i)">
+                  <span class="bl-tab-name">{{ view.name }}</span>
+                  <span class="bl-tab-count" aria-hidden="true">{{ view.rows.length }}</span>
+                  <span class="visually-hidden">, {{ view.rows.length }} ranked</span>
+                </button>
+              }
+            </div>
+          }
+
+          @if (selectedClass; as view) {
+            <div class="bl-panel" id="bl-panel"
+                 [attr.role]="classViews.length > 1 ? 'tabpanel' : null"
+                 [attr.aria-labelledby]="classViews.length > 1 ? 'bl-tab-' + selectedIndex : null"
+                 [attr.tabindex]="classViews.length > 1 ? 0 : null">
+              <p class="bl-class-meta">
+                <span>Harness {{ view.cls.harnessVersion || '—' }}</span>
+                <span aria-hidden="true"> · </span>
+                <span>scoring method {{ view.cls.scoringMethodVersion }}</span>
+                <span aria-hidden="true"> · </span>
+                <span>class <code class="bl-class-hash">{{ view.cls.comparabilityClassSha256.slice(0, 8) }}</code></span>
+              </p>
+              @if (view.cls.distinguishingKeys.length > 0) {
+                <p class="bl-differs">
+                  <span class="bl-differs-label">Differs from other classes on</span>
+                  @for (key of view.cls.distinguishingKeys; track key) {
+                    <span class="gh-tag bl-differs-tag">{{ key }}</span>
+                  }
+                </p>
+              }
+              @if (comparisonDroppedCount > 0) {
+                <p class="bl-cap-note" id="bl-comparison-cap-note">
+                  Model Comparison takes at most {{ maxComparisonSources }} results: Open in Model Comparison leaves out
+                  the {{ comparisonDroppedCount === 1 ? 'newest' : comparisonDroppedCount + ' newest' }}.
+                </p>
+              }
+
+              <div class="gh-datatable-scroll bl-table-scroll">
+                <table class="gh-table gh-datatable bl-table">
+                  <caption class="visually-hidden">Ranked battery results of {{ view.name }}: {{ view.cls.label }}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col" class="bl-num bl-rank-col">Rank</th>
+                      <th app-sort-header [state]="table" column="model" label="Model" (changed)="onTableChanged()"></th>
+                      <th app-sort-header class="bl-num" [state]="table" column="overallIndex" label="Overall Index" (changed)="onTableChanged()"></th>
+                      <th scope="col" class="bl-interval-col">95 % interval</th>
+                      <th app-sort-header class="bl-num" [state]="table" column="speed" label="Speed" (changed)="onTableChanged()"></th>
+                      <th app-sort-header class="bl-num" [state]="table" column="passCost" label="Pass cost" (changed)="onTableChanged()"></th>
+                      <th scope="col" class="bl-num">R</th>
+                      <th app-sort-header [state]="table" column="analyzed" label="Analyzed" (changed)="onTableChanged()"></th>
+                      <th scope="col"><span class="visually-hidden">Actions</span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (r of sortedRows; track r.row.batteryRunId) {
+                      <tr [attr.data-battery-run]="r.row.batteryRunId">
+                        <td class="bl-num bl-rank">
+                          {{ r.rank }}
+                          @if (r.overlapsAbove) {
+                            <span class="bl-overlap"><span aria-hidden="true">≈</span><span class="visually-hidden">interval overlaps the result above</span></span>
+                          }
+                        </td>
+                        <th scope="row" class="bl-model">
+                          <span class="bl-model-name">{{ r.row.testedModelLabel || r.row.testedModelId || '—' }}</span>
+                          @for (badge of r.badges; track badge.kind) {
+                            @switch (badge.kind) {
+                              @case ('provider') {
+                                <app-provider-badge [provider]="badge.provider" />
+                              }
+                              @case ('thinking') {
+                                <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                              }
+                              @case ('reasoning') {
+                                <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                              }
+                              @default {
+                                <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                              }
+                            }
+                          }
+                        </th>
+                        <td class="bl-num bl-index">{{ formatIndexWithHalfWidth(r.row.overallIndex, r.row.overallIndexHalfWidth) }}</td>
+                        <td class="bl-interval">
+                          <span class="bl-interval-text">{{ formatInterval(r.row.overallIndexLower, r.row.overallIndexUpper) }}</span>
+                          @if (r.strip; as g) {
+                            <span class="bl-strip" [class.is-top]="r.rank === 1" aria-hidden="true">
+                              <span class="bl-strip-bar" [style.inset-inline-start.%]="g.startPct"
+                                    [style.inline-size.%]="g.endPct - g.startPct"></span>
+                              <span class="bl-strip-dot" [style.inset-inline-start.%]="g.pointPct"></span>
+                              @if (g.truncatedLow) {
+                                <svg class="bl-strip-chevron bl-strip-chevron-low" [style.inset-inline-start.%]="g.startPct"
+                                     xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                              }
+                              @if (g.truncatedHigh) {
+                                <svg class="bl-strip-chevron bl-strip-chevron-high" [style.inset-inline-start.%]="g.endPct"
+                                     xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                              }
+                            </span>
+                          }
+                        </td>
+                        <td class="bl-num bl-speed">{{ formatNumber(r.row.overallSpeedIndex) }}</td>
+                        <td class="bl-num bl-cost">{{ formatCost(r.row.passCost) }}</td>
+                        <td class="bl-num bl-r">{{ r.row.runsPerSuite }}</td>
+                        <td class="bl-analyzed">
+                          @if (r.analyzedIso) {
+                            <time [attr.datetime]="r.analyzedIso">{{ r.analyzedText }}</time>
+                          } @else {
+                            —
+                          }
+                        </td>
+                        <td class="bl-actions-cell">
+                          <button type="button" class="action-btn bl-view" [id]="'bl-view-' + r.row.batteryRunId"
+                                  [attr.aria-label]="'View the report of battery run #' + r.row.batteryRunId"
+                                  [attr.interestfor]="'bl-view-tip-' + r.row.batteryRunId"
+                                  [attr.style]="'anchor-name: --bl-view-tip-' + r.row.batteryRunId"
+                                  (click)="viewReport(r.row.batteryRunId)">
+                            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                          </button>
+                          <div popover="hint" class="gh-tooltip" [id]="'bl-view-tip-' + r.row.batteryRunId"
+                               [attr.style]="'position-anchor: --bl-view-tip-' + r.row.batteryRunId">View battery run report</div>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          }
+        }
+
+        @if (leaderboard.incomplete.length > 0) {
+          <details class="gh-disclosure bl-incomplete">
+            <summary>Incomplete battery runs ({{ leaderboard.incomplete.length }}) — not ranked</summary>
+            <div class="gh-disclosure-body">
+              <div class="gh-datatable-scroll">
+                <table class="gh-table bl-incomplete-table">
+                  <caption class="visually-hidden">Battery runs whose latest analysis is incomplete, newest first, not ranked</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Model</th>
+                      <th scope="col" class="bl-num">Suites</th>
+                      <th scope="col">Status</th>
+                      <th scope="col">Battery run</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of leaderboard.incomplete; track row.batteryRunId) {
+                      <tr>
+                        <th scope="row">{{ row.testedModelLabel || row.testedModelId || '—' }}</th>
+                        <td class="bl-num">{{ row.completedSuiteCount }}<span class="visually-hidden"> of </span><span aria-hidden="true">/</span>{{ row.suiteCount }}</td>
+                        <td>{{ statusLabel(row.status) }}</td>
+                        <td>#{{ row.batteryRunId }} · rev. {{ row.definitionRevision }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+        }
+      }
+    </div>
+  </div>
+</dialog>

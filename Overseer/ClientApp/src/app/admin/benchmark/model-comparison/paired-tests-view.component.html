@@ -1,0 +1,318 @@
+<!-- The verdict's shape: a filled dot for an established difference, a ring otherwise, a dash when
+     not tested. Decorative: the verdict word beside it carries the meaning. -->
+<ng-template #verdictMark let-shape>
+  <svg [class]="'mcp-shape mcp-shape--' + shape" width="10" height="10" viewBox="0 0 10 10"
+       aria-hidden="true" focusable="false">
+    @if (shape === 'untested') {
+      <line x1="1.5" y1="5" x2="8.5" y2="5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"></line>
+    } @else {
+      <circle cx="5" cy="5" r="3.75" stroke="currentColor" stroke-width="1.5"
+              [attr.fill]="shape === 'established' ? 'currentColor' : 'none'"></circle>
+    }
+  </svg>
+</ng-template>
+
+<!-- A model's name with the badges the Models table shows. -->
+<ng-template #entryName let-entry>
+  <span class="mcp-model-name">{{ entry.name }}</span>
+  @if (entry.thinkingLevel) {
+    <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
+  }
+  @if (showReasoningBadge(entry.reasoningMode)) {
+    <span class="reasoning-badge">{{ entry.reasoningMode }}</span>
+  }
+</ng-template>
+
+<div class="mcp">
+  @if (comparableCount < 2) {
+    <p class="mcp-needs-two">{{ needsTwoText }}</p>
+  } @else {
+    <div class="mcp-toolbar">
+      <!-- Which pairs are tested swaps the body in place, so the two modes are tabs; segmented, so they
+           do not read as a third row at the level of the view tabs. Hidden with two entries, which
+           make one test either way. -->
+      @if (showMode) {
+        <div class="gh-tabs gh-tabs-segmented mcp-mode" role="tablist" aria-label="Pairs to test">
+          <button type="button" role="tab" class="gh-tab" id="mc-paired-mode-Reference"
+                  aria-controls="mc-paired-body"
+                  [attr.aria-selected]="effectiveMode === 'Reference'"
+                  [attr.tabindex]="effectiveMode === 'Reference' ? 0 : -1"
+                  (keydown)="onModeKeydown($event, 0)"
+                  (click)="selectMode('Reference')">Against a reference</button>
+          <!-- aria-disabled, never disabled, so the tab stays focusable and says why. -->
+          <button type="button" role="tab" class="gh-tab" id="mc-paired-mode-AllPairs"
+                  aria-controls="mc-paired-body"
+                  [attr.aria-selected]="effectiveMode === 'AllPairs'"
+                  [attr.aria-disabled]="allPairsUnavailable ? 'true' : null"
+                  [attr.aria-describedby]="allPairsUnavailable ? 'mc-paired-allpairs-reason' : null"
+                  [attr.tabindex]="effectiveMode === 'AllPairs' ? 0 : -1"
+                  (keydown)="onModeKeydown($event, 1)"
+                  (click)="selectMode('AllPairs')">All pairs</button>
+        </div>
+      }
+
+      @if (effectiveMode === 'Reference') {
+        <div class="mcp-reference">
+          <label for="mc-paired-reference">Reference</label>
+          <select id="mc-paired-reference" class="gh-input" (change)="onReferenceChange($event)">
+            @if (referenceValue === '') {
+              <option value="" selected>Highest Intelligence Index</option>
+            }
+            @for (entry of comparableEntries; track entry.key) {
+              <option [value]="entry.key" [selected]="entry.key === referenceValue">{{ entry.label }}</option>
+            }
+          </select>
+        </div>
+      }
+
+      <!-- Icon-only: aria-disabled, not disabled, so each stays focusable with its tooltip; the handlers refuse on their own. -->
+      <button type="button" class="action-btn mcp-recompute" aria-label="Recompute the paired tests"
+              [attr.aria-disabled]="loading ? 'true' : null"
+              interestfor="mc-paired-tip-recompute" style="anchor-name: --mc-paired-tip-recompute"
+              (click)="recompute()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+      </button>
+
+      <div class="mcp-export" role="group" aria-label="Export the paired tests">
+        <button type="button" class="action-btn mcp-copy" aria-label="Copy the paired tests as Markdown"
+                [attr.aria-disabled]="canExport ? null : 'true'"
+                interestfor="mc-paired-tip-copy" style="anchor-name: --mc-paired-tip-copy"
+                (click)="copyMarkdown()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+        <button type="button" class="action-btn mcp-download" [attr.aria-label]="downloadName"
+                [attr.aria-disabled]="canExport ? null : 'true'"
+                interestfor="mc-paired-tip-download" style="anchor-name: --mc-paired-tip-download"
+                (click)="download()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="12" y1="18" x2="12" y2="12"></line>
+            <polyline points="9 15 12 18 15 15"></polyline>
+          </svg>
+        </button>
+      </div>
+      <div popover="hint" class="gh-tooltip" id="mc-paired-tip-recompute"
+           style="position-anchor: --mc-paired-tip-recompute">Recompute the paired tests</div>
+      <div popover="hint" class="gh-tooltip" id="mc-paired-tip-copy"
+           style="position-anchor: --mc-paired-tip-copy">{{ canExport ? 'Copy as Markdown' : 'Nothing to copy yet' }}</div>
+      <div popover="hint" class="gh-tooltip" id="mc-paired-tip-download"
+           style="position-anchor: --mc-paired-tip-download">{{ canExport ? downloadName : 'Nothing to download yet' }}</div>
+    </div>
+
+    @if (showMode && allPairsUnavailable) {
+      <p id="mc-paired-allpairs-reason" class="mcp-hint">{{ allPairsUnavailableReason }}</p>
+    }
+
+    <!-- The view's one live region: the request in flight, then the last export's outcome. -->
+    <p class="mcp-status" role="status">{{ statusText }}</p>
+
+    @if (error) {
+      <p class="gh-field-error mcp-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="8" x2="12" y2="12"></line>
+          <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        </svg>
+        {{ error }}
+      </p>
+    }
+
+    <div id="mc-paired-body" class="mcp-body"
+         [attr.role]="showMode ? 'tabpanel' : null"
+         [attr.aria-labelledby]="showMode ? 'mc-paired-mode-' + effectiveMode : null"
+         [attr.tabindex]="showMode ? 0 : null"
+         [attr.aria-busy]="loading ? 'true' : null">
+      @if (result; as r) {
+        <p class="mcp-family">{{ familyLine }}</p>
+        @if (r.singleRunCaveat) {
+          <p class="mcp-caveat" role="note">{{ r.singleRunCaveat }}</p>
+        }
+        <p class="mcp-measures-note">{{ r.measuresNote }}</p>
+
+        <div class="mcp-sections">
+          @for (section of sections; track section.id) {
+            @if (measureViewsBySection[section.id].length > 0) {
+              <details class="gh-disclosure mcp-section" [id]="'mc-paired-section-' + section.id"
+                       [open]="sectionOpen[section.id]" (toggle)="onSectionToggle(section.id, $event)">
+                <summary>
+                  {{ section.title }}
+                  @if (section.id === 'intelligence') {
+                    <span class="mcp-primary-tag">primary test</span>
+                  }
+                </summary>
+                <div class="gh-disclosure-body">
+                  @for (view of measureViewsBySection[section.id]; track view.id) {
+                    <section class="mcp-measure" [id]="view.id" [attr.aria-labelledby]="view.id + '-title'">
+                      <h5 class="mcp-measure-title" [id]="view.id + '-title'">{{ view.title }}</h5>
+                      <p class="mcp-adjustment">{{ view.measure.adjustmentNote }}</p>
+                      @if (view.measure.caption) {
+                        <p class="mcp-note">{{ view.measure.caption }}</p>
+                      }
+                      @if (view.measure.notTestedReason) {
+                        <p class="mcp-not-tested">Not tested: {{ view.measure.notTestedReason }}</p>
+                      }
+
+                      @if (view.rows.length > 0) {
+                        @if (view.matrix; as m) {
+                          <!-- Row model against column model. Each cell is a button that opens the
+                               pair's full row below; the list after the matrix says the same in rows. -->
+                          <div class="gh-datatable-scroll mcp-table-scroll">
+                            <table class="gh-table mc-paired-matrix">
+                              <caption class="visually-hidden">{{ view.title }}: each row model against each column model, with the difference and the adjusted p</caption>
+                              <thead>
+                                <tr>
+                                  <td class="mc-paired-matrix-corner"></td>
+                                  @for (column of m.columns; track column.key) {
+                                    <th scope="col">{{ column.name }}</th>
+                                  }
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (rowEntry of m.rows; track rowEntry.key; let r = $index) {
+                                  <tr>
+                                    <th scope="row">
+                                      <ng-container *ngTemplateOutlet="entryName; context: { $implicit: rowEntry }"></ng-container>
+                                    </th>
+                                    @for (cell of m.cells[r]; track $index) {
+                                      @if (cell) {
+                                        <td class="mc-paired-cell" [class.is-selected]="isSelected(cell)">
+                                          <button type="button" [class]="'mc-paired-cell-btn mcp-verdict--' + cell.shape"
+                                                  [attr.aria-label]="cellName(view, cell)"
+                                                  [attr.aria-expanded]="isSelected(cell)"
+                                                  (click)="openDetails(cell)">
+                                            <ng-container *ngTemplateOutlet="verdictMark; context: { $implicit: cell.shape }"></ng-container>
+                                            @if (cell.notTested) {
+                                              <span class="mc-paired-cell-effect">Not tested</span>
+                                            } @else {
+                                              <span class="mc-paired-cell-effect">{{ cell.effect }}</span>
+                                              <span class="mc-paired-cell-p">p {{ cell.adjustedP }}</span>
+                                            }
+                                          </button>
+                                        </td>
+                                      } @else {
+                                        <td class="mc-paired-cell-empty"></td>
+                                      }
+                                    }
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                          <details class="gh-disclosure mcp-pair-list">
+                            <summary>Every pair as a list</summary>
+                            <div class="gh-disclosure-body">
+                              <ul>
+                                @for (row of view.rows; track row.id) {
+                                  <li>
+                                    {{ row.treatment.name }} against {{ row.baseline.name }}:
+                                    @if (row.notTested) {
+                                      not tested — {{ row.notTested }}
+                                    } @else {
+                                      {{ row.effect }}@if (row.interval) { ({{ row.interval }})}, {{ row.pairedItems }} paired questions,
+                                      p {{ row.p }}, adjusted p {{ row.adjustedP }}, {{ row.verdict }}.
+                                    }
+                                  </li>
+                                }
+                              </ul>
+                            </div>
+                          </details>
+                        } @else {
+                          <div class="gh-datatable-scroll mcp-table-scroll">
+                            <table class="gh-table gh-datatable mcp-table">
+                              <caption class="visually-hidden">{{ view.title }}: each model against the reference</caption>
+                              <thead>
+                                <tr>
+                                  <th scope="col">Model</th>
+                                  <th scope="col">Against</th>
+                                  <th scope="col" class="mcp-num">Paired questions</th>
+                                  <th scope="col">{{ view.effectHeader }}</th>
+                                  <th scope="col" class="mcp-forest-head" aria-hidden="true"></th>
+                                  <th scope="col" class="mcp-num">dz</th>
+                                  <th scope="col" class="mcp-num">p</th>
+                                  <th scope="col" class="mcp-num">Adjusted p</th>
+                                  <th scope="col">Verdict</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                @for (row of view.rows; track row.id) {
+                                  <tr [class.is-selected]="isSelected(row)">
+                                    <th scope="row" class="mcp-model">
+                                      <button type="button" class="mcp-model-btn"
+                                              [attr.aria-expanded]="isSelected(row)"
+                                              (click)="openDetails(row)">
+                                        <ng-container *ngTemplateOutlet="entryName; context: { $implicit: row.treatment }"></ng-container>
+                                        <span class="visually-hidden">: details against {{ row.baseline.name }}</span>
+                                      </button>
+                                    </th>
+                                    <td>{{ row.baseline.name }}</td>
+                                    @if (row.notTested) {
+                                      <td colspan="6" class="mcp-not-tested">Not tested: {{ row.notTested }}</td>
+                                    } @else {
+                                      <td class="mcp-num">{{ row.pairedItems }}</td>
+                                      <td class="mcp-effect">
+                                        {{ row.effect }}
+                                        @if (row.interval) {
+                                          <span class="mcp-interval">({{ row.interval }})</span>
+                                        }
+                                      </td>
+                                      <td class="mcp-forest" aria-hidden="true">
+                                        <svg class="mcp-forest-svg" viewBox="0 0 100 12" preserveAspectRatio="none" focusable="false">
+                                          <line class="mcp-forest-zero" [attr.x1]="view.zero" y1="0" [attr.x2]="view.zero" y2="12"
+                                                vector-effect="non-scaling-stroke"></line>
+                                          @if (row.marks.lower !== null && row.marks.upper !== null) {
+                                            <line class="mcp-forest-interval" [attr.x1]="row.marks.lower" y1="6" [attr.x2]="row.marks.upper" y2="6"
+                                                  vector-effect="non-scaling-stroke"></line>
+                                          }
+                                          @if (row.marks.point !== null) {
+                                            <line class="mcp-forest-point" [attr.x1]="row.marks.point" y1="2" [attr.x2]="row.marks.point" y2="10"
+                                                  vector-effect="non-scaling-stroke"></line>
+                                          }
+                                        </svg>
+                                      </td>
+                                      <td class="mcp-num">{{ row.dz }}</td>
+                                      <td class="mcp-num">{{ row.p }}</td>
+                                      <td class="mcp-num mcp-adjusted-p">{{ row.adjustedP }}</td>
+                                    }
+                                    <td [class]="'mcp-verdict-cell mcp-verdict--' + row.shape">
+                                      <ng-container *ngTemplateOutlet="verdictMark; context: { $implicit: row.shape }"></ng-container>
+                                      <span class="mcp-verdict">{{ row.verdict }}</span>
+                                    </td>
+                                  </tr>
+                                }
+                              </tbody>
+                            </table>
+                          </div>
+                        }
+                      }
+                    </section>
+                  }
+                </div>
+              </details>
+            }
+          }
+        </div>
+
+        @if (selected; as sel) {
+          <section id="mc-paired-detail" class="mcp-detail" aria-labelledby="mc-paired-detail-title">
+            <div class="mcp-detail-head">
+              <h5 id="mc-paired-detail-title" class="mcp-detail-title" tabindex="-1">{{ selectedTreatmentLabel }} against {{ selectedBaselineLabel }}</h5>
+              <button type="button" class="gh-filter-clear" (click)="closeDetails()">Close details</button>
+            </div>
+            <app-paired-test-result [measures]="r.measures" [baselineKey]="sel.baselineKey" [treatmentKey]="sel.treatmentKey"
+                                    [baselineLabel]="selectedBaselineLabel" [treatmentLabel]="selectedTreatmentLabel"
+                                    [showAdjustment]="true" [showKind]="false"
+                                    idPrefix="mc-paired-detail-result"></app-paired-test-result>
+          </section>
+        }
+      }
+    </div>
+  }
+</div>

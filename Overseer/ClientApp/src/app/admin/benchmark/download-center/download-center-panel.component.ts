@@ -13,7 +13,7 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, Subscription, firstValueFrom, forkJoin, of, timer } from 'rxjs';
 import { catchError, map, switchMap } from 'rxjs/operators';
 
@@ -27,6 +27,8 @@ import {
   BenchmarkReportPeerNaming,
   BenchmarkRunReportJobDto,
   BenchmarkRunReportJobPhase,
+  BenchmarkTextFile,
+  fileNameFromContentDisposition,
   reportDisclosureParam,
   reportPeerNamingParam
 } from '../../../services/admin-benchmark.service';
@@ -115,7 +117,23 @@ export interface DownloadCenterLibraryContext {
   subtitle?: string;
 }
 
-export type DownloadCenterContext = DownloadCenterRunContext | DownloadCenterDocumentsContext | DownloadCenterLibraryContext;
+/**
+ * Opened from a battery run report: the battery's analysis report and every document whose subject
+ * is the battery run (`battery:<id>`), battery-completion and Report Pack alike. No member run's
+ * files are listed.
+ */
+export interface DownloadCenterBatteryContext {
+  kind: 'battery';
+  batteryRunId: number;
+  /** What the subtitle names the battery run by: its battery and model. */
+  label: string;
+}
+
+export type DownloadCenterContext =
+  | DownloadCenterRunContext
+  | DownloadCenterDocumentsContext
+  | DownloadCenterLibraryContext
+  | DownloadCenterBatteryContext;
 
 /**
  * What the host lends the panel so it can chart the documents of the comparison open beside it: the
@@ -144,16 +162,17 @@ export interface DownloadCenterChartActions {
 
 export type DownloadPackageId = 'internal' | 'provider' | 'custom';
 export type DownloadFormat = 'pdf' | 'docx' | 'md' | 'html' | 'txt';
-export type DownloadRowKind = 'pack' | 'runReport' | 'toolCallLog' | 'diagnostics';
+export type DownloadRowKind = 'pack' | 'runReport' | 'toolCallLog' | 'diagnostics' | 'batteryReport';
 
-/** What a remembered choice is keyed by: a pack document's audience, or a run file's kind. */
+/** What a remembered choice is keyed by: a pack document's audience, or a run or battery file's kind. */
 export type DownloadRowCategory =
   | 'executiveSummary'
   | 'technicalReport'
   | 'internalBrief'
   | 'runReport'
   | 'toolCallLog'
-  | 'diagnostics';
+  | 'diagnostics'
+  | 'batteryReport';
 
 /** One available document: a card of the Documents list. */
 export interface DownloadRow {
@@ -166,6 +185,8 @@ export interface DownloadRow {
   /** An explanation shown behind the row's info button, or null. */
   note: string | null;
   runId: number | null;
+  /** The battery run of a battery file; absent on every other row. */
+  batteryRunId?: number | null;
   doc: BenchmarkReportDocumentListItemDto | null;
   /** A subject run was re-scored, re-run or deleted since the document was written. */
   runChanged: boolean;
@@ -294,7 +315,8 @@ export const INTERNAL_REASONS = {
   fullDisclosure: 'Internal only at Full: contains rubric text',
   runReport: 'Internal only: contains questions, rubrics and answers',
   toolCallLog: 'Internal only: contains every tool call’s arguments and results',
-  diagnostics: 'Internal only: contains the run’s configuration and internal log'
+  diagnostics: 'Internal only: contains the run’s configuration and internal log',
+  batteryReport: 'Internal only: contains the battery’s full analysis and its member runs'
 } as const;
 
 /** Why a chosen document gets no charts, word for word as the panel lists it. */
@@ -330,7 +352,7 @@ export const PDF_PAPERS: readonly { id: BenchmarkPdfPaper; label: string }[] = [
 
 const ALL_DISCLOSURES = [BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full];
 
-/** The interval of the run's report writing job poll while its reports are being written. */
+/** The interval of the run's or battery run's report writing job poll while its reports are being written. */
 export const DOWNLOAD_CENTER_REPORT_JOB_POLL_MS = 5000;
 
 /** A report writing job phase inside the notice's parentheses. */
@@ -348,7 +370,8 @@ const DOCUMENT_TYPE_ORDER: readonly string[] = [
   ...REPORT_PACK_AUDIENCES.map(option => option.label),
   'Run report',
   'Tool-call log',
-  'Run diagnostics'
+  'Run diagnostics',
+  'Battery analysis report'
 ];
 
 /** How many cards the list shows at first, and how many more each Show more adds. */
@@ -452,8 +475,9 @@ let nextInstanceId = 0;
  *
  * It makes no request but the document list or detail that fills the list, the render endpoints
  * (Markdown, PDF and Word), the run report and tool-call log endpoints with their PDFs and Word
- * documents, the diagnostics PDF and Word endpoints, which render the captured text and store
- * nothing, a document's delete and its charts' delete: nothing here can start generation. Chart
+ * documents, the battery analysis report, the run and battery report writing jobs, the diagnostics
+ * PDF and Word endpoints, which render the captured text and store nothing, a document's delete and
+ * its charts' delete: nothing here can start generation. Chart
  * uploads go through the host's `chartActions.publish`.
  *
  * Its nested dialogs stop their own close and cancel events, so a dialog around the panel never
@@ -469,6 +493,8 @@ let nextInstanceId = 0;
 })
 export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestroy {
   private readonly benchmarkService = inject(AdminBenchmarkService);
+  /** Fetches the battery analysis report's Markdown, which the benchmark service has no text method for. */
+  private readonly http = inject(HttpClient, { optional: true });
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -720,6 +746,11 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         this.loadRunDocuments(context.run.id, this.generation);
         this.pollRunReportJob(context.run.id, this.generation, 0);
         break;
+      case 'battery':
+        this.addRows([batteryReportRow(context)]);
+        this.loadBatteryDocuments(context.batteryRunId, this.generation);
+        this.pollBatteryReportJob(context.batteryRunId, this.generation, 0);
+        break;
       case 'documents':
         this.loadChosenDocuments(context.documentIds, this.generation);
         break;
@@ -749,12 +780,13 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     this.cdr.markForCheck();
   }
 
-  /** The notice above the list while the run's AI-written reports are being written, or null. */
+  /** The notice above the list while the run's or battery run's AI-written reports are being written, or null. */
   get reportJobNotice(): string | null {
     const phase = this.reportJobPhase;
+    const subject = this.loaded?.kind === 'battery' ? 'this battery run' : 'this run';
     return phase === null
       ? null
-      : `The AI-written reports of this run are being written (${reportJobPhaseText(phase)}). They appear here when they are done.`;
+      : `The AI-written reports of ${subject} are being written (${reportJobPhaseText(phase)}). They appear here when they are done.`;
   }
 
   // -------------------------------------------------------------------------------------------
@@ -1842,14 +1874,61 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     });
   }
 
+  /** Every document about the battery run itself, newest first; no member run's files. */
+  private loadBatteryDocuments(batteryRunId: number, generation: number): void {
+    this.loadingDocuments = true;
+    this.listSub = this.benchmarkService.listReportDocuments({ subject: `battery:${batteryRunId}` }).subscribe({
+      next: documents => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.addRows(sortDocuments(documents ?? []).map(packRow));
+        this.loadingDocuments = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.notices = [...this.notices,
+          'The report documents of this battery run could not be loaded; the analysis report is still listed.'];
+        this.loadingDocuments = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /** The run's report writing job, polled as {@link pollReportJob} describes; its documents are reloaded when it finishes. */
+  private pollRunReportJob(runId: number, generation: number, delayMs: number): void {
+    this.pollReportJob(
+      () => this.benchmarkService.getRunReportJob(runId),
+      () => this.loadRunDocuments(runId, generation),
+      generation,
+      delayMs);
+  }
+
+  /** The battery run's report writing job, polled as {@link pollReportJob} describes. */
+  private pollBatteryReportJob(batteryRunId: number, generation: number, delayMs: number): void {
+    this.pollReportJob(
+      () => this.benchmarkService.getBatteryReportJob(batteryRunId),
+      () => this.loadBatteryDocuments(batteryRunId, generation),
+      generation,
+      delayMs);
+  }
+
   /**
-   * Asks for the run's report writing job after `delayMs`. While it is not finished the notice shows
-   * its phase and the job is asked again every 5 s; once it finishes the run's documents are reloaded
+   * Asks for a report writing job after `delayMs`. While it is not finished the notice shows its
+   * phase and the job is asked again every 5 s; once it finishes `reload` lists the documents again
    * and the notice goes. No job (204) or a failed first request shows nothing.
    */
-  private pollRunReportJob(runId: number, generation: number, delayMs: number): void {
+  private pollReportJob(
+    job: () => Observable<BenchmarkRunReportJobDto | null>,
+    reload: () => void,
+    generation: number,
+    delayMs: number
+  ): void {
     this.stopReportJobPoll();
-    const request$: Observable<ReportJobPoll> = this.benchmarkService.getRunReportJob(runId).pipe(
+    const request$: Observable<ReportJobPoll> = job().pipe(
       map((view): ReportJobPoll => ({ ok: true, view })),
       catchError(() => of<ReportJobPoll>({ ok: false }))
     );
@@ -1858,17 +1937,22 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         if (generation !== this.generation) {
           return;
         }
-        this.onRunReportJob(result, runId, generation);
+        this.onReportJob(result, job, reload, generation);
         this.cdr.markForCheck();
       });
   }
 
-  private onRunReportJob(result: ReportJobPoll, runId: number, generation: number): void {
+  private onReportJob(
+    result: ReportJobPoll,
+    job: () => Observable<BenchmarkRunReportJobDto | null>,
+    reload: () => void,
+    generation: number
+  ): void {
     const waiting = this.reportJobPhase !== null;
     if (!result.ok) {
       // A failed tick while waiting is skipped; a failed first request shows nothing.
       if (waiting) {
-        this.pollRunReportJob(runId, generation, DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
+        this.pollReportJob(job, reload, generation, DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
       }
       return;
     }
@@ -1876,12 +1960,12 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     if (view === null || view.phase === 'Finished') {
       this.reportJobPhase = null;
       if (waiting) {
-        this.loadRunDocuments(runId, generation);
+        reload();
       }
       return;
     }
     this.reportJobPhase = view.phase;
-    this.pollRunReportJob(runId, generation, DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
+    this.pollReportJob(job, reload, generation, DOWNLOAD_CENTER_REPORT_JOB_POLL_MS);
   }
 
   private stopReportJobPoll(): void {
@@ -2114,7 +2198,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   ): Promise<SourceText> {
     const key = row.kind === 'pack'
       ? `render:${row.doc!.id}:${state.disclosure}:${state.naming}`
-      : `${row.kind}:${row.runId}`;
+      : row.kind === 'batteryReport' ? `${row.kind}:${row.batteryRunId}` : `${row.kind}:${row.runId}`;
     let pending = cache.get(key);
     if (!pending) {
       pending = this.fetchText(row, state, context);
@@ -2144,7 +2228,22 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
           throw new Error('Diagnostics exist only for a run.');
         }
         return { text: context.diagnosticsText(), fileName: null, capturedAt: downloadCenterIo.now() };
+      case 'batteryReport':
+        return { ...await firstValueFrom(this.batteryReportText(row.batteryRunId!)), capturedAt: null };
     }
+  }
+
+  /** The battery run's analysis report as Markdown, named as the server's `Content-Disposition` names it. */
+  private batteryReportText(batteryRunId: number): Observable<BenchmarkTextFile> {
+    if (!this.http) {
+      throw new Error('The battery analysis report cannot be fetched here.');
+    }
+    return this.http.get(this.benchmarkService.getBatteryReportUrl(batteryRunId), { observe: 'response', responseType: 'text' }).pipe(
+      map(response => ({
+        text: response.body ?? '',
+        fileName: fileNameFromContentDisposition(response.headers.get('Content-Disposition'), batteryReportFallbackName(batteryRunId))
+      }))
+    );
   }
 
   /**
@@ -2185,6 +2284,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
           : service.renderDiagnosticsPdf(row.runId!, captured.text, isoSeconds(capturedAt), paper);
         return { ...await firstValueFrom(file), capturedAt };
       }
+      case 'batteryReport':
+        throw new Error('The battery analysis report is Markdown only.');
     }
   }
 
@@ -2220,6 +2321,10 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
         ? internalServerName(source.fileName, format)
         : `${safeFileName(run.suiteName)}_${safeFileName(run.modelLabel)}_run${run.id}_diagnostics_INTERNAL.${format}`;
       mtime = source.capturedAt ?? packagedAt;
+      createdAtUtc = isoSeconds(mtime);
+    } else if (row.kind === 'batteryReport') {
+      name = internalServerName(source.fileName ?? batteryReportFallbackName(row.batteryRunId ?? 0), format);
+      mtime = runFileTime(row, context, source.fileName) ?? packagedAt;
       createdAtUtc = isoSeconds(mtime);
     } else {
       const fallback = row.kind === 'runReport' ? `benchmark_run${row.runId}_report.md` : `benchmark_run${row.runId}_tool_calls.md`;
@@ -2259,7 +2364,9 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
   private zipFileName(context: DownloadCenterContext, packagedAt: Date): string {
     const model = context.kind === 'run'
       ? context.run.modelLabel
-      : (this.rows.find(row => row.doc)?.doc?.subjectLabel ?? 'reports');
+      : context.kind === 'battery'
+        ? (context.label || `battery-run-${context.batteryRunId}`)
+        : (this.rows.find(row => row.doc)?.doc?.subjectLabel ?? 'reports');
     return `${safeFileName(model)}_${safeFileName(this.currentPackage.fullName)}_${exportTimestamp(packagedAt)}.zip`;
   }
 }
@@ -2271,7 +2378,8 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
 const RUN_FILE_DESCRIPTIONS: Record<Exclude<DownloadRowKind, 'pack'>, string> = {
   runReport: 'Run report',
   toolCallLog: 'Tool-call log',
-  diagnostics: 'Run diagnostics (captured when the download was prepared)'
+  diagnostics: 'Run diagnostics (captured when the download was prepared)',
+  batteryReport: 'Battery analysis report'
 };
 
 export const ROW_NOTES = {
@@ -2308,6 +2416,35 @@ function runFileRows(run: DownloadCenterRunInfo): DownloadRow[] {
       formats: ['pdf', 'docx', 'txt'], internalReason: INTERNAL_REASONS.diagnostics
     }
   ];
+}
+
+/** The battery analysis report's name when the server gives none. */
+function batteryReportFallbackName(batteryRunId: number): string {
+  return `battery-run-${batteryRunId}_report.md`;
+}
+
+/** The battery run's deterministic analysis report: Markdown, from the battery report endpoint. */
+function batteryReportRow(context: DownloadCenterBatteryContext): DownloadRow {
+  const id = context.batteryRunId;
+  return {
+    key: `battery-report:${id}`,
+    kind: 'batteryReport',
+    category: 'batteryReport',
+    label: `Battery analysis report, battery run #${id}`,
+    detail: context.label,
+    note: null,
+    runId: null,
+    batteryRunId: id,
+    doc: null,
+    runChanged: false,
+    allowedDisclosures: [],
+    formats: ['md'],
+    internalReason: INTERNAL_REASONS.batteryReport,
+    subject: context.label,
+    suite: '',
+    documentType: 'Battery analysis report',
+    createdAtUtc: null
+  };
 }
 
 function subjectRunReportRow(runId: number, subjectLabel: string, suiteName: string): DownloadRow {
@@ -2440,18 +2577,24 @@ const RESEARCHER_REPORT_TITLE_SUFFIX = /\s+[—–-]\s+(?:Report for AI Research
 /** A single run's subject key, `run:<digits>`, as the server's `BenchmarkPdfFileNames` matches it. */
 const RUN_SUBJECT_KEY = /^run:([0-9]+)$/;
 
+/** A battery run's subject key, `battery:<digits>`. */
+const BATTERY_SUBJECT_KEY = /^battery:([0-9]+)$/;
+
 /**
  * A report document's file-name stem. A Report for AI Researchers and Developers is named by its
  * title without the audience suffix, then `_Researcher_Report`; every other document by its title.
- * A document about one run (subject `run:<digits>`) is prefixed `run-<digits>_`, and a document
- * compared with peers `vs-<peer count>-models_` after that (first, for a group subject), as the
- * server's `BenchmarkPdfFileNames.ForReportDocument` names its PDF and Word files.
+ * A document about one run (subject `run:<digits>`) is prefixed `run-<digits>_`, one about a battery
+ * run (`battery:<digits>`) `battery-run-<digits>_`, and a document compared with peers
+ * `vs-<peer count>-models_` after that (first, for a group subject), as the server's
+ * `BenchmarkPdfFileNames.ForReportDocument` names its PDF and Word files.
  */
 export function reportDocumentFileStem(doc: BenchmarkReportDocumentListItemDto, fallbackTitle: string): string {
   const title = doc.title || fallbackTitle;
   const run = RUN_SUBJECT_KEY.exec(doc.subjectKey ?? '');
+  const battery = BATTERY_SUBJECT_KEY.exec(doc.subjectKey ?? '');
   const peers = doc.peerCount ?? 0;
-  const prefix = (run ? `run-${run[1]}_` : '') + (peers > 0 ? `vs-${peers}-models_` : '');
+  const prefix = (run ? `run-${run[1]}_` : battery ? `battery-run-${battery[1]}_` : '')
+    + (peers > 0 ? `vs-${peers}-models_` : '');
   if (doc.audience !== BenchmarkReportAudience.TechnicalReport) {
     return `${prefix}${safeFileName(title)}`;
   }
@@ -2513,7 +2656,8 @@ function runFileTime(row: DownloadRow, context: DownloadCenterContext, serverNam
 function failureReason(error: unknown, row: DownloadRow): string {
   if (error instanceof HttpErrorResponse) {
     if (error.status === 404) {
-      return row.kind === 'pack' ? 'the document no longer exists' : 'the run no longer exists';
+      return row.kind === 'pack' ? 'the document no longer exists'
+        : row.kind === 'batteryReport' ? 'the battery run no longer exists' : 'the run no longer exists';
     }
     if (error.status === 0) {
       return 'the server could not be reached';

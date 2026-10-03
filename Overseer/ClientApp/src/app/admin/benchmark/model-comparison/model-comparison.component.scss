@@ -1290,6 +1290,9 @@
   /* The toolbar rows wrap on the panel's own width. */
   container: mc-panel / inline-size;
 
+  /* The author display outranks the user-agent [hidden] rule. */
+  &[hidden] { display: none; }
+
   &:focus-visible {
     outline: 2px solid var(--primary-color);
     outline-offset: -2px;

@@ -1,0 +1,9 @@
+/* The battery run report's AI Reports tab. Its layout is the run report's AI Reports tab's
+ * (run-ai-reports.component.scss, the component's first stylesheet); only what a battery run adds
+ * is here. Global controls come from styles.scss and are never redefined here.
+ */
+
+/* Why the battery run cannot be written yet: a condition of the battery, not an error. */
+.bai-not-writable {
+  margin: 0 0 12px;
+}

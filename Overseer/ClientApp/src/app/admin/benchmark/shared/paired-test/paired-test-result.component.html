@@ -1,0 +1,206 @@
+<!-- The verdict's shape: a filled dot for an established difference, a ring otherwise, a dash when
+     not tested. Decorative: the verdict word beside it carries the meaning. -->
+<ng-template #verdictMark let-shape>
+  <svg [class]="'ptr-shape ptr-shape--' + shape" width="10" height="10" viewBox="0 0 10 10"
+       aria-hidden="true" focusable="false">
+    @if (shape === 'untested') {
+      <line x1="1.5" y1="5" x2="8.5" y2="5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"></line>
+    } @else {
+      <circle cx="5" cy="5" r="3.75" stroke="currentColor" stroke-width="1.5"
+              [attr.fill]="shape === 'established' ? 'currentColor' : 'none'"></circle>
+    }
+  </svg>
+</ng-template>
+
+@if (view; as v) {
+  <div class="ptr">
+    @if (showKind && v.kindText) {
+      <p class="ptr-kind" [id]="idPrefix + '-kind'">{{ v.kindText }}</p>
+      @if (v.kind === 'Verification' && v.changedKeys.length > 0) {
+        <p class="ptr-changed">
+          <span class="ptr-changed-label">Changed: </span>
+          @for (key of v.changedKeys; track key; let last = $last) {
+            <code>{{ key }}</code>@if (!last) {<span>, </span>}
+          }
+        </p>
+      }
+    }
+
+    <p class="ptr-subject">
+      <strong>{{ v.treatmentLabel }}</strong> against <strong>{{ v.baselineLabel }}</strong>,
+      on the questions both answered. A difference is the first minus the second; a ratio, the first
+      divided by the second.
+    </p>
+
+    @if (showPrimary && v.primary; as row) {
+      <section class="ptr-headline" [attr.aria-labelledby]="idPrefix + '-primary-title'">
+        <h5 class="ptr-headline-title" [id]="idPrefix + '-primary-title'">{{ row.title }}</h5>
+        @if (row.notTested) {
+          <p class="ptr-not-tested">Not tested: {{ row.notTested }}</p>
+        } @else {
+          <p class="ptr-headline-value">
+            <span class="ptr-headline-effect">{{ row.effect }}</span>
+            @if (row.interval) {
+              <span class="ptr-headline-interval">95 % interval {{ row.interval }}</span>
+            }
+          </p>
+          <dl class="ptr-facts">
+            <div>
+              <dt>p</dt>
+              <dd class="ptr-p">{{ row.p }}</dd>
+            </div>
+            @if (showAdjustment) {
+              <div>
+                <dt>Adjusted p</dt>
+                <dd class="ptr-adjusted-p">{{ row.adjustedP }}</dd>
+              </div>
+            }
+            <div>
+              <dt>dz</dt>
+              <dd>{{ row.dz }}</dd>
+            </div>
+            <div>
+              <dt>Paired questions</dt>
+              <dd>{{ row.pairedItems ?? '—' }}</dd>
+            </div>
+          </dl>
+        }
+        <p [class]="'ptr-verdict-line ptr-verdict--' + row.shape">
+          <ng-container *ngTemplateOutlet="verdictMark; context: { $implicit: row.shape }"></ng-container>
+          <span class="ptr-verdict">{{ row.verdict }}</span>
+        </p>
+        @if (row.method) {
+          <p class="ptr-method">{{ row.method }}</p>
+        }
+        @if (row.unpairedNote) {
+          <p class="ptr-note">{{ row.unpairedNote }}</p>
+        }
+        @if (row.note) {
+          <p class="ptr-note">{{ row.note }}</p>
+        }
+        @if (showAdjustment && row.adjustmentNote) {
+          <p class="ptr-note ptr-adjustment">{{ row.adjustmentNote }}</p>
+        }
+        @if (row.suites.length > 0) {
+          <details class="gh-disclosure ptr-suites">
+            <summary>Per-suite detail</summary>
+            <div class="gh-disclosure-body">
+              <div class="gh-datatable-scroll">
+                <table class="gh-table ptr-suite-table">
+                  <caption class="visually-hidden">Each suite's weighted difference with its Wilcoxon p, Holm-adjusted across the suites.</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Suite</th>
+                      <th scope="col" class="ptr-num">Paired questions</th>
+                      <th scope="col" class="ptr-num">Weighted difference</th>
+                      <th scope="col" class="ptr-num">Wilcoxon p</th>
+                      <th scope="col" class="ptr-num">Holm-adjusted p</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (s of row.suites; track s.suite.suiteIndex) {
+                      <tr>
+                        <th scope="row">
+                          {{ s.suite.suiteName }}
+                          @if (s.suite.note) {
+                            <span class="ptr-row-note">{{ s.suite.note }}</span>
+                          }
+                        </th>
+                        <td class="ptr-num">{{ s.suite.pairedItems }}</td>
+                        <td class="ptr-num">{{ s.difference }}</td>
+                        <td class="ptr-num">{{ s.p }}</td>
+                        <td class="ptr-num">{{ s.adjustedP }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+        }
+      </section>
+    }
+
+    <div class="ptr-sections">
+      @for (section of sections; track section) {
+        @if (v.sectionRows[section].length > 0) {
+          <details [class]="'gh-disclosure ptr-section ptr-section--' + section"
+                   [id]="idPrefix + '-section-' + section"
+                   [open]="sectionOpen[section]" (toggle)="onSectionToggle(section, $event)">
+            <summary>{{ sectionTitles[section] }}</summary>
+            <div class="gh-disclosure-body">
+              <div class="gh-datatable-scroll">
+                <table class="gh-table ptr-table">
+                  <caption class="visually-hidden">{{ sectionTitles[section] }}: {{ v.treatmentLabel }} against {{ v.baselineLabel }}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Measure</th>
+                      <th scope="col" class="ptr-num">Paired questions</th>
+                      <th scope="col">{{ section === 'dimensions' ? 'Difference' : 'Ratio' }} with 95 % interval</th>
+                      @if (section === 'dimensions') {
+                        <th scope="col" class="ptr-num">dz</th>
+                      }
+                      <th scope="col" class="ptr-num">p</th>
+                      @if (showAdjustment) {
+                        <th scope="col" class="ptr-num">Adjusted p</th>
+                      }
+                      <th scope="col">Verdict</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of v.sectionRows[section]; track row.measure.measure) {
+                      <tr [attr.data-measure]="row.measure.measure">
+                        <th scope="row">{{ row.label }}</th>
+                        @if (row.notTested) {
+                          <td [attr.colspan]="(section === 'dimensions' ? 4 : 3) + (showAdjustment ? 1 : 0)"
+                              class="ptr-not-tested">Not tested: {{ row.notTested }}</td>
+                        } @else {
+                          <td class="ptr-num">{{ row.pairedItems ?? '—' }}</td>
+                          <td class="ptr-effect">
+                            {{ row.effect }}
+                            @if (row.interval) {
+                              <span class="ptr-interval">({{ row.interval }})</span>
+                            }
+                          </td>
+                          @if (section === 'dimensions') {
+                            <td class="ptr-num">{{ row.dz }}</td>
+                          }
+                          <td class="ptr-num">{{ row.p }}</td>
+                          @if (showAdjustment) {
+                            <td class="ptr-num">{{ row.adjustedP }}</td>
+                          }
+                        }
+                        <td [class]="'ptr-verdict-cell ptr-verdict--' + row.shape">
+                          <ng-container *ngTemplateOutlet="verdictMark; context: { $implicit: row.shape }"></ng-container>
+                          <span class="ptr-verdict">{{ row.verdict }}</span>
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+              @for (row of v.sectionRows[section]; track row.measure.measure) {
+                @if (row.caption) {
+                  <p class="ptr-note">{{ row.caption }}</p>
+                }
+                @if (row.note) {
+                  <p class="ptr-note">{{ row.label }}: {{ row.note }}</p>
+                }
+                @if (row.unpairedNote && !row.notTested) {
+                  <p class="ptr-note">{{ row.label }}: {{ row.unpairedNote }}</p>
+                }
+                @if (showAdjustment && row.adjustmentNote) {
+                  <p class="ptr-note ptr-adjustment">{{ row.label }}: {{ row.adjustmentNote }}</p>
+                }
+              }
+            </div>
+          </details>
+        }
+      }
+    </div>
+
+    @if (v.caveat) {
+      <p class="ptr-caveat" role="note">{{ v.caveat }}</p>
+    }
+  </div>
+}

@@ -1,19 +1,22 @@
 <div class="bb">
 
-  <!-- =========================================================================================
-       1. BATTERIES
-       ========================================================================================= -->
+  <!-- The battery definitions as a filterable list of full-width cards shown ten at a time. -->
   <section class="bb-section" aria-labelledby="bb-batteries-title">
     <div class="bb-section-head">
-      <h4 class="gh-section-title" id="bb-batteries-title">Batteries</h4>
+      <!-- Focused after a delete that leaves no card to focus. -->
+      <h4 class="gh-section-title" id="bb-batteries-title" tabindex="-1">Batteries</h4>
       <app-info-tip trigger="click" tipId="bb-batteries-tip" subject="Batteries">
         A battery is a fixed set of two or more suites with declared weights. A battery run tests one model on
         every suite, one after another, and combines the results into an Overall Intelligence Index with an
-        uncertainty interval. Start one from Run Benchmark with Run Target set to Battery.
+        uncertainty interval. Start one from Run Benchmark with Run Target set to Battery; battery runs are listed
+        in Run History, and each battery's Leaderboard ranks the results of its current definition.
       </app-info-tip>
+      <!-- The list's one polite live region. -->
+      <p class="gh-list-status bb-list-status" id="bb-list-status" role="status">{{ listStatus }}</p>
       <div class="bb-head-actions">
         @if (archivedCount > 0) {
-          <button type="button" class="gh-filter-toggle bb-show-archived" [attr.aria-pressed]="showArchived"
+          <!-- A view setting, not a filter: Clear all leaves it as it is. -->
+          <button type="button" class="gh-filter-toggle bb-show-archived" [attr.aria-pressed]="showArchived ? 'true' : 'false'"
                   (click)="toggleShowArchived()">Show archived ({{ archivedCount }})</button>
         }
         <button type="button" class="btn-gh bb-new-battery" (click)="newBattery()">
@@ -32,838 +35,273 @@
     }
 
     @if (batteriesLoading && batteries.length === 0) {
-      <p class="text-muted">Loading batteries…</p>
+      <p class="text-muted bb-loading">Loading batteries…</p>
     } @else if (batteriesError) {
       <div class="alert alert-warning" role="alert">{{ batteriesError }}</div>
     } @else if (batteries.length === 0) {
       <p class="text-muted bb-empty-batteries">No batteries yet. Create one with New Battery to run several suites as one benchmark.</p>
     } @else if (visibleBatteries.length === 0) {
-      <p class="text-muted">Every battery is archived. Use Show archived to see them.</p>
+      <p class="text-muted bb-all-archived">Every battery is archived. Use Show archived to see them.</p>
     } @else {
-      <ul class="bb-cards" role="list">
-        @for (battery of visibleBatteries; track battery.id) {
-          <li>
-            <article class="bb-card" [class.is-archived]="battery.isArchived" [attr.aria-labelledby]="'bb-card-title-' + battery.id">
-              <p class="bb-card-kicker">
-                <span>Revision {{ battery.revision }}</span>
-                <span aria-hidden="true">·</span>
-                <span>{{ battery.weightingSchemeLabel || schemeLabel(battery.weightingScheme) }}</span>
-                <span aria-hidden="true">·</span>
-                <span>{{ battery.batteryRunCount }} {{ battery.batteryRunCount === 1 ? 'run' : 'runs' }}</span>
-                @if (battery.isArchived) {
-                  <span class="gh-tag bb-tag-archived">Archived</span>
+      @if (showFilterBar) {
+        <!-- Search, Sort by, the facets and the active filters. -->
+        <div class="gh-filter-bar bb-filter-bar">
+          <div class="gh-filter-bar-row">
+            <div class="gh-search-field bb-search">
+              <label class="visually-hidden" for="bb-search">Search batteries</label>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="search" class="gh-input" id="bb-search" autocomplete="off"
+                     placeholder="Search name, description or suite"
+                     [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+            </div>
+            <div class="bb-sort">
+              <label class="bb-sort-label" for="bb-sort">Sort by</label>
+              <select class="gh-input bb-sort-select" id="bb-sort" (change)="onSortChange($event)">
+                @for (sort of sorts; track sort.id) {
+                  <option [value]="sort.id" [selected]="list.sortId === sort.id">{{ sort.label }}</option>
                 }
-                @if (battery.hasActiveBatteryRun) {
-                  <span class="gh-tag bb-tag-active">Running</span>
-                }
-              </p>
-              <h5 class="bb-card-title" [id]="'bb-card-title-' + battery.id">{{ battery.name }}</h5>
-              @if (battery.description) {
-                <p class="bb-card-description">{{ battery.description }}</p>
+              </select>
+            </div>
+          </div>
+
+          @if (facets.length > 0) {
+            <div class="gh-facet-row bb-facet-row">
+              @for (facet of facets; track facet.column) {
+                <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" [options]="facet.options"
+                                  [selected]="facet.selected" [mode]="facet.mode" [anyLabel]="facet.anyLabel" noun="batteries"
+                                  (selectedChange)="onFacetChange(facet.column, $event)"></app-filter-facet>
               }
-              <ol class="bb-card-suites" [attr.aria-label]="'Suites of ' + battery.name + ' in run order'">
-                @for (suite of battery.suites; track suite.index) {
-                  <li [class.is-deleted]="suite.deleted">
-                    <span class="bb-suite-name">{{ suite.suiteName }}</span>
-                    @if (suite.deleted) {
-                      <span class="bb-suite-meta">deleted</span>
-                    } @else {
-                      <span class="bb-suite-meta">
-                        {{ suite.questionCount }} {{ suite.questionCount === 1 ? 'question' : 'questions' }}
-                        @if (declaredWeights(battery).length > suite.index) {
-                          · {{ formatPercent(declaredWeights(battery)[suite.index]) }}
-                        }
-                        @if (!suite.difficultyFullyAssessed) {
-                          · <span class="bb-warn-text">difficulties not assessed</span>
-                        }
-                      </span>
-                    }
+            </div>
+          }
+
+          @if (chips.length > 0) {
+            <div class="gh-filter-bar-row bb-chips-row">
+              <ul class="gh-filter-chips bb-filter-chips" role="list" aria-label="Active filters">
+                @for (chip of chips; track chip.key) {
+                  <li>
+                    <button type="button" class="gh-filter-chip"
+                            [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                            (click)="removeChip(chip)">
+                      <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                      <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
                   </li>
                 }
-              </ol>
-              @if (battery.validationErrors.length > 0) {
-                <ul class="bb-card-errors">
-                  @for (error of battery.validationErrors; track $index) {
-                    <li class="gh-field-error">
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                      {{ error }}
-                    </li>
-                  }
-                </ul>
-              }
-              <div class="bb-card-actions" role="group" [attr.aria-label]="'Actions for battery ' + battery.name">
-                <button type="button" class="btn-ghost bb-edit" (click)="editBattery(battery)"
-                        [attr.aria-label]="'Edit battery ' + battery.name">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                  Edit
-                </button>
-                <button type="button" class="btn-ghost bb-leaderboard" (click)="showLeaderboardFor(battery)"
-                        [attr.aria-label]="'Show the leaderboard of battery ' + battery.name">Leaderboard</button>
-                <button type="button" class="btn-ghost bb-archive" (click)="toggleArchive(battery)"
-                        [attr.aria-label]="(battery.isArchived ? 'Restore battery ' : 'Archive battery ') + battery.name">
-                  {{ battery.isArchived ? 'Restore' : 'Archive' }}
-                </button>
-                <button type="button" class="btn-ghost btn-ghost-danger bb-delete"
-                        [attr.aria-disabled]="battery.hasActiveBatteryRun ? 'true' : null"
-                        [attr.aria-label]="'Delete battery ' + battery.name"
-                        [attr.interestfor]="battery.hasActiveBatteryRun ? 'bb-tip-delete-' + battery.id : null"
-                        [attr.style]="'anchor-name: --bb-tip-delete-' + battery.id"
-                        (click)="requestDelete(battery)">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                  Delete
-                </button>
-                @if (battery.hasActiveBatteryRun) {
-                  <div popover="hint" class="gh-tooltip" [id]="'bb-tip-delete-' + battery.id"
-                       [attr.style]="'position-anchor: --bb-tip-delete-' + battery.id">A battery run of this battery is in progress</div>
-                }
-              </div>
-            </article>
-          </li>
-        }
-      </ul>
-    }
-  </section>
-
-  <!-- =========================================================================================
-       2. BATTERY RUNS
-       ========================================================================================= -->
-  <section class="bb-section" aria-labelledby="bb-runs-title">
-    <div class="bb-section-head">
-      <h4 class="gh-section-title" id="bb-runs-title">Battery Runs</h4>
-      <button type="button" class="action-btn bb-refresh" (click)="refresh()"
-              aria-label="Refresh batteries and battery runs"
-              interestfor="bb-tip-refresh" style="anchor-name: --bb-tip-refresh">
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="23 4 23 10 17 10"></polyline>
-          <polyline points="1 20 1 14 7 14"></polyline>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-        </svg>
-      </button>
-      <div popover="hint" class="gh-tooltip" id="bb-tip-refresh" style="position-anchor: --bb-tip-refresh">Refresh</div>
-    </div>
-
-    @if (runsLoading && batteryRuns.length === 0) {
-      <p class="text-muted">Loading battery runs…</p>
-    } @else if (runsError) {
-      <div class="alert alert-warning" role="alert">{{ runsError }}</div>
-    } @else if (batteryRuns.length === 0) {
-      <p class="text-muted bb-empty-runs">No battery runs yet. Start one from Run Benchmark with Run Target set to Battery.</p>
-    } @else {
-      <app-table-pager [state]="runTable" [rows]="batteryRuns" noun="battery runs" (changed)="onTableChanged()"></app-table-pager>
-      <div class="gh-datatable-scroll bb-runs-scroll">
-        <table class="gh-table gh-datatable bb-runs-table">
-          <caption class="visually-hidden">Battery runs: battery, model, status, suites complete, Overall Index, Overall Speed, total cost and start time.</caption>
-          <thead>
-            <tr>
-              <th app-sort-header [state]="runTable" column="battery" label="Battery" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="model" label="Model" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="status" label="Status" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="suites" label="Suites" class="bb-num" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="overallIndex" label="Overall Index" class="bb-num" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="overallSpeed" label="Overall Speed" class="bb-num" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="totalCost" label="Total Cost" class="bb-num" (changed)="onTableChanged()"></th>
-              <th app-sort-header [state]="runTable" column="startedAtUtc" label="Started" (changed)="onTableChanged()"></th>
-              <th scope="col"><span class="visually-hidden">Actions</span></th>
-            </tr>
-            <tr class="gh-filter-row">
-              <td>
-                <label class="visually-hidden" for="bb-f-battery">Filter by battery</label>
-                <select id="bb-f-battery" class="gh-input gh-filter-select" (change)="onRunFilter('battery', $event)">
-                  <option value="" [selected]="!runTable.filters['battery']">All</option>
-                  @for (name of runBatteryNames; track name) {
-                    <option [value]="name" [selected]="runTable.filters['battery'] === name">{{ name }}</option>
-                  }
-                </select>
-              </td>
-              <td></td>
-              <td>
-                <label class="visually-hidden" for="bb-f-status">Filter by status</label>
-                <select id="bb-f-status" class="gh-input gh-filter-select" (change)="onRunFilter('status', $event)">
-                  <option value="" [selected]="!runTable.filters['status']">All</option>
-                  @for (status of runStatuses; track status) {
-                    <option [value]="status" [selected]="runTable.filters['status'] === status">{{ statusLabel(status) }}</option>
-                  }
-                </select>
-              </td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td></td>
-              <td>
-                @if (runTable.hasActiveFilters) {
-                  <button type="button" class="gh-filter-clear" (click)="clearRunFilters()">Clear filters</button>
-                }
-              </td>
-            </tr>
-          </thead>
-          <tbody>
-            @if (runTable.noMatches(batteryRuns)) {
-              <tr><td colspan="9" class="text-muted">No battery runs match these filters.</td></tr>
-            }
-            @for (run of runTable.view(batteryRuns); track run.id) {
-              <tr [class.is-selected]="run.id === selectedBatteryRunId" [attr.data-run-id]="run.id">
-                <th scope="row">
-                  <span class="bb-run-battery">{{ run.batteryName }}</span>
-                  <span class="bb-run-meta">#{{ run.id }} · rev. {{ run.definitionRevision }} · R = {{ run.runsPerSuite }}</span>
-                </th>
-                <td>{{ run.testedModelLabel || '—' }}</td>
-                <td>{{ statusLabel(run.status) }}</td>
-                <td class="bb-num">{{ run.completedSuiteCount }}/{{ run.suiteCount }}</td>
-                <td class="bb-num">
-                  @if (run.latestAnalysisId == null) {
-                    <span class="text-muted">Not analyzed</span>
-                  } @else if (run.latestAnalysisComplete === false) {
-                    <span class="text-muted">Incomplete</span>
-                  } @else {
-                    {{ formatIndexWithHalfWidth(run.overallIndex, run.overallIndexHalfWidth) }}
-                  }
-                  @if (run.analysisStale) {
-                    <span class="gh-tag gh-tag-changed bb-tag-stale">Stale</span>
-                  }
-                </td>
-                <td class="bb-num">{{ formatNumber(run.overallSpeedIndex) }}</td>
-                <td class="bb-num">{{ formatCost(run.totalCost) }}</td>
-                <td>
-                  @if (isoDate(run.startedAtUtc); as iso) {
-                    <time [attr.datetime]="iso">{{ formatDate(run.startedAtUtc) }}</time>
-                  } @else {
-                    —
-                  }
-                </td>
-                <td class="bb-actions">
-                  <button type="button" class="action-btn bb-view-analysis" (click)="showAnalysis(run.id)"
-                          [attr.aria-label]="'View analysis of battery run ' + run.id"
-                          [attr.interestfor]="'bb-tip-view-' + run.id"
-                          [attr.style]="'anchor-name: --bb-tip-view-' + run.id">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                  </button>
-                  <div popover="hint" class="gh-tooltip" [id]="'bb-tip-view-' + run.id"
-                       [attr.style]="'position-anchor: --bb-tip-view-' + run.id">View analysis</div>
-                  <button type="button" class="action-btn bb-show-progress" (click)="showProgress(run)"
-                          [attr.aria-label]="'Show progress of battery run ' + run.id"
-                          [attr.interestfor]="'bb-tip-progress-' + run.id"
-                          [attr.style]="'anchor-name: --bb-tip-progress-' + run.id">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-                  </button>
-                  <div popover="hint" class="gh-tooltip" [id]="'bb-tip-progress-' + run.id"
-                       [attr.style]="'position-anchor: --bb-tip-progress-' + run.id">Show progress</div>
-                </td>
-              </tr>
-            }
-          </tbody>
-        </table>
-      </div>
-      <app-table-pager [state]="runTable" [rows]="batteryRuns" noun="battery runs" [announce]="false" (changed)="onTableChanged()"></app-table-pager>
-    }
-  </section>
-
-  <!-- =========================================================================================
-       3. ANALYSIS
-       ========================================================================================= -->
-  @if (selectedBatteryRunId != null) {
-    <section class="bb-section bb-analysis" aria-labelledby="bb-analysis-title">
-      <div class="bb-section-head">
-        <h4 #analysisHeading class="gh-section-title" id="bb-analysis-title" tabindex="-1">
-          Analysis of Battery Run #{{ selectedBatteryRunId }}
-        </h4>
-        <div class="bb-head-actions">
-          <button type="button" class="btn-ghost bb-download-report"
-                  [attr.aria-disabled]="analysis ? null : 'true'"
-                  interestfor="bb-tip-download" style="anchor-name: --bb-tip-download"
-                  (click)="downloadReport()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            Download Report
-          </button>
-          <div popover="hint" class="gh-tooltip" id="bb-tip-download" style="position-anchor: --bb-tip-download">
-            {{ analysis ? 'Download the Markdown report' : 'Compute the analysis first' }}
-          </div>
-          <button type="button" class="btn-ghost bb-recompute" [disabled]="recomputing" (click)="recompute()">
-            <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-            {{ recomputing ? 'Computing…' : (analysis ? 'Recompute' : 'Compute') }}
-          </button>
-        </div>
-      </div>
-
-      @if (selectedRun; as run) {
-        <p class="bb-analysis-meta">
-          {{ run.batteryName }} · revision {{ run.definitionRevision }} · {{ run.testedModelLabel || 'unknown model' }}
-          · {{ statusLabel(run.status) }} · R = {{ run.runsPerSuite }}
-          @if (analysis) {
-            · computed {{ formatDate(analysis.computedAtUtc) }}
+              </ul>
+              <button type="button" class="gh-filter-clear bb-clear-filters" (click)="clearFilters()">Clear all</button>
+            </div>
           }
+        </div>
+      }
+
+      @if (noMatches) {
+        <p class="text-muted bb-no-matches">No batteries match these filters.
+          <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear all filters</button>
         </p>
-      }
-
-      @if (analysisError) {
-        <div class="alert alert-danger bb-analysis-error" role="alert">{{ analysisError }}</div>
-      }
-
-      @if (recomputeCalledOut) {
-        <div class="alert alert-warning bb-recompute-callout" role="note">
-          @if (analysis?.stale || selectedRun?.analysisStale) {
-            The battery run's usable members changed after this analysis was computed.
-          }
-          @if ((analysis?.excludedMembers?.length ?? 0) > 0 || selectedRun?.analysisHasExcludedMembers) {
-            This analysis leaves out members that were not usable. A run repaired in place keeps its id, so
-            the analysis cannot tell it changed.
-          }
-          Recompute to bring it up to date.
-        </div>
-      }
-
-      @if (analysisLoading && !analysis) {
-        <p class="text-muted">Loading analysis…</p>
-      } @else if (!analysis) {
-        @if (!analysisError) {
-          <p class="text-muted bb-no-analysis">No analysis has been computed for this battery run yet. Use Compute to compute it.</p>
-        }
-      } @else if (!result) {
-        <p class="text-muted">This analysis holds no result.</p>
       } @else {
-        <!-- Headline -->
-        <div class="bb-headline" [class.is-incomplete]="!result.complete || !result.overallIndex">
-          @if (result.complete && result.overallIndex; as overall) {
-            <p class="bb-headline-label">Overall Intelligence Index</p>
-            <p class="bb-headline-value">{{ formatIndexWithHalfWidth(overall.pointEstimate, overall.combinedHalfWidth) }}</p>
-            <p class="bb-headline-interval">
-              95 % interval {{ formatInterval(overall.combinedLower, overall.combinedUpper) }}
-              @if (overall.combinedIntervalTruncated) { (truncated at the scale's ends) }
-              · {{ schemeLabel(result.scheme) }}
-            </p>
-          } @else {
-            <p class="bb-headline-label">Overall Intelligence Index</p>
-            <p class="bb-headline-value bb-incomplete">Incomplete ({{ result.completedSuiteCount }} of {{ result.suiteCount }} suites)</p>
-            <p class="bb-headline-interval">
-              The Overall Index is reported only when every suite has a usable result. The per-suite figures below are shown without it.
-            </p>
-          }
-        </div>
-
-        @if (result.overallIndex; as overall) {
-          <h5 class="bb-sub-title">Uncertainty</h5>
-          <dl class="bb-facts bb-uncertainty">
-            <div>
-              <dt>Item sampling</dt>
-              <dd>
-                @if (overall.itemSamplingStandardError != null) {
-                  SE {{ formatNumber(overall.itemSamplingStandardError, 2) }}
-                  · t({{ formatNumber(overall.effectiveDegreesOfFreedom, 1) }} df) = {{ formatNumber(overall.itemSamplingCriticalValue, 3) }}
-                  · ± {{ formatNumber(overall.itemSamplingHalfWidth) }}
-                } @else {
-                  Withheld by {{ suiteNames(overall.itemSamplingWithheldBySuiteIndex) || 'a suite' }} (fewer than three scored items)
-                }
-              </dd>
-            </div>
-            <div>
-              <dt>Effective degrees of freedom (ν)</dt>
-              <dd>{{ formatNumber(overall.effectiveDegreesOfFreedom, 1) }}</dd>
-            </div>
-            <div>
-              <dt>Reproducibility</dt>
-              <dd>
-                {{ reproducibilitySourceLabel(overall.reproducibilitySource) }}
-                @if (overall.reproducibilityStandardError != null) {
-                  · SE {{ formatNumber(overall.reproducibilityStandardError, 2) }}
-                  · t({{ formatNumber(overall.reproducibilityDegreesOfFreedom, 1) }} df) = {{ formatNumber(overall.reproducibilityCriticalValue, 3) }}
-                  · ± {{ formatNumber(overall.reproducibilityHalfWidth) }}
-                }
-              </dd>
-            </div>
-            @if (overall.perRoundIndices.length > 0) {
-              <div>
-                <dt>Per-round composites</dt>
-                <dd>
-                  @for (round of overall.perRoundIndices; track round.round; let last = $last) {
-                    Round {{ round.round }}: {{ formatNumber(round.index) }}{{ last ? '' : ' · ' }}
+        <ul class="bb-cards" role="list" aria-labelledby="bb-batteries-title">
+          @for (battery of cards; track battery.id) {
+            <li class="bb-card-item">
+              <article class="bb-card" [class.is-archived]="battery.isArchived" [attr.data-battery-id]="battery.id"
+                       [attr.aria-labelledby]="'bb-card-title-' + battery.id">
+                <header class="bb-card-head">
+                  <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+                  <div class="bb-card-kicker">
+                    <span class="bb-card-id">#{{ battery.id }}</span>
+                    <span class="bb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="config-badge bb-revision">Revision {{ battery.revision }}</span>
+                    <span class="bb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="config-badge bb-scheme">{{ schemeLabelOf(battery) }}</span>
+                    @if (battery.isArchived) {
+                      <span class="bb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="gh-tag bb-tag-archived">Archived</span>
+                    }
+                    @if (battery.hasActiveBatteryRun) {
+                      <span class="bb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="gh-tag bb-tag-active">Running</span>
+                    }
+                    @if (isBroken(battery)) {
+                      <span class="bb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="gh-tag gh-tag-internal bb-tag-broken">Broken</span>
+                    }
+                    @if (difficultiesIncomplete(battery)) {
+                      <span class="bb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span class="gh-tag gh-tag-changed bb-tag-difficulties">Difficulties incomplete</span>
+                    }
+                  </div>
+                  <!-- Focused after Load more and after a delete. -->
+                  <h5 class="bb-card-title" [id]="'bb-card-title-' + battery.id" tabindex="-1">{{ battery.name }}</h5>
+                  @if (battery.description) {
+                    <p class="bb-card-description">{{ battery.description }}</p>
                   }
-                </dd>
-              </div>
-            }
-            <div>
-              <dt>Combined</dt>
-              <dd>± {{ formatNumber(overall.combinedHalfWidth) }} (both components in quadrature)</dd>
-            </div>
-          </dl>
-        }
-
-        <!-- Suite profile -->
-        <h5 class="bb-sub-title">Suite profile</h5>
-        <div class="gh-datatable-scroll bb-table-scroll">
-          <table class="gh-table bb-profile-table">
-            <caption class="visually-hidden">Suite profile: each suite's index with its interval, weight, contribution, items and runs.</caption>
-            <thead>
-              <tr>
-                <th scope="col">Suite</th>
-                <th scope="col" class="bb-num">Weight</th>
-                <th scope="col" class="bb-num">Index</th>
-                <th scope="col" class="bb-num">Interval</th>
-                <th scope="col" class="bb-num">Contribution</th>
-                <th scope="col" class="bb-num">Items</th>
-                <th scope="col" class="bb-num">Runs</th>
-                <th scope="col" class="bb-num">Speed</th>
-                <th scope="col" class="bb-num">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (suite of result.suites; track suite.suiteIndex) {
-                <tr [class.is-incomplete]="!suite.complete">
-                  <th scope="row">
-                    {{ suite.suiteName }}
-                    @if (!suite.complete) { <span class="gh-tag bb-tag-missing">No usable result</span> }
-                    @if (suite.examIncomplete) { <span class="gh-tag gh-tag-changed">Exam incomplete</span> }
-                  </th>
-                  <td class="bb-num">{{ formatPercent(suite.weight) }}</td>
-                  <td class="bb-num">{{ formatNumber(suite.index) }}</td>
-                  <td class="bb-num">
-                    {{ formatInterval(suite.combinedLower, suite.combinedUpper) }}
-                    @if (suite.combinedIntervalTruncated) { <span class="visually-hidden">(truncated)</span><span aria-hidden="true">*</span> }
-                  </td>
-                  <td class="bb-num">{{ formatNumber(suite.contribution) }}</td>
-                  <td class="bb-num">{{ suite.scoredItemCount }}/{{ suite.examItemCount }}</td>
-                  <td class="bb-num">{{ suite.usableMemberCount }}</td>
-                  <td class="bb-num">{{ formatNumber(suite.meanSpeedIndex) }}</td>
-                  <td class="bb-num">{{ formatCost(suite.totalCost) }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
-        <p class="bb-note">
-          Profile unevenness: between-suite SD {{ formatNumber(result.betweenSuiteStandardDeviation) }},
-          range {{ formatNumber(result.betweenSuiteRange) }}. Each suite's own interval uses the normal 1.96 for
-          item sampling; the Overall Index uses Student's t on ν.
-        </p>
-
-        <!-- Weighting sensitivity -->
-        @if (result.weightingSensitivity.length > 0) {
-          <h5 class="bb-sub-title">Weighting sensitivity</h5>
-          <div class="gh-datatable-scroll bb-table-scroll">
-            <table class="gh-table bb-sensitivity-table">
-              <caption class="visually-hidden">The Overall Index under each weighting scheme.</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Weighting</th>
-                  <th scope="col" class="bb-num">Overall Index</th>
-                  <th scope="col" class="bb-num">Difference</th>
-                  <th scope="col">Weights</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of result.weightingSensitivity; track row.scheme) {
-                  <tr [class.is-declared]="row.declared">
-                    <th scope="row">
-                      {{ schemeLabel(row.scheme) }}
-                      <span class="gh-tag" [class.bb-tag-declared]="row.declared">{{ row.declared ? 'Declared' : 'Sensitivity' }}</span>
-                    </th>
-                    <td class="bb-num">{{ formatNumber(row.index) }}</td>
-                    <td class="bb-num">{{ row.declared ? '—' : formatSigned(declaredSchemeIndex != null ? row.index - declaredSchemeIndex : null) }}</td>
-                    <td class="bb-weights">
-                      @for (weight of row.weights; track $index; let i = $index; let last = $last) {
-                        {{ suiteName(i) }} {{ formatPercent(weight) }}{{ last ? '' : ' · ' }}
-                      }
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        }
-
-        <!-- Leave one suite out -->
-        @if (result.leaveOneSuiteOut.length > 0) {
-          <h5 class="bb-sub-title">Leave one suite out</h5>
-          <div class="gh-datatable-scroll bb-table-scroll">
-            <table class="gh-table bb-loo-table">
-              <caption class="visually-hidden">The Overall Index with each suite omitted and the other weights renormalized.</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Suite omitted</th>
-                  <th scope="col" class="bb-num">Overall Index</th>
-                  <th scope="col" class="bb-num">Change</th>
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of result.leaveOneSuiteOut; track row.suiteIndex) {
-                  <tr>
-                    <th scope="row">{{ row.suiteName }}</th>
-                    <td class="bb-num">{{ formatNumber(row.index) }}</td>
-                    <td class="bb-num">{{ formatSigned(row.change) }}</td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        }
-
-        <div class="bb-panels">
-          <!-- Dimensions -->
-          @if (result.dimensions.length > 0 || result.criticalErrorRate != null) {
-            <div class="bb-panel">
-              <h5 class="bb-sub-title">Dimensions</h5>
-              <dl class="bb-facts">
-                @for (dimension of result.dimensions; track dimension.dimension) {
-                  <div>
-                    <dt>{{ dimension.dimension }}</dt>
-                    <dd>
-                      @if (dimension.mean != null) {
-                        {{ formatNumber(dimension.mean) }}
+                  <div class="bb-card-meta">
+                    <span>Modified
+                      @if (isoDate(battery.modifiedAtUtc); as iso) {
+                        <time class="bb-card-time" [attr.datetime]="iso">{{ formatModified(battery.modifiedAtUtc) }}</time>
                       } @else {
-                        — <span class="bb-withheld">withheld by {{ suiteNames(dimension.withheldBySuiteIndex) }}</span>
+                        —
                       }
-                    </dd>
-                  </div>
-                }
-                <div>
-                  <dt>Critical-error rate</dt>
-                  <dd>{{ formatPercent(result.criticalErrorRate) }}</dd>
-                </div>
-              </dl>
-            </div>
-          }
-
-          <!-- Speed -->
-          @if (result.speed; as speed) {
-            <div class="bb-panel">
-              <h5 class="bb-sub-title">Speed</h5>
-              <dl class="bb-facts">
-                <div>
-                  <dt>Overall Speed Index</dt>
-                  <dd>
-                    @if (speed.overallSpeedIndex != null) {
-                      {{ formatNumber(speed.overallSpeedIndex) }}
-                    } @else {
-                      — <span class="bb-withheld">withheld by {{ suiteNames(speed.speedIndexWithheldBySuiteIndex) }}</span>
+                    </span>
+                    @if (battery.createdByUserName) {
+                      <span class="bb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <span>by {{ battery.createdByUserName }}</span>
                     }
-                  </dd>
-                </div>
-                <div>
-                  <dt>Model time P50 / P90 / max</dt>
-                  <dd>{{ formatMs(speed.modelTimeP50Ms) }} / {{ formatMs(speed.modelTimeP90Ms) }} / {{ formatMs(speed.modelTimeMaxMs) }}</dd>
-                </div>
-                <div>
-                  <dt>First token P50 / P90 / max</dt>
-                  <dd>{{ formatMs(speed.ttftP50Ms) }} / {{ formatMs(speed.ttftP90Ms) }} / {{ formatMs(speed.ttftMaxMs) }}</dd>
-                </div>
-                <div>
-                  <dt>Answers pooled</dt>
-                  <dd>{{ speed.pooledAnswerCount }} · total model time {{ formatMs(speed.totalModelTimeMs) }}</dd>
-                </div>
-              </dl>
-              @if (speed.degraded) {
-                <p class="bb-degraded">Degraded: {{ speed.degradedReason || 'a speed-affecting setting differs between suites.' }}</p>
-              }
-            </div>
-          }
-
-          <!-- Cost -->
-          @if (result.cost; as cost) {
-            <div class="bb-panel">
-              <h5 class="bb-sub-title">Cost</h5>
-              @if (!cost.available) {
-                <p class="bb-withheld">
-                  Unknown: {{ cost.withheldReason || 'a suite has unresolved prices' }}
-                  @if (cost.withheldBySuiteIndex.length > 0) { ({{ suiteNames(cost.withheldBySuiteIndex) }}) }
-                </p>
-              } @else {
-                <dl class="bb-facts">
-                  <div><dt>Total</dt><dd>{{ formatCost(cost.totalCost) }}</dd></div>
-                  <div><dt>One battery pass</dt><dd>{{ formatCost(cost.passCost) }}</dd></div>
-                  <div><dt>Per question asked</dt><dd>{{ formatCost(cost.costPerQuestion) }}</dd></div>
-                  <div><dt>Per Overall Index point</dt><dd>{{ formatCost(cost.costPerIndexPoint) }}</dd></div>
-                  @for (entry of roleCosts(cost.passCostByRole); track entry.role) {
-                    <div><dt>Pass cost: {{ entry.role }}</dt><dd>{{ formatCost(entry.cost) }}</dd></div>
-                  }
-                </dl>
-              }
-              @if (cost.degraded) {
-                <p class="bb-degraded">Degraded: {{ cost.degradedReason || 'a cost-affecting setting differs between suites.' }}</p>
-              }
-            </div>
-          }
-        </div>
-
-        <!-- Caveats and exclusions -->
-        @if (result.caveats.length > 0) {
-          <h5 class="bb-sub-title">Caveats</h5>
-          <ul class="bb-caveats">
-            @for (caveat of result.caveats; track $index) {
-              <li>{{ caveat }}</li>
-            }
-          </ul>
-        }
-
-        @if ((analysis?.excludedMembers?.length ?? 0) > 0) {
-          <h5 class="bb-sub-title">Excluded members</h5>
-          <ul class="bb-excluded">
-            @for (member of analysis?.excludedMembers ?? []; track member.runId + ':' + member.round) {
-              <li>
-                <span class="bb-excluded-what">{{ suiteName(member.suiteIndex) }}, round {{ member.round }}, run #{{ member.runId }}</span>:
-                {{ member.reason }}
-              </li>
-            }
-          </ul>
-        }
-      }
-    </section>
-  }
-
-  <!-- =========================================================================================
-       4. LEADERBOARD
-       ========================================================================================= -->
-  @if (leaderboardHash) {
-    <section class="bb-section bb-leaderboard-section" aria-labelledby="bb-leaderboard-title">
-      <div class="bb-section-head">
-        <h4 class="gh-section-title" id="bb-leaderboard-title">Leaderboard: {{ leaderboardTitle }}</h4>
-        <span class="bb-hash">definition {{ shortHash(leaderboardHash) }}</span>
-      </div>
-
-      @if (leaderboardLoading && !leaderboard) {
-        <p class="text-muted">Loading leaderboard…</p>
-      } @else if (leaderboardError) {
-        <div class="alert alert-warning" role="alert">{{ leaderboardError }}</div>
-      } @else if (leaderboard) {
-        @if (leaderboard.classes.length === 0 && leaderboard.incomplete.length === 0) {
-          <p class="text-muted bb-empty-leaderboard">No battery run of this definition has an analysis yet.</p>
-        } @else {
-          <p class="bb-note bb-overlap-note">
-            Each table ranks results that may be compared with one another. Overlapping intervals are not a
-            ranking: two results whose intervals overlap may not differ at all. Results in different tables were
-            measured under different conditions and are never ranked together.
-          </p>
-        }
-
-        @for (cls of leaderboard.classes; track cls.comparabilityClassSha256) {
-          <div class="bb-class">
-            <h5 class="bb-sub-title">{{ cls.label }}</h5>
-            <p class="bb-class-meta">
-              Harness {{ cls.harnessVersion || '—' }} · scoring method {{ cls.scoringMethodVersion }}
-              · class {{ shortHash(cls.comparabilityClassSha256) }}
-              @if (cls.distinguishingKeys.length > 0) {
-                · differs from other classes on {{ cls.distinguishingKeys.join(', ') }}
-              }
-            </p>
-            <div class="gh-datatable-scroll bb-table-scroll">
-              <table class="gh-table bb-leaderboard-table">
-                <caption class="visually-hidden">Ranked battery results of {{ cls.label }}, by Overall Index.</caption>
-                <thead>
-                  <tr>
-                    <th scope="col" class="bb-num">Rank</th>
-                    <th scope="col">Model</th>
-                    <th scope="col" class="bb-num">Overall Index</th>
-                    <th scope="col" class="bb-num">95 % interval</th>
-                    <th scope="col" class="bb-num">Speed</th>
-                    <th scope="col" class="bb-num">Pass cost</th>
-                    <th scope="col" class="bb-num">R</th>
-                    <th scope="col">Battery run</th>
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of cls.rows; track row.batteryRunId; let i = $index) {
-                    <tr [class.is-selected]="row.batteryRunId === selectedBatteryRunId">
-                      <td class="bb-num">{{ i + 1 }}</td>
-                      <th scope="row">{{ row.testedModelLabel || '—' }}</th>
-                      <td class="bb-num">{{ formatIndexWithHalfWidth(row.overallIndex, row.overallIndexHalfWidth) }}</td>
-                      <td class="bb-num">{{ formatInterval(row.overallIndexLower, row.overallIndexUpper) }}</td>
-                      <td class="bb-num">{{ formatNumber(row.overallSpeedIndex) }}</td>
-                      <td class="bb-num">{{ formatCost(row.passCost) }}</td>
-                      <td class="bb-num">{{ row.runsPerSuite }}</td>
-                      <td>#{{ row.batteryRunId }} · rev. {{ row.definitionRevision }}</td>
-                      <td class="bb-actions">
-                        <button type="button" class="action-btn" (click)="showAnalysis(row.batteryRunId)"
-                                [attr.aria-label]="'View analysis of battery run ' + row.batteryRunId"
-                                [attr.interestfor]="'bb-tip-lb-view-' + row.batteryRunId"
-                                [attr.style]="'anchor-name: --bb-tip-lb-view-' + row.batteryRunId">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
-                        </button>
-                        <div popover="hint" class="gh-tooltip" [id]="'bb-tip-lb-view-' + row.batteryRunId"
-                             [attr.style]="'position-anchor: --bb-tip-lb-view-' + row.batteryRunId">View analysis</div>
-                      </td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-        }
-
-        @if (leaderboard.incomplete.length > 0) {
-          <div class="bb-class bb-incomplete-list">
-            <h5 class="bb-sub-title">Incomplete battery runs (not ranked)</h5>
-            <div class="gh-datatable-scroll bb-table-scroll">
-              <table class="gh-table bb-incomplete-table">
-                <caption class="visually-hidden">Battery runs whose latest analysis is incomplete, newest first, not ranked.</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Model</th>
-                    <th scope="col" class="bb-num">Suites</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Battery run</th>
-                    <th scope="col">Computed</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (row of leaderboard.incomplete; track row.batteryRunId) {
-                    <tr>
-                      <th scope="row">{{ row.testedModelLabel || '—' }}</th>
-                      <td class="bb-num">{{ row.completedSuiteCount }}/{{ row.suiteCount }}</td>
-                      <td>{{ statusLabel(row.status) }}</td>
-                      <td>#{{ row.batteryRunId }} · rev. {{ row.definitionRevision }}</td>
-                      <td>{{ formatDate(row.computedAtUtc) }}</td>
-                    </tr>
-                  }
-                </tbody>
-              </table>
-            </div>
-          </div>
-        }
-
-        <!-- =====================================================================================
-             5. COMPARE
-             ===================================================================================== -->
-        @if (compareCandidates.length >= 2) {
-          <section class="bb-compare" aria-labelledby="bb-compare-title">
-            <h5 class="bb-sub-title" id="bb-compare-title">Compare two results</h5>
-            <p class="bb-note">
-              Choose two results of one table to compare two models, or the same model in two tables to verify a
-              change. The difference is treatment minus baseline.
-            </p>
-            <div class="bb-compare-form">
-              <div class="form-group">
-                <label for="bb-compare-baseline">Baseline</label>
-                <select id="bb-compare-baseline" class="gh-input" (change)="onCompareSelect('baseline', $event)">
-                  <option value="" [selected]="compareBaselineId == null">Choose a result</option>
-                  @for (cls of leaderboard.classes; track cls.comparabilityClassSha256) {
-                    <optgroup [label]="cls.label">
-                      @for (row of cls.rows; track row.batteryRunId) {
-                        <option [value]="row.batteryRunId" [selected]="row.batteryRunId === compareBaselineId">{{ compareOptionLabel(row) }}</option>
-                      }
-                    </optgroup>
-                  }
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="bb-compare-treatment">Treatment</label>
-                <select id="bb-compare-treatment" class="gh-input" (change)="onCompareSelect('treatment', $event)">
-                  <option value="" [selected]="compareTreatmentId == null">Choose a result</option>
-                  @for (cls of leaderboard.classes; track cls.comparabilityClassSha256) {
-                    <optgroup [label]="cls.label">
-                      @for (row of cls.rows; track row.batteryRunId) {
-                        <option [value]="row.batteryRunId" [selected]="row.batteryRunId === compareTreatmentId">{{ compareOptionLabel(row) }}</option>
-                      }
-                    </optgroup>
-                  }
-                </select>
-              </div>
-              <button type="button" class="btn-gh bb-compare-btn" [disabled]="!canCompare" (click)="compare()"
-                      aria-describedby="bb-compare-kind">
-                {{ comparing ? 'Comparing…' : 'Compare' }}
-              </button>
-            </div>
-            <p class="bb-note" id="bb-compare-kind">
-              @switch (compareKind) {
-                @case ('model') { Model comparison: both results are in one table. }
-                @case ('verification') { Verification of a change: the same model under two conditions. Allowed only when exactly one instrument setting differs. }
-                @case ('unlikely') { These two results are in different tables and test different models; the comparison will probably be refused. }
-                @case ('same') { Choose two different results. }
-                @default { Choose a baseline and a treatment. }
-              }
-            </p>
-
-            @if (compareRefusal) {
-              <div class="alert alert-warning bb-compare-refusal" role="alert">
-                <strong>Not comparable.</strong> {{ compareRefusal }}
-              </div>
-            }
-
-            @if (comparison) {
-              @if (comparisonResult; as cmp) {
-                <div class="bb-headline bb-compare-headline">
-                  <p class="bb-headline-label">Difference D (treatment − baseline)</p>
-                  <p class="bb-headline-value bb-compare-d">{{ formatSigned(cmp.compositeDifference) }}</p>
-                  <p class="bb-headline-interval">
-                    @if (cmp.compositeConfidenceHalfWidth != null) {
-                      95 % interval {{ formatInterval(cmp.compositeConfidenceLower, cmp.compositeConfidenceUpper) }}
-                      · t({{ formatNumber(cmp.compositeDegreesOfFreedom, 1) }} df) = {{ formatNumber(cmp.compositeCriticalValue, 3) }}
-                    } @else if (cmp.standardErrorWithheldBySuiteIndex.length > 0) {
-                      No interval: {{ suiteNames(cmp.standardErrorWithheldBySuiteIndex) }} has fewer than three paired items.
-                    }
-                    @if (cmp.compositeWithheldBySuiteIndex.length > 0) {
-                      No difference: {{ suiteNames(cmp.compositeWithheldBySuiteIndex) }} has no paired item.
-                    }
-                  </p>
-                </div>
-                <dl class="bb-facts bb-compare-facts">
-                  <div>
-                    <dt>Randomization p</dt>
-                    <dd>
-                      {{ formatPValue(cmp.randomizationPValue) }}
-                      · {{ randomizationMethodLabel(cmp.randomizationMethod) }}
-                      @if (cmp.randomizationMethod === 'MonteCarlo') {
-                        ({{ cmp.monteCarloResamples }} resamples, seed {{ cmp.seed }}, Monte Carlo SE {{ formatNumber(cmp.monteCarloStandardError, 4) }})
-                      }
-                    </dd>
+                    <span class="bb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="bb-card-definition">definition <span class="bb-hash">{{ shortHash(battery.definitionSha256) }}</span></span>
+                    <app-info-tip trigger="click" [tipId]="'bb-def-tip-' + battery.id" [subject]="'Definition of battery ' + battery.name">
+                      <dl>
+                        <div>
+                          <dt><span class="gh-info-term">Definition SHA-256</span></dt>
+                          <dd class="bb-hash-full">{{ battery.definitionSha256 || 'not recorded' }}</dd>
+                        </div>
+                        <div>
+                          <dt><span class="gh-info-term">What it covers</span></dt>
+                          <dd>The suites, the weighting scheme and any custom weights. Changing any of them makes a new hash, and the leaderboard ranks only results of the same definition. Reordering the suites makes a new revision but keeps the hash.</dd>
+                        </div>
+                      </dl>
+                    </app-info-tip>
                   </div>
-                  <div>
-                    <dt>Overall Index</dt>
-                    <dd>baseline {{ formatNumber(cmp.baselineOverallIndex) }} · treatment {{ formatNumber(cmp.treatmentOverallIndex) }}</dd>
+                  @if (battery.validationErrors.length > 0) {
+                    <ul class="bb-card-errors">
+                      @for (error of battery.validationErrors; track $index) {
+                        <li class="gh-field-error">
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                          {{ error }}
+                        </li>
+                      }
+                    </ul>
+                  }
+                </header>
+
+                <dl class="bb-metrics">
+                  <div class="bb-metric" data-metric="suites">
+                    <dt>Suites</dt>
+                    <dd>{{ battery.suites.length }}</dd>
                   </div>
-                  <div>
-                    <dt>Paired items</dt>
-                    <dd>{{ cmp.pairedItemCount }}</dd>
+                  <div class="bb-metric" data-metric="questions">
+                    <dt>Questions</dt>
+                    <dd>{{ questionTotal(battery) }}</dd>
+                  </div>
+                  <div class="bb-metric" data-metric="runs">
+                    <dt>Runs</dt>
+                    <dd>{{ battery.batteryRunCount }}</dd>
+                  </div>
+                  <div class="bb-metric" data-metric="ranked">
+                    <dt>Ranked results</dt>
+                    <dd>{{ battery.rankedResultCount ?? '—' }}</dd>
                   </div>
                 </dl>
-                <div class="gh-datatable-scroll bb-table-scroll">
-                  <table class="gh-table bb-compare-table">
-                    <caption class="visually-hidden">Per-suite differences with Holm-adjusted Wilcoxon p-values.</caption>
+
+                <div class="bb-card-actions" role="group" [attr.aria-label]="'Actions for battery ' + battery.name">
+                  <button type="button" class="btn-ghost bb-leaderboard" [id]="'bb-leaderboard-' + battery.id"
+                          (click)="openLeaderboard(battery)"
+                          [attr.aria-label]="'Leaderboard of battery ' + battery.name">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></svg>
+                    Leaderboard
+                  </button>
+                  <button type="button" class="btn-ghost bb-edit" (click)="editBattery(battery)"
+                          [attr.aria-label]="'Edit battery ' + battery.name">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    Edit
+                  </button>
+                  <button type="button" class="btn-ghost bb-archive" (click)="toggleArchive(battery)"
+                          [attr.aria-label]="(battery.isArchived ? 'Restore battery ' : 'Archive battery ') + battery.name">
+                    {{ battery.isArchived ? 'Restore' : 'Archive' }}
+                  </button>
+                  <button type="button" class="btn-ghost btn-ghost-danger bb-delete"
+                          [attr.aria-disabled]="battery.hasActiveBatteryRun ? 'true' : null"
+                          [attr.aria-label]="'Delete battery ' + battery.name"
+                          [attr.interestfor]="battery.hasActiveBatteryRun ? 'bb-tip-delete-' + battery.id : null"
+                          [attr.style]="'anchor-name: --bb-tip-delete-' + battery.id"
+                          (click)="requestDelete(battery)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    Delete
+                  </button>
+                  @if (battery.hasActiveBatteryRun) {
+                    <div popover="hint" class="gh-tooltip" [id]="'bb-tip-delete-' + battery.id"
+                         [attr.style]="'position-anchor: --bb-tip-delete-' + battery.id">A battery run of this battery is in progress</div>
+                  }
+                </div>
+
+                <!-- The suites in run order: the declared weights as one stacked bar, then a compact table. -->
+                <div class="bb-card-suites">
+                  <div class="bb-weight-mix" aria-hidden="true">
+                    @for (segment of weightMix(battery); track segment.index; let odd = $odd) {
+                      <span class="bb-weight-segment" [class.is-alt]="odd" [class.is-deleted]="segment.deleted"
+                            [style.flex-grow]="segment.share"></span>
+                    }
+                  </div>
+                  <table class="gh-table bb-suite-table">
+                    <caption class="visually-hidden">Suites of {{ battery.name }} in run order</caption>
                     <thead>
                       <tr>
+                        <th scope="col" class="bb-num">#</th>
                         <th scope="col">Suite</th>
+                        <th scope="col" class="bb-num">Questions</th>
                         <th scope="col" class="bb-num">Weight</th>
-                        <th scope="col" class="bb-num">Paired items</th>
-                        <th scope="col" class="bb-num">Difference</th>
-                        <th scope="col" class="bb-num">SE</th>
-                        <th scope="col" class="bb-num">Wilcoxon p</th>
-                        <th scope="col" class="bb-num">Holm-adjusted p</th>
+                        <th scope="col">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      @for (suite of cmp.suites; track suite.suiteIndex) {
-                        <tr>
-                          <th scope="row">
-                            {{ suite.suiteName }}
-                            @if (suite.note) { <span class="bb-row-note">{{ suite.note }}</span> }
-                          </th>
-                          <td class="bb-num">{{ formatPercent(suite.weight) }}</td>
-                          <td class="bb-num">{{ suite.pairedItemCount }}</td>
-                          <td class="bb-num">{{ formatSigned(suite.weightedDifference) }}</td>
-                          <td class="bb-num">{{ formatNumber(suite.weightedDifferenceStandardError, 2) }}</td>
-                          <td class="bb-num">{{ formatPValue(suite.wilcoxonPValue) }}</td>
-                          <td class="bb-num">{{ formatPValue(suite.holmAdjustedPValue) }}</td>
-                        </tr>
+                      @for (suite of leadingSuites(battery); track suite.index; let i = $index) {
+                        <ng-container *ngTemplateOutlet="suiteRow; context: { $implicit: suite, position: i, battery: battery }"></ng-container>
                       }
                     </tbody>
-                  </table>
-                </div>
-                @if (cmp.notes.length > 0) {
-                  <ul class="bb-caveats">
-                    @for (note of cmp.notes; track $index) {
-                      <li>{{ note }}</li>
+                    @if (battery.suites.length > suiteRows) {
+                      <tbody [id]="'bb-suites-more-' + battery.id" [hidden]="!suitesExpanded(battery)">
+                        @for (suite of moreSuites(battery); track suite.index; let i = $index) {
+                          <ng-container *ngTemplateOutlet="suiteRow; context: { $implicit: suite, position: i + suiteRows, battery: battery }"></ng-container>
+                        }
+                      </tbody>
                     }
-                  </ul>
-                }
-              } @else {
-                <p class="text-muted">The server returned no comparison.</p>
-              }
+                  </table>
+                  @if (battery.suites.length > suiteRows) {
+                    <button type="button" class="btn-link bb-suites-toggle"
+                            [attr.aria-expanded]="suitesExpanded(battery) ? 'true' : 'false'"
+                            [attr.aria-controls]="'bb-suites-more-' + battery.id"
+                            (click)="toggleSuites(battery)">
+                      {{ suitesExpanded(battery) ? 'Show fewer' : 'Show all ' + battery.suites.length + ' suites' }}
+                    </button>
+                  }
+                </div>
+              </article>
+            </li>
+          }
+        </ul>
+
+        @if (remainingCount > 0) {
+          <div class="gh-load-more bb-load-more">
+            <button type="button" class="btn-ghost bb-show-more" (click)="showMore()">Show {{ nextBatchCount }} more</button>
+            @if (remainingCount > list.batch) {
+              <button type="button" class="gh-filter-clear bb-show-all" (click)="showAll()">Show all {{ matchingCount }}</button>
             }
-          </section>
+          </div>
         }
       }
-    </section>
-  }
+    }
+  </section>
+
+  <!-- One row of a card's suite table. -->
+  <ng-template #suiteRow let-suite let-position="position" let-battery="battery">
+    <tr [class.is-deleted]="suite.deleted">
+      <td class="bb-num">{{ position + 1 }}</td>
+      <th scope="row" class="bb-suite-name">{{ suite.suiteName }}</th>
+      <td class="bb-num">{{ suite.deleted ? '—' : suite.questionCount }}</td>
+      <td class="bb-num">{{ formatPercent(suiteWeight(battery, position)) }}</td>
+      <td>
+        @if (suite.deleted) {
+          <span class="gh-tag gh-tag-internal">Deleted</span>
+        } @else if (!suite.difficultyFullyAssessed) {
+          <span class="gh-tag bb-tag-not-assessed">Not assessed</span>
+        }
+      </td>
+    </tr>
+  </ng-template>
 
   <app-battery-editor-dialog (saved)="onBatterySaved($event)"></app-battery-editor-dialog>
+
+  <app-battery-leaderboard-dialog #leaderboardDialog (closed)="onLeaderboardClosed()"></app-battery-leaderboard-dialog>
 
   <dialog #deleteDialog class="gh-dialog bb-delete-dialog" aria-labelledby="bbDeleteTitle"
           (cancel)="onDeleteCancel($event)">

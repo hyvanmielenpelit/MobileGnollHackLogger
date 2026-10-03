@@ -27,6 +27,9 @@ public static class BenchmarkPdfFileNames
     // A subject that is one run: its documents are named from the run number first.
     private static readonly Regex RunSubject = new(@"^run:([0-9]+)\z", RegexOptions.CultureInvariant);
 
+    // A subject that is one battery run: its documents are named from the battery run number first.
+    private static readonly Regex BatterySubject = new(@"^battery:([0-9]+)\z", RegexOptions.CultureInvariant);
+
     /// <summary>
     /// The client's <c>safeFileName</c> (<c>utils/download.util.ts</c>): lowercase, whitespace runs to
     /// hyphens, everything outside <c>[a-z0-9._-]</c> dropped, repeated separators collapsed, leading and
@@ -50,7 +53,8 @@ public static class BenchmarkPdfFileNames
     /// <summary>
     /// <c>[run-&lt;id&gt;_][vs-&lt;N&gt;-models_]&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].&lt;extension&gt;</c>, as
     /// the Download Center names a pack document: <c>run-&lt;id&gt;_</c> when the subject is the run
-    /// <c>run:&lt;id&gt;</c> (a group subject has no prefix); <c>vs-&lt;N&gt;-models_</c> when the stored fact
+    /// <c>run:&lt;id&gt;</c>, <c>battery-run-&lt;id&gt;_</c> when it is the battery run <c>battery:&lt;id&gt;</c>
+    /// (a group subject has no prefix); <c>vs-&lt;N&gt;-models_</c> when the stored fact
     /// sheet has N &gt; 0 peers, whatever N is; the title, else "&lt;audience&gt;: &lt;subject&gt;";
     /// <c>_INTERNAL</c> at Full disclosure. The extension is <c>pdf</c> or <c>docx</c>, e.g.
     /// <c>run-73_claude-5.5-opus-on-the-gnollbench-executive-summary_full_named_INTERNAL.pdf</c> for a
@@ -87,7 +91,10 @@ public static class BenchmarkPdfFileNames
         string internalSuffix = options.Disclosure == BenchmarkReportDisclosure.Full ? "_INTERNAL" : string.Empty;
 
         var runSubject = RunSubject.Match(document.SubjectKey ?? string.Empty);
-        string runPrefix = runSubject.Success ? "run-" + runSubject.Groups[1].Value + "_" : string.Empty;
+        var batterySubject = BatterySubject.Match(document.SubjectKey ?? string.Empty);
+        string runPrefix = runSubject.Success ? "run-" + runSubject.Groups[1].Value + "_"
+            : batterySubject.Success ? "battery-run-" + batterySubject.Groups[1].Value + "_"
+            : string.Empty;
         int peerCount = PeerCountOf(document.FactsJson);
         string comparisonPrefix = peerCount > 0 ? "vs-" + peerCount.ToString(CultureInfo.InvariantCulture) + "-models_" : string.Empty;
 

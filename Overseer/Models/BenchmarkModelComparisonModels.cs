@@ -37,8 +37,9 @@ public enum BenchmarkModelComparisonPricingBasis
 }
 
 /// <summary>
-/// What to compare. Each run id and each group id becomes one point; a group is one point over its
-/// members, never several.
+/// What to compare. Each run id, group id and battery run id becomes one point; a group or a battery
+/// result is one point over its members, never several. Battery results are compared only with
+/// battery results.
 /// </summary>
 public class BenchmarkModelComparisonRequest
 {
@@ -50,6 +51,12 @@ public class BenchmarkModelComparisonRequest
     /// not poolable is returned excluded rather than pooled.
     /// </summary>
     public List<long> GroupIds { get; set; } = new();
+
+    /// <summary>
+    /// Battery runs, each contributing one point read from its latest battery analysis. A request
+    /// naming any of them may name no run or group.
+    /// </summary>
+    public List<long> BatteryRunIds { get; set; } = new();
 
     public BenchmarkModelComparisonPricingBasis PricingBasis { get; set; }
         = BenchmarkModelComparisonPricingBasis.Current;
@@ -133,10 +140,13 @@ public class BenchmarkModelComparisonSpeedDto
     /// <summary>Mean of the pooled per-answer model times.</summary>
     public double? ModelTimeMeanMs { get; set; }
 
-    /// <summary>Mean over member runs of that run's own total model time over its Ok answers.</summary>
+    /// <summary>
+    /// Mean over member runs of that run's own total model time over its Ok answers. For a battery
+    /// result, per battery pass: the sum over suites of that mean.
+    /// </summary>
     public double? TotalModelTimePerRunMeanMs { get; set; }
 
-    /// <summary>Sample standard deviation of the per-run total model times. Null below two runs.</summary>
+    /// <summary>Sample standard deviation of the per-run total model times. Null below two runs, and for a battery result.</summary>
     public double? TotalModelTimeSdMs { get; set; }
 
     public int PooledAnswerCount { get; set; }
@@ -171,23 +181,28 @@ public class BenchmarkModelComparisonCostDto
     /// </summary>
     public double? CandidateCostPerQuestionUsd { get; set; }
 
+    /// <summary>For a battery result, per battery pass: the sum over suites of the mean per run.</summary>
     public double? CandidateCostPerRunUsd { get; set; }
     public double? CandidateTotalCostUsd { get; set; }
 
     /// <summary>
     /// Mean cost of one run behind the entry with every role included: candidate, assessor, second
     /// opinion, claim verifier and final synthesis. Null unless every run resolved a card for every role
-    /// that spent tokens, and every run recorded per-role usage (harness 15 or later).
+    /// that spent tokens, and every run recorded per-role usage (harness 15 or later). For a battery
+    /// result, per battery pass.
     /// </summary>
     public double? TotalRunCostPerRunUsd { get; set; }
 
-    /// <summary>Sample SD of the per-run total across the entry's runs. Null below two runs, or when the total is null.</summary>
+    /// <summary>Sample SD of the per-run total across the entry's runs. Null below two runs, when the total is null, and for a battery result.</summary>
     public double? TotalRunCostSdUsd { get; set; }
 
     /// <summary>Why <see cref="TotalRunCostPerRunUsd"/> is null, in one sentence. Null when it is present.</summary>
     public string? TotalRunCostUnavailableReason { get; set; }
 
-    /// <summary>Questions each run behind the entry asked, averaged: the denominator of <see cref="CandidateCostPerQuestionUsd"/>.</summary>
+    /// <summary>
+    /// Questions each run behind the entry asked, averaged: the denominator of
+    /// <see cref="CandidateCostPerQuestionUsd"/>. For a battery result, per battery pass.
+    /// </summary>
     public double? QuestionsAskedPerRun { get; set; }
 
     /// <summary>`AsRun` or `Current`, echoing the basis the whole comparison was computed on.</summary>
@@ -250,24 +265,37 @@ public class BenchmarkModelComparisonTableDto
 /// <summary>One model, as configured, on one comparison.</summary>
 public class BenchmarkModelComparisonEntryDto
 {
-    /// <summary>`run:12` or `group:3` — stable across a refresh, and what a chart keys its series by.</summary>
+    /// <summary>`run:12`, `group:3` or `battery:7` — stable across a refresh, and what a chart keys its series by.</summary>
     public string Key { get; set; } = string.Empty;
 
-    /// <summary>`Run` or `Group`.</summary>
+    /// <summary>`Run`, `Group` or `Battery`.</summary>
     public string SourceKind { get; set; } = string.Empty;
 
     public long SourceId { get; set; }
 
-    /// <summary>The group's name; null for a single run.</summary>
+    /// <summary>The group's or the battery's name; null for a single run.</summary>
     public string? SourceName { get; set; }
 
+    /// <summary>The runs behind the point; for a battery result, its usable member runs.</summary>
     public List<long> RunIds { get; set; } = new();
 
-    /// <summary><i>R</i>: runs behind this point.</summary>
+    /// <summary><i>R</i>: runs behind this point. For a battery result, every usable member run of every suite.</summary>
     public int RunCount { get; set; }
 
+    /// <summary>Null for a battery result, which spans several suites.</summary>
     public long? SuiteId { get; set; }
     public string? SuiteName { get; set; }
+
+    // --- A battery result only; null on a run or group entry ---
+    public long? BatteryRunId { get; set; }
+    public string? BatteryName { get; set; }
+    public string? BatteryDefinitionSha256 { get; set; }
+
+    /// <summary>The comparability class of the battery's latest analysis; null when it has none.</summary>
+    public string? BatteryComparabilityClassSha256 { get; set; }
+
+    public int? SuiteCount { get; set; }
+    public int? RunsPerSuite { get; set; }
 
     // --- The model axis, which is what these points are allowed to differ on ---
     public string Provider { get; set; } = string.Empty;
@@ -329,6 +357,9 @@ public class BenchmarkModelComparisonEntryDto
 /// </summary>
 public class BenchmarkModelComparisonDto
 {
+    /// <summary>`Runs` (runs and analysis groups) or `Batteries` (battery results).</summary>
+    public string SubjectKind { get; set; } = BenchmarkModelComparisonSubjectKinds.Runs;
+
     public string PricingBasis { get; set; } = string.Empty;
 
     /// <summary>Ready for the chart subtitle, including the date the basis was taken.</summary>
@@ -336,19 +367,28 @@ public class BenchmarkModelComparisonDto
 
     public DateTime ComputedAtUtc { get; set; }
 
+    /// <summary>Null on a comparison of battery results.</summary>
     public long? BaselineSuiteId { get; set; }
     public string? BaselineSuiteName { get; set; }
+
+    /// <summary>The battery the baseline condition ran; null on a comparison of runs and groups.</summary>
+    public string? BaselineBatteryName { get; set; }
 
     /// <summary>The entries that define the baseline condition — those that may be charted.</summary>
     public List<string> BaselineEntryKeys { get; set; } = new();
 
-    /// <summary>The baseline's value for every must-match key, so a report can print the condition.</summary>
+    /// <summary>
+    /// The baseline's value for every must-match key, so a report can print the condition. For
+    /// battery results, the definition hash and the comparability class under `BatteryDefinition`
+    /// and `BatteryComparabilityClass`.
+    /// </summary>
     public Dictionary<string, string> BaselineKeyValues { get; set; } = new();
 
     /// <summary>
     /// The must-match signature of the baseline condition: the one short string that names the
     /// instrument the charted points were measured under, so an exported figure carries its own
-    /// provenance. Empty when nothing reached the baseline.
+    /// provenance. For battery results, the comparability class hash. Empty when nothing reached the
+    /// baseline.
     /// </summary>
     public string BaselineSignature { get; set; } = string.Empty;
 
@@ -381,6 +421,13 @@ public class BenchmarkModelComparisonDto
     /// all graded by the same panel.
     /// </summary>
     public BenchmarkPanelDiagnosticsDto? PanelDiagnostics { get; set; }
+}
+
+/// <summary>The values of <see cref="BenchmarkModelComparisonDto.SubjectKind"/>.</summary>
+public static class BenchmarkModelComparisonSubjectKinds
+{
+    public const string Runs = "Runs";
+    public const string Batteries = "Batteries";
 }
 
 /// <summary>A measure the comparison deliberately refuses to chart, and the reason.</summary>

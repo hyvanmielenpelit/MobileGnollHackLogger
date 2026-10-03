@@ -13,13 +13,11 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
-import { formatDate } from '@angular/common';
 import { Observable, Subject, Subscription, catchError, debounceTime, map, of, switchMap, timer } from 'rxjs';
 
 import {
   AdminBenchmarkService,
   BenchmarkReportAudience,
-  BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportDocumentOrigin,
   BenchmarkReportPeerNaming,
@@ -27,7 +25,6 @@ import {
   BenchmarkRunReportDocumentsStatus,
   BenchmarkRunReportEstimateDto,
   BenchmarkRunReportJobDto,
-  SameProviderWarningDto,
   WriteRunReportDocumentsRequest,
   reportDisclosureParam
 } from '../../../services/admin-benchmark.service';
@@ -35,18 +32,36 @@ import { SystemAiConfigDto } from '../../../services/admin.service';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ModelPickerComponent, ModelPickerOption } from '../../../shared/model-picker/model-picker.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
-import { parseServerUtcDate } from '../../../utils/date.util';
 import { safeFileName } from '../../../utils/download.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { rememberedPdfPaper } from '../download-center/benchmark-download-center.component';
 import { reportDisclosureInfo } from '../report-disclosure-guide';
+import { audienceLabel, disclosureLabel } from '../report-pack/report-document-format';
 import {
-  audienceLabel,
-  disclosureLabel,
-  formatCostUsd,
-  formatElapsed,
-  statusLabel as reportDocumentStatusLabel
-} from '../report-pack/report-document-format';
+  REPORT_DOCUMENT_AUDIENCES,
+  ReportDocumentRow,
+  ReportDocumentsStatusKind,
+  ReportEstimateView,
+  ReportStatusSnapshot,
+  completionDocumentsOf,
+  isReportWriterSameProviderWarning,
+  missingReportAudiences,
+  reportDateUtc,
+  reportDocumentByline,
+  reportDocumentDisclosures,
+  reportDocumentMeta,
+  reportDocumentRows,
+  reportDocumentTag,
+  reportDocumentWriter,
+  reportDocumentsStatusOf,
+  reportEstimateView,
+  reportJobInProgress,
+  reportJobStatusKind,
+  reportJobStatusText,
+  reportServerErrorText,
+  reportStatusSnapshotOfJob,
+  writtenReportLabels
+} from './report-documents-list';
 import {
   ReportWriterCandidate,
   isSameProvider,
@@ -57,6 +72,8 @@ import {
 import { RUN_REPORT_WRITER_ADVICE } from './report-writer-advice';
 import { RunReportWritingDialogComponent } from './run-report-writing-dialog.component';
 
+export { reportDocumentsStatusOf } from './report-documents-list';
+
 /** The interval of the tab's status poll while a finished run's reports are queued or written. */
 export const RUN_REPORT_DOCUMENTS_POLL_MS = 5000;
 
@@ -64,10 +81,7 @@ export const RUN_REPORT_DOCUMENTS_POLL_MS = 5000;
 export const RUN_REPORT_ESTIMATE_DEBOUNCE_MS = 300;
 
 /** The two AI-written documents of a run, in the order the tab lists them. */
-export const RUN_REPORT_AUDIENCES: readonly BenchmarkReportAudience[] = [
-  BenchmarkReportAudience.ExecutiveSummary,
-  BenchmarkReportAudience.TechnicalReport
-];
+export const RUN_REPORT_AUDIENCES: readonly BenchmarkReportAudience[] = REPORT_DOCUMENT_AUDIENCES;
 
 /** The run's report fields as the tab last read them, for the host to keep its copy of the run current. */
 export interface RunReportStatusChange {
@@ -78,26 +92,16 @@ export interface RunReportStatusChange {
 }
 
 /** One row of the document list: an audience and its stored document, if any. */
-export interface RunAiReportRow {
-  audience: BenchmarkReportAudience;
-  label: string;
-  doc: BenchmarkReportDocumentListItemDto | null;
-}
+export type RunAiReportRow = ReportDocumentRow;
 
 /** How the status line is drawn. */
-export type RunAiReportStatusKind = 'plain' | 'progress' | 'failed' | 'skipped';
+export type RunAiReportStatusKind = ReportDocumentsStatusKind;
 
 /**
  * The cost estimate block: waiting for the estimate, failed, no price card for the writer, or the
  * total with, for two documents, the cost of each.
  */
-export interface RunReportEstimateView {
-  state: 'loading' | 'failed' | 'noPrice' | 'ready';
-  /** The total, formatted; null unless ready. */
-  total: string | null;
-  /** One entry per document, only when there are two. */
-  parts: { name: string; cost: string }[];
-}
+export type RunReportEstimateView = ReportEstimateView;
 
 interface EstimateRequest {
   key: string;
@@ -113,26 +117,7 @@ interface EstimateResult {
 }
 
 /** The run's report status, from the job while the server knows it, else from the run. */
-interface StatusSnapshot {
-  status: BenchmarkRunReportDocumentsStatus;
-  message: string | null;
-  writerId: number | null;
-  writerName: string | null;
-}
-
-/** The run's documents status, read from its number or, from an older server, its name. */
-export function reportDocumentsStatusOf(raw: unknown): BenchmarkRunReportDocumentsStatus {
-  if (typeof raw === 'number') {
-    return raw as BenchmarkRunReportDocumentsStatus;
-  }
-  if (typeof raw === 'string') {
-    const value = BenchmarkRunReportDocumentsStatus[raw as keyof typeof BenchmarkRunReportDocumentsStatus];
-    if (typeof value === 'number') {
-      return value;
-    }
-  }
-  return BenchmarkRunReportDocumentsStatus.NotRequested;
-}
+type StatusSnapshot = ReportStatusSnapshot;
 
 /** A run's status by name, from its number or its name. */
 function runStatusName(status: string | number | null | undefined): string {
@@ -145,30 +130,6 @@ function runStatusName(status: string | number | null | undefined): string {
     case 6: case 'CompletedWithLimits': return 'CompletedWithLimits';
     default: return String(status ?? '');
   }
-}
-
-/** The server's own message from an error body: a plain string, or `{ error }`. */
-function serverErrorText(err: any): string | null {
-  const body = err?.error;
-  if (typeof body === 'string' && body.trim()) return body.trim();
-  if (body && typeof body.error === 'string' && body.error.trim()) return body.error.trim();
-  return null;
-}
-
-/** A 409 body that asks for the same-provider acknowledgment rather than refusing. */
-function isSameProviderWarning(body: unknown): body is SameProviderWarningDto {
-  if (!body || typeof body !== 'object') return false;
-  const warning = body as Partial<SameProviderWarningDto>;
-  return typeof warning.provider === 'string' && (warning.sameProvider === true || warning.role === 'reportWriter');
-}
-
-function snapshotOfJob(job: BenchmarkRunReportJobDto): StatusSnapshot {
-  return {
-    status: reportDocumentsStatusOf(job.status),
-    message: job.message ?? null,
-    writerId: job.writerConfigId ?? null,
-    writerName: job.writerDisplayName ?? null
-  };
 }
 
 function snapshotOfRun(run: BenchmarkRunDetailDto): StatusSnapshot {
@@ -185,13 +146,7 @@ function runCompletionDocumentsOf(
   documents: readonly BenchmarkReportDocumentListItemDto[] | null | undefined,
   runId: number
 ): BenchmarkReportDocumentListItemDto[] {
-  const subjectKey = `run:${runId}`;
-  const newestFirst = (documents ?? [])
-    .filter(doc => doc.origin === BenchmarkReportDocumentOrigin.RunCompletion && doc.subjectKey === subjectKey)
-    .sort((a, b) => (b.createdAtUtc ?? '').localeCompare(a.createdAtUtc ?? '') || b.id - a.id);
-  return RUN_REPORT_AUDIENCES
-    .map(audience => newestFirst.find(doc => doc.audience === audience))
-    .filter((doc): doc is BenchmarkReportDocumentListItemDto => !!doc);
+  return completionDocumentsOf(documents, `run:${runId}`, BenchmarkReportDocumentOrigin.RunCompletion);
 }
 
 /**
@@ -356,8 +311,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
 
   /** A job for the run's documents is queued or writing. */
   get jobInProgress(): boolean {
-    return this.status === BenchmarkRunReportDocumentsStatus.Pending ||
-      this.status === BenchmarkRunReportDocumentsStatus.Writing;
+    return reportJobInProgress(this.status);
   }
 
   /** The run finished with a status its documents can be written for. */
@@ -368,19 +322,9 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
 
   /** The job state, or '' when the document rows already say everything. */
   get statusText(): string {
-    const message = this.statusMessage?.trim();
-    switch (this.status) {
-      case BenchmarkRunReportDocumentsStatus.Pending:
-        return 'Waiting for the report writer';
-      case BenchmarkRunReportDocumentsStatus.Writing:
-        return 'Writing…';
-      case BenchmarkRunReportDocumentsStatus.Failed:
-        return message ? `Failed: ${message}` : 'Failed';
-      case BenchmarkRunReportDocumentsStatus.Skipped:
-        return message ? `Skipped: ${message}` : 'Skipped';
-      case BenchmarkRunReportDocumentsStatus.Canceled:
-        // The server's cancellation messages begin with the word already.
-        return !message ? 'Canceled' : /^cancel/i.test(message) ? message : `Canceled: ${message}`;
+    const text = reportJobStatusText(this.status, this.statusMessage);
+    if (text) {
+      return text;
     }
     if (this.status === BenchmarkRunReportDocumentsStatus.NotRequested && this.runWriterId != null &&
       runStatusName(this.run?.status) === 'Running') {
@@ -390,13 +334,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   get statusKind(): RunAiReportStatusKind {
-    switch (this.status) {
-      case BenchmarkRunReportDocumentsStatus.Failed: return 'failed';
-      case BenchmarkRunReportDocumentsStatus.Skipped: return 'skipped';
-      case BenchmarkRunReportDocumentsStatus.Pending:
-      case BenchmarkRunReportDocumentsStatus.Writing: return 'progress';
-      default: return 'plain';
-    }
+    return reportJobStatusKind(this.status);
   }
 
   documentFor(audience: BenchmarkReportAudience): BenchmarkReportDocumentListItemDto | undefined {
@@ -405,11 +343,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
 
   /** One row per run-completion audience, in the order the tab lists them, with its stored document if any. */
   get documentRows(): RunAiReportRow[] {
-    return RUN_REPORT_AUDIENCES.map(audience => ({
-      audience,
-      label: audienceLabel(audience),
-      doc: this.documentFor(audience) ?? null
-    }));
+    return reportDocumentRows(this.documents);
   }
 
   /** At least one document is written, so the Download Center has something of this tab's to offer. */
@@ -419,12 +353,12 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
 
   /** The documents the run lacks, in list order. */
   get missingAudiences(): BenchmarkReportAudience[] {
-    return RUN_REPORT_AUDIENCES.filter(audience => !this.documentFor(audience));
+    return missingReportAudiences(this.documents);
   }
 
   /** The written documents, whose names the write panel lists as not writable. */
   get writtenLabels(): string[] {
-    return RUN_REPORT_AUDIENCES.filter(audience => !!this.documentFor(audience)).map(audienceLabel);
+    return writtenReportLabels(this.documents);
   }
 
   /** A finished run has fewer than both documents, so the tab offers Write Reports. */
@@ -498,55 +432,30 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
 
   /** The cost estimate block under the write row, or null when there is nothing to say. */
   get estimateView(): RunReportEstimateView | null {
-    if (this.estimateLoading) return { state: 'loading', total: null, parts: [] };
-    if (this.estimateFailed) return { state: 'failed', total: null, parts: [] };
-    const estimate = this.estimate;
-    if (!estimate || estimate.refusal) return null;
-    const total = estimate.estimatedTotalCostUsd;
-    if (total === null || total === undefined) {
-      return { state: 'noPrice', total: null, parts: [] };
-    }
-    const parts = estimate.estimates.length > 1
-      ? estimate.estimates.map(e => ({ name: audienceLabel(e.audience), cost: formatCostUsd(e.estimatedCostUsd) }))
-      : [];
-    return { state: 'ready', total: formatCostUsd(total), parts };
+    return reportEstimateView(this.estimateLoading, this.estimateFailed, this.estimate);
   }
 
   documentStatusLabel(doc: BenchmarkReportDocumentListItemDto): string {
-    switch (doc.status) {
-      case 'Completed': return 'Written';
-      case 'CompletedWithWarnings': return 'Written with warnings';
-      default: return reportDocumentStatusLabel(doc.status);
-    }
+    return reportDocumentTag(doc);
   }
 
   documentWriter(doc: BenchmarkReportDocumentListItemDto): string {
-    return doc.writerDisplayName || this.runWriterName || 'the report writer';
+    return reportDocumentWriter(doc, this.runWriterName);
   }
 
   /** When a document was written, in UTC. */
   documentDate(doc: BenchmarkReportDocumentListItemDto): string {
-    return this.formatDateUtc(doc.createdAtUtc);
+    return reportDateUtc(doc.createdAtUtc);
   }
 
   /** A written document's writer and date. */
   documentByline(doc: BenchmarkReportDocumentListItemDto): string {
-    return `by ${this.documentWriter(doc)} on ${this.documentDate(doc)}`;
+    return reportDocumentByline(doc, this.runWriterName);
   }
 
   /** The writer and date, then the stored duration and cost where known. */
   documentMeta(doc: BenchmarkReportDocumentListItemDto): string {
-    const parts = [this.documentByline(doc)];
-    if (doc.durationMs > 0) parts.push(formatElapsed(doc.durationMs));
-    if (doc.costUsd !== null && doc.costUsd !== undefined) parts.push(formatCostUsd(doc.costUsd));
-    if (doc.sameProviderAcknowledged) parts.push('same provider, acknowledged');
-    return parts.join(' · ');
-  }
-
-  private formatDateUtc(value: string | null | undefined): string {
-    if (!value) return 'an unknown date';
-    const date = parseServerUtcDate(value);
-    return Number.isNaN(date.getTime()) ? value : `${formatDate(date, 'yyyy-MM-dd HH:mm', 'en-US', 'UTC')} UTC`;
+    return reportDocumentMeta(doc, this.runWriterName);
   }
 
   // --- Choices ---
@@ -640,7 +549,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
         this.writeSubmitting = false;
         if (this.run?.id !== runId) return;
         // The selection changed under the client's check: the server asks for the acknowledgment.
-        if (err?.status === 409 && !acknowledgeSameProvider && isSameProviderWarning(err.error)) {
+        if (err?.status === 409 && !acknowledgeSameProvider && isReportWriterSameProviderWarning(err.error)) {
           this.cdr.markForCheck();
           this.openSameProviderConfirm(reportWriterWarningText(err.error.assessorModelDisplayName, err.error.provider));
           return;
@@ -658,7 +567,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
   private static writeErrorOf(err: any, runId: number): string {
     if (err?.status === 404) return `Run #${runId} no longer exists.`;
     if (err?.status === 0) return 'The server could not be reached.';
-    return serverErrorText(err) ?? `The reports could not be requested (HTTP ${err?.status ?? 'error'}).`;
+    return reportServerErrorText(err) ?? `The reports could not be requested (HTTP ${err?.status ?? 'error'}).`;
   }
 
   /** Show Progress: the progress dialog of the job in hand. Closing it never cancels the job. */
@@ -690,7 +599,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
     const run = this.run;
     if (!run) return;
     if (view && view.runId === run.id) {
-      this.afterFinish(snapshotOfJob(view));
+      this.afterFinish(reportStatusSnapshotOfJob(view));
       return;
     }
     const runId = run.id;
@@ -722,12 +631,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
     const run = this.run;
     if (!run) return;
     this.viewError = null;
-    const allowed = [...new Set(doc.allowedDisclosures ?? [])].sort((a, b) => a - b);
-    const disclosures = allowed.length > 0 ? allowed : [BenchmarkReportDisclosure.Full];
-    const highest = disclosures[disclosures.length - 1];
-    const byKey = new Map(disclosures.map(disclosure => [reportDisclosureParam(disclosure), disclosure] as const));
-    const disclosureOf = (variant: string | null): BenchmarkReportDisclosure =>
-      (variant !== null ? byKey.get(variant as ReturnType<typeof reportDisclosureParam>) : undefined) ?? highest;
+    const { disclosures, highest, disclosureOf } = reportDocumentDisclosures(doc);
     const paper = rememberedPdfPaper();
     const label = audienceLabel(doc.audience);
     this.pdfViewer?.open({
@@ -816,7 +720,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
         this.deleting = false;
         const reason = err?.status === 404 ? 'it no longer exists'
           : err?.status === 0 ? 'the server could not be reached'
-            : (serverErrorText(err) ?? `HTTP ${err?.status ?? 'error'}`);
+            : (reportServerErrorText(err) ?? `HTTP ${err?.status ?? 'error'}`);
         this.deleteError = `The ${label} could not be deleted: ${reason.replace(/\.$/, '')}.`;
         this.cdr.markForCheck();
       }
@@ -897,7 +801,7 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
   /** The job's view of the status while this server process knows the job, else the run's own. */
   private fetchStatus(runId: number): Observable<StatusSnapshot | null> {
     return this.benchmarkService.getRunReportJob(runId).pipe(
-      switchMap(job => job ? of(snapshotOfJob(job)) : this.benchmarkService.getRun(runId).pipe(map(snapshotOfRun))),
+      switchMap(job => job ? of(reportStatusSnapshotOfJob(job)) :this.benchmarkService.getRun(runId).pipe(map(snapshotOfRun))),
       catchError(() => of(null))
     );
   }

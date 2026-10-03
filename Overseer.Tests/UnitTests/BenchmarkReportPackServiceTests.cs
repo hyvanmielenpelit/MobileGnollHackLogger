@@ -38,6 +38,9 @@ public class BenchmarkReportPackServiceTests
 {
     private const string UserId = "user-1";
 
+    /// <summary>The first member run of <see cref="Harness.SeedBatteryAsync"/>, clear of the seeded suite's runs.</summary>
+    private const long BatteryFirstRunId = 9001;
+
     // --- Generation through the real agent loop -----------------------------------------------------
 
     [Fact]
@@ -286,6 +289,79 @@ public class BenchmarkReportPackServiceTests
 
         var usage = Assert.Single(await h.Db.SystemAiUsageLogs.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportPackService.UsageRoleContext, usage.RoleContext);
+    }
+
+    [Fact]
+    public async Task ABatteryCompletionJob_WritesAStandaloneBatteryDocument_StoredWithItsOrigin()
+    {
+        await using var h = await Harness.CreateAsync();
+        long batteryRunId = await h.SeedBatteryAsync();
+        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+            h.Db, new BenchmarkModelComparisonService(h.Db),
+            BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, new[] { BenchmarkReportAudience.ExecutiveSummary }, h.Writer.Id),
+            BenchmarkReportPackPreparation.DefaultAnswerExcerptChars, CancellationToken.None);
+        Assert.True(prep != null, refusal);
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep!));
+
+        var job = await h.RunBatteryCompletionAsync(batteryRunId, BenchmarkReportAudience.ExecutiveSummary);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal($"battery:{batteryRunId}", job.Request.SubjectKey);
+        Assert.Equal(new[] { batteryRunId }, job.Request.BatteryRunIds);
+        Assert.Empty(job.Request.RunIds);
+        Assert.Equal(BenchmarkReportPackPreparation.BatteryJobLabel(batteryRunId), job.SubjectLabel);
+
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.Include(d => d.Runs).ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportDocumentOrigin.BatteryCompletion, document.Origin);
+        Assert.Equal($"battery:{batteryRunId}", document.SubjectKey);
+        Assert.Equal(BenchmarkReportComparisonKey.From(Array.Empty<long>(), Array.Empty<long>(), new[] { batteryRunId }), document.ComparisonKey);
+        Assert.Equal(new long[] { BatteryFirstRunId, BatteryFirstRunId + 1 }, document.Runs.Where(r => !r.IsPeer).Select(r => r.RunId).OrderBy(id => id));
+        Assert.DoesNotContain(document.Runs, r => r.IsPeer);
+        Assert.Equal("Core knowledge", document.SuiteName);
+        Assert.Null(document.SuiteId);
+
+        var request = BenchmarkReportJson.Deserialize<BenchmarkModelComparisonRequest>(document.ComparisonRequestJson);
+        Assert.Equal(new[] { batteryRunId }, request.BatteryRunIds);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        Assert.Equal(BenchmarkBatteryReportFacts.SubjectKind, sheet.SubjectKind);
+        Assert.NotNull(sheet.Battery);
+        Assert.Empty(sheet.Peers);
+        Assert.Equal(new[] { "S1-Q1", "S1-Q2", "S1-Q3", "S2-Q1", "S2-Q2" }, sheet.Questions.Select(q => q.Reference));
+    }
+
+    [Fact]
+    public async Task StartAndPreview_RefuseBatteryResultsMixedWithRuns()
+    {
+        await using var h = await Harness.CreateAsync();
+        long batteryRunId = await h.SeedBatteryAsync();
+        var request = h.Request();
+        request.BatteryRunIds.Add(batteryRunId);
+
+        var start = Assert.IsType<BadRequestObjectResult>(await h.Controller().Start(request, CancellationToken.None));
+        Assert.Contains(BenchmarkBatteryModelComparison.MixedSourcesError, JsonSerializer.Serialize(start.Value));
+
+        var preview = Assert.IsType<BadRequestObjectResult>(await h.Controller().Preview(request, CancellationToken.None));
+        Assert.Contains(BenchmarkBatteryModelComparison.MixedSourcesError, JsonSerializer.Serialize(preview.Value));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task Preview_OfABatterySubject_EstimatesItsDocuments()
+    {
+        await using var h = await Harness.CreateAsync();
+        long batteryRunId = await h.SeedBatteryAsync();
+        var request = BenchmarkReportPackPreparation.BatteryRequest(
+            batteryRunId, new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport }, h.Writer.Id);
+
+        var ok = Assert.IsType<OkObjectResult>(await h.Controller().Preview(request, CancellationToken.None));
+        var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(ok.Value);
+
+        Assert.Null(preview.Refusal);
+        Assert.Equal($"battery:{batteryRunId}", preview.SubjectKey);
+        Assert.Equal("Core knowledge", preview.SuiteName);
+        Assert.Empty(preview.Peers);
+        Assert.Equal(2, preview.Estimates.Count);
+        Assert.Equal(0, h.Provider.Calls);
     }
 
     [Fact]
@@ -732,6 +808,60 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
+    public async Task ListController_FiltersBySubjectKey_AndByTheBatteryCompletionOrigin()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
+
+        var runDocument = BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary);
+        runDocument.Id = 0;
+        runDocument.Runs = new List<BenchmarkReportDocumentRun>();
+        var groupDocument = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        groupDocument.Id = 0;
+        groupDocument.SubjectKey = "group:4";
+        groupDocument.Runs = new List<BenchmarkReportDocumentRun>();
+        var battery7 = BatteryReportHarness.BatteryDocument(7, BenchmarkReportAudience.ExecutiveSummary);
+        battery7.Runs = new List<BenchmarkReportDocumentRun>();
+        var battery8 = BatteryReportHarness.BatteryDocument(8, BenchmarkReportAudience.TechnicalReport);
+        battery8.Runs = new List<BenchmarkReportDocumentRun>();
+        db.BenchmarkReportDocuments.AddRange(runDocument, groupDocument, battery7, battery8);
+        await db.SaveChangesAsync(ct);
+
+        var controller = new AdminBenchmarkReportDocumentsController(
+            new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
+        async Task<List<BenchmarkReportDocumentListItemDto>> ListAsync(string? comparison = null, string? origin = null, string? subject = null)
+        {
+            var ok = Assert.IsType<OkObjectResult>(await controller.List(null, null, null, CancellationToken.None, comparison, origin, subject));
+            return Assert.IsType<List<BenchmarkReportDocumentListItemDto>>(ok.Value);
+        }
+
+        Assert.Equal(4, (await ListAsync()).Count);
+        Assert.Equal(runDocument.Id, Assert.Single(await ListAsync(subject: "run:12")).Id);
+        Assert.Equal(groupDocument.Id, Assert.Single(await ListAsync(subject: "group:4")).Id);
+        Assert.Equal(battery7.Id, Assert.Single(await ListAsync(subject: "battery:7")).Id);
+        Assert.Empty(await ListAsync(subject: "battery:9"));
+
+        var batteryDocuments = await ListAsync(origin: "batteryCompletion");
+        Assert.Equal(new[] { battery7.Id, battery8.Id }, batteryDocuments.Select(d => d.Id).OrderBy(id => id));
+        Assert.All(batteryDocuments, d => Assert.Equal(BenchmarkReportDocumentOrigin.BatteryCompletion, d.Origin));
+        Assert.Equal(battery8.Id, Assert.Single(await ListAsync(origin: "BatteryCompletion", subject: "battery:8")).Id);
+        Assert.Empty(await ListAsync(origin: "runCompletion", subject: "battery:8"));
+
+        var byComparison = Assert.Single(await ListAsync(comparison: "battery:7"));
+        Assert.Equal(battery7.Id, byComparison.Id);
+        Assert.Equal(1, byComparison.ComparisonEntryCount);
+        Assert.Empty(await ListAsync(comparison: "battery:7,battery:8"));
+
+        foreach (var malformed in new[] { "", "battery:", "battery:x", "battery:-1", "battery:0", " battery:7", "run:1,run:2", "suite:1" })
+        {
+            var bad = Assert.IsType<BadRequestObjectResult>(await controller.List(null, null, null, CancellationToken.None, null, null, malformed));
+            Assert.Contains("subject must be one run:", JsonSerializer.Serialize(bad.Value));
+        }
+        var badOrigin = Assert.IsType<BadRequestObjectResult>(await controller.List(null, null, null, CancellationToken.None, null, "battery"));
+        Assert.Contains("batteryCompletion", JsonSerializer.Serialize(badOrigin.Value));
+    }
+
+    [Fact]
     public async Task Backfill_KeysEveryReadableRow_LeavesAnUnreadableOneEmpty_AndIsIdempotent()
     {
         var options = BenchmarkRunExamTests.InMemoryOptions();
@@ -960,6 +1090,38 @@ public class BenchmarkReportPackServiceTests
             await Jobs.WaitForSlotAsync(job, CancellationToken.None);
 
             await Service().WriteRunCompletionDocumentsAsync(job, CancellationToken.None);
+            return job;
+        }
+
+        /// <summary>One round of both suites of <see cref="BenchmarkBatteryTestData.Definition"/>, analysed; returns the battery run id.</summary>
+        public async Task<long> SeedBatteryAsync()
+        {
+            long id = await BenchmarkBatteryTestData.SeedAsync(
+                Db,
+                BenchmarkBatteryTestData.Definition(),
+                (BenchmarkBatteryTestData.SuiteARun(BatteryFirstRunId), 0, 1),
+                (BenchmarkBatteryTestData.SuiteBRun(BatteryFirstRunId + 1), 1, 1));
+            var (analysis, _, _, error) = await BenchmarkBatteryTestData.Service(Db).AnalyseAsync(id, null, null, CancellationToken.None);
+            Assert.True(analysis != null, error);
+            return id;
+        }
+
+        /// <summary>Runs one battery-completion job for the battery run through the service, over the fake writer.</summary>
+        public async Task<BenchmarkReportPackJob> RunBatteryCompletionAsync(long batteryRunId, BenchmarkReportAudience audience)
+        {
+            var snapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(Db, Writer, CancellationToken.None);
+            var job = new BenchmarkReportPackJob
+            {
+                WriterConfigId = Writer.Id,
+                WriterDisplayName = Writer.DisplayName,
+                WriterSnapshotId = snapshot.Id,
+                StartedByUserId = UserId,
+                Cts = new CancellationTokenSource(),
+                Documents = { new BenchmarkReportPackDocumentProgress { Audience = audience } }
+            };
+            await Jobs.WaitForSlotAsync(job, CancellationToken.None);
+
+            await Service().WriteBatteryCompletionDocumentsAsync(batteryRunId, job, CancellationToken.None);
             return job;
         }
 

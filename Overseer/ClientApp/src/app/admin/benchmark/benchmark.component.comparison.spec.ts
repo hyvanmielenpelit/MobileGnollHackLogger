@@ -7,6 +7,7 @@ import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import { serializeQuestionsYaml } from './question-yaml/question-yaml-format';
 import { COMPARISON_WIZARD_STEPS } from './model-comparison/model-comparison.component';
 import { ReportDocumentsLauncherComponent } from './report-pack/report-documents-launcher.component';
+import { MAX_COMPARABILITY_INDEX_GROUPS, MAX_COMPARABILITY_INDEX_RUNS } from './state/benchmark-comparison.state';
 import {
   AdminBenchmarkSpecContext, clearStoredState, createAdminBenchmarkFixture, COMPARISON_SELECTION_KEY, COMPARISON_LAUNCHER_KEY
 } from './benchmark.component.testing';
@@ -765,7 +766,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const stored = JSON.parse(localStorage.getItem(COMPARISON_SELECTION_KEY)!);
       expect(stored).toEqual({
-        runIds: [1, 2], groupIds: [11], suiteId: 5, pricingBasis: 'Current'
+        runIds: [1, 2], groupIds: [11], batteryRunIds: [], suiteId: 5, pricingBasis: 'Current'
       });
     });
 
@@ -799,6 +800,168 @@ describe('AdminBenchmarkComponent', () => {
       }).not.toThrow();
       expect(ctx.comparison.comparisonRunIds).toEqual([]);
       expect(ctx.comparison.comparisonPricingBasis).toBe('Current');
+    });
+
+    // --- The comparability index caps ---
+
+    it('asks the index about at most the server\'s caps of runs and groups', () => {
+      ctx.workspace.historyRuns = Array.from({ length: MAX_COMPARABILITY_INDEX_RUNS + 5 }, (_, i) => buildRun(i + 1, 5));
+      ctx.workspace.runGroups = Array.from({ length: MAX_COMPARABILITY_INDEX_GROUPS + 5 }, (_, i) => buildGroup(i + 1, 5));
+      benchmarkServiceMock.getComparabilityIndex.mockClear();
+
+      ctx.comparison.loadComparabilityIndex();
+
+      const query = benchmarkServiceMock.getComparabilityIndex.mock.calls[0][0];
+      expect(MAX_COMPARABILITY_INDEX_RUNS).toBe(1000);
+      expect(MAX_COMPARABILITY_INDEX_GROUPS).toBe(500);
+      expect(query.runIds.length).toBe(MAX_COMPARABILITY_INDEX_RUNS);
+      expect(query.groupIds.length).toBe(MAX_COMPARABILITY_INDEX_GROUPS);
+    });
+
+    // --- Battery results ---
+
+    function buildBatteryRun(id: number, overrides: any = {}): any {
+      return {
+        id,
+        batteryId: 2,
+        batteryName: 'Core Battery',
+        definitionRevision: 1,
+        definitionSha256: 'd'.repeat(64),
+        status: 'Completed',
+        suiteCount: 3,
+        runsPerSuite: 2,
+        startedAtUtc: '2026-10-01T10:00:00Z',
+        testedModelLabel: `Battery model ${id}`,
+        testedProvider: 'Anthropic',
+        latestAnalysisId: 100 + id,
+        latestAnalysisAtUtc: '2026-10-01T15:00:00Z',
+        latestAnalysisComplete: true,
+        comparabilityClassSha256: 'c'.repeat(64),
+        overallIndex: 70,
+        analysisStale: false,
+        slots: [],
+        members: [],
+        suites: [],
+        ...overrides
+      };
+    }
+
+    it('selects battery results through the picker and sends them alone, with no index notices', () => {
+      ctx.workspace.batteryRuns = [buildBatteryRun(4), buildBatteryRun(9)];
+      ctx.comparison.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds: [4, 9] });
+      benchmarkServiceMock.compareModels.mockClear();
+
+      ctx.comparison.runComparison();
+
+      expect(benchmarkServiceMock.compareModels).toHaveBeenCalledWith({
+        runIds: [],
+        groupIds: [],
+        batteryRunIds: [4, 9],
+        pricingBasis: 'Current'
+      });
+      expect(ctx.comparison.comparisonSelectedSources).toEqual([
+        { kind: 'battery', id: 4, label: 'Battery model 4', provider: 'Anthropic', detail: 'Battery run 4' },
+        { kind: 'battery', id: 9, label: 'Battery model 9', provider: 'Anthropic', detail: 'Battery run 9' }
+      ]);
+      // The comparability index does not cover battery results, so it has nothing to say about them.
+      ctx.comparison.comparabilityIndexError = 'The index could not be built.';
+      expect(ctx.comparison.comparisonSelectionNotices).toEqual([]);
+
+      const stored = JSON.parse(localStorage.getItem(COMPARISON_SELECTION_KEY)!);
+      expect(stored.batteryRunIds).toEqual([4, 9]);
+      expect(stored.runIds).toEqual([]);
+    });
+
+    it('offers the loaded battery runs whatever the suite scope, and keeps their selection through a scope change', () => {
+      ctx.workspace.batteryRuns = [buildBatteryRun(4)];
+      ctx.comparison.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds: [4] });
+
+      ctx.comparison.onComparisonSuiteChange(6);
+
+      expect(ctx.comparison.comparisonBatteryRunOptions.map(battery => battery.id)).toEqual([4]);
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([4]);
+    });
+
+    it('removes one battery result through the chip, and clears battery results with the rest', () => {
+      ctx.workspace.batteryRuns = [buildBatteryRun(4), buildBatteryRun(9)];
+      ctx.comparison.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds: [4, 9] });
+
+      ctx.comparison.onComparisonRemoveSource(
+        { kind: 'battery', id: 4, label: 'Battery model 4', provider: 'Anthropic', detail: 'Battery run 4' });
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([9]);
+
+      ctx.comparison.clearComparisonSelection();
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([]);
+    });
+
+    it('applies a preset: its battery results selected, runs and groups cleared, back on step 1', () => {
+      ctx.workspace.batteryRuns = [buildBatteryRun(4), buildBatteryRun(9)];
+      ctx.comparison.onComparisonSelectionChange({ runIds: [1], groupIds: [11] });
+      ctx.comparison.comparison = { entries: [] } as any;
+      benchmarkServiceMock.getBatteryRuns.mockClear();
+
+      ctx.comparison.applyComparisonPreset({ batteryRunIds: [9, 4, 9] });
+
+      expect(ctx.comparison.comparisonRunIds).toEqual([]);
+      expect(ctx.comparison.comparisonGroupIds).toEqual([]);
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([9, 4]);
+      // No payload is what puts the wizard on step 1, where the selection is.
+      expect(ctx.comparison.comparison).toBeNull();
+      // Both battery runs are already loaded, so Run History is not fetched again.
+      expect(benchmarkServiceMock.getBatteryRuns).not.toHaveBeenCalled();
+    });
+
+    it('loads Run History when a preset names a battery run that is not loaded yet', () => {
+      ctx.workspace.batteryRuns = [];
+      benchmarkServiceMock.getBatteryRuns.mockClear();
+
+      ctx.comparison.applyComparisonPreset({ batteryRunIds: [4] });
+
+      expect(benchmarkServiceMock.getBatteryRuns).toHaveBeenCalled();
+    });
+
+    it('restores battery results, an older record restoring none', () => {
+      localStorage.setItem(COMPARISON_SELECTION_KEY, JSON.stringify({
+        runIds: [], groupIds: [], batteryRunIds: [4], suiteId: null, pricingBasis: 'Current'
+      }));
+      ctx.comparison.restoreComparisonSelection();
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([4]);
+
+      localStorage.setItem(COMPARISON_SELECTION_KEY, JSON.stringify({
+        runIds: [1], groupIds: [], suiteId: null, pricingBasis: 'Current'
+      }));
+      ctx.comparison.restoreComparisonSelection();
+      expect(ctx.comparison.comparisonBatteryRunIds).toEqual([]);
+      expect(ctx.comparison.comparisonRunIds).toEqual([1]);
+    });
+
+    it('names the battery in Last comparison when the comparison holds battery results', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      ctx.comparison.comparison = {
+        subjectKind: 'Batteries',
+        baselineSuiteName: null,
+        baselineBatteryName: 'Core Battery',
+        pricingBasis: 'Current',
+        pricingBasisLabel: 'Current prices',
+        comparableCount: 2,
+        entries: [{}, {}],
+        computedAtUtc: '2026-10-02T10:00:00Z'
+      } as any;
+      ctx.refresh();
+
+      const state = fixture.nativeElement.querySelector('.mc-launcher .mc-launcher-state') as HTMLElement;
+      const terms = Array.from(state.querySelectorAll('dt')).map(dt => dt.textContent!.trim());
+      expect(terms).toEqual(['Battery', 'Pricing basis', 'Charted', 'Computed']);
+      expect(state.querySelector('dd')!.textContent!.trim()).toBe('Core Battery');
+    });
+
+    it('names battery results as the third source kind in the steps', () => {
+      fixture.nativeElement.querySelector('#bm-tab-modelcomparison').click();
+      fixture.detectChanges();
+
+      const first = fixture.nativeElement
+        .querySelector('.mc-launcher-hero .mc-launcher-howto ol.mc-launcher-steps > li') as HTMLElement;
+      expect(first.textContent).toContain('battery results');
     });
   });
 

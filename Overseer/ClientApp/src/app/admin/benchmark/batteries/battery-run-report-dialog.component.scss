@@ -1,0 +1,434 @@
+@use '../benchmark-shared' as shared;
+
+/* Battery Run Report: layout and component-local presentation only. The dialog frame
+ * (.gh-dialog-fullscreen), the buttons, the tabs, .gh-table, .gh-disclosure, .gh-tag, the badges,
+ * .gh-action-popover and .gh-tooltip come from styles.scss; the frame from app-run-report-frame;
+ * the run report's shared .rr-* rules (header, panels, key-figure cards) from styles.scss. */
+
+// The title group the run report's header uses.
+@include shared.shared-19;
+
+#brrTitle {
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+  }
+}
+
+.brr-stale-tag {
+  margin-top: 0;
+}
+
+/* --- Header actions ------------------------------------------------------------------------ */
+
+// Two columns: Downloads over Actions, equal in width and left-aligned; Copy diagnostics beside
+// Downloads. The closed popover and the hidden tooltips take no cell.
+.brr-actions {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas:
+    "downloads copy"
+    "actions .";
+  gap: 6px;
+  align-items: center;
+
+  .action-btn {
+    margin: 0;
+  }
+}
+
+#brr-downloads-trigger { grid-area: downloads; }
+#brr-actions-trigger { grid-area: actions; }
+#brr-copy-diagnostics-btn { grid-area: copy; }
+
+#brr-downloads-trigger,
+#brr-actions-trigger {
+  justify-content: flex-start;
+  inline-size: 100%;
+}
+
+// Under the group, so the live region takes no grid cell and a message never shifts the buttons.
+.brr-status {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-end: 0;
+  margin-block-start: 2px;
+  white-space: nowrap;
+  font-size: var(--text-secondary);
+  color: #888;
+}
+
+// A narrow report: the header's width is spare and its height is not, so the actions take one row.
+@container run-report-frame (inline-size < 40rem) {
+  .brr-actions {
+    grid-template-columns: none;
+    grid-template-areas: none;
+    grid-auto-flow: column;
+  }
+
+  #brr-downloads-trigger,
+  #brr-actions-trigger,
+  #brr-copy-diagnostics-btn {
+    grid-area: auto;
+  }
+}
+
+/* --- Body ------------------------------------------------------------------------------------ */
+
+.brr-load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.brr-action-error,
+.bb-analysis-error,
+.bb-recompute-callout,
+.brr-integrity-notice {
+  margin-bottom: 16px;
+}
+
+.brr-callout,
+.bb-recompute-callout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+
+  p {
+    flex: 1 1 20rem;
+    margin: 0;
+  }
+}
+
+.brr-callout {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.brr-notice-list {
+  margin: 4px 0 0;
+  padding-inline-start: 1.25rem;
+
+  li {
+    margin: 2px 0;
+  }
+}
+
+.brr-none {
+  margin: 0;
+}
+
+.brr-hash {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+// Run History's fingerprint hues: color reinforces the column label and never carries the meaning alone.
+.brr-fp-short {
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+  white-space: nowrap;
+
+  &.fp-prompt { color: var(--primary-color); }
+  &.fp-guides { color: var(--nav-color); }
+  &.fp-kb { color: var(--fp-kb-color, #7fb8e8); }
+  &.fp-wiki { color: var(--fp-wiki-color, #6fc3c0); }
+  &.fp-source { color: var(--fp-source-color, #c197dd); }
+}
+
+.brr-fp-none {
+  font-size: var(--text-secondary);
+  color: #888;
+  white-space: nowrap;
+}
+
+/* --- Suites and Members ---------------------------------------------------------------------- */
+
+.brr-member-links {
+  min-inline-size: 10rem;
+}
+
+.brr-member-link {
+  display: block;
+  font-size: var(--text-secondary);
+  text-align: start;
+
+  & + & {
+    margin-top: 2px;
+  }
+}
+
+.brr-suite-list {
+  margin: 0 0 12px;
+  padding-inline-start: 1.25rem;
+
+  li {
+    margin: 4px 0;
+  }
+
+  .brr-member-link {
+    display: inline;
+    margin-inline-start: 8px;
+  }
+}
+
+.brr-suite-name {
+  font-weight: 600;
+}
+
+.brr-members-table {
+  td {
+    vertical-align: top;
+  }
+}
+
+.brr-member-cell-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+
+  .action-btn {
+    margin: 0;
+  }
+}
+
+.brr-member-index {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.brr-member-note {
+  margin: 4px 0 0;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.job-status-chip.brr-chip-instrument {
+  background: rgba(163, 113, 247, 0.15);
+  color: #c9a7ff;
+  border: 1px solid rgba(163, 113, 247, 0.35);
+}
+
+/* --- Analysis (the bb- rules moved with the analysis markup) -------------------------------- */
+
+.bb-table-scroll {
+  margin-block: 8px;
+}
+
+.bb-num {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+tr.is-incomplete > * {
+  color: #aaa;
+}
+
+.bb-weights {
+  font-size: var(--text-secondary);
+  color: #bbb;
+}
+
+.bb-tag-declared {
+  color: var(--primary-color);
+}
+
+.bb-row-note {
+  display: block;
+  font-size: var(--text-secondary);
+  font-weight: 400;
+  color: #aaa;
+}
+
+.bb-analysis-meta {
+  margin: 0 0 12px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.bb-headline {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(212, 160, 23, 0.35);
+  border-inline-start: 4px solid var(--primary-color);
+  border-radius: 6px;
+  background: rgba(212, 160, 23, 0.06);
+
+  &.is-incomplete {
+    border-color: rgba(255, 255, 255, 0.15);
+    border-inline-start-color: #888;
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.bb-headline-label {
+  font-size: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #aaa;
+}
+
+.bb-headline-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+
+  &.bb-incomplete {
+    font-size: 1.25rem;
+    color: #ddd;
+  }
+}
+
+.bb-headline-interval {
+  color: #ccc;
+}
+
+.bb-sub-title {
+  margin: 18px 0 8px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--title-color, #e0ba6d);
+}
+
+.bb-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 16px;
+  margin: 0;
+
+  > div {
+    display: contents;
+  }
+
+  dt {
+    color: #aaa;
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.bb-note {
+  margin: 4px 0 8px;
+  font-size: var(--text-secondary);
+  color: #aaa;
+}
+
+.bb-withheld {
+  color: #aaa;
+  font-size: var(--text-secondary);
+}
+
+.bb-degraded {
+  margin: 6px 0 0;
+  font-size: var(--text-secondary);
+  color: #fbbf24;
+}
+
+.bb-caveats,
+.bb-excluded {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+
+  li {
+    margin: 4px 0;
+  }
+}
+
+.bb-excluded-what {
+  font-weight: 600;
+}
+
+/* --- Paired Test ----------------------------------------------------------------------------- */
+
+.bb-compare-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-inline-size: min(100%, 18rem);
+    flex: 1 1 18rem;
+    margin: 0;
+  }
+
+  label,
+  .brr-treatment-label {
+    font-weight: 600;
+  }
+}
+
+.bb-compare-treatment {
+  margin: 0;
+  padding: 6px 0;
+}
+
+.bb-compare-refusal {
+  margin-top: 12px;
+}
+
+.bb-compare-headline {
+  margin-top: 12px;
+}
+
+/* The paired result's Intelligence verdict under the M7 headline: the shape and the word carry it,
+   the color only repeats an established one. */
+.brr-paired-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
+  font-weight: 600;
+  color: #c4c4cc;
+
+  svg {
+    flex: none;
+  }
+}
+
+.brr-paired-verdict--established {
+  color: var(--primary-color);
+}
+
+.brr-paired-measures {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.brr-paired-measures-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.brr-paired-status {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}

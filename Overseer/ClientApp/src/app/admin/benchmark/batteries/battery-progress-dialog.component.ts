@@ -144,7 +144,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   @Output() closed = new EventEmitter<void>();
   /** A member's run id; the host opens the single-run progress dialog on it. */
   @Output() openRunProgress = new EventEmitter<number>();
-  /** The battery run id whose analysis the host shows. */
+  /** Open Analysis: the battery run id whose Battery Run Report the host opens. */
   @Output() openAnalysis = new EventEmitter<number>();
   /** The battery run id after a successful Continue or Re-run under current instrument. */
   @Output() batteryResumed = new EventEmitter<number>();

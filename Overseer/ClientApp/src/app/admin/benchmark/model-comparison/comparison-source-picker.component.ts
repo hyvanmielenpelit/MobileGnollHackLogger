@@ -4,9 +4,11 @@ import {
   ElementRef,
   EventEmitter,
   Input,
+  OnChanges,
   OnDestroy,
   OnInit,
   Output,
+  SimpleChanges,
   ViewChild,
   inject
 } from '@angular/core';
@@ -21,9 +23,11 @@ import { SortHeaderComponent } from '../../../shared/data-table/sort-header.comp
 import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
 import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
 import type {
+  BenchmarkBatteryRunDto,
   BenchmarkRunGroupDto,
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
+import { batteryRunStatusLabel, isFinishedBatteryRunStatus } from '../batteries/battery.models';
 import {
   HASH_SHAPED,
   SHORT_HASH_LENGTH,
@@ -64,11 +68,19 @@ function groupKey(group: BenchmarkRunGroupDto): string {
   return `group:${group.id}`;
 }
 
-/** The two source lists, emitted together because a comparison is made of both at once. */
+/**
+ * The source lists, emitted together because a comparison is made of runs and groups at once, or
+ * of battery results alone. `batteryRunIds` is never non-empty beside runs or groups.
+ */
 export interface ModelComparisonSelection {
   readonly runIds: number[];
   readonly groupIds: number[];
+  /** Absent reads as none. */
+  readonly batteryRunIds?: number[];
 }
+
+/** The kinds of source the picker's tabs offer, in display order. */
+export type ComparisonSourceTab = 'runs' | 'groups' | 'batteries';
 
 /**
  * The most sources one request may carry.
@@ -80,14 +92,19 @@ export interface ModelComparisonSelection {
 export const MAX_COMPARISON_SOURCES = 24;
 
 /**
- * The two source sections' titles.
+ * The source sections' titles.
  *
  * Exported because the wizard's notice band names the table its notices report on, and a second
- * copy of either string would go stale the first time one is renamed. The `<h4>` elements below
- * bind to these, so the heading and the label are the same value.
+ * copy of any of them would go stale the first time one is renamed. The kind tabs bind to these,
+ * so the tab and the label are the same value.
  */
 export const RUN_SECTION_TITLE = 'Single runs';
 export const GROUP_SECTION_TITLE = 'Analysis groups';
+export const BATTERY_SECTION_TITLE = 'Battery results';
+
+/** Why one kind of source cannot join the current selection, shown in the blocked panel. */
+export const SOURCE_MIX_NOTE =
+  'A comparison holds either battery results or runs and groups. Clear the selection to switch.';
 
 /** The canonical rendering of an absent value, as `BenchmarkComparabilityKey.NoValue` writes it. */
 const NO_VALUE = '(none)';
@@ -203,7 +220,9 @@ function conditionHueClass(ordinal: number | null): string {
 
 /**
  * Chooses what a cross-model comparison is computed over: single runs at R = 1, analysis groups at
- * one pooled point each, and the suite scope that decides which of either are offered.
+ * one pooled point each, and the suite scope that decides which of either are offered; or battery
+ * results at one point each, which the suite scope does not narrow and which are never mixed with
+ * runs or groups.
  *
  * Presentational, like the view it feeds: it owns no fetching and mutates nothing but its own table
  * state. The host holds the selection and issues the request, so the two panels of this sub-tab
@@ -222,7 +241,7 @@ function conditionHueClass(ordinal: number | null): string {
   templateUrl: './comparison-source-picker.component.html',
   styleUrls: ['./comparison-source-picker.component.scss']
 })
-export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
+export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDestroy {
   /** Protected rather than private: the filter rows call it directly after a `TableState` mutation. */
   protected cdr = inject(ChangeDetectorRef);
 
@@ -238,9 +257,14 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   /** The active suite scope; null offers every suite. */
   @Input() suiteId: number | null = null;
 
+  /** Battery runs offered as one point each. Not narrowed by the suite scope: a battery spans suites. */
+  @Input() batteryRuns: readonly BenchmarkBatteryRunDto[] = [];
+
   @Input() selectedRunIds: readonly number[] = [];
 
   @Input() selectedGroupIds: readonly number[] = [];
+
+  @Input() selectedBatteryRunIds: readonly number[] = [];
 
   /** A request is in flight. Compare is disabled rather than queued behind it. */
   @Input() loading = false;
@@ -257,10 +281,13 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   /** The hard cap, exposed so the template names the same number the guard enforces. */
   readonly maxSources = MAX_COMPARISON_SOURCES;
 
-  /** The two source-kind tabs, in display order. */
-  readonly sourceTabs = ['runs', 'groups'] as const;
+  /** The source-kind tabs, in display order. */
+  readonly sourceTabs: readonly ComparisonSourceTab[] = ['runs', 'groups', 'batteries'];
 
-  activeSourceTab: 'runs' | 'groups' = 'runs';
+  activeSourceTab: ComparisonSourceTab = 'runs';
+
+  /** The visible line in a panel whose kind cannot join the current selection. */
+  readonly sourceMixNote = SOURCE_MIX_NOTE;
 
   readonly runTable = new TableState<BenchmarkRunSummaryDto>('id', 'desc').registerAccessors(
     {
@@ -306,10 +333,45 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     }
   );
 
+  readonly batteryTable = new TableState<BenchmarkBatteryRunDto>('id', 'desc').registerAccessors(
+    {
+      selected: b => (this.isBatterySelected(b.id) ? 1 : 0),
+      id: b => b.id,
+      batteryName: b => b.batteryName,
+      testedModel: b => this.batteryModelText(b),
+      status: b => this.batteryStatus(b),
+      comparabilityClass: b => this.batteryClassText(b),
+      overallIndex: b => b.overallIndex,
+      runsPerSuite: b => b.runsPerSuite,
+      analyzedAtUtc: b => (b.latestAnalysisAtUtc ? new Date(b.latestAnalysisAtUtc) : null)
+    },
+    {
+      batteryName: exactFilter(b => b.batteryName),
+      testedModel: b => this.batteryModelText(b),
+      status: exactFilter(b => this.batteryStatus(b)),
+      selected: exactFilter(b => (this.isBatterySelected(b.id) ? 'yes' : 'no'))
+    }
+  );
+
   ngOnInit(): void {
     // Every icon-only control below carries an interestfor tooltip, and the primitives behind those
     // are not baseline everywhere.
     ensureOverlayPolyfills();
+  }
+
+  /**
+   * Shows the Battery results tab when battery results become the selection from outside it — a
+   * restored selection, or the leaderboard's Open in Model Comparison — so they are not left
+   * selected behind another tab.
+   */
+  ngOnChanges(changes: SimpleChanges): void {
+    const batteries = changes['selectedBatteryRunIds'];
+    if (batteries
+      && (batteries.previousValue?.length ?? 0) === 0
+      && this.selectedBatteryRunIds.length > 0
+      && this.selectedRunIds.length + this.selectedGroupIds.length === 0) {
+      this.activeSourceTab = 'batteries';
+    }
   }
 
   ngOnDestroy(): void {
@@ -321,7 +383,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   // The source-kind tabs
   // ---------------------------------------------------------------------------------------------
 
-  selectSourceTab(tab: 'runs' | 'groups'): void {
+  selectSourceTab(tab: ComparisonSourceTab): void {
     this.activeSourceTab = tab;
     this.cdr.detectChanges();
   }
@@ -351,24 +413,36 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
   }
 
   /** The section title a tab names, exported so the wizard's notice band can cite the same string. */
-  sourceTabTitle(tab: 'runs' | 'groups'): string {
-    return tab === 'runs' ? RUN_SECTION_TITLE : GROUP_SECTION_TITLE;
+  sourceTabTitle(tab: ComparisonSourceTab): string {
+    switch (tab) {
+      case 'runs': return RUN_SECTION_TITLE;
+      case 'groups': return GROUP_SECTION_TITLE;
+      default: return BATTERY_SECTION_TITLE;
+    }
   }
 
   /** The tab's row count — what its table actually lists, unselectable rows included. */
-  sourceTabRowCount(tab: 'runs' | 'groups'): number {
-    return tab === 'runs' ? this.runs.length : this.groups.length;
+  sourceTabRowCount(tab: ComparisonSourceTab): number {
+    switch (tab) {
+      case 'runs': return this.runs.length;
+      case 'groups': return this.groups.length;
+      default: return this.batteryRuns.length;
+    }
   }
 
   /** The noun after the tab's row count, singular for one. */
-  sourceTabNoun(tab: 'runs' | 'groups'): string {
-    const singular = tab === 'runs' ? 'run' : 'group';
+  sourceTabNoun(tab: ComparisonSourceTab): string {
+    const singular = tab === 'runs' ? 'run' : tab === 'groups' ? 'group' : 'battery result';
     return this.sourceTabRowCount(tab) === 1 ? singular : `${singular}s`;
   }
 
   /** The tab's own selected count, so each tab's badge names only its own kind. */
-  sourceTabSelectedCount(tab: 'runs' | 'groups'): number {
-    return tab === 'runs' ? this.selectedRunCount : this.selectedGroupCount;
+  sourceTabSelectedCount(tab: ComparisonSourceTab): number {
+    switch (tab) {
+      case 'runs': return this.selectedRunCount;
+      case 'groups': return this.selectedGroupCount;
+      default: return this.selectedBatteryCount;
+    }
   }
 
   get selectedRunCount(): number {
@@ -377,6 +451,51 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
 
   get selectedGroupCount(): number {
     return this.selectedGroupIds.length;
+  }
+
+  get selectedBatteryCount(): number {
+    return this.selectedBatteryRunIds.length;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // No mixing
+  //
+  // A comparison holds either battery results or runs and groups; the server refuses the mix.
+  // While one kind is selected, the other kind's checkboxes are aria-disabled — focusable, so a
+  // keyboard reader lands on them and hears why — and the panel says so in a visible line.
+  // ---------------------------------------------------------------------------------------------
+
+  /** Runs and groups are selected, so battery results cannot join. */
+  get batteriesBlocked(): boolean {
+    return this.selectedRunCount + this.selectedGroupCount > 0;
+  }
+
+  /** Battery results are selected, so runs and groups cannot join. */
+  get runsAndGroupsBlocked(): boolean {
+    return this.selectedBatteryCount > 0;
+  }
+
+  /** A run that cannot be added; one already selected can always be removed. */
+  isRunBlocked(id: number): boolean {
+    return this.runsAndGroupsBlocked && !this.isRunSelected(id);
+  }
+
+  isGroupBlocked(id: number): boolean {
+    return this.runsAndGroupsBlocked && !this.isGroupSelected(id);
+  }
+
+  isBatteryBlocked(id: number): boolean {
+    return this.batteriesBlocked && !this.isBatterySelected(id);
+  }
+
+  /**
+   * Keeps an aria-disabled checkbox from toggling: cancelling the click reverts the native check
+   * and suppresses the change event.
+   */
+  preventBlockedToggle(event: Event, blocked: boolean): void {
+    if (blocked) {
+      event.preventDefault();
+    }
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -403,25 +522,42 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     return this.selectedGroupIds.includes(id);
   }
 
+  isBatterySelected(id: number): boolean {
+    return this.selectedBatteryRunIds.includes(id);
+  }
+
   toggleRun(run: BenchmarkRunSummaryDto): void {
-    if (!this.isRunSelectable(run)) {
+    if (!this.isRunSelectable(run) || this.isRunBlocked(run.id)) {
       return;
     }
     const runIds = this.isRunSelected(run.id)
       ? this.selectedRunIds.filter(id => id !== run.id)
       : [...this.selectedRunIds, run.id];
-    this.emitSelection(runIds, [...this.selectedGroupIds]);
+    this.emitSelection(runIds, [...this.selectedGroupIds], [...this.selectedBatteryRunIds]);
   }
 
   toggleGroup(group: BenchmarkRunGroupDto): void {
+    if (this.isGroupBlocked(group.id)) {
+      return;
+    }
     const groupIds = this.isGroupSelected(group.id)
       ? this.selectedGroupIds.filter(id => id !== group.id)
       : [...this.selectedGroupIds, group.id];
-    this.emitSelection([...this.selectedRunIds], groupIds);
+    this.emitSelection([...this.selectedRunIds], groupIds, [...this.selectedBatteryRunIds]);
+  }
+
+  toggleBattery(battery: BenchmarkBatteryRunDto): void {
+    if (!this.isBatterySelectable(battery) || this.isBatteryBlocked(battery.id)) {
+      return;
+    }
+    const batteryRunIds = this.isBatterySelected(battery.id)
+      ? this.selectedBatteryRunIds.filter(id => id !== battery.id)
+      : [...this.selectedBatteryRunIds, battery.id];
+    this.emitSelection([...this.selectedRunIds], [...this.selectedGroupIds], batteryRunIds);
   }
 
   get selectedCount(): number {
-    return this.selectedRunIds.length + this.selectedGroupIds.length;
+    return this.selectedRunIds.length + this.selectedGroupIds.length + this.selectedBatteryRunIds.length;
   }
 
   /** Selected runs the current page of the run table does not show. */
@@ -436,12 +572,27 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     return this.selectedGroupIds.filter(id => !onPage.has(id)).length;
   }
 
+  /** Selected battery results the current page of the battery table does not show. */
+  get offPageBatteryCount(): number {
+    const onPage = new Set(this.batteryTable.view(this.batteryRuns).map(battery => battery.id));
+    return this.selectedBatteryRunIds.filter(id => !onPage.has(id)).length;
+  }
+
   get showSelectedRunsOnly(): boolean {
     return this.runTable.filters['selected'] === 'yes';
   }
 
   get showSelectedGroupsOnly(): boolean {
     return this.groupTable.filters['selected'] === 'yes';
+  }
+
+  get showSelectedBatteriesOnly(): boolean {
+    return this.batteryTable.filters['selected'] === 'yes';
+  }
+
+  toggleShowSelectedBatteriesOnly(): void {
+    this.batteryTable.setFilter('selected', this.showSelectedBatteriesOnly ? '' : 'yes');
+    this.cdr.detectChanges();
   }
 
   toggleShowSelectedRunsOnly(): void {
@@ -1340,11 +1491,83 @@ export class ComparisonSourcePickerComponent implements OnInit, OnDestroy {
     return value == null || !Number.isFinite(value) ? '—' : value.toFixed(1);
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Battery results
+  // ---------------------------------------------------------------------------------------------
+
+  /**
+   * A battery result is one point only once it is finished and its latest analysis is complete
+   * and current: the server excludes anything else. Such a row stays in the table, disabled, with
+   * the reason as its accessible name, as a run that is not completed does.
+   */
+  isBatterySelectable(battery: BenchmarkBatteryRunDto): boolean {
+    return this.batteryUnselectableReason(battery) === null;
+  }
+
+  /** Why the battery result cannot be compared, or null when it can. */
+  batteryUnselectableReason(battery: BenchmarkBatteryRunDto): string | null {
+    const subject = `Battery run ${battery.id}`;
+    if (!isFinishedBatteryRunStatus(battery.status)) {
+      return `${subject} is ${this.batteryStatus(battery).toLowerCase()} — only a finished battery run can be compared`;
+    }
+    if (battery.latestAnalysisId == null) {
+      return `${subject} has no analysis — compute the battery analysis first`;
+    }
+    if (battery.latestAnalysisComplete === false) {
+      return `${subject} has an incomplete analysis — only a complete analysis can be compared`;
+    }
+    if (battery.analysisStale) {
+      return `${subject} has a stale analysis — recompute the battery analysis first`;
+    }
+    return null;
+  }
+
+  batteryStatus(battery: BenchmarkBatteryRunDto): string {
+    return batteryRunStatusLabel(battery.status);
+  }
+
+  /** The statuses actually present in the offered battery runs. */
+  get batteryStatusOptions(): string[] {
+    return Array.from(new Set(this.batteryRuns.map(battery => this.batteryStatus(battery)))).sort();
+  }
+
+  /** The battery names actually present, for the Battery filter. */
+  get batteryNameOptions(): string[] {
+    return Array.from(new Set(this.batteryRuns.map(battery => battery.batteryName)))
+      .sort((a, b) => a.localeCompare(b));
+  }
+
+  /** The tested model with its thinking level and reasoning mode, as the run table has it. */
+  batteryModelText(battery: BenchmarkBatteryRunDto): string {
+    return [this.batteryModelName(battery), battery.testedThinkingLevel, battery.testedReasoningMode]
+      .filter(part => !!part?.trim())
+      .join(' ');
+  }
+
+  batteryModelName(battery: BenchmarkBatteryRunDto): string | null {
+    return battery.testedModelLabel?.trim() || battery.testedModelId?.trim() || null;
+  }
+
+  /**
+   * The comparability class as the Class column sorts it: the short hash, or the tag that stands
+   * in for it while the analysis is incomplete or stale, or empty with no analysis.
+   */
+  batteryClassText(battery: BenchmarkBatteryRunDto): string {
+    if (battery.latestAnalysisId == null) {
+      return '';
+    }
+    if (battery.latestAnalysisComplete === false) {
+      return 'Incomplete';
+    }
+    const hash = this.shortHash(battery.comparabilityClassSha256);
+    return battery.analysisStale ? `${hash} Stale` : hash;
+  }
+
   onTableChanged(): void {
     this.cdr.detectChanges();
   }
 
-  private emitSelection(runIds: number[], groupIds: number[]): void {
-    this.selectionChange.emit({ runIds, groupIds });
+  private emitSelection(runIds: number[], groupIds: number[], batteryRunIds: number[]): void {
+    this.selectionChange.emit({ runIds, groupIds, batteryRunIds });
   }
 }

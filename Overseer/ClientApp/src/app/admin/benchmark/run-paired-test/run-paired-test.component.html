@@ -1,0 +1,70 @@
+@if (run) {
+  <section class="rpt" aria-labelledby="rpt-title">
+    <h4 class="gh-section-title" id="rpt-title">Paired test</h4>
+    <p class="rpt-lead">
+      This run is the treatment. Choose a baseline from the finished runs on the same suite: another model
+      makes a model comparison, the same model with a changed instrument setting verifies a change. Both
+      are tested on the questions they both answered.
+    </p>
+
+    @if (candidates.length === 0) {
+      <p class="rpt-empty">No other finished run on this suite to compare with.</p>
+    } @else {
+      <div class="rpt-form">
+        <div class="rpt-field">
+          <label for="rpt-baseline">Baseline</label>
+          <select id="rpt-baseline" class="gh-input" aria-describedby="rpt-kind"
+                  (change)="onBaselineChange($event)">
+            <option value="" [selected]="baselineId === null">Choose a run</option>
+            @for (group of groups; track group.label) {
+              <optgroup [label]="group.label">
+                @for (option of group.options; track option.run.id) {
+                  <option [value]="option.run.id" [selected]="option.run.id === baselineId">{{ option.label }}</option>
+                }
+              </optgroup>
+            }
+          </select>
+        </div>
+        <div class="rpt-field">
+          <span class="rpt-treatment-label">Treatment</span>
+          <p class="rpt-treatment">{{ treatmentLabel }}</p>
+        </div>
+        <button type="button" class="btn-gh rpt-compare" [disabled]="!canCompare" (click)="compare()"
+                aria-describedby="rpt-kind">
+          {{ comparing ? 'Comparing…' : 'Compare' }}
+        </button>
+      </div>
+
+      <p class="rpt-kind" id="rpt-kind">{{ kindText }}</p>
+      @if (changedKeys.length > 0) {
+        <p class="rpt-changed">
+          <span class="rpt-changed-label">Changed: </span>
+          @for (key of changedKeys; track key; let last = $last) {
+            <code>{{ key }}</code>@if (!last) {<span>, </span>}
+          }
+        </p>
+      }
+
+      <p class="rpt-status" role="status">
+        @if (kindsLoading) {
+          Sorting the runs by the kind of comparison they make…
+        } @else if (notComparableCount > 0) {
+          {{ notComparableCount }} finished {{ notComparableCount === 1 ? 'run on this suite is' : 'runs on this suite are' }} not comparable with this one and {{ notComparableCount === 1 ? 'is' : 'are' }} not listed.
+        }
+      </p>
+      @if (kindsError) {
+        <div class="alert alert-warning rpt-kinds-error" role="alert">{{ kindsError }}</div>
+      }
+    }
+
+    @if (error) {
+      <div class="alert alert-warning rpt-error" role="alert">
+        <strong>Not compared.</strong> {{ error }}
+      </div>
+    }
+
+    @if (result) {
+      <app-paired-test-result class="rpt-result" [comparison]="result" [showKind]="false" idPrefix="rpt-result"></app-paired-test-result>
+    }
+  </section>
+}

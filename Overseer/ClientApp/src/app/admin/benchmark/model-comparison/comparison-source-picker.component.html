@@ -20,11 +20,13 @@
           About conditions
         </button>
 
-        <!-- Suite scope: a selection-stage control, so it sits above the two tables it scopes rather
-             than in the comparison view's filter row, which holds presentation controls only. -->
+        <!-- Suite scope: a selection-stage control, so it sits above the tables it scopes rather
+             than in the comparison view's filter row, which holds presentation controls only. A
+             battery spans several suites, so the scope leaves battery results alone. -->
         <div class="csp-scope">
           <label for="csp-suite">Suite<span class="visually-hidden"> — show runs and groups from</span></label>
           <select id="csp-suite" class="gh-input" [disabled]="suites.length === 0"
+                  aria-describedby="csp-suite-hint"
                   [ngModel]="suiteId" [ngModelOptions]="{ standalone: true }"
                   (ngModelChange)="onSuiteChange($event)">
             <option [ngValue]="null">All suites</option>
@@ -32,6 +34,7 @@
               <option [ngValue]="suite.id">{{ suite.name }}</option>
             }
           </select>
+          <span id="csp-suite-hint" class="csp-scope-hint">Does not apply to battery results</span>
         </div>
       </div>
     </div>
@@ -64,6 +67,9 @@
   @if (activeSourceTab === 'runs') {
     <div role="tabpanel" id="csp-src-panel-runs" aria-labelledby="csp-src-tab-runs" tabindex="0"
          class="csp-panel">
+      @if (runsAndGroupsBlocked) {
+        <p class="csp-mix-note" id="csp-mix-note-runs">{{ sourceMixNote }}</p>
+      }
       <div class="csp-panel-toolbar">
         <div class="csp-panel-actions">
           @if (selectedRunIds.length > 0) {
@@ -167,14 +173,19 @@
                       [class.csp-row-unselectable]="!isRunSelectable(run)">
                     <td class="col-center col-selected">
                       <!-- Disabled, not hidden: an operator who ran a benchmark should be able to see
-                           why it cannot be charted. -->
+                           why it cannot be charted. While battery results are selected the box is
+                           aria-disabled instead, and the panel's note says why. -->
                       <label class="csp-check" [for]="'csp-run-' + run.id">
                         <input type="checkbox" [id]="'csp-run-' + run.id"
                                [disabled]="!isRunSelectable(run)"
+                               [attr.aria-disabled]="isRunSelectable(run) && isRunBlocked(run.id) ? 'true' : null"
+                               [attr.aria-describedby]="isRunSelectable(run) && isRunBlocked(run.id) ? 'csp-mix-note-runs' : null"
                                [attr.aria-label]="isRunSelectable(run)
                                  ? 'Compare run ' + run.id
                                  : runUnselectableReason(run)"
-                               [checked]="isRunSelected(run.id)" (change)="toggleRun(run)">
+                               [checked]="isRunSelected(run.id)"
+                               (click)="preventBlockedToggle($event, isRunBlocked(run.id))"
+                               (change)="toggleRun(run)">
                       </label>
                     </td>
                     <td class="col-center col-id">#{{ run.id }}</td>
@@ -226,6 +237,9 @@
   @if (activeSourceTab === 'groups') {
     <div role="tabpanel" id="csp-src-panel-groups" aria-labelledby="csp-src-tab-groups" tabindex="0"
          class="csp-panel">
+      @if (runsAndGroupsBlocked) {
+        <p class="csp-mix-note" id="csp-mix-note-groups">{{ sourceMixNote }}</p>
+      }
       <div class="csp-panel-toolbar">
         <p class="csp-panel-note">Each group is one point: the average of its runs.</p>
         <div class="csp-panel-actions">
@@ -332,8 +346,12 @@
                     <td class="col-center col-selected">
                       <label class="csp-check" [for]="'csp-group-' + group.id">
                         <input type="checkbox" [id]="'csp-group-' + group.id"
+                               [attr.aria-disabled]="isGroupBlocked(group.id) ? 'true' : null"
+                               [attr.aria-describedby]="isGroupBlocked(group.id) ? 'csp-mix-note-groups' : null"
                                [attr.aria-label]="'Compare ' + groupSubject(group)"
-                               [checked]="isGroupSelected(group.id)" (change)="toggleGroup(group)">
+                               [checked]="isGroupSelected(group.id)"
+                               (click)="preventBlockedToggle($event, isGroupBlocked(group.id))"
+                               (change)="toggleGroup(group)">
                       </label>
                     </td>
                     <td class="col-center col-id">#{{ group.id }}</td>
@@ -388,6 +406,174 @@
           </table>
         </div>
         <app-table-pager [state]="groupTable" [rows]="groups" noun="groups" [announce]="false"
+                         (changed)="onTableChanged()"></app-table-pager>
+      }
+    </div>
+  }
+
+  <!-- ===================================================================================
+       BATTERY RESULTS
+       One point per battery run, compared only with other battery results. The rows are the
+       battery runs Run History loads; the suite scope does not narrow them. No Condition column:
+       the comparability index does not cover batteries, and Class stands in for it.
+       =================================================================================== -->
+  @if (activeSourceTab === 'batteries') {
+    <div role="tabpanel" id="csp-src-panel-batteries" aria-labelledby="csp-src-tab-batteries" tabindex="0"
+         class="csp-panel">
+      @if (batteriesBlocked) {
+        <p class="csp-mix-note" id="csp-mix-note-batteries">{{ sourceMixNote }}</p>
+      }
+      <div class="csp-panel-toolbar">
+        <p class="csp-panel-note">
+          Each battery result is one point: its Overall Index across the battery's suites. Only results
+          of the same battery and comparability class are charted together.
+        </p>
+        <div class="csp-panel-actions">
+          @if (selectedBatteryRunIds.length > 0) {
+            <p class="csp-selection-count" role="status">
+              {{ selectedBatteryRunIds.length }} {{ selectedBatteryRunIds.length === 1 ? 'battery result' : 'battery results' }} selected@if (offPageBatteryCount > 0) {<span> — {{ offPageBatteryCount }} not on this page</span>}
+            </p>
+            <button type="button" class="gh-filter-toggle"
+                    [attr.aria-pressed]="showSelectedBatteriesOnly"
+                    (click)="toggleShowSelectedBatteriesOnly()">Show selected only</button>
+          }
+        </div>
+      </div>
+
+      @if (batteryRuns.length === 0) {
+        <p class="text-muted">
+          No battery runs yet. Start one from the Run Benchmark tab with a battery as the target.
+        </p>
+      } @else {
+        <app-table-pager [state]="batteryTable" [rows]="batteryRuns" noun="battery results"
+                         (changed)="onTableChanged()"></app-table-pager>
+        <div class="gh-datatable-scroll">
+          <table class="gh-table gh-datatable csp-table">
+            <caption class="visually-hidden">
+              Battery results offered as comparison points: compare, id, battery and its revision,
+              tested model with its thinking level and reasoning mode, status, comparability class,
+              Overall Index, runs per suite and analysis time. Only a finished battery run with a
+              complete, current analysis may be compared.
+            </caption>
+            <thead>
+              <tr>
+                <th app-sort-header [state]="batteryTable" column="selected" label="Compare"
+                    class="col-center col-selected" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="batteryTable" column="id" label="ID"
+                    class="col-center col-id" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="batteryTable" column="batteryName" label="Battery" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="batteryTable" column="testedModel" label="Tested Model" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="batteryTable" column="status" label="Status" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="batteryTable" column="comparabilityClass" label="Class" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="batteryTable" column="overallIndex" label="Overall Index"
+                    class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="batteryTable" column="runsPerSuite" label="R"
+                    class="col-center" (changed)="onTableChanged()"></th>
+                <th app-sort-header [state]="batteryTable" column="analyzedAtUtc" label="Analyzed" (changed)="onTableChanged()"></th>
+              </tr>
+              <tr class="gh-filter-row">
+                <td>
+                  @if (batteryTable.hasActiveFilters) {
+                    <button type="button" class="gh-filter-clear"
+                            (click)="batteryTable.clearFilters(); onTableChanged()">Clear filters</button>
+                  }
+                </td>
+                <td></td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-battery-name">Filter by battery</label>
+                  <select id="csp-f-battery-name" class="gh-input gh-filter-select"
+                          [ngModel]="batteryTable.filters['batteryName']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="batteryTable.setFilter('batteryName', $event); onTableChanged()">
+                    <option value="">All batteries</option>
+                    @for (name of batteryNameOptions; track name) {
+                      <option [value]="name">{{ name }}</option>
+                    }
+                  </select>
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-battery-model">Filter by tested model, thinking level or reasoning mode</label>
+                  <input id="csp-f-battery-model" type="text" class="gh-input gh-filter-input" placeholder="Tested model"
+                         [ngModel]="batteryTable.filters['testedModel']" [ngModelOptions]="{ standalone: true }"
+                         (ngModelChange)="batteryTable.setFilter('testedModel', $event); onTableChanged()">
+                </td>
+                <td>
+                  <label class="visually-hidden" for="csp-f-battery-status">Filter by status</label>
+                  <select id="csp-f-battery-status" class="gh-input gh-filter-select"
+                          [ngModel]="batteryTable.filters['status']" [ngModelOptions]="{ standalone: true }"
+                          (ngModelChange)="batteryTable.setFilter('status', $event); onTableChanged()">
+                    <option value="">All</option>
+                    @for (status of batteryStatusOptions; track status) {
+                      <option [value]="status">{{ status }}</option>
+                    }
+                  </select>
+                </td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+              </tr>
+            </thead>
+            <tbody>
+              @if (batteryTable.noMatches(batteryRuns)) {
+                <tr><td colspan="9" class="text-muted">No battery results match these filters.</td></tr>
+              } @else {
+                @for (battery of batteryTable.view(batteryRuns); track battery.id) {
+                  <tr [class.csp-row-selected]="isBatterySelected(battery.id)"
+                      [class.csp-row-unselectable]="!isBatterySelectable(battery)">
+                    <td class="col-center col-selected">
+                      <!-- Disabled, not hidden, with the reason as its name, as a run that is not
+                           completed is. While runs or groups are selected the box is aria-disabled
+                           instead, and the panel's note says why. -->
+                      <label class="csp-check" [for]="'csp-battery-' + battery.id">
+                        <input type="checkbox" [id]="'csp-battery-' + battery.id"
+                               [disabled]="!isBatterySelectable(battery)"
+                               [attr.aria-disabled]="isBatterySelectable(battery) && isBatteryBlocked(battery.id) ? 'true' : null"
+                               [attr.aria-describedby]="isBatterySelectable(battery) && isBatteryBlocked(battery.id) ? 'csp-mix-note-batteries' : null"
+                               [attr.aria-label]="batteryUnselectableReason(battery) ?? 'Include battery run ' + battery.id + ' in the comparison'"
+                               [checked]="isBatterySelected(battery.id)"
+                               (click)="preventBlockedToggle($event, isBatteryBlocked(battery.id))"
+                               (change)="toggleBattery(battery)">
+                      </label>
+                    </td>
+                    <td class="col-center col-id">#{{ battery.id }}</td>
+                    <td>
+                      <span class="csp-battery-name">{{ battery.batteryName }}</span>
+                      <span class="csp-battery-revision">rev {{ battery.definitionRevision }}</span>
+                    </td>
+                    <td>
+                      @if (batteryModelName(battery); as modelName) {
+                        <app-model-identity [name]="modelName" [provider]="battery.testedProvider"
+                                            [thinkingLevel]="battery.testedThinkingLevel"
+                                            [reasoningMode]="battery.testedReasoningMode"></app-model-identity>
+                      } @else {
+                        <span class="text-muted">—</span>
+                      }
+                    </td>
+                    <td>{{ batteryStatus(battery) }}</td>
+                    <td>
+                      @if (battery.latestAnalysisId == null) {
+                        <span class="text-muted">—</span>
+                      } @else if (battery.latestAnalysisComplete === false) {
+                        <span class="gh-tag">Incomplete</span>
+                      } @else {
+                        <span class="csp-class-cell">
+                          <code class="csp-class-hash">{{ shortHash(battery.comparabilityClassSha256) }}</code>
+                          @if (battery.analysisStale) {
+                            <span class="gh-tag gh-tag-changed">Stale</span>
+                          }
+                        </span>
+                      }
+                    </td>
+                    <td class="col-center">{{ formatIndex(battery.overallIndex) }}</td>
+                    <td class="col-center">{{ battery.runsPerSuite }}</td>
+                    <td>{{ battery.latestAnalysisAtUtc ? formatDate(battery.latestAnalysisAtUtc) : 'Not analyzed' }}</td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
+        </div>
+        <app-table-pager [state]="batteryTable" [rows]="batteryRuns" noun="battery results" [announce]="false"
                          (changed)="onTableChanged()"></app-table-pager>
       }
     </div>

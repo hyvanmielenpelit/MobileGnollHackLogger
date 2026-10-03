@@ -31,8 +31,8 @@ using Overseer.Services.Benchmarking;
 public class AdminBenchmarkBatteriesController : ControllerBase
 {
     private const int NameMaxLength = 128;
-    private const int DefaultRunListSize = 50;
-    private const int MaxRunListSize = 200;
+    internal const int DefaultRunListSize = 50;
+    internal const int MaxRunListSize = 1000;
 
     private static readonly BenchmarkBatteryWeightingScheme[] Schemes =
     {
@@ -52,15 +52,21 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     private readonly ApplicationDbContext _db;
     private readonly BenchmarkBatteryOrchestrator _orchestrator;
     private readonly BenchmarkBatteryAnalysisService _analysisService;
+    private readonly BenchmarkBatteryLeaderboardService _leaderboard;
+    private readonly BenchmarkRunManager _runManager;
 
     public AdminBenchmarkBatteriesController(
         ApplicationDbContext db,
         BenchmarkBatteryOrchestrator orchestrator,
-        BenchmarkBatteryAnalysisService analysisService)
+        BenchmarkBatteryAnalysisService analysisService,
+        BenchmarkBatteryLeaderboardService leaderboard,
+        BenchmarkRunManager runManager)
     {
         _db = db;
         _orchestrator = orchestrator;
         _analysisService = analysisService;
+        _leaderboard = leaderboard;
+        _runManager = runManager;
     }
 
     private string? CurrentUserId()
@@ -364,12 +370,15 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             .GroupBy(r => r.BatteryId)
             .ToDictionary(g => g.Key, g => g.Select(r => r.Status).ToList());
 
+        var summaries = await _leaderboard.LoadSummariesAsync(batteries.Select(b => b.DefinitionSha256), ct);
+
         return batteries
             .Select(b => ToBatteryDto(
                 b,
                 suiteNames,
                 difficulties,
-                runsByBattery.TryGetValue(b.Id, out var statuses) ? statuses : new List<BenchmarkRunSeriesStatus>()))
+                runsByBattery.TryGetValue(b.Id, out var statuses) ? statuses : new List<BenchmarkRunSeriesStatus>(),
+                summaries.TryGetValue((b.DefinitionSha256 ?? string.Empty).Trim().ToLowerInvariant(), out var summary) ? summary : null))
             .ToList();
     }
 
@@ -377,7 +386,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         BenchmarkBattery battery,
         IReadOnlyDictionary<long, string> suiteNames,
         IReadOnlyDictionary<long, IReadOnlyList<int?>> difficultiesBySuite,
-        IReadOnlyList<BenchmarkRunSeriesStatus> runStatuses)
+        IReadOnlyList<BenchmarkRunSeriesStatus> runStatuses,
+        BenchmarkBatteryLeaderboardSummary? leaderboard)
     {
         var ordered = battery.Suites.OrderBy(s => s.OrderIndex).ThenBy(s => s.Id).ToList();
 
@@ -427,6 +437,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             ModifiedAtUtc = battery.ModifiedAtUtc,
             BatteryRunCount = runStatuses.Count,
             HasActiveBatteryRun = runStatuses.Any(s => ActiveStatuses.Contains(s)),
+            RankedResultCount = leaderboard?.RankedResultCount ?? 0,
+            LatestAnalysisAtUtc = leaderboard?.LatestAnalysisAtUtc,
             Suites = suites,
             WeightPreviews = Schemes
                 .Select(scheme => new BenchmarkBatteryWeightPreviewDto
@@ -536,6 +548,67 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     {
         var result = await _orchestrator.ResumeAsync(id, request?.Mode ?? BenchmarkBatteryResumeMode.Continue, ct);
         return StartResultToActionResult(result);
+    }
+
+    /// <summary>
+    /// Deletes a battery run; its analyses, member rows and battery-completion documents go with it, and
+    /// any report job of it is canceled. With <c>deleteMembers=true</c>
+    /// each member run, superseded ones included, is deleted through the single-run delete, except a
+    /// run that also serves another battery run, which is kept. 204 on success; 404 for an unknown
+    /// battery run; 409 while it is driven or live, or while a member run to delete is in flight.
+    /// </summary>
+    [HttpDelete("runs/{id:long}")]
+    public async Task<IActionResult> DeleteBatteryRun(
+        long id,
+        [FromQuery] bool deleteMembers = false,
+        CancellationToken ct = default,
+        [FromServices] BenchmarkBatteryReportDocumentService? documents = null)
+    {
+        var batteryRun = await _db.BenchmarkBatteryRuns
+            .Include(r => r.Members)
+            .FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (batteryRun == null) return NotFound();
+
+        if (_orchestrator.IsDriving(id) || ActiveStatuses.Contains(batteryRun.Status))
+        {
+            return Conflict("Cannot delete a battery run while it is in progress.");
+        }
+
+        var memberRunIds = new List<long>();
+        if (deleteMembers)
+        {
+            var ownRunIds = batteryRun.Members.Select(m => m.BenchmarkRunId).Distinct().ToList();
+            var sharedRunIds = await _db.BenchmarkBatteryRunMembers
+                .Where(m => ownRunIds.Contains(m.BenchmarkRunId) && m.BenchmarkBatteryRunId != id)
+                .Select(m => m.BenchmarkRunId)
+                .Distinct()
+                .ToListAsync(ct);
+            memberRunIds = ownRunIds.Except(sharedRunIds).OrderBy(runId => runId).ToList();
+
+            if (_runManager.CurrentRunId is long current && memberRunIds.Contains(current))
+            {
+                return Conflict("Cannot delete a member run while it is running.");
+            }
+        }
+
+        // Tracked, so the cascade reaches the analyses on providers that apply it to loaded rows only.
+        await _db.BenchmarkBatteryAnalyses.Where(a => a.BenchmarkBatteryRunId == id).LoadAsync(ct);
+
+        _db.BenchmarkBatteryRuns.Remove(batteryRun);
+        await _db.SaveChangesAsync(ct);
+
+        // The battery-completion documents and their charts, and any report job of this battery run.
+        if (documents != null)
+        {
+            await documents.SettleAfterDeleteAsync(id, ct);
+        }
+
+        foreach (long runId in memberRunIds)
+        {
+            await AdminBenchmarkController.TryDeleteRunAsync(_db, _runManager, runId, ct);
+        }
+
+        return NoContent();
     }
 
     /// <summary>
@@ -752,13 +825,15 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         var state = await LoadMemberStateAsync(ids, ct);
         var latest = await LoadLatestAnalysesAsync(ids, ct);
         var configLabels = await LoadConfigurationLabelsAsync(batteryRuns, ct);
+        var identities = await _leaderboard.LoadIdentitiesAsync(batteryRuns, IdentityRunIds(batteryRuns, state), ct);
 
         var dtos = batteryRuns
             .Select(b => ToRunDto(
                 b,
                 state,
                 latest.TryGetValue(b.Id, out var analysis) ? analysis : null,
-                configLabels))
+                configLabels,
+                identities.TryGetValue(b.Id, out var identity) ? identity : null))
             .ToList();
 
         foreach (var dto in dtos)
@@ -846,6 +921,38 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     }
 
     /// <summary>
+    /// The member run a battery run's identity is read from: the newest non-superseded usable member
+    /// in the grid, else the newest member whose run still exists; null when there is none.
+    /// </summary>
+    private static long? IdentityRunIdOf(BenchmarkBatteryRun batteryRun, MemberState state)
+    {
+        int suiteCount = SuiteCountOf(batteryRun, TryReadDefinition(batteryRun.DefinitionJson));
+
+        var members = state.Of(batteryRun.Id)
+            .Where(m => state.Runs.ContainsKey(m.BenchmarkRunId))
+            .OrderByDescending(m => m.AddedAtUtc)
+            .ThenByDescending(m => m.Id)
+            .ToList();
+
+        var usable = members.FirstOrDefault(m => !m.Superseded
+                                                 && m.SuiteIndex >= 0 && m.SuiteIndex < suiteCount
+                                                 && state.UnusableReason(m) == null);
+
+        return (usable ?? members.FirstOrDefault())?.BenchmarkRunId;
+    }
+
+    /// <summary>The identity member run per battery run, for those that have one.</summary>
+    private static Dictionary<long, long> IdentityRunIds(IEnumerable<BenchmarkBatteryRun> batteryRuns, MemberState state)
+    {
+        var ids = new Dictionary<long, long>();
+        foreach (var batteryRun in batteryRuns)
+        {
+            if (IdentityRunIdOf(batteryRun, state) is long runId) ids[batteryRun.Id] = runId;
+        }
+        return ids;
+    }
+
+    /// <summary>
     /// The run ids of the non-superseded usable members whose suite index lies in the definition —
     /// the set <see cref="BenchmarkBatteryAnalysisService.LoadAsync"/> analyses.
     /// </summary>
@@ -863,7 +970,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         BenchmarkBatteryRun batteryRun,
         MemberState state,
         BenchmarkBatteryAnalysis? latestAnalysis,
-        IReadOnlyDictionary<long, string> configLabels)
+        IReadOnlyDictionary<long, string> configLabels,
+        BenchmarkBatteryRunIdentity? identity)
     {
         var definition = TryReadDefinition(batteryRun.DefinitionJson);
         int suiteCount = SuiteCountOf(batteryRun, definition);
@@ -903,6 +1011,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             }
         }
 
+        var fingerprints = BenchmarkBatteryOrchestrator.ReadFingerprints(batteryRun.SuiteFingerprintsJson);
+
         var dto = new BenchmarkBatteryRunDto
         {
             Id = batteryRun.Id,
@@ -918,7 +1028,12 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                     Index = s.Index,
                     SuiteId = s.SuiteId,
                     SuiteName = s.SuiteName,
-                    CustomWeight = s.CustomWeight
+                    CustomWeight = s.CustomWeight,
+                    CandidateSystemPromptSha256 = fingerprints.GetValueOrDefault(s.Index)?.CandidateSystemPromptSha256,
+                    ToolGuidesSha256 = fingerprints.GetValueOrDefault(s.Index)?.ToolGuidesSha256,
+                    KnowledgeBaseHeadSha = fingerprints.GetValueOrDefault(s.Index)?.KnowledgeBaseHeadSha,
+                    WikiHeadSha = fingerprints.GetValueOrDefault(s.Index)?.WikiHeadSha,
+                    SourceCodeHeadSha = fingerprints.GetValueOrDefault(s.Index)?.SourceCodeHeadSha
                 })
                 .ToList(),
             SuiteCount = suiteCount,
@@ -940,6 +1055,18 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             StartedByUserName = batteryRun.StartedByUser?.UserName,
             TestedModelConfigurationId = BenchmarkBatteryOrchestrator.DeserializeRequest(batteryRun)?.TestedModelConfigurationId,
             TestedModelLabel = TestedModelLabelOf(batteryRun, state, configLabels),
+            TestedProvider = identity?.TestedProvider,
+            TestedModelId = identity?.TestedModelId,
+            TestedThinkingLevel = identity?.TestedThinkingLevel,
+            TestedReasoningMode = identity?.TestedReasoningMode,
+            TestedServiceTier = identity?.TestedServiceTier,
+            AssessorLabel = identity?.AssessorLabel,
+            CoAssessorLabel = identity?.CoAssessorLabel,
+            ScoringProfileName = identity?.ScoringProfileName,
+            VerboseMode = identity?.VerboseMode ?? false,
+            ReportWriterModelConfigurationId = batteryRun.ReportWriterModelConfigurationId,
+            ReportDocumentsStatus = batteryRun.ReportDocumentsStatus,
+            ReportDocumentsMessage = batteryRun.ReportDocumentsMessage,
             Slots = slots,
             Members = members
         };
@@ -1033,6 +1160,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         dto.LatestAnalysisId = analysis.Id;
         dto.LatestAnalysisAtUtc = analysis.ComputedAtUtc;
         dto.LatestAnalysisComplete = analysis.Complete;
+        dto.ComparabilityClassSha256 = analysis.ComparabilityClassSha256;
         dto.OverallIndex = result?.OverallIndex?.PointEstimate;
         dto.OverallIndexHalfWidth = result?.OverallIndex?.CombinedHalfWidth;
         dto.OverallIndexLower = result?.OverallIndex?.CombinedLower;
@@ -1089,7 +1217,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
         var state = await LoadMemberStateAsync(new[] { batteryRun.Id }, ct);
         int suiteCount = SuiteCountOf(batteryRun, TryReadDefinition(batteryRun.DefinitionJson));
-        long[] memberRunIds = ReadMemberRunIds(analysis);
+        long[] memberRunIds = BenchmarkBatteryLeaderboardService.ReadMemberRunIds(analysis);
         var result = BenchmarkBatteryAnalysisService.DeserializeResult(analysis);
 
         string? comparedName = null;
@@ -1121,18 +1249,6 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             Comparison = BenchmarkBatteryAnalysisService.DeserializeComparison(analysis),
             ExcludedMembers = result?.ExcludedMembers.ToList() ?? new List<BenchmarkBatteryExcludedMember>()
         };
-    }
-
-    private static long[] ReadMemberRunIds(BenchmarkBatteryAnalysis analysis)
-    {
-        try
-        {
-            return JsonSerializer.Deserialize<long[]>(analysis.MemberRunIdsJson ?? "[]") ?? Array.Empty<long>();
-        }
-        catch (JsonException)
-        {
-            return Array.Empty<long>();
-        }
     }
 
     /// <summary>
@@ -1168,7 +1284,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             return BadRequest("The battery run's stored definition cannot be read, so no report can be produced.");
         }
 
-        long[] memberRunIds = ReadMemberRunIds(analysis);
+        long[] memberRunIds = BenchmarkBatteryLeaderboardService.ReadMemberRunIds(analysis);
 
         var memberRuns = await _db.BenchmarkRuns
             .AsNoTracking()
@@ -1279,14 +1395,20 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
         var state = await LoadMemberStateAsync(batteryRunIds, ct);
         var configLabels = await LoadConfigurationLabelsAsync(batteryRuns, ct);
+        var identities = await _leaderboard.LoadIdentitiesAsync(batteryRuns, IdentityRunIds(batteryRuns, state), ct);
 
         var rows = analyses
             .Where(a => batteryRunById.ContainsKey(a.BenchmarkBatteryRunId))
-            .Select(a => ToLeaderboardRow(a, batteryRunById[a.BenchmarkBatteryRunId], state, configLabels))
+            .Select(a => ToLeaderboardRow(
+                a,
+                batteryRunById[a.BenchmarkBatteryRunId],
+                state,
+                configLabels,
+                identities.TryGetValue(a.BenchmarkBatteryRunId, out var identity) ? identity : null))
             .ToList();
 
         var ranked = rows
-            .Where(r => r.Complete && !string.IsNullOrEmpty(r.ComparabilityClassSha256) && r.OverallIndex.HasValue)
+            .Where(r => BenchmarkBatteryLeaderboardService.IsRanked(r.Complete, r.ComparabilityClassSha256, r.OverallIndex))
             .ToList();
         var rankedIds = new HashSet<long>(ranked.Select(r => r.BatteryRunId));
 
@@ -1307,7 +1429,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var representatives = classes.ToDictionary(
                 c => c.ComparabilityClassSha256,
                 c => analyses.First(a => a.Id == c.Rows.OrderByDescending(r => r.ComputedAtUtc).First().AnalysisId));
-            var distinguishing = await DistinguishingKeysAsync(representatives, ct);
+            var distinguishing = await _leaderboard.DistinguishingKeysAsync(representatives, ct);
             foreach (var cls in classes)
             {
                 cls.DistinguishingKeys = distinguishing.TryGetValue(cls.ComparabilityClassSha256, out var keys) ? keys : new List<string>();
@@ -1346,7 +1468,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         BenchmarkBatteryAnalysis analysis,
         BenchmarkBatteryRun batteryRun,
         MemberState state,
-        IReadOnlyDictionary<long, string> configLabels)
+        IReadOnlyDictionary<long, string> configLabels,
+        BenchmarkBatteryRunIdentity? identity)
     {
         var result = BenchmarkBatteryAnalysisService.DeserializeResult(analysis);
         var definition = TryReadDefinition(batteryRun.DefinitionJson);
@@ -1361,6 +1484,11 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             ComputedAtUtc = analysis.ComputedAtUtc,
             TestedModelConfigurationId = BenchmarkBatteryOrchestrator.DeserializeRequest(batteryRun)?.TestedModelConfigurationId,
             TestedModelLabel = TestedModelLabelOf(batteryRun, state, configLabels),
+            TestedProvider = identity?.TestedProvider,
+            TestedModelId = identity?.TestedModelId,
+            TestedThinkingLevel = identity?.TestedThinkingLevel,
+            TestedReasoningMode = identity?.TestedReasoningMode,
+            TestedServiceTier = identity?.TestedServiceTier,
             Status = batteryRun.Status.ToString(),
             RunsPerSuite = batteryRun.RunsPerSuite,
             SuiteCount = result?.SuiteCount ?? SuiteCountOf(batteryRun, definition),
@@ -1385,64 +1513,5 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         return distinguishingKeys.Count > 0
             ? label + " · differs in " + string.Join(", ", distinguishingKeys)
             : label;
-    }
-
-    /// <summary>
-    /// Per class, the must-match comparability keys whose values (per suite) differ from those of at
-    /// least one other class, read from one representative analysis per class, in key order.
-    /// </summary>
-    private async Task<Dictionary<string, List<string>>> DistinguishingKeysAsync(
-        IReadOnlyDictionary<string, BenchmarkBatteryAnalysis> representatives,
-        CancellationToken ct)
-    {
-        var runIdsByClass = representatives.ToDictionary(p => p.Key, p => ReadMemberRunIds(p.Value));
-        var allIds = runIdsByClass.Values.SelectMany(ids => ids).Distinct().ToList();
-
-        var runs = await _db.BenchmarkRuns
-            .AsNoTracking()
-            .Where(r => allIds.Contains(r.Id))
-            .ToListAsync(ct);
-        await BenchmarkSeriesOrchestrator.HydrateItemRevisionsAsync(_db, runs, ct);
-        var runById = runs.ToDictionary(r => r.Id);
-
-        var keyOrder = new List<string>();
-        var valuesByClass = new Dictionary<string, Dictionary<string, SortedSet<string>>>(StringComparer.Ordinal);
-
-        foreach (var (cls, ids) in runIdsByClass)
-        {
-            var values = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
-            foreach (long runId in ids)
-            {
-                if (!runById.TryGetValue(runId, out var run)) continue;
-
-                long? suiteId = run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId;
-                foreach (var key in BenchmarkCrossModelComparability.MustMatchKeys(run))
-                {
-                    if (!keyOrder.Contains(key.Name)) keyOrder.Add(key.Name);
-                    if (!values.TryGetValue(key.Name, out var set))
-                    {
-                        set = new SortedSet<string>(StringComparer.Ordinal);
-                        values[key.Name] = set;
-                    }
-                    set.Add($"{suiteId}:{key.Value}");
-                }
-            }
-            valuesByClass[cls] = values;
-        }
-
-        var distinguishing = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        foreach (var (cls, values) in valuesByClass)
-        {
-            distinguishing[cls] = keyOrder
-                .Where(name => valuesByClass
-                    .Where(other => other.Key != cls)
-                    .Any(other => !SetOf(values, name).SetEquals(SetOf(other.Value, name))))
-                .ToList();
-        }
-
-        return distinguishing;
-
-        static SortedSet<string> SetOf(Dictionary<string, SortedSet<string>> values, string name)
-            => values.TryGetValue(name, out var set) ? set : new SortedSet<string>(StringComparer.Ordinal);
     }
 }

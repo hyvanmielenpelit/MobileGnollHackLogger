@@ -65,6 +65,8 @@ export interface BatteryPreviewRow {
 }
 
 const KEY_PREFIX = 'suite-';
+/** The fewest suites a battery holds. */
+const MIN_SUITES = 2;
 
 /**
  * Creates or edits a battery: its name, description, suites in run order, weighting scheme and,
@@ -93,7 +95,9 @@ export class BatteryEditorDialogComponent implements OnInit, OnDestroy {
 
   @ViewChild('editorDialog') dialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('editorHeading') heading?: ElementRef<HTMLElement>;
+  @ViewChild('nameInput') nameInput?: ElementRef<HTMLInputElement>;
 
+  readonly minSuites = MIN_SUITES;
   readonly schemeOptions: readonly BatterySchemeOption[] = BATTERY_SCHEME_OPTIONS;
   readonly formatPercent = formatPercent;
   readonly formatNumber = formatNumber;
@@ -268,8 +272,9 @@ export class BatteryEditorDialogComponent implements OnInit, OnDestroy {
     return this.name.trim() === '' ? 'Enter a name for the battery.' : null;
   }
 
-  get suiteCountError(): string | null {
-    return this.checkedRows.length < 2 ? 'Select at least two suites.' : null;
+  /** While true the save button is aria-disabled and the footer says why. */
+  get tooFewSuites(): boolean {
+    return this.checkedRows.length < MIN_SUITES;
   }
 
   get customWeightError(): string | null {
@@ -281,8 +286,13 @@ export class BatteryEditorDialogComponent implements OnInit, OnDestroy {
       : 'Every selected suite needs a custom weight above zero.';
   }
 
+  /** The custom-weight error shows once a suite is checked, or after a save attempt. */
+  get showCustomError(): boolean {
+    return !!this.customWeightError && (this.attemptedSave || this.previewRows.length > 0);
+  }
+
   get canSave(): boolean {
-    return !this.saving && !this.nameError && !this.suiteCountError && !this.customWeightError;
+    return !this.saving && !this.tooFewSuites && !this.nameError && !this.customWeightError;
   }
 
   get schemeLabel(): string {
@@ -385,10 +395,18 @@ export class BatteryEditorDialogComponent implements OnInit, OnDestroy {
 
   // --- Save ------------------------------------------------------------------------------------
 
+  /**
+   * Inert while saving or while too few suites are checked. Otherwise an invalid name or custom
+   * weight shows its error and takes focus: the name first, then the first invalid weight.
+   */
   save(): void {
+    if (this.saving || this.tooFewSuites) {
+      return;
+    }
     this.attemptedSave = true;
     if (!this.canSave) {
-      this.cdr.markForCheck();
+      this.cdr.detectChanges();
+      this.focusFirstInvalid();
       return;
     }
     const checked = this.checkedRows;
@@ -417,5 +435,19 @@ export class BatteryEditorDialogComponent implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       }
     });
+  }
+
+  private focusFirstInvalid(): void {
+    if (this.nameError) {
+      this.nameInput?.nativeElement.focus();
+      return;
+    }
+    if (this.customWeightError) {
+      const row = this.checkedRows.find(r => !isValidCustomWeight(r.customWeight));
+      const input = row
+        ? this.dialog?.nativeElement.querySelector<HTMLInputElement>('#bbe-custom-' + row.suiteId)
+        : null;
+      input?.focus();
+    }
   }
 }

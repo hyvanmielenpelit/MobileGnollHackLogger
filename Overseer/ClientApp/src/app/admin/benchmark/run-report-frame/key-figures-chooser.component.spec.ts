@@ -336,3 +336,85 @@ describe('KeyFiguresChooserComponent', () => {
     expect(outer().open).toBe(true);
   });
 });
+
+@Component({
+  standalone: true,
+  imports: [KeyFiguresChooserComponent],
+  template: `
+    <button type="button" class="opener">Choose figures</button>
+    <app-key-figures-chooser class="battery-chooser" idPrefix="brr-kfch" figuresHint="Remembered for every battery run report."
+                             detailsHint="The battery run's settings in the image."></app-key-figures-chooser>
+    <app-key-figures-chooser class="run-chooser"></app-key-figures-chooser>`
+})
+class TwoChoosersHostComponent {
+  @ViewChild(KeyFiguresChooserComponent) chooser!: KeyFiguresChooserComponent;
+}
+
+describe('KeyFiguresChooserComponent with a host id prefix and hints', () => {
+  let fixture: ComponentFixture<TwoChoosersHostComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [TwoChoosersHostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(TwoChoosersHostComponent);
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    for (const dialog of Array.from(document.querySelectorAll('dialog[open]')) as HTMLDialogElement[]) {
+      dialog.close();
+    }
+  });
+
+  function root(): HTMLElement {
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  function dialog(): HTMLDialogElement {
+    return root().querySelector('.battery-chooser dialog') as HTMLDialogElement;
+  }
+
+  function open(): void {
+    fixture.componentInstance.chooser.open(FIGURES, ['mean-time'], root().querySelector<HTMLElement>('.opener'), { rows: DETAILS, excluded: [] });
+    fixture.detectChanges();
+  }
+
+  it('prefixes every id with the host prefix and points every reference at it', () => {
+    open();
+    expect(dialog().getAttribute('aria-labelledby')).toBe('brr-kfchTitle');
+    expect(dialog().querySelector('h3')?.id).toBe('brr-kfchTitle');
+    expect(document.activeElement).toBe(dialog().querySelector('#brr-kfchTitle'));
+
+    const close = dialog().querySelector('.kfch-close') as HTMLButtonElement;
+    expect(close.getAttribute('interestfor')).toBe('brr-kfch-close-tip');
+    expect(close.getAttribute('style')).toContain('anchor-name: --brr-kfch-close-tip');
+    expect(dialog().querySelector('#brr-kfch-close-tip')?.getAttribute('style')).toContain('position-anchor: --brr-kfch-close-tip');
+
+    const [figures, details] = Array.from(dialog().querySelectorAll<HTMLElement>('[role="group"]'));
+    expect(figures.getAttribute('aria-labelledby')).toBe('brr-kfchCaption');
+    expect(dialog().querySelector('#brr-kfchCaption')?.textContent?.trim()).toBe('Figures');
+    expect(details.getAttribute('aria-labelledby')).toBe('brr-kfchDetailsCaption');
+    expect(dialog().querySelector('#brr-kfchDetailsCaption')?.textContent?.trim()).toBe('Image details');
+
+    expect(Array.from(figures.querySelectorAll('input')).map(box => box.id))
+      .toEqual(['brr-kfch-intelligence', 'brr-kfch-mean-time', 'brr-kfch-estimated-cost']);
+    expect((dialog().querySelector('#brr-kfch-mean-time') as HTMLInputElement).checked).toBe(false);
+    expect(Array.from(details.querySelectorAll('input')).map(box => box.id)[0]).toBe('brr-kfch-detail-model');
+  });
+
+  it('shares no id with a default chooser on the same page', () => {
+    open();
+    const ids = (selector: string): string[] =>
+      Array.from(root().querySelectorAll<HTMLElement>(`${selector} [id]`)).map(element => element.id);
+    const battery = ids('.battery-chooser');
+    const run = ids('.run-chooser');
+    expect(run).toContain('kfchTitle');
+    expect(run).toContain('kfch-close-tip');
+    expect(battery.filter(id => run.includes(id))).toEqual([]);
+  });
+
+  it('shows the hints the host gives', () => {
+    open();
+    expect(dialog().querySelector('.kfch-hint')?.textContent?.trim()).toBe('Remembered for every battery run report.');
+    expect(dialog().querySelector('.kfch-detail-hint')?.textContent?.trim()).toBe("The battery run's settings in the image.");
+  });
+});

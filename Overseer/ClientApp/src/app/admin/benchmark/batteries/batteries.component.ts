@@ -4,91 +4,92 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  OnDestroy,
   OnInit,
   Output,
   ViewChild,
   inject
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 
 import {
   AdminBenchmarkService,
-  BenchmarkBatteryAnalysisDto,
   BenchmarkBatteryDto,
-  BenchmarkBatteryLeaderboardDto,
-  BenchmarkBatteryLeaderboardRowDto,
-  BenchmarkBatteryRunDto,
+  BenchmarkBatterySuiteDto,
   BenchmarkSuiteDto
 } from '../../../services/admin-benchmark.service';
+import { CardListChip, CardListFacet, CardListState } from '../../../shared/data-table/card-list-state';
+import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
+import { TableState, anyOfFilter, customFilter } from '../../../shared/data-table/table-state';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
-import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
-import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
-import { exactFilter, TableState } from '../../../shared/data-table/table-state';
 import { BatteryEditorDialogComponent } from './battery-editor-dialog.component';
+import { BatteryLeaderboardDialogComponent } from './battery-leaderboard-dialog.component';
 import {
-  BenchmarkBatteryComparison,
-  BenchmarkBatteryStatisticsResult,
-  batteryRunStatusLabel,
+  BATTERY_CARD_SUITE_ROWS,
+  BATTERY_FILTER_BAR_MIN_EXCLUSIVE,
+  BATTERY_LIST_SORTS,
+  BATTERY_LIST_VIEW_STORAGE_KEY,
+  BATTERY_SCHEME_OPTIONS,
+  BatteryWeightSegment,
+  DEFAULT_BATTERY_LIST_SORT,
   batterySchemeLabel,
-  formatCost,
-  formatIndexWithHalfWidth,
-  formatInterval,
-  formatMs,
-  formatNumber,
+  batteryWeightMix,
   formatPercent,
-  formatPValue,
-  formatSigned,
-  httpErrorText,
-  randomizationMethodLabel,
-  reproducibilitySourceLabel
+  httpErrorText
 } from './battery.models';
 
-/** What two leaderboard rows chosen for Compare would be, judged from the rows alone. */
-export type BatteryCompareKind = 'model' | 'verification' | 'unlikely' | 'same' | 'none';
+/** A battery's weighting scheme as its card and the Weighting facet show it. */
+function schemeLabelOf(battery: BenchmarkBatteryDto): string {
+  return battery.weightingSchemeLabel || batterySchemeLabel(battery.weightingScheme);
+}
+
+/** The text the search field matches: the name, the description and the suite names. */
+function batterySearchText(battery: BenchmarkBatteryDto): string {
+  return [battery.name, battery.description ?? '', ...battery.suites.map(s => s.suiteName)].join('\n').toLowerCase();
+}
+
+/** A timestamp's milliseconds, or 0 when it does not parse. */
+function timeOf(value: string | null | undefined): number {
+  if (!value) return 0;
+  const ms = parseServerUtcDate(value).getTime();
+  return Number.isNaN(ms) ? 0 : ms;
+}
 
 /**
- * The Multi-Suite sub-tab: battery definitions, battery runs, the analysis of one battery run, the
- * leaderboard of its definition and a paired comparison of two of its results.
+ * The Multi-Suite sub-tab: the battery definitions as a card list, with New Battery, Edit,
+ * Archive / Restore, Delete and each definition's leaderboard.
  *
- * It loads its own data. The host hears of a battery run to show (`openBatteryRun`, which opens the
- * progress dialog) and of every change to the battery list (`batteriesChanged`, for the launcher).
+ * It loads its own data. The host hears of every change to the battery list (`batteriesChanged`,
+ * for the launcher). The leaderboard dialog it hosts reaches the shell's Battery Run Report through
+ * `BenchmarkShellBridge`, which the shell provides.
  */
 @Component({
   selector: 'app-benchmark-batteries',
   standalone: true,
-  imports: [InfoTipComponent, SortHeaderComponent, TablePagerComponent, BatteryEditorDialogComponent],
+  imports: [NgTemplateOutlet, InfoTipComponent, FilterFacetComponent, BatteryEditorDialogComponent, BatteryLeaderboardDialogComponent],
   templateUrl: './batteries.component.html',
   styleUrls: ['./batteries.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class BenchmarkBatteriesComponent implements OnInit {
+export class BenchmarkBatteriesComponent implements OnInit, OnDestroy {
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
+  private host = inject<ElementRef<HTMLElement>>(ElementRef);
 
-  /** A battery run id whose progress dialog the host opens. */
-  @Output() openBatteryRun = new EventEmitter<number>();
   /** After a battery is created, edited, archived, restored or deleted. */
   @Output() batteriesChanged = new EventEmitter<void>();
 
   @ViewChild(BatteryEditorDialogComponent) editor?: BatteryEditorDialogComponent;
+  @ViewChild('leaderboardDialog') leaderboardDialog?: BatteryLeaderboardDialogComponent;
   @ViewChild('deleteDialog') deleteDialog?: ElementRef<HTMLDialogElement>;
-  @ViewChild('analysisHeading') analysisHeading?: ElementRef<HTMLElement>;
 
-  readonly formatCost = formatCost;
-  readonly formatIndexWithHalfWidth = formatIndexWithHalfWidth;
-  readonly formatInterval = formatInterval;
-  readonly formatMs = formatMs;
-  readonly formatNumber = formatNumber;
   readonly formatPercent = formatPercent;
-  readonly formatPValue = formatPValue;
-  readonly formatSigned = formatSigned;
-  readonly schemeLabel = batterySchemeLabel;
-  readonly statusLabel = batteryRunStatusLabel;
-  readonly reproducibilitySourceLabel = reproducibilitySourceLabel;
-  readonly randomizationMethodLabel = randomizationMethodLabel;
+  readonly schemeLabelOf = schemeLabelOf;
+  readonly sorts = BATTERY_LIST_SORTS;
+  readonly suiteRows = BATTERY_CARD_SUITE_ROWS;
 
-  // --- Batteries -------------------------------------------------------------------------------
   batteries: BenchmarkBatteryDto[] = [];
   batteriesLoading = false;
   batteriesError: string | null = null;
@@ -101,118 +102,264 @@ export class BenchmarkBatteriesComponent implements OnInit {
   deleting = false;
   deleteError: string | null = null;
 
-  // --- Battery runs ----------------------------------------------------------------------------
-  batteryRuns: BenchmarkBatteryRunDto[] = [];
-  runsLoading = false;
-  runsError: string | null = null;
-  readonly runTable = new TableState<BenchmarkBatteryRunDto>('startedAtUtc', 'desc').registerAccessors(
+  /** The cards whose suite table shows every row. */
+  private readonly expandedSuites = new Set<number>();
+  /** The battery whose Leaderboard button opened the dialog, focused again when it closes. */
+  private leaderboardOpenerId: number | null = null;
+
+  readonly table = new TableState<BenchmarkBatteryDto>('modified', 'desc').registerAccessors(
     {
-      battery: r => r.batteryName,
-      model: r => r.testedModelLabel ?? null,
-      status: r => r.status,
-      suites: r => (r.suiteCount > 0 ? r.completedSuiteCount / r.suiteCount : null),
-      overallIndex: r => r.overallIndex ?? null,
-      overallSpeed: r => r.overallSpeedIndex ?? null,
-      totalCost: r => r.totalCost ?? null,
-      startedAtUtc: r => parseServerUtcDate(r.startedAtUtc)
+      modified: b => timeOf(b.modifiedAtUtc),
+      name: b => b.name,
+      runs: b => b.batteryRunCount,
+      suites: b => b.suites.length
     },
     {
-      battery: exactFilter(r => r.batteryName),
-      status: exactFilter(r => r.status)
+      search: customFilter((b, value) => batterySearchText(b).includes(value.trim().toLowerCase())),
+      suite: anyOfFilter(b => b.suites.map(s => s.suiteName)),
+      weighting: anyOfFilter(b => schemeLabelOf(b))
     }
   );
 
-  // --- Analysis --------------------------------------------------------------------------------
-  selectedBatteryRunId: number | null = null;
-  /** The selected battery run when it is not in the loaded list. */
-  private selectedRunFallback: BenchmarkBatteryRunDto | null = null;
-  analysis: BenchmarkBatteryAnalysisDto | null = null;
-  analysisLoading = false;
-  analysisError: string | null = null;
-  recomputing = false;
+  /** The card list over `table`: the search, Sort by, the facets, the chips and the batch. */
+  readonly list = new CardListState<BenchmarkBatteryDto>(this.table, {
+    idPrefix: 'bb',
+    sorts: BATTERY_LIST_SORTS,
+    defaultSort: DEFAULT_BATTERY_LIST_SORT,
+    storageKey: BATTERY_LIST_VIEW_STORAGE_KEY,
+    facets: [
+      { column: 'suite', label: 'Suite', values: b => b.suites.map(s => s.suiteName) },
+      { column: 'weighting', label: 'Weighting', values: b => schemeLabelOf(b), order: BATTERY_SCHEME_OPTIONS.map(o => o.label) }
+    ],
+    onChange: () => this.cdr.markForCheck()
+  });
 
-  // --- Leaderboard and Compare -----------------------------------------------------------------
-  leaderboardHash: string | null = null;
-  leaderboard: BenchmarkBatteryLeaderboardDto | null = null;
-  leaderboardLoading = false;
-  leaderboardError: string | null = null;
-
-  compareBaselineId: number | null = null;
-  compareTreatmentId: number | null = null;
-  comparing = false;
-  comparison: BenchmarkBatteryAnalysisDto | null = null;
-  compareRefusal: string | null = null;
+  /** `visibleBatteries`, kept as one array until the batteries or Show archived change, for the facet memo. */
+  private visibleMemo: { batteries: BenchmarkBatteryDto[]; showArchived: boolean; rows: BenchmarkBatteryDto[] } | null = null;
+  /** Each battery's weight bar, built once per battery object. */
+  private readonly weightMixCache = new WeakMap<BenchmarkBatteryDto, BatteryWeightSegment[]>();
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
     this.refresh();
   }
 
-  /** Reloads every list, and the open analysis and leaderboard. */
+  ngOnDestroy(): void {
+    this.list.dispose();
+  }
+
+  /** Reloads the batteries and the suites the editor offers. */
   refresh(): void {
     this.loadBatteries();
     this.loadSuites(true);
-    this.loadRuns();
-    if (this.selectedBatteryRunId != null) {
-      this.loadAnalysis(this.selectedBatteryRunId);
-    }
-    if (this.leaderboardHash) {
-      this.loadLeaderboard(this.leaderboardHash);
-    }
   }
 
-  /** Selects a battery run, loads its analysis and its definition's leaderboard, and moves focus to the analysis. */
-  showAnalysis(batteryRunId: number): void {
-    this.selectedBatteryRunId = batteryRunId;
-    this.selectedRunFallback = null;
-    this.analysis = null;
-    this.analysisError = null;
-    this.loadAnalysis(batteryRunId);
+  // --- The list --------------------------------------------------------------------------------
 
-    const run = this.batteryRuns.find(r => r.id === batteryRunId);
-    if (run) {
-      this.selectLeaderboard(run.definitionSha256);
-    } else {
-      this.benchmarkService.getBatteryRun(batteryRunId).subscribe({
-        next: (detail) => {
-          if (this.selectedBatteryRunId !== batteryRunId) return;
-          this.selectedRunFallback = detail;
-          this.selectLeaderboard(detail.definitionSha256);
-          this.cdr.markForCheck();
-        },
-        error: (err) => {
-          this.analysisError = httpErrorText(err, 'Could not load the battery run.');
-          this.cdr.markForCheck();
-        }
-      });
-    }
-
-    this.cdr.detectChanges();
-    const heading = this.analysisHeading?.nativeElement;
-    if (heading) {
-      heading.focus({ preventScroll: true });
-      const reduce = typeof window !== 'undefined'
-        && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      heading.scrollIntoView?.({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
-    }
-  }
-
-  // =============================================================================================
-  // Batteries
-  // =============================================================================================
-
+  /** The batteries the list holds: every one while Show archived is pressed, else the unarchived. */
   get visibleBatteries(): BenchmarkBatteryDto[] {
-    return this.showArchived ? this.batteries : this.batteries.filter(b => !b.isArchived);
+    const memo = this.visibleMemo;
+    if (memo && memo.batteries === this.batteries && memo.showArchived === this.showArchived) {
+      return memo.rows;
+    }
+    const rows = this.showArchived ? this.batteries : this.batteries.filter(b => !b.isArchived);
+    this.visibleMemo = { batteries: this.batteries, showArchived: this.showArchived, rows };
+    return rows;
   }
 
   get archivedCount(): number {
     return this.batteries.filter(b => b.isArchived).length;
   }
 
+  /** The filter bar is shown above three batteries, and while a filter is still active. */
+  get showFilterBar(): boolean {
+    return this.visibleBatteries.length > BATTERY_FILTER_BAR_MIN_EXCLUSIVE || this.table.hasActiveFilters;
+  }
+
+  get cards(): BenchmarkBatteryDto[] {
+    return this.list.view(this.visibleBatteries);
+  }
+
+  get facets(): CardListFacet[] {
+    return this.list.facets(this.visibleBatteries);
+  }
+
+  get chips(): CardListChip[] {
+    return this.list.chips(this.visibleBatteries);
+  }
+
+  get listStatus(): string {
+    return this.list.statusText(this.visibleBatteries, { one: 'battery', many: 'batteries' });
+  }
+
+  get noMatches(): boolean {
+    return this.table.noMatches(this.visibleBatteries);
+  }
+
+  get remainingCount(): number {
+    return this.list.remainingCount(this.visibleBatteries);
+  }
+
+  get nextBatchCount(): number {
+    return this.list.nextBatchCount(this.visibleBatteries);
+  }
+
+  get matchingCount(): number {
+    return this.list.matching(this.visibleBatteries).length;
+  }
+
   toggleShowArchived(): void {
     this.showArchived = !this.showArchived;
+    this.list.invalidate();
     this.cdr.markForCheck();
   }
+
+  onSearchInput(event: Event): void {
+    this.list.setSearchInput((event.target as HTMLInputElement).value);
+  }
+
+  /** Escape with text clears the search at once; in an empty field it passes through. */
+  onSearchKeydown(event: KeyboardEvent): void {
+    if (this.list.clearSearchOnEscape(event)) {
+      this.cdr.detectChanges();
+    }
+  }
+
+  onSortChange(event: Event): void {
+    if (this.list.setSort((event.target as HTMLSelectElement).value)) {
+      this.cdr.detectChanges();
+    }
+  }
+
+  onFacetChange(column: string, values: string[]): void {
+    this.list.setFacet(column, values);
+    this.cdr.detectChanges();
+  }
+
+  /** Removes a chip's filter, then focuses the chip now in its place, else the previous one, else the search. */
+  removeChip(chip: CardListChip): void {
+    const index = this.list.removeChip(chip, this.visibleBatteries);
+    this.cdr.detectChanges();
+    const chips = Array.from(this.host.nativeElement.querySelectorAll<HTMLButtonElement>('.bb-filter-chips .gh-filter-chip'));
+    const target = index >= 0 ? chips[index] ?? chips[index - 1] : undefined;
+    (target ?? this.element('#bb-search'))?.focus();
+  }
+
+  /** Clears the search and every filter, then focuses the search when it is still shown. */
+  clearFilters(): void {
+    this.list.clearFilters();
+    this.cdr.detectChanges();
+    this.element('#bb-search')?.focus();
+  }
+
+  showMore(): void {
+    this.focusCard(this.list.showMore(this.visibleBatteries));
+  }
+
+  showAll(): void {
+    this.focusCard(this.list.showAll(this.visibleBatteries));
+  }
+
+  /** Renders, then focuses the title of the card at `index` in the view, if there is one. */
+  private focusCard(index: number): void {
+    this.cdr.detectChanges();
+    const battery = this.cards[index];
+    if (battery) {
+      this.element('#bb-card-title-' + battery.id)?.focus();
+    }
+  }
+
+  /** After a delete: the card now at the deleted one's index, else the previous one, else the heading. */
+  private focusAfterDelete(index: number): void {
+    this.cdr.detectChanges();
+    const cards = this.cards;
+    const battery = index >= 0 ? cards[index] ?? cards[index - 1] : undefined;
+    const target = battery ? this.element('#bb-card-title-' + battery.id) : null;
+    (target ?? this.element('#bb-batteries-title'))?.focus();
+  }
+
+  private element(selector: string): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>(selector);
+  }
+
+  // --- A card ----------------------------------------------------------------------------------
+
+  /** The declared weight preview of a battery, in suite order; empty when the weights are undefined. */
+  declaredWeights(battery: BenchmarkBatteryDto): number[] {
+    return battery.weightPreviews?.find(p => p.declared)?.weights ?? [];
+  }
+
+  /** A suite's declared weight, or null when the weights are undefined. */
+  suiteWeight(battery: BenchmarkBatteryDto, position: number): number | null {
+    const weights = this.declaredWeights(battery);
+    return weights.length === battery.suites.length ? weights[position] ?? null : null;
+  }
+
+  weightMix(battery: BenchmarkBatteryDto): BatteryWeightSegment[] {
+    let segments = this.weightMixCache.get(battery);
+    if (!segments) {
+      segments = batteryWeightMix(battery.suites, this.declaredWeights(battery));
+      this.weightMixCache.set(battery, segments);
+    }
+    return segments;
+  }
+
+  /** The questions of every suite, summed. */
+  questionTotal(battery: BenchmarkBatteryDto): number {
+    return battery.suites.reduce((sum, suite) => sum + (suite.deleted ? 0 : suite.questionCount), 0);
+  }
+
+  /** A validation error or a deleted suite keeps the battery from running. */
+  isBroken(battery: BenchmarkBatteryDto): boolean {
+    return battery.validationErrors.length > 0 || battery.brokenSuiteNames.length > 0 || battery.suites.some(s => s.deleted);
+  }
+
+  /** A suite still holds a question with no assessed difficulty. */
+  difficultiesIncomplete(battery: BenchmarkBatteryDto): boolean {
+    return battery.suites.some(s => !s.deleted && !s.difficultyFullyAssessed);
+  }
+
+  /** The first rows of the suite table, always shown. */
+  leadingSuites(battery: BenchmarkBatteryDto): BenchmarkBatterySuiteDto[] {
+    return battery.suites.slice(0, BATTERY_CARD_SUITE_ROWS);
+  }
+
+  /** The rows behind *Show all K suites*. */
+  moreSuites(battery: BenchmarkBatteryDto): BenchmarkBatterySuiteDto[] {
+    return battery.suites.slice(BATTERY_CARD_SUITE_ROWS);
+  }
+
+  suitesExpanded(battery: BenchmarkBatteryDto): boolean {
+    return this.expandedSuites.has(battery.id);
+  }
+
+  /** Shows or hides the suite rows past the first four; focus stays on the toggle. */
+  toggleSuites(battery: BenchmarkBatteryDto): void {
+    if (this.expandedSuites.has(battery.id)) {
+      this.expandedSuites.delete(battery.id);
+    } else {
+      this.expandedSuites.add(battery.id);
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** `2026-10-02 14:05 UTC`, or an em dash. */
+  formatModified(value: string | null | undefined): string {
+    const iso = this.isoDate(value);
+    return iso ? `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC` : '—';
+  }
+
+  isoDate(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const date = parseServerUtcDate(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+
+  shortHash(hash: string | null | undefined): string {
+    return hash ? hash.slice(0, 8) : '—';
+  }
+
+  // --- Loading ---------------------------------------------------------------------------------
 
   private loadBatteries(): void {
     this.batteriesLoading = true;
@@ -246,10 +393,7 @@ export class BenchmarkBatteriesComponent implements OnInit {
     });
   }
 
-  /** The declared weight preview of a battery, in suite order; empty when the weights are undefined. */
-  declaredWeights(battery: BenchmarkBatteryDto): number[] {
-    return battery.weightPreviews?.find(p => p.declared)?.weights ?? [];
-  }
+  // --- Actions ---------------------------------------------------------------------------------
 
   newBattery(): void {
     this.batteryActionError = null;
@@ -265,7 +409,7 @@ export class BenchmarkBatteriesComponent implements OnInit {
     const index = this.batteries.findIndex(b => b.id === battery.id);
     this.batteries = index >= 0
       ? this.batteries.map(b => (b.id === battery.id ? battery : b))
-      : [...this.batteries, battery].sort((a, b) => a.name.localeCompare(b.name));
+      : [...this.batteries, battery];
     this.batteriesChanged.emit();
     this.loadBatteries();
     this.cdr.markForCheck();
@@ -286,8 +430,25 @@ export class BenchmarkBatteriesComponent implements OnInit {
     });
   }
 
-  showLeaderboardFor(battery: BenchmarkBatteryDto): void {
-    this.selectLeaderboard(battery.definitionSha256);
+  /** Opens the leaderboard of the battery's current definition. */
+  openLeaderboard(battery: BenchmarkBatteryDto): void {
+    this.leaderboardOpenerId = battery.id;
+    this.leaderboardDialog?.open({
+      definitionSha256: battery.definitionSha256,
+      name: battery.name,
+      revision: battery.revision,
+      schemeLabel: schemeLabelOf(battery),
+      suiteCount: battery.suites.length
+    });
+  }
+
+  /** The leaderboard closed: focus returns to the Leaderboard button that opened it. */
+  onLeaderboardClosed(): void {
+    const id = this.leaderboardOpenerId;
+    this.leaderboardOpenerId = null;
+    if (id != null) {
+      this.element('#bb-leaderboard-' + id)?.focus();
+    }
   }
 
   requestDelete(battery: BenchmarkBatteryDto): void {
@@ -327,11 +488,13 @@ export class BenchmarkBatteriesComponent implements OnInit {
     this.deleteError = null;
     this.benchmarkService.deleteBattery(battery.id).subscribe({
       next: () => {
+        const index = this.cards.findIndex(b => b.id === battery.id);
         this.deleting = false;
         this.batteries = this.batteries.filter(b => b.id !== battery.id);
+        this.expandedSuites.delete(battery.id);
         this.closeDeleteDialog();
         this.batteriesChanged.emit();
-        this.loadRuns();
+        this.focusAfterDelete(index);
       },
       error: (err) => {
         this.deleting = false;
@@ -339,280 +502,5 @@ export class BenchmarkBatteriesComponent implements OnInit {
         this.cdr.markForCheck();
       }
     });
-  }
-
-  // =============================================================================================
-  // Battery runs
-  // =============================================================================================
-
-  private loadRuns(): void {
-    this.runsLoading = true;
-    this.runsError = null;
-    this.benchmarkService.getBatteryRuns().subscribe({
-      next: (runs) => {
-        this.batteryRuns = runs;
-        this.runsLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.runsLoading = false;
-        this.runsError = httpErrorText(err, 'Could not load the battery runs.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  /** The battery names present in the loaded runs, for the Battery filter. */
-  get runBatteryNames(): string[] {
-    return [...new Set(this.batteryRuns.map(r => r.batteryName))]
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-  }
-
-  get runStatuses(): string[] {
-    return [...new Set(this.batteryRuns.map(r => r.status))].sort();
-  }
-
-  onRunFilter(column: 'battery' | 'status', event: Event): void {
-    this.runTable.setFilter(column, (event.target as HTMLSelectElement).value);
-    this.cdr.markForCheck();
-  }
-
-  clearRunFilters(): void {
-    this.runTable.clearFilters();
-    this.cdr.markForCheck();
-  }
-
-  onTableChanged(): void {
-    this.cdr.markForCheck();
-  }
-
-  showProgress(run: BenchmarkBatteryRunDto): void {
-    this.openBatteryRun.emit(run.id);
-  }
-
-  formatDate(value: string | null | undefined): string {
-    if (!value) return '—';
-    const date = parseServerUtcDate(value);
-    return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
-  }
-
-  isoDate(value: string | null | undefined): string | null {
-    if (!value) return null;
-    const date = parseServerUtcDate(value);
-    return Number.isNaN(date.getTime()) ? null : date.toISOString();
-  }
-
-  // =============================================================================================
-  // Analysis
-  // =============================================================================================
-
-  get selectedRun(): BenchmarkBatteryRunDto | null {
-    if (this.selectedBatteryRunId == null) return null;
-    return this.batteryRuns.find(r => r.id === this.selectedBatteryRunId) ?? this.selectedRunFallback;
-  }
-
-  get result(): BenchmarkBatteryStatisticsResult | null {
-    return this.analysis?.result ?? null;
-  }
-
-  /** Recompute is called out when the stored analysis may no longer describe the battery run. */
-  get recomputeCalledOut(): boolean {
-    const run = this.selectedRun;
-    return !!this.analysis && (
-      this.analysis.stale
-      || (this.analysis.excludedMembers?.length ?? 0) > 0
-      || !!run?.analysisStale
-      || !!run?.analysisHasExcludedMembers);
-  }
-
-  private loadAnalysis(batteryRunId: number): void {
-    this.analysisLoading = true;
-    this.analysisError = null;
-    this.benchmarkService.getBatteryAnalysis(batteryRunId).subscribe({
-      next: (analysis) => {
-        if (this.selectedBatteryRunId !== batteryRunId) return;
-        this.analysis = analysis;
-        this.analysisLoading = false;
-        if (analysis && !this.leaderboardHash) {
-          this.selectLeaderboard(analysis.definitionSha256);
-        }
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        if (this.selectedBatteryRunId !== batteryRunId) return;
-        this.analysisLoading = false;
-        this.analysisError = httpErrorText(err, 'Could not load the analysis.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  recompute(): void {
-    const id = this.selectedBatteryRunId;
-    if (id == null || this.recomputing) return;
-    this.recomputing = true;
-    this.analysisError = null;
-    this.benchmarkService.analyseBatteryRun(id).subscribe({
-      next: (analysis) => {
-        this.recomputing = false;
-        if (this.selectedBatteryRunId === id) {
-          this.analysis = analysis;
-        }
-        this.loadRuns();
-        if (this.leaderboardHash) {
-          this.loadLeaderboard(this.leaderboardHash);
-        }
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.recomputing = false;
-        this.analysisError = httpErrorText(err, 'The analysis could not be computed.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  downloadReport(): void {
-    const id = this.selectedBatteryRunId;
-    if (id == null || !this.analysis) return;
-    window.open(this.benchmarkService.getBatteryReportUrl(id), '_blank');
-  }
-
-  suiteName(index: number): string {
-    const fromResult = this.result?.suites?.find(s => s.suiteIndex === index)?.suiteName;
-    const fromRun = this.selectedRun?.suites?.find(s => s.index === index)?.suiteName;
-    return fromResult ?? fromRun ?? `Suite ${index + 1}`;
-  }
-
-  suiteNames(indexes: readonly number[] | null | undefined): string {
-    return (indexes ?? []).map(i => this.suiteName(i)).join(', ');
-  }
-
-  /** The declared scheme's index, for the sensitivity differences. */
-  get declaredSchemeIndex(): number | null {
-    return this.result?.weightingSensitivity?.find(s => s.declared)?.index ?? null;
-  }
-
-  roleCosts(costs: Record<string, number> | null | undefined): { role: string; cost: number }[] {
-    return Object.entries(costs ?? {}).map(([role, cost]) => ({ role, cost }));
-  }
-
-  // =============================================================================================
-  // Leaderboard
-  // =============================================================================================
-
-  private selectLeaderboard(hash: string | null | undefined): void {
-    if (!hash) return;
-    if (hash !== this.leaderboardHash) {
-      this.leaderboardHash = hash;
-      this.leaderboard = null;
-      this.compareBaselineId = null;
-      this.compareTreatmentId = null;
-      this.comparison = null;
-      this.compareRefusal = null;
-    }
-    this.loadLeaderboard(hash);
-  }
-
-  private loadLeaderboard(hash: string): void {
-    this.leaderboardLoading = true;
-    this.leaderboardError = null;
-    this.benchmarkService.getBatteryLeaderboard(hash).subscribe({
-      next: (board) => {
-        if (this.leaderboardHash !== hash) return;
-        this.leaderboard = board;
-        this.leaderboardLoading = false;
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        if (this.leaderboardHash !== hash) return;
-        this.leaderboardLoading = false;
-        this.leaderboardError = httpErrorText(err, 'Could not load the leaderboard.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  get leaderboardTitle(): string {
-    const board = this.leaderboard;
-    if (board?.batteryName) return board.batteryName;
-    const run = this.batteryRuns.find(r => r.definitionSha256 === this.leaderboardHash);
-    return run?.batteryName ?? 'Battery';
-  }
-
-  shortHash(hash: string | null | undefined): string {
-    return hash ? hash.slice(0, 8) : '—';
-  }
-
-  // =============================================================================================
-  // Compare
-  // =============================================================================================
-
-  /** Every ranked leaderboard row with the class it belongs to, for the two Compare selects. */
-  get compareCandidates(): { classLabel: string; classSha: string; row: BenchmarkBatteryLeaderboardRowDto }[] {
-    return (this.leaderboard?.classes ?? []).flatMap(c =>
-      c.rows.map(row => ({ classLabel: c.label, classSha: c.comparabilityClassSha256, row })));
-  }
-
-  compareOptionLabel(row: BenchmarkBatteryLeaderboardRowDto): string {
-    return `#${row.batteryRunId} · ${row.testedModelLabel ?? 'unknown model'} · ${formatNumber(row.overallIndex)}`;
-  }
-
-  onCompareSelect(side: 'baseline' | 'treatment', event: Event): void {
-    const value = (event.target as HTMLSelectElement).value;
-    const id = value === '' ? null : Number(value);
-    if (side === 'baseline') {
-      this.compareBaselineId = id;
-    } else {
-      this.compareTreatmentId = id;
-    }
-    this.comparison = null;
-    this.compareRefusal = null;
-    this.cdr.markForCheck();
-  }
-
-  get compareKind(): BatteryCompareKind {
-    const candidates = this.compareCandidates;
-    const baseline = candidates.find(c => c.row.batteryRunId === this.compareBaselineId);
-    const treatment = candidates.find(c => c.row.batteryRunId === this.compareTreatmentId);
-    if (!baseline || !treatment) return 'none';
-    if (baseline.row.batteryRunId === treatment.row.batteryRunId) return 'same';
-    if (baseline.classSha === treatment.classSha) return 'model';
-    const sameModel = baseline.row.testedModelConfigurationId != null
-      && baseline.row.testedModelConfigurationId === treatment.row.testedModelConfigurationId;
-    return sameModel ? 'verification' : 'unlikely';
-  }
-
-  get canCompare(): boolean {
-    const kind = this.compareKind;
-    return !this.comparing && kind !== 'none' && kind !== 'same';
-  }
-
-  compare(): void {
-    if (!this.canCompare || this.compareBaselineId == null || this.compareTreatmentId == null) return;
-    const baselineId = this.compareBaselineId;
-    const treatmentId = this.compareTreatmentId;
-    this.comparing = true;
-    this.comparison = null;
-    this.compareRefusal = null;
-    this.benchmarkService.analyseBatteryRun(treatmentId, baselineId).subscribe({
-      next: (analysis) => {
-        this.comparing = false;
-        this.comparison = analysis;
-        if (this.selectedBatteryRunId === treatmentId) {
-          this.analysis = analysis;
-        }
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.comparing = false;
-        this.compareRefusal = httpErrorText(err, 'The two battery results could not be compared.');
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  get comparisonResult(): BenchmarkBatteryComparison | null {
-    return this.comparison?.comparison ?? null;
   }
 }

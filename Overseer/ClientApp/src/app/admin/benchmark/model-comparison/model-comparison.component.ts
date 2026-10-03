@@ -202,6 +202,7 @@ import {
   DownloadCenterPanelComponent
 } from '../download-center/download-center-panel.component';
 import { anonymizeComparisonForSubject } from './report-chart-anonymize';
+import { PairedTestsViewComponent } from './paired-tests-view.component';
 import {
   ComparisonTableCell,
   ComparisonTableModel,
@@ -255,7 +256,7 @@ export type ComparisonWizardStep = 1 | 2 | 3 | 4;
 export const COMPARISON_WIZARD_STEPS: readonly {
   readonly step: ComparisonWizardStep; readonly title: string; readonly summary: string;
 }[] = [
-  { step: 1, title: 'Sources', summary: 'Choose the runs or groups to compare.' },
+  { step: 1, title: 'Sources', summary: 'Choose the single runs or groups to compare, or the battery results, which are compared only with each other.' },
   { step: 2, title: 'Charts & table', summary: 'Choose the models to show, view the charts and the table, and export them.' },
   { step: 3, title: 'Reports', summary: 'Write AI reports on one model of this comparison.' },
   { step: 4, title: 'Documents', summary: 'View, chart, download and delete this comparison’s documents.' }
@@ -284,10 +285,11 @@ export const TABLE_COLUMNS_STORAGE_KEY = 'overseer.modelComparison.tableColumns'
 export const DOWNLOAD_SETTINGS_STORAGE_KEY = 'overseer.modelComparison.download';
 
 /**
- * Step 2's four views: every chart, one chart with zoom and pan, the sortable table, and the table
- * image with zoom and pan. The charts and the table image are composed by the export pipeline.
+ * Step 2's five views: every chart, one chart with zoom and pan, the sortable table, the table image
+ * with zoom and pan, and the paired tests. The charts and the table image are composed by the export
+ * pipeline.
  */
-export type FigureViewTab = 'all' | 'single' | 'table' | 'tablePreview';
+export type FigureViewTab = 'all' | 'single' | 'table' | 'tablePreview' | 'paired';
 
 /** The two views that show charts. */
 export function isChartView(tab: FigureViewTab): boolean {
@@ -297,6 +299,11 @@ export function isChartView(tab: FigureViewTab): boolean {
 /** The two views that show the table. */
 export function isTableView(tab: FigureViewTab): boolean {
   return tab === 'table' || tab === 'tablePreview';
+}
+
+/** The Paired tests view, whose sidebar shows only Data. */
+export function isPairedView(tab: FigureViewTab): boolean {
+  return tab === 'paired';
 }
 
 /** The settings sidebar's tabs. Which of them are shown depends on the view group. */
@@ -324,11 +331,20 @@ export const TABLE_VIEW_SIDEBAR_TABS: readonly FigureSidebarTabOption[] = [
   { id: 'download', label: 'Download' }
 ];
 
+/** The Paired tests view's one tab: the theme, chart, table and download settings do not apply to it. */
+export const PAIRED_VIEW_SIDEBAR_TABS: readonly FigureSidebarTabOption[] = [
+  { id: 'data', label: 'Data' }
+];
+
 /**
  * The tab to show with a view: the chosen one, except that Charts and Table swap for each other
- * across the two view groups. Data, Theme and Download are in both sets and never change.
+ * across the two view groups. Data, Theme and Download are in both sets and never change. The Paired
+ * tests view shows Data.
  */
 export function sidebarTabForView(tab: FigureSidebarTab, view: FigureViewTab): FigureSidebarTab {
+  if (isPairedView(view)) {
+    return 'data';
+  }
   if (isTableView(view)) {
     return tab === 'charts' ? 'table' : tab;
   }
@@ -349,7 +365,7 @@ export const SIDEBAR_WIDTH_MAX = 640;
 
 const FIGURE_SIDEBAR_TABS: readonly FigureSidebarTab[] = ['data', 'theme', 'charts', 'table', 'download'];
 
-const FIGURE_VIEW_TABS: readonly FigureViewTab[] = ['all', 'single', 'table', 'tablePreview'];
+const FIGURE_VIEW_TABS: readonly FigureViewTab[] = ['all', 'single', 'table', 'tablePreview', 'paired'];
 
 /** Earlier stored tab names: Emphasis became Data, Style became Charts, Export became Download. */
 const MIGRATED_SIDEBAR_TABS: Readonly<Record<string, FigureSidebarTab>> = {
@@ -585,7 +601,8 @@ export interface ComparisonFigureCard {
   imports: [
     CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent,
     FigureStylePanelComponent, ExportSizeSectionComponent, TableSettingsPanelComponent, ReorderableListComponent,
-    InfoTipComponent, PaneResizerComponent, ReportPackPanelComponent, DownloadCenterPanelComponent
+    InfoTipComponent, PaneResizerComponent, ReportPackPanelComponent, DownloadCenterPanelComponent,
+    PairedTestsViewComponent
   ],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
@@ -619,6 +636,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** How many analysis groups the host currently has selected. */
   @Input() selectedGroupCount = 0;
 
+  /** How many battery results the host currently has selected; never beside runs or groups. */
+  @Input() selectedBatteryCount = 0;
+
   /**
    * What the host has to say about the current selection: what cannot be charted, what will be
    * excluded, and what is still being computed. Empty while the selection is unremarkable.
@@ -634,9 +654,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** The selection band's Clear selection button, emitted for the host to drop every source at once. */
   @Output() clearSelection = new EventEmitter<void>();
 
-  /** The two counts together, which is what both caps and Next are judged on. */
+  /** The selection counts together, which is what both caps and Next are judged on. */
   get selectedSourceCount(): number {
-    return this.selectedRunCount + this.selectedGroupCount;
+    return this.selectedRunCount + this.selectedGroupCount + this.selectedBatteryCount;
   }
 
   /** The request cap. Above it Compare is refused rather than truncated. */
@@ -1198,12 +1218,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   get selectionSummary(): string {
     const runs = this.selectedRunCount;
     const groups = this.selectedGroupCount;
-    if (runs === 0 && groups === 0) {
+    const batteries = this.selectedBatteryCount;
+    if (runs === 0 && groups === 0 && batteries === 0) {
       return 'Nothing selected yet';
     }
     const parts = [
       runs > 0 ? `${runs} ${runs === 1 ? 'run' : 'runs'}` : '',
-      groups > 0 ? `${groups} ${groups === 1 ? 'group' : 'groups'}` : ''
+      groups > 0 ? `${groups} ${groups === 1 ? 'group' : 'groups'}` : '',
+      batteries > 0 ? `${batteries} ${batteries === 1 ? 'battery result' : 'battery results'}` : ''
     ].filter(part => part !== '');
     return `${parts.join(' and ')} selected`;
   }
@@ -1941,14 +1963,17 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       }
       return ids;
     };
+    const batteryRunIds = idsOf('battery');
     const context: ReportPackContext = {
       runIds: idsOf('run'),
       groupIds: idsOf('group'),
+      ...(batteryRunIds.length > 0 ? { batteryRunIds } : {}),
       pricingBasis: basis,
       entries: comparison.entries,
       entryKeys: comparison.entries.map(entry => entry.key),
       suiteId: comparison.baselineSuiteId ?? null,
-      suiteName: comparison.baselineSuiteName ?? null
+      // A comparison of battery results spans several suites; its battery stands in for the suite.
+      suiteName: comparison.baselineSuiteName ?? comparison.baselineBatteryName ?? null
     };
     this.reportPackContextCache = { comparison, basis, context };
     return context;
@@ -3174,12 +3199,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // The step-2 workspace
   //
-  // A collapsible settings sidebar beside four views: All charts, Single chart, the Interactive
-  // table and the Table preview. The chart views and the Table preview show images composed by the
-  // export pipeline, so the page and a download are the same image. The sidebar's tabs follow the
-  // view group — Data · Theme · Charts · Download beside the charts, Data · Theme · Table · Download
-  // beside the table — so a tab never holds a setting that does not apply to the view it is shown
-  // with. Every control exists once.
+  // A collapsible settings sidebar beside five views: All charts, Single chart, the Interactive
+  // table, the Table preview and the Paired tests. The chart views and the Table preview show images
+  // composed by the export pipeline, so the page and a download are the same image. The sidebar's
+  // tabs follow the view group — Data · Theme · Charts · Download beside the charts, Data · Theme ·
+  // Table · Download beside the table, Data alone beside the paired tests — so a tab never holds a
+  // setting that does not apply to the view it is shown with. Every control exists once.
   // ---------------------------------------------------------------------------------------------
 
   private readonly storedSidebar = readStoredFigureSidebar();
@@ -3187,24 +3212,42 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** All charts by default; kept across steps and remembered per browser. */
   figureTab: FigureViewTab = this.storedSidebar.view;
 
-  /** The four views. Each label is also the tab's accessible name. */
+  /** The five views. Each label is also the tab's accessible name. */
   readonly figureTabs: readonly { readonly id: FigureViewTab; readonly label: string }[] = [
     { id: 'all', label: 'All charts' },
     { id: 'single', label: 'Single chart' },
     { id: 'table', label: 'Interactive table' },
-    { id: 'tablePreview', label: 'Table preview' }
+    { id: 'tablePreview', label: 'Table preview' },
+    { id: 'paired', label: 'Paired tests' }
   ];
 
   readonly isChartView = isChartView;
   readonly isTableView = isTableView;
+  readonly isPairedView = isPairedView;
 
   /**
    * The view on screen: the chosen one, or the Interactive table while a chart view is chosen and
-   * nothing can be charted. The chosen one is kept, so a refetch that makes the set chartable again
-   * returns to it.
+   * nothing can be charted, or the Paired tests view is chosen and fewer than two entries are
+   * comparable. The chosen one is kept, so a refetch that makes it available again returns to it.
    */
   get effectiveFigureTab(): FigureViewTab {
-    return isChartView(this.figureTab) && !this.showFigures ? 'table' : this.figureTab;
+    return this.isFigureTabUnavailable(this.figureTab) ? 'table' : this.figureTab;
+  }
+
+  /** Why the Paired tests tab refuses, as the tab's visually hidden suffix. */
+  readonly pairedUnavailableReason = 'unavailable: comparing needs two comparable models';
+
+  /**
+   * Whether the Paired tests view has been shown since step 2 was rendered. It stays mounted, and
+   * hidden, after the first visit, so its mode, reference and result survive a trip to another view.
+   */
+  private pairedVisited = false;
+
+  get pairedViewMounted(): boolean {
+    if (this.effectiveFigureTab === 'paired') {
+      this.pairedVisited = true;
+    }
+    return this.pairedVisited;
   }
 
   /** The Single chart or the Table preview, the two views that share the zoom-and-pan stage. */
@@ -3213,8 +3256,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return tab === 'single' || tab === 'tablePreview';
   }
 
-  /** A chart view's tab refuses while nothing can be charted, and says why. */
+  /**
+   * A chart view's tab refuses while nothing can be charted, and the Paired tests tab while fewer
+   * than two entries are comparable; each says why.
+   */
   isFigureTabUnavailable(tab: FigureViewTab): boolean {
+    if (isPairedView(tab)) {
+      return this.measuredEntryCount < 2;
+    }
     return isChartView(tab) && !this.showFigures;
   }
 
@@ -3260,7 +3309,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** The tabs the current view group shows, in order. */
   get visibleSidebarTabs(): readonly FigureSidebarTabOption[] {
-    return isTableView(this.effectiveFigureTab) ? TABLE_VIEW_SIDEBAR_TABS : CHART_VIEW_SIDEBAR_TABS;
+    const view = this.effectiveFigureTab;
+    if (isPairedView(view)) {
+      return PAIRED_VIEW_SIDEBAR_TABS;
+    }
+    return isTableView(view) ? TABLE_VIEW_SIDEBAR_TABS : CHART_VIEW_SIDEBAR_TABS;
   }
 
   /** The tab shown: Charts and Table swap for each other with the view group; the rest are in both sets. */
@@ -3341,7 +3394,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * preview drops its bitmap. The chart views refuse while nothing can be charted. Single opens on
    * the chart last activated on All, or the first; the Table preview opens at Fit to screen.
    *
-   * The sidebar keeps a tab both view groups show; Charts and Table swap for each other.
+   * The sidebar keeps a tab both view groups show; Charts and Table swap for each other. The Paired
+   * tests view shows only Data and leaves the chosen tab for the next view.
    */
   selectFigureTab(tab: FigureViewTab): void {
     if (this.isFigureTabUnavailable(tab)) {
@@ -3382,7 +3436,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.setHighlight(null);
     }
 
-    this.sidebarTab = sidebarTabForView(this.sidebarTab, tab);
+    if (!isPairedView(tab)) {
+      this.sidebarTab = sidebarTabForView(this.sidebarTab, tab);
+    }
     this.figureTab = tab;
     this.writeStoredSidebar();
     this.cdr.detectChanges();

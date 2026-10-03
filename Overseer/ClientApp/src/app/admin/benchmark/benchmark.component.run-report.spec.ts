@@ -836,7 +836,7 @@ describe('AdminBenchmarkComponent', () => {
         const body = rootPx() * 0.875;
 
         const panels = Array.from(fixture.nativeElement.querySelectorAll('.benchmark-run-detail-dialog [role="tabpanel"].rr-panel')) as HTMLElement[];
-        expect(panels.length).toBe(10);
+        expect(panels.length).toBe(11);
         for (const p of panels) {
           expect(sizeOf(p), p.id).toBeCloseTo(body, 2);
         }
@@ -891,7 +891,7 @@ describe('AdminBenchmarkComponent', () => {
     });
 
     describe('tabs', () => {
-      const KEYS = ['summary', 'integrity', 'synthesis', 'questions', 'difficulty', 'tools', 'cost', 'configuration', 'reports', 'calibration'];
+      const KEYS = ['summary', 'integrity', 'synthesis', 'questions', 'difficulty', 'tools', 'cost', 'configuration', 'reports', 'calibration', 'paired'];
 
       function tablist(): HTMLElement {
         return fixture.nativeElement.querySelector('.benchmark-run-detail-dialog [role="tablist"][aria-label="Run report sections"]') as HTMLElement;
@@ -922,7 +922,7 @@ describe('AdminBenchmarkComponent', () => {
         return reportRun({ answers: [reportAnswer(1), reportAnswer(2), reportAnswer(3)] });
       }
 
-      it('should render ten tabs in order under the header, each controlling its own panel', () => {
+      it('should render eleven tabs in order under the header, each controlling its own panel', () => {
         openReport(reportRun());
 
         const list = tablist();
@@ -933,7 +933,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(all.map(t => t.id)).toEqual(KEYS.map(key => `rr-tab-${key}`));
         expect(all.map(t => (t.textContent || '').replace(/\s+/g, ' ').trim())).toEqual([
           'Summary', 'Integrity Notice', 'Synthesis', 'Questions (3)', 'Difficulty', 'Tools', 'Cost',
-          'Configuration', 'AI Reports', 'Calibration'
+          'Configuration', 'AI Reports', 'Calibration', 'Paired Test'
         ]);
         expect(list.querySelector('svg')).toBeNull();
         expect(all.filter(t => t.getAttribute('tabindex') === '0').map(t => t.id)).toEqual(['rr-tab-summary']);
@@ -948,7 +948,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(shownPanels().map(p => p.id)).toEqual(['rr-panel-summary']);
       });
 
-      it('should cap the Difficulty, Tools, Cost, Configuration, AI Reports and Calibration panels and no other', () => {
+      it('should cap the Difficulty, Tools, Cost, Configuration, AI Reports, Calibration and Paired Test panels and no other', () => {
         openReport(reportRun());
 
         const panel = (key: string) => fixture.nativeElement.querySelector(`#rr-panel-${key}`) as HTMLElement;
@@ -956,7 +956,7 @@ describe('AdminBenchmarkComponent', () => {
           expect(panel(key).classList, key).toContain('rr-panel-narrow');
           expect(panel(key).classList, key).not.toContain('rr-panel-medium');
         }
-        for (const key of ['configuration', 'reports', 'calibration']) {
+        for (const key of ['configuration', 'reports', 'calibration', 'paired']) {
           expect(panel(key).classList, key).toContain('rr-panel-medium');
           expect(panel(key).classList, key).not.toContain('rr-panel-narrow');
         }
@@ -987,16 +987,16 @@ describe('AdminBenchmarkComponent', () => {
 
         let event = press(tab('summary'), 'ArrowLeft');
         expect(event.defaultPrevented).toBe(true);
-        expect(component.runReportTab).toBe('calibration');
-        expect(document.activeElement).toBe(tab('calibration'));
+        expect(component.runReportTab).toBe('paired');
+        expect(document.activeElement).toBe(tab('paired'));
 
-        press(tab('calibration'), 'ArrowRight');
+        press(tab('paired'), 'ArrowRight');
         expect(component.runReportTab).toBe('summary');
         expect(document.activeElement).toBe(tab('summary'));
 
         press(tab('summary'), 'End');
-        expect(component.runReportTab).toBe('calibration');
-        press(tab('calibration'), 'Home');
+        expect(component.runReportTab).toBe('paired');
+        press(tab('paired'), 'Home');
         expect(component.runReportTab).toBe('summary');
         press(tab('summary'), 'ArrowRight');
         expect(component.runReportTab).toBe('integrity');

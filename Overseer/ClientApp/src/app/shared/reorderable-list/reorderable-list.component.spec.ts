@@ -22,7 +22,7 @@ const ITEMS: readonly ReorderableListItem[] = [
   template: `
     <button type="button" class="outside">Outside</button>
     <app-reorderable-list idPrefix="t" listLabel="Model order" itemNoun="model"
-                          [items]="items" [checkable]="checkable"
+                          [items]="items" [checkable]="checkable" [describedBy]="describedBy"
                           [dividerIndex]="dividerIndex" dividerText="Charts plot the entries above this line"
                           [itemTemplate]="useTemplate ? custom : null"
                           (orderChange)="onOrder($event)" (checkedChange)="onChecked($event)" />
@@ -35,10 +35,11 @@ class TestHostComponent {
   checkable = false;
   dividerIndex: number | null = null;
   useTemplate = false;
+  describedBy: string | null = null;
   orders: string[][] = [];
   checks: { key: string; checked: boolean }[] = [];
 
-  update(patch: Partial<Pick<TestHostComponent, 'items' | 'checkable' | 'dividerIndex' | 'useTemplate'>>): void {
+  update(patch: Partial<Pick<TestHostComponent, 'items' | 'checkable' | 'dividerIndex' | 'useTemplate' | 'describedBy'>>): void {
     Object.assign(this, patch);
     this.cdr.markForCheck();
   }
@@ -341,6 +342,12 @@ describe('ReorderableListComponent', () => {
       fixture.detectChanges();
       expect(hostComponent.checks).toEqual([{ key: 'a', checked: true }]);
       expect(box.checked).toBe(false);
+    });
+
+    it('puts describedBy ahead of each row\'s own descriptions on every checkbox', () => {
+      update({ checkable: true, describedBy: 'outside-hint' });
+      expect(byId('t-a-check').getAttribute('aria-describedby')).toBe('outside-hint');
+      expect(byId('t-b-check').getAttribute('aria-describedby')).toBe('outside-hint t-b-tags');
     });
 
     it('renders a locked item checked and disabled, with its reason in an info tip', () => {

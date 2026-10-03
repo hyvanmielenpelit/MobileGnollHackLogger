@@ -3636,7 +3636,7 @@ public class AdminBenchmarkController : ControllerBase
             query = query.Where(r => r.BenchmarkSuiteId == suiteId.Value);
         }
 
-        int limit = Math.Clamp(take ?? 50, 1, 200);
+        int limit = Math.Clamp(take ?? 50, 1, 1000);
 
         var rows = await query
             .OrderByDescending(r => r.StartedAtUtc)
@@ -4964,18 +4964,37 @@ public class AdminBenchmarkController : ControllerBase
     [HttpDelete("runs/{id}")]
     public async Task<IActionResult> DeleteRun(long id)
     {
-        if (_runManager.CurrentRunId == id)
+        if (!await TryDeleteRunAsync(_dbContext, _runManager, id))
         {
             return BadRequest("Cannot delete an active benchmark run.");
         }
 
-        var run = await _dbContext.BenchmarkRuns.FindAsync(id);
+        return Ok();
+    }
+
+    /// <summary>
+    /// The single-run delete: removes the run unless it is the run in flight. False only for the run
+    /// in flight; an unknown id is a successful no-op. The battery-run delete removes its member runs
+    /// through here.
+    /// </summary>
+    internal static async Task<bool> TryDeleteRunAsync(
+        ApplicationDbContext db,
+        BenchmarkRunManager runManager,
+        long id,
+        CancellationToken ct = default)
+    {
+        if (runManager.CurrentRunId == id)
+        {
+            return false;
+        }
+
+        var run = await db.BenchmarkRuns.FindAsync(new object[] { id }, ct);
         if (run != null)
         {
-            _dbContext.BenchmarkRuns.Remove(run);
-            await _dbContext.SaveChangesAsync();
+            db.BenchmarkRuns.Remove(run);
+            await db.SaveChangesAsync(ct);
         }
-        return Ok();
+        return true;
     }
 
     /// <summary>
@@ -5304,13 +5323,7 @@ public class AdminBenchmarkController : ControllerBase
             .OrderByDescending(g => g.CreatedAtUtc)
             .ToListAsync();
 
-        var dtos = new List<BenchmarkRunGroupDto>(groups.Count);
-        foreach (var group in groups)
-        {
-            dtos.Add(await BuildGroupDtoAsync(group, includeMembers: false));
-        }
-
-        return Ok(dtos);
+        return Ok(await BuildGroupListDtosAsync(groups));
     }
 
     [HttpGet("runs/groups/{id}")]
@@ -5650,55 +5663,136 @@ public class AdminBenchmarkController : ControllerBase
     private static string DescribeTier(BenchmarkRunGroupTier tier) =>
         DescribeTier((BenchmarkComparabilityTier)(int)tier);
 
+    /// <summary>The columns of a group's newest member run that a group DTO shows.</summary>
+    private sealed class GroupNewestRun
+    {
+        public long Id { get; set; }
+        public DateTime StartedAtUtc { get; set; }
+        public string SuiteName { get; set; } = string.Empty;
+        public string? DisplayName { get; set; }
+        public string ModelId { get; set; } = string.Empty;
+        public string Provider { get; set; } = string.Empty;
+        public string? ThinkingLevel { get; set; }
+        public string? ReasoningMode { get; set; }
+    }
+
+    private static IQueryable<GroupNewestRun> SelectGroupNewestRuns(IQueryable<BenchmarkRun> runs)
+        => runs.Select(r => new GroupNewestRun
+        {
+            Id = r.Id,
+            StartedAtUtc = r.StartedAtUtc,
+            SuiteName = r.SuiteName,
+            DisplayName = r.TestedModelSnapshot.DisplayName,
+            ModelId = r.TestedModelSnapshot.ModelId,
+            Provider = r.TestedModelSnapshot.Provider,
+            ThinkingLevel = r.TestedModelSnapshot.ThinkingLevel,
+            ReasoningMode = r.TestedModelSnapshot.ReasoningMode
+        });
+
+    /// <summary>
+    /// The group DTO without its members. The suite name is the one the newest member run was made
+    /// under, the live suite's only for an empty group; the tested model comes from the same run, since
+    /// a persisted group is candidate-identical.
+    /// </summary>
+    private static BenchmarkRunGroupDto ToGroupDto(
+        BenchmarkRunGroup group,
+        BenchmarkGroupAnalysis? latest,
+        GroupNewestRun? newest) => new()
+    {
+        Id = group.Id,
+        Name = group.Name,
+        BenchmarkSuiteId = group.BenchmarkSuiteId,
+        SuiteName = newest?.SuiteName ?? group.BenchmarkSuite?.Name,
+        TestedModelDisplayName = newest?.DisplayName ?? newest?.ModelId,
+        TestedModelProvider = newest?.Provider,
+        TestedModelId = newest?.ModelId,
+        TestedModelThinkingLevel = newest?.ThinkingLevel,
+        TestedModelReasoningMode = newest?.ReasoningMode,
+        Tier = group.Tier.ToString(),
+        TierLabel = DescribeTier(group.Tier),
+        ComparabilityKeyHash = group.ComparabilityKeyHash,
+        ComparabilityKeyStale = group.ComparabilityKeyVersion != BenchmarkComparabilityKey.DefinitionVersion,
+        CrossCondition = group.CrossCondition,
+        Notes = group.Notes,
+        CreatedFromSeriesId = group.CreatedFromSeriesId,
+        CreatedAtUtc = group.CreatedAtUtc,
+        ModifiedAtUtc = group.ModifiedAtUtc,
+        RunCount = group.Members.Count,
+        LatestAnalysisId = latest?.Id,
+        LatestAnalysisAtUtc = latest?.ComputedAtUtc,
+        AnalysisStale = BenchmarkGroupAnalysisService.IsStale(group, latest)
+    };
+
+    /// <summary>
+    /// The DTOs of many groups, without members, in two set queries: the latest analysis of every
+    /// group (without its result JSON) and the newest member run of every group.
+    /// </summary>
+    private async Task<List<BenchmarkRunGroupDto>> BuildGroupListDtosAsync(IReadOnlyList<BenchmarkRunGroup> groups)
+    {
+        if (groups.Count == 0) return new List<BenchmarkRunGroupDto>();
+
+        var groupIds = groups.Select(g => g.Id).Distinct().ToList();
+
+        var analysisHeads = await _dbContext.BenchmarkGroupAnalyses
+            .AsNoTracking()
+            .Where(a => groupIds.Contains(a.BenchmarkRunGroupId))
+            .Select(a => new { a.Id, a.BenchmarkRunGroupId, a.ComputedAtUtc, a.MemberRunIdsJson })
+            .ToListAsync();
+
+        // The fields IsStale and the DTO read; the result JSON is never loaded for the list.
+        var latestByGroup = analysisHeads
+            .GroupBy(a => a.BenchmarkRunGroupId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var head = g.OrderByDescending(a => a.ComputedAtUtc).ThenByDescending(a => a.Id).First();
+                    return new BenchmarkGroupAnalysis
+                    {
+                        Id = head.Id,
+                        BenchmarkRunGroupId = head.BenchmarkRunGroupId,
+                        ComputedAtUtc = head.ComputedAtUtc,
+                        MemberRunIdsJson = head.MemberRunIdsJson
+                    };
+                });
+
+        var memberRunIds = groups
+            .SelectMany(g => g.Members.Select(m => m.BenchmarkRunId))
+            .Distinct()
+            .ToList();
+
+        var runById = memberRunIds.Count == 0
+            ? new Dictionary<long, GroupNewestRun>()
+            : await SelectGroupNewestRuns(_dbContext.BenchmarkRuns.Where(r => memberRunIds.Contains(r.Id)))
+                .ToDictionaryAsync(r => r.Id);
+
+        return groups
+            .Select(group => ToGroupDto(
+                group,
+                latestByGroup.TryGetValue(group.Id, out var latest) ? latest : null,
+                group.Members
+                    .Select(m => runById.TryGetValue(m.BenchmarkRunId, out var run) ? run : null)
+                    .Where(run => run != null)
+                    .OrderByDescending(run => run!.StartedAtUtc)
+                    .ThenByDescending(run => run!.Id)
+                    .FirstOrDefault()))
+            .ToList();
+    }
+
     private async Task<BenchmarkRunGroupDto> BuildGroupDtoAsync(BenchmarkRunGroup group, bool includeMembers)
     {
         var latest = await _groupAnalysisService.GetLatestAnalysisAsync(group.Id);
 
-        // The name the newest member run was made under; the live suite's only for an empty group.
-        // The tested model comes from the same run: a persisted group is candidate-identical.
         var memberRunIds = group.Members.Select(m => m.BenchmarkRunId).ToList();
         var newest = memberRunIds.Count == 0
             ? null
-            : await _dbContext.BenchmarkRuns
-                .Where(r => memberRunIds.Contains(r.Id))
-                .OrderByDescending(r => r.StartedAtUtc)
-                .ThenByDescending(r => r.Id)
-                .Select(r => new
-                {
-                    r.SuiteName,
-                    r.TestedModelSnapshot.DisplayName,
-                    r.TestedModelSnapshot.ModelId,
-                    r.TestedModelSnapshot.Provider,
-                    r.TestedModelSnapshot.ThinkingLevel,
-                    r.TestedModelSnapshot.ReasoningMode
-                })
+            : await SelectGroupNewestRuns(_dbContext.BenchmarkRuns
+                    .Where(r => memberRunIds.Contains(r.Id))
+                    .OrderByDescending(r => r.StartedAtUtc)
+                    .ThenByDescending(r => r.Id))
                 .FirstOrDefaultAsync();
 
-        var dto = new BenchmarkRunGroupDto
-        {
-            Id = group.Id,
-            Name = group.Name,
-            BenchmarkSuiteId = group.BenchmarkSuiteId,
-            SuiteName = newest?.SuiteName ?? group.BenchmarkSuite?.Name,
-            TestedModelDisplayName = newest?.DisplayName ?? newest?.ModelId,
-            TestedModelProvider = newest?.Provider,
-            TestedModelId = newest?.ModelId,
-            TestedModelThinkingLevel = newest?.ThinkingLevel,
-            TestedModelReasoningMode = newest?.ReasoningMode,
-            Tier = group.Tier.ToString(),
-            TierLabel = DescribeTier(group.Tier),
-            ComparabilityKeyHash = group.ComparabilityKeyHash,
-            ComparabilityKeyStale = group.ComparabilityKeyVersion != BenchmarkComparabilityKey.DefinitionVersion,
-            CrossCondition = group.CrossCondition,
-            Notes = group.Notes,
-            CreatedFromSeriesId = group.CreatedFromSeriesId,
-            CreatedAtUtc = group.CreatedAtUtc,
-            ModifiedAtUtc = group.ModifiedAtUtc,
-            RunCount = group.Members.Count,
-            LatestAnalysisId = latest?.Id,
-            LatestAnalysisAtUtc = latest?.ComputedAtUtc,
-            AnalysisStale = BenchmarkGroupAnalysisService.IsStale(group, latest)
-        };
+        var dto = ToGroupDto(group, latest, newest);
 
         if (includeMembers && group.Members.Count > 0)
         {
@@ -5937,10 +6031,113 @@ public class AdminBenchmarkController : ControllerBase
         [FromServices] BenchmarkComparabilityIndexService indexService,
         CancellationToken ct)
     {
+        return await BuildComparabilityIndexAsync(request, indexService, ct);
+    }
+
+    /// <summary>
+    /// The same index as <see cref="GetModelComparisonComparability"/>, with the ids in the body: a
+    /// request naming several hundred sources would not fit in a query string.
+    /// </summary>
+    [HttpPost("model-comparison/comparability")]
+    public async Task<IActionResult> PostModelComparisonComparability(
+        [FromBody] BenchmarkComparabilityIndexRequest? request,
+        [FromServices] BenchmarkComparabilityIndexService indexService,
+        CancellationToken ct)
+    {
+        return await BuildComparabilityIndexAsync(request, indexService, ct);
+    }
+
+    private async Task<IActionResult> BuildComparabilityIndexAsync(
+        BenchmarkComparabilityIndexRequest? request,
+        BenchmarkComparabilityIndexService indexService,
+        CancellationToken ct)
+    {
         var (result, error) = await indexService.BuildAsync(request, ct);
 
         return result == null
             ? BadRequest(error ?? "The comparability index could not be computed.")
             : Ok(result);
+    }
+
+    // --- Paired tests ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The Model Comparison wizard's Paired tests view: one family of paired tests per measure over the
+    /// comparison's comparable entries, against a reference or across all pairs, Holm-adjusted when a
+    /// family holds more than one test. The comparison is recomputed from the same sources, so the
+    /// entries and degrade flags are exactly the wizard's. Read-only arithmetic over stored data.
+    ///
+    /// <para>400 for a request mixing battery results with runs or groups, for fewer than two comparable
+    /// entries, and for All pairs above twelve comparable entries.</para>
+    /// </summary>
+    [HttpPost("model-comparison/paired")]
+    public async Task<IActionResult> PostPairedComparison(
+        [FromBody] BenchmarkPairedComparisonRequest? request,
+        [FromServices] BenchmarkPairedTestsService pairedTests,
+        CancellationToken ct)
+    {
+        var (result, error) = await pairedTests.CompareAsync(request, ct);
+
+        return result == null
+            ? BadRequest(error ?? "The paired tests could not be computed.")
+            : Ok(result);
+    }
+
+    /// <summary>
+    /// The speed, cost and dimension rows of the Battery Run Report's Paired Test tab, with M7 as the
+    /// Intelligence row: the treatment battery run against a baseline of the same definition, judged by
+    /// the M7 eligibility rule, so a verification of a change is accepted here as well.
+    /// </summary>
+    [HttpPost("model-comparison/paired/battery")]
+    public async Task<IActionResult> PostBatteryPairedComparison(
+        [FromBody] BenchmarkBatteryPairedComparisonRequest? request,
+        [FromServices] BenchmarkPairedTestsService pairedTests,
+        CancellationToken ct)
+    {
+        var (result, error, notFound) = await pairedTests.CompareBatteriesAsync(request, ct);
+
+        if (result != null) return Ok(result);
+        return notFound
+            ? NotFound(error ?? "Battery run not found.")
+            : BadRequest(error ?? "The paired test could not be computed.");
+    }
+
+    /// <summary>
+    /// The single-run report's Paired Test tab: this run (the treatment) against another finished run on
+    /// the same suite, named as a model comparison, a verification of a change or a replicate. 400 when
+    /// the pair is not comparable, a run has not finished, or the suites differ.
+    /// </summary>
+    [HttpPost("runs/{id:long}/paired-comparison")]
+    public async Task<IActionResult> PostRunPairedComparison(
+        long id,
+        [FromBody] BenchmarkRunPairedComparisonRequest? request,
+        [FromServices] BenchmarkPairedTestsService pairedTests,
+        CancellationToken ct)
+    {
+        var (result, error, notFound) = await pairedTests.CompareRunsAsync(id, request, ct);
+
+        if (result != null) return Ok(result);
+        return notFound
+            ? NotFound(error ?? "Run not found.")
+            : BadRequest(error ?? "The paired test could not be computed.");
+    }
+
+    /// <summary>
+    /// The kind of paired comparison each candidate baseline would make with this run, in request order,
+    /// so the Paired Test tab can group its baseline select. Reads no answer text.
+    /// </summary>
+    [HttpPost("runs/{id:long}/paired-comparison/kinds")]
+    public async Task<IActionResult> PostRunPairedComparisonKinds(
+        long id,
+        [FromBody] BenchmarkRunPairKindsRequest? request,
+        [FromServices] BenchmarkPairedTestsService pairedTests,
+        CancellationToken ct)
+    {
+        var (result, error, notFound) = await pairedTests.ClassifyRunsAsync(id, request, ct);
+
+        if (result != null) return Ok(result);
+        return notFound
+            ? NotFound(error ?? "Run not found.")
+            : BadRequest(error ?? "The runs could not be classified.");
     }
 }

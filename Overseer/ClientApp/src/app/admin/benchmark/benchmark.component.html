@@ -120,7 +120,6 @@
   @if (activeSubTab === 'multisuite') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-multisuite" aria-labelledby="bm-tab-multisuite" tabindex="0">
       <app-benchmark-batteries #batteriesPanel
-                               (openBatteryRun)="monitor.openBatteryDialog($event)"
                                (batteriesChanged)="onBatteriesChanged()"></app-benchmark-batteries>
     </div>
   }
@@ -1743,6 +1742,12 @@
               }
             </div>
           </div>
+
+          <div role="tabpanel" class="rr-panel rr-panel-medium" id="rr-panel-paired" aria-labelledby="rr-tab-paired" tabindex="0"
+               [hidden]="runReportTab !== 'paired'">
+            <app-run-paired-test [run]="selectedRunDetail" [candidateRuns]="workspace.historyRuns"
+                                 [active]="runDetailDialogOpen && runReportTab === 'paired'"></app-run-paired-test>
+          </div>
         } @else if (runDetailLoadError) {
           <div class="alert alert-danger" role="alert">
             <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -2526,6 +2531,10 @@
   (batteryCanceled)="onBatteryCanceledFromDialog($event)"
   (memberAttached)="onBatteryMemberAttachedFromDialog($event)"></app-battery-progress-dialog>
 
+<!-- BATTERY RUN REPORT: opened from Run History, the leaderboard and the battery progress dialog. -->
+<app-battery-run-report-dialog #batteryRunReport
+  (openRunReport)="viewRunDetail($event)"></app-battery-run-report-dialog>
+
 <!-- SNAPSHOT VIEWER COMPONENT -->
 <app-snapshot-viewer #snapshotViewer
                      [deleteBlockedReason]="snapshotDeleteBlockedReason"
@@ -2564,6 +2573,7 @@
       [pricingBasis]="comparison.comparisonPricingBasis"
       [selectedRunCount]="comparison.comparisonRunIds.length"
       [selectedGroupCount]="comparison.comparisonGroupIds.length"
+      [selectedBatteryCount]="comparison.comparisonBatteryRunIds.length"
       [selectionNotices]="comparison.comparisonSelectionNotices"
       [selectedSources]="comparison.comparisonSelectedSources"
       (pricingBasisChange)="comparison.onComparisonPricingBasisChange($event)"
@@ -2581,6 +2591,8 @@
         [suiteId]="comparison.comparisonSuiteId"
         [selectedRunIds]="comparison.comparisonRunIds"
         [selectedGroupIds]="comparison.comparisonGroupIds"
+        [batteryRuns]="comparison.comparisonBatteryRunOptions"
+        [selectedBatteryRunIds]="comparison.comparisonBatteryRunIds"
         [loading]="comparison.comparisonLoading"
         [comparabilityIndex]="comparison.comparabilityIndex"
         [indexLoading]="comparison.comparabilityIndexLoading"

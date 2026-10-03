@@ -14,7 +14,7 @@
     <h3>Cross-model comparison</h3>
     <p class="mc-launcher-lead">
       Compare AI models side by side on quality, speed and cost, using the benchmark runs of one
-      suite.
+      suite or the results of one battery.
     </p>
 
     <div class="mc-launcher-actions">
@@ -31,10 +31,18 @@
       <section class="mc-launcher-last" aria-labelledby="mc-launcher-last-heading">
         <h4 id="mc-launcher-last-heading">Last comparison</h4>
         <dl class="mc-launcher-state">
-          <div>
-            <dt>Suite</dt>
-            <dd>{{ comparison.comparison.baselineSuiteName || 'Not set' }}</dd>
-          </div>
+          <!-- A comparison of battery results spans several suites, so it names its battery instead. -->
+          @if (comparison.comparison.subjectKind === 'Batteries') {
+            <div>
+              <dt>Battery</dt>
+              <dd>{{ comparison.comparison.baselineBatteryName || 'Not set' }}</dd>
+            </div>
+          } @else {
+            <div>
+              <dt>Suite</dt>
+              <dd>{{ comparison.comparison.baselineSuiteName || 'Not set' }}</dd>
+            </div>
+          }
           <div>
             <dt>Pricing basis</dt>
             <dd>{{ comparison.comparison.pricingBasisLabel || comparison.comparison.pricingBasis }}</dd>

@@ -12,6 +12,7 @@ import { AdminBenchmarkService, BenchmarkBatteryDto, BenchmarkBatteryRunDto } fr
 import { SystemService } from '../../services/system.service';
 import { BenchmarkPollTickerService } from '../../services/benchmark-poll-ticker.service';
 import { IMAGE_DETAILS_STORAGE_KEY, KEY_FIGURES_STORAGE_KEY } from './run-report-frame/key-figures-image';
+import { RUN_HISTORY_MEMBERS_STORAGE_KEY } from './benchmark.models';
 import { PDFJS_LOADER } from '../../shared/pdf-viewer/pdfjs-loader';
 import { BenchmarkWorkspaceStore } from './state/benchmark-workspace.store';
 import { BenchmarkLauncherState } from './state/benchmark-launcher.state';
@@ -48,6 +49,7 @@ export function clearStoredState(): void {
     localStorage.removeItem(RUN_REPORT_TAB_STORAGE_KEY);
     localStorage.removeItem(RUN_REPORT_HEADER_STORAGE_KEY);
     localStorage.removeItem(RUN_HISTORY_VIEW_STORAGE_KEY);
+    localStorage.removeItem(RUN_HISTORY_MEMBERS_STORAGE_KEY);
     localStorage.removeItem(KEY_FIGURES_STORAGE_KEY);
     localStorage.removeItem(IMAGE_DETAILS_STORAGE_KEY);
   } catch { /* private-browsing modes throw */ }
@@ -229,7 +231,16 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     deleteBattery: vi.fn().mockName("AdminBenchmarkService.deleteBattery"),
     archiveBattery: vi.fn().mockName("AdminBenchmarkService.archiveBattery"),
     getBatteryRuns: vi.fn().mockName("AdminBenchmarkService.getBatteryRuns"),
-    startBatteryRun: vi.fn().mockName("AdminBenchmarkService.startBatteryRun"),
+    deleteBatteryRun: vi.fn().mockName("AdminBenchmarkService.deleteBatteryRun"),
+    getPairedComparison: vi.fn().mockName("AdminBenchmarkService.getPairedComparison"),
+    getRunPairedComparison: vi.fn().mockName("AdminBenchmarkService.getRunPairedComparison"),
+    getRunPairKinds: vi.fn().mockName("AdminBenchmarkService.getRunPairKinds"),
+    getBatteryPairedComparison: vi.fn().mockName("AdminBenchmarkService.getBatteryPairedComparison"),
+    writeBatteryReportDocuments: vi.fn().mockName("AdminBenchmarkService.writeBatteryReportDocuments"),
+    getBatteryReportJob: vi.fn().mockName("AdminBenchmarkService.getBatteryReportJob"),
+    cancelBatteryReportJob: vi.fn().mockName("AdminBenchmarkService.cancelBatteryReportJob"),
+    estimateBatteryReports: vi.fn().mockName("AdminBenchmarkService.estimateBatteryReports"),
+    deleteBatteryReportDocument: vi.fn().mockName("AdminBenchmarkService.deleteBatteryReportDocument"),    startBatteryRun: vi.fn().mockName("AdminBenchmarkService.startBatteryRun"),
     getActiveBatteryRun: vi.fn().mockName("AdminBenchmarkService.getActiveBatteryRun"),
     getBatteryRun: vi.fn().mockName("AdminBenchmarkService.getBatteryRun"),
     cancelBatteryRun: vi.fn().mockName("AdminBenchmarkService.cancelBatteryRun"),
@@ -248,6 +259,8 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
   benchmarkServiceMock.getBatteries.mockReturnValue(of([]));
   benchmarkServiceMock.getActiveBatteryRun.mockReturnValue(of(null));
   benchmarkServiceMock.getBatteryRuns.mockReturnValue(of([]));
+  benchmarkServiceMock.getRunPairKinds.mockReturnValue(of([]));
+  benchmarkServiceMock.getBatteryReportJob.mockReturnValue(of(null));
   benchmarkServiceMock.getBatteryRun.mockReturnValue(of(buildBatteryRun()));
   benchmarkServiceMock.getBatteryAnalysis.mockReturnValue(of(null));
   benchmarkServiceMock.getBatteryLeaderboard.mockReturnValue(of({ definitionSha256: 'def-abc', classes: [], incomplete: [] }));

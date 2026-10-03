@@ -4,6 +4,7 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  Input,
   OnInit,
   Output,
   ViewChild,
@@ -45,6 +46,19 @@ export interface ImageDetailChoices {
 })
 export class KeyFiguresChooserComponent implements OnInit {
   private readonly cdr = inject(ChangeDetectorRef);
+
+  /**
+   * The start of every element id: `{idPrefix}Title`, `{idPrefix}-close-tip`, `{idPrefix}Caption`,
+   * `{idPrefix}DetailsCaption`, `{idPrefix}-{key}` and `{idPrefix}-detail-{key}`. A second chooser on
+   * the page passes its own, so the ids stay unique.
+   */
+  @Input() idPrefix = 'kfch';
+
+  /** The hint under the figures. */
+  @Input() figuresHint = 'Shown in the Summary and in the copied or downloaded image. Remembered for every run report; a figure a run does not have is left out.';
+
+  /** The hint under the image details. */
+  @Input() detailsHint = "The run's settings above the figures in the copied or downloaded image. The dialog header always lists them all. Remembered for every run report.";
 
   /** Emitted on every change of the selection, with the exclusions to remember. */
   @Output() readonly selectionChange = new EventEmitter<string[]>();

@@ -724,6 +724,12 @@ public class BenchmarkModelComparisonServiceTests
             Assert.False(string.IsNullOrWhiteSpace(m.Instead));
         });
         Assert.All(dto.ExcludedMeasures, m => Assert.DoesNotContain("step", m.Instead ?? "", StringComparison.OrdinalIgnoreCase));
+
+        // The charts and table carry no test; the paired tests live in their own view.
+        var pairwise = dto.ExcludedMeasures.Single(m => m.Measure == "Pairwise significance");
+        Assert.Contains("The charts and table carry no significance test", pairwise.Summary);
+        Assert.Contains("Paired tests view", pairwise.Instead);
+        Assert.Contains("Holm", pairwise.Reason);
     }
 
     [Fact]
@@ -753,6 +759,8 @@ public class BenchmarkModelComparisonServiceTests
             pair.ExcludedMeasures.Single(m => m.Measure == "Pairwise significance").Summary);
         Assert.Contains("these 3 models",
             trio.ExcludedMeasures.Single(m => m.Measure == "Pairwise significance").Summary);
+        Assert.All(new[] { pair, trio }, dto => Assert.StartsWith("The charts and table carry no significance test",
+            dto.ExcludedMeasures.Single(m => m.Measure == "Pairwise significance").Summary));
     }
 
     [Fact]
@@ -929,5 +937,61 @@ public class BenchmarkModelComparisonServiceTests
         Assert.NotNull(diagnostics);
         Assert.DoesNotContain(diagnostics!.Entries, e => e.EntryKey == "b");
         Assert.Equal("anthropic-judge", diagnostics.MemberBLabel);
+    }
+
+    // --- Battery results ---------------------------------------------------------------------------
+
+    [Fact]
+    public void AComparisonOfRuns_IsOfSubjectKindRuns_AndCarriesNoBatteryFields()
+    {
+        var dto = Build(new[] { Source("a", Card(), Run(1)) });
+
+        Assert.Equal(BenchmarkModelComparisonSubjectKinds.Runs, dto.SubjectKind);
+        Assert.Null(dto.BaselineBatteryName);
+
+        var entry = Entry(dto, "a");
+        Assert.Null(entry.BatteryRunId);
+        Assert.Null(entry.BatteryName);
+        Assert.Null(entry.BatteryDefinitionSha256);
+        Assert.Null(entry.BatteryComparabilityClassSha256);
+        Assert.Null(entry.SuiteCount);
+        Assert.Null(entry.RunsPerSuite);
+    }
+
+    [Fact]
+    public async Task BatteryResults_MixedWithRunsOrGroups_AreRefused()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        var service = new BenchmarkModelComparisonService(db);
+
+        var (withRuns, runsError) = await service.CompareAsync(new BenchmarkModelComparisonRequest
+        {
+            RunIds = { 1 },
+            BatteryRunIds = { 2 }
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Null(withRuns);
+        Assert.Equal("A comparison holds either battery results or runs and analysis groups.", runsError);
+
+        var (withGroups, groupsError) = await service.CompareAsync(new BenchmarkModelComparisonRequest
+        {
+            GroupIds = { 3 },
+            BatteryRunIds = { 2 }
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Null(withGroups);
+        Assert.Equal(BenchmarkBatteryModelComparison.MixedSourcesError, groupsError);
+    }
+
+    [Fact]
+    public async Task AnEmptyRequest_NamesEveryKindOfSource()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+
+        var (result, error) = await new BenchmarkModelComparisonService(db)
+            .CompareAsync(new BenchmarkModelComparisonRequest(), TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+        Assert.Equal("A comparison needs at least one run, group or battery result.", error);
     }
 }

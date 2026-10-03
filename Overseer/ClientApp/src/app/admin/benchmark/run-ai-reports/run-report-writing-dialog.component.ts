@@ -4,6 +4,7 @@ import {
   Component,
   ElementRef,
   EventEmitter,
+  Input,
   OnDestroy,
   OnInit,
   Output,
@@ -11,7 +12,7 @@ import {
   inject
 } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
-import { Subject, Subscription, catchError, interval, map, of, switchMap } from 'rxjs';
+import { Observable, Subject, Subscription, catchError, interval, map, of, switchMap } from 'rxjs';
 
 import {
   AdminBenchmarkService,
@@ -45,15 +46,43 @@ import {
   runReportStatusWord,
   runReportWritingDiagnosticsFileName
 } from './run-report-writing-diagnostics';
+import { reportDocumentsStatusOf } from './report-documents-list';
+
+/** A subject's stored report status, read when the server knows no job for it. */
+export interface ReportJobStoredStatus {
+  reportDocumentsStatus?: BenchmarkRunReportDocumentsStatus | string | null;
+  reportDocumentsMessage?: string | null;
+}
+
+/**
+ * Where the dialog follows a report writing job: the job endpoint, the cancel endpoint and the
+ * subject's name. A run's is built from `runId` when the context names none.
+ */
+export interface ReportJobSource {
+  getJob(): Observable<BenchmarkRunReportJobDto | null>;
+  cancel(): Observable<BenchmarkRunReportJobDto>;
+  /** The subject in the title and the diagnostics: *Run #42*, *Battery run #7*. */
+  subjectLabel: string;
+  /**
+   * The subject's stored report status, read when the job endpoint answers 204. Without it a 204
+   * settles the dialog at once, on no stored status.
+   */
+  getStoredStatus?(): Observable<ReportJobStoredStatus | null>;
+  /** The diagnostics file name's stem in place of `run-<runId>`, such as `battery-run-7`. */
+  fileStem?: string;
+}
 
 /** What the dialog is opened on. `run` feeds the diagnostics; without it they carry the run id alone. */
 export interface RunReportWritingContext {
+  /** The run, or for another subject the id its diagnostics carry. */
   runId: number;
   /** The subtitle: the suite and the candidate, as the opener names them. */
   runLabel: string;
   /** The estimate shown before writing started, or null when none was known. */
   estimateUsd: number | null;
   run?: RunIdentity;
+  /** The job to follow; absent, the run's own. */
+  source?: ReportJobSource;
 }
 
 /** One stage of the rail: Queued, Preparing, one per requested document, Done. */
@@ -161,8 +190,9 @@ type PollResult = { ok: true; view: BenchmarkRunReportJobDto | null } | { ok: fa
 
 /**
  * The progress of a run's AI report writing job: a phase line, a stage rail, an activity bar, the
- * running figures, one row per document and the diagnostics. It polls the run's job every 2 s
- * through the worker ticker, backing off on failures, until the job finishes or the dialog closes.
+ * running figures, one row per document and the diagnostics. It polls the run's job, or the job of
+ * the context's `source` (a battery run's), every 2 s through the worker ticker, backing off on
+ * failures, until the job finishes or the dialog closes.
  *
  * Closing never cancels the job: the close button, Escape and **Run in Background** only stop
  * following it. It opens from inside the run report dialog, so it stops its own close and cancel
@@ -185,6 +215,9 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   @ViewChild('rwHeading') heading?: ElementRef<HTMLElement>;
   @ViewChild('rwConfirmDialog') confirmDialog?: ElementRef<HTMLDialogElement>;
 
+  /** The prefix of every element id, so two hosts' dialogs can share a document. */
+  @Input() idPrefix = 'rw';
+
   /** The final job view once the job finishes, or null when it settled without one (after a restart). Emitted once per opening. */
   @Output() readonly finished = new EventEmitter<BenchmarkRunReportJobDto | null>();
   /** A written document's id: the host opens it. */
@@ -206,6 +239,8 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   /** The job endpoint answered 204: the job is not known to this server process. */
   unknownJob = false;
   fallbackRun: BenchmarkRunDetailDto | null = null;
+  /** The stored status the 204 fallback read: the run's, or the custom source's. */
+  fallbackStatus: ReportJobStoredStatus | null = null;
   fallbackError: string | null = null;
 
   pollCount = 0;
@@ -254,6 +289,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.viewReceivedAtMs = 0;
     this.unknownJob = false;
     this.fallbackRun = null;
+    this.fallbackStatus = null;
     this.fallbackError = null;
     this.pollCount = 0;
     this.lastSuccessUtc = null;
@@ -268,7 +304,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.openedAtMs = Date.now();
 
     this.elapsedSub = interval(1000).subscribe(() => this.cdr.markForCheck());
-    this.startPolling(context.runId);
+    this.startPolling(this.jobSource);
 
     const dialog = this.dialog?.nativeElement;
     if (dialog && !dialog.open) {
@@ -305,16 +341,41 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     return this.context?.runId ?? null;
   }
 
+  /** The subject the title and the diagnostics name: the custom source's, else *Run #N*. */
+  get subjectLabel(): string {
+    return this.context?.source?.subjectLabel ?? `Run #${this.runId ?? ''}`;
+  }
+
+  /** The subject inside the diagnostics buttons' names: *run 42*, *battery run #7*. */
+  get diagnosticsSubject(): string {
+    const label = this.context?.source?.subjectLabel;
+    return label ? label.charAt(0).toLowerCase() + label.slice(1) : `run ${this.runId ?? ''}`;
+  }
+
+  /** The context's source, or the run's own, built from its id. */
+  private get jobSource(): ReportJobSource {
+    const context = this.context;
+    if (context?.source) {
+      return context.source;
+    }
+    const runId = context?.runId ?? 0;
+    return {
+      getJob: () => this.benchmarkService.getRunReportJob(runId),
+      cancel: () => this.benchmarkService.cancelRunReportJob(runId),
+      subjectLabel: `Run #${runId}`
+    };
+  }
+
   // -------------------------------------------------------------------------------------------
   // Polling
   // -------------------------------------------------------------------------------------------
 
-  private startPolling(runId: number): void {
+  private startPolling(source: ReportJobSource): void {
     const generation = this.generation;
     this.pollSub = this.pollTrigger$.pipe(
       switchMap(() => {
         this.pollCount++;
-        return this.benchmarkService.getRunReportJob(runId).pipe(
+        return source.getJob().pipe(
           map((view): PollResult => ({ ok: true, view })),
           catchError((error: unknown) => of<PollResult>({ ok: false, error }))
         );
@@ -368,11 +429,16 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * 204: the run's stored status is read with the ticker paused. Within the start grace a Pending
-   * or Writing run is a job not registered yet, and polling resumes; otherwise the dialog settles
-   * on the stored status.
+   * 204: the subject's stored status is read with the ticker paused. Within the start grace a
+   * Pending or Writing subject is a job not registered yet, and polling resumes; otherwise the
+   * dialog settles on the stored status.
    */
   private onJobUnknown(): void {
+    const source = this.context?.source;
+    if (source) {
+      this.onSourceJobUnknown(source);
+      return;
+    }
     const runId = this.runId;
     if (runId === null) {
       this.enterUnknownJob(null, null);
@@ -402,6 +468,36 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** A custom source's 204: as the run's, through its stored status where it can read one. */
+  private onSourceJobUnknown(source: ReportJobSource): void {
+    if (!source.getStoredStatus) {
+      this.enterUnknownJob(null, null);
+      return;
+    }
+    this.stopTicker();
+    this.fallbackSub?.unsubscribe();
+    const generation = this.generation;
+    this.fallbackSub = source.getStoredStatus().subscribe({
+      next: stored => {
+        if (generation !== this.generation) {
+          return;
+        }
+        if (storedStatusInProgress(stored?.reportDocumentsStatus) &&
+          Date.now() - this.openedAtMs < RUN_REPORT_JOB_START_GRACE_MS) {
+          this.startTicker(RUN_REPORT_WRITING_POLL_MS);
+          return;
+        }
+        this.enterUnknownJob(null, null, stored ?? null);
+      },
+      error: () => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.enterUnknownJob(null, `The report status of ${this.diagnosticsSubject} could not be read.`);
+      }
+    });
+  }
+
   private onPollError(error: unknown): void {
     this.consecutiveFailures++;
     this.lastError = {
@@ -424,11 +520,16 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** The job is not known to the server: the dialog settles on the run's stored status, or on why it could not be read. */
-  private enterUnknownJob(run: BenchmarkRunDetailDto | null, error: string | null): void {
+  /** The job is not known to the server: the dialog settles on the stored status, or on why it could not be read. */
+  private enterUnknownJob(
+    run: BenchmarkRunDetailDto | null,
+    error: string | null,
+    stored: ReportJobStoredStatus | null = run
+  ): void {
     this.unknownJob = true;
     this.canceling = false;
     this.fallbackRun = run;
+    this.fallbackStatus = stored;
     this.fallbackError = error;
     this.settle(null);
     this.cdr.markForCheck();
@@ -687,7 +788,13 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
 
   /** The stored status the 204 fallback read, as a word. */
   get fallbackStatusWord(): string {
-    return runReportStatusWord(this.fallbackRun?.reportDocumentsStatus);
+    return runReportStatusWord(this.fallbackStatusValue);
+  }
+
+  /** The stored status the 204 fallback read, a status name read as its number. */
+  private get fallbackStatusValue(): BenchmarkRunReportDocumentsStatus | null | undefined {
+    const raw = this.fallbackStatus?.reportDocumentsStatus;
+    return typeof raw === 'string' ? reportDocumentsStatusOf(raw) : raw;
   }
 
   get pollTroubleLine(): string | null {
@@ -721,7 +828,14 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     const run = this.fallbackRun;
     const base: RunIdentity = this.context?.run ?? { runId: this.runId ?? 0 };
     if (!run) {
-      return base;
+      const stored = this.fallbackStatus;
+      return stored
+        ? {
+          ...base,
+          reportDocumentsStatus: this.fallbackStatusValue ?? base.reportDocumentsStatus,
+          reportDocumentsMessage: stored.reportDocumentsMessage ?? base.reportDocumentsMessage
+        }
+        : base;
     }
     return {
       ...base,
@@ -743,9 +857,25 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     };
   }
 
+  /** The diagnostics; a custom source's subject replaces the run line. */
   diagnosticsText(nowUtc: Date = new Date()): string {
-    return buildRunReportWritingDiagnostics(this.view, this.runIdentity, this.clientState, nowUtc,
+    const text = buildRunReportWritingDiagnostics(this.view, this.runIdentity, this.clientState, nowUtc,
       this.context?.estimateUsd ?? null);
+    const source = this.context?.source;
+    if (!source) {
+      return text;
+    }
+    return text
+      .replace(/^== Run ==$/m, '== Subject ==')
+      .replace(/^Run: #\d*$/m, () => `Subject: ${source.subjectLabel}`);
+  }
+
+  /** The diagnostics file's name: `run-<id>_…`, or the custom source's stem in place of `run-<id>`. */
+  private diagnosticsFileName(nowUtc: Date): string {
+    const runId = this.runId ?? 0;
+    const name = runReportWritingDiagnosticsFileName(runId, nowUtc);
+    const stem = this.context?.source?.fileStem;
+    return stem ? `${stem}${name.slice(`run-${runId}`.length)}` : name;
   }
 
   /** The job and client facts the Diagnostics disclosure lists. */
@@ -753,7 +883,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     const view = this.view;
     const notRecorded = 'not recorded';
     const time = (value: string | Date | null | undefined): string => formatUtcSeconds(value) ?? notRecorded;
-    const status = view ? view.status : this.fallbackRun?.reportDocumentsStatus;
+    const status = view ? view.status : this.fallbackStatusValue;
     return [
       { term: 'Job id', value: view?.job?.id || notRecorded },
       { term: 'Pack id', value: view?.job?.packId || notRecorded },
@@ -795,7 +925,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
 
   downloadDiagnostics(): void {
     const now = new Date();
-    runReportWritingIo.download(runReportWritingDiagnosticsFileName(this.runId ?? 0, now), this.diagnosticsText(now));
+    runReportWritingIo.download(this.diagnosticsFileName(now), this.diagnosticsText(now));
   }
 
   // -------------------------------------------------------------------------------------------
@@ -828,7 +958,7 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.canceling = true;
     this.cancelError = null;
     const generation = this.generation;
-    this.cancelSub = this.benchmarkService.cancelRunReportJob(runId).subscribe({
+    this.cancelSub = this.jobSource.cancel().subscribe({
       next: view => {
         if (generation !== this.generation) {
           return;

@@ -1,22 +1,20 @@
 import type { MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { of, throwError } from 'rxjs';
+import { By } from '@angular/platform-browser';
+import { of } from 'rxjs';
 
 import {
   AdminBenchmarkService,
-  BenchmarkBatteryAnalysisDto,
   BenchmarkBatteryDto,
   BenchmarkBatteryLeaderboardDto,
-  BenchmarkBatteryLeaderboardRowDto,
-  BenchmarkBatteryRunDto,
+  BenchmarkBatterySuiteDto,
   BenchmarkSuiteDto
 } from '../../../services/admin-benchmark.service';
+import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
+import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { BenchmarkBatteriesComponent } from './batteries.component';
-import {
-  BenchmarkBatteryComparison,
-  BenchmarkBatteryStatisticsResult,
-  BenchmarkBatterySuiteProfile
-} from './battery.models';
+import { BatteryLeaderboardDialogComponent } from './battery-leaderboard-dialog.component';
+import { BATTERY_LIST_VIEW_STORAGE_KEY, batteryWeightMix } from './battery.models';
 
 function dto<T>(value: object): T {
   return value as T;
@@ -24,7 +22,21 @@ function dto<T>(value: object): T {
 
 const HASH = 'abcdef0123456789abcdef0123456789';
 
-function battery(overrides: Partial<BenchmarkBatteryDto> = {}): BenchmarkBatteryDto {
+function suite(index: number, name: string, overrides: Partial<BenchmarkBatterySuiteDto> = {}): BenchmarkBatterySuiteDto {
+  return {
+    index, suiteId: 10 + index, suiteName: name, deleted: false, customWeight: null, questionCount: 10,
+    assessedQuestionCount: 10, difficultyFullyAssessed: true, difficultyMass: 500,
+    ...overrides
+  };
+}
+
+/** A battery; `suites` and `weights` replace the two-suite default together. */
+function battery(overrides: Partial<BenchmarkBatteryDto> = {}, weights?: number[]): BenchmarkBatteryDto {
+  const suites = overrides.suites ?? [
+    suite(0, 'Gameplay Help', { questionCount: 10, difficultyMass: 400 }),
+    suite(1, 'Board Reading', { questionCount: 8, difficultyMass: 600 })
+  ];
+  const declared = weights ?? (overrides.suites ? suites.map(() => 1 / suites.length) : [0.4, 0.6]);
   return dto<BenchmarkBatteryDto>({
     id: 3,
     name: 'Core Battery',
@@ -38,223 +50,40 @@ function battery(overrides: Partial<BenchmarkBatteryDto> = {}): BenchmarkBattery
     validationErrors: [],
     createdByUserName: 'admin',
     createdAtUtc: '2026-09-01T00:00:00Z',
-    modifiedAtUtc: '2026-09-02T00:00:00Z',
+    modifiedAtUtc: '2026-09-02T14:05:00Z',
     batteryRunCount: 2,
     hasActiveBatteryRun: false,
-    suites: [
-      { index: 0, suiteId: 11, suiteName: 'Gameplay Help', deleted: false, customWeight: null, questionCount: 10, assessedQuestionCount: 10, difficultyFullyAssessed: true, difficultyMass: 400 },
-      { index: 1, suiteId: 12, suiteName: 'Board Reading', deleted: false, customWeight: null, questionCount: 8, assessedQuestionCount: 8, difficultyFullyAssessed: true, difficultyMass: 600 }
-    ],
+    rankedResultCount: 3,
     weightPreviews: [
-      { scheme: 'DifficultyMass', schemeLabel: 'Questions and difficulty', declared: true, weights: [0.4, 0.6] },
-      { scheme: 'Equal', schemeLabel: 'Equal per suite', declared: false, weights: [0.5, 0.5] }
+      { scheme: 'DifficultyMass', schemeLabel: 'Questions and difficulty', declared: true, weights: declared },
+      { scheme: 'Equal', schemeLabel: 'Equal per suite', declared: false, weights: suites.map(() => 1 / suites.length) }
     ],
-    ...overrides
+    ...overrides,
+    suites
   });
 }
 
-function run(overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkBatteryRunDto {
-  return dto<BenchmarkBatteryRunDto>({
-    id: 7,
-    batteryId: 3,
-    batteryName: 'Core Battery',
-    definitionRevision: 2,
-    definitionSha256: HASH,
-    weightingScheme: 'DifficultyMass',
-    suites: [
-      { index: 0, suiteId: 11, suiteName: 'Gameplay Help', customWeight: null },
-      { index: 1, suiteId: 12, suiteName: 'Board Reading', customWeight: null }
-    ],
-    suiteCount: 2,
-    runsPerSuite: 1,
-    requestedMemberCount: 2,
-    completedMemberCount: 2,
-    failedMemberCount: 0,
-    completedSuiteCount: 2,
-    status: 'Completed',
-    stopReason: null,
-    stopReasonText: null,
-    allowCapWait: false,
-    resumable: false,
-    isDriving: false,
-    startedAtUtc: '2026-10-01T10:00:00Z',
-    completedAtUtc: '2026-10-01T11:00:00Z',
-    lastProgressAtUtc: null,
-    errorMessage: null,
-    startedByUserName: 'admin',
-    testedModelConfigurationId: 5,
-    testedModelLabel: 'Model X',
-    currentSuiteIndex: null,
-    currentSuitePosition: null,
-    currentSuiteName: null,
-    currentRound: null,
-    currentRunId: null,
-    slots: [],
-    members: [],
-    latestAnalysisId: 21,
-    latestAnalysisAtUtc: '2026-10-01T11:01:00Z',
-    latestAnalysisComplete: true,
-    overallIndex: 72.4,
-    overallIndexHalfWidth: 5.1,
-    overallIndexLower: 67.3,
-    overallIndexUpper: 77.5,
-    overallSpeedIndex: 61.2,
-    totalCost: 3.5,
-    analysisStale: false,
-    analysisHasExcludedMembers: false,
-    ...overrides
-  });
-}
-
-function profile(overrides: Partial<BenchmarkBatterySuiteProfile>): BenchmarkBatterySuiteProfile {
-  return {
-    suiteIndex: 0, suiteId: 11, suiteName: 'Gameplay Help', complete: true, weight: 0.4, countWeight: 0.55,
-    examItemCount: 10, difficultyMass: 400, expectedQuestionCount: 10, examIncomplete: false, scoredItemCount: 10,
-    usableMemberCount: 1, index: 70, contribution: 28, itemSamplingStandardError: 3, reproducibilityStandardError: null,
-    combinedHalfWidth: 5.9, combinedLower: 64.1, combinedUpper: 75.9, combinedIntervalTruncated: false,
-    identityHolds: true, runIndices: [], meanSpeedIndex: 60, criticalErrorRate: 0.1, totalCost: 1.5,
-    meanCostPerRun: 1.5, statistics: null,
-    ...overrides
-  };
-}
-
-function completeResult(): BenchmarkBatteryStatisticsResult {
-  return {
-    methodVersion: 1,
-    complete: true,
-    completedSuiteCount: 2,
-    suiteCount: 2,
-    scheme: 'DifficultyMass',
-    weights: [0.4, 0.6],
-    countWeights: [0.55, 0.45],
-    suiteMasses: [{ itemCount: 10, difficultyMass: 400 }, { itemCount: 8, difficultyMass: 600 }],
-    excludedMembers: [],
-    pooledIdentityHolds: true,
-    overallIndex: {
-      pointEstimate: 72.4,
-      itemSamplingStandardError: 2.4,
-      effectiveDegreesOfFreedom: 15.6,
-      itemSamplingCriticalValue: 2.131,
-      itemSamplingHalfWidth: 5.1,
-      itemSamplingWithheldBySuiteIndex: [],
-      reproducibilityStandardError: null,
-      reproducibilityDegreesOfFreedom: null,
-      reproducibilityCriticalValue: null,
-      reproducibilityHalfWidth: null,
-      reproducibilitySource: 'NotAvailable',
-      roundCount: 1,
-      perRoundIndices: [],
-      combinedHalfWidth: 5.1,
-      combinedLower: 67.3,
-      combinedUpper: 77.5,
-      combinedIntervalTruncated: false
-    },
-    suites: [
-      profile({}),
-      profile({ suiteIndex: 1, suiteId: 12, suiteName: 'Board Reading', weight: 0.6, index: 74, contribution: 44.4 })
-    ],
-    betweenSuiteStandardDeviation: 2.8,
-    betweenSuiteRange: 4,
-    weightingSensitivity: [
-      { scheme: 'DifficultyMass', declared: true, weights: [0.4, 0.6], index: 72.4 },
-      { scheme: 'ItemCount', declared: false, weights: [0.55, 0.45], index: 71.8 },
-      { scheme: 'Equal', declared: false, weights: [0.5, 0.5], index: 72 }
-    ],
-    leaveOneSuiteOut: [
-      { suiteIndex: 0, suiteName: 'Gameplay Help', index: 74, change: 1.6 },
-      { suiteIndex: 1, suiteName: 'Board Reading', index: 70, change: -2.4 }
-    ],
-    dimensions: [{ dimension: 'Accuracy', mean: 75.5, withheldBySuiteIndex: [] }],
-    criticalErrorRate: 0.08,
-    speed: null,
-    cost: null,
-    usage: null,
-    caveats: ['Fewer than three complete battery rounds: no reproducibility figure is reported.']
-  };
-}
-
-function analysis(overrides: Partial<BenchmarkBatteryAnalysisDto> = {}): BenchmarkBatteryAnalysisDto {
-  return dto<BenchmarkBatteryAnalysisDto>({
-    id: 21,
-    batteryRunId: 7,
-    batteryName: 'Core Battery',
-    computedAtUtc: '2026-10-01T11:01:00Z',
-    memberRunIds: [101, 102],
-    runCount: 2,
-    definitionSha256: HASH,
-    comparabilityClassSha256: 'class-a',
-    complete: true,
-    harnessVersion: '30',
-    scoringMethodVersion: 9,
-    stale: false,
-    comparedWithBatteryRunId: null,
-    comparedWithBatteryName: null,
-    result: completeResult(),
-    comparison: null,
-    excludedMembers: [],
-    ...overrides
-  });
-}
-
-function leaderboardRow(overrides: Partial<BenchmarkBatteryLeaderboardRowDto>): BenchmarkBatteryLeaderboardRowDto {
-  return dto<BenchmarkBatteryLeaderboardRowDto>({
-    batteryRunId: 7, batteryId: 3, batteryName: 'Core Battery', definitionRevision: 2, analysisId: 21,
-    computedAtUtc: '2026-10-01T11:01:00Z', testedModelConfigurationId: 5, testedModelLabel: 'Model X',
-    status: 'Completed', runsPerSuite: 1, suiteCount: 2, completedSuiteCount: 2, complete: true,
-    comparabilityClassSha256: 'class-a', harnessVersion: '30', scoringMethodVersion: 9,
-    overallIndex: 72.4, overallIndexHalfWidth: 5.1, overallIndexLower: 67.3, overallIndexUpper: 77.5,
-    overallSpeedIndex: 61.2, totalCost: 3.5, passCost: 3.5,
-    ...overrides
-  });
-}
-
-function leaderboard(): BenchmarkBatteryLeaderboardDto {
-  return dto<BenchmarkBatteryLeaderboardDto>({
-    definitionSha256: HASH,
-    batteryId: 3,
-    batteryName: 'Core Battery',
-    classes: [
-      {
-        comparabilityClassSha256: 'class-a', label: 'Harness 30', harnessVersion: '30', scoringMethodVersion: 9,
-        distinguishingKeys: ['HarnessVersion'],
-        rows: [leaderboardRow({}), leaderboardRow({ batteryRunId: 8, testedModelConfigurationId: 6, testedModelLabel: 'Model Y', overallIndex: 68 })]
-      },
-      {
-        comparabilityClassSha256: 'class-b', label: 'Harness 29', harnessVersion: '29', scoringMethodVersion: 9,
-        distinguishingKeys: ['HarnessVersion'],
-        rows: [leaderboardRow({ batteryRunId: 5, testedModelConfigurationId: 8, testedModelLabel: 'Model Z', comparabilityClassSha256: 'class-b' })]
-      }
-    ],
-    incomplete: [leaderboardRow({ batteryRunId: 9, complete: false, completedSuiteCount: 1, testedModelLabel: 'Model W', overallIndex: null })]
-  });
-}
-
-function comparison(): BenchmarkBatteryComparison {
-  return {
-    methodVersion: 1,
-    baselineOverallIndex: 68,
-    treatmentOverallIndex: 72.4,
-    suites: [
-      { suiteIndex: 0, suiteName: 'Gameplay Help', weight: 0.4, pairedItemCount: 10, weightedDifference: 3, weightedDifferenceStandardError: 1.2, wilcoxonPValue: 0.04, holmAdjustedPValue: 0.08, comparison: null, note: null },
-      { suiteIndex: 1, suiteName: 'Board Reading', weight: 0.6, pairedItemCount: 8, weightedDifference: 5.3, weightedDifferenceStandardError: 2, wilcoxonPValue: 0.02, holmAdjustedPValue: 0.04, comparison: null, note: null }
-    ],
-    pairedItemCount: 18,
-    compositeDifference: 4.4,
-    compositeWithheldBySuiteIndex: [],
-    compositeStandardError: 1.3,
-    standardErrorWithheldBySuiteIndex: [],
-    compositeDegreesOfFreedom: 14.2,
-    compositeCriticalValue: 2.145,
-    compositeConfidenceHalfWidth: 2.8,
-    compositeConfidenceLower: 1.6,
-    compositeConfidenceUpper: 7.2,
-    randomizationPValue: 0.0123,
-    randomizationMethod: 'Exact',
-    monteCarloResamples: null,
-    monteCarloStandardError: null,
-    seed: null,
-    notes: []
-  };
+/** Four batteries: newest-modified order Bravo, Delta, Alpha, Charlie. */
+function fourBatteries(): BenchmarkBatteryDto[] {
+  return [
+    battery({
+      id: 1, name: 'Alpha', weightingScheme: 'Equal', weightingSchemeLabel: 'Equal per suite', batteryRunCount: 5,
+      modifiedAtUtc: '2026-09-05T00:00:00Z', definitionSha256: 'a'.repeat(64)
+    }),
+    battery({
+      id: 2, name: 'Bravo', batteryRunCount: 1, modifiedAtUtc: '2026-09-10T00:00:00Z', definitionSha256: 'b'.repeat(64),
+      suites: [suite(0, 'Gameplay Help'), suite(1, 'Lore')]
+    }),
+    battery({
+      id: 3, name: 'Charlie', weightingScheme: 'ItemCount', weightingSchemeLabel: 'Questions only', batteryRunCount: 0,
+      modifiedAtUtc: '2026-09-01T00:00:00Z', definitionSha256: 'c'.repeat(64),
+      suites: [suite(0, 'Gameplay Help'), suite(1, 'Board Reading'), suite(2, 'Lore')]
+    }),
+    battery({
+      id: 4, name: 'Delta', description: 'Monster fights', batteryRunCount: 9, modifiedAtUtc: '2026-09-08T00:00:00Z',
+      definitionSha256: 'd'.repeat(64), suites: [suite(0, 'Lore'), suite(1, 'Combat')]
+    })
+  ];
 }
 
 describe('BenchmarkBatteriesComponent', () => {
@@ -266,8 +95,8 @@ describe('BenchmarkBatteriesComponent', () => {
     return fixture.nativeElement as HTMLElement;
   }
 
-  function text(selector: string): string {
-    return (el().querySelector(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  function text(selector: string, root: ParentNode = el()): string {
+    return (root.querySelector(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
   function click(selector: string): void {
@@ -277,11 +106,14 @@ describe('BenchmarkBatteriesComponent', () => {
     fixture.detectChanges();
   }
 
-  function select(selector: string, value: string): void {
-    const control = el().querySelector(selector) as HTMLSelectElement;
-    control.value = value;
-    control.dispatchEvent(new Event('change'));
-    fixture.detectChanges();
+  function card(id: number): HTMLElement {
+    const found = el().querySelector(`article.bb-card[data-battery-id="${id}"]`) as HTMLElement | null;
+    expect(found, `card ${id}`).not.toBeNull();
+    return found!;
+  }
+
+  function shownTitles(): string[] {
+    return Array.from(el().querySelectorAll('.bb-card-title')).map(h => h.textContent!.trim());
   }
 
   function create(): void {
@@ -290,16 +122,20 @@ describe('BenchmarkBatteriesComponent', () => {
     fixture.detectChanges();
   }
 
+  function clearStoredView(): void {
+    try {
+      localStorage.removeItem(BATTERY_LIST_VIEW_STORAGE_KEY);
+    } catch {
+      // Storage unavailable: nothing to clear.
+    }
+  }
+
   beforeEach(async () => {
+    clearStoredView();
     service = {
       getBatteries: vi.fn().mockName("AdminBenchmarkService.getBatteries"),
       getSuites: vi.fn().mockName("AdminBenchmarkService.getSuites"),
-      getBatteryRuns: vi.fn().mockName("AdminBenchmarkService.getBatteryRuns"),
-      getBatteryRun: vi.fn().mockName("AdminBenchmarkService.getBatteryRun"),
-      getBatteryAnalysis: vi.fn().mockName("AdminBenchmarkService.getBatteryAnalysis"),
-      analyseBatteryRun: vi.fn().mockName("AdminBenchmarkService.analyseBatteryRun"),
       getBatteryLeaderboard: vi.fn().mockName("AdminBenchmarkService.getBatteryLeaderboard"),
-      getBatteryReportUrl: vi.fn().mockName("AdminBenchmarkService.getBatteryReportUrl"),
       archiveBattery: vi.fn().mockName("AdminBenchmarkService.archiveBattery"),
       deleteBattery: vi.fn().mockName("AdminBenchmarkService.deleteBattery"),
       createBattery: vi.fn().mockName("AdminBenchmarkService.createBattery"),
@@ -308,216 +144,351 @@ describe('BenchmarkBatteriesComponent', () => {
     } as unknown as MockedObject<AdminBenchmarkService>;
     service.getBatteries.mockReturnValue(of([battery()]));
     service.getSuites.mockReturnValue(of([dto<BenchmarkSuiteDto>({ id: 11, name: 'Gameplay Help', questionCount: 10, assessedQuestionCount: 10, difficultyFullyAssessed: true })]));
-    service.getBatteryRuns.mockReturnValue(of([run(), run({ id: 6, batteryName: 'Old Battery', batteryId: null, testedModelLabel: 'Model Y' })]));
-    service.getBatteryRun.mockReturnValue(of(run()));
-    service.getBatteryAnalysis.mockReturnValue(of(analysis()));
-    service.analyseBatteryRun.mockReturnValue(of(analysis()));
-    service.getBatteryLeaderboard.mockReturnValue(of(leaderboard()));
-    service.getBatteryReportUrl.mockImplementation((id: number) => `/api/admin/benchmark/batteries/runs/${id}/report`);
+    service.getBatteryLeaderboard.mockReturnValue(of(dto<BenchmarkBatteryLeaderboardDto>({
+      definitionSha256: HASH, batteryId: 3, batteryName: 'Core Battery', classes: [], incomplete: []
+    })));
     service.archiveBattery.mockImplementation((id: number, archived?: boolean) => of(battery({ id, isArchived: archived ?? true })));
     service.deleteBattery.mockReturnValue(of(void 0));
     service.getQuestions.mockReturnValue(of([]));
 
     await TestBed.configureTestingModule({
       imports: [BenchmarkBatteriesComponent],
-      providers: [{ provide: AdminBenchmarkService, useValue: service }]
+      providers: [
+        { provide: AdminBenchmarkService, useValue: service },
+        BenchmarkShellBridge
+      ]
     }).compileComponents();
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     el().querySelectorAll('dialog').forEach(d => { if ((d as HTMLDialogElement).open) (d as HTMLDialogElement).close(); });
+    clearStoredView();
   });
 
-  it('creates and loads batteries, suites and battery runs', () => {
+  it('loads the batteries and the suites, and states the count in the status line', () => {
     create();
-    expect(component).toBeTruthy();
     expect(service.getBatteries).toHaveBeenCalled();
     expect(service.getSuites).toHaveBeenCalled();
-    expect(service.getBatteryRuns).toHaveBeenCalled();
+    expect(text('#bb-list-status')).toBe('One battery');
+    expect(el().querySelector('#bb-list-status')?.getAttribute('role')).toBe('status');
   });
 
-  it('shows the empty states', () => {
+  it('shows the empty state', () => {
     service.getBatteries.mockReturnValue(of([]));
-    service.getBatteryRuns.mockReturnValue(of([]));
     create();
-
     expect(text('.bb-empty-batteries')).toContain('No batteries yet');
-    expect(text('.bb-empty-runs')).toContain('No battery runs yet');
-    expect(el().querySelector('.bb-analysis')).toBeNull();
+    expect(el().querySelector('.bb-cards')).toBeNull();
   });
 
-  it('lists battery cards with suites, scheme and declared weights', () => {
-    create();
-    const card = el().querySelector('.bb-card') as HTMLElement;
-    const cardText = card.textContent!.replace(/\s+/g, ' ');
-    expect(cardText).toContain('Core Battery');
-    expect(cardText).toContain('Questions and difficulty');
-    expect(cardText).toContain('Revision 2');
-    expect(cardText).toContain('Gameplay Help');
-    expect(cardText).toContain('40.0 %');
-    expect(cardText).toContain('60.0 %');
+  describe('a card', () => {
+    it('lays out a two-suite battery: kicker, title, meta, metrics, weight bar and every suite row', () => {
+      create();
+      const c = card(3);
+      expect(c.getAttribute('aria-labelledby')).toBe('bb-card-title-3');
+      expect(text('.bb-card-kicker', c)).toBe('#3·, Revision 2·, Questions and difficulty');
+      expect(c.querySelector('.bb-sep > [aria-hidden="true"]')?.textContent).toBe('·');
+      expect(c.querySelector('.bb-sep > .visually-hidden')?.textContent).toBe(', ');
+      const title = c.querySelector('h5.bb-card-title') as HTMLElement;
+      expect(title.textContent!.trim()).toBe('Core Battery');
+      expect(title.getAttribute('tabindex')).toBe('-1');
+      expect(text('.bb-card-meta', c)).toContain('Modified 2026-09-02 14:05 UTC');
+      expect(text('.bb-card-meta', c)).toContain('by admin');
+      expect(text('.bb-card-meta .bb-hash', c)).toBe('abcdef01');
+      expect(c.querySelector('.bb-card-meta time')?.getAttribute('datetime')).toBe('2026-09-02T14:05:00.000Z');
+
+      const metric = (key: string) => text(`.bb-metric[data-metric="${key}"] dd`, c);
+      expect(metric('suites')).toBe('2');
+      expect(metric('questions')).toBe('18');
+      expect(metric('runs')).toBe('2');
+      expect(metric('ranked')).toBe('3');
+
+      const segments = Array.from(c.querySelectorAll<HTMLElement>('.bb-weight-mix .bb-weight-segment'));
+      expect(c.querySelector('.bb-weight-mix')?.getAttribute('aria-hidden')).toBe('true');
+      expect(segments.map(s => s.style.flexGrow)).toEqual(['0.4', '0.6']);
+      expect(segments.map(s => s.classList.contains('is-alt'))).toEqual([false, true]);
+
+      expect(text('.bb-suite-table caption', c)).toBe('Suites of Core Battery in run order');
+      const rows = c.querySelectorAll('.bb-suite-table tbody tr');
+      expect(rows.length).toBe(2);
+      expect(rows[1].textContent!.replace(/\s+/g, ' ')).toContain('Board Reading');
+      expect(rows[1].textContent).toContain('60.0 %');
+      expect(c.querySelector('.bb-suites-toggle')).toBeNull();
+      expect(c.querySelectorAll('.bb-suite-table tbody').length).toBe(1);
+    });
+
+    it('shows "—" for Ranked results when an older server sends no count', () => {
+      service.getBatteries.mockReturnValue(of([battery({ rankedResultCount: undefined })]));
+      create();
+      expect(text('.bb-metric[data-metric="ranked"] dd', card(3))).toBe('—');
+    });
+
+    it('shows four suite rows of seven, and Show all K suites reveals the rest with focus kept', () => {
+      const names = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7'];
+      service.getBatteries.mockReturnValue(of([battery({
+        suites: names.map((name, i) => suite(i, name, i === 5 ? { deleted: true, questionCount: 0 } : {})),
+        brokenSuiteNames: ['S6']
+      }, [0.1, 0.1, 0.2, 0.2, 0.1, 0, 0.3])]));
+      create();
+      const c = card(3);
+
+      const bodies = c.querySelectorAll<HTMLElement>('.bb-suite-table tbody');
+      expect(bodies.length).toBe(2);
+      expect(bodies[0].querySelectorAll('tr').length).toBe(4);
+      expect(bodies[1].id).toBe('bb-suites-more-3');
+      expect(bodies[1].hidden).toBe(true);
+      expect(bodies[1].querySelectorAll('tr').length).toBe(3);
+
+      const toggle = c.querySelector('.bb-suites-toggle') as HTMLButtonElement;
+      expect(toggle.textContent!.trim()).toBe('Show all 7 suites');
+      expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      expect(toggle.getAttribute('aria-controls')).toBe('bb-suites-more-3');
+
+      toggle.focus();
+      toggle.click();
+      fixture.detectChanges();
+      expect(bodies[1].hidden).toBe(false);
+      expect(toggle.textContent!.trim()).toBe('Show fewer');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+      expect(document.activeElement).toBe(toggle);
+
+      // The deleted suite: a hatched segment, a Deleted tag in its row and Broken in the kicker.
+      const segments = Array.from(c.querySelectorAll<HTMLElement>('.bb-weight-segment'));
+      expect(segments.length).toBe(7);
+      expect(segments.map(s => s.classList.contains('is-deleted'))).toEqual([false, false, false, false, false, true, false]);
+      expect(text('tr.is-deleted', c)).toContain('Deleted');
+      expect(text('.bb-card-kicker', c)).toContain('Broken');
+      expect(text('.bb-metric[data-metric="questions"] dd', c)).toBe('60');
+    });
+
+    it('names every state as a word in the kicker', () => {
+      service.getBatteries.mockReturnValue(of([battery({
+        isArchived: true,
+        hasActiveBatteryRun: true,
+        validationErrors: ['Suite S2 has been deleted.'],
+        suites: [suite(0, 'Gameplay Help', { difficultyFullyAssessed: false }), suite(1, 'Board Reading')]
+      })]));
+      create();
+      click('.bb-show-archived');
+      const kicker = card(3).querySelector('.bb-card-kicker') as HTMLElement;
+      expect(kicker.querySelector('.bb-tag-archived')?.textContent?.trim()).toBe('Archived');
+      expect(kicker.querySelector('.bb-tag-active')?.textContent?.trim()).toBe('Running');
+      expect(kicker.querySelector('.bb-tag-broken')?.textContent?.trim()).toBe('Broken');
+      expect(kicker.querySelector('.bb-tag-difficulties')?.textContent?.trim()).toBe('Difficulties incomplete');
+      expect(text('.bb-card-errors', card(3))).toContain('Suite S2 has been deleted.');
+      expect(text('tbody tr', card(3))).toContain('Not assessed');
+    });
+
+    it('groups the actions with Leaderboard first', () => {
+      create();
+      const group = card(3).querySelector('.bb-card-actions') as HTMLElement;
+      expect(group.getAttribute('role')).toBe('group');
+      expect(group.getAttribute('aria-label')).toBe('Actions for battery Core Battery');
+      const labels = Array.from(group.querySelectorAll('button')).map(b => b.textContent!.trim());
+      expect(labels).toEqual(['Leaderboard', 'Edit', 'Archive', 'Delete']);
+      expect(group.querySelector('.bb-leaderboard svg')?.getAttribute('aria-hidden')).toBe('true');
+    });
+
+    it('archives a battery and emits batteriesChanged', () => {
+      create();
+      const changed = vi.fn().mockName('changed');
+      component.batteriesChanged.subscribe(changed);
+      click('.bb-card .bb-archive');
+
+      expect(service.archiveBattery).toHaveBeenCalledWith(3, true);
+      expect(changed).toHaveBeenCalled();
+      expect(el().querySelector('.bb-card')).toBeNull();
+      expect(text('.bb-all-archived')).toContain('Every battery is archived');
+    });
+
+    it('offers Restore on an archived battery once Show archived is pressed', () => {
+      service.getBatteries.mockReturnValue(of([battery(), battery({ id: 5, name: 'Old Battery', isArchived: true })]));
+      create();
+      const toggle = el().querySelector('.bb-show-archived') as HTMLButtonElement;
+      expect(toggle.textContent!.trim()).toBe('Show archived (1)');
+      expect(toggle.getAttribute('aria-pressed')).toBe('false');
+      expect(el().querySelector('article[data-battery-id="5"]')).toBeNull();
+
+      click('.bb-show-archived');
+      expect(toggle.getAttribute('aria-pressed')).toBe('true');
+      expect(text('.bb-archive', card(5))).toBe('Restore');
+      expect(card(5).querySelector('.bb-archive')?.getAttribute('aria-label')).toBe('Restore battery Old Battery');
+
+      card(5).querySelector<HTMLButtonElement>('.bb-archive')!.click();
+      fixture.detectChanges();
+      expect(service.archiveBattery).toHaveBeenCalledWith(5, false);
+    });
+
+    it('deletes a battery after confirmation and focuses the heading when no card is left', () => {
+      create();
+      const changed = vi.fn().mockName('changed');
+      component.batteriesChanged.subscribe(changed);
+      click('.bb-card .bb-delete');
+      expect(text('#bbDeleteTitle')).toBe('Delete battery?');
+
+      click('.bb-confirm-delete');
+      expect(service.deleteBattery).toHaveBeenCalledWith(3);
+      expect(changed).toHaveBeenCalled();
+      expect(el().querySelector('.bb-card')).toBeNull();
+      expect(document.activeElement?.id).toBe('bb-batteries-title');
+    });
+
+    it('keeps Delete aria-disabled and inert while a battery run is active', () => {
+      service.getBatteries.mockReturnValue(of([battery({ hasActiveBatteryRun: true })]));
+      create();
+      const deleteButton = el().querySelector('.bb-card .bb-delete') as HTMLButtonElement;
+      expect(deleteButton.getAttribute('aria-disabled')).toBe('true');
+      expect(deleteButton.getAttribute('interestfor')).toBe('bb-tip-delete-3');
+      deleteButton.click();
+      fixture.detectChanges();
+      expect((el().querySelector('.bb-delete-dialog') as HTMLDialogElement).open).toBe(false);
+      expect(service.deleteBattery).not.toHaveBeenCalled();
+    });
   });
 
-  it('filters the battery runs by battery', () => {
-    create();
-    expect(el().querySelectorAll('.bb-runs-table tbody tr[data-run-id]').length).toBe(2);
-    select('#bb-f-battery', 'Old Battery');
-    const rows = el().querySelectorAll('.bb-runs-table tbody tr[data-run-id]');
-    expect(rows.length).toBe(1);
-    expect(rows[0].getAttribute('data-run-id')).toBe('6');
+  describe('the leaderboard', () => {
+    it('opens the dialog with the battery\'s definition and returns focus to the button on close', () => {
+      create();
+      const dialog = fixture.debugElement.query(By.directive(BatteryLeaderboardDialogComponent)).componentInstance as BatteryLeaderboardDialogComponent;
+      const open = vi.spyOn(dialog, 'open').mockImplementation(() => { });
+
+      const button = card(3).querySelector('.bb-leaderboard') as HTMLButtonElement;
+      expect(button.getAttribute('aria-label')).toBe('Leaderboard of battery Core Battery');
+      button.click();
+      expect(open).toHaveBeenCalledWith({
+        definitionSha256: HASH,
+        name: 'Core Battery',
+        revision: 2,
+        schemeLabel: 'Questions and difficulty',
+        suiteCount: 2
+      });
+
+      (document.body as HTMLElement).focus();
+      dialog.closed.emit();
+      expect(document.activeElement).toBe(button);
+    });
   });
 
-  it('shows a complete analysis with its headline, uncertainty, profile and sensitivity', () => {
-    create();
-    click('tr[data-run-id="7"] .bb-view-analysis');
+  describe('the filter bar', () => {
+    function useSearchClock(): void {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    }
 
-    expect(service.getBatteryAnalysis).toHaveBeenCalledWith(7);
-    expect(text('.bb-headline-value')).toBe('72.4 ± 5.1');
-    expect(text('.bb-headline-interval')).toContain('[67.3, 77.5]');
-    expect(text('.bb-uncertainty')).toContain('15.6');
-    expect(text('.bb-uncertainty')).toContain('2.131');
-    expect(el().querySelectorAll('.bb-profile-table tbody tr').length).toBe(2);
-    expect(text('.bb-sensitivity-table')).toContain('Questions only');
-    expect(text('.bb-sensitivity-table')).toContain('Sensitivity');
-    expect(text('.bb-loo-table')).toContain('−2.4');
-    expect(el().querySelector('.bb-recompute-callout')).toBeNull();
+    function search(value: string): void {
+      const input = el().querySelector('#bb-search') as HTMLInputElement;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      vi.advanceTimersByTime(component.list.debounceMs);
+      fixture.detectChanges();
+    }
+
+    function facet(label: string): FilterFacetComponent {
+      const found = fixture.debugElement.queryAll(By.directive(FilterFacetComponent))
+        .map(d => d.componentInstance as FilterFacetComponent)
+        .find(f => f.label === label);
+      expect(found, label).toBeTruthy();
+      return found!;
+    }
+
+    it('is not rendered with three batteries or fewer', () => {
+      service.getBatteries.mockReturnValue(of(fourBatteries().slice(0, 3)));
+      create();
+      expect(el().querySelector('.bb-filter-bar')).toBeNull();
+      expect(el().querySelector('#bb-search')).toBeNull();
+      expect(text('#bb-list-status')).toBe('Showing 3 of 3 batteries');
+    });
+
+    it('lists the cards most recently modified first, and searches name, description and suite names', () => {
+      service.getBatteries.mockReturnValue(of(fourBatteries()));
+      create();
+      expect(el().querySelector('.bb-filter-bar')).not.toBeNull();
+      expect(text('label[for="bb-search"]')).toBe('Search batteries');
+      expect(shownTitles()).toEqual(['Bravo', 'Delta', 'Alpha', 'Charlie']);
+
+      useSearchClock();
+      search('monster');
+      expect(shownTitles()).toEqual(['Delta']);
+      expect(text('#bb-list-status')).toBe('One battery · filtered from 4');
+
+      search('lore');
+      expect(shownTitles()).toEqual(['Bravo', 'Delta', 'Charlie']);
+      expect(text('.bb-filter-chips')).toContain('Search');
+    });
+
+    it('remembers the Sort by order', () => {
+      service.getBatteries.mockReturnValue(of(fourBatteries()));
+      create();
+      const sort = el().querySelector('#bb-sort') as HTMLSelectElement;
+      expect(Array.from(sort.options).map(o => o.text)).toEqual(['Recently modified', 'Name (A–Z)', 'Most runs', 'Most suites']);
+
+      sort.value = 'runs';
+      sort.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+      expect(shownTitles()).toEqual(['Delta', 'Alpha', 'Bravo', 'Charlie']);
+      expect(JSON.parse(localStorage.getItem(BATTERY_LIST_VIEW_STORAGE_KEY)!)).toEqual({ version: 1, sort: 'runs' });
+
+      fixture.destroy();
+      create();
+      expect((el().querySelector('#bb-sort') as HTMLSelectElement).value).toBe('runs');
+      expect(shownTitles()).toEqual(['Delta', 'Alpha', 'Bravo', 'Charlie']);
+    });
+
+    it('filters by the Suite and Weighting facets, with a removable chip and Clear all', () => {
+      service.getBatteries.mockReturnValue(of(fourBatteries()));
+      create();
+      expect(facet('Weighting').options.map(o => o.value)).toEqual(['Questions and difficulty', 'Questions only', 'Equal per suite']);
+      expect(facet('Weighting').noun).toBe('batteries');
+
+      facet('Weighting').selectedChange.emit(['Questions and difficulty']);
+      fixture.detectChanges();
+      expect(shownTitles()).toEqual(['Bravo', 'Delta']);
+
+      facet('Suite').selectedChange.emit(['Combat']);
+      fixture.detectChanges();
+      expect(shownTitles()).toEqual(['Delta']);
+
+      const chips = el().querySelectorAll<HTMLButtonElement>('.bb-filter-chips .gh-filter-chip');
+      expect(Array.from(chips).map(c => c.getAttribute('aria-label'))).toEqual([
+        'Remove filter Suite: Combat',
+        'Remove filter Weighting: Questions and difficulty'
+      ]);
+      chips[0].click();
+      fixture.detectChanges();
+      expect(shownTitles()).toEqual(['Bravo', 'Delta']);
+      // The chip that took the removed one's place.
+      expect(document.activeElement?.getAttribute('aria-label')).toBe('Remove filter Weighting: Questions and difficulty');
+
+      click('.bb-clear-filters');
+      expect(shownTitles()).toEqual(['Bravo', 'Delta', 'Alpha', 'Charlie']);
+      expect(document.activeElement?.id).toBe('bb-search');
+    });
+
+    it('shows ten cards, then Show more loads the rest and focuses the first new card', () => {
+      const many = Array.from({ length: 12 }, (_, i) => battery({
+        id: 100 + i,
+        name: `Battery ${String(i + 1).padStart(2, '0')}`,
+        modifiedAtUtc: `2026-09-${String(i + 1).padStart(2, '0')}T00:00:00Z`
+      }));
+      service.getBatteries.mockReturnValue(of(many));
+      create();
+      expect(el().querySelectorAll('.bb-card').length).toBe(10);
+      expect(text('#bb-list-status')).toBe('Showing 10 of 12 batteries');
+      expect(text('.bb-show-more')).toBe('Show 2 more');
+      expect(el().querySelector('.bb-show-all')).toBeNull();
+
+      click('.bb-show-more');
+      expect(el().querySelectorAll('.bb-card').length).toBe(12);
+      expect(document.activeElement?.id).toBe('bb-card-title-101');
+      expect(el().querySelector('.bb-show-more')).toBeNull();
+    });
   });
 
-  it('shows an incomplete analysis without a headline and calls out Recompute', () => {
-    const incomplete = completeResult();
-    incomplete.complete = false;
-    incomplete.completedSuiteCount = 1;
-    incomplete.overallIndex = null;
-    incomplete.suites = [incomplete.suites[0], { ...incomplete.suites[1], complete: false, index: null }];
-    service.getBatteryAnalysis.mockReturnValue(of(analysis({
-      complete: false,
-      result: incomplete,
-      excludedMembers: [{ suiteIndex: 1, round: 1, runId: 102, reason: 'index withheld (a question failed at the provider)' }]
-    })));
-    create();
-    click('tr[data-run-id="7"] .bb-view-analysis');
-
-    expect(text('.bb-headline-value')).toBe('Incomplete (1 of 2 suites)');
-    expect(el().querySelector('.bb-uncertainty')).toBeNull();
-    expect(text('.bb-excluded')).toContain('Board Reading, round 1, run #102');
-    expect(text('.bb-excluded')).toContain('index withheld');
-    expect(text('.bb-recompute-callout')).toContain('Recompute');
-
-    click('.bb-recompute');
-    expect(service.analyseBatteryRun).toHaveBeenCalledWith(7);
-  });
-
-  it('offers Compute when no analysis exists', () => {
-    service.getBatteryAnalysis.mockReturnValue(of(null));
-    create();
-    click('tr[data-run-id="7"] .bb-view-analysis');
-
-    expect(text('.bb-no-analysis')).toContain('No analysis has been computed');
-    expect(text('.bb-recompute')).toBe('Compute');
-    expect(el().querySelector('.bb-download-report')?.getAttribute('aria-disabled')).toBe('true');
-  });
-
-  it('downloads the report of the selected battery run', () => {
-    const open = vi.spyOn(window, 'open').mockReturnValue(undefined as any);
-    create();
-    click('tr[data-run-id="7"] .bb-view-analysis');
-    click('.bb-download-report');
-    expect(open).toHaveBeenCalledWith('/api/admin/benchmark/batteries/runs/7/report', '_blank');
-  });
-
-  it('shows one ranked table per comparability class and the incomplete runs apart', () => {
-    create();
-    click('tr[data-run-id="7"] .bb-view-analysis');
-
-    expect(service.getBatteryLeaderboard).toHaveBeenCalledWith(HASH);
-    expect(el().querySelectorAll('.bb-leaderboard-table').length).toBe(2);
-    expect(text('.bb-overlap-note')).toContain('Overlapping intervals are not a ranking');
-    expect(text('.bb-incomplete-table')).toContain('Model W');
-    expect(text('.bb-incomplete-table')).toContain('1/2');
-  });
-
-  it('shows the refusal text when a comparison is refused', () => {
-    create();
-    click('tr[data-run-id="7"] .bb-view-analysis');
-    service.analyseBatteryRun.mockReturnValue(throwError(() => ({
-      status: 400,
-      error: 'Not comparable: HarnessVersion and CandidateSystemPromptSha256 differ.'
-    })));
-
-    select('#bb-compare-baseline', '5');
-    select('#bb-compare-treatment', '8');
-    expect(text('#bb-compare-kind')).toContain('probably be refused');
-    click('.bb-compare-btn');
-
-    expect(service.analyseBatteryRun).toHaveBeenCalledWith(8, 5);
-    expect(text('.bb-compare-refusal')).toContain('HarnessVersion and CandidateSystemPromptSha256 differ');
-  });
-
-  it('shows D, its interval, the randomization p and Holm-adjusted per-suite p', () => {
-    create();
-    click('tr[data-run-id="7"] .bb-view-analysis');
-    service.analyseBatteryRun.mockReturnValue(of(analysis({ batteryRunId: 7, comparedWithBatteryRunId: 8, comparison: comparison() })));
-
-    select('#bb-compare-baseline', '8');
-    select('#bb-compare-treatment', '7');
-    expect(text('#bb-compare-kind')).toContain('Model comparison');
-    click('.bb-compare-btn');
-
-    expect(service.analyseBatteryRun).toHaveBeenCalledWith(7, 8);
-    expect(text('.bb-compare-d')).toBe('+4.4');
-    expect(text('.bb-compare-headline')).toContain('[1.6, 7.2]');
-    expect(text('.bb-compare-facts')).toContain('0.012');
-    expect(text('.bb-compare-facts')).toContain('Exact enumeration');
-    const rows = el().querySelectorAll('.bb-compare-table tbody tr');
-    expect(rows.length).toBe(2);
-    expect(rows[1].textContent).toContain('0.040');
-  });
-
-  it('emits openBatteryRun from Show progress', () => {
-    create();
-    const opened = vi.fn().mockName('opened');
-    component.openBatteryRun.subscribe(opened);
-    click('tr[data-run-id="7"] .bb-show-progress');
-    expect(opened).toHaveBeenCalledWith(7);
-  });
-
-  it('archives a battery and emits batteriesChanged', () => {
-    create();
-    const changed = vi.fn().mockName('changed');
-    component.batteriesChanged.subscribe(changed);
-    click('.bb-card .bb-archive');
-
-    expect(service.archiveBattery).toHaveBeenCalledWith(3, true);
-    expect(changed).toHaveBeenCalled();
-  });
-
-  it('deletes a battery after confirmation', () => {
-    create();
-    const changed = vi.fn().mockName('changed');
-    component.batteriesChanged.subscribe(changed);
-    click('.bb-card .bb-delete');
-    expect(text('#bbDeleteTitle')).toBe('Delete battery?');
-
-    click('.bb-confirm-delete');
-    expect(service.deleteBattery).toHaveBeenCalledWith(3);
-    expect(changed).toHaveBeenCalled();
-    expect(el().querySelector('.bb-card')).toBeNull();
-  });
-
-  it('refuses to delete a battery with a battery run in progress', () => {
-    service.getBatteries.mockReturnValue(of([battery({ hasActiveBatteryRun: true })]));
-    create();
-    const deleteButton = el().querySelector('.bb-card .bb-delete') as HTMLButtonElement;
-    expect(deleteButton.getAttribute('aria-disabled')).toBe('true');
-    deleteButton.click();
-    fixture.detectChanges();
-    expect((el().querySelector('.bb-delete-dialog') as HTMLDialogElement).open).toBe(false);
-  });
-
-  it('focuses the analysis heading from showAnalysis', () => {
-    create();
-    component.showAnalysis(7);
-    fixture.detectChanges();
-    expect(document.activeElement?.id).toBe('bb-analysis-title');
+  describe('batteryWeightMix', () => {
+    it('uses the declared weights, or equal shares when they are undefined', () => {
+      const suites = [{ index: 0, deleted: false }, { index: 1, deleted: true }];
+      expect(batteryWeightMix(suites, [0.25, 0.75]).map(s => s.share)).toEqual([0.25, 0.75]);
+      expect(batteryWeightMix(suites, []).map(s => s.share)).toEqual([0.5, 0.5]);
+      expect(batteryWeightMix(suites, []).map(s => s.deleted)).toEqual([false, true]);
+    });
   });
 });

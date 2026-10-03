@@ -7,7 +7,8 @@
 
 import { formatDate } from '@angular/common';
 
-import type { BenchmarkRunDetailDto } from '../../../services/admin-benchmark.service';
+import type { BenchmarkBatteryRunDto, BenchmarkRunDetailDto } from '../../../services/admin-benchmark.service';
+import { batterySchemeLabel } from '../batteries/battery.models';
 import { formatServiceTier, formatThinkingLevel, showReasoningBadge } from '../../../utils/model-badge-format.util';
 
 /** One model as a run used it, with the settings its badges show. */
@@ -52,7 +53,7 @@ export type RunFactItem =
   | { readonly kind: 'board'; readonly figures: readonly BoardFigure[]; readonly note: string; readonly gaps: readonly string[] };
 
 /** Stable keys: the image-detail selection is stored by them. */
-export const RUN_FACT_KEYS = ['model', 'assessor', 'prompt', 'profile', 'started', 'board'] as const;
+export const RUN_FACT_KEYS = ['model', 'assessor', 'prompt', 'profile', 'started', 'board', 'battery', 'suites'] as const;
 export type RunFactKey = typeof RUN_FACT_KEYS[number];
 
 /** The rows the run report header always shows; the rest sit in its Run details disclosure. */
@@ -192,6 +193,12 @@ export function runFactsReadout(rows: readonly RunFactRow[]): string {
           parts.push(`Started ${item.text}`);
         }
         break;
+      case 'battery':
+      case 'suites':
+        if (item.kind === 'text') {
+          parts.push(item.text);
+        }
+        break;
       case 'board':
         if (item.kind === 'board' && item.figures.length > 0) {
           const complete = item.figures.every(f => f.delivered === f.total);
@@ -309,6 +316,81 @@ export function buildRunFacts(run: BenchmarkRunDetailDto, options: { gaps: reado
   if (figures.length > 0) {
     rows.push({ key: 'board', label: 'Board', item: { kind: 'board', figures, note: BOARD_NOTE, gaps: [...options.gaps] } });
   }
+
+  return rows;
+}
+
+/**
+ * A battery run's settings as its report header lists them: Model, Assessor(s), Prompt, Scoring
+ * profile, Started, Battery (name · revision · scheme) and Suites (complete of K · R runs per
+ * suite). The model is the one the newest usable member ran.
+ */
+export function buildBatteryRunFacts(battery: BenchmarkBatteryRunDto): RunFactRow[] {
+  const rows: RunFactRow[] = [];
+
+  rows.push({
+    key: 'model',
+    label: 'Model',
+    item: {
+      kind: 'models',
+      models: [{
+        name: modelName(battery.testedModelLabel, battery.testedModelId),
+        provider: battery.testedProvider || null,
+        thinkingLevel: battery.testedThinkingLevel ?? null,
+        reasoningMode: battery.testedReasoningMode ?? null,
+        serviceTier: battery.testedServiceTier ?? null,
+        customEndpoint: false
+      }]
+    }
+  });
+
+  const grader = (name: string | null | undefined, role?: 'A' | 'B'): RunFactModel => ({
+    ...(role ? { role } : {}),
+    name: name || 'not recorded',
+    provider: null,
+    thinkingLevel: null,
+    reasoningMode: null,
+    serviceTier: null,
+    customEndpoint: false
+  });
+  if (battery.coAssessorLabel) {
+    rows.push({
+      key: 'assessor',
+      label: 'Assessors',
+      item: { kind: 'models', models: [grader(battery.assessorLabel, 'A'), grader(battery.coAssessorLabel, 'B')] }
+    });
+  } else {
+    rows.push({ key: 'assessor', label: 'Assessor', item: { kind: 'models', models: [grader(battery.assessorLabel)] } });
+  }
+
+  if (battery.verboseMode !== undefined) {
+    const style = battery.verboseMode ? 'detailed' : 'concise';
+    rows.push({
+      key: 'prompt',
+      label: 'Prompt',
+      item: { kind: 'prompt', name: 'Gameplay Help', tags: [style], summary: `Gameplay Help · ${style}` }
+    });
+  }
+
+  rows.push({ key: 'profile', label: 'Scoring profile', item: { kind: 'text', text: battery.scoringProfileName ?? 'Default' } });
+
+  rows.push({ key: 'started', label: 'Started', item: startedItem(battery.startedAtUtc) });
+
+  rows.push({
+    key: 'battery',
+    label: 'Battery',
+    item: {
+      kind: 'text',
+      text: `${battery.batteryName} · Revision ${battery.definitionRevision} · ${batterySchemeLabel(battery.weightingScheme)}`
+    }
+  });
+
+  const runs = battery.runsPerSuite === 1 ? '1 run per suite' : `${battery.runsPerSuite} runs per suite`;
+  rows.push({
+    key: 'suites',
+    label: 'Suites',
+    item: { kind: 'text', text: `${battery.completedSuiteCount} of ${battery.suiteCount} complete · ${runs}` }
+  });
 
   return rows;
 }

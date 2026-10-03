@@ -4,6 +4,7 @@ import { of } from 'rxjs';
 import { AdminBenchmarkComponent, RUN_HISTORY_VIEW_STORAGE_KEY } from './benchmark.component';
 import { AdminBenchmarkService } from '../../services/admin-benchmark.service';
 import { runDurationMs } from './benchmark-run-format';
+import { RUN_HISTORY_LIMIT } from './benchmark.models';
 import {
   AdminBenchmarkSpecContext, benchmarkSpecHandles, clearStoredState, createAdminBenchmarkFixture
 } from './benchmark.component.testing';
@@ -22,6 +23,11 @@ describe('AdminBenchmarkComponent', () => {
     ctx = await createAdminBenchmarkFixture();
     ({ component, fixture, benchmarkServiceMock } = ctx);
   });
+
+  /** The run ids of the Run History tab's cards, in order; these specs load no battery runs. */
+  function viewRunIds(): number[] {
+    return ctx.historyTab().historyView.map(item => item.kind === 'run' ? item.run.id : -item.battery.id);
+  }
 
   describe('Run History card list (data-table)', () => {
     function buildHistoryRun(overrides: Record<string, unknown> = {}): any {
@@ -74,10 +80,10 @@ describe('AdminBenchmarkComponent', () => {
 
       // historyView is a new sorted array; historyRuns itself — which instrumentChangeOf and
       // completedRunsOfSelectedSuite both read by position — must not move under it.
-      expect(ctx.historyTab().historyView.map(r => r.id)).toEqual([3, 2, 1]);
+      expect(viewRunIds()).toEqual([3, 2, 1]);
       ctx.workspace.historyTable.toggleSort('startedAtUtc');
       ctx.workspace.historyTable.toggleSort('startedAtUtc');
-      expect(ctx.historyTab().historyView.map(r => r.id)).toEqual([1, 2, 3]);
+      expect(viewRunIds()).toEqual([1, 2, 3]);
 
       const after = ctx.workspace.instrumentChangeOf(ctx.workspace.historyRuns[0]);
       expect(after).toEqual(before);
@@ -106,8 +112,8 @@ describe('AdminBenchmarkComponent', () => {
       // A facet change returns the list to one batch.
       ctx.historyTab().onHistoryFacetChange('suite', ['Suite 2']);
       expect(ctx.historyTab().historyView.length).toBe(10);
-      expect(ctx.historyTab().historyView.every(r => r.suiteName === 'Suite 2')).toBe(true);
-      expect(ctx.workspace.historyList.matching(ctx.workspace.historyRuns).length).toBe(12);
+      expect(ctx.historyTab().historyView.every(item => item.kind === 'run' && item.run.suiteName === 'Suite 2')).toBe(true);
+      expect(ctx.workspace.historyList.matching(ctx.workspace.historyItems).length).toBe(12);
 
       expect(ctx.workspace.historyRuns).toBe(runs);
       expect(ctx.workspace.historyRuns.length).toBe(25);
@@ -509,22 +515,22 @@ describe('AdminBenchmarkComponent', () => {
       expect(document.activeElement?.id).toBe('rh-list-title');
     });
 
-    it('should count the runs in the status line, and say when the newest 200 are all that is loaded', () => {
+    it('should count the runs in the status line, and say when the newest RUN_HISTORY_LIMIT are all that is loaded', () => {
       openHistoryWith(Array.from({ length: 12 }, (_, i) => buildHistoryRun({ id: 12 - i })));
       const status = fixture.nativeElement.querySelector('#rh-list-status') as HTMLElement;
       expect(status.getAttribute('role')).toBe('status');
       expect(historyStatus()).toBe('Showing 10 of 12 runs');
 
       benchmarkServiceMock.getRuns.mockClear();
-      benchmarkServiceMock.getRuns.mockReturnValue(of(Array.from({ length: 200 }, (_, i) => buildHistoryRun({ id: 200 - i }))));
+      benchmarkServiceMock.getRuns.mockReturnValue(of(Array.from({ length: RUN_HISTORY_LIMIT }, (_, i) => buildHistoryRun({ id: RUN_HISTORY_LIMIT - i }))));
       const refresh = fixture.nativeElement.querySelector('.rh-list-head .rh-refresh') as HTMLButtonElement;
       expect(refresh.classList.contains('btn-ghost')).toBe(true);
       refresh.click();
 
       expect(benchmarkServiceMock.getRuns).toHaveBeenCalledTimes(1);
 
-      expect(benchmarkServiceMock.getRuns).toHaveBeenCalledWith(undefined, 200);
-      expect(historyStatus()).toBe('Showing 10 of 200 runs · Only the newest 200 runs are loaded');
+      expect(benchmarkServiceMock.getRuns).toHaveBeenCalledWith(undefined, RUN_HISTORY_LIMIT);
+      expect(historyStatus()).toBe(`Showing 10 of ${RUN_HISTORY_LIMIT} runs · Only the newest ${RUN_HISTORY_LIMIT} runs are loaded`);
     });
 
     describe('list head', () => {
@@ -593,7 +599,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should tell no runs recorded apart from no runs matching the filters', () => {
       openHistoryWith([]);
       const panel = () => fixture.nativeElement.querySelector('#bm-panel-history') as HTMLElement;
-      expect(panel().textContent).toContain('No benchmark runs recorded yet.');
+      expect(panel().textContent).toContain('No benchmark runs or battery runs recorded yet.');
       expect(panel().querySelector('.rh-no-matches')).toBeNull();
       expect(panel().querySelector('.rh-filter-bar')).toBeNull();
 
@@ -603,7 +609,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const noMatches = panel().querySelector('.rh-no-matches') as HTMLElement;
       expect(noMatches.textContent).toContain('No runs match these filters.');
-      expect(panel().textContent).not.toContain('No benchmark runs recorded yet.');
+      expect(panel().textContent).not.toContain('No benchmark runs or battery runs recorded yet.');
       expect(panel().querySelector('.rh-card-list')).toBeNull();
 
       const clear = Array.from(noMatches.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Clear all filters') as HTMLButtonElement;
@@ -886,7 +892,7 @@ describe('AdminBenchmarkComponent', () => {
 
       ctx.workspace.historyTable.toggleSort('durationMs');
 
-      expect(ctx.historyTab().historyView.map(r => r.id)).toEqual([2, 1, 3]);
+      expect(viewRunIds()).toEqual([2, 1, 3]);
     });
   });
 });

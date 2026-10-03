@@ -29,6 +29,7 @@ export {
   reportJobPhaseText
 } from './download-center-panel.component';
 export type {
+  DownloadCenterBatteryContext,
   DownloadCenterChartActions,
   DownloadCenterContext,
   DownloadCenterDocumentsContext,
@@ -51,8 +52,8 @@ let nextInstanceId = 0;
 /**
  * The Download Center dialog: its `<dialog>`, header and close button around
  * `app-download-center-panel`, which holds the packages, the documents table and the download.
- * Opened by the run report's **Downloads** and by the Model Comparison launcher's **Open Download
- * Center**; neither lends chart actions.
+ * Opened by the run report's and the battery run report's **Downloads** and by the Model Comparison
+ * launcher's **Open Download Center**; none lends chart actions.
  *
  * The panel's nested dialogs stop their own close and cancel events, so this dialog's `close` event
  * is always its own.
@@ -86,7 +87,7 @@ export class BenchmarkDownloadCenterComponent implements OnInit {
     ensureOverlayPolyfills();
   }
 
-  /** Shows the dialog for a run, chosen documents or a library, at the last package and paper used. */
+  /** Shows the dialog for a run, a battery run, chosen documents or a library, at the last package and paper used. */
   open(context: DownloadCenterContext): void {
     this.context = context;
     this.panel.load(context);
@@ -132,6 +133,11 @@ export class BenchmarkDownloadCenterComponent implements OnInit {
     }
     if (context.kind === 'run') {
       return `Run #${context.run.id} · ${context.run.suiteName} · ${context.run.modelLabel}`;
+    }
+    if (context.kind === 'battery') {
+      return context.label
+        ? `Battery run #${context.batteryRunId} · ${context.label}`
+        : `Battery run #${context.batteryRunId}`;
     }
     if (context.subtitle) {
       return context.subtitle;

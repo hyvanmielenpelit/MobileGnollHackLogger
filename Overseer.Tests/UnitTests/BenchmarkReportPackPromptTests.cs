@@ -884,6 +884,102 @@ public class BenchmarkReportPackPromptTests
         Assert.DoesNotContain("both graders agreed", Build(audience).SystemPrompt, StringComparison.OrdinalIgnoreCase);
     }
 
+    // The stand-alone run prompt, pinned ---------------------------------------------------------
+
+    private const string PromptSeparator = "\n===== USER MESSAGE =====\n";
+
+    /// <summary>
+    /// The run-completion documents' writer prompt, system prompt and user message, against a golden
+    /// file of the stand-alone fixture; with <c>OVERSEER_UPDATE_GOLDENS=1</c> the file is written
+    /// instead. The battery subject must leave it byte for byte as it is, and the stored prompt hash
+    /// must be the hash of the pinned system prompt.
+    /// </summary>
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, "prompt_exec_standalone_run.txt")]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, "prompt_technical_standalone_run.txt")]
+    public void TheStandaloneRunPrompt_IsPinned(BenchmarkReportAudience audience, string file)
+    {
+        var prompt = BenchmarkReportPackPrompt.Build(audience, BenchmarkReportPackFixture.StandaloneSheet(), BenchmarkReportPackFixture.Content());
+        string text = prompt.SystemPrompt + PromptSeparator + prompt.UserMessage;
+
+        if (BenchmarkReportPackFixture.UpdateGoldens)
+        {
+            BenchmarkReportPackFixture.WriteGolden(file, text);
+            return;
+        }
+
+        string golden = BenchmarkReportPackFixture.ReadGolden(file);
+        Assert.Equal(golden, text);
+
+        string system = golden[..golden.IndexOf(PromptSeparator, StringComparison.Ordinal)];
+        Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(system))), BenchmarkReportPackPrompt.PromptSha256(audience));
+    }
+
+    // A battery subject -------------------------------------------------------------------------
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void ABatterySubject_KeepsTheAudiencesSystemPrompt(BenchmarkReportAudience audience)
+    {
+        var battery = BenchmarkReportPackPrompt.Build(audience, BatteryReportFixture.Sheet(), BatteryReportFixture.Content());
+        var run = BenchmarkReportPackPrompt.Build(audience, BenchmarkReportPackFixture.StandaloneSheet(), BenchmarkReportPackFixture.Content());
+
+        Assert.Equal(run.SystemPrompt, battery.SystemPrompt);
+        Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(audience),
+            Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(battery.SystemPrompt))));
+    }
+
+    [Fact]
+    public void ABatteryUserMessage_ExplainsTheComposite_AndHowToReferToAQuestion()
+    {
+        string message = BenchmarkReportPackPrompt.Build(
+            BenchmarkReportAudience.TechnicalReport, BatteryReportFixture.Sheet(), BatteryReportFixture.Content()).UserMessage;
+
+        Assert.Contains("Kind: Battery\nRuns: 4\n", message);
+        Assert.Contains("\nBATTERY\nName: Core knowledge (revision 2)\nSuites: 2; runs per suite: 2; member runs: 4\nWeighting scheme: Questions and difficulty\n", message);
+        Assert.Contains("Never compare it with a single suite's Intelligence Index", message);
+        Assert.Contains("- S1: Item lore, 2 questions\n- S2: Hazards, 2 questions\n", message);
+        Assert.Contains("refer to a question as S<suite>-Q<n>, for example S2-Q7", message);
+        Assert.Contains("give the question's number shown after \"number\" in its QUESTIONS row", message);
+        Assert.Contains("(no peers: this is a stand-alone battery report", message);
+        Assert.True(message.IndexOf("BATTERY\n", StringComparison.Ordinal) < message.IndexOf("GRADERS", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ABatteryUserMessage_GivesEveryQuestionARow_AndTheDetailOnlyWhereItWasKept()
+    {
+        string message = BenchmarkReportPackPrompt.Build(
+            BenchmarkReportAudience.TechnicalReport, BatteryReportFixture.Sheet(), BatteryReportFixture.Content()).UserMessage;
+
+        Assert.Contains("[S1-Q1] number 1 | band: Simple | mean score: 90 | scored in 2 runs | critical errors: 0 | refuted answer sentences: 0 | tool calls: 2 | in detail\n"
+            + "  Question as asked:\n    What happens if I throw a gem at a co-aligned unicorn?\n", message);
+        Assert.Contains("[S1-Q2] number 2 | band: Intermediate | mean score: 72 | scored in 2 runs | critical errors: 0 | refuted answer sentences: 0 | tool calls: 3\n"
+            + "[S2-Q1] number 3 | band: Intermediate | mean score: 25 | scored in 2 runs | critical errors: 1 | refuted answer sentences: 1 | tool calls: 5 | in detail\n", message);
+        Assert.Contains("  Answer excerpt (the median-scoring round, run 21, cut):\n", message);
+        Assert.Contains("  Grader comments (run 12):\n", message);
+        Assert.DoesNotContain("How long is the prayer timeout", message);
+        Assert.DoesNotContain("[Q1]", message);
+        Assert.Contains("QUESTIONS NEEDING A NOTE: S2-Q1\n", message);
+        Assert.Contains("QUESTIONS NEEDING A TOPIC: S1-Q1, S2-Q1\n", message);
+        Assert.Contains("FINDING ROWS (cite as evidence by id)\n(none)\n", message);
+    }
+
+    [Fact]
+    public void ABatteryQuestionsDetailLength_IsWhatItAddsToThePrompt()
+    {
+        var sheet = BatteryReportFixture.Sheet();
+        var content = BatteryReportFixture.Content();
+        string with = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, content).UserMessage;
+        int length = BenchmarkReportPackPrompt.DetailBlockLength(sheet, content, 1);
+
+        sheet.Questions.Single(q => q.Number == 1).Detailed = false;
+        string without = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, content).UserMessage;
+
+        Assert.True(length > 0);
+        Assert.Equal(with.Length - without.Length, length);
+        Assert.Equal(0, BenchmarkReportPackPrompt.DetailBlockLength(sheet, content, 2));
+    }
+
     // Repair ------------------------------------------------------------------------------------
 
     [Fact]

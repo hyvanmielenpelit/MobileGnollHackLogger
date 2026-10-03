@@ -13,6 +13,7 @@ import {
   BenchmarkRunGroupTierPreviewDto,
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
+import { RUN_HISTORY_LIMIT } from '../benchmark.models';
 
 /**
  * The URL the group report download targets.
@@ -285,7 +286,7 @@ describe('MultiRunComponent', () => {
     open();
 
     expect(serviceMock.getRunGroups).toHaveBeenCalled();
-    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, 200);
+    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, RUN_HISTORY_LIMIT);
     expect(component.groups.length).toBe(1);
   });
 
@@ -1067,9 +1068,10 @@ describe('MultiRunComponent', () => {
     expect(checkbox.getAttribute('aria-label')).toBe('Include run 41 in this group');
   });
 
-  it('should request up to 200 runs rather than 50', () => {
+  it('should request up to the run history limit of 1000 runs', () => {
     open();
-    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, 200);
+    expect(RUN_HISTORY_LIMIT).toBe(1000);
+    expect(serviceMock.getRuns).toHaveBeenCalledWith(5, RUN_HISTORY_LIMIT);
   });
 
   it('should keep a run selected across a page change and a filter change, and still pass it to createGroup', () => {

@@ -18,6 +18,33 @@ public sealed record BenchmarkRunLimits(
     int RunsInLast24Hours,
     int RemainingDailyHeadroom);
 
+/// <summary>Which limit refused a spend.</summary>
+public enum BenchmarkSpendDenialKind
+{
+    /// <summary>Nothing refused the spend.</summary>
+    None = 0,
+
+    /// <summary>The rolling 60-minute run cap.</summary>
+    HourlyCap = 1,
+
+    /// <summary>The rolling 24-hour run cap.</summary>
+    DailyCap = 2,
+
+    /// <summary>A refusal that the run-cap windows moving on does not lift.</summary>
+    Other = 3
+}
+
+/// <summary>The spend guard's verdict: allowed, or refused with a reason and the kind of limit that refused it.</summary>
+public sealed record BenchmarkSpendCheck(bool Allowed, string? DenialReason, BenchmarkSpendDenialKind DenialKind)
+{
+    public static BenchmarkSpendCheck Allow { get; } = new(true, null, BenchmarkSpendDenialKind.None);
+
+    public static BenchmarkSpendCheck Deny(BenchmarkSpendDenialKind kind, string reason) => new(false, reason, kind);
+
+    /// <summary>Refused by the hourly or the daily run cap, which waiting on the rolling window lifts.</summary>
+    public bool IsCapDenial => DenialKind is BenchmarkSpendDenialKind.HourlyCap or BenchmarkSpendDenialKind.DailyCap;
+}
+
 public class BenchmarkComplianceGuard
 {
     private const string DefaultPurposeStatement =
@@ -38,14 +65,14 @@ public class BenchmarkComplianceGuard
         _configuration.GetValue<int>("Benchmark:Compliance:MaxQuestionsPerSuite", 50);
 
     public int MaxRunsPerDay =>
-        _configuration.GetValue<int>("Benchmark:Compliance:MaxRunsPerDay", 20);
+        _configuration.GetValue<int>("Benchmark:Compliance:MaxRunsPerDay", 120);
 
     public int MaxRunsPerHour =>
-        _configuration.GetValue<int>("Benchmark:Compliance:MaxRunsPerHour", 5);
+        _configuration.GetValue<int>("Benchmark:Compliance:MaxRunsPerHour", 30);
 
     /// <summary>The most launches one battery run may plan (suites × runs per suite).</summary>
     public int MaxBatteryMembers =>
-        _configuration.GetValue<int>("Benchmark:Battery:MaxMembers", 60);
+        _configuration.GetValue<int>("Benchmark:Battery:MaxMembers", 120);
 
     public string GetPurposeStatement()
     {
@@ -90,6 +117,16 @@ public class BenchmarkComplianceGuard
 
     public async Task<(bool Allowed, string? DenialReason)> CanSpendAsync(ApplicationDbContext? db = null, CancellationToken ct = default)
     {
+        var check = await CheckSpendAsync(db, ct);
+        return (check.Allowed, check.DenialReason);
+    }
+
+    /// <summary>
+    /// The verdict <see cref="CanSpendAsync"/> returns, with the kind of limit that refused the spend,
+    /// so a caller that may wait on the run cap can tell a cap denial from any other.
+    /// </summary>
+    public virtual async Task<BenchmarkSpendCheck> CheckSpendAsync(ApplicationDbContext? db = null, CancellationToken ct = default)
+    {
         var dbContext = db ?? _dbContext;
         var now = DateTime.UtcNow;
 
@@ -99,7 +136,9 @@ public class BenchmarkComplianceGuard
 
         if (hourlyCount >= MaxRunsPerHour)
         {
-            return (false, $"Hourly benchmark run cap reached ({MaxRunsPerHour} runs/hour). Please try again later or adjust the cap in configuration.");
+            return BenchmarkSpendCheck.Deny(
+                BenchmarkSpendDenialKind.HourlyCap,
+                $"Hourly benchmark run cap reached ({MaxRunsPerHour} runs/hour). Please try again later or adjust the cap in configuration.");
         }
 
         var dayCutoff = now.AddHours(-24);
@@ -108,10 +147,12 @@ public class BenchmarkComplianceGuard
 
         if (dailyCount >= MaxRunsPerDay)
         {
-            return (false, $"Daily benchmark run cap reached ({MaxRunsPerDay} runs/day). Please try again later or adjust the cap in configuration.");
+            return BenchmarkSpendCheck.Deny(
+                BenchmarkSpendDenialKind.DailyCap,
+                $"Daily benchmark run cap reached ({MaxRunsPerDay} runs/day). Please try again later or adjust the cap in configuration.");
         }
 
-        return (true, null);
+        return BenchmarkSpendCheck.Allow;
     }
 
     public async Task<(bool Allowed, string? DenialReason)> CanAddQuestionsAsync(long suiteId, int countToAdd = 1, ApplicationDbContext? db = null, CancellationToken ct = default)

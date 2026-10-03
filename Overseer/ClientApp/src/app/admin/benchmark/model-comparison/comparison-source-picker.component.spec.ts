@@ -2,12 +2,15 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 
 import {
+  BATTERY_SECTION_TITLE,
   ComparisonSourcePickerComponent,
   GROUP_SECTION_TITLE,
   ModelComparisonSelection,
-  RUN_SECTION_TITLE
+  RUN_SECTION_TITLE,
+  SOURCE_MIX_NOTE
 } from './comparison-source-picker.component';
 import type {
+  BenchmarkBatteryRunDto,
   BenchmarkRunGroupDto,
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
@@ -109,6 +112,44 @@ describe('ComparisonSourcePickerComponent', () => {
 
   function runs(count: number): BenchmarkRunSummaryDto[] {
     return Array.from({ length: count }, (_unused, index) => buildRun({ id: index + 1 }));
+  }
+
+  /** A finished battery run with a complete, current analysis: one a comparison may include. */
+  function buildBattery(overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkBatteryRunDto {
+    const id = overrides.id ?? 4;
+    return {
+      id,
+      batteryId: 2,
+      batteryName: 'Core Battery',
+      definitionRevision: 3,
+      definitionSha256: 'd'.repeat(64),
+      weightingScheme: 'Equal',
+      suites: [],
+      suiteCount: 3,
+      runsPerSuite: 2,
+      requestedMemberCount: 6,
+      completedMemberCount: 6,
+      failedMemberCount: 0,
+      completedSuiteCount: 3,
+      status: 'Completed',
+      allowCapWait: false,
+      resumable: false,
+      isDriving: false,
+      startedAtUtc: '2026-10-01T10:00:00Z',
+      completedAtUtc: '2026-10-01T14:00:00Z',
+      testedModelLabel: `Battery model ${id}`,
+      testedProvider: 'Anthropic',
+      slots: [],
+      members: [],
+      latestAnalysisId: 30 + id,
+      latestAnalysisAtUtc: '2026-10-01T15:00:00Z',
+      latestAnalysisComplete: true,
+      comparabilityClassSha256: 'c1a55'.repeat(13),
+      overallIndex: 71.25,
+      analysisStale: false,
+      analysisHasExcludedMembers: false,
+      ...overrides
+    } as BenchmarkBatteryRunDto;
   }
 
   function buildIndexEntry(
@@ -233,15 +274,19 @@ describe('ComparisonSourcePickerComponent', () => {
   function render(inputs: {
     runs?: BenchmarkRunSummaryDto[];
     groups?: BenchmarkRunGroupDto[];
+    batteryRuns?: BenchmarkBatteryRunDto[];
     selectedRunIds?: number[];
     selectedGroupIds?: number[];
+    selectedBatteryRunIds?: number[];
     comparabilityIndex?: BenchmarkComparabilityIndexDto | null;
     indexLoading?: boolean;
   } = {}): void {
     fixture.componentRef.setInput('runs', inputs.runs ?? runs(3));
     fixture.componentRef.setInput('groups', inputs.groups ?? [buildGroup()]);
+    fixture.componentRef.setInput('batteryRuns', inputs.batteryRuns ?? [buildBattery()]);
     fixture.componentRef.setInput('selectedRunIds', inputs.selectedRunIds ?? []);
     fixture.componentRef.setInput('selectedGroupIds', inputs.selectedGroupIds ?? []);
+    fixture.componentRef.setInput('selectedBatteryRunIds', inputs.selectedBatteryRunIds ?? []);
     fixture.componentRef.setInput('comparabilityIndex', inputs.comparabilityIndex ?? null);
     fixture.componentRef.setInput('indexLoading', inputs.indexLoading ?? false);
     fixture.detectChanges();
@@ -1213,12 +1258,17 @@ describe('ComparisonSourcePickerComponent', () => {
         .map(element => element.nativeElement as HTMLButtonElement);
     }
 
-    it('titles both kind tabs from the exported constants', () => {
+    it('titles the three kind tabs from the exported constants', () => {
       render();
-      const [runsTab, groupsTab] = tabButtons();
+      const buttons = tabButtons();
+      expect(buttons.length).toBe(3);
+      const [runsTab, groupsTab, batteriesTab] = buttons;
 
       expect(runsTab.textContent).toContain(RUN_SECTION_TITLE);
       expect(groupsTab.textContent).toContain(GROUP_SECTION_TITLE);
+      expect(batteriesTab.textContent).toContain(BATTERY_SECTION_TITLE);
+      expect(batteriesTab.id).toBe('csp-src-tab-batteries');
+      expect(batteriesTab.getAttribute('aria-controls')).toBe('csp-src-panel-batteries');
     });
 
     it("renders only the active kind's table, and keeps each table's own page across a tab switch", () => {
@@ -1264,6 +1314,11 @@ describe('ComparisonSourcePickerComponent', () => {
       fixture.detectChanges();
 
       expectPagerPair();
+
+      tabButtons()[2].click();
+      fixture.detectChanges();
+
+      expectPagerPair();
     });
 
     it('moves between the kind tabs with the arrow keys, wrapping, and focus follows', () => {
@@ -1276,17 +1331,26 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(component.activeSourceTab).toBe('groups');
       expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#csp-src-tab-groups'));
 
-      // Two tabs: a second ArrowRight wraps back to the first.
       component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 1);
+      fixture.detectChanges();
+      expect(component.activeSourceTab).toBe('batteries');
+      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#csp-src-tab-batteries'));
+
+      // Three tabs: ArrowRight on the last wraps back to the first.
+      component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 2);
       fixture.detectChanges();
       expect(component.activeSourceTab).toBe('runs');
       expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#csp-src-tab-runs'));
 
+      component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
+      fixture.detectChanges();
+      expect(component.activeSourceTab).toBe('batteries');
+
       component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
       fixture.detectChanges();
-      expect(component.activeSourceTab).toBe('groups');
+      expect(component.activeSourceTab).toBe('batteries');
 
-      component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 1);
+      component.onSourceTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 2);
       fixture.detectChanges();
       expect(component.activeSourceTab).toBe('runs');
     });
@@ -1296,9 +1360,10 @@ describe('ComparisonSourcePickerComponent', () => {
       const buttons = tabButtons();
 
       expect(buttons.filter(b => b.getAttribute('tabindex') === '0').length).toBe(1);
-      expect(buttons.filter(b => b.getAttribute('tabindex') === '-1').length).toBe(1);
+      expect(buttons.filter(b => b.getAttribute('tabindex') === '-1').length).toBe(2);
       expect(buttons.find(b => b.id === 'csp-src-tab-runs')?.getAttribute('aria-selected')).toBe('true');
       expect(buttons.find(b => b.id === 'csp-src-tab-groups')?.getAttribute('aria-selected')).toBe('false');
+      expect(buttons.find(b => b.id === 'csp-src-tab-batteries')?.getAttribute('aria-selected')).toBe('false');
     });
 
     it('shows the selected count on each tab, only where it has a selection', () => {
@@ -1326,6 +1391,176 @@ describe('ComparisonSourcePickerComponent', () => {
       component.onConditionDialogClose(new Event('close'));
 
       expect(document.activeElement?.id).toBe('csp-src-tab-runs');
+    });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Battery results
+  // -------------------------------------------------------------------------------------------
+
+  describe('battery results', () => {
+    function showBatteries(): void {
+      component.selectSourceTab('batteries');
+      fixture.detectChanges();
+    }
+
+    const box = (selector: string): HTMLInputElement =>
+      fixture.nativeElement.querySelector(selector) as HTMLInputElement;
+
+    it('lists battery results in their own table, with pagers and no Condition column', () => {
+      render({
+        batteryRuns: [
+          buildBattery({ id: 4 }),
+          buildBattery({ id: 5, analysisStale: true }),
+          buildBattery({ id: 6, latestAnalysisComplete: false, comparabilityClassSha256: null })
+        ]
+      });
+      showBatteries();
+
+      const panel = fixture.nativeElement.querySelector('#csp-src-panel-batteries') as HTMLElement;
+      expect(panel.getAttribute('aria-labelledby')).toBe('csp-src-tab-batteries');
+      const headers = Array.from(panel.querySelectorAll('thead .gh-th-label'))
+        .map(label => (label.textContent ?? '').trim());
+      expect(headers).toEqual(['Compare', 'ID', 'Battery', 'Tested Model', 'Status', 'Class', 'Overall Index', 'R', 'Analyzed']);
+      expect(panel.querySelectorAll('app-table-pager').length).toBe(2);
+
+      // Newest first by id; the class is a short hash, or a tag while the analysis cannot be used.
+      const rows = Array.from(panel.querySelectorAll('tbody tr')) as HTMLElement[];
+      expect(rows.map(row => row.querySelector('.col-id')?.textContent?.trim())).toEqual(['#6', '#5', '#4']);
+      expect(rows[0].textContent).toContain('Incomplete');
+      expect(rows[1].querySelector('.gh-tag-changed')?.textContent?.trim()).toBe('Stale');
+      expect(rows[2].querySelector('.csp-class-hash')?.textContent?.trim()).toBe('c1a55'.repeat(13).slice(0, 12));
+      expect(rows[2].textContent).toContain('Core Battery');
+      expect(rows[2].textContent).toContain('rev 3');
+      expect(rows[2].textContent).toContain('71.3');
+      expect(box('#csp-battery-4').getAttribute('aria-label')).toBe('Include battery run 4 in the comparison');
+    });
+
+    it('offers a battery result the server would exclude disabled, with the reason as its name', () => {
+      render({
+        batteryRuns: [
+          buildBattery({ id: 4 }),
+          buildBattery({ id: 5, status: 'Running' }),
+          buildBattery({ id: 6, latestAnalysisId: null, latestAnalysisAtUtc: null }),
+          buildBattery({ id: 7, latestAnalysisComplete: false }),
+          buildBattery({ id: 8, analysisStale: true })
+        ]
+      });
+      showBatteries();
+
+      expect(box('#csp-battery-4').disabled).toBe(false);
+      expect(box('#csp-battery-5').disabled).toBe(true);
+      expect(box('#csp-battery-5').getAttribute('aria-label')).toContain('only a finished battery run can be compared');
+      expect(box('#csp-battery-6').getAttribute('aria-label')).toContain('has no analysis');
+      expect(box('#csp-battery-7').getAttribute('aria-label')).toContain('incomplete analysis');
+      expect(box('#csp-battery-8').getAttribute('aria-label')).toContain('stale analysis');
+
+      let emitted = 0;
+      component.selectionChange.subscribe(() => emitted++);
+      component.toggleBattery(component.batteryRuns[1]);
+      expect(emitted).toBe(0);
+    });
+
+    it('emits battery results with the rest of the selection, and counts them on the tab', () => {
+      render({ batteryRuns: [buildBattery({ id: 4 }), buildBattery({ id: 9 })], selectedBatteryRunIds: [4] });
+      const emitted: ModelComparisonSelection[] = [];
+      component.selectionChange.subscribe(value => emitted.push(value));
+
+      box('#csp-battery-9').click();
+
+      expect(emitted).toEqual([{ runIds: [], groupIds: [], batteryRunIds: [4, 9] }]);
+      const badge = fixture.nativeElement.querySelector('#csp-src-tab-batteries .csp-tab-selected') as HTMLElement;
+      expect(badge.textContent?.trim()).toBe('1 selected');
+    });
+
+    it('filters by battery on the exact name', () => {
+      render({
+        batteryRuns: [
+          buildBattery({ id: 4, batteryName: 'Core' }),
+          buildBattery({ id: 5, batteryName: 'Core Plus' })
+        ]
+      });
+      showBatteries();
+
+      const select = fixture.nativeElement.querySelector('#csp-f-battery-name') as HTMLSelectElement;
+      expect(Array.from(select.options).map(option => option.textContent?.trim())).toEqual(['All batteries', 'Core', 'Core Plus']);
+      component.batteryTable.setFilter('batteryName', 'Core');
+      fixture.detectChanges();
+
+      expect(component.batteryTable.view(component.batteryRuns).map(battery => battery.id)).toEqual([4]);
+    });
+
+    it('keeps battery results apart from runs and groups, saying why in a visible line', () => {
+      render({ batteryRuns: [buildBattery({ id: 4 })], selectedRunIds: [1] });
+      showBatteries();
+      const emitted: ModelComparisonSelection[] = [];
+      component.selectionChange.subscribe(value => emitted.push(value));
+
+      const note = fixture.nativeElement.querySelector('#csp-mix-note-batteries') as HTMLElement;
+      expect(note.textContent?.trim()).toBe(SOURCE_MIX_NOTE);
+      const battery = box('#csp-battery-4');
+      // aria-disabled, not disabled: it stays focusable, and its description is the note.
+      expect(battery.disabled).toBe(false);
+      expect(battery.getAttribute('aria-disabled')).toBe('true');
+      expect(battery.getAttribute('aria-describedby')).toBe('csp-mix-note-batteries');
+
+      battery.click();
+      expect(battery.checked).toBe(false);
+      expect(emitted).toEqual([]);
+    });
+
+    it('keeps runs and groups apart from battery results the other way round', () => {
+      render({ batteryRuns: [buildBattery({ id: 4 })], selectedBatteryRunIds: [4] });
+      component.selectSourceTab('runs');
+      fixture.detectChanges();
+      const emitted: ModelComparisonSelection[] = [];
+      component.selectionChange.subscribe(value => emitted.push(value));
+
+      expect((fixture.nativeElement.querySelector('#csp-mix-note-runs') as HTMLElement).textContent?.trim())
+        .toBe(SOURCE_MIX_NOTE);
+      const run = box('#csp-run-1');
+      expect(run.getAttribute('aria-disabled')).toBe('true');
+      expect(run.getAttribute('aria-describedby')).toBe('csp-mix-note-runs');
+      run.click();
+      expect(run.checked).toBe(false);
+
+      component.selectSourceTab('groups');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('#csp-mix-note-groups')).toBeTruthy();
+      const group = box('#csp-group-1');
+      expect(group.getAttribute('aria-disabled')).toBe('true');
+      group.click();
+
+      expect(emitted).toEqual([]);
+    });
+
+    it('shows no mixing line while nothing blocks the kind', () => {
+      render({ batteryRuns: [buildBattery({ id: 4 })] });
+      expect(fixture.nativeElement.querySelector('.csp-mix-note')).toBeNull();
+      expect(box('#csp-run-1').getAttribute('aria-disabled')).toBeNull();
+      showBatteries();
+      expect(fixture.nativeElement.querySelector('.csp-mix-note')).toBeNull();
+      expect(box('#csp-battery-4').getAttribute('aria-disabled')).toBeNull();
+    });
+
+    it('opens on the Battery results tab when battery results arrive as the selection', () => {
+      render({ batteryRuns: [buildBattery({ id: 4 })] });
+      expect(component.activeSourceTab).toBe('runs');
+
+      fixture.componentRef.setInput('selectedBatteryRunIds', [4]);
+      fixture.detectChanges();
+
+      expect(component.activeSourceTab).toBe('batteries');
+      expect(fixture.nativeElement.querySelector('#csp-src-panel-batteries')).toBeTruthy();
+    });
+
+    it('says the suite scope does not apply to battery results', () => {
+      render();
+      const select = fixture.nativeElement.querySelector('#csp-suite') as HTMLSelectElement;
+      const hint = fixture.nativeElement.querySelector('#csp-suite-hint') as HTMLElement;
+
+      expect(select.getAttribute('aria-describedby')).toBe('csp-suite-hint');
+      expect(hint.textContent?.trim()).toBe('Does not apply to battery results');
     });
   });
 });

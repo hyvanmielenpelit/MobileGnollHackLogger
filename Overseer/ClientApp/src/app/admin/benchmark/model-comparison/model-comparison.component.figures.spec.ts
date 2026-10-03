@@ -1,5 +1,6 @@
 import type { Mock } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpTestingController } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
 import { BaseChartDirective } from 'ng2-charts';
 import {
@@ -469,22 +470,66 @@ describe('ModelComparisonComponent', () => {
     }
   });
 
-  it('offers the four views as tabs with icons and the full tab contract', () => {
+  it('offers the five views as tabs with icons and the full tab contract', () => {
     render(buildDto(comparableSet(3)), 2);
 
     // Each visible label is the whole accessible name, so no aria-label repeats it.
     const tabs = fixture.debugElement.queryAll(By.css('.mc-fig-tabs [role="tab"]'))
       .map(tab => tab.nativeElement as HTMLElement);
-    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual([null, null, null, null]);
+    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual([null, null, null, null, null]);
 
-    expectTabContract('.mc-fig-tabs', 'Comparison views', 'mc-fig-tab-', 'mc-fig-panel-', ['All charts', 'Single chart', 'Interactive table', 'Table preview'], () => component.figureTab, ['all', 'single', 'table', 'tablePreview']);
-    expect(component.previewActive).toBe(true);
-    expect(fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview'))).not.toBeNull();
+    expectTabContract('.mc-fig-tabs', 'Comparison views', 'mc-fig-tab-', 'mc-fig-panel-', ['All charts', 'Single chart', 'Interactive table', 'Table preview', 'Paired tests'], () => component.figureTab, ['all', 'single', 'table', 'tablePreview', 'paired']);
+    const paired = fixture.debugElement.query(By.css('#mc-fig-panel-paired')).nativeElement as HTMLElement;
+    expect(paired.hidden).toBe(false);
+    expect(paired.getAttribute('role')).toBe('tabpanel');
+    expect(paired.getAttribute('aria-labelledby')).toBe('mc-fig-tab-paired');
+    expect(component.previewActive).toBe(false);
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview'))).toBeNull();
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-all'))).toBeNull();
     expect(fixture.debugElement.query(By.css('#mc-fig-panel-table'))).toBeNull();
     // Every tab carries a glyph, or none would.
     const glyphs = fixture.debugElement.queryAll(By.css('.mc-fig-tabs [role="tab"] svg.btn-icon'));
-    expect(glyphs.length).toBe(4);
+    expect(glyphs.length).toBe(5);
+  });
+
+  it('refuses the Paired tests tab, with its reason, while fewer than two entries are comparable', () => {
+    render(buildDto([comparableSet(1)[0], buildExcludedEntry('run:9', ['ScoringMethodVersion'])]), 2);
+
+    const tab = fixture.debugElement.query(By.css('#mc-fig-tab-paired')).nativeElement as HTMLButtonElement;
+    expect(tab.getAttribute('aria-disabled')).toBe('true');
+    expect(tab.querySelector('.visually-hidden')?.textContent).toContain('comparing needs two comparable models');
+    expect(tab.getAttribute('aria-describedby')).toBeNull();
+
+    tab.click();
+    fixture.detectChanges();
+    expect(component.figureTab).not.toBe('paired');
+    expect(fixture.debugElement.query(By.css('#mc-fig-panel-paired'))).toBeNull();
+  });
+
+  it('shows only Data beside the paired tests, keeps the chosen tab for the next view, and sends the highlighted reference', () => {
+    render(buildDto(comparableSet(3)), 2);
+    openSidebarTab('download');
+    component.toggleEmphasis('run:2');
+    refresh();
+
+    (fixture.debugElement.query(By.css('#mc-fig-tab-paired')).nativeElement as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(fixture.debugElement.queryAll(By.css('.mc-fig-sidebar-tabs [role="tab"]'))
+      .map(tab => (tab.nativeElement as HTMLElement).textContent!.trim())).toEqual(['Data']);
+    expect(textOf('#mc-side-panel-data legend')).toContain('Models');
+    expect(textOf('#mc-side-panel-data legend')).toContain('Prices');
+    expect(textOf('#mc-side-panel-data legend')).not.toContain('Model order');
+    expect(textOf('#mc-side-panel-data legend')).not.toContain('Measures');
+    expect(fixture.debugElement.query(By.css('#mc-emph-run-2'))).not.toBeNull();
+
+    const http = TestBed.inject(HttpTestingController);
+    const request = http.expectOne(req => req.url.endsWith('/model-comparison/paired'));
+    expect(request.request.body).toEqual(expect.objectContaining({ runIds: [1, 2, 3], mode: 'Reference', referenceKey: 'run:2' }));
+
+    // The paired view stays mounted, hidden, so its state survives a trip to another view.
+    showView('all');
+    expect(component.sidebarTab).toBe('download');
+    expect((fixture.debugElement.query(By.css('#mc-fig-panel-paired')).nativeElement as HTMLElement).hidden).toBe(true);
   });
 
   it('reads a stored Charts or Preview view as All or Single, and keeps a stored table view', () => {
@@ -500,6 +545,7 @@ describe('ModelComparisonComponent', () => {
     expect(storedView('gallery')).toBe('all');
     expect(storedView('table')).toBe('table');
     expect(storedView('tablePreview')).toBe('tablePreview');
+    expect(storedView('paired')).toBe('paired');
   });
 
   it('shows the bar set on a panel, the trade-off set on a scatter and the profile set on the profile', () => {

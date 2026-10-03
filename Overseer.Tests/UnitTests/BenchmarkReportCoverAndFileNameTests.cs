@@ -141,9 +141,70 @@ public class BenchmarkReportCoverAndFileNameTests
         Assert.DoesNotContain(info.Facts, f => f.Label == "Compared with");
     }
 
+    [Theory]
+    [InlineData(BenchmarkReportPeerNaming.Named)]
+    [InlineData(BenchmarkReportPeerNaming.Anonymized)]
+    public void ABatteryCover_NamesTheBatteryRun_ItsSuitesAndItsRounds(BenchmarkReportPeerNaming naming)
+    {
+        var document = BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport);
+
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, Options(naming, BenchmarkReportDisclosure.Full), BenchmarkPdfPaper.A4);
+
+        Assert.Equal("Battery run #9 — Core knowledge (2 suites, 2 runs per suite)", info.SubjectLine);
+        Assert.Equal(
+            new[] { "Document ID", "Disclosure", "Peers", "Battery", "Questions", "Battery run", "Member runs", "Created (UTC)", "Generated format", "Writer", "Provenance" },
+            info.Facts.Select(f => f.Label));
+        Assert.Equal("Core knowledge, revision 2 (2 suites)", Fact(info, "Battery"));
+        Assert.Equal("#9", Fact(info, "Battery run"));
+        Assert.Equal("4", Fact(info, "Member runs"));
+        Assert.Equal("none (stand-alone report)", Fact(info, "Peers"));
+    }
+
+    [Fact]
+    public void ABatteryCoverWithAPeer_SaysItIsAComparison()
+    {
+        var document = BatteryReportFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = BatteryReportFixture.Sheet();
+        sheet.Peers.Add(new BenchmarkReportPeer { Letter = "A", EntryKey = "battery:11", Label = "Grok 5", DisplayName = "Grok 5", Provider = "xAI", ModelId = "grok-5" });
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named), BenchmarkPdfPaper.A4);
+
+        Assert.Equal("Battery run #9 — Core knowledge (2 suites, 2 runs per suite) · compared with 1 model", info.SubjectLine);
+        Assert.Equal("Grok 5 (1 model)", Fact(info, "Compared with"));
+        Assert.DoesNotContain(info.Facts, f => f.Label == "Suite");
+    }
+
     // ---------------------------------------------------------------------------------------------
     // The file name
     // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void ABatteryDocumentsName_StartsWithTheBatteryRunNumber()
+    {
+        var document = BatteryReportFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        var options = Options(BenchmarkReportPeerNaming.Named, BenchmarkReportDisclosure.Full);
+
+        string name = BenchmarkPdfFileNames.ForReportDocument(document, options);
+
+        Assert.Equal("battery-run-9_" + BenchmarkPdfFileNames.SafeFileName(document.Title) + "_full_named_INTERNAL.pdf", name);
+        Assert.Equal(name[..^".pdf".Length] + ".docx", BenchmarkPdfFileNames.ForReportDocument(document, options, "docx"));
+
+        var researcher = BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        Assert.StartsWith("battery-run-9_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_",
+            BenchmarkPdfFileNames.ForReportDocument(researcher, options));
+    }
+
+    [Fact]
+    public void ABatteryDocumentWithPeers_CarriesThePeerCount_AfterTheBatteryRunNumber()
+    {
+        var document = BatteryReportFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = BatteryReportFixture.Sheet();
+        sheet.Peers.Add(new BenchmarkReportPeer { Letter = "A", EntryKey = "battery:11", Label = "Grok 5" });
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        Assert.StartsWith("battery-run-9_vs-1-models_", BenchmarkPdfFileNames.ForReportDocument(document, Options(BenchmarkReportPeerNaming.Named)));
+    }
 
     [Fact]
     public void AComparisonDocumentsName_CarriesThePeerCount_AfterTheRunNumber()

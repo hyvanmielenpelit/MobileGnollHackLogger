@@ -3,9 +3,12 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
+using Overseer.Controllers;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
@@ -569,6 +572,70 @@ public class BenchmarkComparabilityIndexTests
 
         Assert.Null(result);
         Assert.Contains(BenchmarkComparabilityIndexService.MaxRunIds.ToString(), error!);
+    }
+
+    [Fact]
+    public void TheCaps_CoverTheRunHistoryListAndFiveHundredGroups()
+    {
+        Assert.Equal(1000, BenchmarkComparabilityIndexService.MaxRunIds);
+        Assert.Equal(500, BenchmarkComparabilityIndexService.MaxGroupIds);
+    }
+
+    [Fact]
+    public async Task TooManyGroups_IsRefusedNamingTheCap()
+    {
+        using var db = new ApplicationDbContext(NewDatabase());
+        var service = new BenchmarkComparabilityIndexService(db);
+
+        var (result, error) = await service.BuildAsync(new BenchmarkComparabilityIndexRequest
+        {
+            GroupIds = Enumerable.Range(1, BenchmarkComparabilityIndexService.MaxGroupIds + 1)
+                .Select(i => (long)i)
+                .ToList()
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+        Assert.Contains(BenchmarkComparabilityIndexService.MaxGroupIds.ToString(), error!);
+    }
+
+    // --- Endpoints ----------------------------------------------------------------------------------------
+
+    private static AdminBenchmarkController CreateController(ApplicationDbContext db)
+        => new(
+            db, null!, null!, new BenchmarkRunManager(), null!, null!, null!, null!, null!, null!,
+            null!, null!, null!, null!, null!, null!, null!, null!, null!);
+
+    [Fact]
+    public async Task ThePostEndpoint_ReturnsWhatTheGetEndpointReturns()
+    {
+        var options = NewDatabase();
+        await SeedAsync(options, new[] { Run(1), Run(2, "gemini-3.8-flash-lite") }, new[] { Group(7, "Pair", 1, 2) });
+        var ct = TestContext.Current.CancellationToken;
+
+        using var db = new ApplicationDbContext(options);
+        var controller = CreateController(db);
+        var service = new BenchmarkComparabilityIndexService(db);
+        var request = new BenchmarkComparabilityIndexRequest { RunIds = new List<long> { 1, 2 }, GroupIds = new List<long> { 7 } };
+
+        var fromGet = Assert.IsType<BenchmarkComparabilityIndexDto>(Assert.IsType<OkObjectResult>(
+            await controller.GetModelComparisonComparability(request, service, ct)).Value);
+        var fromPost = Assert.IsType<BenchmarkComparabilityIndexDto>(Assert.IsType<OkObjectResult>(
+            await controller.PostModelComparisonComparability(request, service, ct)).Value);
+
+        fromPost.ComputedAtUtc = fromGet.ComputedAtUtc;
+        Assert.Equal(JsonSerializer.Serialize(fromGet), JsonSerializer.Serialize(fromPost));
+        Assert.Equal(3, fromPost.Entries.Count);
+    }
+
+    [Fact]
+    public async Task ThePostEndpoint_RefusesAnEmptyBodyWith400()
+    {
+        using var db = new ApplicationDbContext(NewDatabase());
+
+        var result = await CreateController(db).PostModelComparisonComparability(
+            null, new BenchmarkComparabilityIndexService(db), TestContext.Current.CancellationToken);
+
+        Assert.Contains("at least one run or group", Assert.IsType<string>(Assert.IsType<BadRequestObjectResult>(result).Value));
     }
 
     [Fact]

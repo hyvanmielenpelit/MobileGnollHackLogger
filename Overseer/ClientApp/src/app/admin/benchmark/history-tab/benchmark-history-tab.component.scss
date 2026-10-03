@@ -121,12 +121,18 @@
   margin-inline-start: auto;
 }
 
-.rh-refresh {
+/* Show battery member runs and Refresh, at the end of the row. */
+.rh-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin-inline-start: auto;
 }
 
 .rh-loading,
 .rh-empty,
+.rh-members-only,
 .rh-no-matches {
   margin: 0;
 }
@@ -226,6 +232,12 @@
   .instrument-changed {
     margin: 0;
   }
+
+  // Inline with the other parts, without the block layout the global tag takes under a name.
+  .gh-tag {
+    display: inline-flex;
+    margin: 0;
+  }
 }
 
 .rh-card-id {
@@ -242,6 +254,28 @@
   font-variant-numeric: tabular-nums;
   color: #d4d4d8;
   white-space: nowrap;
+}
+
+/* A battery run's own card, told apart from a member run's *Battery #id* by its gold label. */
+.rh-battery-run-badge {
+  padding: 0 0.4em;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 55%, transparent);
+  border-radius: 4px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+  white-space: nowrap;
+}
+
+.rh-battery-suites,
+.rh-battery-rounds {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rh-battery-not-analyzed {
+  border-color: var(--border-glass);
+  color: #d4d4d8;
 }
 
 .rh-sep {
@@ -420,6 +454,8 @@
   &.fp-kb { color: var(--fp-kb-color); }
   &.fp-wiki { color: var(--fp-wiki-color); }
   &.fp-source { color: var(--fp-source-color); }
+  &.fp-def { color: var(--primary-color); }
+  &.fp-class { color: var(--nav-color); }
 }
 
 /* A narrower list: the metrics move under the header, spread across the card's width, with their
@@ -460,6 +496,23 @@
   }
 }
 
+/* The battery run delete confirmation. */
+.rh-delete-battery-dialog {
+  .rh-delete-battery-message {
+    margin: 0 0 15px;
+  }
+
+  .rh-delete-battery-members {
+    margin-block-end: 15px;
+  }
+
+  .rh-delete-battery-notice {
+    margin: 0;
+  }
+}
+
 @include shared.shared-22;
+
+@include shared.shared-23;
 
 @include shared.shared-29;

@@ -109,6 +109,8 @@ export interface ImageContext {
   readonly suiteName: string;
   /** For the file name. */
   readonly modelName: string;
+  /** The file name's subject part; absent reads `run<runId>`. A battery run passes `battery-run-<id>`. */
+  readonly fileStem?: string;
 }
 
 /** A decoded logo and its natural size. */
@@ -281,10 +283,11 @@ const KEY_FIGURES_STORAGE_VERSION = 1;
 /**
  * The keys left out of the Summary panel and the whole-strip image, from
  * `{ version: 1, excluded: [...] }` in localStorage; none when absent or unreadable. Storing the exclusions keeps a card added later in.
+ * `storageKey` is the run report's {@link KEY_FIGURES_STORAGE_KEY} unless another report passes its own.
  */
-export function readStoredKeyFigureExclusions(): string[] {
+export function readStoredKeyFigureExclusions(storageKey: string = KEY_FIGURES_STORAGE_KEY): string[] {
   try {
-    const raw = localStorage.getItem(KEY_FIGURES_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) {
       return [];
     }
@@ -298,9 +301,9 @@ export function readStoredKeyFigureExclusions(): string[] {
   }
 }
 
-export function storeKeyFigureExclusions(excluded: readonly string[]): void {
+export function storeKeyFigureExclusions(excluded: readonly string[], storageKey: string = KEY_FIGURES_STORAGE_KEY): void {
   try {
-    localStorage.setItem(KEY_FIGURES_STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(storageKey, JSON.stringify({
       version: KEY_FIGURES_STORAGE_VERSION,
       excluded: normalizeKeyFigureExclusions(excluded)
     }));
@@ -328,27 +331,32 @@ export const DEFAULT_IMAGE_DETAIL_EXCLUSIONS: readonly string[] = ['board'];
 
 /**
  * The run-fact keys the images leave out, from `{ version: 1, excluded: [...] }` in localStorage; an
- * empty list is a choice of every row. {@link DEFAULT_IMAGE_DETAIL_EXCLUSIONS} when absent or unreadable.
+ * empty list is a choice of every row. `fallback`, {@link DEFAULT_IMAGE_DETAIL_EXCLUSIONS} unless the
+ * caller passes another, when absent or unreadable. `storageKey` is the run report's
+ * {@link IMAGE_DETAILS_STORAGE_KEY} unless another report passes its own.
  */
-export function readStoredImageDetailExclusions(): string[] {
+export function readStoredImageDetailExclusions(
+  storageKey: string = IMAGE_DETAILS_STORAGE_KEY,
+  fallback: readonly string[] = DEFAULT_IMAGE_DETAIL_EXCLUSIONS
+): string[] {
   try {
-    const raw = localStorage.getItem(IMAGE_DETAILS_STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) {
-      return [...DEFAULT_IMAGE_DETAIL_EXCLUSIONS];
+      return [...fallback];
     }
     const parsed = JSON.parse(raw) as { version?: unknown; excluded?: unknown } | null;
     if (!parsed || parsed.version !== IMAGE_DETAILS_STORAGE_VERSION || !Array.isArray(parsed.excluded)) {
-      return [...DEFAULT_IMAGE_DETAIL_EXCLUSIONS];
+      return [...fallback];
     }
     return normalizeKeyFigureExclusions(parsed.excluded.filter((key): key is string => typeof key === 'string'));
   } catch {
-    return [...DEFAULT_IMAGE_DETAIL_EXCLUSIONS];
+    return [...fallback];
   }
 }
 
-export function storeImageDetailExclusions(excluded: readonly string[]): void {
+export function storeImageDetailExclusions(excluded: readonly string[], storageKey: string = IMAGE_DETAILS_STORAGE_KEY): void {
   try {
-    localStorage.setItem(IMAGE_DETAILS_STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(storageKey, JSON.stringify({
       version: IMAGE_DETAILS_STORAGE_VERSION,
       excluded: normalizeKeyFigureExclusions(excluded)
     }));
@@ -654,7 +662,8 @@ export function keyFigureCardFileName(context: ImageContext, cardLabel: string, 
 }
 
 function fileNameStem(context: ImageContext): string {
-  return `gnollbench_run${context.runId}_${safeFileName(context.suiteName)}_${safeFileName(context.modelName)}`;
+  const subject = context.fileStem ? safeFileName(context.fileStem) : `run${context.runId}`;
+  return `gnollbench_${subject}_${safeFileName(context.suiteName)}_${safeFileName(context.modelName)}`;
 }
 
 /** The status line for one export; `subject` is `Key figures` or the card's label. */

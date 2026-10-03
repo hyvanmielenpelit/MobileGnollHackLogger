@@ -83,18 +83,39 @@ public static class BenchmarkReportPackPrompt
     /// <summary>
     /// The questions that get a question note: more than <see cref="QuestionNoteGapPoints"/> below the
     /// peer mean, or a critical error. On a sheet with no peers, a score below
-    /// <see cref="StandaloneNoteScore"/> takes the place of the peer gap.
+    /// <see cref="StandaloneNoteScore"/> takes the place of the peer gap. On a battery sheet, whose
+    /// questions carry no peer figures, the score takes its place too, and only a question given in
+    /// detail gets a note.
     /// </summary>
     public static IReadOnlyList<int> QuestionsNeedingNote(BenchmarkReportFactSheet sheet)
     {
         ArgumentNullException.ThrowIfNull(sheet);
-        bool standalone = sheet.Peers.Count == 0;
+        bool battery = sheet.Battery != null;
+        bool standalone = battery || sheet.Peers.Count == 0;
 
         return sheet.Questions
+            .Where(q => !battery || q.Detailed == true)
             .Where(q => q.CriticalError
                 || (standalone
                     ? q.Score.HasValue && q.Score.Value < StandaloneNoteScore
                     : q.Difference.HasValue && q.Difference.Value < -QuestionNoteGapPoints))
+            .Select(q => q.Number)
+            .Distinct()
+            .OrderBy(n => n)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The questions that need a topic where the document requires topics: every question, or on a
+    /// battery sheet the questions given in detail.
+    /// </summary>
+    public static IReadOnlyList<int> QuestionsNeedingTopic(BenchmarkReportFactSheet sheet)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        bool battery = sheet.Battery != null;
+
+        return sheet.Questions
+            .Where(q => !battery || q.Detailed == true)
             .Select(q => q.Number)
             .Distinct()
             .OrderBy(n => n)
@@ -430,6 +451,11 @@ public static class BenchmarkReportPackPrompt
         Line(sb, $"Questions in the exam: {sheet.Questions.Count.ToString(CultureInfo.InvariantCulture)}");
         Line(sb);
 
+        if (sheet.Battery != null)
+        {
+            AppendBattery(sb, sheet.Battery);
+        }
+
         Line(sb, "GRADERS (by role; write each role name in lower case)");
         if (sheet.Graders.Count == 0)
         {
@@ -445,7 +471,9 @@ public static class BenchmarkReportPackPrompt
         var peers = OrderedPeers(sheet.Peers);
         if (peers.Count == 0)
         {
-            Line(sb, "(no peers: this is a stand-alone run report, so {{peer:X}} tokens are unavailable and every peer fact is unavailable)");
+            Line(sb, sheet.Battery != null
+                ? "(no peers: this is a stand-alone battery report, so {{peer:X}} tokens are unavailable and every peer fact is unavailable)"
+                : "(no peers: this is a stand-alone run report, so {{peer:X}} tokens are unavailable and every peer fact is unavailable)");
         }
         foreach (var peer in peers)
         {
@@ -509,20 +537,151 @@ public static class BenchmarkReportPackPrompt
         }
 
         AppendRows(sb, sheet, runCount);
-        AppendQuestions(sb, sheet, content);
+        if (sheet.Battery != null)
+        {
+            AppendBatteryQuestions(sb, sheet, content);
+        }
+        else
+        {
+            AppendQuestions(sb, sheet, content);
+        }
+
+        var references = sheet.Questions
+            .Where(q => q.Reference != null)
+            .GroupBy(q => q.Number)
+            .ToDictionary(g => g.Key, g => g.First().Reference!);
+        string Reference(int number) => references.TryGetValue(number, out string? reference) ? reference : Q(number);
 
         if (spec.UsesQuestionNotes)
         {
             var needing = QuestionsNeedingNote(sheet);
             Line(sb, needing.Count == 0
                 ? "QUESTIONS NEEDING A NOTE: none"
-                : $"QUESTIONS NEEDING A NOTE: {string.Join(", ", needing.Select(Q))}");
+                : $"QUESTIONS NEEDING A NOTE: {string.Join(", ", needing.Select(Reference))}");
         }
 
         if (spec.RequiresQuestionTopics)
         {
-            var all = sheet.Questions.Select(q => q.Number).Distinct().OrderBy(n => n).ToList();
-            Line(sb, $"QUESTIONS NEEDING A TOPIC: {(all.Count == 0 ? "none" : string.Join(", ", all.Select(Q)))}");
+            var all = QuestionsNeedingTopic(sheet);
+            Line(sb, $"QUESTIONS NEEDING A TOPIC: {(all.Count == 0 ? "none" : string.Join(", ", all.Select(Reference)))}");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// What a battery subject is: the composite and its weights, the suites, how to refer to a
+    /// question, and which questions carry their content.
+    /// </summary>
+    private static void AppendBattery(StringBuilder sb, BenchmarkReportBatterySubject battery)
+    {
+        Line(sb, "BATTERY");
+        Line(sb, $"Name: {OneLine(battery.Name)}{(battery.Revision is int revision ? $" (revision {revision.ToString(CultureInfo.InvariantCulture)})" : string.Empty)}");
+        Line(sb, $"Suites: {battery.SuiteCount.ToString(CultureInfo.InvariantCulture)}; runs per suite: {battery.RunsPerSuite.ToString(CultureInfo.InvariantCulture)}; member runs: {battery.MemberRunCount.ToString(CultureInfo.InvariantCulture)}");
+        Line(sb, $"Weighting scheme: {OneLine(battery.Scheme)}");
+        Line(sb, "The subject is a battery result: one model run on every suite of the battery, several times each. Its Intelligence Index (quality.index) is the battery's Overall Index, the sum over the suites of each suite's weight times its index (suite.<n>.weight and suite.<n>.index), so each suite contributes suite.<n>.contribution points. Its interval (quality.interval) combines item sampling across the suites with reproducibility across rounds, as quality.intervalBasis states.");
+        Line(sb, "The Overall Index is a composite. Never compare it with a single suite's Intelligence Index, or with the result of a single run or analysis group. Peers listed under PEERS are results of the same battery definition in the same comparability class.");
+        Line(sb, "Use the per-suite profile to say where the composite comes from: which suites lift it, which hold it down, and how uneven the suites are (battery.suiteIndexSd and battery.suiteIndexRange). The sensitivity.* facts give the Overall Index under the other weighting schemes and the loo.* facts with one suite left out; mention them only to say how far the result depends on the weights or on a single suite.");
+        Line(sb, "cost.perRun and cost.totalRunPerRun are per battery pass: one run of every suite.");
+        Line(sb, "SUITES (S<n> in a question reference is the suite's number; its figures are the suite.<n>.* facts)");
+        foreach (var suite in battery.Suites.OrderBy(s => s.Number))
+        {
+            Line(sb, $"- S{suite.Number.ToString(CultureInfo.InvariantCulture)}: {OneLine(suite.Name)}, {suite.QuestionCount.ToString(CultureInfo.InvariantCulture)} questions");
+        }
+        Line(sb, "QUESTION REFERENCES: refer to a question as S<suite>-Q<n>, for example S2-Q7 for question seven of suite two. In this battery report that form replaces the Q7 form everywhere, in the prose and in \"evidence\", and it is the only form in which a digit may appear in the prose. In the integer fields \"questions\" and \"question\", give the question's number shown after \"number\" in its QUESTIONS row.");
+        Line(sb, "DETAIL: every question has a one-line row with its mean score over the runs that scored it. Only the rows marked \"in detail\" are followed by the question as asked, its rubric, one answer excerpt from the run whose score was the median of its rounds, and the graders' comments on that answer. Describe any other question only from its row. Topics and notes are asked for the questions in detail only.");
+        Line(sb, "A battery report has no finding rows: cite fact keys and question references as evidence.");
+        Line(sb);
+    }
+
+    /// <summary>
+    /// A battery's questions: a one-line row for every question, and for those given in detail the
+    /// question, its rubric, the one answer excerpt and the graders' comments on it.
+    /// </summary>
+    private static void AppendBatteryQuestions(StringBuilder sb, BenchmarkReportFactSheet sheet, BenchmarkReportContentSnapshot content)
+    {
+        Line(sb, "QUESTIONS");
+        var questions = sheet.Questions.OrderBy(q => q.Number).ToList();
+        if (questions.Count == 0)
+        {
+            Line(sb, "(none)");
+        }
+
+        foreach (var q in questions)
+        {
+            string refuted = q.RefutedAnswerSentences is int sentences
+                ? $"refuted answer sentences: {sentences.ToString(CultureInfo.InvariantCulture)}"
+                : $"refuted claims: {q.RefutedClaims.ToString(CultureInfo.InvariantCulture)}";
+            int critical = q.CriticalErrorCount ?? (q.CriticalError ? 1 : 0);
+            string? detail = q.Detailed == true ? BatteryDetail(content, q.Number) : null;
+            Line(sb, $"[{q.Reference ?? Q(q.Number)}] number {q.Number.ToString(CultureInfo.InvariantCulture)} | band: {OneLine(q.Band)} | mean score: {Num(q.Score)} | scored in {q.RunCount.ToString(CultureInfo.InvariantCulture)} runs | critical errors: {critical.ToString(CultureInfo.InvariantCulture)} | {refuted} | tool calls: {Num(q.ToolCalls)}{(detail != null ? " | in detail" : string.Empty)}");
+
+            if (detail != null)
+            {
+                sb.Append(detail);
+                Line(sb);
+            }
+        }
+        Line(sb);
+    }
+
+    /// <summary>
+    /// The characters a battery question's detail adds to the prompt: its content block and the blank
+    /// line after it; 0 when it carries none.
+    /// </summary>
+    internal static int DetailBlockLength(BenchmarkReportFactSheet sheet, BenchmarkReportContentSnapshot content, int number)
+    {
+        ArgumentNullException.ThrowIfNull(sheet);
+        ArgumentNullException.ThrowIfNull(content);
+        if (sheet.Questions.FirstOrDefault(q => q.Number == number) is not { Detailed: true }) return 0;
+
+        string? detail = BatteryDetail(content, number);
+        return detail == null ? 0 : detail.Length + " | in detail".Length + 1;
+    }
+
+    /// <summary>One battery question's content block, from the one run that holds it; null when none does.</summary>
+    private static string? BatteryDetail(BenchmarkReportContentSnapshot content, int number)
+    {
+        var entry = content.Runs
+            .OrderBy(r => r.RunId)
+            .Select(r => (r.RunId, Item: r.Questions.FirstOrDefault(c => c.Number == number)))
+            .FirstOrDefault(e => e.Item != null);
+        if (entry.Item == null) return null;
+
+        var item = entry.Item;
+        string run = entry.RunId.ToString(CultureInfo.InvariantCulture);
+        var sb = new StringBuilder();
+
+        Line(sb, "  Question as asked:");
+        Block(sb, item.QuestionText);
+        Line(sb, "  Rubric:");
+        Block(sb, item.ExpectedPointsRecorded && item.ExpectedPoints != null ? WithoutSourceParagraphs(item.ExpectedPoints) : "(not recorded)");
+        Line(sb, $"  Answer excerpt (the median-scoring round, run {run}{(item.AnswerExcerptCut ? ", cut" : string.Empty)}):");
+        Block(sb, item.AnswerExcerpt);
+
+        Line(sb, $"  Grader comments (run {run}):");
+        if (item.Graders.Count == 0)
+        {
+            Line(sb, "    (none)");
+        }
+        foreach (var grader in item.Graders)
+        {
+            string score = grader.Score.HasValue ? $", score {grader.Score.Value.ToString(CultureInfo.InvariantCulture)}" : string.Empty;
+            Line(sb, $"    - {OneLine(grader.Role)}{score}: {OneLine(string.IsNullOrWhiteSpace(grader.Comment) ? "(no comment)" : grader.Comment)}");
+            foreach (string evidence in grader.Evidence ?? new List<string>())
+            {
+                Line(sb, $"      evidence: {OneLine(evidence)}");
+            }
+        }
+
+        if (item.ClaimRulings.Count > 0)
+        {
+            Line(sb, $"  Claim rulings (run {run}):");
+            foreach (var ruling in item.ClaimRulings)
+            {
+                string rationale = string.IsNullOrWhiteSpace(ruling.Rationale) ? string.Empty : $" (rationale: {OneLine(ruling.Rationale)})";
+                Line(sb, $"    - {OneLine(BenchmarkReportContent.RulingLabel(ruling.Role, ruling.Verdict))}: {OneLine(ruling.Claim)}{rationale}");
+            }
         }
 
         return sb.ToString();

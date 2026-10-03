@@ -1,5 +1,7 @@
 import {
+  BenchmarkBatteryRunDto,
   BenchmarkRunAnswerDto,
+  BenchmarkRunSummaryDto,
   BenchmarkModelComparisonPricingBasis
 } from '../../services/admin-benchmark.service';
 import { CardListSort } from '../../shared/data-table/card-list-state';
@@ -19,7 +21,8 @@ export const RUN_REPORT_TABS = [
   { key: 'cost', label: 'Cost' },
   { key: 'configuration', label: 'Configuration' },
   { key: 'reports', label: 'AI Reports' },
-  { key: 'calibration', label: 'Calibration' }
+  { key: 'calibration', label: 'Calibration' },
+  { key: 'paired', label: 'Paired Test' }
 ] as const;
 
 export type RunReportTabKey = typeof RUN_REPORT_TABS[number]['key'];
@@ -33,7 +36,21 @@ export const RUN_REPORT_HEADER_STORAGE_KEY = 'overseer.benchmark.runReport.heade
 /** Where Run History's Sort by order is remembered, per viewer, as `{ version: 1, sort }`. */
 export const RUN_HISTORY_VIEW_STORAGE_KEY = 'overseer.benchmark.runHistory.view';
 
-/** The orders Run History's Sort by offers. Run ids ascend with time, so the id stands in for the date. */
+/** Where Run History's *Show battery member runs* is remembered, per viewer, as `'1'` or `'0'`. */
+export const RUN_HISTORY_MEMBERS_STORAGE_KEY = 'overseer.benchmark.runHistory.members';
+
+/** One card of Run History: a single run, or a battery run standing for its members. */
+export type HistoryItem =
+  | { readonly kind: 'run'; readonly key: string; readonly run: BenchmarkRunSummaryDto }
+  | { readonly kind: 'battery'; readonly key: string; readonly battery: BenchmarkBatteryRunDto };
+
+/** The Kind facet's values, in the order it lists them. */
+export const RUN_HISTORY_KINDS = ['Single run', 'Battery run'] as const;
+
+/**
+ * The orders Run History's Sort by offers. The `id` column is the card's position in
+ * `historyItems`, which is newest first, so it stands in for the date.
+ */
 export const RUN_HISTORY_SORTS: readonly CardListSort[] = [
   { id: 'newest', label: 'Newest first', column: 'id', direction: 'desc' },
   { id: 'oldest', label: 'Oldest first', column: 'id', direction: 'asc' },
@@ -62,7 +79,10 @@ export const RUN_HISTORY_STARTED_RANGES: readonly { value: string; label: string
 ];
 
 /** The run count the runs endpoint returns at most; Run History says when it holds that many. */
-export const RUN_HISTORY_LIMIT = 200;
+export const RUN_HISTORY_LIMIT = 1000;
+
+/** The battery run count Run History asks for; it says when it holds that many. */
+export const BATTERY_RUN_HISTORY_LIMIT = 500;
 
 /** What each instrument label stands for, read after the short label by assistive technology. */
 export const FINGERPRINT_LONG_NAMES: Record<BenchmarkFingerprintEntry['label'], string> = {

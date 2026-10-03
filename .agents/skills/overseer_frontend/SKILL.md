@@ -90,6 +90,13 @@ Harness-neutral, and the floor for any Overseer frontend work.
   component; the settings page's `.tier-badge` (the Tier 1–4 permission chips) is a different,
   component-local class. The key-figures images draw all four with the same colors (`BADGE_PALETTE`
   in `run-report-frame/key-figures-image.ts`); change both together.
+- **The run-report frame rules are global** since 2026-10-03, because the single-run report
+  (`#runDetailDialog`) and the Battery Run Report share them: `.score-card` (with `.score-label`,
+  `.score-value`, `.score-subvalue`, `.score-headline`, `.score-note`), `.rr-identity` / `.rr-emblem`,
+  `.rr-header-controls`, `.rr-run-facts-primary`, the `.rr-run-details*` disclosure, `.rr-tabs`,
+  `.rr-tab-flag`, `.rr-panel` with `.rr-panel-narrow` (48 rem) and `.rr-panel-medium` (60 rem), and the
+  `.rr-figures*` key-figures grid and actions. They are in `styles.scss`; do not copy them back into
+  either component.
 - **`.settings-dialog.model-form-dialog`** is the near-full-screen frame of every dialog hosting
   `app-ai-model-form` (Admin config, My Models add and edit): `min(96rem, 100dvw - 32px)` by
   `100dvh - 32px`, 8 px inset on a phone, a flex column in which only the form body scrolls. It
@@ -291,8 +298,8 @@ To find specific popups, look in the corresponding component's `.html` template:
   with the benchmark tabs, with no brand row above them. `benchmark.component.html` is the shell: the
   sub-tab row, one tab panel per sub-tab, and the dialogs more than one sub-tab opens (the run report,
   the run progress, difficulty assessor and confirm dialogs, the snapshot viewer, the grader guide, the
-  comparison wizard, the multi-run and battery progress dialogs). The Run, History, Manage Suites,
-  Scoring Profiles and Model Comparison sub-tabs are components of their own (`run-tab/`,
+  comparison wizard, the multi-run and battery progress dialogs, the Battery Run Report). The Run,
+  History, Manage Suites, Scoring Profiles and Model Comparison sub-tabs are components of their own (`run-tab/`,
   `history-tab/`, `suites-tab/`, `profiles-tab/`, `comparison-tab/`) holding their own dialogs; Manage
   Questions and Import Default Suites are `suites-tab/suite-questions-dialog.component.*` and
   `suites-tab/import-default-suites-dialog.component.*`. Their shared state is in `state/` (the
@@ -323,21 +330,31 @@ To find specific popups, look in the corresponding component's `.html` template:
     box trimmed to its caps). It holds a dialog-mode info tip (`rh-list-tip`, *About the run history*:
     the indexes, the cost pair, the five hashes and what *Instrument changed* / *Options changed*
     compare against), the
-    polite status line `#rh-list-status` (*Showing 10 of 75 runs*, *· filtered from N*, and *· Only the
-    newest 200 runs are loaded* when exactly 200 came back) and **Refresh** (`.btn-ghost`, *rotate*).
+    polite status line `#rh-list-status` (*Showing 10 of 75 runs*, a battery run counting as one run,
+    *· filtered from N*, *· Only the newest 1000 runs are loaded* when `RUN_HISTORY_LIMIT` came back,
+    *· newest 500 battery runs* when `BATTERY_RUN_HISTORY_LIMIT` did, and *· Battery runs could not be
+    loaded*), **Show battery member runs** (a `gh-filter-toggle` with `aria-pressed`, below) and
+    **Refresh** (`.btn-ghost`, *rotate*).
     The filter bar copies the Download Center's markup with `rh-` ids: `#rh-search` (*Search runs*, over
     `#id`, suite, model name and id, provider, assessor, status, harness version and the five
     fingerprints; Escape with text clears it), `#rh-sort` **Sort by** (*Newest first*, *Oldest first*,
     the two index orders, the two cost orders, *Duration, shortest first*, *Tested model (A–Z)*, *Suite
-    (A–Z)*; stored under `overseer.benchmark.runHistory.view`), the facets *Suite*, *Tested model*,
-    *Assessor*, *Status*, *Flags*, *Changes* and *Started* (single mode), each with `noun="runs"`, and
-    the chips with **Clear all**; there is no selection and no sticky bar. The state is the workspace
-    store's `historyList`, a `CardListState` over `historyTable` (`idPrefix: 'rh'`, `onChange` calling
-    `BenchmarkViewSync.notify()`, since the Benchmark components are OnPush); `historyView` is `historyList.view(historyRuns)`, and
-    `historyRuns` stays in server order for `instrumentChangeOf`, `completedRunsOfSelectedSuite` and
-    the other helpers that depend on it.
-    `loadHistory()` fetches the newest 200 runs (`getRuns(undefined, 200)`); the server-side suite
-    select and `historySuiteFilter` are gone, replaced by the client-side *Suite* facet. A card holds a
+    (A–Z)*; stored under `overseer.benchmark.runHistory.view`), the facets *Kind* (*Single run* /
+    *Battery run*), *Suite*, *Tested model*, *Assessor*, *Status*, *Flags*, *Changes* and *Started*
+    (single mode), each with `noun="runs"`, and the chips with **Clear all**; there is no selection and
+    no sticky bar. The state is the workspace store's `historyList`, a `CardListState` over
+    `historyTable` (`idPrefix: 'rh'`, `onChange` calling `BenchmarkViewSync.notify()`, since the
+    Benchmark components are OnPush). **It runs over `historyItems`**, a memoized `HistoryItem` union
+    (`{ kind: 'run', key, run }` | `{ kind: 'battery', key, battery }`, `benchmark.models.ts`) that
+    `mergeHistoryItems` builds from `historyRuns` and `batteryRuns`, each battery run placed before the
+    first run that started no later; `historyView` is `historyList.view(historyItems)`, and every
+    `historyTable` accessor reads either kind. **`historyRuns` stays the server-order run list** for
+    `instrumentChangeOf`, `completedRunsOfSelectedSuite` and the other helpers that depend on it — never
+    read those from `historyItems`. `loadHistory()` fetches the newest `RUN_HISTORY_LIMIT` (1000) runs
+    and, in parallel, the newest `BATTERY_RUN_HISTORY_LIMIT` (500) battery runs
+    (`getBatteryRuns(undefined, 500)`; a failure leaves single runs only and sets `batteryRunsFailed`);
+    the server-side suite select and `historySuiteFilter` are gone, replaced by the client-side *Suite*
+    facet. A run card holds a
     kicker (`#N`, the status badge, the degraded count with a Feather *alert-triangle* SVG and visually
     hidden *degraded answers*, the progress count, `INSTRUMENT CHANGED` / `OPTIONS CHANGED`, parts
     separated by an `aria-hidden` dot and a visually hidden comma), the `h5.rh-card-title`
@@ -355,21 +372,65 @@ To find specific popups, look in the corresponding component's `.html` template:
     column. Ten cards, then **Show 10 more** / **Show all N**, focusing the first new card's title; a
     removed chip moves focus to the next chip, else the previous, else `#rh-search`; after a delete,
     focus goes to the card now at the deleted one's index, else the previous, else `#rh-list-title`.
-    *No benchmark runs recorded yet…* and *No runs match these filters.* (with **Clear all filters**) are
-    separate empty states. A member run of a battery carries *Battery #id · suite s/K*
-    (`.rh-battery-badge`) in its kicker.
+    *No benchmark runs or battery runs recorded yet…*, *No runs match these filters.* (with **Clear all
+    filters**) and *Every loaded run is a member of a battery run…* are separate empty states.
+    **Battery member runs are hidden by default**: `mergeHistoryItems` leaves out runs with a
+    `batteryRunId` while `showBatteryMembers` is off. **Show battery member runs** toggles it, stored
+    under `overseer.benchmark.runHistory.members` (`'1'` / `'0'`, try/catch) — a view setting, **not a
+    chip and not a filter**, which **Clear all** keeps, as the Download Center keeps *Show selected
+    only*. Shown, a member's kicker carries *Battery #id · suite s/K* (`.rh-battery-badge`).
+    **A battery card** is `article.rh-card.rh-card-battery[data-battery-run-id]` in the same list and grid
+    (`#rh-battery-{id}-title`): the kicker `.rh-battery-run-badge` *Battery run #N* (distinct from a
+    member's badge), the status badge from `batteryStatusBadgeClass()` (`benchmark-run-format.ts`, onto
+    the `badge-status-*` classes) with `batteryRunStatusLabel`, *k of K suites*, *R runs per suite* and
+    *Analysis stale* (`gh-tag gh-tag-changed`) or *Not analyzed*; the model with `runFactBadges`; the
+    battery name · revision · *assessed by* · `<time>` · *by* user; the metrics *Intelligence* (Overall
+    Index ± half-width as a score badge, else *N/A* with *Incomplete (k of K suites)*), *Speed*,
+    *Duration* (`batteryRunDurationMs`) and *Cost*; the group *Actions for battery run N* — **View
+    details** (*eye*, `bridge.openBatteryRunReport(id)`), **Download Markdown report**
+    (*file-with-arrow*, `aria-disabled` with its tooltip reason until analyzed), **Show progress**
+    (*activity*, while live or resumable) and **Delete battery run** (`.action-btn-danger`, *trash*,
+    `aria-disabled` while live); and a *DEF* / *CLASS* instrument strip with a click-mode info tip
+    (`rh-binstr-{id}`). **Delete** opens `#rhDeleteBatteryDialog` (*Delete battery run #N?*): the
+    analyses and AI documents go with it, a `.checkbox-label` **Also delete its M member runs**,
+    unchecked by default, and **Delete** (`btn-gh btn-gh-delete`, *trash*) calling
+    `deleteBatteryRun(id, deleteMembers)`; focus afterwards moves as after a run delete.
   - **The Multi-Suite tab** (`#bm-tab-multisuite` / `#bm-panel-multisuite`, `activeSubTab ===
     'multisuite'`) is the fourth tab, after *Multi-Run Analysis*; the tab row passes positional indexes
     to `onTabKeydown($event, n)`, so a tab inserted before the end moves the indexes and the spec's
-    tab-order pins after it. The panel is `app-benchmark-batteries` (`batteries/`, `bb-` classes and ids):
-    *Batteries* cards with **New Battery**, **Edit**, **Leaderboard**, **Archive** / **Restore**,
-    **Delete** (its own `bb-delete-dialog` confirmation) and *Show archived*; *Battery Runs*, a
-    `.gh-datatable` on `TableState` with battery and status filters; the *Analysis* panel with
-    **Download Report** and **Compute** / **Recompute**; the *Leaderboard*, one ranked table per
-    comparability class; and *Compare two results*. Interfaces mirroring the server's analysis records,
-    the scheme labels and the client-side weight preview are in `batteries/battery.models.ts`. The
-    launcher's battery mode, the battery banner (`.battery-banner`) and the documentation of the whole
-    feature are in `docs/overseer/ai-benchmark-multi-suite.md`.
+    tab-order pins after it. The panel is `app-benchmark-batteries` (`batteries/`, `bb-` classes and ids)
+    and holds the battery **definitions only** — battery runs are in Run History, and the analysis, the
+    leaderboard and the paired test are dialogs (below); there is no *Battery Runs* table, *Analysis*
+    panel or *Compare two results* section. The head is `h4.gh-section-title#bb-batteries-title`
+    *Batteries* with a click-mode info tip, the polite `#bb-list-status.gh-list-status` (*Showing 3 of 3
+    batteries*), **Show archived (n)** (a `gh-filter-toggle` with `aria-pressed`, shown while an archived
+    battery exists; a view setting that **Clear all** keeps) and **New Battery** (`.btn-gh`, *plus*). A
+    card list (`frontend_ui_controls` §8h) on `CardListState`: the filter bar shows above
+    `BATTERY_FILTER_BAR_MIN_EXCLUSIVE` (3) batteries or while a filter is active — `#bb-search` (name,
+    description, suite names), `#bb-sort` (*Recently modified*, *Name (A–Z)*, *Most runs*, *Most
+    suites*; `overseer.benchmark.batteries.view`), the facets *Suite* and *Weighting* with
+    `noun="batteries"`, chips and **Clear all** — and batches of 10. **One full-width
+    `article.bb-card` per row** in the `bb-cards` inline-size container (`"head metrics actions" /
+    "suites suites suites"`; metrics under the head below 60 rem, one column below 30 rem), so a 2-suite
+    and a 12-suite battery never make a ragged grid. The kicker (`#id`, *Revision n* and the scheme as
+    `.config-badge`, then `gh-tag`s *Archived*, *Running*, *Broken*, *Difficulties incomplete*, parts
+    separated by `.bb-sep`), the `h5.bb-card-title` (`tabindex="-1"`), the description, a meta line
+    (*Modified* `<time>` · *by* user · *definition* hash with an info tip), validation errors as
+    `.gh-field-error`, `dl.bb-metrics` (*Suites*, *Questions*, *Runs*, *Ranked results* from the DTO's
+    `rankedResultCount`), the `role="group"` *Actions for battery {name}* — `.btn-ghost` **Leaderboard**
+    (*award*, first), **Edit** (*pencil*), **Archive** / **Restore**, **Delete** (`btn-ghost-danger`,
+    *trash*, `aria-disabled` with a tooltip while a run is active; its own `bb-delete-dialog`) — and,
+    under a hairline, the suites: an `aria-hidden` stacked weight bar `.bb-weight-mix` (run order, width
+    = declared weight, alternating gold tints, a hatched gray segment for a deleted suite) over
+    `table.gh-table.bb-suite-table` (*#*, *Suite*, *Questions*, *Weight*, *Status*) showing
+    `BATTERY_CARD_SUITE_ROWS` (4) rows, the rest in a hidden `<tbody id="bb-suites-more-{id}">` behind a
+    link-style **Show all K suites** / **Show fewer** (`aria-expanded`, `aria-controls`; focus stays on
+    it). The tab hosts `app-battery-leaderboard-dialog`. Interfaces mirroring the server's analysis
+    records, the scheme labels, sorts, facets, the weight-mix and interval-strip helpers,
+    `batteryRunDiagnosticsText` and the client-side weight preview are in `batteries/battery.models.ts`.
+    The launcher's battery mode, the battery banner (`.battery-banner`, holding the `.lost-contact-notice`
+    of the monitor's back-off) and the documentation of the whole feature are in
+    `docs/overseer/ai-benchmark-multi-suite.md`.
 
   Not an exhaustive list of the Benchmark dialogs, only the ones recorded here so far. Each names the
   component that holds it when that is not the shell:
@@ -439,9 +500,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     (`:host(.rrf-layout-single) .rrf-header`). `app-run-report-frame layout="single"`
     keeps the header and a tab row (`[runReportTabs]`) in place and scrolls one body (`[runReportBody]`;
     `scrollBodyToTop()` on a tab change). The row is `.gh-tabs .gh-tabs-secondary`, *Run report
-    sections*, ten tabs without icons from `runReportTabs` (`rr-tab-<key>` controlling
+    sections*, eleven tabs without icons from `runReportTabs` (`rr-tab-<key>` controlling
     `rr-panel-<key>`): *Summary · Integrity · Synthesis · Questions (N) · Difficulty · Tools · Cost ·
-    Configuration · AI Reports · Calibration*, with arrow-key, Home and End roving. Every panel is
+    Configuration · AI Reports · Calibration · Paired Test*, with arrow-key, Home and End roving. Every panel is
     rendered and the unchosen ones are `hidden` — never `@if` — so the key-figures export reads the
     Summary cards from any tab. The chosen tab is in `localStorage['overseer.benchmark.runReport.tab']`,
     restored on every open (unknown → *Summary*); a re-score reload keeps the tab shown; `jumpToAnswer`
@@ -516,8 +577,16 @@ To find specific popups, look in the corresponding component's `.html` template:
     confirmations stop their own `close` and `cancel` events so the run report dialog never sees them.
     The section is not a run action.
     The **Difficulty**, **Tools** and **Cost** panels are capped at 48 rem (`.rr-panel-narrow`) and
-    **Configuration**, **AI Reports** and **Calibration** at 60 rem (`.rr-panel-medium`), each centered
-    in the dialog (`margin-inline: auto`); the other tabs are full width. The Tools tables right-align
+    **Configuration**, **AI Reports**, **Calibration** and **Paired Test** at 60 rem
+    (`.rr-panel-medium`), each centered in the dialog (`margin-inline: auto`); the other tabs are full
+    width. The **Paired Test** tab is its own component, `app-run-paired-test` (`run-paired-test/`, `rpt-`
+    ids), fed the run, `workspace.historyRuns` and whether the tab is shown: this run is the treatment;
+    the `#rpt-baseline` select offers the finished runs on the same suite, newest first, labeled *#id ·
+    model · index · date* and grouped in `<optgroup>`s by the kind the server names
+    (`POST runs/{id}/paired-comparison/kinds`, fetched when the tab is first shown) — *Model
+    comparison*, *Verification of a change*, *Replicate* — with not-comparable runs left out and
+    counted in a `role="status"` line; a kind sentence and the changed keys; **Compare** (`.btn-gh`, no
+    glyph: a plain commit); and the result in `app-paired-test-result`. The Tools tables right-align
     their counts (`.rr-num`). The panels share one type scale: running text at `--text-body`,
     metadata and hints at `--text-secondary`, and every tab heading `.gh-section-title`; the Summary
     cards, question cards, synthesis panel and cost panel keep their own scales.
@@ -576,11 +645,16 @@ To find specific popups, look in the corresponding component's `.html` template:
     (`app-download-center-panel`) holds the whole body and footer; `benchmark-download-center.component.*`
     (`app-benchmark-download-center`) is a thin dialog wrapper around it — header, emblem, title and
     Close — with the same `open(context)` / `closed` and a `documentsChanged` output. The wrapper is
-    opened from the run report's **Downloads** (a `run` context) and from the Model Comparison
-    launcher's **Open Download Center**; the panel is also placed directly as the Model Comparison
-    wizard's step 4 (below). Contexts: `run`, `documents` (chosen ids) and `library` (`scope` —
-    `{ kind: 'comparison', entryKeys }` or `{ kind: 'all' }` — and `preselect: 'all' | 'none'`, listed
-    with one request, `origin=reportPack`). **The documents list** is a card list (`frontend_ui_controls`
+    opened from the run report's **Downloads** (a `run` context), the Battery Run Report's **Downloads**
+    and its AI Reports tab (a `battery` context) and from the Model Comparison launcher's **Open
+    Download Center**; the panel is also placed directly as the Model Comparison wizard's step 4
+    (below). Contexts: `run`, `battery` (`{ kind: 'battery', batteryRunId, label }`: the **Battery
+    analysis report** file row — the Markdown from `batteries/runs/{id}/report`,
+    `battery-run-<id>_report.md` as fallback name — and every document whose subject is
+    `battery:<id>`, battery-completion and Report Pack alike, via `listReportDocuments({ subject })`, with
+    the *being written* notice and a 5-s poll of the battery run's report job; **no member-run rows**),
+    `documents` (chosen ids) and `library` (`scope` — `{ kind: 'comparison', entryKeys }` or
+    `{ kind: 'all' }` — and `preselect: 'all' | 'none'`, listed with one request, `origin=reportPack`). **The documents list** is a card list (`frontend_ui_controls`
     §8h). Its search, **Sort by**, facets, chips, status line and Load more come from the shared
     `CardListState` (`shared/data-table/card-list-state.ts`), behind a private `list` getter that
     builds it on first use, after the `idPrefix` input is bound; the panel's public members (`searchText`, `sortId`,
@@ -705,11 +779,91 @@ To find specific popups, look in the corresponding component's `.html` template:
     one polite live region (the stage line), per-member *Open run progress*, **Attach existing run** on
     empty, superseded and index-withheld cells, and **Cancel Battery**, **Re-run under Current
     Instrument**, **Continue** and **Open Analysis** in the footer. Opened from the battery banner's
-    **Show Battery Progress** and from the Battery Runs table.
+    **Show Battery Progress**, a Run History battery card's **Show progress** and the Battery Run
+    Report's *Show progress* action. **Open Analysis** emits `openAnalysis` with the battery run id, and
+    the shell's `onOpenBatteryAnalysis` opens the Battery Run Report.
+  - `app-battery-leaderboard-dialog` (`batteries/battery-leaderboard-dialog.component.*`, `bl-` ids,
+    hosted by `app-benchmark-batteries`, opened with `open({ definitionSha256, name, … })`):
+    `<dialog class="gh-dialog gh-dialog-fullscreen battery-leaderboard-dialog" aria-labelledby="blTitle">`,
+    *Leaderboard: {name}*. It focuses `h3#blTitle[tabindex=-1]` on open, closes on Escape and the header
+    **Close** (`.btn-icon-action`, *Close leaderboard*, `interestfor` tooltip) and stops its own `close`
+    and `cancel` events. The header has the decorative emblem, a subtitle, a `ul.bl-badges` (*Revision
+    n*, the scheme, *K suites*, *R runs per suite* when uniform, *definition* hash with a click-mode
+    info tip) and the group *Leaderboard actions*: **Open in Model Comparison** (`.btn-ghost`,
+    *compass*; `aria-disabled` with a tooltip reason below two ranked rows in the shown class; it calls
+    `BenchmarkShellBridge.openComparisonWizard({ batteryRunIds })` with at most
+    `MAX_COMPARISON_SOURCES`, dropping the newest first with the visible `#bl-comparison-cap-note`) and
+    an icon-only **Refresh** (*rotate*). The body: a `role="status"` loading line, an `alert-danger` with
+    **Retry**, or the empty state; the note *Each table ranks results of one comparability class.
+    Overlapping intervals are not a ranking.*; with several classes a `.gh-tabs .gh-tabs-secondary`
+    tablist *Comparability classes* (*Class A*, *Class B*…, a count, most rows then newest first; the
+    full §5 contract), with one none; the class line *Harness h · scoring method m · class `a1b2c3d4`*
+    and *Differs from other classes on* with one `gh-tag` per key; `table.gh-table.gh-datatable.bl-table`
+    in a `gh-datatable-scroll` with a sticky header and a hidden caption — *Rank* (index rank, an *≈*
+    with hidden *interval overlaps the result above*), *Model* (badges with hidden prefixes), *Overall
+    Index*, *95 % interval* with an `aria-hidden` interval strip (one scale per class, padded 5 %, the top
+    row gold, chevrons for truncation, hidden below 48 rem), *Speed*, *Pass cost*, *R*, *Analyzed*
+    (`<time>`) and an icon-only **View the report of battery run #N** (*eye*), which asks the shell
+    through the bridge to open the Battery Run Report over the dialog; `TableState` with
+    `app-sort-header` on *Model*, *Overall Index*, *Speed*, *Pass cost* and *Analyzed*, no pager, rank
+    unchanged by a sort — and a closed `details.gh-disclosure` *Incomplete battery runs (n) — not
+    ranked*.
+  - `app-battery-run-report-dialog` (`batteries/battery-run-report-dialog.component.*`, `brr-` ids;
+    the analysis panels keep their `bb-` classes): the **Battery Run Report**, hosted by the shell beside
+    `#runDetailDialog` and reached through `BenchmarkShellBridge.openBatteryRunReport(id)` from Run
+    History, the leaderboard and the progress dialog. **It mirrors `#runDetailDialog` part for part**:
+    `<dialog class="gh-dialog gh-dialog-fullscreen" id="batteryRunReportDialog" aria-labelledby="brrTitle">`
+    with `app-run-report-frame layout="single"`, `[runReportTabs]` and a `[runReportBody]` scrolled to the
+    top on a tab change; no footer; Escape and **Close** (`.rr-close`, *Close battery run report*) close
+    it and stop polling. The header: emblem, `h3#brrTitle[tabindex=-1]` *Battery Run #N* (focused on
+    open), `app-run-facts` primary rows *Model* and *Assessor(s)*, and the *Run details* disclosure
+    (`app-run-facts layout="stacked"`: *Prompt*, *Scoring profile*, *Started*, *Battery*, *Suites*;
+    `buildBatteryRunFacts` in `run-facts.ts`, whose `battery` and `suites` keys a single run never
+    emits), its open state in `overseer.benchmark.batteryRunReport.header`. `div.rr-header-controls`
+    holds the `role="group"` *Battery run actions* — **Downloads** (*file-with-arrow*, the Download
+    Center's `battery` context), **Actions** (*rotate* plus a *chevron*: a §4f popover of *Recompute
+    analysis* / *Compute analysis*, *Continue battery*, *Re-run under current instrument* and *Show
+    progress*, each `aria-disabled` with its reason on a second line) and an icon-only **Copy
+    diagnostics** (*copy*, `batteryRunDiagnosticsText`) — and **Close** outside it; there is no *View
+    game snapshot*. The tab row `.gh-tabs .gh-tabs-secondary` *Battery run report sections*, no icons,
+    every panel rendered and `hidden`, the chosen tab in `overseer.benchmark.batteryRunReport.tab`
+    (unknown → *Summary*): **Summary** (*Key figures* with **Choose figures**, **Copy** and **Download**
+    over `.rr-figures` `.score-card`s keyed `intelligence`, `critical-errors`, `answered`, `speed`,
+    `mean-time`, `wall-time`, `model-cost`, `estimated-cost`, the choices in
+    `overseer.benchmark.batteryRunReport.keyFigures` and `….imageDetails`, the images named through
+    `ImageContext.fileStem` `battery-run-<id>`; then the recompute callout and the caveats),
+    **Integrity** (a `gh-tag` *Notice* from one getter), **Suites** (a link-style button per member run
+    that opens its single-run report on top, emitted as `openRunReport`), **Robustness**, **Members**
+    (the suite × round grid with **Open run report**), **Dimensions**, **Speed**, **Cost**,
+    **Configuration**, **Paired Test** (this run the treatment; the baseline select from
+    `getBatteryLeaderboard(definitionSha256)` grouped by class; a kind line — model comparison,
+    verification, replicate (Compare disabled: M7 refuses it), probably refused; **Compare** runs `analyseBatteryRun(id, baselineId)` (M7,
+    persisted) and then `POST model-comparison/paired/battery`, shown in `app-paired-test-result` with
+    `[showPrimary]="false"` under the M7 block) and **AI Reports**.
+  - `app-battery-ai-reports` (`batteries/battery-ai-reports.component.*`): the Battery Run Report's AI
+    Reports tab, the counterpart of `app-run-ai-reports` with the same rows and tags, **View** (PDF
+    viewer), **Delete** (confirmation), the *Write missing reports* fieldset, the **Report writer**
+    picker preselected with the battery run's writer, the `.gh-estimate-panel`, the refusal line, the
+    amber same-provider warning with **Write Anyway** (*zap*), **Show Progress** and **Open Download
+    Center**. The row-building and tag rules both components use are in
+    `run-ai-reports/report-documents-list.ts`; `report-writer-policy.ts` and `report-writer-advice.ts` (with
+    a battery entry) are shared. Its progress dialog is `app-run-report-writing-dialog` with a
+    `ReportJobSource` (`{ getJob(), cancel(), subjectLabel }`) for the battery run; without one the
+    dialog builds the run source from `runId`, as before.
 
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → AI Benchmark →
-  Run History → Cross-model comparison, step 1)** — single runs and analysis groups on two
-  kind tabs (`csp-src-tab-runs` / `csp-src-tab-groups`), one table per tab, with a pager above and below it.
+  Run History → Cross-model comparison, step 1)** — single runs, analysis groups and battery results
+  on three kind tabs (`csp-src-tab-runs` / `csp-src-tab-groups` / `csp-src-tab-batteries`, *Single
+  runs*, *Analysis groups*, *Battery results*), one table per tab, with a pager above and below it. The
+  battery table (`csp-src-panel-batteries`, rows from the workspace store's `batteryRuns`) has *Compare*
+  (*Include battery run N in the comparison*), *ID*, *Battery* (name and revision, with an
+  `exactFilter`), *Tested Model*, *Status*, *Class* (short hash, or *Incomplete* / *Stale*), *Overall
+  Index*, *R* and *Analyzed*. **No mixing:** while runs or groups are selected the battery checkboxes are
+  `aria-disabled`, and the other way round, with the visible line *A comparison holds either battery
+  results or runs and groups. Clear the selection to switch.*; the suite scope select says it does not
+  apply to battery results. `ModelComparisonSelection` and `BenchmarkComparisonSelection` carry
+  `batteryRunIds` (an older stored blob restores `[]`), and the comparability index is requested with
+  `POST model-comparison/comparability`.
   - `#legendDialog`: About conditions — full-screen: what a condition is, which one the charts
     use, the three kinds of key as plain-language cards with technical names collapsed, and
     every condition as an exclusive accordion (`<details name="csp-conditions">`, only the open
@@ -735,8 +889,17 @@ To find specific popups, look in the corresponding component's `.html` template:
   step 4, go back to step 2 to change them, then **Update charts…** on step 4 and view again. While
   charts are being published the wizard's own close controls are disabled and the benchmark
   component's Escape guard refuses Escape, as during an export.
-  - No preview dialog: step 2 is a workspace with four view tabs — **All charts** (grid), **Single
-    chart** (eye), **Interactive table** (table) and **Table preview** (image). When nothing can be
+  - **Battery results** are the third source kind. A battery comparison's `subjectKind` is
+    `Batteries`: `sourceLabel` and `table-export.ts` read *Battery run N*, the cost axis titles say *per
+    battery pass*, the launcher's *Last comparison* names the baseline battery, `reportPackContext`
+    carries `batteryRunIds` and `documentsContext` the `battery:` keys. No table display column was
+    added. `BenchmarkShellBridge.openComparisonWizard(preset?)` opens the wizard on step 1 with a preset's
+    `batteryRunIds` selected (the leaderboard's **Open in Model Comparison**). The charts plot at most
+    `MAX_PLOTTED_ENTRIES` (12) models.
+  - No preview dialog: step 2 is a workspace with five view tabs — **All charts** (grid), **Single
+    chart** (eye), **Interactive table** (table), **Table preview** (image) and **Paired tests**
+    (*columns*; `aria-disabled` while fewer than two entries are comparable, its reason as a visually
+    hidden suffix; see `app-paired-tests-view` below). When nothing can be
     charted the two chart tabs are `aria-disabled`, the reason is shown (per shape: no models, fewer
     than two models measured the same way, or the admin unticked models under Data → Models down to
     fewer than two), and the step opens on *Interactive table*. The view bar (`.mc-fig-bar`) holds
@@ -816,12 +979,50 @@ To find specific popups, look in the corresponding component's `.html` template:
     comparison*), a `reloadToken` bumped when a job finishes or a document is charted, and the
     wizard's `DownloadCenterChartActions` (see the Download Center entry above), which add the
     *Charts* option and facet, **Update charts…** and the per-card **More actions**.
+  - **`app-paired-tests-view`** (`model-comparison/paired-tests-view.component.*`, `mc-paired-` ids):
+    step 2's **Paired tests** view, mounted on its first showing and then kept (`pairedViewMounted`),
+    fed the comparison, the pricing basis, step 2's Highlight keys and whether it is shown. With fewer
+    than two comparable entries it shows only *Comparing needs a second comparable entry…* and where a
+    single model's result lives. The toolbar: the mode as a `.gh-tabs-segmented` pair *Against a
+    reference* / *All pairs* (`role="tablist"` *Pairs to test*, hidden with two entries; *All pairs*
+    `aria-disabled` above 12 entries with `#mc-paired-allpairs-reason`), the **Reference** select
+    (`#mc-paired-reference`; the default is the first highlighted comparable entry, else the server's —
+    the highest Intelligence Index), an icon-only **Recompute** (*rotate*), and, at the right end, the
+    group *Export the paired tests*: icon-only **Copy as Markdown** (*copy*) and **Download**
+    (*file-with-arrow*; Markdown or CSV by the Download tab's table format,
+    `paired-tests_<yyyyMMdd-HHmmss>`, built by `paired-tests-export.ts`), both `aria-disabled` while there
+    is nothing to export. One `role="status"` line (*Computing paired tests…*, then the export outcome).
+    The body (`#mc-paired-body`, the mode's tabpanel): the family line (*3 tests against GPT-6.1 Sol ·
+    Holm-adjusted*), the single-run caveat (`role="note"`), the measures note, then one non-exclusive
+    `details.gh-disclosure` per section — *Intelligence* (*primary test*), *Quality dimensions*,
+    *Speed*, *Cost* — open state in `overseer.modelComparison.pairedSections` (try/catch, all open by
+    default). Reference mode is a `.gh-datatable` (*Model* as a details button, *Against*, *Paired
+    questions*, the difference or ratio with its interval, an `aria-hidden` forest strip on a shared
+    scale with the zero (or one) line, *dz*, *p*, *Adjusted p*, *Verdict*); All-pairs mode is the
+    lower-triangle `table.mc-paired-matrix` whose cell buttons open the pair, then *Every pair as a
+    list*. The opened pair is `section#mc-paired-detail` with `app-paired-test-result`. The request is a
+    `switchMap`, so a change of selection, prices, mode or reference cancels one in flight; it is sent
+    when the view is shown and the request differs from the last, and always on Recompute (with
+    `recompute: true`). The verdict is a word plus a shape — filled dot (established), ring, dash (not
+    tested) — and color only repeats it. The About dialog's *Not shown as charts* points *Pairwise
+    significance* to this view.
+  - **`app-paired-test-result`** (`benchmark/shared/paired-test/`): one pair on every measure — the
+    Intelligence headline (difference, interval, p, verdict; suppressed by `[showPrimary]="false"`, as the
+    battery report does under its M7 block), then *Quality dimensions*, *Speed* and *Cost* as
+    non-exclusive disclosures (`overseer.benchmark.pairedTest.sections`), the kind sentence and, for a
+    verification, its changed keys unless `[showKind]="false"` (the run report's tab shows its own), the
+    adjustment line when `[showAdjustment]`, and the single-run caveat.
+    It takes either a whole `BenchmarkPairComparisonDto` (`comparison`: the run and battery reports) or
+    a family's `measures` with the pair's keys and labels (the wizard's details), plus an `idPrefix`.
+    The wording, effect and *p* formats, the forest-strip scale and the kind sentences are in
+    `paired-test-format.ts`, shared by all three hosts so a verdict never reads *equal*.
   - **Recompute** is icon-only: a `.action-btn` with the rotate glyph,
     `aria-label="Recompute the comparison"` and the tooltip *Recompute this comparison*. A refetch
     whose payload carries the same entry keys (from changing Prices or from Recompute) keeps the
     admin's Show and Highlight choices; a different set of entries reseeds both.
   - **The sidebar follows the view.** Chart views show **Data · Theme · Charts · Download**; table
-    views show **Data · Theme · Table · Download**. A tab in both sets stays selected across a view
+    views show **Data · Theme · Table · Download**; the Paired tests view shows **Data** alone (Models
+    and Prices; *Model order* is not offered, since the paired tests keep the comparison's entry order). A tab in both sets stays selected across a view
     change; only *Charts* and *Table* swap. Stored tabs migrate `emphasis` → `data`, `style` →
     `charts`, `download` / `export` → `download`. The sidebar's collapsed state, width, tab and view
     are in `localStorage['overseer.modelComparison.figureSidebar']`.

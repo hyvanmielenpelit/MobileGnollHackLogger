@@ -1,10 +1,16 @@
 import {
   buildConditionLegend,
   conditionDetailFor,
+  costUnitOf,
   isGeneratedGroupName,
+  modelComparisonQueryParams,
   normalizeThinkingLevel,
   parseConfigurationValue,
   questionCoverageNotes,
+  selectedConditions,
+  selectionKeys,
+  selectionNotices,
+  sourceLabel,
   summarizeConditionDifference,
   toChartContext,
   toChartEntries
@@ -705,5 +711,60 @@ describe('toChartEntries total run cost', () => {
     expect(noTotal.totalRunCostSdUsd).toBeNull();
     expect(Number.isNaN(noCost.totalRunCostUsd)).toBe(true);
     expect(noCost.totalRunCostSdUsd).toBeNull();
+  });
+});
+
+describe('battery results', () => {
+  it('sends battery run ids as repeated parameters after the groups, and none when absent', () => {
+    expect(modelComparisonQueryParams({ runIds: [], groupIds: [], batteryRunIds: [4, 9], pricingBasis: 'Current' }))
+      .toEqual([['batteryRunIds', '4'], ['batteryRunIds', '9'], ['pricingBasis', 'Current']]);
+    expect(modelComparisonQueryParams({ runIds: [1], groupIds: [2], pricingBasis: 'AsRun' }))
+      .toEqual([['runIds', '1'], ['groupIds', '2'], ['pricingBasis', 'AsRun']]);
+  });
+
+  it('keys a battery result as battery:<id>, after runs and groups', () => {
+    expect(selectionKeys([1], [2], [4])).toEqual(['run:1', 'group:2', 'battery:4']);
+    expect(selectionKeys([1], [2])).toEqual(['run:1', 'group:2']);
+  });
+
+  it('adds no condition for a battery result, which the index does not cover', () => {
+    expect(selectedConditions(buildIndex(), [], [], [4])).toEqual([]);
+    expect(selectedConditions(buildIndex(), [1], [], [4])).toEqual([1]);
+  });
+
+  it('names a battery entry Battery run N', () => {
+    expect(sourceLabel({ sourceKind: 'Battery', sourceId: 4 })).toBe('Battery run 4');
+    expect(sourceLabel({ sourceKind: 'Run', sourceId: 4 })).toBe('Run 4');
+    expect(sourceLabel({ sourceKind: 'Group', sourceId: 4 })).toBe('Analysis group 4');
+  });
+
+  it('says nothing about the index for a selection of battery results', () => {
+    const notices = selectionNotices({
+      index: null,
+      indexLoading: true,
+      indexError: 'The index could not be built.',
+      runIds: [],
+      groupIds: [],
+      batteryRunIds: [4, 9],
+      pricingBasis: 'Current'
+    });
+    expect(notices).toEqual([]);
+  });
+
+  it('costs a battery comparison per battery pass and names its battery, and a run comparison per suite run', () => {
+    const battery = toChartContext({
+      ...buildComparison([buildComparisonEntry('battery:4', {})]),
+      subjectKind: 'Batteries',
+      baselineSuiteName: null,
+      baselineBatteryName: 'Core Battery'
+    });
+    expect(battery.costUnit).toBe('battery pass');
+    expect(battery.suiteName).toBe('Core Battery');
+
+    const runs = toChartContext({ ...buildComparison([buildComparisonEntry('run:1', {})]), subjectKind: 'Runs' });
+    expect(runs.costUnit).toBe('suite run');
+    // An older server sends no subject kind, and compares runs and groups only.
+    expect(costUnitOf(buildComparison([]))).toBe('suite run');
+    expect(costUnitOf(null)).toBe('suite run');
   });
 });

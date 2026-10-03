@@ -457,6 +457,16 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<DateTime?>("LastProgressAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ReportDocumentsMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("ReportDocumentsStatus")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("ReportWriterModelConfigurationId")
+                        .HasColumnType("bigint");
+
                     b.Property<int>("RequestedMemberCount")
                         .HasColumnType("int");
 

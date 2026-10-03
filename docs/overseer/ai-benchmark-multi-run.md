@@ -406,6 +406,26 @@ manufacture findings, reliably, on data with no effect in it at all.
 together. The refusal to pool a Tier C set lives at the persistence boundary
 (`BenchmarkGroupAnalysisService`), which is where a caller could otherwise do it by accident.
 
+### 8.3 Siblings: the wizard's Paired tests and the run report's Paired Test tab
+
+*Compare with group* is no longer the only paired test, but it is still the reference for the others.
+Since 2026-10-03 two siblings ask the same question elsewhere, and all three are one method family,
+`BenchmarkPairedTests`, built on the primitives of this section (`BenchmarkGroupStatistics.Compare`,
+`WilcoxonSignedRank`, `CohensDz`, `StudentTCritical95`) and re-implementing none:
+
+- The **Model Comparison wizard's Paired tests view** tests runs, groups or battery results of one
+  condition against a reference or across all pairs. For run and group entries its Intelligence row
+  **is** `Compare` over each entry's `Compute` result, so for the same two groups it equals *Compare
+  with group*, which a unit test pins; each measure is a family, Holm-adjusted when it holds more than
+  one test.
+- The **run report's Paired Test tab** tests one run against another finished run on the same suite,
+  without building groups, and names the pair a *model comparison*, a *verification of a change* or a
+  *replicate*.
+
+Both add the quality dimensions, and speed and cost as Wilcoxon on log ratios, which *Compare with
+group* does not report. *Compare with group* keeps what they lack: the per-item exploratory comparisons
+of § 8.1 and a persisted comparison inside the group analysis. See `ai-benchmark.md`, *Paired Tests*.
+
 ---
 
 ## 9. What This Method Cannot Decompose
@@ -476,3 +496,11 @@ advisory exists to catch.
 
 Every figure in the report is reproducible from the member runs' stored answers, which is what makes
 it usable as an instrument for deciding whether a change is kept.
+
+This non-goal still holds for the multi-run report. It was reversed for **batteries** on 2026-10-03: a
+battery run's Executive Summary and Report for AI Researchers and Developers are written by a report
+writer under the Report Pack rule — numbers from code, words from the writer, rendering with no AI —
+while the battery's Markdown report stays arithmetic only. The decision and its reasons are in
+[`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 7.2, and the mechanics in
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 14. A single run already had its own
+AI-written documents (`ai-benchmark-report-pack.md` § 11).

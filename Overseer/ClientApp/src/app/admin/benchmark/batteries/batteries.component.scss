@@ -1,5 +1,6 @@
 /* Multi-Suite sub-tab: layout and component-local presentation only. Buttons, .gh-tag,
- * .gh-datatable, .gh-section-title, .gh-field-error and the tooltips come from styles.scss. */
+ * .config-badge, .gh-table, the filter bar, .gh-section-title, .gh-field-error and the tooltips come
+ * from styles.scss. */
 
 :host {
   display: block;
@@ -14,21 +15,45 @@
 }
 
 .bb-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   min-inline-size: 0;
 }
 
+/* The heading, its info button, the status line and the head actions, centered on one row. The
+   status line wraps under the heading where the row is narrow. */
 .bb-section-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
-  margin-bottom: 12px;
+  gap: 10px 8px;
+  padding-block-end: 6px;
+  border-bottom: 1px solid var(--border-glass);
 
   .gh-section-title {
     margin: 0;
+    padding: 0;
+    border-bottom: 0;
+    text-box: trim-both cap alphabetic;
+
+    &:focus:not(:focus-visible) {
+      outline: none;
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--primary-color);
+      outline-offset: 4px;
+      border-radius: 2px;
+    }
   }
 }
 
+.bb-list-status {
+  margin-inline-start: auto;
+}
+
+/* Show archived and New Battery, at the end of the row. */
 .bb-head-actions {
   display: flex;
   flex-wrap: wrap;
@@ -37,92 +62,204 @@
   margin-inline-start: auto;
 }
 
-.bb-analysis .gh-section-title:focus-visible {
-  outline: 2px solid var(--primary-color);
-  outline-offset: 3px;
-}
-
 .bb-battery-error,
-.bb-analysis-error,
-.bb-recompute-callout {
-  margin-bottom: 12px;
+.bb-loading,
+.bb-empty-batteries,
+.bb-all-archived,
+.bb-no-matches {
+  margin: 0;
 }
 
-/* --- Battery cards ----------------------------------------------------------------------- */
+/* --- Filter bar ------------------------------------------------------------------------------ */
+
+.bb-filter-bar {
+  padding-block: 4px 2px;
+}
+
+.bb-search {
+  flex: 1 1 16rem;
+}
+
+/* Sort by, pushed to the end of the search row. */
+.bb-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-inline-start: auto;
+}
+
+.bb-sort-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.bb-sort-select {
+  min-block-size: 32px;
+  padding-block: 4px;
+  font-size: var(--text-secondary);
+}
+
+.bb-clear-filters {
+  margin-inline-start: 4px;
+}
+
+/* --- Battery cards --------------------------------------------------------------------------- */
 
 .bb-cards {
-  list-style: none;
+  display: grid;
+  gap: 0.75rem;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
-  gap: 12px;
+  list-style: none;
+  container: bb-cards / inline-size;
 }
 
+.bb-card-item {
+  min-inline-size: 0;
+}
+
+/* The header, the metrics and the actions on one row, the suites under a hairline. The metric
+   columns have a fixed width, so they line up down the list. */
 .bb-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  block-size: 100%;
-  padding: 12px 14px;
+  --bb-pad-block: 1rem;
+  --bb-pad-inline: 1.25rem;
+  --bb-zone-gap: 1.5rem;
+  --bb-row-gap: 0.875rem;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "head metrics actions"
+    "suites suites suites";
+  gap: var(--bb-row-gap) var(--bb-zone-gap);
+  padding: var(--bb-pad-block) var(--bb-pad-inline);
   border: 1px solid var(--border-glass);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
 
   &.is-archived {
-    opacity: 0.75;
+    background: rgba(255, 255, 255, 0.02);
   }
 }
 
+.bb-card-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  min-inline-size: 0;
+}
+
+/* The id, the revision, the scheme and the battery's states, each a word. */
 .bb-card-kicker {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 6px;
-  margin: 0;
+  gap: 4px 8px;
+  margin: 0 0 calc(var(--bb-row-gap) - 0.375rem);
   font-size: var(--text-secondary);
-  color: #aaa;
+  color: #a1a1aa;
+
+  // Inline with the other parts, without the block layout the global tags take under a name.
+  .gh-tag,
+  .config-badge {
+    display: inline-flex;
+    margin: 0;
+  }
 }
 
+.bb-card-id {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary-color);
+}
+
+.bb-sep {
+  color: #71717a;
+}
+
+.bb-tag-archived {
+  border-color: var(--border-glass);
+  color: #d4d4d8;
+}
+
+.bb-tag-active {
+  border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+  color: var(--primary-color);
+}
+
+.bb-tag-not-assessed {
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fcd34d;
+}
+
+/* Focused after Load more and after a delete, so it carries a ring for that focus alone. */
 .bb-card-title {
   margin: 0;
-  font-size: 1.0625rem;
+  font-size: 1.125rem;
   font-weight: 700;
+  line-height: 1.3;
+  color: #f4f4f5;
   overflow-wrap: anywhere;
+
+  &:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
 }
 
 .bb-card-description {
   margin: 0;
+  max-inline-size: 70ch;
   color: #ccc;
   white-space: pre-wrap;
 }
 
-.bb-card-suites {
+.bb-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
   margin: 0;
-  padding-inline-start: 1.5rem;
-
-  li {
-    margin: 2px 0;
-  }
-
-  li.is-deleted .bb-suite-name {
-    text-decoration: line-through;
-    color: #999;
-  }
-}
-
-.bb-suite-name {
-  font-weight: 600;
-}
-
-.bb-suite-meta {
-  margin-inline-start: 6px;
   font-size: var(--text-secondary);
-  color: #aaa;
+  line-height: 1.4;
+  color: #a1a1aa;
+
+  > span {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
 }
 
-.bb-warn-text {
-  color: #fbbf24;
+.bb-card-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+// Monospaced because it is a hash prefix and is read character by character.
+.bb-hash,
+.bb-hash-full {
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
+}
+
+.bb-hash {
+  color: var(--primary-color);
+}
+
+.bb-hash-full {
+  overflow-wrap: anywhere;
 }
 
 .bb-card-errors {
@@ -131,23 +268,104 @@
   padding: 0;
 }
 
+/* Four counts, each a small-caps label over its value, behind a hairline that separates them from
+   the header. */
+.bb-metrics {
+  grid-area: metrics;
+  display: grid;
+  grid-template-columns: repeat(4, 7.5rem);
+  align-content: start;
+  gap: 0.75rem 1rem;
+  margin: 0;
+  padding-inline-start: var(--bb-zone-gap);
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.08);
+
+  dt {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #888;
+  }
+
+  dd {
+    margin: 0.25rem 0 0;
+    font-size: var(--text-body);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.bb-metric {
+  min-inline-size: 0;
+}
+
 .bb-card-actions {
+  grid-area: actions;
   display: flex;
   flex-wrap: wrap;
+  align-self: start;
+  justify-content: flex-end;
   gap: 8px;
-  margin-top: auto;
-  padding-top: 8px;
+  max-inline-size: 22rem;
 }
 
-.bb-tag-active {
-  color: var(--primary-color);
+/* --- Suites block ---------------------------------------------------------------------------- */
+
+.bb-card-suites {
+  grid-area: suites;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  padding-block-start: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* --- Tables ------------------------------------------------------------------------------ */
+/* One segment per suite in run order, as wide as its declared weight. Two gold tints alternate so
+   neighbors stay apart; a deleted suite is hatched gray and keeps a minimum width. */
+.bb-weight-mix {
+  display: flex;
+  gap: 2px;
+  inline-size: 100%;
+  block-size: 8px;
+}
 
-.bb-runs-scroll,
-.bb-table-scroll {
-  margin-block: 8px;
+.bb-weight-segment {
+  flex: 0 1 0;
+  min-inline-size: 2px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--primary-color) 85%, transparent);
+
+  &.is-alt {
+    background: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+
+  &.is-deleted {
+    min-inline-size: 0.75rem;
+    background: repeating-linear-gradient(135deg, #71717a 0 3px, #3f3f46 3px 6px);
+  }
+}
+
+.bb-suite-table {
+  inline-size: 100%;
+  margin: 0;
+  font-size: var(--text-secondary);
+
+  th,
+  td {
+    padding-block: 4px;
+  }
+
+  tr.is-deleted .bb-suite-name {
+    text-decoration: line-through;
+    color: #999;
+  }
+}
+
+.bb-suite-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .bb-num {
@@ -156,213 +374,51 @@
   white-space: nowrap;
 }
 
-.bb-run-battery {
-  display: block;
-  font-weight: 600;
-}
-
-.bb-run-meta {
-  display: block;
-  font-size: var(--text-secondary);
-  font-weight: 400;
-  color: #aaa;
-}
-
-.bb-actions {
-  white-space: nowrap;
-  text-align: end;
-}
-
-tr.is-selected > * {
-  background: rgba(212, 160, 23, 0.08);
-}
-
-tr.is-incomplete > * {
-  color: #aaa;
-}
-
-.bb-weights {
-  font-size: var(--text-secondary);
-  color: #bbb;
-}
-
-.bb-tag-declared {
-  color: var(--primary-color);
-}
-
-.bb-tag-stale {
-  margin-inline-start: 6px;
-}
-
-.bb-row-note {
-  display: block;
-  font-size: var(--text-secondary);
-  font-weight: 400;
-  color: #aaa;
-}
-
-/* --- Analysis ------------------------------------------------------------------------------ */
-
-.bb-analysis-meta,
-.bb-class-meta {
-  margin: 0 0 12px;
-  font-size: var(--text-secondary);
-  color: #aaa;
-}
-
-.bb-headline {
-  margin: 0 0 16px;
-  padding: 14px 16px;
-  border: 1px solid rgba(212, 160, 23, 0.35);
-  border-inline-start: 4px solid var(--primary-color);
-  border-radius: 6px;
-  background: rgba(212, 160, 23, 0.06);
-
-  &.is-incomplete {
-    border-color: rgba(255, 255, 255, 0.15);
-    border-inline-start-color: #888;
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  p {
-    margin: 0;
-  }
-}
-
-.bb-headline-label {
-  font-size: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #aaa;
-}
-
-.bb-headline-value {
-  font-size: 1.75rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--primary-color);
-
-  &.bb-incomplete {
-    font-size: 1.25rem;
-    color: #ddd;
-  }
-}
-
-.bb-headline-interval {
-  color: #ccc;
-}
-
-.bb-sub-title {
-  margin: 18px 0 8px;
-  font-size: 0.9375rem;
-  font-weight: 700;
-  color: var(--title-color, #e0ba6d);
-}
-
-.bb-facts {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 4px 16px;
-  margin: 0;
-
-  > div {
-    display: contents;
-  }
-
-  dt {
-    color: #aaa;
-  }
-
-  dd {
-    margin: 0;
-    font-variant-numeric: tabular-nums;
-  }
-}
-
-.bb-panels {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
-  gap: 0 24px;
-}
-
-.bb-panel {
-  min-inline-size: 0;
-}
-
-.bb-note {
-  margin: 4px 0 8px;
-  font-size: var(--text-secondary);
-  color: #aaa;
-}
-
-.bb-withheld {
-  color: #aaa;
+.bb-suites-toggle {
   font-size: var(--text-secondary);
 }
 
-.bb-degraded {
-  margin: 6px 0 0;
-  font-size: var(--text-secondary);
-  color: #fbbf24;
-}
+/* A narrower list: the metrics move under the header, spread across the card's width, with their
+   hairline above them. */
+@container bb-cards (inline-size < 60rem) {
+  .bb-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head actions"
+      "metrics metrics"
+      "suites suites";
+  }
 
-.bb-caveats,
-.bb-excluded {
-  margin: 0;
-  padding-inline-start: 1.25rem;
-
-  li {
-    margin: 4px 0;
+  .bb-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+    border-inline-start: 0;
+    padding-inline-start: 0;
+    padding-block-start: 0.75rem;
+    border-block-start: 1px solid rgba(255, 255, 255, 0.08);
   }
 }
 
-.bb-excluded-what {
-  font-weight: 600;
-}
-
-/* --- Leaderboard and Compare --------------------------------------------------------------- */
-
-.bb-hash {
-  font-family: var(--font-mono);
-  font-size: var(--text-secondary);
-  color: #999;
-}
-
-.bb-class + .bb-class {
-  margin-top: 8px;
-}
-
-.bb-compare {
-  margin-top: 20px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-glass);
-}
-
-.bb-compare-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px 16px;
-
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-inline-size: min(100%, 18rem);
-    flex: 1 1 18rem;
+/* A phone: one column, the actions on their own line under the header. */
+@container bb-cards (inline-size < 30rem) {
+  .bb-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "actions"
+      "metrics"
+      "suites";
   }
 
-  label {
-    font-weight: 600;
+  .bb-card-actions {
+    justify-content: flex-start;
+    max-inline-size: none;
   }
 }
 
-.bb-compare-refusal {
-  margin-top: 12px;
-}
-
-.bb-compare-headline {
-  margin-top: 12px;
+@media (prefers-reduced-motion: reduce) {
+  .bb-card {
+    transition: none;
+  }
 }
 
 /* --- Delete confirmation ------------------------------------------------------------------- */

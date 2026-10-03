@@ -29,6 +29,11 @@ export interface BenchmarkGraderGuideRequest {
   profile?: GraderGuideProfile | null;
 }
 
+/** What the comparison wizard opens with selected; it opens on step 1. */
+export interface ComparisonWizardPreset {
+  batteryRunIds: readonly number[];
+}
+
 /**
  * Requests from the sub-tabs and the state services to the dialogs and the tab row AdminBenchmarkComponent
  * hosts. The methods keep the names the shell's own handlers have, so a template reads the same either way.
@@ -43,7 +48,8 @@ export class BenchmarkShellBridge {
   readonly closeSnapshotViewerFor$ = new Subject<number>();
   readonly openGraderGuide$ = new Subject<BenchmarkGraderGuideRequest>();
   readonly confirm$ = new Subject<BenchmarkConfirmOptions>();
-  readonly openComparisonWizard$ = new Subject<void>();
+  readonly openComparisonWizard$ = new Subject<ComparisonWizardPreset | null>();
+  readonly openBatteryRunReport$ = new Subject<number>();
   readonly runDeleted$ = new Subject<number>();
 
   selectSubTab(tab: BenchmarkSubTab): void {
@@ -79,8 +85,14 @@ export class BenchmarkShellBridge {
     this.confirm$.next(options);
   }
 
-  openComparisonWizard(): void {
-    this.openComparisonWizard$.next();
+  /** Opens the comparison wizard, with `preset`'s sources selected when given. */
+  openComparisonWizard(preset: ComparisonWizardPreset | null = null): void {
+    this.openComparisonWizard$.next(preset);
+  }
+
+  /** Opens the Battery Run Report over whatever is showing. */
+  openBatteryRunReport(batteryRunId: number): void {
+    this.openBatteryRunReport$.next(batteryRunId);
   }
 
   /** A run was deleted; the run report closes if it shows that run. */
