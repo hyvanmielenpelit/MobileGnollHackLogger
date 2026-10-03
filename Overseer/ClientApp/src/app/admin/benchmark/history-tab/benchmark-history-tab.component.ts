@@ -34,6 +34,8 @@ import {
   formatDuration
 } from '../benchmark-run-format';
 import {
+  batteryModelBadges,
+  batteryModelName,
   batteryRunStatusLabel,
   formatIndexWithHalfWidth,
   formatNumber,
@@ -196,28 +198,10 @@ export class BenchmarkHistoryTabComponent implements OnInit {
   }
 
   /** A battery card's headline: the tested model's label, else its id. */
-  batteryModelName(battery: BenchmarkBatteryRunDto): string {
-    return battery.testedModelLabel || battery.testedModelId || 'Model not recorded';
-  }
-
-  private readonly batteryBadgeCache = new WeakMap<BenchmarkBatteryRunDto, RunFactBadge[]>();
+  readonly batteryModelName = batteryModelName;
 
   /** The tested model's badges on a battery card, by the same rules as a run card's. */
-  batteryModelBadges(battery: BenchmarkBatteryRunDto): RunFactBadge[] {
-    let badges = this.batteryBadgeCache.get(battery);
-    if (!badges) {
-      badges = runFactBadges({
-        name: this.batteryModelName(battery),
-        provider: battery.testedProvider || null,
-        thinkingLevel: battery.testedThinkingLevel ?? null,
-        reasoningMode: battery.testedReasoningMode ?? null,
-        serviceTier: null,
-        customEndpoint: false
-      });
-      this.batteryBadgeCache.set(battery, badges);
-    }
-    return badges;
-  }
+  readonly batteryModelBadges = batteryModelBadges;
 
   /** The orchestrator may still move the battery run, so it can be neither deleted nor resumed here. */
   isBatteryLive(battery: BenchmarkBatteryRunDto): boolean {

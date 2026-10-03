@@ -1194,6 +1194,7 @@ public class AdminBenchmarkController : ControllerBase
 
         var clusters = BenchmarkRubricGapDetector.Detect(samples);
         var kbGaps = BenchmarkRubricGapDetector.DetectKnowledgeBaseGaps(samples);
+        var rubricContradictions = await LoadRubricContradictionsAsync(suiteId);
 
         return Ok(new BenchmarkRubricGapReportDto
         {
@@ -1217,8 +1218,86 @@ public class AdminBenchmarkController : ControllerBase
                 Basis = g.Basis,
                 QuestionOrderIndices = g.QuestionOrderIndices.ToList(),
                 Recurrence = g.Recurrence
-            }).ToList()
+            }).ToList(),
+            RubricContradictions = rubricContradictions
         });
+    }
+
+    /// <summary>
+    /// The sentences graders docked against the rubric that the claim verifier supported with a
+    /// citation (<see cref="BenchmarkService.SupportedRubricContradictions"/>), read from the stored
+    /// verification items of the suite's answers at each question's current item revision. One row per
+    /// question and charged sentence, carrying the first run's charged parts, rubric quote, citation
+    /// and basis and the number of distinct runs that raised it; ordered by question, then by that
+    /// count, highest first. Ordinary claims never appear here: an item is read only for its accused
+    /// role and rubric citation. No AI calls.
+    /// </summary>
+    private async Task<List<BenchmarkRubricContradictionDto>> LoadRubricContradictionsAsync(
+        long suiteId,
+        CancellationToken ct = default)
+    {
+        var rows = await _dbContext.BenchmarkRunAnswers
+            .Where(a => a.BenchmarkRun.BenchmarkSuiteId == suiteId
+                        && a.BenchmarkQuestionId != null
+                        && a.ClaimVerificationJson != null
+                        && a.ItemRevisionUsed == a.BenchmarkQuestion!.ItemRevision)
+            .Select(a => new
+            {
+                a.BenchmarkRunId,
+                QuestionId = a.BenchmarkQuestionId!.Value,
+                a.OrderIndex,
+                a.ClaimVerificationJson
+            })
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        var byKey = new Dictionary<(long QuestionId, string Sentence), (BenchmarkRubricContradictionDto Row, HashSet<long> Runs)>();
+        foreach (var row in rows.OrderBy(r => r.BenchmarkRunId))
+        {
+            List<BenchmarkClaimVerification>? verifications;
+            try
+            {
+                verifications = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(row.ClaimVerificationJson!);
+            }
+            catch (JsonException)
+            {
+                // A malformed blob costs that answer's items, never the report.
+                continue;
+            }
+
+            foreach (var item in BenchmarkService.SupportedRubricContradictions(verifications))
+            {
+                string sentence = item.Claim.Trim();
+                var key = (row.QuestionId, sentence);
+                if (!byKey.TryGetValue(key, out var entry))
+                {
+                    entry = (new BenchmarkRubricContradictionDto
+                    {
+                        QuestionId = row.QuestionId,
+                        QuestionOrderIndex = row.OrderIndex,
+                        ChargedSentence = sentence,
+                        ChargedParts = item.QuotedFragments?.ToList() ?? new List<string>(),
+                        RubricQuote = item.RubricQuote,
+                        Citation = item.Citation,
+                        Basis = item.Basis
+                    }, new HashSet<long>());
+                    byKey[key] = entry;
+                }
+                entry.Row.RubricQuote ??= item.RubricQuote;
+                entry.Runs.Add(row.BenchmarkRunId);
+            }
+        }
+
+        return byKey.Values
+            .Select(e =>
+            {
+                e.Row.RunCount = e.Runs.Count;
+                return e.Row;
+            })
+            .OrderBy(r => r.QuestionOrderIndex)
+            .ThenByDescending(r => r.RunCount)
+            .ThenBy(r => r.ChargedSentence, StringComparer.Ordinal)
+            .ToList();
     }
 
     /// <summary>
@@ -3163,6 +3242,7 @@ public class AdminBenchmarkController : ControllerBase
             RefutedClaimAnswerCount = run.RefutedClaimAnswerCount,
             ContestedCriticalErrorAnswerCount = run.ContestedCriticalErrorAnswerCount,
             ContestedAccuracyDeductionAnswerCount = run.ContestedAccuracyDeductionAnswerCount,
+            RubricContradictedAnswerCount = BenchmarkRunFinalizer.RubricContradictedAnswerCount(run.Answers),
             DimensionOutlierAnswerCount = run.DimensionOutlierAnswerCount,
             OutOfRubricAccuracyAnswerCount = run.OutOfRubricAccuracyAnswerCount,
             AnswerFramingOpenerAnswerCount = run.AnswerFramingOpenerAnswerCount,

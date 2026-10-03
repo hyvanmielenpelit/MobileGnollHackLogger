@@ -54,6 +54,10 @@ public static class BenchmarkClaimVerificationPrompt
     /// <paramref name="claimAntecedents"/> carries, per claim, the answer sentence before a claim whose
     /// first word refers back to it, printed above the claim as a context line
     /// (<see cref="AntecedentShown"/>).
+    /// <paramref name="claimRubricCited"/> marks, per claim, an accused sentence charged against the
+    /// rubric; its block carries a <c>Charged against the rubric</c> line with the claim's entry in
+    /// <paramref name="claimRubricQuotes"/>, and the accused-sentence preamble tells the verifier to
+    /// judge such an item against the source and the board only.
     /// </summary>
     public static string BuildPrompt(
         string suiteName,
@@ -76,13 +80,17 @@ public static class BenchmarkClaimVerificationPrompt
         IReadOnlyList<string?>? claimCharges = null,
         IReadOnlyList<IReadOnlyList<string>?>? claimChargedParts = null,
         IReadOnlyList<string?>? assessorEvidenceByMember = null,
-        IReadOnlyList<string?>? claimAntecedents = null)
+        IReadOnlyList<string?>? claimAntecedents = null,
+        IReadOnlyList<bool>? claimRubricCited = null,
+        IReadOnlyList<string?>? claimRubricQuotes = null)
     {
         bool HasRole(int i, string role) => claimRoles != null && i < claimRoles.Count
             && claimRoles[i] != null && claimRoles[i].Contains(role);
         bool IsAccused(int i) => HasRole(i, BenchmarkClaimRoles.AccusedQuote);
+        bool IsRubricCharged(int i) => IsAccused(i) && claimRubricCited != null && i < claimRubricCited.Count && claimRubricCited[i];
         bool IsAssessorStatement(int i) => HasRole(i, BenchmarkClaimRoles.AssessorStatement);
         bool hasAccused = Enumerable.Range(0, claims.Count).Any(IsAccused);
+        bool hasRubricCharged = Enumerable.Range(0, claims.Count).Any(IsRubricCharged);
         bool hasAssessorStatements = Enumerable.Range(0, claims.Count).Any(IsAssessorStatement);
         bool panel = assessorEvidenceByMember != null && assessorEvidenceByMember.Count > 1;
 
@@ -214,6 +222,10 @@ public static class BenchmarkClaimVerificationPrompt
             sb.AppendLine(panel
                 ? $"The assessors graded without tools and between them charged the sentences of the answer marked \"{ChargedLabel(panel)}\" below. Check each exactly as you check the others, and judge the charged part: the words the assessor quoted, read in their sentence and the context given with it. Supported means the charged part is true as the answer states it; Refuted means the charged part is false. A true clause elsewhere in the sentence does not make a false charged part Supported. A sentence absent from the rubric is not thereby false."
                 : "The first assessor graded without tools and charged the sentences of the answer marked \"Charged by the assessor as false or imprecise\" below. Check each exactly as you check the others, and judge the charged part: the words the assessor quoted, read in their sentence and the context given with it. Supported means the charged part is true as the answer states it; Refuted means the charged part is false. A true clause elsewhere in the sentence does not make a false charged part Supported. A sentence absent from the rubric is not thereby false.");
+            if (hasRubricCharged)
+            {
+                sb.AppendLine(RubricChargedPreamble);
+            }
         }
         if (hasAssessorStatements)
         {
@@ -316,6 +328,11 @@ public static class BenchmarkClaimVerificationPrompt
                 {
                     sb.AppendLine($"Charged part (the words the assessor quoted, not part of the claim): \"{string.Join("\"; \"", parts)}\"");
                 }
+                if (IsRubricCharged(i))
+                {
+                    string? rubricQuote = claimRubricQuotes != null && i < claimRubricQuotes.Count ? claimRubricQuotes[i] : null;
+                    sb.AppendLine(RubricChargedLine(rubricQuote));
+                }
             }
             if (IsAssessorStatement(i))
             {
@@ -360,6 +377,18 @@ public static class BenchmarkClaimVerificationPrompt
 
         return sb.ToString();
     }
+
+    /// <summary>The sentence the accused-sentence preamble gains when any item is charged against the rubric.</summary>
+    public const string RubricChargedPreamble = "An item marked as charged against the rubric is one the assessor docked because it disagrees with the rubric's text. The rubric can be wrong: judge the charged part against the GnollHack source and the board only, never against the rubric.";
+
+    /// <summary>
+    /// The line a rubric-charged item's block carries: the rubric text the assessor relied on, quoted
+    /// and marked untrusted, or the bare marker when no rubric text was found.
+    /// </summary>
+    public static string RubricChargedLine(string? rubricQuote)
+        => string.IsNullOrWhiteSpace(rubricQuote)
+            ? "Charged against the rubric."
+            : $"Charged against the rubric. Rubric text the assessor relied on (untrusted): \"{rubricQuote.Trim()}\"";
 
     /// <summary>The label an accused claim's block carries.</summary>
     private static string ChargedLabel(bool panel)

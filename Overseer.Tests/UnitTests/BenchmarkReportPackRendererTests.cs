@@ -1198,9 +1198,9 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void TheFormatVersion_IsNine()
+    public void TheFormatVersion_IsTen()
     {
-        Assert.Equal(9, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(10, BenchmarkReportPackRenderer.ReportFormatVersion);
     }
 
     [Fact]
@@ -2135,6 +2135,41 @@ public class BenchmarkReportPackRendererTests
             + "|---|---|---|---|\n"
             + "| Simple | 1 | 2 | 90 |\n", alone);
         Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Critical error |", alone);
+    }
+
+    [Fact]
+    public void TheDifficultyBands_WithNoBandScore_LeaveTheScoreColumnsOut()
+    {
+        static BenchmarkReportFactSheet WithoutBandScores(BenchmarkReportFactSheet sheet)
+        {
+            foreach (var fact in sheet.Facts.Where(f => f.Key.StartsWith("band.", StringComparison.Ordinal) && !f.Key.EndsWith(".questions", StringComparison.Ordinal)))
+            {
+                fact.Display = BenchmarkReportFacts.NotAvailable;
+                fact.Value = null;
+                fact.Available = false;
+                fact.UnavailableReason = BenchmarkBatteryReportFacts.BandReason;
+            }
+            return sheet;
+        }
+
+        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        document.FactsJson = BenchmarkReportJson.Serialize(WithoutBandScores(WithVersion9Facts(Sheet())));
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
+        Assert.Contains("### Difficulty bands (assessed)\n\n"
+            + "| Difficulty band | Questions | Authored questions |\n"
+            + "|---|---|---|\n"
+            + "| Simple | 1 | 2 |\n"
+            + "| Intermediate | 2 | 1 |\n"
+            + "| Advanced | 1 | 1 |\n\n", text);
+
+        var standalone = StandaloneDocument(BenchmarkReportAudience.TechnicalReport);
+        standalone.FactsJson = BenchmarkReportJson.Serialize(WithoutBandScores(WithVersion9Facts(StandaloneSheet())));
+        string alone = BenchmarkReportPackRenderer.Render(standalone, new BenchmarkReportRenderOptions());
+        Assert.Contains("### Difficulty bands (assessed)\n\n"
+            + "| Difficulty band | Questions | Authored questions |\n"
+            + "|---|---|---|\n"
+            + "| Simple | 1 | 2 |\n", alone);
     }
 
     [Fact]

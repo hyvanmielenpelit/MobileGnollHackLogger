@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -371,6 +373,22 @@ public class BenchmarkBatteryReportDocumentServiceTests
         {
             Assert.False(BenchmarkBatteryReportDocumentService.TryParseSubjectKey(key, out _));
         }
+    }
+
+    // --- Estimate ------------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Estimate_AbortedByTheClient_Answers499()
+    {
+        await using var h = await BatteryReportHarness.CreateAsync();
+        using var aborted = new CancellationTokenSource();
+        aborted.Cancel();
+
+        var result = Assert.IsType<StatusCodeResult>(await h.Controller().Estimate(
+            h.BatteryRunId, new BenchmarkRunReportEstimateRequest { WriterModelConfigurationId = h.WriterConfig.Id }, aborted.Token));
+
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, result.StatusCode);
+        Assert.Equal(0, h.Writer.JobCalls);
     }
 }
 

@@ -719,8 +719,19 @@ public static class BenchmarkAssessmentPrompt
     ///     synthesis prompt states how each critical error was resolved and marks an answer NOT
     ///     ATTEMPTED. Moves with ScoringMethodVersion 13; CandidateSystemPromptSha256 and
     ///     ToolGuidesSha256 do not move.
+    /// v46: an Accuracy evidence sentence that names the rubric or a required point charges the
+    ///     answer against the rubric, and its charges reach the claim verifier as accused items marked
+    ///     rubricCited, with the rubric text they relied on: backtick quotes, spans of 4 to 14
+    ///     characters that occur once or are anchored, and a table row a charge names by its label;
+    ///     at most 5 accused items, rubric-charged first. A quoted span the answer repeats is placed
+    ///     on the line the charge's own words name, and dropped when no single line does. The
+    ///     verifier is told to judge a rubric-charged item against the source and the board, never the
+    ///     rubric, and a supported rubric-charged item raises the advisory RubricContradictedBySource,
+    ///     reported in the run report and suite health (H1). Battery report accuracy fixes H2 to H4
+    ///     change reports only. ScoringMethodVersion stays 13; CandidateSystemPromptSha256 and
+    ///     ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "45";
+    public const string HarnessVersion = "46";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:

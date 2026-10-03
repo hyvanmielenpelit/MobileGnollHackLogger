@@ -558,6 +558,51 @@ public static class BenchmarkReportBuilder
             : $" (quoted: {string.Join(", ", fragments.Select(f => $"\"{f}\""))})";
     }
 
+    /// <summary>The harness version that first sent sentences docked against the rubric to the claim verifier.</summary>
+    private const int RubricChargedVerificationHarnessVersion = 46;
+
+    private static bool PredatesRubricChargedVerification(BenchmarkRun run)
+        => int.TryParse(run.HarnessVersion, out int version) && version < RubricChargedVerificationHarnessVersion;
+
+    /// <summary>The line the Rubric Contradicted by Source bullet ends with.</summary>
+    internal const string RubricRepairLeadLine = "Suite repair lead: check the rubric point against the cited source before the next run.";
+
+    /// <summary>
+    /// The Rubric Contradicted by Source bullet: for each answer <see cref="BenchmarkRunFinalizer.IsRubricContradicted"/>
+    /// holds for, every accused item docked against the rubric that the claim verifier supported with a
+    /// citation (<see cref="BenchmarkService.SupportedRubricContradictions"/>), with its question, the
+    /// charged sentence and part, the rubric text the grader relied on, and the verifier's citation and
+    /// basis; then <see cref="RubricRepairLeadLine"/>. Nothing when no answer is flagged.
+    /// </summary>
+    private static void AppendRubricContradictions(StringBuilder sb, IReadOnlyList<BenchmarkRunAnswer> answers, bool isPanelRun)
+    {
+        var flagged = answers
+            .Where(BenchmarkRunFinalizer.IsRubricContradicted)
+            .OrderBy(a => a.OrderIndex)
+            .ToList();
+        if (flagged.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine($"- **Rubric Contradicted by Source:** {Inv(flagged.Count)} (question(s) {string.Join(", ", flagged.Select(a => $"Q{a.OrderIndex}"))}) — a sentence {(isPanelRun ? "a panel member" : "the assessor")} docked because it disagrees with the rubric's text was checked by the claim verifier against the source code/wiki and **supported** with a citation. Advisory: the deduction stands and no index moved.");
+        foreach (var answer in flagged)
+        {
+            foreach (var item in BenchmarkService.SupportedRubricContradictions(ClaimVerificationsOf(answer)))
+            {
+                string chargedPart = item.QuotedFragments is { Count: > 0 } parts
+                    ? $" (charged part: {string.Join(", ", parts.Select(p => $"\"{p}\""))})"
+                    : string.Empty;
+                string accusers = isPanelRun && item.AccusingMembers is { Count: > 0 } members
+                    ? $" — accused by {string.Join(" and ", members)}"
+                    : string.Empty;
+                string rubric = string.IsNullOrWhiteSpace(item.RubricQuote) ? "not found" : $"\"{item.RubricQuote}\"";
+                sb.AppendLine($"  - Q{answer.OrderIndex}: \"{item.Claim}\"{chargedPart}{accusers} — rubric: {rubric} — source: {item.Citation} — {item.Basis}");
+            }
+        }
+        sb.AppendLine($"  - *{RubricRepairLeadLine}*");
+    }
+
     private const string BasisRefutedCause = "own-knowledge basis refuted";
     private const string AccusationSupportedCause = "a sentence the assessor quoted as false was supported";
     private const string AssessorStatementRefutedCause = "a statement of the assessor's own evidence was refuted";
@@ -2856,6 +2901,12 @@ public static class BenchmarkReportBuilder
             ? Inv(contestedAccuracyDeductionCount)
             : "not recorded";
         int dimensionOutlierCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.DimensionOutlier));
+        int rubricContradictedCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource));
+        // "Not recorded" on a run before harness 46, which never sent a rubric-charged sentence to
+        // the verifier: that is not a zero.
+        string rubricContradictedFigure = rubricContradictedCount > 0 || !PredatesRubricChargedVerification(run)
+            ? Inv(rubricContradictedCount)
+            : "not recorded";
         int outOfRubricAccuracyCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction));
         int answerFramingOpenerCount = answers.Count(a => ((BenchmarkAnswerFlags)a.AnswerFlags).HasFlag(BenchmarkAnswerFlags.AnswerFramingOpener));
         int providerErrorCount = answers.Count(BenchmarkRunFinalizer.HasTerminalFailure);
@@ -2967,7 +3018,7 @@ public static class BenchmarkReportBuilder
         {
             advisoryNote += $" *Removal was not recorded for {bleedUnrecorded} of these — the run predates harness version {BenchmarkAssessmentPrompt.HarnessVersion}, which added the counter; that figure is inferred, not measured.*";
         }
-        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {FlagFigure(Inv(contestedCount), f => f.ContestedVerdict)}, unevidenced deductions: {FlagFigure(Inv(unevidencedCount), f => f.UnevidencedDeduction)}, omissions as accuracy: {FlagFigure(Inv(omissionCount), f => f.OmissionAsAccuracy)}, refuted claims: {refutedCount}, contested critical errors: {FlagFigure(Inv(contestedCriticalErrorCount), f => f.ContestedCriticalError)}, out-of-rubric accuracy deductions: {FlagFigure(Inv(outOfRubricAccuracyCount), f => f.OutOfRubricAccuracy)}, contested accuracy deductions: {FlagFigure(contestedAccuracyDeductionFigure, f => f.ContestedAccuracyDeduction)}, dimension outliers: {FlagFigure(Inv(dimensionOutlierCount), f => f.DimensionOutlier)}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
+        sb.AppendLine($"- **Advisory Flags:** {advisoryCount} (reasoning bleed: {bleedCount}, repeated fragments: {repeatCount}, contested verdicts: {FlagFigure(Inv(contestedCount), f => f.ContestedVerdict)}, unevidenced deductions: {FlagFigure(Inv(unevidencedCount), f => f.UnevidencedDeduction)}, omissions as accuracy: {FlagFigure(Inv(omissionCount), f => f.OmissionAsAccuracy)}, refuted claims: {refutedCount}, contested critical errors: {FlagFigure(Inv(contestedCriticalErrorCount), f => f.ContestedCriticalError)}, out-of-rubric accuracy deductions: {FlagFigure(Inv(outOfRubricAccuracyCount), f => f.OutOfRubricAccuracy)}, contested accuracy deductions: {FlagFigure(contestedAccuracyDeductionFigure, f => f.ContestedAccuracyDeduction)}, rubric contradicted by source: {FlagFigure(rubricContradictedFigure, f => f.RubricContradictedBySource)}, dimension outliers: {FlagFigure(Inv(dimensionOutlierCount), f => f.DimensionOutlier)}, answer-framing openers: {answerFramingOpenerCount}) {advisoryNote}");
 
         // The Accuracy-specific share of the generic unevidenced-deduction flag, which is shared
         // by dimensions. Read from the stored evidence, so a run graded before the rule existed
@@ -3053,6 +3104,7 @@ public static class BenchmarkReportBuilder
                 : Inv(contestedAccuracyDeductionCount);
             sb.AppendLine($"- **Contested Accuracy Deductions:** {countText} — {causesText}. The claim verifier checked these against the source code/wiki: either the own-knowledge statement an out-of-rubric Accuracy deduction rests on was **refuted**, or a sentence {charger} quoted as false was **supported**{assessorStatementClause}{dockedSuspicionClause}. Advisory: the deduction stands and no index moved; re-assess from the run detail.");
         }
+        AppendRubricContradictions(sb, answers, isPanelRun);
         sb.AppendLine($"- **Answers Scrubbed:** {scrubbedAnyCount} of {totalQuestions} (transport payloads: {scrubbedTransportCount}, reasoning narration: {bleedRemoved})");
         sb.AppendLine();
 
@@ -4831,6 +4883,7 @@ public static class BenchmarkReportBuilder
                 {
                     flagDescriptions.Add($"Contested accuracy deduction (advisory, changed no score) ({string.Join(" and ", ContestedDeductionCauses(ia, isPanelRun ? BenchmarkPanelMember.A : (BenchmarkPanelMember?)null))})");
                 }
+                if (iaFlags.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource)) flagDescriptions.Add("Rubric contradicted by source: a sentence docked against the rubric was supported with a citation (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.OmissionAsAccuracy)) flagDescriptions.Add("Omission docked as accuracy (advisory, changed no score)");
                 if (iaFlags.HasFlag(BenchmarkAnswerFlags.DimensionOutlier)) flagDescriptions.Add("Dimension outlier: one level ≤ 1 beside three at ≥ 3, no defect of that kind named (advisory, changed no score)");
                 if (ia.ToolBudgetExhausted)

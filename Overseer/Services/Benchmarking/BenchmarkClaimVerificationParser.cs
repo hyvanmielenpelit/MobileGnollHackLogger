@@ -112,6 +112,20 @@ public record BenchmarkClaimVerification(
     public string? Charge { get; init; }
 
     /// <summary>
+    /// True on an accused sentence an assessor docked because it disagrees with the rubric's text,
+    /// stamped by the harness from its own submission manifest like <see cref="Roles"/>. Null otherwise,
+    /// and on a record stored before harness 46.
+    /// </summary>
+    [JsonPropertyName("rubricCited")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? RubricCited { get; init; }
+
+    /// <summary>On a <see cref="RubricCited"/> item: the rubric text the assessor relied on, when the harness found it. Null otherwise.</summary>
+    [JsonPropertyName("rubricQuote")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RubricQuote { get; init; }
+
+    /// <summary>
     /// True on an item submitted with a charged part (a <c>Charged part</c> line in its claim block).
     /// Its <see cref="Verdict"/> is then the verifier's <c>chargedPartVerdict</c>, and
     /// <see cref="Citation"/> and <see cref="Basis"/> its <c>chargedPartBasis</c>, which carries the

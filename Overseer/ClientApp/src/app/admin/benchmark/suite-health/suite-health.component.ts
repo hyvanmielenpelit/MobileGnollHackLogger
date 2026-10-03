@@ -8,6 +8,7 @@ import {
   BenchmarkSuiteItemAnalysisDto,
   BenchmarkItemStatisticsDto,
   BenchmarkRubricGapReportDto,
+  BenchmarkRubricContradictionDto,
   BenchmarkCitationReportDto,
   BenchmarkCoverageReportDto,
   RubricCheckJobDto,
@@ -858,5 +859,15 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   formatQuestionIndices(indices: number[]): string {
     if (!indices || indices.length === 0) return 'None';
     return indices.map(i => `Q${i}`).join(', ');
+  }
+
+  /** The rubric-contradiction rows of the loaded report; empty when it carries none. */
+  get rubricContradictions(): BenchmarkRubricContradictionDto[] {
+    return this.rubricGaps?.rubricContradictions ?? [];
+  }
+
+  /** The words a grader quoted from a charged sentence, each in quotation marks. */
+  formatChargedParts(parts: string[]): string {
+    return parts.map(p => `“${p}”`).join(', ');
   }
 }

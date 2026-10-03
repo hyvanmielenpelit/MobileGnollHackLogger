@@ -145,9 +145,10 @@ describe('RunAiReportsComponent', () => {
     fixture.componentRef.setInput('launcherWriterConfigId', launcherWriterConfigId);
   }
 
-  function load(run: any, dialogOpen = true): void {
+  function load(run: any, dialogOpen = true, active = true): void {
     fixture.componentRef.setInput('run', run);
     fixture.componentRef.setInput('dialogOpen', dialogOpen);
+    fixture.componentRef.setInput('active', active);
     fixture.detectChanges();
   }
 
@@ -670,6 +671,77 @@ describe('RunAiReportsComponent', () => {
     flush();
     discardPeriodicTasks();
   }));
+
+  describe('estimating only while the tab is shown', () => {
+    function setActive(active: boolean): void {
+      fixture.componentRef.setInput('active', active);
+      fixture.detectChanges();
+    }
+
+    it('should send no estimate while the tab is not shown', fakeAsync(() => {
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }), true, false);
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS * 3);
+
+      expect(service.estimateRunReports).not.toHaveBeenCalled();
+      expect(component.estimateLoading).toBe(false);
+      flush();
+      discardPeriodicTasks();
+    }));
+
+    it('should send one estimate once the tab is shown', fakeAsync(() => {
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }), true, false);
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+
+      setActive(true);
+      expect(estimateLine()).toBe('Estimating…');
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+
+      expect(service.estimateRunReports).toHaveBeenCalledTimes(1);
+      expect(service.estimateRunReports).toHaveBeenCalledWith(55, { writerModelConfigurationId: 1, audiences: [1, 2] });
+      flush();
+      discardPeriodicTasks();
+    }));
+
+    it('should not estimate again when the tab is left and shown again with the same choice', fakeAsync(() => {
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }), true, false);
+      setActive(true);
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+      expect(service.estimateRunReports).toHaveBeenCalledTimes(1);
+
+      setActive(false);
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+      setActive(true);
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+      setActive(false);
+      setActive(true);
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+
+      expect(service.estimateRunReports).toHaveBeenCalledTimes(1);
+      flush();
+      discardPeriodicTasks();
+    }));
+
+    it('should hold the estimate of another run opened while the tab is hidden until the tab is shown', fakeAsync(() => {
+      setUp();
+      load(reportRun({ assessmentJson: '{}', reportWriterModelConfigurationId: 1 }));
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+      expect(service.estimateRunReports).toHaveBeenCalledTimes(1);
+
+      load(reportRun({ id: 56, assessmentJson: '{}', reportWriterModelConfigurationId: 1 }), true, false);
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS * 2);
+      expect(service.estimateRunReports).toHaveBeenCalledTimes(1);
+
+      setActive(true);
+      tick(RUN_REPORT_ESTIMATE_DEBOUNCE_MS);
+      expect(service.estimateRunReports).toHaveBeenCalledTimes(2);
+      expect(service.estimateRunReports).toHaveBeenLastCalledWith(56, { writerModelConfigurationId: 1, audiences: [1, 2] });
+      flush();
+      discardPeriodicTasks();
+    }));
+  });
 
   it('should explain the documents and the writer choice in the Report writer info tip', () => {
     setUp();

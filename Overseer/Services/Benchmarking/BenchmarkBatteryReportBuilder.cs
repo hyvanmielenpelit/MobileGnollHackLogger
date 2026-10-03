@@ -13,7 +13,9 @@ using MobileGnollHackLogger.Data;
 ///
 /// <para>Arithmetic only: there is no AI-written synthesis, for the reason the multi-run report has
 /// none. Every figure is read from a persisted <see cref="BenchmarkBatteryStatisticsResult"/>, never
-/// from live runs, so the report stays reproducible after a member run is deleted.</para>
+/// from live runs, so the report stays reproducible after a member run is deleted. The one exception
+/// is the usage section's tool-call outcomes and refuted answer sentences, which the caller counts
+/// over the member runs' rows (<see cref="BenchmarkBatteryAnswerOutcomes"/>).</para>
 /// </summary>
 public static class BenchmarkBatteryReportBuilder
 {
@@ -112,6 +114,10 @@ public static class BenchmarkBatteryReportBuilder
     /// <param name="comparison">A paired comparison against a baseline battery run, when one was computed.</param>
     /// <param name="comparisonLabel">The baseline's label for the comparison heading.</param>
     /// <param name="overseerVersion">The build that produced the report.</param>
+    /// <param name="answerOutcomes">
+    /// The usable members' tool-call outcomes and refuted answer sentences, from
+    /// <see cref="BenchmarkBatteryAnswerOutcomes.LoadAsync"/>; when null, the usage section leaves them out.
+    /// </param>
     public static string BuildMarkdownReport(
         BenchmarkBatteryRun batteryRun,
         BenchmarkBatteryDefinition definition,
@@ -121,7 +127,8 @@ public static class BenchmarkBatteryReportBuilder
         BenchmarkBatteryComparabilityResult? comparability = null,
         BenchmarkBatteryComparison? comparison = null,
         string? comparisonLabel = null,
-        string? overseerVersion = null)
+        string? overseerVersion = null,
+        BenchmarkBatteryAnswerOutcomes? answerOutcomes = null)
     {
         ArgumentNullException.ThrowIfNull(batteryRun);
         ArgumentNullException.ThrowIfNull(definition);
@@ -143,7 +150,7 @@ public static class BenchmarkBatteryReportBuilder
 
         if (result.Usage != null)
         {
-            AppendUsage(sb, ++section, result.Usage);
+            AppendUsage(sb, ++section, result.Usage, answerOutcomes);
         }
 
         if (comparison != null)
@@ -719,7 +726,8 @@ public static class BenchmarkBatteryReportBuilder
         sb.AppendLine();
     }
 
-    private static void AppendUsage(StringBuilder sb, int section, BenchmarkBatteryUsageStatistics usage)
+    private static void AppendUsage(
+        StringBuilder sb, int section, BenchmarkBatteryUsageStatistics usage, BenchmarkBatteryAnswerOutcomes? answerOutcomes)
     {
         sb.AppendLine($"## {section}. Token and Tool Usage");
         sb.AppendLine();
@@ -727,9 +735,19 @@ public static class BenchmarkBatteryReportBuilder
         sb.AppendLine($"- **Grader tokens, kept separate:** assessor {Tokens(usage.TotalAssessmentInputTokens)} in / {Tokens(usage.TotalAssessmentOutputTokens)} out; " +
                       $"claim verifier {Tokens(usage.TotalClaimVerificationInputTokens)} in / {Tokens(usage.TotalClaimVerificationOutputTokens)} out");
         sb.AppendLine($"- **Model calls:** {(usage.TotalModelCalls.HasValue ? Int(usage.TotalModelCalls.Value) : "— *not recorded*")} · **Tool calls:** {Int(usage.TotalToolCalls)}");
+        if (answerOutcomes != null)
+        {
+            sb.AppendLine(answerOutcomes.ToolCallsFailed is int failed && answerOutcomes.ToolCallsRefusedByBudget is int refused
+                ? $"- **Tool call outcomes:** {Int(failed)} failed, {Int(refused)} refused by the tool budget"
+                : $"- **Tool call outcomes:** — *not recorded: {answerOutcomes.ToolCallsUnavailableReason ?? "the per-call rows were not loaded."}*");
+        }
         if (usage.ClaimsChecked > 0)
         {
-            sb.AppendLine($"- **Claim verification:** {Int(usage.ClaimsChecked)} claims checked — {Int(usage.ClaimsSupported)} supported, **{Int(usage.ClaimsRefuted)} refuted**, {Int(usage.ClaimsIndeterminate)} indeterminate");
+            string sentences = answerOutcomes == null
+                ? string.Empty
+                : "; refuted answer sentences (accused ones included): "
+                  + (answerOutcomes.RefutedAnswerSentences is int refutedSentences ? Int(refutedSentences) : "— *not countable: some verifications record no roles*");
+            sb.AppendLine($"- **Claim verification:** {Int(usage.ClaimsChecked)} claims checked — {Int(usage.ClaimsSupported)} supported, **{Int(usage.ClaimsRefuted)} refuted**, {Int(usage.ClaimsIndeterminate)} indeterminate{sentences}");
         }
         sb.AppendLine();
 

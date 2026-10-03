@@ -545,7 +545,26 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
-**Format version 9** (the current one, 2026-09-30, with harness 44 in `ai-benchmark.md`) comes from a
+**Format version 10** (the current one, 2026-10-03, with harness 46 in `ai-benchmark.md`) comes from the
+battery run 1 analysis (runs 76 and 77). It changes no score, index, grading prompt, comparability key or
+`HarnessVersion`; stored documents re-render with the new renderer on their next download.
+
+- **Battery tool outcomes (H2)**: a battery fact sheet's `tools.failed` and `tools.refusedByBudget` are
+  counted over the usable members' index-counting answers' per-call tool rows, classified by the run-level
+  rule (`BenchmarkToolCallRecorder.Outcomes`) through a projection that never loads `ArgsText` or
+  `Result` (`BenchmarkBatteryAnswerOutcomes.LoadAsync`). They stay unavailable, with the run-level reason,
+  when a member predates per-call tool records (harness 17). Format 9 withheld both on every battery.
+- **Empty band scores (H3)**: both difficulty-band tables, with peers and stand-alone, leave out the model,
+  peer-mean and difference columns when no `band.*.score` is available, instead of a column of dashes.
+- **Refuted sentences (H4)**: the battery fact `claims.refutedAnswerSentences`, *Refuted answer sentences,
+  accused sentences included*, sums the per-question refuted answer sentences; `claims.refuted` is
+  labelled *Claims the verifier refuted (the answers' own claims)*, and the battery prompt tells the writer
+  how the two differ.
+- **Client-aborted preparation**: an estimate or preview the client abandons answers `499` instead of
+  raising an unhandled `TaskCanceledException`, and the run report dialog asks for an estimate only while
+  its AI Reports tab is shown.
+
+**Format version 9** (2026-09-30, with harness 44 in `ai-benchmark.md`) comes from a
 review of run 75's run-completion documents. It changes no score, index, grading prompt, comparability
 key or `HarnessVersion`. Stored documents re-render with the new renderer on their next download
 (*generated under 8 · rendered with 9*); the prompt changes reach only documents written from now on.

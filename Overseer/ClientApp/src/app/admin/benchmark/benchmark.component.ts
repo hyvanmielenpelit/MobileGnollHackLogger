@@ -40,7 +40,7 @@ import { SystemAiConfigDto } from '../../services/admin.service';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { MultiRunProgressDialogComponent } from './multi-run/multi-run-progress-dialog.component';
 import { BenchmarkBatteriesComponent } from './batteries/batteries.component';
-import { BatteryProgressDialogComponent } from './batteries/battery-progress-dialog.component';
+import { BatteryMemberRunProgressRequest, BatteryProgressDialogComponent } from './batteries/battery-progress-dialog.component';
 import { BatteryRunReportDialogComponent } from './batteries/battery-run-report-dialog.component';
 import { RunPairedTestComponent } from './run-paired-test/run-paired-test.component';
 import { BenchmarkCostPanelComponent, apportionWholePercentShares } from './cost-panel/benchmark-cost-panel.component';
@@ -162,6 +162,18 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 export * from './benchmark.models';
 
+/** How a run progress rail item stands; `skipped` and `ended` occur only once the run is terminal. */
+export type RunRailItemState = 'pending' | 'current' | 'done' | 'skipped' | 'ended';
+
+/** One stage of the run progress dialog's rail. */
+export interface RunRailItem {
+  index: 1 | 2 | 3 | 4;
+  name: string;
+  state: RunRailItemState;
+  /** What the stage did, or why it did not run; null while the run is live. */
+  note: string | null;
+}
+
 @Component({
   selector: 'app-admin-benchmark',
   standalone: true,
@@ -226,7 +238,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     const bridge = this.bridge;
     bridge.selectSubTab$.pipe(takeUntilDestroyed()).subscribe(tab => this.selectSubTab(tab));
     bridge.openRunReport$.pipe(takeUntilDestroyed()).subscribe(runId => this.viewRunDetail(runId));
-    bridge.openRunProgress$.pipe(takeUntilDestroyed()).subscribe(fromSeries => this.openRunProgressDialog(fromSeries));
+    // The banner's Show Progress, a started run and a re-run: the dialog shows the live run.
+    bridge.openRunProgress$.pipe(takeUntilDestroyed()).subscribe(fromSeries => {
+      this.monitor.clearViewedRun();
+      this.openRunProgressDialog(fromSeries);
+    });
     bridge.openDifficultyAssessor$.pipe(takeUntilDestroyed())
       .subscribe(request => this.openDifficultyAssessorDialog(request.suite, request.question));
     bridge.openSnapshotViewer$.pipe(takeUntilDestroyed()).subscribe(snapshotId => this.openSnapshotViewer(snapshotId));
@@ -381,10 +397,10 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * failure: ReasoningBleed = 8, RepeatedFragments = 16, ContestedVerdict = 32,
    * UnevidencedDeduction = 64, RefutedClaim = 128, OmissionAsAccuracy = 256,
    * OutOfRubricAccuracyDeduction = 512, AnswerFramingOpener = 1024, ContestedCriticalError = 2048,
-   * ContestedAccuracyDeduction = 4096, DimensionOutlier = 8192. Must track
-   * BenchmarkRunFinalizer.AdvisoryFlags on the server as the source of truth.
+   * ContestedAccuracyDeduction = 4096, DimensionOutlier = 8192, RubricContradictedBySource = 16384.
+   * Must track BenchmarkRunFinalizer.AdvisoryFlags on the server as the source of truth.
    */
-  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048 | 4096 | 8192;
+  private static readonly ADVISORY_FLAGS = 8 | 16 | 32 | 64 | 128 | 256 | 512 | 1024 | 2048 | 4096 | 8192 | 16384;
 
   /** The same advisory members by name, as they arrive in answerFlagNames. */
   private static readonly ADVISORY_FLAG_NAMES: readonly string[] = [
@@ -398,7 +414,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     'AnswerFramingOpener',
     'ContestedCriticalError',
     'ContestedAccuracyDeduction',
-    'DimensionOutlier'
+    'DimensionOutlier',
+    'RubricContradictedBySource'
   ];
 
   /**
@@ -777,6 +794,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   ngOnDestroy() {
     // The state services stop their own pollers and timers as this component's injector is destroyed.
+    this.monitor.clearViewedRun();
     this.stopDetailPolling();
     if (this.copiedDiagnosticsTimer) { clearTimeout(this.copiedDiagnosticsTimer); }
     if (this.copiedRunDiagnosticsTimer) { clearTimeout(this.copiedRunDiagnosticsTimer); }
@@ -955,7 +973,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       + `omission as accuracy: ${count('omissionAsAccuracy')}, out-of-rubric accuracy: ${count('outOfRubricAccuracy')}, `
       + `dimension outliers: ${count('dimensionOutlier')}, completeness out of scope: ${count('completenessOutOfScope')}, `
       + `readability form only: ${count('readabilityFormOnly')}, contested critical errors: ${count('contestedCriticalError')}, `
-      + `contested accuracy deductions: ${count('contestedAccuracyDeduction')}`;
+      + `contested accuracy deductions: ${count('contestedAccuracyDeduction')}, `
+      + `rubric contradicted by source: ${count('rubricContradictedBySource')}`;
   }
 
   /**
@@ -1229,6 +1248,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    */
   onOpenRunProgressFromSeries(runId: number): void {
     this.monitor.multiRunDialogVisible = false;
+    this.monitor.clearViewedRun();
     this.monitor.activeRunId = runId;
     this.monitor.startPolling(runId);
     this.openRunProgressDialog(true);
@@ -1272,13 +1292,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  /** Hands a member over to the run progress dialog, closing the battery dialog: never two stacked. */
-  onOpenRunProgressFromBattery(runId: number): void {
+  /**
+   * Hands a member over to the run progress dialog, closing the battery dialog: never two stacked. The
+   * dialog stays on that member while the battery moves on; the live run and the banner are untouched.
+   */
+  onOpenRunProgressFromBattery(request: BatteryMemberRunProgressRequest): void {
     this.monitor.batteryDialogVisible = false;
-    this.monitor.activeRunId = runId;
-    this.monitor.startPolling(runId);
+    this.monitor.viewRun(request.runId);
+    this.monitor.returnToBatteryRunId = request.batteryRunId;
     this.openRunProgressDialog();
-    this.monitor.returnToBatteryOnClose = true;
     this.viewSync.notify();
   }
 
@@ -1320,10 +1342,15 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * post-answering span.
    */
   get runStage(): BenchmarkRunStage {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     if (!run) return 'answering';
-    if (this.monitor.rerunLaunchPending) return 'answering';
+    if (this.dialogRerunLaunchPending) return 'answering';
     return this.runStageOf(run);
+  }
+
+  /** A failed-question re-run is being launched for the run the progress dialog shows. */
+  get dialogRerunLaunchPending(): boolean {
+    return this.monitor.rerunLaunchPending && this.monitor.dialogFollowsLiveRun;
   }
 
   /** The stage of any run from its own detail, with no re-run launch pending. */
@@ -1358,9 +1385,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     }
   }
 
-  /** The active run names a report writer, so the rail and the stage labels have a fourth stage. */
+  /** The dialog's run names a report writer, so the rail and the stage labels have a fourth stage. */
   get runHasReportStage(): boolean {
-    return this.monitor.activeRunDetail?.reportWriterModelConfigurationId != null;
+    return this.monitor.dialogRunDetail?.reportWriterModelConfigurationId != null;
   }
 
   /** The stage labels' denominator: 4 with a report writer, else 3. */
@@ -1375,7 +1402,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * run (another terminal status, or nothing queued within the start grace).
    */
   get runReportStage(): 'none' | 'pending' | 'current' | 'done' | 'ended' | 'notWritten' {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     if (!run || run.reportWriterModelConfigurationId == null) return 'none';
     if (!this.runIsTerminal) return 'pending';
     if (this.monitor.runAwaitsReports(run)) return 'current';
@@ -1398,11 +1425,129 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return stage === 'current' || stage === 'done' || stage === 'ended';
   }
 
+  /**
+   * The rail's items. While the run is live they follow `runRailStage`. Once it is terminal each stage
+   * says how it ended: done with what it did, skipped when nothing was configured for it, ended where
+   * a canceled or failed run stopped, and pending with *Not reached* after that.
+   */
+  get runRailItems(): RunRailItem[] {
+    const run = this.monitor.dialogRunDetail;
+    const items: RunRailItem[] = [
+      { index: 1, name: 'Answering and grading', state: 'pending', note: null },
+      { index: 2, name: 'Follow-up grading passes', state: 'pending', note: null },
+      { index: 3, name: 'Synthesis and scoring', state: 'pending', note: null }
+    ];
+    if (run && this.runIsTerminal) {
+      this.applyTerminalRailStates(run, items);
+    } else {
+      const stage = this.runRailStage;
+      for (const item of items) {
+        item.state = stage === item.index ? 'current' : stage > item.index ? 'done' : 'pending';
+      }
+    }
+    if (this.runHasReportStage) {
+      items.push(this.reportRailItem());
+    }
+    return items;
+  }
+
+  private applyTerminalRailStates(run: BenchmarkRunDetailDto, items: RunRailItem[]): void {
+    const [answering, followUp, synthesis] = items;
+    const status = formatStatus(run.status);
+    const stopped = status === 'Canceled' || status === 'Failed';
+    const answered = run.answers.length;
+    const total = run.totalQuestionCount ?? 0;
+    const followUpConfigured = this.runShowsClaimVerifierCounter || this.runShowsSecondOpinionCounter;
+    const synthesisRan = (run.totalSynthesisInputTokens ?? 0) > 0;
+    const readings = run.isPanelRun ? 'reference readings' : 'second readings';
+    const followUpNote = [
+      this.runShowsClaimVerifierCounter ? `${run.claimsCheckedCount ?? 0} claims checked` : null,
+      this.runShowsSecondOpinionCounter ? `${run.secondOpinionGradedAnswerCount ?? 0} ${readings}` : null
+    ].filter((part): part is string => part !== null).join(' · ');
+
+    if (!stopped) {
+      answering.state = 'done';
+      answering.note = `${answered} of ${total} answered`;
+      followUp.state = followUpConfigured ? 'done' : 'skipped';
+      followUp.note = followUpConfigured ? followUpNote : 'Not configured';
+      synthesis.state = 'done';
+      synthesis.note = synthesisRan ? 'Synthesis written' : 'Scored';
+      return;
+    }
+
+    // A stopped run ended in the first stage it had not finished; the stages after it were not reached.
+    const answeringFinished = total > 0 && answered >= total
+      && !run.answers.some(a => this.isAssessmentIncomplete(a));
+    const stoppedIn = !answeringFinished ? 1 : (followUpConfigured && !synthesisRan ? 2 : 3);
+    answering.state = stoppedIn === 1 ? 'ended' : 'done';
+    answering.note = stoppedIn === 1 ? `Stopped at ${answered} of ${total}` : `${answered} of ${total} answered`;
+    if (!followUpConfigured) {
+      followUp.state = 'skipped';
+      followUp.note = 'Not configured';
+    } else if (stoppedIn === 2) {
+      followUp.state = 'ended';
+      followUp.note = followUpNote;
+    } else if (stoppedIn > 2) {
+      followUp.state = 'done';
+      followUp.note = followUpNote;
+    } else {
+      followUp.note = 'Not reached';
+    }
+    if (stoppedIn === 3) {
+      synthesis.state = 'ended';
+      synthesis.note = status === 'Failed' ? 'Failed' : 'Canceled';
+    } else {
+      synthesis.note = 'Not reached';
+    }
+  }
+
+  /** Stage 4, the AI-written reports, from `runReportStage`. */
+  private reportRailItem(): RunRailItem {
+    const item: RunRailItem = { index: 4, name: 'Writing reports', state: 'pending', note: null };
+    switch (this.runReportStage) {
+      case 'current':
+        item.state = 'current';
+        break;
+      case 'done':
+        item.state = 'done';
+        item.note = this.runReportsStatLabel;
+        break;
+      case 'ended':
+        item.state = 'ended';
+        item.note = this.runReportEndedNote;
+        break;
+      case 'notWritten':
+        item.note = 'Not written';
+        break;
+    }
+    return item;
+  }
+
+  /** Why stage 4 ended, in a word. */
+  private get runReportEndedNote(): string {
+    switch (reportDocumentsStatusOf(this.monitor.dialogRunDetail)) {
+      case BenchmarkRunReportDocumentsStatus.Failed: return 'Failed';
+      case BenchmarkRunReportDocumentsStatus.Skipped: return 'Skipped';
+      default: return 'Canceled';
+    }
+  }
+
+  /** The visually hidden word that names a rail item's state; color is never the only carrier. */
+  runRailStateWord(state: RunRailItemState): string {
+    switch (state) {
+      case 'current': return '(current)';
+      case 'done': return '(done)';
+      case 'skipped': return '(skipped)';
+      case 'ended': return '(ended)';
+      default: return '';
+    }
+  }
+
   /** What stage 4 is doing, from the job view polled alongside the run. */
   private get runReportWritingDetail(): string {
-    const job = this.monitor.activeRunReportJob;
-    const status = reportDocumentsStatusOf(this.monitor.activeRunDetail);
-    if (!job || job.runId !== this.monitor.activeRunDetail?.id) {
+    const job = this.monitor.dialogRunReportJob;
+    const status = reportDocumentsStatusOf(this.monitor.dialogRunDetail);
+    if (!job || job.runId !== this.monitor.dialogRunDetail?.id) {
       return status === BenchmarkRunReportDocumentsStatus.Writing ? 'writing the reports' : 'waiting for the report writer';
     }
     switch (job.phase) {
@@ -1431,7 +1576,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The documents stored, and how long they took: `2 documents, 1m 12s`. */
   private get runReportsWrittenSummary(): string {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     const count = run?.reportDocumentsWrittenCount ?? 0;
     const documents = `${count} ${count === 1 ? 'document' : 'documents'}`;
     const durationMs = run?.reportDocumentsDurationMs;
@@ -1440,7 +1585,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The status line's report sentence once stage 4 is over, or null while it is not. */
   private get runReportOutcomeSentence(): string | null {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     const message = run?.reportDocumentsMessage?.trim();
     const sentence = (text: string): string => /[.!?]$/.test(text) ? text : `${text}.`;
     switch (this.runReportStage) {
@@ -1464,11 +1609,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The server's clock now: the job view's reading plus the client time since it arrived. */
   private runReportServerNowMs(): number | null {
-    const job = this.monitor.activeRunReportJob;
+    const job = this.monitor.dialogRunReportJob;
     if (!job?.serverTimeUtc) return null;
     const server = parseServerUtcDate(job.serverTimeUtc).getTime();
     if (Number.isNaN(server)) return null;
-    return server + Math.max(0, Date.now() - this.monitor.activeRunReportJobReceivedAtMs);
+    return server + Math.max(0, Date.now() - this.monitor.dialogRunReportJobReceivedAtMs);
   }
 
   /**
@@ -1478,9 +1623,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runReportsStatLabel(): string {
     switch (this.runReportStage) {
       case 'current': {
-        const job = this.monitor.activeRunReportJob;
+        const job = this.monitor.dialogRunReportJob;
         const now = this.runReportServerNowMs();
-        if (job?.runId === this.monitor.activeRunDetail?.id && job?.slotAcquiredAtUtc && now !== null) {
+        if (job?.runId === this.monitor.dialogRunDetail?.id && job?.slotAcquiredAtUtc && now !== null) {
           const started = parseServerUtcDate(job.slotAcquiredAtUtc).getTime();
           if (!Number.isNaN(started)) {
             return `${formatElapsed(Math.max(0, now - started))} · writing`;
@@ -1490,7 +1635,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
       case 'done':
       case 'ended':
-        return (this.monitor.activeRunDetail?.reportDocumentsWrittenCount ?? 0) > 0 ? this.runReportsWrittenSummary : 'None written';
+        return (this.monitor.dialogRunDetail?.reportDocumentsWrittenCount ?? 0) > 0 ? this.runReportsWrittenSummary : 'None written';
       case 'notWritten':
         return 'Not written';
       default:
@@ -1502,12 +1647,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runReportWriterCost(): number | null {
     switch (this.runReportStage) {
       case 'current': {
-        const job = this.monitor.activeRunReportJob;
-        return job?.runId === this.monitor.activeRunDetail?.id ? (job?.job?.costUsd ?? null) : null;
+        const job = this.monitor.dialogRunReportJob;
+        return job?.runId === this.monitor.dialogRunDetail?.id ? (job?.job?.costUsd ?? null) : null;
       }
       case 'done':
       case 'ended':
-        return this.monitor.activeRunDetail?.reportDocumentsCostUsd ?? null;
+        return this.monitor.dialogRunDetail?.reportDocumentsCostUsd ?? null;
       default:
         return null;
     }
@@ -1515,17 +1660,17 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Answers the claim verifier is reading right now. */
   get runVerifyingCount(): number {
-    return (this.monitor.activeRunDetail?.inFlightVerificationOrderIndexes ?? []).length;
+    return (this.monitor.dialogRunDetail?.inFlightVerificationOrderIndexes ?? []).length;
   }
 
   /** Answers the second-opinion assessor is reading right now. */
   get runSecondOpinionInFlightCount(): number {
-    return (this.monitor.activeRunDetail?.inFlightSecondOpinionOrderIndexes ?? []).length;
+    return (this.monitor.dialogRunDetail?.inFlightSecondOpinionOrderIndexes ?? []).length;
   }
 
   /** Answers the claim verifier has produced a verdict or an error for, scoped to a re-run. */
   get runVerifiedCount(): number {
-    const verified = (this.monitor.activeRunDetail?.answers ?? []).filter(
+    const verified = (this.monitor.dialogRunDetail?.answers ?? []).filter(
       a => a.claimVerificationJson != null || a.claimVerificationError != null);
     if (!this.runHasRerunScope) return verified.length;
     const scope = new Set(this.effectiveRerunScope);
@@ -1534,7 +1679,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Answers carrying a second verdict, scoped to a re-run. */
   get runSecondOpinionCount(): number {
-    const graded = (this.monitor.activeRunDetail?.answers ?? []).filter(
+    const graded = (this.monitor.dialogRunDetail?.answers ?? []).filter(
       a => a.secondOpinionQualityScore != null || a.secondOpinionError != null);
     if (!this.runHasRerunScope) return graded.length;
     const scope = new Set(this.effectiveRerunScope);
@@ -1547,21 +1692,24 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * rather than a zero that reads as a failure.
    */
   get runShowsClaimVerifierCounter(): boolean {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     return !!(run?.claimVerifierDisplayNameUsed || run?.claimVerifierModelIdUsed);
   }
 
   /** Whether the stat strip carries a "Second opinions" cell; the model strip's condition. */
   get runShowsSecondOpinionCounter(): boolean {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     return !!(run?.secondOpinionAssessorModelDisplayNameUsed || run?.secondOpinionAssessorModelIdUsed)
       && run?.secondOpinionModeUsed !== 0;
   }
 
   get runStageLabel(): string {
-    const run = this.monitor.activeRunDetail;
-    if (!run) return '';
-    if (this.monitor.rerunLaunchPending) return 'Starting failed-question re-run…';
+    const run = this.monitor.dialogRunDetail;
+    if (!run) {
+      const runId = this.monitor.dialogRunId;
+      return runId != null ? `Loading run #${runId}…` : '';
+    }
+    if (this.dialogRerunLaunchPending) return 'Starting failed-question re-run…';
     const total = this.runTotalQuestionCount;
     const scoped = this.runHasRerunScope;
     const stageCount = this.runStageCount;
@@ -1610,12 +1758,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runAnsweredCount(): number {
-    return this.monitor.activeRunDetail?.answers.length ?? 0;
+    return this.monitor.dialogRunDetail?.answers.length ?? 0;
   }
 
   /** Answers that reached a terminal assessment state — scored or failed to assess. */
   get runScoredCount(): number {
-    return (this.monitor.activeRunDetail?.answers ?? []).filter(a => {
+    return (this.monitor.dialogRunDetail?.answers ?? []).filter(a => {
       const s = this.formatAssessmentStatus(a.assessmentStatus);
       return s === 'Scored' || s === 'Failed';
     }).length;
@@ -1626,7 +1774,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runFailedAnswers(): BenchmarkRunAnswerDto[] {
-    return (this.monitor.activeRunDetail?.answers ?? []).filter(a => this.isAnswerFailed(a));
+    return (this.monitor.dialogRunDetail?.answers ?? []).filter(a => this.isAnswerFailed(a));
   }
 
   /** The selected run detail's answers that failed, for the run-detail dialog's alert and integrity notice. */
@@ -1637,7 +1785,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /**
    * Failed answers grouped by their error message, each with the shared status code and the
    * questions it hit, ascending. Defaults to the selected run detail's own failures; the run
-   * diagnostics capture passes the active run's failures instead, since it describes a
+   * diagnostics capture passes the progress dialog run's failures instead, since it describes a
    * different run.
    */
   failedAnswerGroups(answers: BenchmarkRunAnswerDto[] = this.failedAnswers())
@@ -1684,7 +1832,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runTotalQuestionCount(): number {
-    return this.monitor.activeRunDetail?.totalQuestionCount ?? 0;
+    return this.monitor.dialogRunDetail?.totalQuestionCount ?? 0;
   }
 
   /**
@@ -1699,13 +1847,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   /** Answered count for the progress meter: the whole run, or only the re-run's own answers. */
   get runMeterAnswered(): number {
     if (!this.runHasRerunScope) return this.runAnsweredCount;
-    return this.monitor.activeRunDetail?.rerunAnsweredOrderIndexes?.length ?? 0;
+    return this.monitor.dialogRunDetail?.rerunAnsweredOrderIndexes?.length ?? 0;
   }
 
   /** Scored count for the progress meter: the whole run, or only the re-run's own answers. */
   get runMeterScored(): number {
     if (!this.runHasRerunScope) return this.runScoredCount;
-    return this.monitor.activeRunDetail?.rerunScoredOrderIndexes?.length ?? 0;
+    return this.monitor.dialogRunDetail?.rerunScoredOrderIndexes?.length ?? 0;
   }
 
   /**
@@ -1717,16 +1865,16 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runMeterFailed(): number {
     if (!this.runHasRerunScope) return this.runFailedAnswerCount;
     const scope = new Set(this.effectiveRerunScope);
-    const reAnswered = new Set(this.monitor.activeRunDetail?.rerunAnsweredOrderIndexes ?? []);
+    const reAnswered = new Set(this.monitor.dialogRunDetail?.rerunAnsweredOrderIndexes ?? []);
     return this.runFailedAnswers.filter(a => scope.has(a.orderIndex) && reAnswered.has(a.orderIndex)).length;
   }
 
   get runIsRunning(): boolean {
-    return this.monitor.activeRunDetail != null && formatStatus(this.monitor.activeRunDetail.status) === 'Running';
+    return this.monitor.dialogRunDetail != null && formatStatus(this.monitor.dialogRunDetail.status) === 'Running';
   }
 
   get runIsTerminal(): boolean {
-    return this.monitor.activeRunDetail != null && !this.monitor.rerunLaunchPending && formatStatus(this.monitor.activeRunDetail.status) !== 'Running';
+    return this.monitor.dialogRunDetail != null && !this.dialogRerunLaunchPending && formatStatus(this.monitor.dialogRunDetail.status) !== 'Running';
   }
 
   /**
@@ -1737,8 +1885,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   get runIsFirstPass(): boolean {
     return this.runIsRunning
       && !this.runHasRerunScope
-      && !this.monitor.rerunLaunchPending
-      && this.monitor.activeRunDetail?.rerunStartedAtUtc == null;
+      && !this.dialogRerunLaunchPending
+      && this.monitor.dialogRunDetail?.rerunStartedAtUtc == null;
   }
 
   /**
@@ -1748,7 +1896,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * matched to the answers by question id.
    */
   get runProgressRows(): BenchmarkRunProgressRow[] {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     if (!run) return [];
 
     const source: { orderIndex: number; questionText: string; answer: BenchmarkRunAnswerDto | null }[] =
@@ -1823,7 +1971,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
         // A question inside a pending re-run's scope stops showing the failure it is about to
         // be re-run for.
-        if (this.monitor.rerunLaunchPending && this.effectiveRerunScope.includes(q.orderIndex)) {
+        if (this.dialogRerunLaunchPending && this.effectiveRerunScope.includes(q.orderIndex)) {
           return {
             orderIndex: q.orderIndex,
             questionText: q.questionText,
@@ -1860,8 +2008,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Server-reported scope once the re-run is Running; the client-captured list during launch. */
   get effectiveRerunScope(): number[] {
-    const server = this.monitor.activeRunDetail?.rerunScopeOrderIndexes ?? [];
-    return server.length > 0 ? server : this.monitor.rerunScopeOrderIndexes;
+    const server = this.monitor.dialogRunDetail?.rerunScopeOrderIndexes ?? [];
+    if (server.length > 0) return server;
+    return this.monitor.dialogFollowsLiveRun ? this.monitor.rerunScopeOrderIndexes : [];
   }
 
   get runHasRerunScope(): boolean {
@@ -1880,7 +2029,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (row.status === 'Pending') return 'Pending';
     if (row.status === 'Answering') return 'Answering';
     if (row.status === 'Verifying') return 'Verifying';
-    if (row.status === 'SecondOpinion') return this.monitor.activeRunDetail?.isPanelRun ? 'Reference reader' : 'Second reader';
+    if (row.status === 'SecondOpinion') return this.monitor.dialogRunDetail?.isPanelRun ? 'Reference reader' : 'Second reader';
     if (row.status === 'ProviderError') return 'Provider Error';
     if (row.status === 'Canceled') return 'Canceled';
     if (row.status !== 'Ok') return row.status;
@@ -1900,7 +2049,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (!ans || row.status === 'Pending' || row.status === 'Answering' || row.assessmentStatus !== 'Scored') {
       return null;
     }
-    const score = this.monitor.activeRunDetail?.isPanelRun ? ans.panelQualityScore : ans.qualityScore;
+    const score = this.monitor.dialogRunDetail?.isPanelRun ? ans.panelQualityScore : ans.qualityScore;
     return score ?? null;
   }
 
@@ -1924,7 +2073,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * measures the re-run's own span; the run's CompletedAtUtc stays fixed across a re-run.
    */
   get runElapsedLabel(): string {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     if (!run) return '—';
     if (this.runElapsedIsRerun) {
       // While running, any completion stamp is a previous re-run's, earlier than this start, and
@@ -1938,11 +2087,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runElapsedIsRerun(): boolean {
-    return this.runHasRerunScope && !!this.monitor.activeRunDetail?.rerunStartedAtUtc;
+    return this.runHasRerunScope && !!this.monitor.dialogRunDetail?.rerunStartedAtUtc;
   }
 
   get runAverageAnswerDurationLabel(): string {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     if (!run || run.answers.length === 0) return '—';
     return formatDuration(Math.round(run.totalAnswerDurationMs / run.answers.length));
   }
@@ -1954,22 +2103,22 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * "not reported", not "no cache ever warmed".
    */
   get runCacheCreationUnreported(): boolean {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     if (!run) return false;
     return (run.totalCacheCreationTokens ?? 0) === 0 &&
       (run.totalCacheReadTokens ?? 0) > 0 &&
       (run.testedModelProviderUsed ?? '').toLowerCase() === 'openai';
   }
 
-  /** The diagnostics capture of the active run, which the progress dialog copies and downloads. */
+  /** The diagnostics capture of the progress dialog's run, which the dialog copies and downloads. */
   get runDiagnosticsText(): string {
-    return this.runDiagnosticsTextFor(this.monitor.activeRunDetail, this.runStage);
+    return this.runDiagnosticsTextFor(this.monitor.dialogRunDetail, this.runStage);
   }
 
   /** The text the Diagnostics panel shows: empty while it is closed, stamped when it last refreshed. */
   get runDiagnosticsPanelText(): string {
     return this.runDiagnosticsPanelOpen
-      ? this.runDiagnosticsTextFor(this.monitor.activeRunDetail, this.runStage, this.monitor.runDiagnosticsPanelCapturedAt)
+      ? this.runDiagnosticsTextFor(this.monitor.dialogRunDetail, this.runStage, this.monitor.runDiagnosticsPanelCapturedAt)
       : '';
   }
 
@@ -1986,13 +2135,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * long model-generated content already reachable through the run detail dialog and the
    * Markdown report. No credential or connection string appears in the DTO.
    *
-   * The active run's progress figures are the progress dialog's own, re-run scope and launch
+   * The progress dialog's run is described by the dialog's own figures, re-run scope and launch
    * state included. Any other run, such as the one the run report shows, is described from its
    * detail alone, so the run report and the Download Center capture the same text for it.
    */
   runDiagnosticsTextFor(run: BenchmarkRunDetailDto | null, stage: BenchmarkRunStage, capturedAt: Date = new Date()): string {
-    const live = run === this.monitor.activeRunDetail;
-    const facts = live || !run ? this.activeRunDiagnosticsFacts() : this.detailDiagnosticsFacts(run);
+    const live = run === this.monitor.dialogRunDetail;
+    const facts = live || !run ? this.dialogRunDiagnosticsFacts() : this.detailDiagnosticsFacts(run);
     const lines: string[] = [];
 
     // Header
@@ -2152,7 +2301,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       }
       // The launch state and the suite question list belong to the progress dialog's run.
       if (live) {
-        lines.push(`Re-run launch pending: ${this.monitor.rerunLaunchPending}`);
+        lines.push(`Re-run launch pending: ${this.dialogRerunLaunchPending}`);
         if (this.monitor.runProgressQuestions.length > 0 && this.monitor.runProgressQuestionsSuiteId != null) {
           lines.push(`Suite questions loaded: ${this.monitor.runProgressQuestions.length} for suite ${this.monitor.runProgressQuestionsSuiteId}`);
         } else {
@@ -2216,7 +2365,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
           - (run.toolStarvedAnswerCount ?? 0);
         lines.push(`clean: ${clean}, transport defects: ${run.transportDefectAnswerCount ?? 0}, recovered: ${run.recoveredAnswerCount ?? 0}, harness limits: ${run.toolStarvedAnswerCount ?? 0} (sums to ${run.totalQuestionCount})`);
         // A null contested-accuracy-deduction count is a run before harness 20: not recorded, never 0.
-        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, dimension outliers: ${run.dimensionOutlierAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
+        lines.push(`advisory flags: ${run.advisoryFlagAnswerCount ?? 0}, scrubbed: ${run.scrubbedArtifactAnswerCount ?? 0}, contested verdicts: ${run.contestedVerdictAnswerCount ?? 0}, unevidenced deductions: ${run.unevidencedDeductionAnswerCount ?? 0}, refuted claims: ${run.refutedClaimAnswerCount ?? 0}, contested critical errors: ${run.contestedCriticalErrorAnswerCount ?? 0}, contested accuracy deductions: ${run.contestedAccuracyDeductionAnswerCount ?? 'not recorded'}, rubric contradicted by source: ${run.rubricContradictedAnswerCount ?? 'not recorded'}, dimension outliers: ${run.dimensionOutlierAnswerCount ?? 'not recorded'}, re-assessed: ${run.reassessedAnswerCount ?? 0}`);
         // The run-level counts above are member A's; member B's come from its own record.
         if (run.isPanelRun) {
           lines.push(this.memberBFlagsLine(run));
@@ -2529,8 +2678,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return lines.join('\n');
   }
 
-  /** The progress figures of the active run, as the progress dialog shows them. */
-  private activeRunDiagnosticsFacts(): RunDiagnosticsFacts {
+  /** The progress figures of the progress dialog's run, as the dialog shows them. */
+  private dialogRunDiagnosticsFacts(): RunDiagnosticsFacts {
     return {
       answered: this.runAnsweredCount,
       total: this.runTotalQuestionCount,
@@ -2650,7 +2799,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     lines.push(`Cost: ${run.reportDocumentsCostUsd != null ? `$${run.reportDocumentsCostUsd.toFixed(4)}` : 'n/a'} (outside the run's own cost)`);
     if (live) {
       lines.push(`Stage 4: ${this.runReportStage}`);
-      const job = this.monitor.activeRunReportJob;
+      const job = this.monitor.dialogRunReportJob;
       if (job && job.runId === run.id) {
         lines.push(`Job: phase ${job.phase}, queued ${job.queuedAtUtc}, slot acquired ${job.slotAcquiredAtUtc ?? 'n/a'}, finished ${job.finishedAtUtc ?? 'n/a'}, jobs ahead ${job.jobsAhead ?? 'n/a'}, cost so far ${job.job?.costUsd != null ? `$${job.job.costUsd.toFixed(4)}` : 'n/a'}`);
       } else {
@@ -2663,7 +2812,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** Suite, model and run, in the order of the server's report and tool-call-log file names. */
   get runDiagnosticsFileName(): string {
-    const run = this.monitor.activeRunDetail;
+    const run = this.monitor.dialogRunDetail;
     if (!run) return 'overseer-benchmark-run-diagnostics.txt';
     return `${safeFileName(run.suiteName)}_${safeFileName(run.testedModelDisplayNameUsed)}_run${run.id}_diagnostics.txt`;
   }
@@ -2675,7 +2824,6 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   openRunProgressDialog(fromSeries = false): void {
     this.monitor.returnToSeriesOnClose = fromSeries;
-    this.monitor.returnToBatteryOnClose = false;
     this.monitor.isRunProgressDialogOpen = true;
     this.monitor.runDiagnosticsCopyFailed = false;
 
@@ -2695,9 +2843,11 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       this.monitor.startRunElapsedTicker();
     }
 
-    // Resolved here and not in the poll handler: the suite's questions only supply the first
-    // pass's not-yet-answered rows, so one fetch per dialog open is enough.
-    const suiteId = this.monitor.activeRunDetail?.benchmarkSuiteId ?? this.launcher.selectedSuiteId;
+    // The suite's questions only supply the first pass's not-yet-answered rows. A run whose detail
+    // has not arrived yet is the launcher's when the dialog follows the live run; otherwise the poll
+    // that brings the detail loads them (`syncDialogQuestions`).
+    const suiteId = this.monitor.dialogRunDetail?.benchmarkSuiteId
+      ?? (this.monitor.dialogFollowsLiveRun ? this.launcher.selectedSuiteId : null);
     if (suiteId != null && this.monitor.runProgressQuestionsSuiteId !== suiteId) {
       this.monitor.loadRunProgressQuestions(suiteId);
     }
@@ -2707,37 +2857,62 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.runProgressHeading?.nativeElement.focus();
   }
 
+  /**
+   * Every way the run progress dialog closes: its buttons, Escape and View Full Report. The dialog
+   * follows the live run again, and Back to Battery reopens the battery run the member came from.
+   */
   closeRunProgressDialog(returnToSeries: boolean = this.monitor.returnToSeriesOnClose): void {
     const shouldReturn = returnToSeries;
-    const shouldReturnToBattery = this.monitor.returnToBatteryOnClose;
+    const returnToBatteryRunId = this.monitor.returnToBatteryRunId;
     this.monitor.returnToSeriesOnClose = false;
-    this.monitor.returnToBatteryOnClose = false;
+    this.monitor.returnToBatteryRunId = null;
     this.monitor.isRunProgressDialogOpen = false;
+    this.monitor.clearViewedRun();
     this.monitor.stopRunElapsedTicker();
     this.runProgressDialog?.nativeElement.close();
     if (shouldReturn && this.monitor.activeSeriesId != null) {
       this.monitor.openMultiRunDialog();
-    } else if (shouldReturnToBattery && this.dialogBatteryRunId != null) {
-      this.monitor.openBatteryDialog();
+    } else if (returnToBatteryRunId != null) {
+      this.monitor.openBatteryDialog(returnToBatteryRunId);
     }
     this.viewSync.notify();
   }
 
+  /** The run progress dialog's Back to Battery leads back to a battery run. */
+  get runProgressReturnsToBattery(): boolean {
+    return this.monitor.returnToBatteryRunId != null;
+  }
+
   /** Terminal-state action: hand the operator over to the existing full run detail dialog. */
   viewActiveRunDetail(): void {
-    const runId = this.monitor.activeRunDetail?.id ?? this.monitor.activeRunId;
+    const runId = this.monitor.dialogRunDetail?.id ?? this.monitor.dialogRunId;
     if (runId == null) return;
-    this.monitor.returnToBatteryOnClose = false;
+    this.monitor.returnToBatteryRunId = null;
     this.closeRunProgressDialog(false);
     this.viewRunDetail(runId);
   }
 
-  /** Re-runs the failed questions without leaving the dialog, so the retry stays watchable. */
+  /**
+   * Re-runs the failed questions without leaving the dialog, so the retry stays watchable. The re-run
+   * makes its run the live run, so the dialog follows the live run from here.
+   */
   rerunFailedFromProgress(): void {
-    const runId = this.monitor.activeRunDetail?.id ?? this.monitor.activeRunId;
+    const detail = this.monitor.dialogRunDetail;
+    const runId = detail?.id ?? this.monitor.dialogRunId;
     if (runId == null) return;
+    const failed = this.runFailedAnswers.map(a => a.orderIndex);
     this.monitor.armCompletionSignalsFromGesture();
-    this.monitor.launchFailedQuestionRerun(runId, this.runFailedAnswers.map(a => a.orderIndex));
+    if (!this.monitor.dialogFollowsLiveRun && detail) {
+      // Keeps the header legible during the launch, as the live run's own detail does.
+      this.monitor.activeRunDetail = detail;
+    }
+    this.monitor.clearViewedRun();
+    this.monitor.launchFailedQuestionRerun(runId, failed);
+  }
+
+  /** The run progress dialog's Cancel Run: cancels the run it shows. */
+  cancelDialogRun(): void {
+    this.monitor.cancelActiveRun(this.monitor.dialogRunId);
   }
 
   /**
@@ -2765,8 +2940,14 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (runId == null) return;
     this.closeRunDetail();
     this.activeSubTab = 'run';
-    this.monitor.activeRunId = runId;
-    this.monitor.startPolling(runId);
+    if (this.monitor.activeRunId != null && this.monitor.activeRunId !== runId && this.monitor.pollTickerHandle != null) {
+      // Another run is live, and the banner keeps following it.
+      this.monitor.viewRun(runId);
+    } else {
+      this.monitor.clearViewedRun();
+      this.monitor.activeRunId = runId;
+      this.monitor.startPolling(runId);
+    }
     if (!this.monitor.isRunProgressDialogOpen) {
       this.openRunProgressDialog();
     }
@@ -3861,7 +4042,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   get runGradeableAnswerCount(): number {
-    return (this.monitor.activeRunDetail?.answers ?? []).filter(a => this.countsTowardQualityIndex(a)).length;
+    return (this.monitor.dialogRunDetail?.answers ?? []).filter(a => this.countsTowardQualityIndex(a)).length;
   }
 
   /**
@@ -3901,7 +4082,12 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The text a flag badge shows: the flag's name, except where a short reading is clearer. */
   flagBadgeLabel(flag: string): string {
-    return flag === 'ContestedAccuracyDeduction' ? 'contested deduction' : flag === 'DimensionOutlier' ? 'dimension outlier' : flag;
+    switch (flag) {
+      case 'ContestedAccuracyDeduction': return 'contested deduction';
+      case 'RubricContradictedBySource': return 'rubric contradicted';
+      case 'DimensionOutlier': return 'dimension outlier';
+      default: return flag;
+    }
   }
 
   // --- Difficulty bands ---

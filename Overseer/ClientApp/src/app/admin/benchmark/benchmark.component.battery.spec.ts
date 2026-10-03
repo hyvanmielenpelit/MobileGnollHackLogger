@@ -1,7 +1,9 @@
 import type { Mock, MockedObject } from "vitest";
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { of, throwError, Subject } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
+import { BenchmarkCostPanelComponent } from './cost-panel/benchmark-cost-panel.component';
 import { MultiRunComponent } from './multi-run/multi-run.component';
 import { BenchmarkShellBridge } from './state/benchmark-shell-bridge.service';
 import {
@@ -785,15 +787,213 @@ describe('AdminBenchmarkComponent', () => {
         vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
         ctx.monitor.openBatteryDialog();
 
-        component.onOpenRunProgressFromBattery(42);
+        component.onOpenRunProgressFromBattery({ runId: 42, batteryRunId: 9 });
         fixture.detectChanges();
         expect(ctx.monitor.batteryDialogVisible).toBe(false);
-        expect(ctx.monitor.activeRunId).toBe(42);
-        expect(ctx.monitor.returnToBatteryOnClose).toBe(true);
+        expect(ctx.monitor.dialogRunId).toBe(42);
+        expect(ctx.monitor.viewedRunId).toBe(42);
+        expect(ctx.monitor.returnToBatteryRunId).toBe(9);
 
         component.closeRunProgressDialog();
         expect(ctx.monitor.batteryDialogVisible).toBe(true);
-        expect(ctx.monitor.returnToBatteryOnClose).toBe(false);
+        expect(ctx.monitor.returnToBatteryRunId).toBeNull();
+        expect(ctx.monitor.viewedRunId).toBeNull();
+      });
+
+      describe('a member opened from the battery dialog', () => {
+        /** Run 76 finished, with its own question and cost; run 77 is the member in flight. */
+        function memberRun(id: number): any {
+          const running = id === 77;
+          return {
+            id, benchmarkSuiteId: id === 76 ? 1 : 2, suiteName: `Suite of run ${id}`, scoringProfileName: 'Default',
+            testedModelDisplayNameUsed: 'Test Model', testedModelProviderUsed: 'Anthropic', testedModelIdUsed: 'claude-3-5-sonnet',
+            testedModelParallelExecutionModeUsed: 2, assessorModelDisplayNameUsed: 'Test Assessor',
+            assessorModelProviderUsed: 'Anthropic', assessorModelIdUsed: 'claude-3-5-sonnet', startedByUserName: 'admin',
+            status: running ? 'Running' : 'Completed', startedAtUtc: '2026-10-03T10:00:00Z',
+            completedAtUtc: running ? null : '2026-10-03T10:20:00Z', totalQuestionCount: 1, answeredQuestionCount: 1,
+            totalAnswerDurationMs: 0, totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0,
+            totalCacheCreationTokens: 0, totalDurationMs: 0, estimatedCost: id === 76 ? 1.23 : 9.87, errorMessage: null,
+            answers: [{
+              id: id * 10, benchmarkRunId: id, orderIndex: 1, questionText: `Question of run ${id}`, difficulty: 1,
+              status: 'Ok', assessmentStatus: running ? 'Assessing' : 'Scored', durationMs: 1000
+            }]
+          };
+        }
+
+        const battery77 = (overrides: Partial<BenchmarkBatteryRunDto> = {}): Partial<BenchmarkBatteryRunDto> => ({
+          status: 'Running', currentRunId: 77, ...overrides
+        });
+
+        let showModal: Mock;
+
+        beforeEach(() => {
+          benchmarkServiceMock.getRun.mockImplementation((id: number) => of(memberRun(id)));
+          showModal = vi.spyOn(component.runProgressDialog.nativeElement, 'showModal').mockReturnValue(undefined) as unknown as Mock;
+          vi.spyOn(component.runProgressDialog.nativeElement, 'close').mockReturnValue(undefined);
+        });
+
+        const dialogText = (selector: string): string =>
+          ((fixture.nativeElement.querySelector(`.benchmark-run-progress-dialog ${selector}`) as HTMLElement | null)?.textContent ?? '')
+            .replace(/\s+/g, ' ').trim();
+
+        const viewedTicker = (): unknown => (ctx.monitor as any).viewedPollTickerHandle;
+
+        function openMember(runId: number, batteryRunId = 9): void {
+          component.onOpenRunProgressFromBattery({ runId, batteryRunId });
+          ctx.refresh();
+        }
+
+        it('should keep showing the opened member across battery ticks while the banner follows the live member', () => {
+          attachBattery(battery77());
+          openMember(76);
+
+          for (let tick = 0; tick < 2; tick++) {
+            ctx.monitor.pollBatteryRun(9);
+            ctx.refresh();
+          }
+
+          expect(showModal).toHaveBeenCalled();
+          expect(dialogText('#runProgressDialogTitle')).toBe('Benchmark Run #76');
+          expect(dialogText('.dialog-subtitle')).toContain('Suite of run 76');
+          expect(ctx.monitor.dialogRunDetail?.id).toBe(76);
+          expect(ctx.monitor.activeRunId).toBe(77);
+          expect(dialogText('.run-question-list')).toContain('Question of run 76');
+          expect(dialogText('.run-question-list')).not.toContain('Question of run 77');
+          const costPanel = fixture.debugElement.query(By.css('.benchmark-run-progress-dialog app-benchmark-cost-panel'))
+            .componentInstance as BenchmarkCostPanelComponent;
+          expect(costPanel.total).toBe(1.23);
+          expect(query('.battery-banner .banner-progress')!.textContent).toContain('Run #77: answered 1 of 1');
+        });
+
+        it('should load the questions of the viewed run\'s suite, not the live run\'s', () => {
+          attachBattery(battery77());
+          benchmarkServiceMock.getQuestions.mockClear();
+
+          openMember(76);
+
+          expect(benchmarkServiceMock.getQuestions).toHaveBeenCalledWith(1);
+          expect(benchmarkServiceMock.getQuestions).not.toHaveBeenCalledWith(2);
+        });
+
+        it('should start a viewed poller only once the battery moves on from the member being viewed', () => {
+          benchmarkServiceMock.getRun.mockImplementation((id: number) => of({ ...memberRun(id), status: 'Running', completedAtUtc: null }));
+          attachBattery(battery77({ currentRunId: 76 }));
+          openMember(76);
+          expect(ctx.monitor.activeRunId).toBe(76);
+          expect(viewedTicker()).toBeNull();
+
+          benchmarkServiceMock.getBatteryRun.mockReturnValue(of(buildBatteryRun(battery77())));
+          ctx.monitor.pollBatteryRun(9);
+          ctx.refresh();
+
+          expect(ctx.monitor.activeRunId).toBe(77);
+          expect(viewedTicker()).not.toBeNull();
+          expect(dialogText('#runProgressDialogTitle')).toBe('Benchmark Run #76');
+          expect(ctx.monitor.dialogRunDetail?.id).toBe(76);
+        });
+
+        it('should return to the battery run the member came from, even with another battery run live', () => {
+          attachBattery(battery77());
+          ctx.monitor.openBatteryDialog(12);
+          ctx.monitor.onBatteryDialogClosed();
+          component.onOpenRunProgressFromBattery({ runId: 76, batteryRunId: 12 });
+          ctx.refresh();
+          expect(dialogText('.dialog-footer')).toContain('Back to Battery');
+
+          component.closeRunProgressDialog();
+
+          expect(ctx.monitor.batteryDialogVisible).toBe(true);
+          expect(component.dialogBatteryRunId).toBe(12);
+          expect(ctx.monitor.returnToBatteryRunId).toBeNull();
+        });
+
+        it('should stop following the member when Back to Battery is clicked', () => {
+          attachBattery(battery77());
+          openMember(76);
+
+          const back = Array.from(fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .dialog-footer button') as NodeListOf<HTMLButtonElement>)
+            .find(b => (b.textContent || '').includes('Back to Battery'))!;
+          back.click();
+
+          expect(ctx.monitor.viewedRunId).toBeNull();
+          expect(viewedTicker()).toBeNull();
+          expect(ctx.monitor.batteryDialogVisible).toBe(true);
+        });
+
+        it('should stop following the member when the close button is clicked', () => {
+          attachBattery(battery77());
+          openMember(76);
+
+          (fixture.nativeElement.querySelector('.benchmark-run-progress-dialog .dialog-header .btn-icon-action') as HTMLButtonElement).click();
+
+          expect(ctx.monitor.viewedRunId).toBeNull();
+          expect(ctx.monitor.dialogRunId).toBe(77);
+        });
+
+        it('should stop following the member on Escape', () => {
+          attachBattery(battery77());
+          openMember(76);
+
+          component.runProgressDialog.nativeElement.dispatchEvent(new Event('cancel'));
+
+          expect(ctx.monitor.viewedRunId).toBeNull();
+          expect(ctx.monitor.isRunProgressDialogOpen).toBe(false);
+        });
+
+        it('should stop following the member on View Full Report, which opens that member\'s report', () => {
+          attachBattery(battery77());
+          openMember(76);
+          vi.spyOn(component.runDetailDialog.nativeElement, 'showModal').mockReturnValue(undefined);
+          benchmarkServiceMock.getRun.mockClear();
+
+          const viewReport = Array.from(fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .dialog-footer button') as NodeListOf<HTMLButtonElement>)
+            .find(b => (b.textContent || '').includes('View Full Report'))!;
+          viewReport.click();
+
+          expect(ctx.monitor.viewedRunId).toBeNull();
+          expect(ctx.monitor.batteryDialogVisible).toBe(false);
+          expect(benchmarkServiceMock.getRun).toHaveBeenCalledWith(76);
+          component.closeRunDetail();
+        });
+
+        it('should stop following the member when the page is destroyed', () => {
+          benchmarkServiceMock.getRun.mockImplementation((id: number) => of({ ...memberRun(id), status: 'Running', completedAtUtc: null }));
+          attachBattery(battery77());
+          openMember(76);
+          expect(viewedTicker()).not.toBeNull();
+
+          fixture.destroy();
+
+          expect(ctx.monitor.viewedRunId).toBeNull();
+          expect(viewedTicker()).toBeNull();
+        });
+
+        it('should cancel the run the dialog shows', () => {
+          attachBattery(battery77());
+          benchmarkServiceMock.getRun.mockImplementation((id: number) => of({ ...memberRun(id), status: 'Running', completedAtUtc: null }));
+          benchmarkServiceMock.cancelRun.mockReturnValue(of(undefined) as any);
+          openMember(76);
+
+          const cancel = Array.from(fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .dialog-footer button') as NodeListOf<HTMLButtonElement>)
+            .find(b => (b.textContent || '').includes('Cancel Run'))!;
+          cancel.click();
+
+          expect(benchmarkServiceMock.cancelRun).toHaveBeenCalledWith(76);
+          component.closeRunProgressDialog();
+        });
+
+        it('should follow the live run again from the banner\'s Show Progress', () => {
+          attachBattery(battery77());
+          openMember(76);
+          component.closeRunProgressDialog();
+          ctx.monitor.viewRun(76);
+
+          fixture.debugElement.injector.get(BenchmarkShellBridge).openRunProgressDialog();
+
+          expect(ctx.monitor.viewedRunId).toBeNull();
+          expect(ctx.monitor.dialogRunId).toBe(77);
+          component.closeRunProgressDialog();
+        });
       });
 
       it('should replace the progress dialog with the Battery Run Report the dialog asks for', () => {

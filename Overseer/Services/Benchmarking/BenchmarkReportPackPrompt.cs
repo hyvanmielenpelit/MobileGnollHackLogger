@@ -583,6 +583,7 @@ public static class BenchmarkReportPackPrompt
         Line(sb, "The Overall Index is a composite. Never compare it with a single suite's Intelligence Index, or with the result of a single run or analysis group. Peers listed under PEERS are results of the same battery definition in the same comparability class.");
         Line(sb, "Use the per-suite profile to say where the composite comes from: which suites lift it, which hold it down, and how uneven the suites are (battery.suiteIndexSd and battery.suiteIndexRange). The sensitivity.* facts give the Overall Index under the other weighting schemes and the loo.* facts with one suite left out; mention them only to say how far the result depends on the weights or on a single suite.");
         Line(sb, "cost.perRun and cost.totalRunPerRun are per battery pass: one run of every suite.");
+        Line(sb, "claims.refuted counts the claim verifier's refutations of the answers' own claims only. claims.refutedAnswerSentences counts every refuted answer sentence, the sentences a grader accused included, and is the sum of the questions' refuted answer sentences. Cite the one your sentence describes.");
         Line(sb, "SUITES (S<n> in a question reference is the suite's number; its figures are the suite.<n>.* facts)");
         foreach (var suite in battery.Suites.OrderBy(s => s.Number))
         {

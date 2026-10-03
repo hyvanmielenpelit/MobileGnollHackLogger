@@ -944,4 +944,82 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.Null(BenchmarkClaimVerificationPrompt.AntecedentShown("   "));
         Assert.Null(BenchmarkClaimVerificationPrompt.AntecedentShown(null));
     }
+
+    // --- Items charged against the rubric ----------------------------------------------------
+
+    private const string ClericalRow = "| Clerical | Wisdom | No |";
+    private const string MovementRow = "| Movement | Intelligence or Wisdom | No |";
+
+    private static string BuildRubricChargedPrompt(IReadOnlyList<bool>? rubricCited, IReadOnlyList<string?>? rubricQuotes)
+    {
+        return BenchmarkClaimVerificationPrompt.BuildPrompt(
+            "GnollHack Suite",
+            9,
+            "Explain GnollHack's spell system.",
+            "- Clerical (Wis/Cha, non-somatic)",
+            new List<string> { "Own claim.", ClericalRow, MovementRow },
+            new List<string> { "source_code_search" },
+            15,
+            claimRoles: new List<IReadOnlyList<string>>
+            {
+                new[] { BenchmarkClaimRoles.UnverifiedClaim },
+                new[] { BenchmarkClaimRoles.AccusedQuote },
+                new[] { BenchmarkClaimRoles.AccusedQuote }
+            },
+            claimChargedParts: new List<IReadOnlyList<string>?> { null, new[] { "Wisdom" }, null },
+            claimRubricCited: rubricCited,
+            claimRubricQuotes: rubricQuotes).Replace("\r\n", "\n");
+    }
+
+    private static string ClaimBlock(string prompt, int index)
+    {
+        int start = prompt.IndexOf($"=== START CLAIM {index} ===", System.StringComparison.Ordinal);
+        int end = prompt.IndexOf($"=== END CLAIM {index} ===", System.StringComparison.Ordinal);
+        return prompt.Substring(start, end - start);
+    }
+
+    [Fact]
+    public void BuildPrompt_ARubricChargedItem_CarriesTheRubricLine_AndThePreambleTellsTheVerifierNotToJudgeByTheRubric()
+    {
+        string prompt = BuildRubricChargedPrompt(new[] { false, true, true }, new string?[] { null, "Wis/Cha", null });
+
+        Assert.Contains("ACCUSED SENTENCE ADJUDICATION:", prompt);
+        Assert.Contains(BenchmarkClaimVerificationPrompt.RubricChargedPreamble, prompt);
+        Assert.Contains(
+            "An item marked as charged against the rubric is one the assessor docked because it disagrees with the rubric's text. "
+            + "The rubric can be wrong: judge the charged part against the GnollHack source and the board only, never against the rubric.",
+            prompt);
+
+        Assert.DoesNotContain("Charged against the rubric", ClaimBlock(prompt, 0));
+        string clerical = ClaimBlock(prompt, 1);
+        Assert.Contains("Charged against the rubric. Rubric text the assessor relied on (untrusted): \"Wis/Cha\"", clerical);
+        Assert.Contains("Charged part (the words the assessor quoted, not part of the claim): \"Wisdom\"", clerical);
+        // Without a rubric quote the item carries the bare marker.
+        string movement = ClaimBlock(prompt, 2);
+        Assert.Contains("Charged against the rubric.\n", movement);
+        Assert.DoesNotContain("Rubric text the assessor relied on", movement);
+    }
+
+    [Fact]
+    public void BuildPrompt_WithoutARubricChargedItem_HasNeitherThePreambleSentenceNorTheLine()
+    {
+        string unmarked = BuildRubricChargedPrompt(null, null);
+        string allFalse = BuildRubricChargedPrompt(new[] { false, false, false }, new string?[] { null, "Wis/Cha", null });
+
+        foreach (string prompt in new[] { unmarked, allFalse })
+        {
+            Assert.Contains("ACCUSED SENTENCE ADJUDICATION:", prompt);
+            Assert.DoesNotContain(BenchmarkClaimVerificationPrompt.RubricChargedPreamble, prompt);
+            Assert.DoesNotContain("Charged against the rubric", prompt);
+        }
+    }
+
+    [Fact]
+    public void BuildPrompt_ARubricCitedFlagOnANonAccusedItem_IsIgnored()
+    {
+        string prompt = BuildRubricChargedPrompt(new[] { true, false, false }, new string?[] { "Wis/Cha", null, null });
+
+        Assert.DoesNotContain(BenchmarkClaimVerificationPrompt.RubricChargedPreamble, prompt);
+        Assert.DoesNotContain("Charged against the rubric", prompt);
+    }
 }

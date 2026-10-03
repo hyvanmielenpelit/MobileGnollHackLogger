@@ -67,8 +67,9 @@ public static class BenchmarkReportFactLabels
         ["answers.scored"] = "Scored answers",
         ["errors.critical"] = "Critical errors",
         ["claims.supported"] = "Claims the verifier supported",
-        ["claims.refuted"] = "Claims the verifier refuted",
+        ["claims.refuted"] = "Claims the verifier refuted (the answers' own claims)",
         ["claims.indeterminate"] = "Claims the verifier could not decide",
+        ["claims.refutedAnswerSentences"] = "Refuted answer sentences, accused sentences included",
 
         // Tools
         ["tools.callsPerQuestion"] = "Tool calls per question",

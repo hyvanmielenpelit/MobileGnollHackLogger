@@ -16,7 +16,11 @@ public class BenchmarkBatteryReportBuilderTests
 {
     private readonly ApplicationDbContext _db = BenchmarkBatteryTestData.NewDb();
 
-    private async Task<string> BuildAsync(params (BenchmarkRun Run, int SuiteIndex, int Round)[] members)
+    private Task<string> BuildAsync(params (BenchmarkRun Run, int SuiteIndex, int Round)[] members)
+        => BuildAsync(null, members);
+
+    private async Task<string> BuildAsync(
+        BenchmarkBatteryAnswerOutcomes? answerOutcomes, params (BenchmarkRun Run, int SuiteIndex, int Round)[] members)
     {
         var definition = BenchmarkBatteryTestData.Definition();
         long id = await BenchmarkBatteryTestData.SeedAsync(_db, definition, members);
@@ -35,7 +39,55 @@ public class BenchmarkBatteryReportBuilderTests
             analysis,
             loaded!.MemberRuns,
             loaded.Comparability,
-            overseerVersion: "1.2.3");
+            overseerVersion: "1.2.3",
+            answerOutcomes: answerOutcomes);
+    }
+
+    /// <summary>Both suites once, with token totals so the usage section is printed, and claim rulings on suite A.</summary>
+    private static (BenchmarkRun Run, int SuiteIndex, int Round)[] MembersWithUsage()
+    {
+        var suiteA = BenchmarkBatteryTestData.SuiteARun(1);
+        suiteA.TotalInputTokens = 12_000;
+        suiteA.TotalOutputTokens = 3_000;
+        suiteA.ClaimsSupportedCount = 4;
+        suiteA.ClaimsRefutedCount = 2;
+        var suiteB = BenchmarkBatteryTestData.SuiteBRun(2);
+        suiteB.TotalInputTokens = 8_000;
+        suiteB.TotalOutputTokens = 2_000;
+        return new[] { (suiteA, 0, 1), (suiteB, 1, 1) };
+    }
+
+    [Fact]
+    public async Task TheUsageSection_StatesTheToolCallOutcomes_AndTheRefutedAnswerSentences()
+    {
+        var outcomes = new BenchmarkBatteryAnswerOutcomes { ToolCallsFailed = 3, ToolCallsRefusedByBudget = 1, RefutedAnswerSentences = 5 };
+
+        string report = await BuildAsync(outcomes, MembersWithUsage());
+
+        Assert.Contains("- **Tool call outcomes:** 3 failed, 1 refused by the tool budget", report);
+        Assert.Contains("- **Claim verification:** 6 claims checked — 4 supported, **2 refuted**, 0 indeterminate; refuted answer sentences (accused ones included): 5", report);
+    }
+
+    [Fact]
+    public async Task TheUsageSection_SaysWhenTheToolCallOutcomesWereNotRecorded()
+    {
+        var outcomes = new BenchmarkBatteryAnswerOutcomes { ToolCallsUnavailableReason = BenchmarkBatteryAnswerOutcomes.ToolRecordsReason };
+
+        string report = await BuildAsync(outcomes, MembersWithUsage());
+
+        Assert.Contains("- **Tool call outcomes:** — *not recorded: " + BenchmarkBatteryAnswerOutcomes.ToolRecordsReason + "*", report);
+        Assert.Contains("; refuted answer sentences (accused ones included): — *not countable: some verifications record no roles*", report);
+    }
+
+    [Fact]
+    public async Task TheUsageSection_WithoutLoadedOutcomes_LeavesThemOut()
+    {
+        string report = await BuildAsync(MembersWithUsage());
+
+        Assert.Contains("## 9. Token and Tool Usage", report);
+        Assert.DoesNotContain("Tool call outcomes", report);
+        Assert.Contains("- **Claim verification:** 6 claims checked — 4 supported, **2 refuted**, 0 indeterminate", report);
+        Assert.DoesNotContain("refuted answer sentences", report);
     }
 
     [Fact]

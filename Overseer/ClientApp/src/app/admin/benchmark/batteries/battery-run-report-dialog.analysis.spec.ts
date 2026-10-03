@@ -43,9 +43,10 @@ describe('BatteryRunReportDialogComponent analysis', () => {
     expect(h.text('.bb-loo-table')).toContain('−2.4');
 
     showTab('suites');
-    expect(h.el().querySelectorAll('.bb-profile-table tbody tr').length).toBe(2);
-    expect(h.text('.bb-profile-table thead')).toContain('Critical errors');
-    expect(h.text('.bb-profile-table tbody tr:first-child')).toContain('$1.50');
+    const cards = h.el().querySelectorAll('#brr-panel-suites .brr-suite-card');
+    expect(cards.length).toBe(2);
+    expect(cards[0].querySelector('[data-metric="critical-errors"] dt')?.textContent?.trim()).toBe('Critical errors');
+    expect(cards[0].querySelector('[data-metric="cost"] dd')?.textContent?.trim()).toBe('$1.50');
     expect(h.el().querySelector('.bb-recompute-callout')).toBeNull();
   });
 

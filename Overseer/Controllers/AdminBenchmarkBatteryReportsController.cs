@@ -201,61 +201,69 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     /// What writing the battery run's documents with the writer would cost, by the Report Pack
     /// preview's arithmetic over the battery prompt, with the writer's refusal or same-provider
     /// warning. Computes the fact sheet and the prompts; makes no model call. 404 for an unknown
-    /// battery run; a document that is not a battery-completion document is a 400.
+    /// battery run; a document that is not a battery-completion document is a 400; a request the client
+    /// aborts is a 499.
     /// </summary>
     [HttpPost("estimate")]
     public async Task<IActionResult> Estimate(long batteryRunId, [FromBody] BenchmarkRunReportEstimateRequest request, CancellationToken ct)
     {
         if (request == null) return BadRequest(new { error = "A request body is required." });
 
-        var source = await BenchmarkBatteryReportDocumentService.LoadSourceAsync(_db, batteryRunId, ct);
-        if (source == null) return NotFound();
+        try
+        {
+            var source = await BenchmarkBatteryReportDocumentService.LoadSourceAsync(_db, batteryRunId, ct);
+            if (source == null) return NotFound();
 
-        var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
-        if (invalidAudience != null) return invalidAudience;
-        var audiences = requested ?? await BenchmarkBatteryReportDocumentService.MissingAudiencesAsync(_db, batteryRunId, ct);
+            var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
+            if (invalidAudience != null) return invalidAudience;
+            var audiences = requested ?? await BenchmarkBatteryReportDocumentService.MissingAudiencesAsync(_db, batteryRunId, ct);
 
-        var writer = request.WriterModelConfigurationId > 0
-            ? await _db.SystemAiApiConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct)
-            : null;
-        var candidate = BenchmarkBatteryReportDocumentService.CandidateIdentity(source);
-        var estimate = new BenchmarkRunReportEstimateDto
-        {
-            Refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard)
-        };
-        if (estimate.Refusal == null
-            && !_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
-        {
-            estimate.Refusal = EndpointRefusal(writer, endpointError);
-        }
-        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
-        if (estimate.Refusal == null && warning != null)
-        {
-            estimate.SameProviderWarning = BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning);
-        }
+            var writer = request.WriterModelConfigurationId > 0
+                ? await _db.SystemAiApiConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct)
+                : null;
+            var candidate = BenchmarkBatteryReportDocumentService.CandidateIdentity(source);
+            var estimate = new BenchmarkRunReportEstimateDto
+            {
+                Refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard)
+            };
+            if (estimate.Refusal == null
+                && !_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
+            {
+                estimate.Refusal = EndpointRefusal(writer, endpointError);
+            }
+            string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
+            if (estimate.Refusal == null && warning != null)
+            {
+                estimate.SameProviderWarning = BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning);
+            }
 
-        string? subjectRefusal = BenchmarkBatteryReportDocumentService.SubjectRefusal(source);
-        if (subjectRefusal != null)
-        {
-            estimate.Refusal ??= subjectRefusal;
+            string? subjectRefusal = BenchmarkBatteryReportDocumentService.SubjectRefusal(source);
+            if (subjectRefusal != null)
+            {
+                estimate.Refusal ??= subjectRefusal;
+                return Ok(estimate);
+            }
+
+            int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
+            var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+                _db, _comparisonService, BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, audiences, writer?.Id ?? 0),
+                excerptChars, ct, _configuration);
+            if (prep == null)
+            {
+                estimate.Refusal ??= prepRefusal ?? "The reports could not be prepared.";
+                return Ok(estimate);
+            }
+
+            estimate.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
+            estimate.EstimatedTotalCostUsd = estimate.Estimates.Count == 0 || estimate.Estimates.Any(e => e.EstimatedCostUsd == null)
+                ? null
+                : estimate.Estimates.Sum(e => e.EstimatedCostUsd!.Value);
             return Ok(estimate);
         }
-
-        int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
-        var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
-            _db, _comparisonService, BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, audiences, writer?.Id ?? 0),
-            excerptChars, ct, _configuration);
-        if (prep == null)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            estimate.Refusal ??= prepRefusal ?? "The reports could not be prepared.";
-            return Ok(estimate);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        estimate.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
-        estimate.EstimatedTotalCostUsd = estimate.Estimates.Count == 0 || estimate.Estimates.Any(e => e.EstimatedCostUsd == null)
-            ? null
-            : estimate.Estimates.Sum(e => e.EstimatedCostUsd!.Value);
-        return Ok(estimate);
     }
 
     /// <summary>

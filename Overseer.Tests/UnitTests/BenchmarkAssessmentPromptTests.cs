@@ -222,11 +222,11 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFortyFive()
+    public void HarnessVersion_IsFortySix()
     {
-        // Harness 45: grading preamble section 8, notAttempted in the output schema, and critical-error
-        // resolutions and NOT ATTEMPTED in the synthesis prompt.
-        Assert.Equal("45", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 46: Accuracy deductions charged against the rubric reach the claim verifier, and a
+        // supported one raises RubricContradictedBySource.
+        Assert.Equal("46", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -865,15 +865,15 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs45_ScoringMethodIs13()
+    public void Versions_HarnessIs46_ScoringMethodIs13()
     {
-        Assert.Equal("45", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("46", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 45 moves with scoring method 13: confirmed critical errors and the not-attempted
-        // floor change scores. The grading preamble takes a critical error only from the rubric or
-        // the board and gains section 8 (notAttempted, uncertain statements, alternatives), the
-        // output schema gains notAttempted, and the synthesis prompt states each critical error's
-        // resolution and marks an answer NOT ATTEMPTED. No tool guide or chat prompt changes.
+        // Harness 46 changes what reaches the claim verifier, not any score: sentences graders
+        // docked against the rubric are submitted as rubric-cited accused items, a repeated quoted
+        // span is placed on the line its charge names, and a supported rubric-cited item raises the
+        // advisory RubricContradictedBySource. The scoring method stays 13, and no tool guide or chat
+        // prompt changes.
         Assert.Equal(13, BenchmarkAssessmentPrompt.ScoringMethodVersion);
     }
 

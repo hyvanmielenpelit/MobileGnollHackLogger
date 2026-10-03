@@ -183,6 +183,8 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
   @Input() launcherWriterConfigId: number | null = null;
   /** The report dialog is open; the tab polls only then. */
   @Input() dialogOpen = false;
+  /** The tab is the one shown; the cost estimate is requested only then. */
+  @Input() active = false;
 
   /** The button that asked for the Download Center, for the host to return focus to. */
   @Output() readonly downloadsRequested = new EventEmitter<HTMLElement>();
@@ -299,6 +301,9 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
     }
     if (runChange || changes['dialogOpen']) {
       this.syncPoll();
+    }
+    if (changes['active'] && this.active) {
+      this.queueEstimate();
     }
   }
 
@@ -847,7 +852,10 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
     this.pollRunId = null;
   }
 
-  /** Estimates the cost of the checked documents with the chosen writer, once the choice rests. */
+  /**
+   * Estimates the cost of the checked documents with the chosen writer, once the choice rests. While the
+   * tab is not shown nothing is sent; selecting the tab queues the estimate its choice needs then.
+   */
   private queueEstimate(): void {
     const run = this.run;
     const writerId = this.writerConfigId;
@@ -857,6 +865,9 @@ export class RunAiReportsComponent implements OnInit, OnChanges, OnDestroy {
       : null;
     const key = request?.key ?? null;
     if (key === this.requestedEstimateKey) {
+      return;
+    }
+    if (request !== null && !this.active) {
       return;
     }
     this.requestedEstimateKey = key;

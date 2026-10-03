@@ -947,6 +947,29 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Empty(await db.SystemAiUsageLogs.ToListAsync(Ct));
     }
 
+    [Fact]
+    public async Task EstimateAndPreview_AbortedByTheClient_Answer499()
+    {
+        await using var h = await Harness.CreateAsync();
+        using var aborted = new CancellationTokenSource();
+        aborted.Cancel();
+
+        var estimate = Assert.IsType<StatusCodeResult>(await h.Controller().EstimateRunReportDocuments(
+            h.RunId, new BenchmarkRunReportEstimateRequest { WriterModelConfigurationId = h.WriterConfig.Id }, aborted.Token));
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, estimate.StatusCode);
+
+        var preview = Assert.IsType<StatusCodeResult>(await h.Controller().Preview(new BenchmarkReportPackRequest
+        {
+            RunIds = new List<long> { h.RunId },
+            SubjectKey = BenchmarkRunReportDocumentService.SubjectKeyOf(h.RunId),
+            Audiences = BothAudiences.ToList(),
+            WriterModelConfigurationId = h.WriterConfig.Id
+        }, aborted.Token));
+        Assert.Equal(StatusCodes.Status499ClientClosedRequest, preview.StatusCode);
+
+        Assert.Equal(0, h.Writer.JobCalls);
+    }
+
     // --- Run-scoped delete ---------------------------------------------------------------------------
 
     [Fact]

@@ -1046,6 +1046,15 @@ public class BenchmarkRunDetailDto
     public int? ContestedAccuracyDeductionAnswerCount { get; set; }
 
     /// <summary>
+    /// Answers where a sentence a grader docked because it disagrees with the rubric's text was
+    /// supported by the claim verifier with a citation, for either panel member
+    /// (<see cref="Overseer.Services.Benchmarking.BenchmarkRunFinalizer.IsRubricContradicted"/>).
+    /// Advisory: a suite repair lead; the deduction stands and no index moved. Computed from the
+    /// answers; zero on a run recorded before harness 46, which never sent such a sentence.
+    /// </summary>
+    public int RubricContradictedAnswerCount { get; set; }
+
+    /// <summary>
     /// Answers where exactly one graded dimension sits at level 1 or 0 beside three at 3 or above,
     /// with no defect of that dimension's kind named anywhere the assessor wrote. Advisory: the
     /// level stands and no index moved; the verdict is routed to a second reader. Zero on a run
@@ -1596,6 +1605,32 @@ public class BenchmarkRubricGapReportDto
 
     public List<BenchmarkRubricGapClusterDto> Clusters { get; set; } = new();
     public List<BenchmarkKnowledgeBaseGapDto> KnowledgeBaseGaps { get; set; } = new();
+    public List<BenchmarkRubricContradictionDto> RubricContradictions { get; set; } = new();
+}
+
+/// <summary>
+/// A sentence graders docked against the rubric that the claim verifier supported with a citation,
+/// over the suite's runs at the question's current item revision: a suite repair lead.
+/// </summary>
+public class BenchmarkRubricContradictionDto
+{
+    public long QuestionId { get; set; }
+    public int QuestionOrderIndex { get; set; }
+
+    /// <summary>The answer sentence or table row the grader charged, verbatim.</summary>
+    public string ChargedSentence { get; set; } = string.Empty;
+
+    /// <summary>The words the grader quoted from it; empty when it charged the row by its label.</summary>
+    public List<string> ChargedParts { get; set; } = new();
+
+    /// <summary>The rubric text the grader relied on; null when the harness found none.</summary>
+    public string? RubricQuote { get; set; }
+
+    public string? Citation { get; set; }
+    public string? Basis { get; set; }
+
+    /// <summary>The distinct runs whose verification raised it.</summary>
+    public int RunCount { get; set; }
 }
 
 public class BenchmarkKnowledgeBaseGapDto

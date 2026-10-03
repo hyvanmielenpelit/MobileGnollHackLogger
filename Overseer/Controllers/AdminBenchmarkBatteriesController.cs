@@ -1325,9 +1325,10 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                 : $"battery run #{analysis.ComparedWithBatteryRunId.Value} ({baselineName})";
         }
 
+        var answerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(_db, memberRunIds, withRefutedSentences: true, ct);
         string markdown = BenchmarkBatteryReportBuilder.BuildMarkdownReport(
             batteryRun, definition, result, analysis, memberRuns, comparability, comparison, comparisonLabel,
-            GetOverseerVersion());
+            GetOverseerVersion(), answerOutcomes);
 
         string? modelName = memberRuns
             .Select(r => r.TestedModelSnapshot.Label())

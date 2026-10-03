@@ -22,6 +22,7 @@ import { BenchmarkPollTickerService, BenchmarkPollTickerHandle } from '../../../
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { Subject, Subscription } from 'rxjs';
 import { refusalText, reportDocumentsStatusOf, formatStatus } from '../benchmark-run-format';
+import { batteryAwaitsPostRun } from '../batteries/battery.models';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkLauncherState } from './benchmark-launcher.state';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
@@ -115,11 +116,99 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
 
   runQuestionsLoadError: string | null = null;
 
-  activeRunId: number | null = null;
+  private liveRunId: number | null = null;
+
+  /**
+   * The live run: the one this page started, reattached to, or follows as a series or battery member.
+   * The banner, the completion signals and the report-job poll follow it.
+   */
+  get activeRunId(): number | null {
+    return this.liveRunId;
+  }
+
+  set activeRunId(runId: number | null) {
+    this.liveRunId = runId;
+    this.syncViewedPoller();
+  }
 
   activeRunDetail: BenchmarkRunDetailDto | null = null;
 
   pollTickerHandle: BenchmarkPollTickerHandle | null = null;
+
+  /** Bumped by every start and stop of the run poller; a response from an earlier one is discarded. */
+  private runPollGeneration = 0;
+
+  // --- The viewed run ---
+  //
+  // The run progress dialog shows `viewedRunId` when one is set, else the live run. While the viewed
+  // run is not the live run, a reduced poller of its own follows it: it never signals completion,
+  // takes the background lock, applies the re-run grace or loads history.
+
+  /** The run the progress dialog was opened for; null while the dialog follows the live run. */
+  viewedRunId: number | null = null;
+
+  /** The viewed run's detail, polled while it is not the live run. */
+  viewedRunDetail: BenchmarkRunDetailDto | null = null;
+
+  /** The viewed run's report writing job, polled alongside it while its stage 4 is current. */
+  viewedRunReportJob: BenchmarkRunReportJobDto | null = null;
+
+  /** When the viewed run's last job view arrived (client clock). */
+  viewedRunReportJobReceivedAtMs = 0;
+
+  private viewedPollTickerHandle: BenchmarkPollTickerHandle | null = null;
+
+  /** The run the viewed poller was last started for; kept after it stops itself on a finished run. */
+  private viewedPollRunId: number | null = null;
+
+  /** Bumped by every start and stop of the viewed poller; a response from an earlier one is discarded. */
+  private viewedPollGeneration = 0;
+
+  private viewedPollFailureCount = 0;
+
+  /** When the viewed run was first seen terminal (client clock), for its report stage's start grace. */
+  private viewedTerminalSeenAt: { runId: number; atMs: number } | null = null;
+
+  private viewedReportJobSub: Subscription | null = null;
+
+  /** The progress dialog shows the live run. */
+  get dialogFollowsLiveRun(): boolean {
+    return this.viewedRunId == null || this.viewedRunId === this.activeRunId;
+  }
+
+  /** The run the progress dialog shows. */
+  get dialogRunId(): number | null {
+    return this.viewedRunId ?? this.activeRunId;
+  }
+
+  /** The detail of the run the progress dialog shows; null until it has arrived. */
+  get dialogRunDetail(): BenchmarkRunDetailDto | null {
+    const viewed = this.viewedRunId;
+    if (viewed == null) {
+      return this.activeRunDetail;
+    }
+    if (viewed === this.activeRunId) {
+      return this.activeRunDetail?.id === viewed ? this.activeRunDetail : null;
+    }
+    return this.viewedRunDetail?.id === viewed ? this.viewedRunDetail : null;
+  }
+
+  /** The report writing job of the run the progress dialog shows. */
+  get dialogRunReportJob(): BenchmarkRunReportJobDto | null {
+    const viewed = this.viewedRunId;
+    if (viewed == null) {
+      return this.activeRunReportJob;
+    }
+    if (viewed === this.activeRunId) {
+      return this.activeRunReportJob?.runId === viewed ? this.activeRunReportJob : null;
+    }
+    return this.viewedRunReportJob?.runId === viewed ? this.viewedRunReportJob : null;
+  }
+
+  /** When the dialog's job view arrived (client clock), to advance the server's clock between polls. */
+  get dialogRunReportJobReceivedAtMs(): number {
+    return this.dialogFollowsLiveRun ? this.activeRunReportJobReceivedAtMs : this.viewedRunReportJobReceivedAtMs;
+  }
 
   /**
    * Kept separate from visibilityChangeHandler, which belongs to difficulty polling.
@@ -242,8 +331,8 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
 
   resumingBattery = false;
 
-  /** Closing the run progress dialog reopens the Battery Progress dialog it was opened from. */
-  returnToBatteryOnClose = false;
+  /** The battery run whose Battery Progress dialog the run progress dialog was opened from; closing reopens it. */
+  returnToBatteryRunId: number | null = null;
 
   // --- Completion sound ---
   //
@@ -666,7 +755,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         if (batteryRun) {
           this.activeBatteryRun = batteryRun;
           this.activeBatteryRunId = batteryRun.id;
-          if (this.batteryIsLive) {
+          if (this.batteryIsLive || batteryAwaitsPostRun(batteryRun)) {
             this.startBatteryPolling(batteryRun.id);
           }
           this.viewSync.notify();
@@ -736,11 +825,14 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         this.batteryNextPollDueAtMs = 0;
         this.clearLostContact('battery');
         this.activeBatteryRun = batteryRun;
-        // One signal per battery run watched live, at whatever end it reaches except a cancel. Its
-        // members' own completions are accounted for here, so none of them signals afterwards.
+        // A finished battery run is followed through its analysis and its AI-written reports.
+        const awaitsPostRun = !this.batteryIsLive && batteryAwaitsPostRun(batteryRun);
+        // One signal per battery run watched live, at whatever end it reaches except a cancel, once its
+        // post-run work has ended. Its members' own completions are accounted for here, so none of
+        // them signals afterwards.
         if (this.batteryIsLive) {
           this.batteriesSeenLive.add(batteryRun.id);
-        } else if (this.batteriesSeenLive.has(batteryRun.id)) {
+        } else if (!awaitsPostRun && this.batteriesSeenLive.has(batteryRun.id)) {
           this.batteriesSeenLive.delete(batteryRun.id);
           for (const member of batteryRun.members ?? []) {
             this.runsSeenLive.delete(member.runId);
@@ -755,7 +847,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
           this.activeRunId = runningId;
           this.startPolling(runningId);
         }
-        if (!this.batteryIsLive) {
+        if (!this.batteryIsLive && !awaitsPostRun) {
           this.stopBatteryPolling();
           this.workspace.loadHistory();
           this.workspace.loadRunLimits();
@@ -833,7 +925,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   }
 
   onBatteryDialogClosed(): void {
-    this.returnToBatteryOnClose = false;
+    this.returnToBatteryRunId = null;
     this.batteryDialogVisible = false;
     this.batteryDialogRunId = null;
     this.viewSync.notify();
@@ -877,13 +969,17 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     });
   }
 
-  cancelActiveRun() {
-    if (!this.activeRunId) return;
-    const runId = this.activeRunId;
+  /** Cancels a run: the live one by default, or the one the progress dialog shows. */
+  cancelActiveRun(runId: number | null = this.activeRunId) {
+    if (!runId) return;
     this.noteOperatorCancel(runId);
     this.benchmarkService.cancelRun(runId).subscribe({
       next: () => {
-        this.pollRunDetail(this.activeRunId!);
+        if (runId === this.viewedRunId && runId !== this.activeRunId) {
+          this.startViewedPolling(runId);
+        } else if (this.activeRunId != null) {
+          this.pollRunDetail(this.activeRunId);
+        }
       },
       error: (err) => {
         this.operatorCancelledRunIds.delete(runId);
@@ -904,6 +1000,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
 
   startPolling(runId: number) {
     this.stopPolling();
+    this.runPollGeneration++;
     this.runPollFailureCount = 0;
     this.runPollGaveUpRunId = null;
     if (this.activeRunReportJob?.runId !== runId) {
@@ -937,6 +1034,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
   }
 
   stopPolling() {
+    this.runPollGeneration++;
     if (this.pollTickerHandle) {
       this.pollTickerHandle();
       this.pollTickerHandle = null;
@@ -981,6 +1079,9 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     const cancelledByOperator = this.operatorCancelledRunIds.delete(run.id);
     if (this.activeSeries != null && this.seriesIsLive) return;
     if (this.activeBatteryRun != null && this.batteryIsLive) return;
+    // The battery signals once for its members, after its own post-run work.
+    const battery = this.activeBatteryRun;
+    if (battery != null && batteryAwaitsPostRun(battery) && (battery.members ?? []).some(m => m.runId === run.id)) return;
     if (cancelledByOperator || this.runEndedByCancellation(run)) return;
     this.signalCompletion(`run:${run.id}`);
   }
@@ -1166,14 +1267,27 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     }
   }
 
+  /**
+   * A response is discarded when the poller that asked has since been stopped or restarted, or the
+   * live run has moved to another run: `stopPolling` cannot cancel a request already in flight.
+   */
+  private runPollResponseIsStale(runId: number, generation: number): boolean {
+    return generation !== this.runPollGeneration || (this.activeRunId != null && runId !== this.activeRunId);
+  }
+
   private pollRunDetail(runId: number) {
+    const generation = this.runPollGeneration;
     this.benchmarkService.getRun(runId).subscribe({
       next: (run) => {
+        if (this.runPollResponseIsStale(runId, generation)) return;
         this.lastRunPollAtUtc = new Date().toISOString();
         this.lastRunPollError = null;
         this.runPollFailureCount = 0;
         this.activeRunDetail = run;
-        this.runDiagnosticsPanelCapturedAt = new Date();
+        if (this.dialogFollowsLiveRun) {
+          this.runDiagnosticsPanelCapturedAt = new Date();
+          this.syncDialogQuestions();
+        }
         const statusStr = formatStatus(run.status);
         if (statusStr === 'Running') {
           this.runsSeenLive.add(run.id);
@@ -1182,7 +1296,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
           if (this.runTerminalSeenAt?.runId === run.id) {
             this.runTerminalSeenAt = null;
           }
-          if (this.isRunProgressDialogOpen && !this.runElapsedInterval) {
+          if (this.isRunProgressDialogOpen && this.dialogFollowsLiveRun && !this.runElapsedInterval) {
             this.startRunElapsedTicker();
           }
         } else if (this.rerunLaunchPending) {
@@ -1213,6 +1327,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         this.viewSync.notify();
       },
       error: (err) => {
+        if (this.runPollResponseIsStale(runId, generation)) return;
         this.lastRunPollAtUtc = new Date().toISOString();
         const httpStatus = err?.status ? ` (HTTP ${err.status})` : '';
         const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || err?.message || 'Polling failed');
@@ -1253,14 +1368,17 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     }
 
     this.stopPolling();
-    this.stopRunElapsedTicker();
+    if (this.dialogFollowsLiveRun) {
+      this.stopRunElapsedTicker();
+    }
     this.workspace.loadHistory();
     this.maybeSignalRunCompletion(run);
   }
 
   /**
    * The run's stage 4 is still to come or under way: it ended Completed, names a report writer, and its
-   * reports are Pending or Writing, or still NotRequested within the start grace.
+   * reports are Pending or Writing, or still NotRequested within the start grace of the poller that
+   * first saw it terminal.
    */
   runAwaitsReports(run: BenchmarkRunDetailDto): boolean {
     if (run.reportWriterModelConfigurationId == null || formatStatus(run.status) !== 'Completed') {
@@ -1270,9 +1388,14 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
     if (status === BenchmarkRunReportDocumentsStatus.Pending || status === BenchmarkRunReportDocumentsStatus.Writing) {
       return true;
     }
-    return status === BenchmarkRunReportDocumentsStatus.NotRequested
-      && this.runReportGraceOpen
-      && this.runTerminalSeenAt?.runId === run.id;
+    if (status !== BenchmarkRunReportDocumentsStatus.NotRequested) {
+      return false;
+    }
+    if (this.runTerminalSeenAt?.runId === run.id) {
+      return this.runReportGraceOpen;
+    }
+    return this.viewedTerminalSeenAt?.runId === run.id
+      && Date.now() - this.viewedTerminalSeenAt.atMs < BenchmarkActiveRunMonitor.RUN_REPORT_STAGE_GRACE_MS;
   }
 
   /** One request at a time: a slow answer is superseded by the next poll's. A failure leaves the last view. */
@@ -1286,6 +1409,142 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
         this.viewSync.notify();
       },
       error: err => console.warn('Failed to poll the run report writing job', err)
+    });
+  }
+
+  // --- The viewed run ---
+
+  /** Points the progress dialog at this run, and keeps it there when the live run moves on. */
+  viewRun(runId: number): void {
+    if (this.viewedRunId !== runId) {
+      this.viewedRunId = runId;
+      this.syncViewedPoller();
+    }
+    this.viewSync.notify();
+  }
+
+  /** The progress dialog follows the live run again; the viewed poller stops. */
+  clearViewedRun(): void {
+    this.viewedRunId = null;
+    this.stopViewedPolling();
+    this.viewedRunDetail = null;
+    this.viewedRunReportJob = null;
+    this.viewedTerminalSeenAt = null;
+  }
+
+  /** A viewed poller runs exactly while a viewed run is set and is not the live run. */
+  private syncViewedPoller(): void {
+    const runId = this.viewedRunId;
+    if (runId == null || runId === this.activeRunId) {
+      this.stopViewedPolling();
+      return;
+    }
+    if (this.viewedPollRunId !== runId) {
+      this.startViewedPolling(runId);
+    }
+  }
+
+  /**
+   * Fetches the viewed run at once, then every {@link RUN_POLL_INTERVAL_MS} while it is Running or
+   * its reports are awaited, and stops after the first terminal response that awaits nothing. What
+   * the live poller already holds for the run is shown until the first response.
+   */
+  private startViewedPolling(runId: number): void {
+    this.stopViewedPolling();
+    this.viewedPollRunId = runId;
+    this.viewedPollFailureCount = 0;
+    const generation = this.viewedPollGeneration;
+    if (this.viewedRunDetail?.id !== runId) {
+      this.viewedRunDetail = this.activeRunDetail?.id === runId ? this.activeRunDetail : null;
+    }
+    if (this.viewedRunReportJob?.runId !== runId) {
+      const job = this.activeRunReportJob?.runId === runId ? this.activeRunReportJob : null;
+      this.viewedRunReportJob = job;
+      this.viewedRunReportJobReceivedAtMs = job ? this.activeRunReportJobReceivedAtMs : 0;
+    }
+    if (this.viewedTerminalSeenAt?.runId !== runId) {
+      this.viewedTerminalSeenAt = this.runTerminalSeenAt?.runId === runId ? { ...this.runTerminalSeenAt } : null;
+    }
+    this.pollViewedRun(runId, generation);
+    // The response above may already have stopped the poller.
+    if (generation !== this.viewedPollGeneration) {
+      return;
+    }
+    this.viewedPollTickerHandle = this.pollTicker.start(BenchmarkActiveRunMonitor.RUN_POLL_INTERVAL_MS, () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        return;
+      }
+      this.pollViewedRun(runId, generation);
+    });
+  }
+
+  private stopViewedPolling(): void {
+    this.viewedPollGeneration++;
+    this.viewedPollRunId = null;
+    this.haltViewedTicker();
+  }
+
+  /** Stops the viewed poller's ticks and job poll, keeping what it last read. */
+  private haltViewedTicker(): void {
+    if (this.viewedPollTickerHandle) {
+      this.viewedPollTickerHandle();
+      this.viewedPollTickerHandle = null;
+    }
+    this.viewedReportJobSub?.unsubscribe();
+    this.viewedReportJobSub = null;
+  }
+
+  private pollViewedRun(runId: number, generation: number): void {
+    this.benchmarkService.getRun(runId).subscribe({
+      next: (run) => {
+        if (generation !== this.viewedPollGeneration || runId !== this.viewedRunId || run?.id !== runId) return;
+        this.viewedPollFailureCount = 0;
+        this.viewedRunDetail = run;
+        this.runDiagnosticsPanelCapturedAt = new Date();
+        this.syncDialogQuestions();
+        if (formatStatus(run.status) === 'Running') {
+          this.viewedTerminalSeenAt = null;
+          if (this.isRunProgressDialogOpen && !this.runElapsedInterval) {
+            this.startRunElapsedTicker();
+          }
+        } else {
+          if (this.viewedTerminalSeenAt?.runId !== run.id) {
+            this.viewedTerminalSeenAt = { runId: run.id, atMs: Date.now() };
+          }
+          if (this.runAwaitsReports(run)) {
+            this.pollViewedRunReportJob(runId, generation);
+          } else {
+            // The run id is kept, so a later change of the live run does not restart the poller.
+            this.viewedPollGeneration++;
+            this.haltViewedTicker();
+            this.stopRunElapsedTicker();
+          }
+        }
+        this.viewSync.notify();
+      },
+      error: (err) => {
+        if (generation !== this.viewedPollGeneration || runId !== this.viewedRunId) return;
+        console.warn('Failed to poll the viewed run', err);
+        this.viewedPollFailureCount++;
+        if (this.viewedPollFailureCount >= BenchmarkActiveRunMonitor.MAX_CONSECUTIVE_POLL_FAILURES) {
+          this.viewedPollGeneration++;
+          this.haltViewedTicker();
+        }
+      }
+    });
+  }
+
+  /** One request at a time, as for the live run. A failure leaves the last view. */
+  private pollViewedRunReportJob(runId: number, generation: number): void {
+    this.viewedReportJobSub?.unsubscribe();
+    this.viewedReportJobSub = this.benchmarkService.getRunReportJob(runId).subscribe({
+      next: view => {
+        if (generation !== this.viewedPollGeneration || runId !== this.viewedRunId) return;
+        this.viewedRunReportJob = view;
+        this.viewedRunReportJobReceivedAtMs = Date.now();
+        this.viewSync.notify();
+      },
+      error: err => console.warn('Failed to poll the viewed run\'s report writing job', err)
     });
   }
 
@@ -1309,16 +1568,36 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
 
   runDiagnosticsCopyFailed = false;
 
+  /** The suite the dialog's detail last asked questions for, so a failed load is retried only on a change. */
+  private dialogQuestionsSuiteId: number | null = null;
+
+  /**
+   * Loads the questions of the dialog run's suite once its detail has arrived, and again whenever that
+   * suite changes, while the progress dialog is open.
+   */
+  syncDialogQuestions(): void {
+    if (!this.isRunProgressDialogOpen) return;
+    const suiteId = this.dialogRunDetail?.benchmarkSuiteId ?? null;
+    if (suiteId == null || suiteId === this.dialogQuestionsSuiteId) return;
+    this.dialogQuestionsSuiteId = suiteId;
+    if (suiteId !== this.runProgressQuestionsSuiteId) {
+      this.loadRunProgressQuestions(suiteId);
+    }
+  }
+
   loadRunProgressQuestions(suiteId: number): void {
     // Claimed before the request so a second open while it is in flight does not refire it.
     this.runProgressQuestionsSuiteId = suiteId;
     this.benchmarkService.getQuestions(suiteId).subscribe({
       next: (data) => {
+        // A slower answer for a suite the dialog has since left is dropped.
+        if (this.runProgressQuestionsSuiteId !== suiteId) return;
         this.runQuestionsLoadError = null;
         this.runProgressQuestions = data;
         this.viewSync.notify();
       },
       error: (err) => {
+        if (this.runProgressQuestionsSuiteId !== suiteId) return;
         // The dialog degrades to the answers alone rather than failing to open.
         this.runProgressQuestionsSuiteId = null;
         const msg = typeof err?.error === 'string' ? err.error : (err?.error?.message || err?.message || 'Failed to load suite questions');
@@ -1391,6 +1670,7 @@ export class BenchmarkActiveRunMonitor implements OnDestroy {
 
   ngOnDestroy(): void {
     this.stopPolling();
+    this.clearViewedRun();
     this.stopRunElapsedTicker();
     this.stopSeriesPolling();
     this.stopBatteryPolling();

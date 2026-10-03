@@ -9,10 +9,39 @@
         @if (batteryRun; as run) {
           <p class="dialog-subtitle">
             {{ run.batteryName }}
-            @if (run.testedModelLabel) { · {{ run.testedModelLabel }} }
             · {{ run.suiteCount }} {{ run.suiteCount === 1 ? 'suite' : 'suites' }}
             × {{ run.runsPerSuite }} {{ run.runsPerSuite === 1 ? 'round' : 'rounds' }}
           </p>
+          <dl class="bp-header-facts">
+            <div class="bp-header-fact">
+              <dt>Model under test</dt>
+              <dd class="bp-model-line">
+                <span class="model-name">{{ modelName }}</span>
+                @for (badge of modelBadges; track badge.kind) {
+                  @switch (badge.kind) {
+                    @case ('provider') {
+                      <app-provider-badge [provider]="badge.provider" />
+                    }
+                    @case ('thinking') {
+                      <span class="thinking-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                    }
+                    @case ('reasoning') {
+                      <span class="reasoning-badge"><span class="visually-hidden">{{ badge.srPrefix }}</span>{{ badge.text }}</span>
+                    }
+                    @default {
+                      <span class="config-badge">@if (badge.srPrefix) {<span class="visually-hidden">{{ badge.srPrefix }}</span>}{{ badge.text }}</span>
+                    }
+                  }
+                }
+              </dd>
+            </div>
+            @if (hasReportWriter) {
+              <div class="bp-header-fact bp-report-writer">
+                <dt>Report writer</dt>
+                <dd><span class="model-name">{{ reportWriterName }}</span></dd>
+              </div>
+            }
+          </dl>
         }
       </div>
       <button type="button" class="btn-icon-action"
@@ -29,14 +58,37 @@
       <div popover="hint" class="gh-tooltip" id="bp-tip-close" style="position-anchor: --bp-tip-close">Close</div>
     </div>
 
-    <div class="dialog-body">
-      <h4 #batteryProgressHeading tabindex="-1" class="progress-heading bp-heading">
+    <!-- An inline-size container: the rail stacks when the body is narrow. -->
+    <div class="dialog-body bp-body">
+      <h4 #batteryProgressHeading tabindex="-1" class="progress-heading gh-section-title bp-heading">
         @if (batteryRun; as run) {
           {{ run.batteryName }} — revision {{ run.definitionRevision }}
         } @else {
           Loading battery run…
         }
       </h4>
+
+      @if (railItems.length > 0) {
+        <ol class="run-stage-rail bp-rail" aria-label="Battery run stages">
+          @for (item of railItems; track item.key; let i = $index) {
+            <li class="run-stage" [attr.data-stage]="item.key"
+                [class.is-current]="item.state === 'current'" [class.is-done]="item.state === 'done'"
+                [class.is-ended]="item.state === 'ended'"
+                [attr.aria-current]="item.state === 'current' ? 'step' : null">
+              <span class="run-stage-index" aria-hidden="true">{{ i + 1 }}</span>
+              <span class="run-stage-label">
+                <span class="run-stage-name">{{ item.name }}</span>
+                @if (item.note) {
+                  <span class="run-stage-note">{{ item.note }}</span>
+                }
+              </span>
+              @if (item.state !== 'pending') {
+                <span class="visually-hidden">{{ railStateWord(item.state) }}</span>
+              }
+            </li>
+          }
+        </ol>
+      }
 
       <div class="job-progress-block">
         <label class="progress-label" for="bpProgressBar">Slots with a usable result</label>

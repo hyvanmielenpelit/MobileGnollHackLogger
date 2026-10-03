@@ -157,7 +157,18 @@ public enum BenchmarkAnswerFlags
     // Advisory, and grouped here for the same reason as UnevidencedDeduction: the answer is intact
     // and the level may well be deserved. Nothing here changes a score; it routes the verdict to a
     // second reader. See BenchmarkVerdictConsistency.IsDimensionOutlier.
-    DimensionOutlier = 8192
+    DimensionOutlier = 8192,
+
+    // The claim verifier returned Supported with a citation, its charged part judged, for a sentence
+    // of the answer the assessor docked because it disagrees with the rubric's text (an accused item
+    // marked rubricCited in ClaimVerificationJson): the source bears out the answer against the
+    // rubric, so the rubric point is a suite repair lead.
+    //
+    // Advisory, and grouped here for the same reason as ContestedAccuracyDeduction, which the same
+    // verdict also raises: the deduction and every score stand, and the verifier is a model the
+    // rubric never sanctioned as a grader. A human checks the rubric point against the cited source
+    // before the rubric is changed.
+    RubricContradictedBySource = 16384
 }
 
 /// <summary>

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
@@ -368,7 +369,7 @@ public class BenchmarkBatteryReportFactsTests
         // What a battery cannot state is kept with its reason.
         Assert.Equal(BenchmarkBatteryReportFacts.SuiteNameReason, Fact(sheet, "suite.name").UnavailableReason);
         Assert.Equal(BenchmarkBatteryReportFacts.CompositeIndexReason, Fact(sheet, "quality.rawIndex").UnavailableReason);
-        Assert.Equal(BenchmarkBatteryReportFacts.ToolRowsReason, Fact(sheet, "tools.failed").UnavailableReason);
+        Assert.Equal("0", Fact(sheet, "tools.failed").Display);
         Assert.Equal(BenchmarkBatteryReportFacts.BandReason, Fact(sheet, "band.simple.score").UnavailableReason);
         Assert.Equal(BenchmarkBatteryReportFacts.StandaloneReason, Fact(sheet, "quality.rank").UnavailableReason);
         Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("peer.", StringComparison.Ordinal));
@@ -488,6 +489,194 @@ public class BenchmarkBatteryReportFactsTests
 
         Assert.Null(prep);
         Assert.Equal(BenchmarkBatteryModelComparison.MixedSourcesError, refusal);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Tool-call outcomes and refuted answer sentences
+    // ---------------------------------------------------------------------------------------------
+
+    private static BenchmarkRunAnswerToolCall Call(int order, string? status, string? error = null) => new()
+    {
+        SortOrder = order,
+        Name = "wiki_search",
+        Status = status,
+        Error = error,
+        ArgsText = "{\"query\":\"gems\"}",
+        Result = "A result."
+    };
+
+    private static string Verifications(params (string Claim, BenchmarkClaimVerdict Verdict, string? Role)[] rulings)
+        => System.Text.Json.JsonSerializer.Serialize(rulings
+            .Select(r => new BenchmarkClaimVerification(0, r.Claim, r.Verdict, null, null) { Roles = r.Role == null ? null : new[] { r.Role } })
+            .ToArray());
+
+    /// <summary>The battery subject's sheet, built as the preparation builds it, with <paramref name="outcomes"/> as its tool-call outcomes.</summary>
+    private static async Task<BenchmarkReportFactSheet> BuildSheetAsync(ApplicationDbContext db, long batteryRunId, BenchmarkBatteryAnswerOutcomes? outcomes)
+    {
+        var request = BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, new[] { BenchmarkReportAudience.TechnicalReport }, 0);
+        var (comparison, subject, refusal) = await BenchmarkReportPackPreparation.CompareAsync(new BenchmarkModelComparisonService(db), request, Ct);
+        Assert.True(refusal == null, refusal);
+        var (sources, error) = await BenchmarkBatteryModelComparison.LoadAsync(db, new[] { batteryRunId }, Ct);
+        Assert.True(sources != null, error);
+
+        var runIds = subject!.RunIds.Distinct().ToList();
+        var runs = await db.BenchmarkRuns.AsNoTracking().Include(r => r.Answers).Where(r => runIds.Contains(r.Id)).ToListAsync(Ct);
+        var built = BenchmarkBatteryReportFacts.Build(new BenchmarkBatteryReportFactsInput
+        {
+            Comparison = comparison!,
+            SubjectKey = subject.Key,
+            Sources = sources!,
+            Runs = runs.ToDictionary(r => r.Id),
+            AnswerOutcomes = outcomes
+        });
+        Assert.True(built.Sheet != null, built.Refusal);
+        return built.Sheet!;
+    }
+
+    [Fact]
+    public async Task TheToolCallOutcomes_AreCountedOverTheMembersPerCallRows_ByTheRunRule()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        // Round 1 of suite A: a completed call, a failed call and a budget refusal on its first answer.
+        // Round 2 of suite B: a call that recorded no status, which counts as failed, and a completed one.
+        long id = await SeedThreeRoundsAsync(db, adjust: (run, round) =>
+        {
+            if (round == 1 && run.BenchmarkSuiteId == BenchmarkBatteryTestData.SuiteA)
+            {
+                run.Answers[0].ToolCalls.AddRange(new[]
+                {
+                    Call(0, "completed"),
+                    Call(1, "failed", "Tool wiki_search failed: timeout."),
+                    Call(2, "failed", BenchmarkToolCallRecorder.PerQuestionBudgetRefusalMarker + ".")
+                });
+            }
+            if (round == 2 && run.BenchmarkSuiteId == BenchmarkBatteryTestData.SuiteB)
+            {
+                run.Answers[1].ToolCalls.AddRange(new[] { Call(0, null), Call(1, "Completed") });
+            }
+        });
+
+        var outcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, new long[] { 1, 2, 3, 4, 5, 6 }, withRefutedSentences: false, Ct);
+        var sheet = await BuildSheetAsync(db, id, outcomes);
+
+        Assert.True(Fact(sheet, "tools.failed").Available);
+        Assert.Equal("2", Fact(sheet, "tools.failed").Display);
+        Assert.Equal(2, Fact(sheet, "tools.failed").Value!.GetValue<int>());
+        Assert.Equal("1", Fact(sheet, "tools.refusedByBudget").Display);
+        Assert.Single(sheet.Facts, f => f.Key == "tools.failed");
+
+        // Outcomes a member run predates are kept unavailable with the run report's reason.
+        var unrecorded = new BenchmarkBatteryAnswerOutcomes { ToolCallsUnavailableReason = BenchmarkBatteryAnswerOutcomes.ToolRecordsReason };
+        var withheld = await BuildSheetAsync(db, id, unrecorded);
+        Assert.False(Fact(withheld, "tools.failed").Available);
+        Assert.Equal(BenchmarkBatteryAnswerOutcomes.ToolRecordsReason, Fact(withheld, "tools.failed").UnavailableReason);
+        Assert.Equal(BenchmarkBatteryAnswerOutcomes.ToolRecordsReason, Fact(withheld, "tools.refusedByBudget").UnavailableReason);
+
+        // Outcomes that were not loaded say so.
+        var unloaded = await BuildSheetAsync(db, id, null);
+        Assert.Equal(BenchmarkBatteryReportFacts.ToolRowsReason, Fact(unloaded, "tools.failed").UnavailableReason);
+    }
+
+    [Fact]
+    public async Task TheAnswerOutcomes_CountOnlyTheAnswersThatCountTowardTheIndex_OfTheRunsAsked()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        var first = BenchmarkBatteryTestData.SuiteARun(1);
+        first.Answers[0].ToolCalls.AddRange(new[] { Call(0, "completed"), Call(1, "failed") });
+        // An empty answer with no finish reason counts toward no index, so its calls are not counted.
+        first.Answers[1].Status = BenchmarkAnswerStatus.EmptyAnswer;
+        first.Answers[1].ToolCalls.Add(Call(0, "failed"));
+        first.Answers[2].ClaimVerificationJson = Verifications(
+            ("Sentence one.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.UnverifiedClaim),
+            ("Sentence two.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote),
+            ("A grader's statement.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AssessorStatement));
+        var second = BenchmarkBatteryTestData.SuiteBRun(2);
+        second.Answers[0].ToolCalls.Add(Call(0, "failed", BenchmarkToolCallRecorder.BudgetRefusalMarker));
+        var other = BenchmarkBatteryTestData.SuiteARun(3);
+        other.Answers[0].ToolCalls.Add(Call(0, "failed"));
+        db.BenchmarkRuns.AddRange(first, second, other);
+        await db.SaveChangesAsync(Ct);
+
+        var outcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, new long[] { 1, 2 }, withRefutedSentences: true, Ct);
+
+        Assert.Null(outcomes.ToolCallsUnavailableReason);
+        Assert.Equal(1, outcomes.ToolCallsFailed);
+        Assert.Equal(1, outcomes.ToolCallsRefusedByBudget);
+        Assert.Equal(2, outcomes.RefutedAnswerSentences);
+
+        var withoutSentences = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, new long[] { 1, 2 }, withRefutedSentences: false, Ct);
+        Assert.Null(withoutSentences.RefutedAnswerSentences);
+        Assert.Equal(1, withoutSentences.ToolCallsFailed);
+    }
+
+    [Fact]
+    public async Task TheAnswerOutcomes_AreUnavailable_WhenAMemberRunPredatesPerCallToolRecords()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        var old = BenchmarkBatteryTestData.Run(1, BenchmarkBatteryTestData.SuiteA, new[] { 60, 70, 80 }, new[] { 40, 40, 40 }, harnessVersion: "16");
+        var current = BenchmarkBatteryTestData.SuiteBRun(2);
+        current.Answers[0].ToolCalls.Add(Call(0, "failed"));
+        db.BenchmarkRuns.AddRange(old, current);
+        await db.SaveChangesAsync(Ct);
+
+        var outcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, new long[] { 1, 2 }, withRefutedSentences: false, Ct);
+
+        Assert.Equal(BenchmarkBatteryAnswerOutcomes.ToolRecordsReason, outcomes.ToolCallsUnavailableReason);
+        Assert.Null(outcomes.ToolCallsFailed);
+        Assert.Null(outcomes.ToolCallsRefusedByBudget);
+    }
+
+    [Fact]
+    public async Task TheRefutedAnswerSentences_AreTheQuestionsSum_AccusedOnesIncluded()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        long id = await SeedThreeRoundsAsync(db, adjust: (run, round) =>
+        {
+            if (round == 1 && run.BenchmarkSuiteId == BenchmarkBatteryTestData.SuiteA)
+            {
+                run.ClaimsSupportedCount = 1;
+                run.ClaimsRefutedCount = 1;
+                run.Answers[0].ClaimVerificationJson = Verifications(
+                    ("Sentence one.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.UnverifiedClaim),
+                    ("Sentence two.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote),
+                    ("Sentence three.", BenchmarkClaimVerdict.Supported, BenchmarkClaimRoles.UnverifiedClaim),
+                    ("A grader's statement.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AssessorStatement));
+            }
+            if (round == 3 && run.BenchmarkSuiteId == BenchmarkBatteryTestData.SuiteB)
+            {
+                run.Answers[1].ClaimVerificationJson = Verifications(
+                    ("Another sentence.", BenchmarkClaimVerdict.Refuted, BenchmarkClaimRoles.AccusedQuote));
+            }
+        });
+
+        var sheet = (await PrepareAsync(db, id)).Sheet;
+
+        Assert.Equal("1", Fact(sheet, "claims.refuted").Display);
+        Assert.Equal("3", Fact(sheet, "claims.refutedAnswerSentences").Display);
+        Assert.Equal(sheet.Questions.Sum(q => q.RefutedAnswerSentences!.Value), Fact(sheet, "claims.refutedAnswerSentences").Value!.GetValue<int>());
+        Assert.Equal("Refuted answer sentences, accused sentences included", BenchmarkReportFactLabels.Label("claims.refutedAnswerSentences"));
+        Assert.Contains("claims.refutedAnswerSentences = 3\n",
+            BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, sheet, new BenchmarkReportContentSnapshot()).UserMessage);
+    }
+
+    [Fact]
+    public async Task TheRefutedAnswerSentences_AreUnavailable_WhenAVerificationRecordsNoRoles()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        long id = await SeedThreeRoundsAsync(db, adjust: (run, round) =>
+        {
+            if (round == 1 && run.BenchmarkSuiteId == BenchmarkBatteryTestData.SuiteA)
+            {
+                run.ClaimsRefutedCount = 1;
+                run.Answers[0].ClaimVerificationJson = Verifications(("A sentence.", BenchmarkClaimVerdict.Refuted, null));
+            }
+        });
+
+        var sheet = (await PrepareAsync(db, id)).Sheet;
+
+        Assert.Equal("1", Fact(sheet, "claims.refuted").Display);
+        Assert.False(Fact(sheet, "claims.refutedAnswerSentences").Available);
+        Assert.Equal(BenchmarkBatteryReportFacts.RefutedSentencesReason, Fact(sheet, "claims.refutedAnswerSentences").UnavailableReason);
     }
 
     // ---------------------------------------------------------------------------------------------

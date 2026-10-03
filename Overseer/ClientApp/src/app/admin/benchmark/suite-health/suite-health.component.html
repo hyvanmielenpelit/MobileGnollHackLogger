@@ -551,6 +551,61 @@
         } @else {
           <p class="text-muted">No refuted claims recorded as knowledge base gap candidates for this suite.</p>
         }
+
+        <!-- Rubric Contradicted by Source -->
+        <h4 class="mt-25">Rubric contradicted by source</h4>
+        <p class="section-note">
+          Sentences a grader docked because they disagree with the rubric, which the claim verifier
+          then supported against the game source code or wiki with a citation. Each row is a suite
+          repair lead: check the rubric point against the cited source before the next run. Read from
+          runs at each question's current item revision; nothing is changed automatically.
+        </p>
+
+        @if (rubricContradictions.length > 0) {
+          <table class="gh-table sh-table rubric-contradiction-table">
+            <caption class="visually-hidden">
+              Rubric points of {{ suiteName }} the claim verifier contradicted against the source, with
+              the charged sentence, the rubric text the grader relied on, the verifier's citation and
+              the number of runs that raised each.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Question</th>
+                <th scope="col">Charged sentence</th>
+                <th scope="col">Rubric quote</th>
+                <th scope="col">Citation</th>
+                <th scope="col">Runs</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of rubricContradictions; track row.questionId + '-' + row.chargedSentence) {
+                <tr>
+                  <th scope="row">Q{{ row.questionOrderIndex }}</th>
+                  <td class="rationale">
+                    “{{ row.chargedSentence }}”
+                    @if (row.chargedParts.length > 0) {
+                      <div class="text-muted mt-5">Charged part: {{ formatChargedParts(row.chargedParts) }}</div>
+                    }
+                  </td>
+                  <td class="rationale">{{ row.rubricQuote ? '“' + row.rubricQuote + '”' : '—' }}</td>
+                  <td class="rationale">
+                    @if (row.citation) {
+                      <code>{{ row.citation }}</code>
+                    } @else {
+                      —
+                    }
+                    @if (row.basis) {
+                      <div class="text-muted mt-5">{{ row.basis }}</div>
+                    }
+                  </td>
+                  <td>{{ row.runCount }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        } @else {
+          <p class="text-muted rubric-contradiction-empty">No rubric point has been contradicted by the source.</p>
+        }
       }
     </div>
   }

@@ -395,77 +395,110 @@
                =================================================================================== -->
           <div role="tabpanel" class="rr-panel" id="brr-panel-suites" aria-labelledby="brr-tab-suites" tabindex="0"
                [hidden]="tab !== 'suites'">
-            <h4 class="gh-section-title">Suite profile</h4>
+            <h4 class="gh-section-title" id="brrSuitesTitle">Suite profile</h4>
             @if (result; as r) {
-              <div class="gh-datatable-scroll bb-table-scroll">
-                <table class="gh-table bb-profile-table">
-                  <caption class="visually-hidden">Suite profile: each suite's weight, index, contribution, interval, scored items, speed, cost per run, critical-error rate and member runs.</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Suite</th>
-                      <th scope="col" class="bb-num">Weight</th>
-                      <th scope="col" class="bb-num">Index</th>
-                      <th scope="col" class="bb-num">Contribution</th>
-                      <th scope="col" class="bb-num">Interval</th>
-                      <th scope="col" class="bb-num">Scored items</th>
-                      <th scope="col" class="bb-num">Speed</th>
-                      <th scope="col" class="bb-num">Cost per run</th>
-                      <th scope="col" class="bb-num">Critical errors</th>
-                      <th scope="col">Member runs</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (suite of r.suites; track suite.suiteIndex) {
-                      <tr [class.is-incomplete]="!suite.complete" [attr.data-suite-index]="suite.suiteIndex">
-                        <th scope="row">
-                          {{ suite.suiteName }}
-                          @if (!suite.complete) { <span class="gh-tag bb-tag-missing">No usable result</span> }
-                          @if (suite.examIncomplete) { <span class="gh-tag gh-tag-changed">Exam incomplete</span> }
-                        </th>
-                        <td class="bb-num">{{ formatPercent(suite.weight) }}</td>
-                        <td class="bb-num">{{ formatNumber(suite.index) }}</td>
-                        <td class="bb-num">{{ formatNumber(suite.contribution) }}</td>
-                        <td class="bb-num">
-                          {{ formatInterval(suite.combinedLower, suite.combinedUpper) }}
-                          @if (suite.combinedIntervalTruncated) { <span class="visually-hidden">(truncated)</span><span aria-hidden="true">*</span> }
-                        </td>
-                        <td class="bb-num">{{ suite.scoredItemCount }}/{{ suite.examItemCount }}</td>
-                        <td class="bb-num">{{ formatNumber(suite.meanSpeedIndex) }}</td>
-                        <td class="bb-num">{{ formatCost(suite.meanCostPerRun) }}</td>
-                        <td class="bb-num">{{ formatPercent(suite.criticalErrorRate) }}</td>
-                        <td class="brr-member-links">
-                          @for (member of suiteMembers(suite.suiteIndex); track member.memberId) {
-                            <button type="button" class="btn-link brr-member-link" [attr.data-run-id]="member.runId"
-                                    (click)="openMemberRun(member.runId)">Run #{{ member.runId }}<span class="visually-hidden">, {{ suite.suiteName }},</span> · round {{ member.round }}</button>
-                          } @empty {
-                            <span class="text-muted">None yet</span>
-                          }
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
+              <div class="brr-suite-strip">
+                <span class="brr-suite-unevenness">
+                  Profile unevenness: between-suite SD {{ formatNumber(r.betweenSuiteStandardDeviation, 2) }}
+                  <span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span>
+                  range {{ formatNumber(r.betweenSuiteRange, 2) }} points
+                </span>
+                <app-info-tip trigger="click" tipId="brr-suite-interval-tip" subject="Suite intervals">
+                  Each suite's own interval uses the normal 1.96 for item sampling; the Overall Index uses Student's t on ν.
+                </app-info-tip>
               </div>
-              <p class="bb-note">
-                Profile unevenness: between-suite SD {{ formatNumber(r.betweenSuiteStandardDeviation) }},
-                range {{ formatNumber(r.betweenSuiteRange) }}. Each suite's own interval uses the normal 1.96 for
-                item sampling; the Overall Index uses Student's t on ν.
-              </p>
             } @else {
-              <!-- Without an analysis the suites are still listed, with their member runs. -->
-              <ul class="brr-suite-list">
-                @for (suite of detail.suites; track suite.index) {
-                  <li [attr.data-suite-index]="suite.index">
-                    <span class="brr-suite-name">{{ suite.suiteName }}</span>
-                    @for (member of suiteMembers(suite.index); track member.memberId) {
-                      <button type="button" class="btn-link brr-member-link" [attr.data-run-id]="member.runId"
-                              (click)="openMemberRun(member.runId)">Run #{{ member.runId }}<span class="visually-hidden">, {{ suite.suiteName }},</span> · round {{ member.round }}</button>
-                    }
-                  </li>
-                }
-              </ul>
-              <p class="text-muted">The suite profile needs an analysis.</p>
+              <p class="text-muted brr-suite-strip">The suite profile needs an analysis.</p>
             }
+
+            <!-- One full-width card per suite: head, metrics, then its member runs across the bottom. -->
+            <ul class="brr-suite-cards" role="list" aria-labelledby="brrSuitesTitle">
+              @for (card of suiteCards; track card.suiteIndex) {
+                <li class="brr-suite-card-item">
+                  <article class="brr-suite-card" [class.is-incomplete]="card.profile !== null && !card.profile.complete"
+                           [attr.data-suite-index]="card.suiteIndex"
+                           [attr.aria-labelledby]="'brr-suite-title-' + card.suiteIndex">
+                    <header class="brr-suite-head">
+                      <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+                      <div class="brr-suite-kicker">
+                        <span class="brr-suite-position">Suite {{ card.position }} of {{ card.count }}</span>
+                        @if (card.profile; as p) {
+                          @if (p.weight != null) {
+                            <span class="brr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                            <span class="brr-suite-weight">{{ formatPercent(p.weight) }} weight</span>
+                          }
+                          @if (!p.complete) {
+                            <span class="brr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                            <span class="gh-tag bb-tag-missing">No usable result</span>
+                          }
+                          @if (p.examIncomplete) {
+                            <span class="brr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                            <span class="gh-tag gh-tag-changed">Exam incomplete</span>
+                          }
+                        }
+                      </div>
+                      <h5 class="brr-suite-title" [id]="'brr-suite-title-' + card.suiteIndex">{{ card.suiteName }}</h5>
+                      <div class="brr-suite-meta">
+                        @if (card.profile; as p) {
+                          <span>{{ p.scoredItemCount }} of {{ p.examItemCount }} scored items</span>
+                          <span class="brr-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <span>{{ p.usableMemberCount }} usable {{ p.usableMemberCount === 1 ? 'run' : 'runs' }}</span>
+                        } @else {
+                          <span>{{ card.members.length }} member {{ card.members.length === 1 ? 'run' : 'runs' }}</span>
+                        }
+                      </div>
+                    </header>
+
+                    <dl class="brr-suite-metrics">
+                      <div class="brr-suite-metric" data-metric="index">
+                        <dt>Index</dt>
+                        <dd>
+                          @if (card.profile; as p) {
+                            @if (p.index != null) {
+                              <span class="score-badge" [class]="scoreClass(p.index)">{{ formatNumber(p.index) }}</span>
+                            } @else {
+                              <span class="text-muted">&mdash;</span>
+                            }
+                            <span class="brr-suite-metric-note">95 % {{ formatInterval(p.combinedLower, p.combinedUpper) }}@if (p.combinedIntervalTruncated) {<span class="visually-hidden"> (truncated)</span><span aria-hidden="true">*</span>}</span>
+                          } @else {
+                            <span class="text-muted">&mdash;</span>
+                            <span class="brr-suite-metric-note">Not analyzed</span>
+                          }
+                        </dd>
+                      </div>
+                      <div class="brr-suite-metric" data-metric="contribution">
+                        <dt>Contribution</dt>
+                        <dd>{{ formatNumber(card.profile?.contribution) }}</dd>
+                      </div>
+                      <div class="brr-suite-metric" data-metric="speed">
+                        <dt>Speed</dt>
+                        <dd>{{ formatNumber(card.profile?.meanSpeedIndex) }}</dd>
+                      </div>
+                      <div class="brr-suite-metric" data-metric="cost">
+                        <dt>Cost per run</dt>
+                        <dd>{{ formatCost(card.profile?.meanCostPerRun) }}</dd>
+                      </div>
+                      <div class="brr-suite-metric" data-metric="critical-errors">
+                        <dt>Critical errors</dt>
+                        <dd>{{ formatPercent(card.profile?.criticalErrorRate) }}</dd>
+                      </div>
+                    </dl>
+
+                    <div class="brr-suite-members" role="group" [attr.aria-labelledby]="'brr-suite-members-' + card.suiteIndex">
+                      <span class="brr-suite-members-label" [id]="'brr-suite-members-' + card.suiteIndex">Member runs</span>
+                      <div class="brr-suite-member-runs">
+                        @for (member of card.members; track member.memberId) {
+                          <button type="button" class="btn-gh brr-member-run" [attr.data-run-id]="member.runId"
+                                  (click)="openMemberRun(member.runId)">Run #{{ member.runId }}<span aria-hidden="true">&nbsp;&middot; </span><span class="visually-hidden">, </span>Round {{ member.round }}<span class="visually-hidden">, {{ card.suiteName }}</span></button>
+                        } @empty {
+                          <span class="text-muted brr-suite-no-members">None yet</span>
+                        }
+                      </div>
+                    </div>
+                  </article>
+                </li>
+              }
+            </ul>
           </div>
 
           <!-- ===================================================================================

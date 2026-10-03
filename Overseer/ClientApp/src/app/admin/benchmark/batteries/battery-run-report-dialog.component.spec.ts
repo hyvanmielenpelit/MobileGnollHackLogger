@@ -23,6 +23,13 @@ import {
   tearDownBatteryRunReport
 } from './battery-run-report-dialog.testing';
 
+/** The text assistive technology reads: `aria-hidden` parts left out, whitespace collapsed. */
+function accessibleText(element: HTMLElement): string {
+  const copy = element.cloneNode(true) as HTMLElement;
+  copy.querySelectorAll('[aria-hidden="true"]').forEach(node => node.remove());
+  return (copy.textContent ?? '').replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim();
+}
+
 describe('BatteryRunReportDialogComponent', () => {
   let h: BatteryRunReportHarness;
 
@@ -572,11 +579,58 @@ describe('BatteryRunReportDialogComponent', () => {
       h.component.openRunReport.subscribe(opened);
       h.open();
 
-      const link = h.el().querySelector('#brr-panel-suites .brr-member-link[data-run-id="102"]') as HTMLButtonElement;
-      expect(link.classList).toContain('btn-link');
-      link.click();
+      const button = h.el().querySelector('#brr-panel-suites .brr-suite-card button.btn-gh[data-run-id="102"]') as HTMLButtonElement;
+      expect(button).not.toBeNull();
+      expect(button.getAttribute('type')).toBe('button');
+      const name = accessibleText(button);
+      expect(name).toContain('Run #102');
+      expect(name).toContain('Round 1');
+      expect(name).toContain('Board Reading');
+      expect(button.closest('.brr-suite-card')?.getAttribute('data-suite-index')).toBe('1');
+      button.click();
       expect(opened).toHaveBeenCalledWith(102);
       expect(h.dialog().open).toBe(true);
+    });
+
+    it('lists the suites as cards with their member runs before an analysis exists', () => {
+      h.service.getBatteryAnalysis.mockReturnValue(of(null));
+      h.open();
+
+      const cards = h.el().querySelectorAll('#brr-panel-suites ul.brr-suite-cards[role="list"] > li > article.brr-suite-card');
+      expect(cards.length).toBe(2);
+      expect(cards[0].getAttribute('aria-labelledby')).toBe('brr-suite-title-0');
+      expect(cards[0].querySelector('h5#brr-suite-title-0')?.textContent?.trim()).toBe('Gameplay Help');
+      expect(accessibleText(cards[0].querySelector('.brr-suite-kicker') as HTMLElement)).toBe('Suite 1 of 2');
+      expect(cards[0].querySelector('[data-metric="index"] .brr-suite-metric-note')?.textContent?.trim()).toBe('Not analyzed');
+      expect(cards[0].querySelector('button.btn-gh[data-run-id="101"]')).not.toBeNull();
+      expect(h.text('#brr-panel-suites .brr-suite-strip')).toBe('The suite profile needs an analysis.');
+    });
+
+    it('prints the profile unevenness to two decimals, with the interval method behind an info button', () => {
+      h.open();
+
+      const unevenness = accessibleText(h.el().querySelector('#brr-panel-suites .brr-suite-unevenness') as HTMLElement);
+      expect(unevenness).toContain('between-suite SD 2.80');
+      expect(unevenness).toContain('range 4.00 points');
+      const tip = h.el().querySelector('#brr-panel-suites .brr-suite-strip app-info-tip') as HTMLElement;
+      expect(tip.querySelector('button.gh-info-btn--click')?.getAttribute('aria-label')).toBe('About Suite intervals');
+      expect(tip.querySelector('#brr-suite-interval-tip')?.textContent).toContain('Student\'s t on ν');
+    });
+
+    it('shows each suite\'s weight, index, interval and figures on its card', () => {
+      h.open();
+
+      const card = h.el().querySelector('#brr-panel-suites .brr-suite-card[data-suite-index="1"]') as HTMLElement;
+      expect(accessibleText(card.querySelector('.brr-suite-kicker') as HTMLElement)).toBe('Suite 2 of 2, 60.0 % weight');
+      expect(accessibleText(card.querySelector('.brr-suite-meta') as HTMLElement)).toBe('8 of 8 scored items, 1 usable run');
+      const index = card.querySelector('[data-metric="index"] .score-badge') as HTMLElement;
+      expect(index.textContent?.trim()).toBe('74.0');
+      expect(index.classList).toContain('badge-score-mid');
+      expect(card.querySelector('[data-metric="index"] .brr-suite-metric-note')?.textContent?.trim()).toBe('95 % [64.1, 75.9]');
+      expect(card.querySelector('[data-metric="contribution"] dd')?.textContent?.trim()).toBe('44.4');
+      expect(card.querySelector('[data-metric="critical-errors"] dd')?.textContent?.trim()).toBe('10.0 %');
+      expect(card.querySelector('.brr-suite-members')?.getAttribute('aria-labelledby')).toBe('brr-suite-members-1');
+      expect(h.text('#brr-suite-members-1')).toBe('Member runs');
     });
 
     it('lays out the Members grid by suite and round and opens a member run report', () => {

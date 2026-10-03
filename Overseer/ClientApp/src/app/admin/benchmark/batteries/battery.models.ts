@@ -6,6 +6,8 @@
 // This file imports nothing from the service, which imports these types from here.
 
 import type { CardListSort } from '../../../shared/data-table/card-list-state';
+import { parseServerUtcDate } from '../../../utils/date.util';
+import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
 
 /** `BenchmarkBatteryWeightingScheme` as the API sends it. */
 export type BatteryWeightingSchemeKey = 'DifficultyMass' | 'ItemCount' | 'Equal' | 'Custom';
@@ -335,6 +337,109 @@ export function isLiveBatteryRunStatus(status: string | null | undefined): boole
 
 export function isFinishedBatteryRunStatus(status: string | null | undefined): boolean {
   return status === 'Completed' || status === 'CompletedWithErrors';
+}
+
+// --- Post-run work -----------------------------------------------------------------------------
+
+/**
+ * How long after a battery run finishes its analysis, and the queuing of its AI-written reports, are
+ * waited for. The server computes the one and queues the other just after the last member ends.
+ */
+export const BATTERY_POST_RUN_GRACE_MS = 120_000;
+
+/** The fields of a battery run its post-run work is read from. */
+export interface BatteryPostRunFields {
+  readonly status: string;
+  readonly completedAtUtc?: string | null;
+  readonly latestAnalysisId?: number | null;
+  readonly analysisStale?: boolean;
+  readonly reportWriterModelConfigurationId?: number | null;
+  /** `BenchmarkRunReportDocumentsStatus`, by number or by name. */
+  readonly reportDocumentsStatus?: number | string | null;
+}
+
+/** A battery run's `BenchmarkRunReportDocumentsStatus` by name, from its number or its name. */
+export type BatteryReportDocumentsStatusName =
+  | 'NotRequested' | 'Pending' | 'Writing' | 'Completed' | 'CompletedWithWarnings' | 'Failed' | 'Skipped' | 'Canceled';
+
+const REPORT_DOCUMENTS_STATUS_NAMES: readonly BatteryReportDocumentsStatusName[] = [
+  'NotRequested', 'Pending', 'Writing', 'Completed', 'CompletedWithWarnings', 'Failed', 'Skipped', 'Canceled'
+];
+
+export function batteryReportDocumentsStatusName(status: number | string | null | undefined): BatteryReportDocumentsStatusName {
+  if (typeof status === 'number') {
+    return REPORT_DOCUMENTS_STATUS_NAMES[status] ?? 'NotRequested';
+  }
+  return REPORT_DOCUMENTS_STATUS_NAMES.find(name => name === status) ?? 'NotRequested';
+}
+
+/** The battery run finished within the post-run grace; false when it records no completion time. */
+export function batteryPostRunGraceOpen(run: BatteryPostRunFields, nowMs: number = Date.now()): boolean {
+  if (!run.completedAtUtc) {
+    return false;
+  }
+  const completedMs = parseServerUtcDate(run.completedAtUtc).getTime();
+  return !Number.isNaN(completedMs) && nowMs - completedMs < BATTERY_POST_RUN_GRACE_MS;
+}
+
+/** The battery analysis of the finished members is still to come: none yet, or one the members have outdated. */
+export function batteryAnalysisPending(run: BatteryPostRunFields): boolean {
+  return run.latestAnalysisId == null || run.analysisStale === true;
+}
+
+/** The battery run names a report writer whose job is queued or writing, or not queued yet within the grace. */
+export function batteryAwaitsReports(run: BatteryPostRunFields, nowMs: number = Date.now()): boolean {
+  if (run.reportWriterModelConfigurationId == null) {
+    return false;
+  }
+  const status = batteryReportDocumentsStatusName(run.reportDocumentsStatus);
+  return status === 'Pending' || status === 'Writing' || (status === 'NotRequested' && batteryPostRunGraceOpen(run, nowMs));
+}
+
+/**
+ * A finished battery run whose post-run work is still under way: its analysis within the grace, or
+ * its AI-written reports. Pollers keep following the battery run while this holds.
+ */
+export function batteryAwaitsPostRun(run: BatteryPostRunFields | null | undefined, nowMs: number = Date.now()): boolean {
+  if (!run || !isFinishedBatteryRunStatus(run.status)) {
+    return false;
+  }
+  return (batteryAnalysisPending(run) && batteryPostRunGraceOpen(run, nowMs)) || batteryAwaitsReports(run, nowMs);
+}
+
+// --- The model under test --------------------------------------------------------------------
+
+/** The fields of a battery run its model under test is read from. */
+export interface BatteryModelFields {
+  readonly testedModelLabel?: string | null;
+  readonly testedModelId?: string | null;
+  readonly testedProvider?: string | null;
+  readonly testedThinkingLevel?: string | null;
+  readonly testedReasoningMode?: string | null;
+}
+
+/** A battery run's model under test: its label, else its id. */
+export function batteryModelName(battery: BatteryModelFields): string {
+  return battery.testedModelLabel || battery.testedModelId || 'Model not recorded';
+}
+
+const batteryBadgeCache = new WeakMap<BatteryModelFields, RunFactBadge[]>();
+
+/** The badges of a battery run's model under test, by the same rules as a run card's, built once per object. */
+export function batteryModelBadges(battery: BatteryModelFields): RunFactBadge[] {
+  let badges = batteryBadgeCache.get(battery);
+  if (!badges) {
+    badges = runFactBadges({
+      name: batteryModelName(battery),
+      provider: battery.testedProvider || null,
+      thinkingLevel: battery.testedThinkingLevel ?? null,
+      reasoningMode: battery.testedReasoningMode ?? null,
+      serviceTier: null,
+      customEndpoint: false
+    });
+    batteryBadgeCache.set(battery, badges);
+  }
+  return badges;
 }
 
 // --- The Batteries card list -----------------------------------------------------------------

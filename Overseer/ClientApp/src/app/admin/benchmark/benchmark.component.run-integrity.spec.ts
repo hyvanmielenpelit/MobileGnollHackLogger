@@ -363,6 +363,17 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.advisoryFlagQuestionNumbers).toBe('7');
     });
 
+    it('should treat RubricContradictedBySource as advisory and badge it as rubric contradicted', () => {
+      const contradicted = buildScoredAnswer(9, { answerFlags: 16384, answerFlagNames: ['RubricContradictedBySource'] });
+
+      expect(component.hasAdvisoryFlag(contradicted)).toBe(true);
+      expect(component.hasTransportDefect(contradicted)).toBe(false);
+      expect(component.flagBadgeLabel('RubricContradictedBySource')).toBe('rubric contradicted');
+      expect(component.flagBadgeLabel('ContestedAccuracyDeduction')).toBe('contested deduction');
+      expect(component.flagBadgeLabel('DimensionOutlier')).toBe('dimension outlier');
+      expect(component.flagBadgeLabel('ReasoningBleed')).toBe('ReasoningBleed');
+    });
+
     it('should name only the advisory flags as advisory', () => {
       expect(component.isAdvisoryFlagName('ReasoningBleed')).toBe(true);
       expect(component.isAdvisoryFlagName('RepeatedFragments')).toBe(true);
@@ -374,6 +385,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.isAdvisoryFlagName('ContestedCriticalError')).toBe(true);
       expect(component.isAdvisoryFlagName('ContestedAccuracyDeduction')).toBe(true);
       expect(component.isAdvisoryFlagName('DimensionOutlier')).toBe(true);
+      expect(component.isAdvisoryFlagName('RubricContradictedBySource')).toBe(true);
       expect(component.isAdvisoryFlagName('HarnessArtifacts')).toBe(false);
       expect(component.isAdvisoryFlagName('Truncated')).toBe(false);
       expect(component.isAdvisoryFlagName('Empty')).toBe(false);
@@ -993,6 +1005,102 @@ describe('AdminBenchmarkComponent', () => {
       expect(items[2].getAttribute('aria-current')).toBe('step');
     });
 
+    describe('the rail of a finished run', () => {
+      /** The rail of this run detail, rendered once. */
+      function terminalRail(run: any): HTMLElement[] {
+        ctx.monitor.activeRunDetail = run;
+        ctx.refresh();
+        return Array.from(
+          fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-stage-rail .run-stage'));
+      }
+
+      const note = (item: HTMLElement): string | undefined => item.querySelector('.run-stage-note')?.textContent?.trim();
+
+      const answers = (count: number): any[] => Array.from({ length: count }, (_, i) => buildScoredAnswer(i + 1));
+
+      it('should mark stages 1 to 3 of a completed battery member without a writer done, with counts in stage 2', () => {
+        const items = terminalRail(buildCompletedRun({
+          answers: answers(18),
+          claimVerifierDisplayNameUsed: 'Test Verifier',
+          secondOpinionAssessorModelDisplayNameUsed: 'Test Reader',
+          secondOpinionModeUsed: 1,
+          isPanelRun: true,
+          claimsCheckedCount: 17,
+          secondOpinionGradedAnswerCount: 18,
+          totalSynthesisInputTokens: 5000
+        }));
+
+        expect(items.length).toBe(3);
+        expect(items.every(item => item.classList.contains('is-done'))).toBe(true);
+        expect(items.some(item => item.getAttribute('aria-current') === 'step')).toBe(false);
+        expect(note(items[0])).toBe('18 of 18 answered');
+        expect(note(items[1])).toBe('17 claims checked · 18 reference readings');
+        expect(note(items[2])).toBe('Synthesis written');
+        expect(items[1].querySelector('.visually-hidden')?.textContent?.trim()).toBe('(done)');
+      });
+
+      it('should name second readings in a single-assessor run, and say Scored without a synthesis', () => {
+        const items = terminalRail(buildCompletedRun({
+          answers: answers(18),
+          secondOpinionAssessorModelDisplayNameUsed: 'Test Reader',
+          secondOpinionModeUsed: 1,
+          secondOpinionGradedAnswerCount: 4
+        }));
+
+        expect(note(items[1])).toBe('4 second readings');
+        expect(note(items[2])).toBe('Scored');
+      });
+
+      it('should show stage 2 skipped when the run had no claim verifier and no reader', () => {
+        const items = terminalRail(buildCompletedRun({ answers: answers(18) }));
+
+        expect(items[1].classList).toContain('is-skipped');
+        expect(items[1].classList).not.toContain('is-done');
+        expect(note(items[1])).toBe('Not configured');
+        expect(items[1].querySelector('.visually-hidden')?.textContent?.trim()).toBe('(skipped)');
+        expect(items[0].classList).toContain('is-done');
+        expect(items[2].classList).toContain('is-done');
+      });
+
+      it('should show a canceled run ended in stage 1, with stages 2 and 3 not reached', () => {
+        const items = terminalRail(buildCompletedRun({
+          status: 'Canceled',
+          answers: answers(12),
+          claimVerifierDisplayNameUsed: 'Test Verifier'
+        }));
+
+        expect(items[0].classList).toContain('is-ended');
+        expect(note(items[0])).toBe('Stopped at 12 of 18');
+        expect(items[0].querySelector('.visually-hidden')?.textContent?.trim()).toBe('(ended)');
+        for (const item of [items[1], items[2]]) {
+          expect(item.classList).not.toContain('is-done');
+          expect(item.classList).not.toContain('is-current');
+          expect(item.classList).not.toContain('is-ended');
+          expect(note(item)).toBe('Not reached');
+        }
+      });
+
+      it('should show a run that failed in its follow-up passes ended in stage 2', () => {
+        const items = terminalRail(buildCompletedRun({
+          status: 'Failed',
+          answers: answers(18),
+          claimVerifierDisplayNameUsed: 'Test Verifier',
+          claimsCheckedCount: 3
+        }));
+
+        expect(items[0].classList).toContain('is-done');
+        expect(items[1].classList).toContain('is-ended');
+        expect(note(items[1])).toBe('3 claims checked');
+        expect(note(items[2])).toBe('Not reached');
+      });
+
+      it('should carry no notes while the run is live', () => {
+        const items = railItems('Verifying');
+
+        expect(items.every(item => item.querySelector('.run-stage-note') === null)).toBe(true);
+      });
+    });
+
     /** The text of the stat-strip cell with this term, or null when the run does not show one. */
     function runStatText(label: string): string | null {
       const cells: HTMLElement[] = Array.from(
@@ -1177,7 +1285,8 @@ describe('AdminBenchmarkComponent', () => {
           fixture.nativeElement.querySelectorAll('.benchmark-run-progress-dialog .run-stage-rail .run-stage'));
         expect(items.length).toBe(4);
         expect(items[0].classList).toContain('is-done');
-        expect(items[1].classList).toContain('is-done');
+        // No claim verifier and no second or reference reader in this fixture.
+        expect(items[1].classList).toContain('is-skipped');
         expect(items[2].classList).toContain('is-done');
         expect(items[3].classList).toContain('is-current');
         expect(items[3].getAttribute('aria-current')).toBe('step');

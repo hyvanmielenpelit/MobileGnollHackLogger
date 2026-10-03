@@ -75,7 +75,8 @@ public static class BenchmarkRunFinalizer
         | BenchmarkAnswerFlags.DimensionOutlier
         | BenchmarkAnswerFlags.OmissionAsAccuracy
         | BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction
-        | BenchmarkAnswerFlags.AnswerFramingOpener;
+        | BenchmarkAnswerFlags.AnswerFramingOpener
+        | BenchmarkAnswerFlags.RubricContradictedBySource;
 
     /// <summary>
     /// The harness version that first adjudicated an out-of-rubric Accuracy deduction, and so the
@@ -196,6 +197,22 @@ public static class BenchmarkRunFinalizer
     {
         return (((BenchmarkAnswerFlags)answer.AnswerFlags) & AdvisoryFlags) != 0;
     }
+
+    /// <summary>
+    /// Whether the claim verifier supported, against the rubric, a sentence a grader docked on the
+    /// rubric's text: <see cref="BenchmarkAnswerFlags.RubricContradictedBySource"/> on the answer
+    /// (member A's, or the single assessor's) or on member B's co-assessment flags.
+    /// </summary>
+    public static bool IsRubricContradicted(BenchmarkRunAnswer answer)
+        => (((BenchmarkAnswerFlags)answer.AnswerFlags) & BenchmarkAnswerFlags.RubricContradictedBySource) != 0
+            || BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)?.Flags?.RubricContradictedBySource == true;
+
+    /// <summary>
+    /// The answers <see cref="IsRubricContradicted"/> holds for, computed from the answers; the run
+    /// stores no such count.
+    /// </summary>
+    public static int RubricContradictedAnswerCount(IEnumerable<BenchmarkRunAnswer> answers)
+        => answers.Count(IsRubricContradicted);
 
     /// <summary>
     /// Which of the five mutually exclusive integrity buckets this answer belongs to. The order

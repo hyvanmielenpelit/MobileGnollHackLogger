@@ -1657,6 +1657,7 @@
             <app-run-ai-reports [run]="selectedRunDetail" [pickerOptions]="workspace.benchmarkPickerOptions"
                                 [pickerEmptyHint]="workspace.benchmarkPickerEmptyHint" [writerConfigs]="workspace.stableBenchmarkCapableConfigs"
                                 [launcherWriterConfigId]="launcher.reportWriterConfigId" [dialogOpen]="runDetailDialogOpen"
+                                [active]="runDetailDialogOpen && runReportTab === 'reports'"
                                 (downloadsRequested)="openRunDownloads($event)"
                                 (reportStatusChange)="onRunReportStatusChange($event)"></app-run-ai-reports>
           </div>
@@ -2089,18 +2090,20 @@
     <div class="dialog-header">
       <div class="dialog-title-group">
         <!-- The focus target on open: it is also the dialog's accessible name. -->
-        <h3 id="runProgressDialogTitle" #runProgressHeading tabindex="-1">Benchmark Run #{{ monitor.activeRunDetail?.id ?? monitor.activeRunId }}</h3>
+        <h3 id="runProgressDialogTitle" #runProgressHeading tabindex="-1">Benchmark Run #{{ monitor.dialogRunDetail?.id ?? monitor.dialogRunId }}</h3>
         <!-- Models are not in the header: they carry badges, and a header line cannot show
              them without wrapping. They live in .run-model-strip at the top of the body. -->
         <p class="dialog-subtitle">
-          @if (monitor.activeRunDetail) {
-            {{ monitor.activeRunDetail.suiteName }} | Profile: {{ monitor.activeRunDetail.scoringProfileName || 'Default' }}
-          } @else {
+          @if (monitor.dialogRunDetail) {
+            {{ monitor.dialogRunDetail.suiteName }} | Profile: {{ monitor.dialogRunDetail.scoringProfileName || 'Default' }}
+          } @else if (monitor.dialogFollowsLiveRun) {
             Starting benchmark run…
+          } @else {
+            Loading the run…
           }
         </p>
       </div>
-      <button type="button" class="btn-icon-action" [attr.aria-label]="monitor.returnToSeriesOnClose ? 'Return to series progress' : monitor.returnToBatteryOnClose ? 'Return to battery progress' : 'Close benchmark run progress'" (click)="closeRunProgressDialog()">
+      <button type="button" class="btn-icon-action" [attr.aria-label]="monitor.returnToSeriesOnClose ? 'Return to series progress' : runProgressReturnsToBattery ? 'Return to battery progress' : 'Close benchmark run progress'" (click)="closeRunProgressDialog()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px;">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -2129,138 +2132,138 @@
         }
         <!-- The models, badged exactly as the selectors in the tab badge them, so the
              configuration under test is legible without opening the report. -->
-        @if (monitor.activeRunDetail) {
+        @if (monitor.dialogRunDetail) {
           <dl class="run-model-strip">
             <div class="run-model-row">
               <dt>Model under test</dt>
               <dd>
-                <span class="model-name">{{ monitor.activeRunDetail.testedModelDisplayNameUsed || monitor.activeRunDetail.testedModelIdUsed }}</span>
-                @if (monitor.activeRunDetail.testedModelThinkingLevelUsed) {
-                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.activeRunDetail.testedModelThinkingLevelUsed) }}</span>
+                <span class="model-name">{{ monitor.dialogRunDetail.testedModelDisplayNameUsed || monitor.dialogRunDetail.testedModelIdUsed }}</span>
+                @if (monitor.dialogRunDetail.testedModelThinkingLevelUsed) {
+                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.dialogRunDetail.testedModelThinkingLevelUsed) }}</span>
                 }
-                @if (showReasoningBadge(monitor.activeRunDetail.testedModelReasoningModeUsed)) {
-                  <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.activeRunDetail.testedModelReasoningModeUsed }}</span>
+                @if (showReasoningBadge(monitor.dialogRunDetail.testedModelReasoningModeUsed)) {
+                  <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.dialogRunDetail.testedModelReasoningModeUsed }}</span>
                 }
-                @if (monitor.activeRunDetail.testedModelProviderUsed) {
-                  <app-provider-badge [provider]="monitor.activeRunDetail.testedModelProviderUsed"></app-provider-badge>
+                @if (monitor.dialogRunDetail.testedModelProviderUsed) {
+                  <app-provider-badge [provider]="monitor.dialogRunDetail.testedModelProviderUsed"></app-provider-badge>
                 }
-                @if (monitor.activeRunDetail.testedModelServiceTierUsed) {
-                  <span class="config-badge"><span class="visually-hidden">requested service tier </span>{{ formatServiceTier(monitor.activeRunDetail.testedModelServiceTierUsed) }}</span>
+                @if (monitor.dialogRunDetail.testedModelServiceTierUsed) {
+                  <span class="config-badge"><span class="visually-hidden">requested service tier </span>{{ formatServiceTier(monitor.dialogRunDetail.testedModelServiceTierUsed) }}</span>
                 }
-                @if (monitor.activeRunDetail.testedModelParallelExecutionModeUsed === 0) {
+                @if (monitor.dialogRunDetail.testedModelParallelExecutionModeUsed === 0) {
                   <span class="parallel-badge badge-sequential"><span class="visually-hidden">parallel execution </span>Sequential<span class="visually-hidden">, disabled for this key</span></span>
                 }
-                @if (monitor.activeRunDetail.testedModelParallelExecutionModeUsed === 1) {
+                @if (monitor.dialogRunDetail.testedModelParallelExecutionModeUsed === 1) {
                   <span class="parallel-badge badge-on-request"><span class="visually-hidden">parallel execution </span>On request<span class="visually-hidden"> for this key</span></span>
                 }
               </dd>
             </div>
-            @if (monitor.activeRunDetail.testedModelEndpoint && monitor.activeRunDetail.testedModelEndpoint !== 'official') {
+            @if (monitor.dialogRunDetail.testedModelEndpoint && monitor.dialogRunDetail.testedModelEndpoint !== 'official') {
               <div class="run-model-row">
                 <dt>Endpoint</dt>
                 <dd>
-                  <span class="model-name">{{ monitor.activeRunDetail.testedModelEndpoint }}</span>
+                  <span class="model-name">{{ monitor.dialogRunDetail.testedModelEndpoint }}</span>
                 </dd>
               </div>
             }
             <div class="run-model-row">
               <dt>Assessor</dt>
               <dd>
-                <span class="model-name">{{ monitor.activeRunDetail.assessorModelDisplayNameUsed || monitor.activeRunDetail.assessorModelIdUsed }}</span>
-                @if (monitor.activeRunDetail.assessorModelThinkingLevelUsed) {
-                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.activeRunDetail.assessorModelThinkingLevelUsed) }}</span>
+                <span class="model-name">{{ monitor.dialogRunDetail.assessorModelDisplayNameUsed || monitor.dialogRunDetail.assessorModelIdUsed }}</span>
+                @if (monitor.dialogRunDetail.assessorModelThinkingLevelUsed) {
+                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.dialogRunDetail.assessorModelThinkingLevelUsed) }}</span>
                 }
-                @if (showReasoningBadge(monitor.activeRunDetail.assessorModelReasoningModeUsed)) {
-                  <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.activeRunDetail.assessorModelReasoningModeUsed }}</span>
+                @if (showReasoningBadge(monitor.dialogRunDetail.assessorModelReasoningModeUsed)) {
+                  <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.dialogRunDetail.assessorModelReasoningModeUsed }}</span>
                 }
-                @if (monitor.activeRunDetail.assessorModelProviderUsed) {
-                  <app-provider-badge [provider]="monitor.activeRunDetail.assessorModelProviderUsed"></app-provider-badge>
+                @if (monitor.dialogRunDetail.assessorModelProviderUsed) {
+                  <app-provider-badge [provider]="monitor.dialogRunDetail.assessorModelProviderUsed"></app-provider-badge>
                 }
-                @if (monitor.activeRunDetail.assessorModelEndpoint && monitor.activeRunDetail.assessorModelEndpoint !== 'official') {
-                  <span class="model-name">Endpoint: {{ monitor.activeRunDetail.assessorModelEndpoint }}</span>
+                @if (monitor.dialogRunDetail.assessorModelEndpoint && monitor.dialogRunDetail.assessorModelEndpoint !== 'official') {
+                  <span class="model-name">Endpoint: {{ monitor.dialogRunDetail.assessorModelEndpoint }}</span>
                 }
               </dd>
             </div>
-            @if (monitor.activeRunDetail.isPanelRun) {
+            @if (monitor.dialogRunDetail.isPanelRun) {
               <div class="run-model-row">
                 <dt>Co-assessor</dt>
                 <dd>
-                  <span class="model-name">{{ monitor.activeRunDetail.coAssessorModelDisplayNameUsed || monitor.activeRunDetail.coAssessorModelIdUsed }}</span>
-                  @if (monitor.activeRunDetail.coAssessorModelThinkingLevelUsed) {
-                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.activeRunDetail.coAssessorModelThinkingLevelUsed) }}</span>
+                  <span class="model-name">{{ monitor.dialogRunDetail.coAssessorModelDisplayNameUsed || monitor.dialogRunDetail.coAssessorModelIdUsed }}</span>
+                  @if (monitor.dialogRunDetail.coAssessorModelThinkingLevelUsed) {
+                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.dialogRunDetail.coAssessorModelThinkingLevelUsed) }}</span>
                   }
-                  @if (showReasoningBadge(monitor.activeRunDetail.coAssessorModelReasoningModeUsed)) {
-                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.activeRunDetail.coAssessorModelReasoningModeUsed }}</span>
+                  @if (showReasoningBadge(monitor.dialogRunDetail.coAssessorModelReasoningModeUsed)) {
+                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.dialogRunDetail.coAssessorModelReasoningModeUsed }}</span>
                   }
-                  @if (monitor.activeRunDetail.coAssessorModelProviderUsed) {
-                    <app-provider-badge [provider]="monitor.activeRunDetail.coAssessorModelProviderUsed"></app-provider-badge>
+                  @if (monitor.dialogRunDetail.coAssessorModelProviderUsed) {
+                    <app-provider-badge [provider]="monitor.dialogRunDetail.coAssessorModelProviderUsed"></app-provider-badge>
                   }
-                  @if (monitor.activeRunDetail.coAssessorModelEndpoint && monitor.activeRunDetail.coAssessorModelEndpoint !== 'official') {
-                    <span class="model-name">Endpoint: {{ monitor.activeRunDetail.coAssessorModelEndpoint }}</span>
+                  @if (monitor.dialogRunDetail.coAssessorModelEndpoint && monitor.dialogRunDetail.coAssessorModelEndpoint !== 'official') {
+                    <span class="model-name">Endpoint: {{ monitor.dialogRunDetail.coAssessorModelEndpoint }}</span>
                   }
                 </dd>
               </div>
             }
-            @if ((monitor.activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || monitor.activeRunDetail.secondOpinionAssessorModelIdUsed) && monitor.activeRunDetail.secondOpinionModeUsed !== 0) {
+            @if ((monitor.dialogRunDetail.secondOpinionAssessorModelDisplayNameUsed || monitor.dialogRunDetail.secondOpinionAssessorModelIdUsed) && monitor.dialogRunDetail.secondOpinionModeUsed !== 0) {
               <div class="run-model-row">
-                <dt>{{ monitor.activeRunDetail.isPanelRun ? 'Reference reader' : 'Second reader' }}</dt>
+                <dt>{{ monitor.dialogRunDetail.isPanelRun ? 'Reference reader' : 'Second reader' }}</dt>
                 <dd>
-                  <span class="model-name">{{ monitor.activeRunDetail.secondOpinionAssessorModelDisplayNameUsed || monitor.activeRunDetail.secondOpinionAssessorModelIdUsed }}</span>
-                  @if (monitor.activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) {
-                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.activeRunDetail.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
+                  <span class="model-name">{{ monitor.dialogRunDetail.secondOpinionAssessorModelDisplayNameUsed || monitor.dialogRunDetail.secondOpinionAssessorModelIdUsed }}</span>
+                  @if (monitor.dialogRunDetail.secondOpinionAssessorModelThinkingLevelUsed) {
+                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.dialogRunDetail.secondOpinionAssessorModelThinkingLevelUsed) }}</span>
                   }
-                  @if (showReasoningBadge(monitor.activeRunDetail.secondOpinionAssessorModelReasoningModeUsed)) {
-                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.activeRunDetail.secondOpinionAssessorModelReasoningModeUsed }}</span>
+                  @if (showReasoningBadge(monitor.dialogRunDetail.secondOpinionAssessorModelReasoningModeUsed)) {
+                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.dialogRunDetail.secondOpinionAssessorModelReasoningModeUsed }}</span>
                   }
-                  @if (monitor.activeRunDetail.secondOpinionAssessorModelProviderUsed) {
-                    <app-provider-badge [provider]="monitor.activeRunDetail.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
+                  @if (monitor.dialogRunDetail.secondOpinionAssessorModelProviderUsed) {
+                    <app-provider-badge [provider]="monitor.dialogRunDetail.secondOpinionAssessorModelProviderUsed"></app-provider-badge>
                   }
-                  @if (monitor.activeRunDetail.secondOpinionAssessorModelEndpoint && monitor.activeRunDetail.secondOpinionAssessorModelEndpoint !== 'official') {
-                    <span class="model-name">Endpoint: {{ monitor.activeRunDetail.secondOpinionAssessorModelEndpoint }}</span>
+                  @if (monitor.dialogRunDetail.secondOpinionAssessorModelEndpoint && monitor.dialogRunDetail.secondOpinionAssessorModelEndpoint !== 'official') {
+                    <span class="model-name">Endpoint: {{ monitor.dialogRunDetail.secondOpinionAssessorModelEndpoint }}</span>
                   }
-                  @if (formatSecondOpinionMode(monitor.activeRunDetail.secondOpinionModeUsed)) {
-                    <span class="config-badge"><span class="visually-hidden">coverage </span>{{ runSecondOpinionModeLabel(monitor.activeRunDetail) }}</span>
+                  @if (formatSecondOpinionMode(monitor.dialogRunDetail.secondOpinionModeUsed)) {
+                    <span class="config-badge"><span class="visually-hidden">coverage </span>{{ runSecondOpinionModeLabel(monitor.dialogRunDetail) }}</span>
                     <app-info-tip tipId="runProgressCoverageTip"
-                                  [subject]="monitor.activeRunDetail.isPanelRun ? 'Reference reader coverage' : 'Second reader coverage'">{{ runSecondOpinionModeHint(monitor.activeRunDetail) }}</app-info-tip>
+                                  [subject]="monitor.dialogRunDetail.isPanelRun ? 'Reference reader coverage' : 'Second reader coverage'">{{ runSecondOpinionModeHint(monitor.dialogRunDetail) }}</app-info-tip>
                   }
                 </dd>
               </div>
             }
-            @if (monitor.activeRunDetail.claimVerifierDisplayNameUsed || monitor.activeRunDetail.claimVerifierModelIdUsed) {
+            @if (monitor.dialogRunDetail.claimVerifierDisplayNameUsed || monitor.dialogRunDetail.claimVerifierModelIdUsed) {
               <div class="run-model-row">
                 <dt>Claim verifier</dt>
                 <dd>
-                  <span class="model-name">{{ monitor.activeRunDetail.claimVerifierDisplayNameUsed || monitor.activeRunDetail.claimVerifierModelIdUsed }}</span>
-                  @if (monitor.activeRunDetail.claimVerifierThinkingLevelUsed) {
-                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.activeRunDetail.claimVerifierThinkingLevelUsed) }}</span>
+                  <span class="model-name">{{ monitor.dialogRunDetail.claimVerifierDisplayNameUsed || monitor.dialogRunDetail.claimVerifierModelIdUsed }}</span>
+                  @if (monitor.dialogRunDetail.claimVerifierThinkingLevelUsed) {
+                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.dialogRunDetail.claimVerifierThinkingLevelUsed) }}</span>
                   }
-                  @if (showReasoningBadge(monitor.activeRunDetail.claimVerifierReasoningModeUsed)) {
-                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.activeRunDetail.claimVerifierReasoningModeUsed }}</span>
+                  @if (showReasoningBadge(monitor.dialogRunDetail.claimVerifierReasoningModeUsed)) {
+                    <span class="reasoning-badge"><span class="visually-hidden">reasoning mode </span>{{ monitor.dialogRunDetail.claimVerifierReasoningModeUsed }}</span>
                   }
-                  @if (monitor.activeRunDetail.claimVerifierProviderUsed) {
-                    <app-provider-badge [provider]="monitor.activeRunDetail.claimVerifierProviderUsed"></app-provider-badge>
+                  @if (monitor.dialogRunDetail.claimVerifierProviderUsed) {
+                    <app-provider-badge [provider]="monitor.dialogRunDetail.claimVerifierProviderUsed"></app-provider-badge>
                   }
-                  @if (monitor.activeRunDetail.claimVerifierModelEndpoint && monitor.activeRunDetail.claimVerifierModelEndpoint !== 'official') {
-                    <span class="model-name">Endpoint: {{ monitor.activeRunDetail.claimVerifierModelEndpoint }}</span>
+                  @if (monitor.dialogRunDetail.claimVerifierModelEndpoint && monitor.dialogRunDetail.claimVerifierModelEndpoint !== 'official') {
+                    <span class="model-name">Endpoint: {{ monitor.dialogRunDetail.claimVerifierModelEndpoint }}</span>
                   }
                 </dd>
               </div>
             }
-            @if (monitor.activeRunDetail.reportWriterModelConfigurationId != null) {
+            @if (monitor.dialogRunDetail.reportWriterModelConfigurationId != null) {
               <div class="run-model-row run-model-row-report-writer">
                 <dt>Report writer</dt>
                 <dd>
-                  <span class="model-name">{{ monitor.activeRunDetail.reportWriterDisplayName || monitor.activeRunDetail.reportWriterModelId || 'Deleted configuration' }}</span>
-                  @if (monitor.activeRunDetail.reportWriterThinkingLevel) {
-                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.activeRunDetail.reportWriterThinkingLevel) }}</span>
+                  <span class="model-name">{{ monitor.dialogRunDetail.reportWriterDisplayName || monitor.dialogRunDetail.reportWriterModelId || 'Deleted configuration' }}</span>
+                  @if (monitor.dialogRunDetail.reportWriterThinkingLevel) {
+                    <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ formatThinkingLevel(monitor.dialogRunDetail.reportWriterThinkingLevel) }}</span>
                   }
-                  @if (monitor.activeRunDetail.reportWriterProvider) {
-                    <app-provider-badge [provider]="monitor.activeRunDetail.reportWriterProvider"></app-provider-badge>
+                  @if (monitor.dialogRunDetail.reportWriterProvider) {
+                    <app-provider-badge [provider]="monitor.dialogRunDetail.reportWriterProvider"></app-provider-badge>
                   }
                 </dd>
               </div>
             }
-            @if (candidatePromptSummaryOf(monitor.activeRunDetail); as promptSummary) {
+            @if (candidatePromptSummaryOf(monitor.dialogRunDetail); as promptSummary) {
               <div class="run-model-row">
                 <dt>Chat prompt</dt>
                 <dd>
@@ -2280,26 +2283,21 @@
              diagnostics. Stage 4 is the writing of the AI-written reports after the run ended
              Completed; the run itself does not change during it. -->
         <ol class="run-stage-rail" aria-label="Run stages">
-          <li class="run-stage" [class.is-current]="runRailStage === 1" [class.is-done]="runRailStage > 1 || runRailReportsReached"
-              [attr.aria-current]="runRailStage === 1 ? 'step' : null">
-            <span class="run-stage-index" aria-hidden="true">1</span>
-            <span class="run-stage-name">Answering and grading</span>
-          </li>
-          <li class="run-stage" [class.is-current]="runRailStage === 2" [class.is-done]="runRailStage > 2 || runRailReportsReached"
-              [attr.aria-current]="runRailStage === 2 ? 'step' : null">
-            <span class="run-stage-index" aria-hidden="true">2</span>
-            <span class="run-stage-name">Follow-up grading passes</span>
-          </li>
-          <li class="run-stage" [class.is-current]="runRailStage === 3" [class.is-done]="runHasReportStage && runRailReportsReached"
-              [attr.aria-current]="runRailStage === 3 ? 'step' : null">
-            <span class="run-stage-index" aria-hidden="true">3</span>
-            <span class="run-stage-name">Synthesis and scoring</span>
-          </li>
-          @if (runHasReportStage) {
-            <li class="run-stage run-stage-reports" [class.is-current]="runRailStage === 4" [class.is-done]="runReportStage === 'done'"
-                [attr.aria-current]="runRailStage === 4 ? 'step' : null">
-              <span class="run-stage-index" aria-hidden="true">4</span>
-              <span class="run-stage-name">Writing reports</span>
+          @for (item of runRailItems; track item.index) {
+            <li class="run-stage" [class.run-stage-reports]="item.index === 4" [attr.data-stage]="item.index"
+                [class.is-current]="item.state === 'current'" [class.is-done]="item.state === 'done'"
+                [class.is-skipped]="item.state === 'skipped'" [class.is-ended]="item.state === 'ended'"
+                [attr.aria-current]="item.state === 'current' ? 'step' : null">
+              <span class="run-stage-index" aria-hidden="true">{{ item.index }}</span>
+              <span class="run-stage-label">
+                <span class="run-stage-name">{{ item.name }}</span>
+                @if (item.note) {
+                  <span class="run-stage-note">{{ item.note }}</span>
+                }
+              </span>
+              @if (item.state !== 'pending') {
+                <span class="visually-hidden">{{ runRailStateWord(item.state) }}</span>
+              }
             </li>
           }
         </ol>
@@ -2346,19 +2344,19 @@
           </div>
           <div class="run-stat">
             <dt>Input tokens</dt>
-            <dd>{{ (monitor.activeRunDetail?.totalInputTokens ?? 0) | number }}</dd>
+            <dd>{{ (monitor.dialogRunDetail?.totalInputTokens ?? 0) | number }}</dd>
           </div>
           <div class="run-stat">
             <dt>Output tokens</dt>
-            <dd>{{ (monitor.activeRunDetail?.totalOutputTokens ?? 0) | number }}</dd>
+            <dd>{{ (monitor.dialogRunDetail?.totalOutputTokens ?? 0) | number }}</dd>
           </div>
           <div class="run-stat">
             <dt>Cache read</dt>
-            <dd>{{ (monitor.activeRunDetail?.totalCacheReadTokens ?? 0) | number }}</dd>
+            <dd>{{ (monitor.dialogRunDetail?.totalCacheReadTokens ?? 0) | number }}</dd>
           </div>
           <div class="run-stat">
             <dt>Cache creation</dt>
-            <dd>{{ runCacheCreationUnreported ? 'n/a' : ((monitor.activeRunDetail?.totalCacheCreationTokens ?? 0) | number) }}</dd>
+            <dd>{{ runCacheCreationUnreported ? 'n/a' : ((monitor.dialogRunDetail?.totalCacheCreationTokens ?? 0) | number) }}</dd>
           </div>
           <!-- Counts, not bars: only answers with unverified claims or a fired trigger are
                candidates, so neither number has an honest maximum to fill against. -->
@@ -2370,7 +2368,7 @@
           }
           @if (runShowsSecondOpinionCounter) {
             <div class="run-stat">
-              <dt>{{ monitor.activeRunDetail?.isPanelRun ? 'Reference readings' : 'Second readings' }}</dt>
+              <dt>{{ monitor.dialogRunDetail?.isPanelRun ? 'Reference readings' : 'Second readings' }}</dt>
               <dd>{{ runSecondOpinionCount | number }}@if (runSecondOpinionInFlightCount > 0) {<span class="run-stat-inflight"> · {{ runSecondOpinionInFlightCount }} in progress</span>}</dd>
             </div>
           }
@@ -2388,28 +2386,28 @@
         -->
         <app-benchmark-cost-panel
           variant="live"
-          [total]="monitor.activeRunDetail?.estimatedCost ?? null"
-          [candidate]="monitor.activeRunDetail?.estimatedCandidateCost ?? null"
-          [assessor]="monitor.activeRunDetail?.estimatedAssessorCost ?? null"
-          [coAssessor]="monitor.activeRunDetail?.estimatedCoAssessorCost ?? null"
-          [panel]="!!monitor.activeRunDetail?.isPanelRun"
-          [secondOpinion]="monitor.activeRunDetail?.estimatedSecondOpinionCost ?? null"
-          [claimVerifier]="monitor.activeRunDetail?.estimatedVerifierCost ?? null"
-          [synthesis]="monitor.activeRunDetail?.estimatedSynthesisCost ?? null"
-          [coSynthesis]="monitor.activeRunDetail?.estimatedCoSynthesisCost ?? null"
-          [grading]="monitor.activeRunDetail?.estimatedGradingCost ?? null"
+          [total]="monitor.dialogRunDetail?.estimatedCost ?? null"
+          [candidate]="monitor.dialogRunDetail?.estimatedCandidateCost ?? null"
+          [assessor]="monitor.dialogRunDetail?.estimatedAssessorCost ?? null"
+          [coAssessor]="monitor.dialogRunDetail?.estimatedCoAssessorCost ?? null"
+          [panel]="!!monitor.dialogRunDetail?.isPanelRun"
+          [secondOpinion]="monitor.dialogRunDetail?.estimatedSecondOpinionCost ?? null"
+          [claimVerifier]="monitor.dialogRunDetail?.estimatedVerifierCost ?? null"
+          [synthesis]="monitor.dialogRunDetail?.estimatedSynthesisCost ?? null"
+          [coSynthesis]="monitor.dialogRunDetail?.estimatedCoSynthesisCost ?? null"
+          [grading]="monitor.dialogRunDetail?.estimatedGradingCost ?? null"
           [reportWriter]="runReportWriterCost"
-          [pricingSource]="monitor.activeRunDetail?.pricingSource ?? null"
-          [pricingIncomplete]="monitor.activeRunDetail?.pricingIncomplete ?? false"
-          [legacyRun]="isLegacyCostRun(monitor.activeRunDetail)"></app-benchmark-cost-panel>
+          [pricingSource]="monitor.dialogRunDetail?.pricingSource ?? null"
+          [pricingIncomplete]="monitor.dialogRunDetail?.pricingIncomplete ?? false"
+          [legacyRun]="isLegacyCostRun(monitor.dialogRunDetail)"></app-benchmark-cost-panel>
 
-        @if (!monitor.rerunLaunchPending && (runMeterFailed > 0 || (runIsTerminal && monitor.activeRunDetail?.errorMessage))) {
+        @if (!dialogRerunLaunchPending && (runMeterFailed > 0 || (runIsTerminal && monitor.dialogRunDetail?.errorMessage))) {
           <div class="alert alert-danger mt-15" role="alert">
             @if (runMeterFailed > 0) {
               {{ runMeterFailed }} question(s) failed during this run.
             }
-            @if (monitor.activeRunDetail?.errorMessage) {
-              {{ monitor.activeRunDetail?.errorMessage }}
+            @if (monitor.dialogRunDetail?.errorMessage) {
+              {{ monitor.dialogRunDetail?.errorMessage }}
             }
           </div>
         }
@@ -2495,10 +2493,10 @@
     </div>
     <div class="dialog-footer">
       @if (!runIsTerminal) {
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ monitor.returnToSeriesOnClose ? 'Back to Series' : monitor.returnToBatteryOnClose ? 'Back to Battery' : 'Run in Background' }}</button>
-        <button type="button" class="btn-gh btn-gh-delete" (click)="monitor.cancelActiveRun()">Cancel Run</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ monitor.returnToSeriesOnClose ? 'Back to Series' : runProgressReturnsToBattery ? 'Back to Battery' : 'Run in Background' }}</button>
+        <button type="button" class="btn-gh btn-gh-delete" (click)="cancelDialogRun()">Cancel Run</button>
       } @else {
-        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ monitor.returnToSeriesOnClose ? 'Back to Series' : monitor.returnToBatteryOnClose ? 'Back to Battery' : 'Close' }}</button>
+        <button type="button" class="btn-gh btn-gh-cancel" (click)="closeRunProgressDialog()">{{ monitor.returnToSeriesOnClose ? 'Back to Series' : runProgressReturnsToBattery ? 'Back to Battery' : 'Close' }}</button>
         <button type="button" class="btn-gh" (click)="viewActiveRunDetail()">View Full Report</button>
         @if (runFailedAnswerCount > 0) {
           <button type="button" class="btn-gh" (click)="rerunFailedFromProgress()">

@@ -72,7 +72,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// <summary>
     /// The subject, its peers, the estimated cost of each document, the same-provider warning and any
     /// refusal. Computes the fact sheet and the prompts; makes no model call. Battery results mixed with
-    /// runs or groups are a 400.
+    /// runs or groups are a 400; a request the client aborts is a 499.
     /// </summary>
     [HttpPost("report-packs/preview")]
     public async Task<IActionResult> Preview([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
@@ -80,46 +80,53 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (request == null) return BadRequest(new { error = "A request body is required." });
         if (BenchmarkReportPackPreparation.MixesSources(request)) return BadRequest(new { error = BenchmarkBatteryModelComparison.MixedSourcesError });
 
-        int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
-        var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(_db, _comparisonService, request, excerptChars, ct, _configuration);
-        if (prep == null)
+        try
         {
-            return Ok(new BenchmarkReportPackPreviewDto { SubjectKey = request.SubjectKey ?? string.Empty, Refusal = refusal });
-        }
-
-        var preview = new BenchmarkReportPackPreviewDto
-        {
-            SubjectKey = prep.Subject.Key,
-            SubjectLabel = prep.Sheet.SubjectLabel,
-            SubjectState = prep.Sheet.SubjectState,
-            SuiteName = prep.Sheet.SuiteName,
-            Peers = prep.Sheet.Peers.Select(p => new BenchmarkReportPackPeerDto
+            int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
+            var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(_db, _comparisonService, request, excerptChars, ct, _configuration);
+            if (prep == null)
             {
-                Letter = p.Letter,
-                EntryKey = p.EntryKey,
-                Label = p.Label,
-                Provider = p.Provider,
-                State = p.State
-            }).ToList()
-        };
-
-        SystemAiApiConfiguration? writer = null;
-        if (request.WriterModelConfigurationId > 0)
-        {
-            writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
-            preview.WriterDisplayName = writer?.DisplayName;
-            preview.Refusal = WriterRefusal(writer, prep.Subject);
-            if (preview.Refusal == null && _complianceGuard.IsSameProvider(writer!.Provider, prep.Subject.Provider))
-            {
-                preview.SameProviderWarning = BenchmarkReportPackPreparation.SameProviderWarning(prep.Subject, writer);
+                return Ok(new BenchmarkReportPackPreviewDto { SubjectKey = request.SubjectKey ?? string.Empty, Refusal = refusal });
             }
+
+            var preview = new BenchmarkReportPackPreviewDto
+            {
+                SubjectKey = prep.Subject.Key,
+                SubjectLabel = prep.Sheet.SubjectLabel,
+                SubjectState = prep.Sheet.SubjectState,
+                SuiteName = prep.Sheet.SuiteName,
+                Peers = prep.Sheet.Peers.Select(p => new BenchmarkReportPackPeerDto
+                {
+                    Letter = p.Letter,
+                    EntryKey = p.EntryKey,
+                    Label = p.Label,
+                    Provider = p.Provider,
+                    State = p.State
+                }).ToList()
+            };
+
+            SystemAiApiConfiguration? writer = null;
+            if (request.WriterModelConfigurationId > 0)
+            {
+                writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
+                preview.WriterDisplayName = writer?.DisplayName;
+                preview.Refusal = WriterRefusal(writer, prep.Subject);
+                if (preview.Refusal == null && _complianceGuard.IsSameProvider(writer!.Provider, prep.Subject.Provider))
+                {
+                    preview.SameProviderWarning = BenchmarkReportPackPreparation.SameProviderWarning(prep.Subject, writer);
+                }
+            }
+
+            var audiences = (request.Audiences ?? new List<BenchmarkReportAudience>()).Distinct().OrderBy(a => a).ToList();
+            preview.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
+            preview.EstimatedTotalCostUsd = TotalCost(preview.Estimates);
+
+            return Ok(preview);
         }
-
-        var audiences = (request.Audiences ?? new List<BenchmarkReportAudience>()).Distinct().OrderBy(a => a).ToList();
-        preview.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
-        preview.EstimatedTotalCostUsd = TotalCost(preview.Estimates);
-
-        return Ok(preview);
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     /// <summary>
@@ -345,57 +352,65 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// <summary>
     /// What writing the run's documents with the writer would cost, by the preview's arithmetic, with
     /// the writer's refusal or same-provider warning. Computes the fact sheet and the prompts; makes no
-    /// model call. 404 for an unknown run; a document that is not a run-completion document is a 400.
+    /// model call. 404 for an unknown run; a document that is not a run-completion document is a 400; a
+    /// request the client aborts is a 499.
     /// </summary>
     [HttpPost("runs/{runId:long}/report-documents/estimate")]
     public async Task<IActionResult> EstimateRunReportDocuments(long runId, [FromBody] BenchmarkRunReportEstimateRequest request, CancellationToken ct)
     {
         if (request == null) return BadRequest(new { error = "A request body is required." });
 
-        var run = await _db.BenchmarkRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
-        if (run == null) return NotFound();
+        try
+        {
+            var run = await _db.BenchmarkRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId, ct);
+            if (run == null) return NotFound();
 
-        var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
-        if (invalidAudience != null) return invalidAudience;
-        var audiences = requested ?? await BenchmarkRunReportDocumentService.MissingAudiencesAsync(_db, runId, ct);
+            var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
+            if (invalidAudience != null) return invalidAudience;
+            var audiences = requested ?? await BenchmarkRunReportDocumentService.MissingAudiencesAsync(_db, runId, ct);
 
-        var writer = request.WriterModelConfigurationId > 0
-            ? await _db.SystemAiApiConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct)
-            : null;
-        var candidate = BenchmarkRunReportDocumentService.CandidateIdentity(run);
-        var estimate = new BenchmarkRunReportEstimateDto
-        {
-            Refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard)
-        };
-        if (estimate.Refusal == null
-            && !_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
-        {
-            estimate.Refusal = EndpointRefusal(writer, endpointError);
-        }
-        string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
-        if (estimate.Refusal == null && warning != null)
-        {
-            estimate.SameProviderWarning = BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning);
-        }
+            var writer = request.WriterModelConfigurationId > 0
+                ? await _db.SystemAiApiConfigurations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct)
+                : null;
+            var candidate = BenchmarkRunReportDocumentService.CandidateIdentity(run);
+            var estimate = new BenchmarkRunReportEstimateDto
+            {
+                Refusal = BenchmarkRunReportDocumentService.WriterRefusal(writer, candidate, _complianceGuard)
+            };
+            if (estimate.Refusal == null
+                && !_endpointPolicy.TryResolveStrict(writer!.BaseUrl, writer.CustomHeadersJson, writer.ApiVersion, out _, out var endpointError))
+            {
+                estimate.Refusal = EndpointRefusal(writer, endpointError);
+            }
+            string? warning = BenchmarkRunReportDocumentService.WriterWarning(writer, candidate, _complianceGuard);
+            if (estimate.Refusal == null && warning != null)
+            {
+                estimate.SameProviderWarning = BenchmarkRunReportDocumentService.WriterWarningDto(writer!, candidate, warning);
+            }
 
-        if (!BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run))
-        {
-            estimate.Refusal ??= NoSynthesisMessage;
+            if (!BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run))
+            {
+                estimate.Refusal ??= NoSynthesisMessage;
+                return Ok(estimate);
+            }
+
+            int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
+            var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
+                _db, _comparisonService, BenchmarkRunReportDocumentService.RunRequest(runId, audiences, writer?.Id ?? 0), excerptChars, ct, _configuration);
+            if (prep == null)
+            {
+                estimate.Refusal ??= prepRefusal ?? "The reports could not be prepared.";
+                return Ok(estimate);
+            }
+
+            estimate.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
+            estimate.EstimatedTotalCostUsd = TotalCost(estimate.Estimates);
             return Ok(estimate);
         }
-
-        int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
-        var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
-            _db, _comparisonService, BenchmarkRunReportDocumentService.RunRequest(runId, audiences, writer?.Id ?? 0), excerptChars, ct, _configuration);
-        if (prep == null)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            estimate.Refusal ??= prepRefusal ?? "The reports could not be prepared.";
-            return Ok(estimate);
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
-
-        estimate.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
-        estimate.EstimatedTotalCostUsd = TotalCost(estimate.Estimates);
-        return Ok(estimate);
     }
 
     /// <summary>

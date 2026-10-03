@@ -22,18 +22,44 @@ import {
   BenchmarkBatteryMemberDto,
   BenchmarkBatteryResumeMode,
   BenchmarkBatteryRunDto,
-  BenchmarkBatterySlotDto
+  BenchmarkBatterySlotDto,
+  BenchmarkRunReportJobDto
 } from '../../../services/admin-benchmark.service';
+import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { RunFactBadge } from '../run-report-frame/run-facts';
+import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import {
   INDEX_WITHHELD_HINT,
+  batteryAnalysisPending,
+  batteryAwaitsPostRun,
+  batteryAwaitsReports,
+  batteryModelBadges,
+  batteryModelName,
+  batteryPostRunGraceOpen,
+  batteryReportDocumentsStatusName,
   batteryRunStatusLabel,
   formatMs,
+  formatNumber,
   httpErrorText,
   isFinishedBatteryRunStatus,
   isLiveBatteryRunStatus
 } from './battery.models';
+
+/** What *Open run progress* hands the host: the member's run and the battery run it belongs to. */
+export interface BatteryMemberRunProgressRequest {
+  readonly runId: number;
+  readonly batteryRunId: number;
+}
+
+/** One stage of the battery progress rail. */
+export interface BatteryRailItem {
+  readonly key: 'runs' | 'analysis' | 'reports';
+  readonly name: string;
+  readonly state: 'pending' | 'current' | 'done' | 'ended';
+  readonly note: string | null;
+}
 
 /** The state a (suite, round) cell of the member grid shows. */
 export type BatterySlotState =
@@ -113,9 +139,11 @@ interface AttachSlot {
 }
 
 /**
- * Progress of one battery run: a suite × round grid of status chips, the stop reason in words and
+ * Progress of one battery run: a stage rail (the suite runs, the battery analysis and, with a report
+ * writer, the AI-written reports), a suite × round grid of status chips, the stop reason in words and
  * the actions that move a stopped battery on. It loads the battery run itself and polls it while it
- * is visible and live, as the multi-run progress dialog does for a series; the host owns `visible`.
+ * is visible and live or its post-run work is under way, as the multi-run progress dialog does for a
+ * series; the host owns `visible`.
  *
  * It never embeds the single-run progress view: two modal dialogs in the top layer trap focus
  * between them, so *Open run progress* closes this dialog and hands the run id to the host.
@@ -123,7 +151,7 @@ interface AttachSlot {
 @Component({
   selector: 'app-battery-progress-dialog',
   standalone: true,
-  imports: [],
+  imports: [ProviderBadgeComponent],
   templateUrl: './battery-progress-dialog.component.html',
   styleUrls: ['./battery-progress-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -131,6 +159,8 @@ interface AttachSlot {
 export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDestroy {
   private benchmarkService = inject(AdminBenchmarkService);
   private cdr = inject(ChangeDetectorRef);
+  /** The configurations, for the report writer's name before a job view names it. */
+  private readonly workspace = inject(BenchmarkWorkspaceStore, { optional: true });
 
   static readonly POLL_INTERVAL_MS = 2000;
   /** Poll delays after consecutive failures; the last repeats. */
@@ -142,8 +172,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   /** Escape, the close button, *Close* and *Run in Background*; the host lowers `visible`. */
   @Output() closed = new EventEmitter<void>();
-  /** A member's run id; the host opens the single-run progress dialog on it. */
-  @Output() openRunProgress = new EventEmitter<number>();
+  /** A member's run and its battery run; the host opens the single-run progress dialog on the run. */
+  @Output() openRunProgress = new EventEmitter<BatteryMemberRunProgressRequest>();
   /** Open Analysis: the battery run id whose Battery Run Report the host opens. */
   @Output() openAnalysis = new EventEmitter<number>();
   /** The battery run id after a successful Continue or Re-run under current instrument. */
@@ -169,6 +199,9 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   private attachOpener: HTMLElement | null = null;
 
   batteryRun: BenchmarkBatteryRunDto | null = null;
+  /** The battery run's report writing job, polled while its reports stage is current. */
+  reportJob: BenchmarkRunReportJobDto | null = null;
+  private reportJobSubscription: Subscription | null = null;
   grid: GridRow[] = [];
   rounds: number[] = [];
 
@@ -222,6 +255,7 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   private reset(): void {
     this.batteryRun = null;
+    this.reportJob = null;
     this.grid = [];
     this.rounds = [];
     this.loadError = null;
@@ -269,8 +303,12 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   }
 
   openMemberRunProgress(member: BenchmarkBatteryMemberDto): void {
+    // Read before the close: the host may stop pointing this dialog at the battery run.
+    const batteryRunId = this.batteryRun?.id ?? this.batteryRunId;
     this.requestClose();
-    this.openRunProgress.emit(member.runId);
+    if (batteryRunId != null) {
+      this.openRunProgress.emit({ runId: member.runId, batteryRunId });
+    }
   }
 
   showAnalysis(): void {
@@ -306,6 +344,8 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
+    this.reportJobSubscription?.unsubscribe();
+    this.reportJobSubscription = null;
     if (this.visibilityHandler && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.visibilityHandler);
       this.visibilityHandler = null;
@@ -343,10 +383,15 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
         this.failureCount = 0;
         this.loadError = null;
         this.applyRun(run);
-        if (this.isOpen && isLiveBatteryRunStatus(run.status)) {
+        const live = isLiveBatteryRunStatus(run.status);
+        if (this.isOpen && (live || batteryAwaitsPostRun(run))) {
           this.schedulePoll(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
-        } else {
+        }
+        if (!live) {
           this.stopElapsedTicker();
+        }
+        if (this.isOpen && this.reportsStageCurrent) {
+          this.pollReportJob(id);
         }
         this.cdr.markForCheck();
       },
@@ -364,6 +409,21 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
         }
         this.cdr.markForCheck();
       }
+    });
+  }
+
+  /** One request at a time: a slow answer is superseded by the next poll's. A failure leaves the last view. */
+  private pollReportJob(batteryRunId: number): void {
+    this.reportJobSubscription?.unsubscribe();
+    this.reportJobSubscription = this.benchmarkService.getBatteryReportJob(batteryRunId).subscribe({
+      next: (view) => {
+        if (batteryRunId !== this.batteryRunId) {
+          return;
+        }
+        this.reportJob = view;
+        this.cdr.markForCheck();
+      },
+      error: (err) => console.warn('Failed to poll the battery report writing job', err)
     });
   }
 
@@ -597,11 +657,141 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
 
   // --- Read-outs -------------------------------------------------------------------------------
 
+  /** The model under test, by the same rules as Run History's battery card. */
+  get modelName(): string {
+    return this.batteryRun ? batteryModelName(this.batteryRun) : '';
+  }
+
+  get modelBadges(): RunFactBadge[] {
+    return this.batteryRun ? batteryModelBadges(this.batteryRun) : [];
+  }
+
+  /** The battery run names a report writer, so the rail has a third stage. */
+  get hasReportWriter(): boolean {
+    return this.batteryRun?.reportWriterModelConfigurationId != null;
+  }
+
+  /** The report writer's name: the job's, else the configuration's, else its id. */
+  get reportWriterName(): string {
+    const writerId = this.batteryRun?.reportWriterModelConfigurationId;
+    if (writerId == null) return '';
+    if (this.reportJob?.writerConfigId === writerId && this.reportJob.writerDisplayName) {
+      return this.reportJob.writerDisplayName;
+    }
+    const config = this.workspace?.systemConfigs.find(c => c.id === writerId);
+    return config?.displayName || `Configuration #${writerId}`;
+  }
+
+  /** The battery analysis of the finished run is still being computed, within the grace. */
+  private get analysisStageCurrent(): boolean {
+    const run = this.batteryRun;
+    return !!run && this.isFinished && batteryAnalysisPending(run) && batteryPostRunGraceOpen(run);
+  }
+
+  /** The AI-written reports of the finished run are queued or written, or still to be queued within the grace. */
+  get reportsStageCurrent(): boolean {
+    const run = this.batteryRun;
+    return !!run && this.isFinished && batteryAwaitsReports(run);
+  }
+
+  /**
+   * The rail: the suite runs, the battery analysis and, with a report writer, the AI-written reports.
+   * A stage's word is never carried by its color alone: each has a note, and the markup a hidden word.
+   */
+  get railItems(): BatteryRailItem[] {
+    const run = this.batteryRun;
+    if (!run) return [];
+    const items: BatteryRailItem[] = [this.runsRailItem(run), this.analysisRailItem(run)];
+    if (this.hasReportWriter) {
+      items.push(this.reportsRailItem(run));
+    }
+    return items;
+  }
+
+  private runsRailItem(run: BenchmarkBatteryRunDto): BatteryRailItem {
+    const finished = (run.members ?? []).filter(m => !m.superseded && m.runStatus !== 'Running').length;
+    const note = `${Math.min(finished, run.requestedMemberCount)} of ${run.requestedMemberCount} runs`;
+    const name = 'Suite runs';
+    if (this.isFinished) return { key: 'runs', name, state: 'done', note };
+    if (this.isLive) return { key: 'runs', name, state: 'current', note };
+    return { key: 'runs', name, state: 'ended', note: `${batteryRunStatusLabel(run.status)} at ${note}` };
+  }
+
+  private analysisRailItem(run: BenchmarkBatteryRunDto): BatteryRailItem {
+    const name = 'Battery analysis';
+    if (!this.isFinished) {
+      return { key: 'analysis', name, state: 'pending', note: this.isLive ? null : 'Not reached' };
+    }
+    if (!batteryAnalysisPending(run)) {
+      return run.overallIndex != null
+        ? { key: 'analysis', name, state: 'done', note: `Overall Index ${formatNumber(run.overallIndex)}` }
+        : {
+          key: 'analysis', name, state: 'ended',
+          note: `No Overall Index: ${run.completedSuiteCount} of ${run.suiteCount} suites have a usable result`
+        };
+    }
+    return batteryPostRunGraceOpen(run)
+      ? { key: 'analysis', name, state: 'current', note: 'Computing the Overall Index…' }
+      : { key: 'analysis', name, state: 'ended', note: 'Not computed: use Recompute in the Battery Run Report' };
+  }
+
+  private reportsRailItem(run: BenchmarkBatteryRunDto): BatteryRailItem {
+    const name = 'AI-written reports';
+    if (!this.isFinished) {
+      return { key: 'reports', name, state: 'pending', note: this.isLive ? null : 'Not reached' };
+    }
+    const message = run.reportDocumentsMessage?.trim() || null;
+    switch (batteryReportDocumentsStatusName(run.reportDocumentsStatus)) {
+      case 'Pending': {
+        const ahead = this.reportJob?.jobsAhead;
+        const queue = ahead != null && ahead > 0 ? ` (${ahead} ${ahead === 1 ? 'job' : 'jobs'} ahead)` : '';
+        return { key: 'reports', name, state: 'current', note: `Waiting for the report writer${queue}` };
+      }
+      case 'Writing':
+        return { key: 'reports', name, state: 'current', note: 'Writing the Executive Summary and the Researcher report' };
+      case 'Completed': {
+        const written = (this.reportJob?.job?.documents ?? []).filter(doc => doc.documentId != null).length;
+        return {
+          key: 'reports', name, state: 'done',
+          note: written > 0 ? `${written} ${written === 1 ? 'document' : 'documents'} written` : 'Written'
+        };
+      }
+      case 'CompletedWithWarnings':
+        return { key: 'reports', name, state: 'done', note: 'Written with warnings' };
+      case 'Failed':
+        return { key: 'reports', name, state: 'ended', note: message ? `Failed: ${message}` : 'Failed' };
+      case 'Skipped':
+        return { key: 'reports', name, state: 'ended', note: message ? `Skipped: ${message}` : 'Skipped' };
+      case 'Canceled':
+        return { key: 'reports', name, state: 'ended', note: message ? `Canceled: ${message}` : 'Canceled' };
+      default:
+        return batteryPostRunGraceOpen(run)
+          ? { key: 'reports', name, state: 'current', note: 'Waiting for the report writer' }
+          : { key: 'reports', name, state: 'ended', note: 'Not started' };
+    }
+  }
+
+  /** The visually hidden word that names a rail item's state. */
+  railStateWord(state: BatteryRailItem['state']): string {
+    switch (state) {
+      case 'current': return '(current)';
+      case 'done': return '(done)';
+      case 'ended': return '(ended)';
+      default: return '';
+    }
+  }
+
   /** The one polite announcement: changes with the stage, never with the clock. */
   get stageLine(): string {
     const run = this.batteryRun;
     if (!run) {
       return this.loadError ? 'Could not load the battery run.' : 'Loading battery run…';
+    }
+    if (this.analysisStageCurrent) {
+      return 'Computing the battery analysis…';
+    }
+    if (this.reportsStageCurrent) {
+      return 'Writing the AI reports…';
     }
     switch (run.status) {
       case 'Pending':
@@ -617,11 +807,26 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
       case 'Stopped':
         return `Stopped: ${run.stopReasonText || run.stopReason || 'no reason recorded'}`;
       case 'Completed':
-        return `Completed: ${run.completedSuiteCount} of ${run.suiteCount} suites`;
+        return `Completed: ${run.completedSuiteCount} of ${run.suiteCount} suites${this.reportsOutcome}`;
       case 'CompletedWithErrors':
-        return `Completed with errors: ${run.completedSuiteCount} of ${run.suiteCount} suites have a usable result`;
+        return `Completed with errors: ${run.completedSuiteCount} of ${run.suiteCount} suites have a usable result${this.reportsOutcome}`;
       default:
         return batteryRunStatusLabel(run.status);
+    }
+  }
+
+  /** The stage line's ending about the AI-written reports once they are settled; empty without a writer. */
+  private get reportsOutcome(): string {
+    const run = this.batteryRun;
+    if (!run || !this.hasReportWriter) return '';
+    switch (batteryReportDocumentsStatusName(run.reportDocumentsStatus)) {
+      case 'Completed':
+      case 'CompletedWithWarnings':
+        return ' · reports written';
+      case 'Failed':
+        return ' · reports failed';
+      default:
+        return ' · reports not written';
     }
   }
 

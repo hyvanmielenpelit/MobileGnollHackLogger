@@ -3512,9 +3512,10 @@ public class BenchmarkService
             return;
         }
 
+        string? rubricText = expectedPoints ?? (answer.ExpectedPointsRecorded ? answer.ExpectedPointsUsed : null);
         var plan = BenchmarkRunFinalizer.IsPanelRun(run)
-            ? BuildPanelClaimPlan(answer)
-            : BuildSingleClaimPlan(answer);
+            ? BuildPanelClaimPlan(answer, rubricText)
+            : BuildSingleClaimPlan(answer, rubricText);
         var manifest = plan.Manifest;
         var claims = manifest.Select(m => m.Text).ToList();
         bool isDisputed = plan.IsDisputed;
@@ -3569,7 +3570,9 @@ public class BenchmarkService
             claimCharges: manifest.Select(m => m.Charge).ToList(),
             claimChargedParts: manifest.Select(m => m.QuotedFragments).ToList(),
             assessorEvidenceByMember: plan.EvidenceByMember,
-            claimAntecedents: manifest.Select(m => m.Antecedent).ToList());
+            claimAntecedents: manifest.Select(m => m.Antecedent).ToList(),
+            claimRubricCited: manifest.Select(m => m.RubricCited).ToList(),
+            claimRubricQuotes: manifest.Select(m => m.RubricQuote).ToList());
 
         var chargedPartItems = BenchmarkClaimVerificationPrompt.ChargedPartItems(
             claims,
@@ -3852,6 +3855,22 @@ public class BenchmarkService
         {
             answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
         }
+
+        // A sentence docked against the rubric was supported with a citation: a lead on the rubric,
+        // advisory like the contested deduction the same verdict raises. Cleared otherwise.
+        SetFlag(answer, BenchmarkAnswerFlags.RubricContradictedBySource, SupportedRubricContradictions(verifications).Count > 0);
+    }
+
+    private static void SetFlag(BenchmarkRunAnswer answer, BenchmarkAnswerFlags flag, bool on)
+    {
+        if (on)
+        {
+            answer.AnswerFlags |= (int)flag;
+        }
+        else
+        {
+            answer.AnswerFlags &= ~(int)flag;
+        }
     }
 
     /// <summary>
@@ -3860,7 +3879,8 @@ public class BenchmarkService
     /// member raised it. <see cref="BenchmarkAnswerFlags.ContestedCriticalError"/> and
     /// <see cref="BenchmarkAnswerFlags.ContestedAccuracyDeduction"/> stay member A's, decided over the
     /// items A raised; member B's two are decided over its own items and written to the flags of
-    /// <see cref="BenchmarkRunAnswer.CoAssessmentJson"/>.
+    /// <see cref="BenchmarkRunAnswer.CoAssessmentJson"/>. <see cref="BenchmarkAnswerFlags.RubricContradictedBySource"/>
+    /// goes the same way, decided over the items each member accused (<see cref="RubricContradictedFor"/>).
     /// </summary>
     internal static void ApplyPanelClaimVerificationOutcome(
         BenchmarkRunAnswer answer,
@@ -3902,6 +3922,8 @@ public class BenchmarkService
             answer.AnswerFlags &= ~(int)BenchmarkAnswerFlags.ContestedAccuracyDeduction;
         }
 
+        SetFlag(answer, BenchmarkAnswerFlags.RubricContradictedBySource, RubricContradictedFor(memberA, verifications));
+
         var record = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson);
         if (record != null)
         {
@@ -3909,9 +3931,18 @@ public class BenchmarkService
             record.Flags ??= new BenchmarkCoAssessmentFlags();
             record.Flags.ContestedCriticalError = criticalB;
             record.Flags.ContestedAccuracyDeduction = accuracyB;
+            record.Flags.RubricContradictedBySource = RubricContradictedFor(memberB, verifications);
             answer.CoAssessmentJson = record.Serialize();
         }
     }
+
+    /// <summary>
+    /// Whether a sentence <paramref name="view"/>'s member accused against the rubric was supported
+    /// with a citation (<see cref="SupportedRubricContradictions"/> over <see cref="AccusedByMembers"/>).
+    /// False without a verdict.
+    /// </summary>
+    internal static bool RubricContradictedFor(BenchmarkVerdictView? view, IReadOnlyList<BenchmarkClaimVerification> verifications)
+        => view != null && SupportedRubricContradictions(AccusedByMembers(verifications, view.Member)).Count > 0;
 
     /// <summary>
     /// One member's two contested findings, read over the items that member raised: its
@@ -4010,8 +4041,8 @@ public class BenchmarkService
         BenchmarkVerdictView? MemberA,
         BenchmarkVerdictView? MemberB);
 
-    /// <summary>A single-assessor answer's claim plan, read from the primary columns.</summary>
-    private ClaimPlan BuildSingleClaimPlan(BenchmarkRunAnswer answer)
+    /// <summary>A single-assessor answer's claim plan, read from the primary columns; <paramref name="rubricText"/> gives the accused items their rubric quotes.</summary>
+    private ClaimPlan BuildSingleClaimPlan(BenchmarkRunAnswer answer, string? rubricText)
     {
         List<string>? claims = null;
         try
@@ -4083,7 +4114,7 @@ public class BenchmarkService
                 claims,
                 isCriticalErrorAdjudication ? answer.CriticalErrorQuote : null,
                 outOfRubricBasis,
-                AccusedQuotesFor(answer),
+                AccusedQuotesFor(answer, rubricText),
                 assessorStatements,
                 answer.AnswerText),
             answer.AnswerText);
@@ -4110,8 +4141,9 @@ public class BenchmarkService
     /// (<see cref="BuildUnionClaimManifest"/>), each member's accuracy evidence in member order, and
     /// the context of every critical-error quote. Member A's disputed-answer claims are persisted as a
     /// single-assessor run persists them; member B's are recovered by the same extraction on a retry.
+    /// <paramref name="rubricText"/> gives the accused items their rubric quotes.
     /// </summary>
-    private ClaimPlan BuildPanelClaimPlan(BenchmarkRunAnswer answer)
+    private ClaimPlan BuildPanelClaimPlan(BenchmarkRunAnswer answer, string? rubricText)
     {
         var memberA = BenchmarkVerdictView.FromPrimary(answer);
         var memberB = BenchmarkVerdictView.FromCoAssessment(answer);
@@ -4149,7 +4181,7 @@ public class BenchmarkService
                 claims,
                 view.CriticalError && !string.IsNullOrWhiteSpace(view.CriticalErrorQuote) ? view.CriticalErrorQuote : null,
                 OutOfRubricBasisOf(view),
-                AccusedQuotesFor(view, answer.AnswerText),
+                AccusedQuotesFor(view, answer.AnswerText, rubricText),
                 assessorStatements);
             if (contribution.IsEmpty) continue;
 
@@ -4220,7 +4252,7 @@ public class BenchmarkService
     /// <summary>
     /// Drops what described the verdict a new one replaces: the evidence-informed re-grade that re-read
     /// it, and the claim verification of its quote, basis and accused sentences, with the counts and
-    /// the three flags that verification set. The new verdict is then verified afresh, as a first
+    /// the four flags that verification set. The new verdict is then verified afresh, as a first
     /// grading is. Token and cost accounting of the discarded work is kept.
     /// </summary>
     internal static void ClearReplacedVerdictEvidence(BenchmarkRunAnswer answer)
@@ -4237,14 +4269,17 @@ public class BenchmarkService
         answer.ClaimsIndeterminateCount = null;
         answer.AnswerFlags &= ~(int)(BenchmarkAnswerFlags.RefutedClaim
             | BenchmarkAnswerFlags.ContestedCriticalError
-            | BenchmarkAnswerFlags.ContestedAccuracyDeduction);
+            | BenchmarkAnswerFlags.ContestedAccuracyDeduction
+            | BenchmarkAnswerFlags.RubricContradictedBySource);
 
-        // Member B's counterparts of the two contested flags, which the same verification set.
+        // Member B's counterparts of the three flags the same verification set.
         var coAssessment = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson);
-        if (coAssessment?.Flags is { } coFlags && (coFlags.ContestedCriticalError || coFlags.ContestedAccuracyDeduction))
+        if (coAssessment?.Flags is { } coFlags
+            && (coFlags.ContestedCriticalError || coFlags.ContestedAccuracyDeduction || coFlags.RubricContradictedBySource))
         {
             coFlags.ContestedCriticalError = false;
             coFlags.ContestedAccuracyDeduction = false;
+            coFlags.RubricContradictedBySource = false;
             answer.CoAssessmentJson = coAssessment.Serialize();
         }
     }
@@ -8475,6 +8510,14 @@ public class BenchmarkService
         /// <summary>The panel members that recorded the item as <c>Suspected false:</c>, <c>"A"</c> before <c>"B"</c>; null when none did or in a single-assessor run.</summary>
         [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<string>? SuspectedBy { get; init; }
+
+        /// <summary>An accused sentence an assessor docked because it disagrees with the rubric's text (<see cref="AccusedQuote.RubricCited"/>).</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+        public bool RubricCited { get; init; }
+
+        /// <summary>On a <see cref="RubricCited"/> item, the rubric text the assessor relied on; null when none was found.</summary>
+        [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        public string? RubricQuote { get; init; }
     }
 
     /// <summary>
@@ -8501,19 +8544,54 @@ public class BenchmarkService
     /// <summary>
     /// A sentence of the answer the assessor quoted in its accuracy evidence: the sentence or list
     /// item of the answer that encloses the quotation, its context, the quoted spans as they occur in
-    /// the answer, and the assessor's evidence sentence(s) that quote it.
+    /// the answer, and the assessor's evidence sentence(s) that quote it. <see cref="RubricCited"/>
+    /// when a charge on it was made against the rubric (<see cref="ExtractAccusedQuotes"/>), with the
+    /// rubric text the charge relied on in <see cref="RubricQuote"/> when it was found.
     /// </summary>
-    internal sealed record AccusedQuote(string Text, string? Context, IReadOnlyList<string>? QuotedFragments = null, string? Charge = null);
+    internal sealed record AccusedQuote(string Text, string? Context, IReadOnlyList<string>? QuotedFragments = null, string? Charge = null)
+    {
+        public bool RubricCited { get; init; }
+        public string? RubricQuote { get; init; }
+    }
 
     internal const int AccusedQuoteMinLength = 15;
     internal const int AccusedQuoteMaxLength = 400;
     internal const int AccusedQuoteChargeMaxLength = 400;
-    internal const int MaxAccusedQuotesPerAnswer = 3;
+    internal const int MaxAccusedQuotesPerAnswer = 5;
+
+    /// <summary>The cap on accused quotes when rubric-charged quotes are off (<see cref="RubricChargedQuotesEnabled"/>).</summary>
+    internal const int MaxAccusedQuotesPerAnswerRubricChargesOff = 3;
     internal const int AccusedQuoteEligibleMaxAccuracyLevel = 5;
     private const int AccusedQuoteContextMaxLength = 300;
 
+    /// <summary>The fewest letters a word of a charge clause needs to anchor a repeated span to a line of the answer.</summary>
+    internal const int AnchorWordMinLetters = 4;
+
     private static readonly Regex StraightQuotedSpanRegex = new("\"([^\"]*)\"", RegexOptions.Compiled);
     private static readonly Regex TypographicQuotedSpanRegex = new("“([^”]*)”", RegexOptions.Compiled);
+    private static readonly Regex BacktickQuotedSpanRegex = new(@"(?<!`)`([^`\r\n]+)`(?!`)", RegexOptions.Compiled);
+    private static readonly Regex RubricChargeWordRegex = new(
+        @"\b(?:rubric|required)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex RubricParentheticalRegex = new(
+        @"\(\s*rubric\s*:\s*([^()]+?)\s*\)", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex AnchorWordRegex = new(@"\p{L}+(?:['’]\p{L}+)*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Words of a charge clause that never anchor a span: function words, and the words assessors use
+    /// to describe a charge rather than its subject.
+    /// </summary>
+    private static readonly HashSet<string> AnchorStopWords = new(StringComparer.Ordinal)
+    {
+        "about", "above", "after", "also", "although", "another", "answer", "answers", "because", "been",
+        "before", "being", "both", "claim", "claims", "correct", "correctly", "does", "each", "either",
+        "even", "every", "from", "gives", "given", "have", "here", "incorrect", "incorrectly", "instead",
+        "into", "just", "like", "listed", "lists", "marked", "more", "most", "much", "must", "neither",
+        "only", "other", "over", "rather", "required", "requires", "response", "rubric", "said", "same",
+        "says", "should", "some", "state", "stated", "states", "such", "than", "that", "their", "them",
+        "then", "there", "these", "they", "this", "those", "though", "through", "very", "were", "what",
+        "when", "where", "whether", "which", "while", "will", "with", "within", "without", "would",
+        "wrong", "your"
+    };
 
     // Single quotes double as apostrophes, so a span opens only after the start of the text,
     // whitespace, "(" or an em dash, and closes only before the end of the text, whitespace or
@@ -8535,21 +8613,32 @@ public class BenchmarkService
     private bool AccusedQuotesEnabled
         => _configuration.GetValue<bool>("Benchmark:ClaimVerification:AccusedQuotesEnabled", true);
 
-    /// <summary>The accused quotes this answer would submit, empty when the feature is off or the answer is not eligible.</summary>
-    internal IReadOnlyList<AccusedQuote> AccusedQuotesFor(BenchmarkRunAnswer answer)
+    /// <summary>
+    /// Whether <see cref="ExtractAccusedQuotes"/> reads charges made against the rubric: backtick
+    /// quotes, short spans, table rows named by label, the rubric quote, and the larger cap. Off, it
+    /// keeps only the anchoring of repeated spans.
+    /// </summary>
+    private bool RubricChargedQuotesEnabled
+        => _configuration.GetValue<bool>("Benchmark:ClaimVerification:RubricChargedQuotesEnabled", true);
+
+    /// <summary>
+    /// The accused quotes this answer would submit, empty when the feature is off or the answer is not
+    /// eligible. <paramref name="rubricText"/> is read only for each item's rubric quote.
+    /// </summary>
+    internal IReadOnlyList<AccusedQuote> AccusedQuotesFor(BenchmarkRunAnswer answer, string? rubricText = null)
         => AccusedQuotesEnabled && IsAccusedQuoteEligible(answer)
-            ? ExtractAccusedQuotes(answer.AnswerText, ReadEvidence(answer.AssessmentEvidenceJson, "accuracy"))
+            ? ExtractAccusedQuotes(answer.AnswerText, ReadEvidence(answer.AssessmentEvidenceJson, "accuracy"), rubricText, RubricChargedQuotesEnabled)
             : Array.Empty<AccusedQuote>();
 
     /// <summary><see cref="NeedsClaimVerification"/>, or a sentence the assessor charged that the verifier can check.</summary>
     internal bool NeedsClaimVerificationOrAccusation(BenchmarkRunAnswer answer)
         => NeedsClaimVerification(answer) || AccusedQuotesFor(answer).Count > 0;
 
-    /// <summary><see cref="AccusedQuotesFor(BenchmarkRunAnswer)"/> for one panel member's verdict, on the same eligibility rule.</summary>
-    internal IReadOnlyList<AccusedQuote> AccusedQuotesFor(BenchmarkVerdictView v, string? answerText)
+    /// <summary><see cref="AccusedQuotesFor(BenchmarkRunAnswer, string)"/> for one panel member's verdict, on the same eligibility rule.</summary>
+    internal IReadOnlyList<AccusedQuote> AccusedQuotesFor(BenchmarkVerdictView v, string? answerText, string? rubricText = null)
         => AccusedQuotesEnabled
             && (v.AccuracyLevel <= AccusedQuoteEligibleMaxAccuracyLevel || v.ContestedVerdict)
-                ? ExtractAccusedQuotes(answerText, v.AccuracyEvidence)
+                ? ExtractAccusedQuotes(answerText, v.AccuracyEvidence, rubricText, RubricChargedQuotesEnabled)
                 : Array.Empty<AccusedQuote>();
 
     /// <summary>
@@ -8570,14 +8659,32 @@ public class BenchmarkService
     /// occurs in the answer once Markdown emphasis and whitespace runs are ignored. A span the
     /// evidence clause around it approves of (<see cref="IsApprovedInEvidence"/>) is not an
     /// accusation and is skipped; a span not in the answer (a rubric or board quotation) is dropped.
+    /// A span on more than one line of the answer is placed on the line its charge clause names
+    /// (<see cref="AnchoredOccurrence"/>), and dropped when no single line is named.
     /// The answer's own span is widened to the sentence or list item enclosing it
     /// (<see cref="EnclosingSentence"/>), or kept alone when that exceeds
     /// <see cref="AccusedQuoteMaxLength"/>; spans whose widened ranges overlap become one submission
-    /// carrying every quoted fragment and the evidence sentence of each. At most
-    /// <see cref="MaxAccusedQuotesPerAnswer"/>, longest first, ties in evidence order. A bounded
-    /// heuristic: it finds only accusations the assessor quoted.
+    /// carrying every quoted fragment and the evidence sentence of each.
+    ///
+    /// With <paramref name="rubricChargedQuotes"/>, backtick-delimited spans are quotes too, and an
+    /// evidence sentence holding the whole word <c>rubric</c> or <c>required</c> charges against the
+    /// rubric in every clause (<see cref="EvidenceClauses"/>). Such a clause also yields a span of
+    /// <see cref="DockedSpanMinLength"/> to 14 characters that occurs, as whole words, on one line of
+    /// the answer other than a heading, or is anchored; and, when none of its spans was located in
+    /// the answer, the one table row of the answer it names by its first cell
+    /// (<see cref="RowNamedBy"/>), with the clause as the charge and no fragment, unless the clause
+    /// approves. Their submissions are <see cref="AccusedQuote.RubricCited"/>, with
+    /// <see cref="RubricQuoteOf"/>'s rubric text read from <paramref name="rubricText"/>. At most
+    /// <see cref="MaxAccusedQuotesPerAnswer"/>, rubric-charged first, then longest first, ties in
+    /// evidence order. Without it, at most <see cref="MaxAccusedQuotesPerAnswerRubricChargesOff"/>,
+    /// longest first, ties in evidence order. A bounded heuristic: it finds only accusations the
+    /// assessor quoted, or a table row it named.
     /// </summary>
-    internal static List<AccusedQuote> ExtractAccusedQuotes(string? answerText, string? accuracyEvidence)
+    internal static List<AccusedQuote> ExtractAccusedQuotes(
+        string? answerText,
+        string? accuracyEvidence,
+        string? rubricText = null,
+        bool rubricChargedQuotes = true)
     {
         var result = new List<AccusedQuote>();
         if (string.IsNullOrWhiteSpace(answerText) || string.IsNullOrWhiteSpace(accuracyEvidence))
@@ -8586,20 +8693,67 @@ public class BenchmarkService
         }
 
         var (normalizedAnswer, map) = NormalizeWithMap(answerText);
+        string? normalizedRubric = string.IsNullOrWhiteSpace(rubricText) ? null : NormalizeWithMap(rubricText).Normalized;
         var candidates = new List<AccusedCandidate>();
 
-        var matches = StraightQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>()
-            .Concat(TypographicQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
-            .Concat(StraightSingleQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
-            .Concat(TypographicSingleQuotedSpanRegex.Matches(accuracyEvidence).Cast<Match>())
-            .OrderBy(m => m.Index)
-            .ToList();
+        var matches = QuotedSpanMatches(accuracyEvidence, rubricChargedQuotes);
         var quotedRanges = matches.Select(m => (Open: m.Index, Close: m.Index + m.Length - 1)).ToList();
+        var clauses = EvidenceClauses(accuracyEvidence, quotedRanges);
+        var tableRows = AnswerTableRows(answerText);
+        var locatedClauses = new HashSet<EvidenceClause>();
+
+        bool InAnswer(string quoted)
+        {
+            string normalized = NormalizeWithMap(quoted).Normalized;
+            return normalized.Length > 0 && normalizedAnswer.Contains(normalized, StringComparison.OrdinalIgnoreCase);
+        }
+
+        void Collect(int sourceIndex, int start, int end, string? fragment, string? charge, bool rubricCited, string? rubricQuote)
+        {
+            var overlapping = candidates.FirstOrDefault(c => c.Start <= end && start <= c.End);
+            if (overlapping != null)
+            {
+                int unionStart = Math.Min(overlapping.Start, start);
+                int unionEnd = Math.Max(overlapping.End, end);
+                if (unionEnd - unionStart + 1 > AccusedQuoteMaxLength)
+                {
+                    return;
+                }
+
+                overlapping.Start = unionStart;
+                overlapping.End = unionEnd;
+                if (fragment != null && !overlapping.Fragments.Contains(fragment, StringComparer.OrdinalIgnoreCase))
+                {
+                    overlapping.Fragments.Add(fragment);
+                }
+                if (charge != null && !overlapping.Charges.Contains(charge, StringComparer.Ordinal))
+                {
+                    overlapping.Charges.Add(charge);
+                }
+                overlapping.RubricCited |= rubricCited;
+                overlapping.RubricQuote ??= rubricQuote;
+                return;
+            }
+
+            var candidate = new AccusedCandidate(sourceIndex, start, end) { RubricCited = rubricCited, RubricQuote = rubricQuote };
+            if (fragment != null)
+            {
+                candidate.Fragments.Add(fragment);
+            }
+            if (charge != null)
+            {
+                candidate.Charges.Add(charge);
+            }
+            candidates.Add(candidate);
+        }
 
         foreach (var match in matches)
         {
             string quoted = match.Groups[1].Value.Trim();
-            if (quoted.Length < AccusedQuoteMinLength || quoted.Length > AccusedQuoteMaxLength)
+            var clause = clauses.FirstOrDefault(c => match.Index >= c.Start && match.Index <= c.End);
+            bool rubricCharged = rubricChargedQuotes && clause != null && clause.RubricCharged;
+            bool isShort = quoted.Length < AccusedQuoteMinLength;
+            if (quoted.Length > AccusedQuoteMaxLength || (isShort && (!rubricCharged || quoted.Length < DockedSpanMinLength)))
             {
                 continue;
             }
@@ -8610,23 +8764,33 @@ public class BenchmarkService
             }
 
             string normalizedQuote = NormalizeWithMap(quoted).Normalized;
-            if (normalizedQuote.Length == 0)
+            if (normalizedQuote.Length == 0 || (isShort && normalizedQuote.Length < DockedSpanMinLength))
             {
                 continue;
             }
 
-            int at = normalizedAnswer.IndexOf(normalizedQuote, StringComparison.OrdinalIgnoreCase);
-            if (at < 0)
+            if (AnchoredOccurrence(answerText, normalizedAnswer, map, normalizedQuote, quoted, clause?.Text, tableRows, wholeWords: isShort) is not int at)
             {
                 continue;
             }
 
             int start = map[at];
             int end = map[at + normalizedQuote.Length - 1];
+            // A heading names a topic and asserts nothing.
+            if (isShort && IsHeadingLine(answerText, start))
+            {
+                continue;
+            }
+
             string span = answerText.Substring(start, end - start + 1).Trim();
             if (span.Length == 0)
             {
                 continue;
+            }
+
+            if (clause != null)
+            {
+                locatedClauses.Add(clause);
             }
 
             var (sentenceStart, sentenceEnd) = EnclosingSentence(answerText, start, end);
@@ -8637,54 +8801,418 @@ public class BenchmarkService
             }
 
             string? charge = EvidenceSentenceAround(accuracyEvidence, match.Index, match.Index + match.Length - 1, quotedRanges);
+            string? rubricQuote = rubricCharged ? RubricQuoteOf(clause!, matches, InAnswer, normalizedRubric) : null;
+            Collect(match.Index, sentenceStart, sentenceEnd, span, charge, rubricCharged, rubricQuote);
+        }
 
-            var overlapping = candidates.FirstOrDefault(c => c.Start <= sentenceEnd && sentenceStart <= c.End);
-            if (overlapping != null)
+        if (rubricChargedQuotes)
+        {
+            foreach (var clause in clauses.Where(c => c.RubricCharged && !locatedClauses.Contains(c)))
             {
-                int unionStart = Math.Min(overlapping.Start, sentenceStart);
-                int unionEnd = Math.Max(overlapping.End, sentenceEnd);
-                if (unionEnd - unionStart + 1 > AccusedQuoteMaxLength)
+                if (BenchmarkVerdictConsistency.AccusationClauseApproves(clause.Text) == true)
                 {
                     continue;
                 }
 
-                overlapping.Start = unionStart;
-                overlapping.End = unionEnd;
-                if (!overlapping.Fragments.Contains(span, StringComparer.OrdinalIgnoreCase))
+                var row = RowNamedBy(clause.Text, tableRows);
+                if (row == null || row.End - row.Start + 1 > AccusedQuoteMaxLength)
                 {
-                    overlapping.Fragments.Add(span);
+                    continue;
                 }
-                if (charge != null && !overlapping.Charges.Contains(charge, StringComparer.Ordinal))
-                {
-                    overlapping.Charges.Add(charge);
-                }
-                continue;
-            }
 
-            var candidate = new AccusedCandidate(match.Index, sentenceStart, sentenceEnd);
-            candidate.Fragments.Add(span);
-            if (charge != null)
-            {
-                candidate.Charges.Add(charge);
+                Collect(
+                    clause.Start,
+                    row.Start,
+                    row.End,
+                    null,
+                    CapWithEllipsis(clause.Text, AccusedQuoteChargeMaxLength),
+                    true,
+                    RubricQuoteOf(clause, matches, InAnswer, normalizedRubric));
             }
-            candidates.Add(candidate);
         }
 
-        foreach (var candidate in candidates
-            .OrderByDescending(c => c.End - c.Start)
-            .ThenBy(c => c.SourceIndex)
-            .Take(MaxAccusedQuotesPerAnswer))
+        var ordered = rubricChargedQuotes
+            ? candidates
+                .OrderByDescending(c => c.RubricCited)
+                .ThenByDescending(c => c.End - c.Start)
+                .ThenBy(c => c.SourceIndex)
+                .Take(MaxAccusedQuotesPerAnswer)
+            : candidates
+                .OrderByDescending(c => c.End - c.Start)
+                .ThenBy(c => c.SourceIndex)
+                .Take(MaxAccusedQuotesPerAnswerRubricChargesOff);
+
+        foreach (var candidate in ordered)
         {
             string text = answerText.Substring(candidate.Start, candidate.End - candidate.Start + 1);
             string? charge = candidate.Charges.Count > 0 ? CapWithEllipsis(string.Join(" ", candidate.Charges), AccusedQuoteChargeMaxLength) : null;
             result.Add(new AccusedQuote(
                 text,
                 AccusedQuoteContext(answerText, candidate.Start, text),
-                candidate.Fragments.ToList(),
-                charge));
+                candidate.Fragments.Count > 0 ? candidate.Fragments.ToList() : null,
+                charge)
+            {
+                RubricCited = candidate.RubricCited,
+                RubricQuote = candidate.RubricCited ? candidate.RubricQuote : null
+            });
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// The quoted spans of <paramref name="evidence"/> in order of their opening delimiter: double
+    /// quotes (straight or typographic), single quotes (straight or typographic) and, with
+    /// <paramref name="withBackticks"/>, backticks.
+    /// </summary>
+    private static List<Match> QuotedSpanMatches(string evidence, bool withBackticks)
+    {
+        var matches = StraightQuotedSpanRegex.Matches(evidence).Cast<Match>()
+            .Concat(TypographicQuotedSpanRegex.Matches(evidence).Cast<Match>())
+            .Concat(StraightSingleQuotedSpanRegex.Matches(evidence).Cast<Match>())
+            .Concat(TypographicSingleQuotedSpanRegex.Matches(evidence).Cast<Match>());
+        if (withBackticks)
+        {
+            matches = matches.Concat(BacktickQuotedSpanRegex.Matches(evidence).Cast<Match>());
+        }
+
+        return matches.OrderBy(m => m.Index).ToList();
+    }
+
+    /// <summary>
+    /// One clause of the accuracy evidence: its inclusive, trimmed range and text, the range of the
+    /// sentence it belongs to, and whether that sentence charges against the rubric.
+    /// </summary>
+    private sealed class EvidenceClause
+    {
+        public EvidenceClause(int start, int end, int sentenceStart, int sentenceEnd, bool rubricCharged, string text)
+        {
+            Start = start;
+            End = end;
+            SentenceStart = sentenceStart;
+            SentenceEnd = sentenceEnd;
+            RubricCharged = rubricCharged;
+            Text = text;
+        }
+
+        public int Start { get; }
+        public int End { get; }
+        public int SentenceStart { get; }
+        public int SentenceEnd { get; }
+        public bool RubricCharged { get; }
+        public string Text { get; }
+    }
+
+    /// <summary>
+    /// The clauses of <paramref name="evidence"/>. A sentence ends at a line break, or at <c>.</c>,
+    /// <c>!</c> or <c>?</c> followed by whitespace, never inside a quotation; it charges against the
+    /// rubric when it holds the whole word <c>rubric</c> or <c>required</c>, ignoring case. A clause
+    /// is the sentence split at each <c>;</c> outside quotations and parentheses, and after the
+    /// sentence's first such <c>:</c> followed by whitespace when no <c>;</c> precedes it, which ends
+    /// an introductory phrase.
+    /// </summary>
+    private static List<EvidenceClause> EvidenceClauses(string evidence, IReadOnlyList<(int Open, int Close)> quotedRanges)
+    {
+        bool InQuotation(int i) => quotedRanges.Any(r => i > r.Open && i < r.Close);
+
+        var sentences = new List<(int Start, int End)>();
+        int sentenceStart = 0;
+        for (int i = 0; i < evidence.Length; i++)
+        {
+            if (evidence[i] is '\n' or '\r' || (IsSentenceTerminator(evidence, i) && !InQuotation(i)))
+            {
+                sentences.Add((sentenceStart, i));
+                sentenceStart = i + 1;
+            }
+        }
+        if (sentenceStart < evidence.Length)
+        {
+            sentences.Add((sentenceStart, evidence.Length - 1));
+        }
+
+        var clauses = new List<EvidenceClause>();
+        foreach (var (start, end) in sentences)
+        {
+            bool rubricCharged = RubricChargeWordRegex.IsMatch(evidence.Substring(start, end - start + 1));
+
+            void Add(int from, int to)
+            {
+                while (from <= to && char.IsWhiteSpace(evidence[from])) from++;
+                while (to >= from && char.IsWhiteSpace(evidence[to])) to--;
+                if (to >= from)
+                {
+                    clauses.Add(new EvidenceClause(from, to, start, end, rubricCharged, evidence.Substring(from, to - from + 1)));
+                }
+            }
+
+            int depth = 0;
+            int partStart = start;
+            bool introductionPassed = false;
+            for (int i = start; i <= end; i++)
+            {
+                if (InQuotation(i)) continue;
+
+                char c = evidence[i];
+                if (c == '(')
+                {
+                    depth++;
+                }
+                else if (c == ')')
+                {
+                    if (depth > 0) depth--;
+                }
+                else if (depth == 0 && c == ';')
+                {
+                    Add(partStart, i - 1);
+                    partStart = i + 1;
+                    introductionPassed = true;
+                }
+                else if (depth == 0 && c == ':' && !introductionPassed && i + 1 < evidence.Length && char.IsWhiteSpace(evidence[i + 1]))
+                {
+                    Add(partStart, i - 1);
+                    partStart = i + 1;
+                    introductionPassed = true;
+                }
+            }
+            Add(partStart, end);
+        }
+
+        return clauses;
+    }
+
+    /// <summary>A data row of a Markdown table in the answer: its inclusive, trimmed range and its first cell without markup.</summary>
+    private sealed record AnswerTableRow(int Start, int End, string Label);
+
+    /// <summary>
+    /// The data rows of every Markdown table in <paramref name="answerText"/>: lines starting with
+    /// <c>|</c>, without separator rows and without the header row a separator row follows.
+    /// </summary>
+    private static List<AnswerTableRow> AnswerTableRows(string answerText)
+    {
+        var lines = new List<(int Start, int End)>();
+        int lineStart = 0;
+        while (true)
+        {
+            int newline = answerText.IndexOf('\n', lineStart);
+            int s = lineStart;
+            int e = (newline < 0 ? answerText.Length : newline) - 1;
+            while (s <= e && char.IsWhiteSpace(answerText[s])) s++;
+            while (e >= s && char.IsWhiteSpace(answerText[e])) e--;
+            lines.Add((s, e));
+            if (newline < 0) break;
+            lineStart = newline + 1;
+        }
+
+        string LineText(int k) => lines[k].End >= lines[k].Start
+            ? answerText.Substring(lines[k].Start, lines[k].End - lines[k].Start + 1)
+            : string.Empty;
+
+        var rows = new List<AnswerTableRow>();
+        for (int k = 0; k < lines.Count; k++)
+        {
+            string text = LineText(k);
+            if (!text.StartsWith('|') || IsTableSeparatorRow(text)) continue;
+            if (k + 1 < lines.Count && IsTableSeparatorRow(LineText(k + 1))) continue;
+
+            string[] cells = text.Split('|');
+            if (cells.Length < 3) continue;
+
+            rows.Add(new AnswerTableRow(lines[k].Start, lines[k].End, ItemMarkupRegex.Replace(cells[1], string.Empty).Trim()));
+        }
+
+        return rows;
+    }
+
+    private static bool IsTableSeparatorRow(string line)
+        => line.StartsWith('|') && line.Contains('-') && line.All(c => c is '|' or '-' or ':' or ' ' or '\t');
+
+    /// <summary>
+    /// The one row of <paramref name="rows"/> whose label <paramref name="clause"/> names (<see cref="NamesLabel"/>);
+    /// null when it names none or more than one.
+    /// </summary>
+    private static AnswerTableRow? RowNamedBy(string clause, IReadOnlyList<AnswerTableRow> rows)
+    {
+        var named = rows.Where(r => NamesLabel(clause, r.Label)).Take(2).ToList();
+        return named.Count == 1 ? named[0] : null;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="text"/> names a table row by its label of at least 4 characters: the
+    /// label as whole words, ignoring case and whitespace runs, optionally followed by a possessive
+    /// <c>'s</c>.
+    /// </summary>
+    private static bool NamesLabel(string text, string label)
+    {
+        if (label.Length < 4) return false;
+
+        string pattern = string.Join(@"\s+", label.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Select(Regex.Escape));
+        return Regex.IsMatch(
+            text,
+            @"(?<![\p{L}\p{N}])" + pattern + @"(?:['’]s)?(?![\p{L}\p{N}])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    /// <summary>
+    /// The index in <paramref name="normalizedAnswer"/> where a quoted span is placed. Every
+    /// occurrence, ignoring case and, with <paramref name="wholeWords"/>, only where it does not
+    /// start or end inside a word, is put on its line: the table row it is in, else its enclosing
+    /// sentence or list item (<see cref="EnclosingSentence"/>). When all lie on one line, the first
+    /// occurrence. Otherwise the line the charge clause names: a table row whose label the clause
+    /// names (<see cref="NamesLabel"/>) ranks above every other line, and lines that tie on that rank
+    /// by how many of the clause's anchor words they hold (<see cref="AnchorWords"/>). The best line
+    /// is taken only when no other line ties it and it holds at least one anchor word. Null when the
+    /// span is not in the answer or no single line is named.
+    /// </summary>
+    private static int? AnchoredOccurrence(
+        string answerText,
+        string normalizedAnswer,
+        IReadOnlyList<int> map,
+        string normalizedQuote,
+        string quoted,
+        string? clause,
+        IReadOnlyList<AnswerTableRow> tableRows,
+        bool wholeWords)
+    {
+        var occurrences = new List<int>();
+        for (int from = 0; from <= normalizedAnswer.Length - normalizedQuote.Length;)
+        {
+            int at = normalizedAnswer.IndexOf(normalizedQuote, from, StringComparison.OrdinalIgnoreCase);
+            if (at < 0) break;
+            if (!wholeWords || IsWholeWords(normalizedAnswer, at, normalizedQuote.Length))
+            {
+                occurrences.Add(at);
+            }
+            from = at + 1;
+        }
+
+        if (occurrences.Count == 0)
+        {
+            return null;
+        }
+
+        var lines = occurrences
+            .Select(at => (At: at, Line: AnchorLine(answerText, map[at], map[at + normalizedQuote.Length - 1])))
+            .GroupBy(o => o.Line)
+            .Select(g => g.First())
+            .ToList();
+        if (lines.Count == 1)
+        {
+            return lines[0].At;
+        }
+
+        if (string.IsNullOrWhiteSpace(clause))
+        {
+            return null;
+        }
+
+        var anchors = AnchorWords(clause, quoted);
+        var scored = lines
+            .Select(l =>
+            {
+                var row = tableRows.FirstOrDefault(r => r.Start == l.Line.Start && r.End == l.Line.End);
+                var words = WordsOf(answerText.Substring(l.Line.Start, l.Line.End - l.Line.Start + 1));
+                return (l.At, Named: row != null && NamesLabel(clause, row.Label), Count: anchors.Count(words.Contains));
+            })
+            .ToList();
+        var best = scored.OrderByDescending(s => s.Named).ThenByDescending(s => s.Count).First();
+        bool tied = scored.Count(s => s.Named == best.Named && s.Count == best.Count) > 1;
+        return !tied && best.Count >= 1 ? best.At : null;
+    }
+
+    private static bool IsWholeWords(string text, int at, int length)
+    {
+        if (char.IsLetterOrDigit(text[at]) && at > 0 && char.IsLetterOrDigit(text[at - 1])) return false;
+        int last = at + length - 1;
+        return !(char.IsLetterOrDigit(text[last]) && last + 1 < text.Length && char.IsLetterOrDigit(text[last + 1]));
+    }
+
+    /// <summary>The line an occurrence from <paramref name="start"/> to <paramref name="end"/> is on: its table row, else its enclosing sentence or list item.</summary>
+    private static (int Start, int End) AnchorLine(string answerText, int start, int end)
+    {
+        var (lineStart, lineEnd) = PhysicalLine(answerText, start);
+        if (answerText[lineStart] == '|')
+        {
+            return (lineStart, lineEnd);
+        }
+
+        return EnclosingSentence(answerText, start, end);
+    }
+
+    /// <summary>The trimmed, inclusive range of the line of <paramref name="text"/> holding <paramref name="index"/>.</summary>
+    private static (int Start, int End) PhysicalLine(string text, int index)
+    {
+        int s = index;
+        while (s > 0 && text[s - 1] is not ('\n' or '\r')) s--;
+        int e = index;
+        while (e + 1 < text.Length && text[e + 1] is not ('\n' or '\r')) e++;
+        while (s < index && char.IsWhiteSpace(text[s])) s++;
+        while (e > index && char.IsWhiteSpace(text[e])) e--;
+        return (s, e);
+    }
+
+    /// <summary>Whether the line holding <paramref name="index"/> is a Markdown heading.</summary>
+    private static bool IsHeadingLine(string text, int index)
+        => text[PhysicalLine(text, index).Start] == '#';
+
+    /// <summary>
+    /// The words of <paramref name="text"/>, lower-cased: runs of letters joined by apostrophes, a
+    /// possessive <c>'s</c> stripped.
+    /// </summary>
+    private static HashSet<string> WordsOf(string text)
+        => AnchorWordRegex.Matches(text)
+            .Select(m => m.Value)
+            .Select(w => w.Length > 2 && (w.EndsWith("'s", StringComparison.Ordinal) || w.EndsWith("’s", StringComparison.Ordinal)) ? w[..^2] : w)
+            .Select(w => w.ToLowerInvariant())
+            .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The anchor words of a charge clause (<see cref="WordsOf"/>): those of at least
+    /// <see cref="AnchorWordMinLetters"/> letters that are not <see cref="AnchorStopWords"/> and not
+    /// words of the quoted span itself.
+    /// </summary>
+    private static List<string> AnchorWords(string clause, string quoted)
+    {
+        var own = WordsOf(quoted);
+        return WordsOf(clause)
+            .Where(w => w.Count(char.IsLetter) >= AnchorWordMinLetters && !AnchorStopWords.Contains(w) && !own.Contains(w))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The rubric text a rubric-charged clause relied on: a quoted span of the clause that is not in
+    /// the answer and occurs, normalized as <see cref="NormalizeWithMap"/> normalizes, in the rubric;
+    /// else the text after <c>rubric:</c> inside the clause's parentheses; else such a span elsewhere
+    /// in the clause's sentence. Null when none.
+    /// </summary>
+    private static string? RubricQuoteOf(
+        EvidenceClause clause,
+        IReadOnlyList<Match> matches,
+        Func<string, bool> inAnswer,
+        string? normalizedRubric)
+    {
+        string? RubricSpanBetween(int from, int to)
+        {
+            if (normalizedRubric == null) return null;
+            foreach (var match in matches)
+            {
+                if (match.Index < from || match.Index > to) continue;
+
+                string quoted = match.Groups[1].Value.Trim();
+                if (quoted.Length < DockedSpanMinLength || inAnswer(quoted)) continue;
+
+                string normalized = NormalizeWithMap(quoted).Normalized;
+                if (normalized.Length >= DockedSpanMinLength && normalizedRubric.Contains(normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    return CapWithEllipsis(quoted, AccusedQuoteChargeMaxLength);
+                }
+            }
+            return null;
+        }
+
+        var parenthetical = RubricParentheticalRegex.Match(clause.Text);
+        return RubricSpanBetween(clause.Start, clause.End)
+            ?? (parenthetical.Success ? CapWithEllipsis(parenthetical.Groups[1].Value.Trim(), AccusedQuoteChargeMaxLength) : null)
+            ?? RubricSpanBetween(clause.SentenceStart, clause.SentenceEnd);
     }
 
     internal const int DockedSpanMinLength = 4;
@@ -8830,6 +9358,8 @@ public class BenchmarkService
         public int End { get; set; }
         public List<string> Fragments { get; } = new();
         public List<string> Charges { get; } = new();
+        public bool RubricCited { get; set; }
+        public string? RubricQuote { get; set; }
     }
 
     private static readonly Regex LeadingListMarkerRegex = new(@"^(?:[-*+•]|\d+[.)])[ \t]+", RegexOptions.Compiled);
@@ -9427,7 +9957,9 @@ public class BenchmarkService
                     Roles = roles,
                     Context = item.Context ?? accused.Context,
                     QuotedFragments = item.QuotedFragments ?? accused.QuotedFragments,
-                    Charge = item.Charge ?? accused.Charge
+                    Charge = item.Charge ?? accused.Charge,
+                    RubricCited = item.RubricCited || accused.RubricCited,
+                    RubricQuote = item.RubricQuote ?? accused.RubricQuote
                 };
                 continue;
             }
@@ -9435,7 +9967,9 @@ public class BenchmarkService
             items.Add(new ClaimSubmission(trimmed, new List<string> { BenchmarkClaimRoles.AccusedQuote }, accused.Context)
             {
                 QuotedFragments = accused.QuotedFragments,
-                Charge = accused.Charge
+                Charge = accused.Charge,
+                RubricCited = accused.RubricCited,
+                RubricQuote = accused.RubricQuote
             });
         }
 
@@ -9705,7 +10239,9 @@ public class BenchmarkService
                         QuotedFragments = fragments,
                         Charge = charge,
                         RaisedBy = WithMember(item.RaisedBy, contribution.Member),
-                        AccusedBy = WithMember(item.AccusedBy, contribution.Member)
+                        AccusedBy = WithMember(item.AccusedBy, contribution.Member),
+                        RubricCited = item.RubricCited || accused.RubricCited,
+                        RubricQuote = item.RubricQuote ?? accused.RubricQuote
                     };
                     continue;
                 }
@@ -9715,7 +10251,9 @@ public class BenchmarkService
                     QuotedFragments = accused.QuotedFragments,
                     Charge = accused.Charge,
                     RaisedBy = WithMember(null, contribution.Member),
-                    AccusedBy = WithMember(null, contribution.Member)
+                    AccusedBy = WithMember(null, contribution.Member),
+                    RubricCited = accused.RubricCited,
+                    RubricQuote = accused.RubricQuote
                 });
             }
         }
@@ -9755,7 +10293,9 @@ public class BenchmarkService
             {
                 RaisedBy = Union(container.RaisedBy, contained.RaisedBy),
                 AccusedBy = Union(container.AccusedBy, contained.AccusedBy),
-                SuspectedBy = Union(container.SuspectedBy, contained.SuspectedBy)
+                SuspectedBy = Union(container.SuspectedBy, contained.SuspectedBy),
+                RubricCited = container.RubricCited || contained.RubricCited,
+                RubricQuote = container.RubricQuote ?? contained.RubricQuote
             };
 
             if (!merged.SuspectedFalse && contained.SuspectedFalse)
@@ -9815,8 +10355,8 @@ public class BenchmarkService
 
     /// <summary>
     /// Each verification stamped with the manifest item at its claim index: its roles, and the
-    /// fragments, charge, suspected-false record and raising, accusing and suspecting members that
-    /// item carries.
+    /// fragments, charge, suspected-false record, raising, accusing and suspecting members, and rubric
+    /// citation that item carries.
     /// </summary>
     internal static List<BenchmarkClaimVerification> StampRoles(
         IReadOnlyList<BenchmarkClaimVerification> verifications,
@@ -9840,7 +10380,9 @@ public class BenchmarkService
                     RecordedClaim = item.RecordedClaim,
                     RaisedBy = item.RaisedBy?.ToList(),
                     AccusedBy = item.AccusedBy?.ToList(),
-                    SuspectedBy = item.SuspectedBy?.ToList()
+                    SuspectedBy = item.SuspectedBy?.ToList(),
+                    RubricCited = item.RubricCited ? true : null,
+                    RubricQuote = item.RubricCited ? item.RubricQuote : null
                 };
             })
             .ToList();
@@ -9875,6 +10417,14 @@ public class BenchmarkService
                 && v.EffectiveVerdict == BenchmarkClaimVerdict.Supported
                 && !string.IsNullOrWhiteSpace(v.Citation))
             .ToList();
+
+    /// <summary>
+    /// The <see cref="SupportedAccusations"/> charged against the rubric
+    /// (<see cref="BenchmarkClaimVerification.RubricCited"/>): the source bears out the answer where
+    /// the rubric docked it.
+    /// </summary>
+    internal static List<BenchmarkClaimVerification> SupportedRubricContradictions(IReadOnlyList<BenchmarkClaimVerification>? verifications)
+        => SupportedAccusations(verifications).Where(v => v.RubricCited == true).ToList();
 
     /// <summary>
     /// The statements of the assessor's own evidence that the verifier refuted with a citation: the

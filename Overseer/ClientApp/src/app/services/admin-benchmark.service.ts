@@ -1140,6 +1140,7 @@ export interface BenchmarkCoAssessmentRecord {
     readabilityFormOnly?: boolean;
     contestedCriticalError?: boolean;
     contestedAccuracyDeduction?: boolean;
+    rubricContradictedBySource?: boolean;
   } | null;
 }
 
@@ -1341,6 +1342,12 @@ export interface BenchmarkRunDetailDto {
    * on a run before harness 20, which never adjudicated it: "not recorded", never 0.
    */
   contestedAccuracyDeductionAnswerCount?: number | null;
+  /**
+   * Answers where a sentence a grader docked because it disagrees with the rubric's text was
+   * supported by the claim verifier with a citation, for either panel member. Advisory: a suite
+   * repair lead; the deduction stands and no index moved. 0 on a run before harness 46.
+   */
+  rubricContradictedAnswerCount?: number | null;
   /**
    * Answers where one grading dimension came back at level 1 or below while the other three were 3
    * or above, with no defect of that kind named. Advisory: no index moved, and the verdict is routed
@@ -1745,12 +1752,32 @@ export interface BenchmarkKnowledgeBaseGapDto {
   recurrence: number;
 }
 
+/**
+ * A sentence graders docked against the rubric that the claim verifier supported with a citation,
+ * over the suite's runs at the question's current item revision: a suite repair lead.
+ */
+export interface BenchmarkRubricContradictionDto {
+  questionId: number;
+  questionOrderIndex: number;
+  /** The answer sentence or table row the grader charged, verbatim. */
+  chargedSentence: string;
+  /** The words the grader quoted from it; empty when it charged a table row by its label. */
+  chargedParts: string[];
+  /** The rubric text the grader relied on; null when the harness found none. */
+  rubricQuote?: string | null;
+  citation?: string | null;
+  basis?: string | null;
+  /** The distinct runs whose verification raised it. */
+  runCount: number;
+}
+
 export interface BenchmarkRubricGapReportDto {
   suiteId: number;
   runCount: number;
   claimCount: number;
   clusters: BenchmarkRubricGapClusterDto[];
   knowledgeBaseGaps?: BenchmarkKnowledgeBaseGapDto[];
+  rubricContradictions?: BenchmarkRubricContradictionDto[];
 }
 
 export interface BenchmarkCitationDto {

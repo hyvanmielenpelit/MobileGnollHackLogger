@@ -80,8 +80,10 @@ Harness-neutral, and the floor for any Overseer frontend work.
   clears 4.5:1 on the dialog surfaces, where `--color-error` does not). Use it for a refusal under a
   control rather than `form-hint text-danger`; the icon, the word and the color all carry the message.
 - Shared since 2026-09-29, and not to be copied back into a component: **`.run-stage-rail`** (the
-  stage list of the run, multi-run and AI report writing progress dialogs; `.is-done` / `.is-current`
-  plus a visually hidden state word) and the **`.dc-ring`** ring spinner (`.dc-ring-track`,
+  stage list of the run, multi-run, battery and AI report writing progress dialogs; `.is-done` /
+  `.is-current`, plus `.is-skipped` (muted, dashed ring) and `.is-ended` (`--color-warning`) for a
+  finished run's stages, a `.run-stage-note` under the `.run-stage-label`, and a visually hidden state
+  word) and the **`.dc-ring`** ring spinner (`.dc-ring-track`,
   `.dc-ring-arc`; the Download Center and the PDF viewer), which stands still under reduced motion.
 - **`.config-badge`** is the neutral configuration badge (service tier, custom endpoint, prompt
   options) beside `.thinking-badge`, `.reasoning-badge` and `.provider-badge`: a configuration fact,
@@ -104,8 +106,8 @@ Harness-neutral, and the floor for any Overseer frontend work.
 
 ### Typography
 - **Type tokens** on `:root` in `styles.scss`: `--text-body` (0.875rem: running text and
-  values), `--text-secondary` (0.8125rem: labels, metadata, hints), `--leading-body` (1.5,
-  unitless) and `--font-mono` (the monospace stack).
+  values), `--text-secondary` (0.8125rem: labels, metadata, hints), `--text-xs` (0.75rem: notes
+  under a stage-rail item), `--leading-body` (1.5, unitless) and `--font-mono` (the monospace stack).
 - **New text rules use `rem` or the tokens, never `px`.**
 - **A container sets the body size once, and its children inherit it.** Do not restate the size
   on each child.
@@ -775,8 +777,17 @@ To find specific popups, look in the corresponding component's `.html` template:
     head below 40 rem and to one column below 26 rem. Below 56 rem of body everything is one column
     and the body scrolls.
   - `app-battery-progress-dialog` (`batteries/battery-progress-dialog.component.*`, `bp` ids):
-    **full-screen** battery progress — a suite × round grid of status chips (`BATTERY_SLOT_STATE_LABELS`),
-    one polite live region (the stage line), per-member *Open run progress*, **Attach existing run** on
+    **full-screen** battery progress — under the heading a model line (`app-provider-badge` and the
+    thinking badge, through `batteryModelName` / `batteryModelBadges` in `battery.models.ts`) and a
+    *Report writer* fact; then the shared `.run-stage-rail` (*Suite runs*, *Battery analysis*, and
+    *AI-written reports* when a writer is set; stacked below 40 rem of an inline-size container), the
+    labelled progress bar, the state block, the stat strip and a suite × round grid of status chips
+    (`BATTERY_SLOT_STATE_LABELS`). Polling continues after the last member while
+    `batteryAwaitsPostRun` holds (analysis or reports under way, `BATTERY_POST_RUN_GRACE_MS` = 120 s),
+    and the report job is polled while the reports stage is current. One polite live region (the stage
+    line, post-run texts included), per-member *Open run progress* (emits `{ runId, batteryRunId }`,
+    which opens the run progress dialog on that run as the monitor's viewed run, with **Back to
+    Battery** returning to that battery), **Attach existing run** on
     empty, superseded and index-withheld cells, and **Cancel Battery**, **Re-run under Current
     Instrument**, **Continue** and **Open Analysis** in the footer. Opened from the battery banner's
     **Show Battery Progress**, a Run History battery card's **Show progress** and the Battery Run
@@ -832,8 +843,14 @@ To find specific popups, look in the corresponding component's `.html` template:
     `mean-time`, `wall-time`, `model-cost`, `estimated-cost`, the choices in
     `overseer.benchmark.batteryRunReport.keyFigures` and `….imageDetails`, the images named through
     `ImageContext.fileStem` `battery-run-<id>`; then the recompute callout and the caveats),
-    **Integrity** (a `gh-tag` *Notice* from one getter), **Suites** (a link-style button per member run
-    that opens its single-run report on top, emitted as `openRunReport`), **Robustness**, **Members**
+    **Integrity** (a `gh-tag` *Notice* from one getter), **Suites** (the *Profile unevenness* strip to
+    two decimals with a click-mode info tip, then `ul.brr-suite-cards[role=list]` labelled by
+    `h4#brrSuitesTitle`, one full-width `li > article.brr-suite-card` per suite, modeled on Run History's
+    `.rh-card`: kicker, `h5` title, meta line, a `dl.brr-suite-metrics` of fixed 7.5 rem columns —
+    *Index* as a `.score-badge`, *Contribution*, *Speed*, *Cost per run*, *Critical errors* — and a
+    *Member runs* group of `.btn-gh` buttons *Run #N · Round r* with a visually hidden suite name, each
+    emitting `openRunReport`; the `brr-suites` inline-size container moves the metrics under the head
+    below 60 rem and goes to one column below 30 rem), **Robustness**, **Members**
     (the suite × round grid with **Open run report**), **Dimensions**, **Speed**, **Cost**,
     **Configuration**, **Paired Test** (this run the treatment; the baseline select from
     `getBatteryLeaderboard(definitionSha256)` grouped by class; a kind line — model comparison,

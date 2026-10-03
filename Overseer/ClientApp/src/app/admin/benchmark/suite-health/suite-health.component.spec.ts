@@ -464,6 +464,81 @@ describe('SuiteHealthComponent', () => {
     expect(list.getAttribute('aria-label')).toBe('Suite health sections');
   });
 
+  describe('Rubric contradicted by source', () => {
+    function openGapsTab(): string {
+      open();
+      (fixture.nativeElement.querySelector('#sh-tab-gaps') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      return (fixture.nativeElement.textContent || '').replace(/\s+/g, ' ');
+    }
+
+    it('should list each contradicted rubric point with its sentence, rubric quote, citation and runs', () => {
+      serviceMock.getRubricGaps.mockReturnValue(of({
+        suiteId: 5,
+        runCount: 2,
+        claimCount: 0,
+        clusters: [],
+        rubricContradictions: [
+          {
+            questionId: 9,
+            questionOrderIndex: 9,
+            chargedSentence: '| Clerical | Wisdom | No |',
+            chargedParts: ['Wisdom'],
+            rubricQuote: 'Wis/Cha',
+            citation: 'src/spell.c:120',
+            basis: 'Clerical spells use Wisdom.',
+            runCount: 2
+          },
+          {
+            questionId: 9,
+            questionOrderIndex: 9,
+            chargedSentence: '| Movement | Intelligence or Wisdom | No |',
+            chargedParts: [],
+            rubricQuote: null,
+            citation: 'src/spell.c:140',
+            basis: null,
+            runCount: 1
+          }
+        ]
+      }));
+
+      const text = openGapsTab();
+
+      const table = fixture.nativeElement.querySelector('.rubric-contradiction-table') as HTMLTableElement;
+      expect(table).toBeTruthy();
+      expect(table.classList.contains('gh-table')).toBe(true);
+      const headers = Array.from(table.querySelectorAll('thead th')).map(th => (th.textContent || '').trim());
+      expect(headers).toEqual(['Question', 'Charged sentence', 'Rubric quote', 'Citation', 'Runs']);
+
+      const rows: HTMLTableRowElement[] = Array.from(table.querySelectorAll('tbody tr'));
+      expect(rows.length).toBe(2);
+      const first = (rows[0].textContent || '').replace(/\s+/g, ' ');
+      expect(first).toContain('Q9');
+      expect(first).toContain('“| Clerical | Wisdom | No |”');
+      expect(first).toContain('Charged part: “Wisdom”');
+      expect(first).toContain('“Wis/Cha”');
+      expect(rows[0].querySelector('code')?.textContent).toBe('src/spell.c:120');
+      expect(first).toContain('Clerical spells use Wisdom.');
+      expect((rows[0].lastElementChild?.textContent || '').trim()).toBe('2');
+
+      // A row charged by its label has no charged part, and a missing rubric quote reads as a dash.
+      const second = (rows[1].textContent || '').replace(/\s+/g, ' ');
+      expect(second).not.toContain('Charged part');
+      expect((rows[1].children[2].textContent || '').trim()).toBe('—');
+
+      expect(text).toContain('Rubric contradicted by source');
+      expect(text).not.toContain('No rubric point has been contradicted by the source.');
+    });
+
+    it('should say so when no rubric point has been contradicted', () => {
+      const text = openGapsTab();
+
+      expect(text).toContain('Rubric contradicted by source');
+      expect(text).toContain('No rubric point has been contradicted by the source.');
+      expect(fixture.nativeElement.querySelector('.rubric-contradiction-table')).toBeNull();
+    });
+  });
+
   describe('Snapshot facts tab', () => {
     it('should show unbound notice when suite has no gameSnapshotId', () => {
       open();

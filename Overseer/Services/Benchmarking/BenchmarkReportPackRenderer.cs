@@ -113,7 +113,7 @@ public static class BenchmarkReportJson
 /// </summary>
 public static class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 9;
+    public const int ReportFormatVersion = 10;
 
     private const string PairedDifferenceNote = "Paired difference: mean per-question difference, subject minus peer, over the questions "
         + "both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several "
@@ -942,13 +942,17 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
 
         Heading(sb, "### " + DifficultyBandsHeading);
-        Line(sb, "| Difficulty band | Questions | " + AuthoredQuestionsColumn + " | " + Cell(sheet.SubjectLabel) + " | Peer mean | Difference |");
-        Line(sb, "|---|---|---|---|---|---|");
+        bool bandScores = HasBandScores(ctx);
+        Line(sb, "| Difficulty band | Questions | " + AuthoredQuestionsColumn
+            + (bandScores ? " | " + Cell(sheet.SubjectLabel) + " | Peer mean | Difference |" : " |"));
+        Line(sb, bandScores ? "|---|---|---|---|---|---|" : "|---|---|---|");
         foreach (var (key, name) in BenchmarkReportFactLabels.Bands)
         {
             string prefix = "band." + key;
-            Line(sb, "| " + name + " | " + Num(ctx, prefix + ".questions") + " | " + Num(ctx, AuthoredKey(key)) + " | "
-                + Num(ctx, prefix + ".score") + " | " + Num(ctx, prefix + ".peerMean") + " | " + Num(ctx, prefix + ".difference") + " |");
+            Line(sb, "| " + name + " | " + Num(ctx, prefix + ".questions") + " | " + Num(ctx, AuthoredKey(key)) + " |"
+                + (bandScores
+                    ? " " + Num(ctx, prefix + ".score") + " | " + Num(ctx, prefix + ".peerMean") + " | " + Num(ctx, prefix + ".difference") + " |"
+                    : string.Empty));
         }
         Line(sb);
 
@@ -995,16 +999,21 @@ public static class BenchmarkReportPackRenderer
         Line(sb);
 
         Heading(sb, "### " + DifficultyBandsHeading);
-        Line(sb, "| Difficulty band | Questions | " + AuthoredQuestionsColumn + " | " + Cell(sheet.SubjectLabel) + " |");
-        Line(sb, "|---|---|---|---|");
+        bool bandScores = HasBandScores(ctx);
+        Line(sb, "| Difficulty band | Questions | " + AuthoredQuestionsColumn + (bandScores ? " | " + Cell(sheet.SubjectLabel) + " |" : " |"));
+        Line(sb, bandScores ? "|---|---|---|---|" : "|---|---|---|");
         foreach (var (key, name) in BenchmarkReportFactLabels.Bands)
         {
             string prefix = "band." + key;
-            Line(sb, "| " + name + " | " + Num(ctx, prefix + ".questions") + " | " + Num(ctx, AuthoredKey(key)) + " | "
-                + Num(ctx, prefix + ".score") + " |");
+            Line(sb, "| " + name + " | " + Num(ctx, prefix + ".questions") + " | " + Num(ctx, AuthoredKey(key)) + " |"
+                + (bandScores ? " " + Num(ctx, prefix + ".score") + " |" : string.Empty));
         }
         Line(sb);
     }
+
+    /// <summary>Whether any difficulty band has a score; a sheet with none (a battery's) leaves the score columns out.</summary>
+    private static bool HasBandScores(Context ctx)
+        => BenchmarkReportFactLabels.Bands.Any(b => IsAvailable(ctx, "band." + b.Key + ".score"));
 
     /// <summary><c>Core knowledge, revision 3: 12 suites, 10 runs per suite, weighting scheme Questions and difficulty</c>.</summary>
     private static string BatteryDescription(BenchmarkReportBatterySubject battery)
@@ -1493,7 +1502,7 @@ public static class BenchmarkReportPackRenderer
         if (ctx.Options.Disclosure == BenchmarkReportDisclosure.Full)
         {
             // tools.failed exists only where the runs recorded per-call rows (harness 17 and later); a
-            // battery sheet never states it, since its per-call rows stay with the member runs.
+            // battery's per-call rows stay with its member runs.
             Line(sb, ctx.Battery
                 ? "*Per-call arguments and results are in each member run's Tool-call log until the retention sweep prunes them.*"
                 : IsAvailable(ctx, "tools.failed")

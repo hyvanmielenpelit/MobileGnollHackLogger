@@ -78,6 +78,16 @@ The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there i
 
 The writing is not part of the run by design. Writing the reports inside the run was rejected: a writer failure would blemish a run whose scoring succeeded, a queue behind a running Report Pack would delay the run's end, and every run's duration would change with the writer.
 
+**A finished run's rail.** While a run is live, the rail's items are pending, current or done as above. Once the run is terminal, each stage says what happened to it (`runRailItems`), with a short note under its name, and its state is also given in visually hidden text, so color never carries it alone:
+
+- **Stage 1** is *done* (*18 of 18 answered*), or *ended* (amber) where a Cancelled or Failed run stopped (*Stopped at 12 of 18*).
+- **Stage 2** is *skipped* (muted, dashed ring, *Not configured*) when the run has no claim verifier and no second or reference reader; otherwise *done*, with *17 claims checked · 18 reference readings* (*second readings* in a single-assessor run).
+- **Stage 3** is *done* for a completed run (*Synthesis written* when the run has synthesis tokens, else *Scored*).
+- A Cancelled or Failed run marks the stage it stopped in *ended*; the stages before it are *done* and the stages after it *pending*, with *Not reached*.
+- **Stage 4** keeps the mapping above; a run whose reports ended Failed, Skipped or Canceled shows it *ended*, and one whose reports were never written shows *Not written*.
+
+**The dialog's own run.** The dialog shows the run it was opened for, which need not be the live run. Opening a member's progress from the battery progress dialog, or a finished run while another is running, makes it the **viewed run** (`BenchmarkActiveRunMonitor.viewRun`); the banner keeps showing the live run. While the viewed run is also the live run the dialog reads the live poller's detail. When the live run moves on (a battery starting its next member), a reduced viewed-run poller takes over: it fetches the viewed run while it is running or its reports are under way, and its report job during stage 4, then stops. It never chimes, takes the background-activity lock, applies the re-run grace or reloads history, and it discards a response for another run or an older poll, as the live poller now does too. While the viewed run's detail is loading the status line reads *Loading run #N…*. Every close path — the close button, **Back to Battery**, Escape, **View Full Report** and leaving the page — clears the viewed run; **Back to Battery** reopens the battery the member was opened from, by its id, even when another battery is live. The banner's **Show Progress** and a failed-question re-run return the dialog to the live run.
+
 The per-question list merges the suite's questions (fetched once when the dialog opens) with the run's answers, and distinguishes five states:
 
 - **Pending** — the question has not been dispatched.
@@ -3738,12 +3748,20 @@ everything new is stored inside existing JSON columns.
   not the assessor's copy. A span that is not in the answer is a rubric or board quotation and is
   dropped. At most three are kept per answer, longest first, ties in evidence order.
 
-  An answer is eligible at Accuracy ≤ 4 or when it carries `ContestedVerdict`, whatever its
+  An answer is eligible at Accuracy ≤ 5 or when it carries `ContestedVerdict`, whatever its
   unverified-claim count. `Benchmark:ClaimVerification:AccusedQuotesEnabled` (default `true`) switches
   the feature off. Each accused sentence carries a context excerpt: its list heading when it is a list
   item or fragment, and the text immediately before it. A literally true fragment under a heading that
   makes it false advice is judged in that context. This is a bounded heuristic: it finds only the
   accusations the assessor quoted.
+
+  From harness 46 the extractor also recognizes backtick quotes, treats every clause of an evidence
+  sentence that names the *rubric* or what is *required* as **rubric-charged** (a short span of 4–14
+  characters, or a table row the clause names by its first-cell label, then counts as an accusation),
+  keeps up to five items, rubric-charged first, and records the rubric text the assessor relied on. A span
+  that occurs on more than one line of the answer is placed by the charge's own words or dropped, never put
+  at its first occurrence. A rubric-charged item the verifier supports with a citation raises the advisory
+  `RubricContradictedBySource`. The rules are in *Harness Version 46 Updates*.
 
 - **Roles are server-owned (H1).** Every item submitted to the verifier comes from one ordered
   manifest (`BuildClaimManifest`), and each item has a set of roles: `unverifiedClaim`,
@@ -6207,6 +6225,132 @@ co-assessor.
   variance or the denominator is 0. Unlike `PanelMeanAbsDelta`, it reads agreement against the spread of
   the answers themselves, and unlike a consistency ICC it counts a constant offset between the members
   as disagreement.
+
+### Harness Version 46 Updates
+
+The battery run 1 round (runs 76 and 77, 2026-10-03). An Accuracy deduction the assessor charged against
+the rubric now reaches the claim verifier, so a wrong rubric point surfaces as a suite-repair lead
+instead of silently docking a correct answer. `HarnessVersion` moves to **"46"**. `ScoringMethodVersion`
+stays **13**: no anchor, weight, level mapping or cap changes, and no score moves. `ToolGuidesSha256` and
+`CandidateSystemPromptSha256` do not move. No EF Core migration: `BenchmarkAnswerFlags` gains
+`RubricContradictedBySource = 16384`, stored in the existing int column, and the new item fields live
+inside `ClaimVerificationJson`.
+
+#### What was wrong
+
+Under scoring method 12 and later every Accuracy deduction below 6 rests on the rubric or the board, so
+the only route by which such a charge reached the verifier was the accused-quote extractor,
+`BenchmarkService.ExtractAccusedQuotes`. It read only double- and single-quoted spans of 15–400
+characters, did not recognize backtick quotes, discarded a rubric quotation in the same charge, kept at
+most three items, and placed a span at its **first** occurrence in the answer. Run 76 showed every gap:
+
+- On S1-Q9 both rubric points the panel docked (Clerical *Wis/Cha*, Movement *somatic*, Transmutation *any
+  attribute*) were wrong, and none of the six charges reached the verifier: one quoted the six-character
+  *'Wisdom'*, two quoted nothing, and member B named the rubric only in a later sentence.
+- Member A's *'Intelligence or Wisdom'* about Transmutation occurs in three rows of the answer. The
+  extractor took the first, the **Abjuration** row; the verifier rightly supported that row, and a
+  `ContestedAccuracyDeduction` was raised on a row nobody had charged, while the Transmutation charge was
+  never checked.
+- On S1-Q16 both members quoted the formula in backticks (`` `S = min(D, 50) + P` ``, `` `min(D, 50)` ``),
+  so neither charge was seen.
+
+#### Grading
+
+`ExtractAccusedQuotes(answer, evidence, rubricText, rubricChargedQuotes)` applies these rules. Rules 1
+and 3–8 sit behind `Benchmark:ClaimVerification:RubricChargedQuotesEnabled` (default `true`, declared in
+`appsettings.json` beside `AccusedQuotesEnabled`); rule 2 is a correctness fix and always applies.
+
+1. **Backtick quotes and rubric-charged clauses.** Backtick-delimited spans are quotes alongside `"…"`,
+   `“…”`, `'…'` and `‘…’`. The Accuracy evidence is split into sentences at `.`, `!` or `?` followed by
+   whitespace, and at line breaks, never inside a quote. A sentence holding the whole word *rubric* or
+   *required*, in any case, is **rubric-charged**, and so is every clause of it. A clause is the sentence
+   split at each `;` outside quotes and parentheses; the sentence's first `:` followed by whitespace, before
+   any `;`, also splits it, and the text before it is the introductory clause.
+2. **Repeated spans are anchored (always on).** Every occurrence of an accused span in the normalized
+   answer is placed on its line: the Markdown table row it sits in, otherwise its sentence or list item.
+   On one distinct line, that line is taken. On several, each line is ranked first by whether the clause
+   names it by its table row's first-cell label, then by how many of the clause's **anchor words** it
+   holds: words of four or more letters, lower-cased, a possessive `'s` stripped, excluding the span's own
+   words and a stop list of function and charge words (*with*, *only*, *rubric*, *required*, *answer*,
+   *says*, *listed*, *given*, *wrong* and the like). The best line is accepted only when no other line
+   ties it and it holds at least one anchor word; otherwise the span is **dropped**. The label ranking is
+   what places run 76's *'Intelligence or Wisdom'* on the Transmutation row rather than on the NetHack
+   comparison table's *Casting attribute* row, which shares the word *attribute*.
+3. **Short rubric-charged spans.** A rubric-charged span of 4–14 characters (the `DockedSpanMinLength`
+   floor) is accepted when its occurrences sit on one line or rule 2 anchors it; short spans match whole
+   words only, and one that lands on a Markdown heading is dropped. The line is the claim and the span is
+   its charged-part fragment (`QuotedFragments`), which the verifier judges alone. A short span outside a
+   rubric charge is dropped, as before.
+4. **A named table row.** A rubric-charged clause in which no span was located accuses the one answer
+   table row whose first-cell label it names: whole word, any case, a label of four or more characters,
+   an optional `'s`. The row is the claim, with no fragment, and the clause is its charge. Header and
+   separator rows never match; a clause naming two or more rows accuses none; a clause that approves of
+   the row (the existing approval-marker rule) accuses nothing. Unquoted charges about prose sentences are
+   out of scope.
+5. **The rubric quote.** `RubricQuote` is the first of: a quoted span of the clause that is not in the
+   answer and appears, normalized, in the question's rubric text; the text after `rubric:` inside the
+   clause's parentheses (*Wis/Cha*); such a span elsewhere in the clause's sentence (member A's Q16
+   `min(30, depth) + u.ulevel`, which follows the `;`); otherwise null. Only rubric-cited items carry one.
+6. **Priority and cap.** At most **5** items (`MaxAccusedQuotesPerAnswer`), rubric-charged first, then
+   longest first, ties in evidence order. With the switch off, at most 3, longest first, as before.
+7. **The fields.** `AccusedQuote`, `ClaimSubmission` and the stored `BenchmarkClaimVerification` carry
+   `RubricCited` (`rubricCited`) and `RubricQuote` (`rubricQuote`), both omitted when unset and stamped from
+   the server's manifest, never read from model output. The union manifest and `MergeContainedItems` keep
+   `RubricCited` if any merged copy has it and the first non-null quote; `raisedBy` and `accusedBy`
+   stamping is unchanged. On run 76's Q9 the six charges become three items accused by both members.
+8. **The flag.** When a rubric-cited accused item meets the `SupportedAccusations` condition (Supported,
+   with a citation, its charged part judged), the answer gets `RubricContradictedBySource`;
+   `ContestedAccuracyDeduction` is raised as before. In a panel run the flag goes on the members in
+   `accusedBy`: member A's on the answer, member B's in `BenchmarkCoAssessmentFlags.RubricContradictedBySource`.
+   A new verdict clears it for both members.
+9. **The switch.** With `RubricChargedQuotesEnabled` false, extraction is harness 45's except for rule 2:
+   a repeated span with no unique anchor is dropped instead of being placed at its first occurrence.
+
+The accused-sentence eligibility is unchanged: Accuracy ≤ 5 or `ContestedVerdict`.
+
+**The verifier prompt.** The *ACCUSED SENTENCE ADJUDICATION* preamble adds, when an item is rubric-cited:
+*"An item marked as charged against the rubric is one the assessor docked because it disagrees with the
+rubric's text. The rubric can be wrong: judge the charged part against the GnollHack source and the board
+only, never against the rubric."* Each such item adds *"Charged against the rubric. Rubric text the
+assessor relied on (untrusted): "…""*, or *"Charged against the rubric."* without a quote.
+
+**Advisory only.** `RubricContradictedBySource` joins the advisory mask
+(`BenchmarkRunFinalizer`); it moves no score, index or cap. A supported rubric-cited accusation is also a
+supported accusation, so it joins the population the advisory *Evidence-informed Sensitivity* re-grades,
+which can move that figure and nothing else. Rule 2 checks fewer lines than before on a repeated span,
+but never the wrong one.
+
+**Cost.** Run 76 had 9 Accuracy verdicts below 6 on 6 of 18 questions, every one citing the rubric, so
+H1 adds verifier items on about a third of a suite's answers: roughly US$0.40 per two-suite battery pass
+at about US$0.030 per item. The rollback trigger and the acceptance criteria are in the battery run 1
+round's plan: more than two off-question false positives, a claim-verifier cost per answer above 1.5×
+run 76's, or neither motivating case reaching the verifier sets the switch to false.
+
+#### Report (all runs)
+
+- **Advisory Flags** names `rubric contradicted by source`; a run before harness 46 reads *not recorded*.
+- **Rubric Contradicted by Source**, a run-integrity bullet after *Contested Accuracy Deductions*, lists
+  per flagged answer the question, the charged sentence, the rubric quote, and the verifier's citation and
+  basis, and ends *"Suite repair lead: check the rubric point against the cited source before the next
+  run."* It is omitted when no answer is flagged.
+- `BenchmarkRunDetailDto.RubricContradictedAnswerCount` counts answers flagged on either member,
+  computed from the answers (no column); the run dialog's diagnostics print it on the INTEGRITY line and
+  member B's flags line, and an answer's flag badge reads *rubric contradicted*.
+- **Suite health → Rubric gaps** gains *Rubric contradicted by source*: one row per question and charged
+  sentence, over the suite's runs at the question's current item revision, with the rubric quote,
+  citation, basis and the number of runs that raised it (`GET suites/{id}/rubric-gaps`,
+  `rubricContradictions`). The empty state reads *No rubric point has been contradicted by the source*.
+
+**Battery reports (H2–H4).** The battery fact sheet counts `tools.failed` and `tools.refusedByBudget` over
+the members' per-call rows (unavailable, with the run-level reason, when a member predates harness 17),
+adds `claims.refutedAnswerSentences`, and the difficulty-band table omits its score columns when no band
+has a score. These are report-only, with `ReportFormatVersion` 10
+([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 7) and the battery Markdown report's § 9
+([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 7.1).
+
+**Comparability.** Only the Instrument key `HarnessVersion` moves (45 → 46), so a run on run 76's
+configuration is **Tier C** against it. A battery run started under harness 45 refuses to resume under 46
+(`HarnessVersionRefusal`).
 
 ---
 

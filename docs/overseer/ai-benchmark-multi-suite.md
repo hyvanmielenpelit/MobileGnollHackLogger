@@ -398,6 +398,36 @@ with the reason it is not. The footer holds **Run in Background** (or **Close**)
 Battery Run Report (§ 4.7). The dialog is opened from the banner's **Show Battery Progress**, a Run
 History battery card's **Show progress** and the Battery Run Report's *Show progress* action.
 
+**Header and stage rail.** Under the heading a model line names the tested model with its provider and
+thinking badges, and a *Report writer* fact appears when the battery names one. The body runs, in order:
+a stage rail, the labelled progress bar, the state block, a stat strip and the grid. The rail is the
+single-run dialog's (`.run-stage-rail`), with two stages, or three with a writer:
+
+1. **Suite runs**, with *k of N runs*.
+2. **Battery analysis**: current while the Overall Index is computed (*Computing the Overall Index…*),
+   then done (*Overall Index 84.9*), or ended (*No Overall Index: k of K suites have a usable result*);
+   when no analysis appears within `BATTERY_POST_RUN_GRACE_MS` (120 s) of the battery's completion it
+   ends with *Not computed: use Recompute in the Battery Run Report*.
+3. **AI-written reports**, only with a writer, from the battery run's `reportDocumentsStatus`: current
+   while *Pending* (*Waiting for the report writer*, with the queue position) or *Writing* (*Writing the
+   Executive Summary and the Researcher report*); done at *Completed* (*2 documents written*) or
+   *CompletedWithWarnings* (*Written with warnings*); ended with the message at *Failed*, *Skipped* or
+   *Canceled*, and with *Not started* when it is still *NotRequested* after the grace. While the stage is
+   current the dialog also polls the battery report job.
+
+Each stage's state is also given in visually hidden text. The rail stacks below `40rem` of dialog width
+(an inline-size container). **Post-run polling.** A Completed or CompletedWithErrors battery keeps being
+polled while its analysis or its reports are under way (`batteryAwaitsPostRun`), and the live region
+says so: *Computing the battery analysis…*, *Writing the AI reports…*, then *Completed: 2 of 2 suites ·
+reports written* (or *· reports failed*). The completion chime fires once, after that post-run work,
+followed by a Run History reload; a member run does not chime while its battery still awaits post-run
+work.
+
+**A member's own progress.** A member link opens the run progress dialog on **that** run, which stays
+on it when the battery moves on to its next member; the banner keeps showing the live member, and
+**Back to Battery** returns to the battery the member was opened from ([`ai-benchmark.md`](ai-benchmark.md)
+§ *Run Progress Dialog*).
+
 ### 4.4 The Multi-Suite tab
 
 The fourth benchmark tab, after *Multi-Run Analysis*. It holds the battery **definitions** only:
@@ -504,7 +534,7 @@ leaderboard and from the progress dialog's **Open Analysis**.
   |---|---|
   | **Summary** | *Key figures* with **Choose figures**, **Copy** and **Download** (`battery-run-<id>_…` PNG files), then the recompute callout and the caveats. *Recompute* is called out when the analysis is stale **or** lists an excluded member: a run repaired in place keeps its id, so staleness alone cannot show the repair |
   | **Integrity** | Excluded members with their reasons, the pooled identity, the composite verdict (M8), stale and incomplete notices; the tab carries a *Notice* tag while any of them holds |
-  | **Suites** | The suite profile — weight, index, contribution, interval, scored items, speed, cost per run, critical-error rate — with a link per member run that opens its single-run report on top |
+  | **Suites** | The suite profile as one full-width card per suite: a kicker (*Suite n of K* · weight, with *No usable result* or *Exam incomplete* tags), the suite name, *k of N scored items · R usable runs*, the metrics *Index* (a score badge with its 95 % interval), *Contribution*, *Speed*, *Cost per run* and *Critical errors*, and a *Member runs* zone of gold **Run #N · Round r** buttons, one per non-superseded member in round order, each opening that run's single-run report on top. Above the cards, *Profile unevenness: between-suite SD · range* to two decimals, with the interval method behind an info tip. Without an analysis the cards show `—` and *Not analyzed*. The cards stack below `60rem` and go to one column below `30rem` (an inline-size container) |
   | **Robustness** | Uncertainty (item sampling, reproducibility, combined, ν), weighting sensitivity, leave one suite out |
   | **Members** | The suite × round grid of member runs, each with its status, index and **Open run report** |
   | **Dimensions**, **Speed**, **Cost** | The composite figures of M5 and M6; *Cost* adds token and tool usage |
@@ -950,6 +980,11 @@ hash, conditions, and the chat prompt under test from the first member), *Overal
 *Leave-One-Suite-Out*, *Quality Dimensions*, *Speed*, *Cost*, *Token and Tool Usage*, *Paired Battery
 Comparison* when the analysis carries one, and *Method and Limits*.
 
+*Token and Tool Usage* (§ 9) also reads the members' per-call tool records, the one part of the report
+not taken from the persisted analysis: *Tool call outcomes: N failed, M refused by the tool budget*, or
+*not recorded* with the reason when a member predates harness 17, and the claim line adds *refuted answer
+sentences (accused ones included): K* beside the answers' own refuted claims.
+
 A practical reading order:
 
 1. **Is it complete?** An incomplete battery run has no headline; read which suite is missing and why
@@ -991,6 +1026,13 @@ a writer, and it has no battery-completion document yet. *Why:* a battery of K s
 otherwise queue up to 2·K·R member documents for the single report-writer slot, each about one run of
 one suite, when the reader needs one account of the composite. A member's own documents can still be
 written on demand from that run's **AI Reports** tab.
+
+The battery fact sheet (`ReportFormatVersion` 10) counts `tools.failed` and `tools.refusedByBudget`
+over the members' per-call tool records, unavailable with the run-level reason when a member predates
+harness 17, and adds `claims.refutedAnswerSentences`, *Refuted answer sentences, accused sentences
+included*, beside `claims.refuted`, which counts only the answers' own claims. The difficulty-band
+table leaves out its score columns when no band has a score. While the documents are written, the battery
+progress dialog shows an *AI-written reports* stage (§ 4.3), and the completion chime waits for it.
 
 The Battery Run Report's **AI Reports** tab lists the two documents, written or not, with **View**,
 **Delete**, *Write missing reports* (the writer picker starts on the battery run's own writer), the cost

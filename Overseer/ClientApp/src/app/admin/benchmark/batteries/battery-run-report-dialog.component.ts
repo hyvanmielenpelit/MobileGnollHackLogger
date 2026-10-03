@@ -24,6 +24,7 @@ import {
   BenchmarkPairComparisonDto
 } from '../../../services/admin-benchmark.service';
 import { SystemService } from '../../../services/system.service';
+import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { copyToClipboard } from '../../../utils/clipboard.util';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
@@ -63,6 +64,7 @@ import {
   BenchmarkBatteryComparison,
   BenchmarkBatteryOverallIndex,
   BenchmarkBatteryStatisticsResult,
+  BenchmarkBatterySuiteProfile,
   batteryRunStatusLabel,
   batterySchemeLabel,
   formatCost,
@@ -199,6 +201,18 @@ export interface BatteryMemberRow {
   readonly cells: readonly BatteryMemberCell[];
 }
 
+/** One card of the Suites tab; `profile` is null until the battery run is analyzed. */
+export interface BatterySuiteCard {
+  readonly suiteIndex: number;
+  /** 1-based position in run order. */
+  readonly position: number;
+  readonly count: number;
+  readonly suiteName: string;
+  readonly profile: BenchmarkBatterySuiteProfile | null;
+  /** The non-superseded member runs, by round. */
+  readonly members: readonly BenchmarkBatteryMemberDto[];
+}
+
 function suiteNameOf(
   index: number,
   detail: BenchmarkBatteryRunDto,
@@ -317,7 +331,7 @@ export function batteryRunDiagnosticsText(
   standalone: true,
   imports: [
     RunReportFrameComponent, RunFactsComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent,
-    BenchmarkDownloadCenterComponent, BatteryAiReportsComponent, PairedTestResultComponent
+    BenchmarkDownloadCenterComponent, BatteryAiReportsComponent, PairedTestResultComponent, InfoTipComponent
   ],
   templateUrl: './battery-run-report-dialog.component.html',
   styleUrls: ['./battery-run-report-dialog.component.scss'],
@@ -1281,6 +1295,39 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
       .map(slot => slot.member as BenchmarkBatteryMemberDto)
       .sort((a, b) => a.round - b.round);
   }
+
+  /**
+   * The Suites tab's cards: the analysis's suites with their profiles, else the battery run's suites
+   * in run order. Rebuilt only when the battery run or the analysis result is replaced.
+   */
+  get suiteCards(): BatterySuiteCard[] {
+    const detail = this.detail;
+    if (!detail) {
+      return [];
+    }
+    const result = this.result;
+    if (this.suiteCardsSource !== detail || this.suiteCardsResult !== result) {
+      this.suiteCardsSource = detail;
+      this.suiteCardsResult = result;
+      const indexes = result
+        ? result.suites.map(profile => profile.suiteIndex)
+        : [...(detail.suites ?? [])].sort((a, b) => a.index - b.index).map(suite => suite.index);
+      const count = result?.suiteCount ?? (detail.suiteCount || indexes.length);
+      this.suiteCardRows = indexes.map(index => ({
+        suiteIndex: index,
+        position: index + 1,
+        count,
+        suiteName: suiteNameOf(index, detail, result),
+        profile: result?.suites.find(profile => profile.suiteIndex === index) ?? null,
+        members: this.suiteMembers(index)
+      }));
+    }
+    return this.suiteCardRows;
+  }
+
+  private suiteCardsSource: BenchmarkBatteryRunDto | null = null;
+  private suiteCardsResult: BenchmarkBatteryStatisticsResult | null = null;
+  private suiteCardRows: BatterySuiteCard[] = [];
 
   get rounds(): number[] {
     const count = Math.max(1, this.detail?.runsPerSuite || 1);

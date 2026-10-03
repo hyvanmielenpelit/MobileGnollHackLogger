@@ -88,25 +88,44 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         string tooShort = "a spelltool";
         string tooLong = new string('x', BenchmarkService.AccusedQuoteMaxLength + 1);
 
+        // A span under 15 characters is dropped unless its sentence charges against the rubric.
         Assert.Empty(BenchmarkService.ExtractAccusedQuotes(AnswerText + " " + tooLong, Evidence(tooShort, tooLong)));
+
+        // Charged against the rubric, a span of 4 to 14 characters that occurs once is kept; one of
+        // 3 characters, and one over the maximum, are still dropped.
+        var kept = Assert.Single(BenchmarkService.ExtractAccusedQuotes(
+            AnswerText + " " + tooLong,
+            $"The rubric disagrees with \"{tooShort}\", \"Gra\" and \"{tooLong}\"."));
+        Assert.Equal(Spelltool, kept.Text);
+        Assert.Equal(new[] { tooShort }, kept.QuotedFragments);
+        Assert.True(kept.RubricCited);
     }
 
     [Fact]
-    public void Extract_CapsAtThree_LongestFirst_TiesInEvidenceOrder()
+    public void Extract_CapsAtFive_RubricChargedFirst_ThenLongestFirst_TiesInEvidenceOrder()
     {
         string answer = "Alpha beta gamma delta one. Alpha beta gamma delta two. Alpha beta gamma delta three. "
-            + "A much longer sentence the assessor also quoted here.";
+            + "A much longer sentence the assessor also quoted here. Alpha beta gamma delta four. "
+            + "Omega rubric item.";
 
         var quotes = BenchmarkService.ExtractAccusedQuotes(answer, Evidence(
             "Alpha beta gamma delta one.",
             "Alpha beta gamma delta two.",
             "Alpha beta gamma delta three.",
-            "A much longer sentence the assessor also quoted here."));
+            "A much longer sentence the assessor also quoted here.",
+            "Alpha beta gamma delta four.")
+            + " The rubric contradicts \"Omega rubric item.\"");
 
+        Assert.Equal(5, BenchmarkService.MaxAccusedQuotesPerAnswer);
         Assert.Equal(BenchmarkService.MaxAccusedQuotesPerAnswer, quotes.Count);
-        Assert.Equal("A much longer sentence the assessor also quoted here.", quotes[0].Text);
-        Assert.Equal("Alpha beta gamma delta three.", quotes[1].Text);
-        Assert.Equal("Alpha beta gamma delta one.", quotes[2].Text);
+        // The rubric-charged item leads although it is the shortest; the rest are longest first.
+        Assert.Equal("Omega rubric item.", quotes[0].Text);
+        Assert.True(quotes[0].RubricCited);
+        Assert.Equal("A much longer sentence the assessor also quoted here.", quotes[1].Text);
+        Assert.Equal("Alpha beta gamma delta three.", quotes[2].Text);
+        Assert.Equal("Alpha beta gamma delta four.", quotes[3].Text);
+        Assert.Equal("Alpha beta gamma delta one.", quotes[4].Text);
+        Assert.All(quotes.Skip(1), q => Assert.False(q.RubricCited));
     }
 
     [Fact]
@@ -337,6 +356,515 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(answer, evidence));
 
         Assert.Equal(new[] { "You have violated the sanctity of this grave!" }, quote.QuotedFragments);
+    }
+
+    // --- Charges against the rubric (run 76, suite 6, Q9 and Q16) -----------------------------
+    //
+    // The answers' sections and both panel members' Accuracy evidence are copied verbatim from run
+    // 76's report; each rubric is the excerpt of the suite's rubric at the item revision run 76 used.
+
+    private const string Run76Q9Answer =
+        "#### Spell schools\n\n"
+        + "**GnollHack has 12 spell schools, and your casting attribute depends on the school—not simply your character’s role.** When a school lists multiple attributes, it uses your **highest** one.\n\n"
+        + "| School | Casting attribute | Normally somatic? |\n"
+        + "|---|---|---|\n"
+        + "| Abjuration | Intelligence or Wisdom | No |\n"
+        + "| Arcane | Intelligence | Yes |\n"
+        + "| Celestial | Wisdom or Charisma | No |\n"
+        + "| Clerical | Wisdom | No |\n"
+        + "| Conjuration | Intelligence or Charisma | Yes |\n"
+        + "| Divination | Intelligence, Wisdom, or Charisma | No |\n"
+        + "| Enchantment | Intelligence or Charisma | No |\n"
+        + "| Healing | Wisdom | No |\n"
+        + "| Movement | Intelligence or Wisdom | No |\n"
+        + "| Nature | Wisdom or Charisma | No |\n"
+        + "| Necromancy | Wisdom or Charisma | No |\n"
+        + "| Transmutation | Intelligence or Wisdom | Yes |\n\n"
+        + "**Somatic spells require gestures and suffer armor casting penalties.** The individual spell’s components matter; the table describes the schools’ usual behavior.\n\n"
+        + "#### How this differs from NetHack\n\n"
+        + "Compared with traditional NetHack spellcasting:\n\n"
+        + "| Aspect | GnollHack | NetHack |\n"
+        + "|---|---|---|\n"
+        + "| Schools | The 12 schools above | Seven: attack, healing, divination, enchantment, clerical, escape, and matter |\n"
+        + "| Casting attribute | Determined by school; may use the highest of several attributes | Intelligence or Wisdom, determined by role |\n"
+        + "| Success calculation | Mostly additive modifiers shown above | A nonlinear calculation involving spell difficulty, skill, level, role-specific penalties, and equipment |\n"
+        + "| Armor | Casting penalty applies to somatic spells | Metallic armor and shields generally interfere, with role-specific exceptions and robe adjustments |\n"
+        + "| Preparation | Most spells require reagents mixed into a supply of castings | No comparable reagent-mixing system |\n"
+        + "| Spell memory | Learned spells do not expire over time | Spell knowledge expires unless refreshed from spellbooks |\n"
+        + "| Timing | Spells can have different casting times and cooldowns | No comparable general cooldown system |";
+
+    private const string Run76Q9EvidenceA =
+        "Three school entries contradict the rubric: Clerical is listed as 'Wisdom' only (rubric: Wis/Cha); "
+        + "Movement is marked non-somatic (rubric: Movement is somatic); "
+        + "Transmutation's attribute is given as 'Intelligence or Wisdom' (rubric: any attribute).";
+
+    private const string Run76Q9EvidenceB =
+        "The school table contradicts three required bindings: Clerical must use Wisdom/Charisma, not Wisdom alone; "
+        + "Movement is somatic, not non-somatic; and Transmutation uses any attribute, not only Intelligence/Wisdom. "
+        + "The rubric also explicitly marks listing NetHack's seven categories as a critical error.";
+
+    private const string Run76Q9Rubric =
+        "- TWELVE spell schools with attribute bindings and somatic flags:\n"
+        + "  - Abjuration (Int/Wis, non-somatic)\n"
+        + "  - Arcane (Int, somatic)\n"
+        + "  - Celestial (Wis/Cha, non-somatic)\n"
+        + "  - Clerical (Wis/Cha, non-somatic)\n"
+        + "  - Conjuration (Int/Cha, somatic)\n"
+        + "  - Divination (any, non-somatic)\n"
+        + "  - Enchantment (Int/Cha, non-somatic)\n"
+        + "  - Healing (Wis, non-somatic)\n"
+        + "  - Movement (Int/Wis, somatic)\n"
+        + "  - Nature (Wis/Cha, non-somatic)\n"
+        + "  - Necromancy (Wis/Cha, non-somatic)\n"
+        + "  - Transmutation (any, somatic)";
+
+    private const string AbjurationRow = "| Abjuration | Intelligence or Wisdom | No |";
+    private const string ClericalRow = "| Clerical | Wisdom | No |";
+    private const string MovementRow = "| Movement | Intelligence or Wisdom | No |";
+    private const string TransmutationRow = "| Transmutation | Intelligence or Wisdom | Yes |";
+
+    private const string Run76Q16Answer =
+        "#### Individual monster level: `adj_lev()`\n\n"
+        + "Let **B** be the species’ base level, **A** a caller-supplied level adjustment, **P** the player’s experience level, and **D** the effective dungeon difficulty.\n\n"
+        + "The ordinary calculation is:\n\n"
+        + "1. Start with `L = B + A`.\n"
+        + "2. Adjust for dungeon difficulty:\n"
+        + "   - If `D < B + A`, subtract **1**.\n"
+        + "   - Otherwise, add `floor((D − (B + A)) / 5)`.\n"
+        + "3. If `P > B`, add `floor((P − B) / 4)`.\n"
+        + "4. Clamp the result between **0** and `clamp(floor(3B / 2) + A, 0, 127)`.\n\n"
+        + "Thus, deeper levels add roughly one monster level per five levels of difficulty above the starting level; a stronger player adds one per four experience levels above the species’ base level. A weaker player does **not** directly lower it.\n\n"
+        + "There are exceptions: the Wizard of Yendor uses base level plus his recorded death count, capped at 127; `B + A > 127` returns 127 immediately; and `MM_NORMAL_HIT_DICE` bypasses adjustment and uses the species’ base level.  \n"
+        + "*References: `src/makemon.c`, approximately lines 2573 and 3976–4011.*\n\n"
+        + "#### Selecting monsters and encounters\n\n"
+        + "Selection uses a **difficulty-rating range**, which is distinct from the individual monster’s level above. For ordinary generation, let `S = min(D, 50) + P` and `T = D + P`:\n\n"
+        + "| Selection attempt | Minimum difficulty | Maximum difficulty |\n"
+        + "|---|---:|---:|\n"
+        + "| First, tight range | `floor(min(25, max(0, S × 0.5 / 1.66 − 1)))` | `floor(max(1, T × 0.5 + 0.5))` |\n"
+        + "| Second, wider range | `floor(min(15, max(0, S × 0.5 / 2.5 − 1)))` | `floor(max(1, T × 0.5 × 1.189 + 0.5))` |\n"
+        + "| Further fallback | `0` | `floor(max(1, T × 0.5 × 1.414 + 0.5))` |\n\n"
+        + "Caller-supplied difficulty adjustments can alter those multipliers; **the game-difficulty setting’s contribution is explicitly disabled in this helper**. Random encounters use the first range to filter encounter difficulty ratings, then select among eligible definitions by their weights.  \n"
+        + "*References: `src/makemon.c`, approximately lines 3649–3738; `src/encounter.c`, approximately lines 1242–1328.*";
+
+    private const string Run76Q16EvidenceA =
+        "The answer defines `S = min(D, 50) + P` for the minimum-level term; the rubric states the code uses `min(30, depth) + u.ulevel` "
+        + "(minmlev = min(25, max(0, (min(30, depth) + u.ulevel) × 0.5 / 1.66 − 1))). The depth clamp of 50 is incorrect. "
+        + "All other formulas (3.32-equivalent divisor, max = half the sum plus 0.5, 1.189/1.414 fallbacks, adj_lev integer rules and 127 cap, disabled m_initgrp) match.";
+
+    private const string Run76Q16EvidenceB =
+        "The `adj_lev()` description incorrectly compares dungeon difficulty with `B + A`; the rubric says the depth comparison "
+        + "and one-per-five calculation use the monster's base level, while `manual_adj` affects the starting value and cap. "
+        + "The selection formulas also use `min(D, 50)` instead of the rubric's `min(30, depth)`, and present the level band as "
+        + "floored integers even though the rubric explicitly says it is floating-point.";
+
+    private const string Run76Q16Rubric =
+        "Attempt 1: `minmlev = min(25, max(0, (min(30, depth) + u.ulevel) × 0.5 / 1.66 − 1))` — i.e. the sum divided by 3.32, "
+        + "minus 1 — and `maxmlev = max(1, (depth + u.ulevel) × 0.5 + 0.5)`.";
+
+    private const string Run76Q16SelectionSentence = "For ordinary generation, let `S = min(D, 50) + P` and `T = D + P`:";
+
+    [Fact]
+    public void Extract_Run76Q9_MemberA_AccusesTheClericalMovementAndTransmutationRows_NeverTheAbjurationRow()
+    {
+        var quotes = BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, Run76Q9EvidenceA, Run76Q9Rubric);
+
+        Assert.Equal(3, quotes.Count);
+        Assert.All(quotes, q => Assert.True(q.RubricCited));
+        Assert.DoesNotContain(quotes, q => q.Text == AbjurationRow);
+
+        // 'Wisdom' is 6 characters on ten lines; the clause names the Clerical row.
+        var clerical = Assert.Single(quotes, q => q.Text == ClericalRow);
+        Assert.Equal(new[] { "Wisdom" }, clerical.QuotedFragments);
+        Assert.Equal("Wis/Cha", clerical.RubricQuote);
+        Assert.Equal(Run76Q9EvidenceA, clerical.Charge);
+
+        // No quoted span: the clause names the row by its first cell, and is the charge.
+        var movement = Assert.Single(quotes, q => q.Text == MovementRow);
+        Assert.Null(movement.QuotedFragments);
+        Assert.Equal("Movement is marked non-somatic (rubric: Movement is somatic)", movement.Charge);
+        Assert.Equal("Movement is somatic", movement.RubricQuote);
+
+        // 'Intelligence or Wisdom' is on four lines; the row the clause names wins over the
+        // Casting attribute row, which shares only the word "attribute" with it.
+        var transmutation = Assert.Single(quotes, q => q.Text == TransmutationRow);
+        Assert.Equal(new[] { "Intelligence or Wisdom" }, transmutation.QuotedFragments);
+        Assert.Equal("any attribute", transmutation.RubricQuote);
+    }
+
+    [Fact]
+    public void Extract_Run76Q9_MemberB_AccusesTheSameThreeRowsByLabel()
+    {
+        var quotes = BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, Run76Q9EvidenceB, Run76Q9Rubric);
+
+        Assert.Equal(
+            new[] { ClericalRow, MovementRow, TransmutationRow }.OrderBy(t => t, StringComparer.Ordinal),
+            quotes.Select(q => q.Text).OrderBy(t => t, StringComparer.Ordinal));
+        Assert.All(quotes, q =>
+        {
+            Assert.True(q.RubricCited);
+            Assert.Null(q.QuotedFragments);
+            Assert.Null(q.RubricQuote);
+        });
+        Assert.Equal("Clerical must use Wisdom/Charisma, not Wisdom alone", Assert.Single(quotes, q => q.Text == ClericalRow).Charge);
+        Assert.Equal("and Transmutation uses any attribute, not only Intelligence/Wisdom.", Assert.Single(quotes, q => q.Text == TransmutationRow).Charge);
+    }
+
+    [Fact]
+    public void UnionManifest_Run76Q9_MergesBothMembersCopies_IntoThreeRowsAccusedByBoth()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, accused: BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, Run76Q9EvidenceA, Run76Q9Rubric).ToArray()),
+            Contribution(BenchmarkPanelMember.B, accused: BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, Run76Q9EvidenceB, Run76Q9Rubric).ToArray())
+        }, Run76Q9Answer);
+
+        Assert.Equal(3, manifest.Count);
+        Assert.All(manifest, item =>
+        {
+            Assert.Equal(new[] { BenchmarkClaimRoles.AccusedQuote }, item.Roles);
+            Assert.Equal(new[] { "A", "B" }, item.AccusedBy);
+            Assert.True(item.RubricCited);
+        });
+        var clerical = Assert.Single(manifest, m => m.Text == ClericalRow);
+        Assert.Equal(new[] { "Wisdom" }, clerical.QuotedFragments);
+        Assert.Equal("Wis/Cha", clerical.RubricQuote);
+        Assert.Contains("Clerical is listed as 'Wisdom' only", clerical.Charge);
+        Assert.Contains("Clerical must use Wisdom/Charisma, not Wisdom alone", clerical.Charge);
+    }
+
+    [Fact]
+    public void Extract_Run76Q16_MemberA_ReadsABacktickQuote_AndTakesTheRubricQuoteFromItsSentence()
+    {
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(Run76Q16Answer, Run76Q16EvidenceA, Run76Q16Rubric));
+
+        Assert.Equal(Run76Q16SelectionSentence, quote.Text);
+        Assert.Equal(new[] { "S = min(D, 50) + P" }, quote.QuotedFragments);
+        Assert.True(quote.RubricCited);
+        Assert.Equal("min(30, depth) + u.ulevel", quote.RubricQuote);
+    }
+
+    [Fact]
+    public void Extract_Run76Q16_MemberB_KeepsTheShortSpanThatOccursOnce_AndDropsTheUnanchoredAndHeadingSpans()
+    {
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(Run76Q16Answer, Run76Q16EvidenceB, Run76Q16Rubric));
+
+        // `B + A` is on four lines and no anchor word of its clause is on any; `adj_lev()` is only
+        // in a heading. `min(D, 50)`, 10 characters, occurs once.
+        Assert.Equal(Run76Q16SelectionSentence, quote.Text);
+        Assert.Equal(new[] { "min(D, 50)" }, quote.QuotedFragments);
+        Assert.True(quote.RubricCited);
+        Assert.Equal("min(30, depth)", quote.RubricQuote);
+    }
+
+    [Fact]
+    public void UnionManifest_Run76Q16_IsOneSentenceAccusedByBoth_WithBothFragments()
+    {
+        var manifest = BenchmarkService.BuildUnionClaimManifest(new[]
+        {
+            Contribution(BenchmarkPanelMember.A, accused: BenchmarkService.ExtractAccusedQuotes(Run76Q16Answer, Run76Q16EvidenceA, Run76Q16Rubric).ToArray()),
+            Contribution(BenchmarkPanelMember.B, accused: BenchmarkService.ExtractAccusedQuotes(Run76Q16Answer, Run76Q16EvidenceB, Run76Q16Rubric).ToArray())
+        }, Run76Q16Answer);
+
+        var item = Assert.Single(manifest);
+        Assert.Equal(Run76Q16SelectionSentence, item.Text);
+        Assert.Equal(new[] { "S = min(D, 50) + P", "min(D, 50)" }, item.QuotedFragments);
+        Assert.Equal(new[] { "A", "B" }, item.AccusedBy);
+        Assert.True(item.RubricCited);
+        Assert.Equal("min(30, depth) + u.ulevel", item.RubricQuote);
+    }
+
+    [Fact]
+    public void Extract_WithoutTheRubricText_StillAccusesTheRows_AndQuotesOnlyTheRubricParenthetical()
+    {
+        var q9 = BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, Run76Q9EvidenceA);
+        Assert.Equal("Wis/Cha", Assert.Single(q9, q => q.Text == ClericalRow).RubricQuote);
+
+        var q16 = Assert.Single(BenchmarkService.ExtractAccusedQuotes(Run76Q16Answer, Run76Q16EvidenceA));
+        Assert.True(q16.RubricCited);
+        Assert.Null(q16.RubricQuote);
+    }
+
+    // Two lines carry the same quoted span; the charge clause decides which one it means.
+    private const string AntsAnswer = "Soldier ants deal 2d4 damage to gnomes.\nSoldier ants deal 2d4 damage to dwarves.";
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Extract_ARepeatedSpan_GoesToTheLineItsClauseNames_AndIsDroppedOnATieOrWithoutAnAnchor(bool rubricChargedQuotes)
+    {
+        var anchored = Assert.Single(BenchmarkService.ExtractAccusedQuotes(
+            AntsAnswer, "The answer overstates it for gnomes, \"Soldier ants deal 2d4 damage\" being wrong.", null, rubricChargedQuotes));
+        Assert.Equal("Soldier ants deal 2d4 damage to gnomes.", anchored.Text);
+
+        var anchoredSecond = Assert.Single(BenchmarkService.ExtractAccusedQuotes(
+            AntsAnswer, "The answer overstates it for dwarves, \"Soldier ants deal 2d4 damage\" being wrong.", null, rubricChargedQuotes));
+        Assert.Equal("Soldier ants deal 2d4 damage to dwarves.", anchoredSecond.Text);
+
+        // Both lines hold one anchor word each.
+        Assert.Empty(BenchmarkService.ExtractAccusedQuotes(
+            AntsAnswer, "The answer overstates it for gnomes and dwarves alike, \"Soldier ants deal 2d4 damage\" being wrong.", null, rubricChargedQuotes));
+
+        // No word of the clause is on either line.
+        Assert.Empty(BenchmarkService.ExtractAccusedQuotes(AntsAnswer, Evidence("Soldier ants deal 2d4 damage"), null, rubricChargedQuotes));
+    }
+
+    [Fact]
+    public void Extract_TheSwitchOff_StillAnchorsTheRun76Q9RepeatedSpan_ButReadsNoRubricCharge()
+    {
+        var quote = Assert.Single(BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, Run76Q9EvidenceA, Run76Q9Rubric, rubricChargedQuotes: false));
+
+        // The 6-character 'Wisdom' and the unquoted Movement charge are not read; the repeated
+        // 'Intelligence or Wisdom' is still placed on the row its clause names.
+        Assert.Equal(TransmutationRow, quote.Text);
+        Assert.False(quote.RubricCited);
+        Assert.Null(quote.RubricQuote);
+
+        // Backticks are no quotation marks with the switch off.
+        Assert.Empty(BenchmarkService.ExtractAccusedQuotes(Run76Q16Answer, Run76Q16EvidenceA, Run76Q16Rubric, rubricChargedQuotes: false));
+        Assert.Empty(BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, Run76Q9EvidenceB, Run76Q9Rubric, rubricChargedQuotes: false));
+    }
+
+    [Theory]
+    // Not charged against the rubric: a short span is dropped.
+    [InlineData("Clerical is listed as 'Wisdom' only.", null)]
+    // Charged against the rubric: the same short span is kept on the row its clause names.
+    [InlineData("Clerical is listed as 'Wisdom' only (rubric: Wis/Cha).", ClericalRow)]
+    // A clause naming two rows accuses neither, and one naming a single row accuses it.
+    [InlineData("The rubric binds Clerical and Healing to Wisdom/Charisma, not Wisdom alone.", null)]
+    [InlineData("The rubric binds Clerical to Wisdom/Charisma, not Wisdom alone.", ClericalRow)]
+    // A clause that approves of the row it names accuses nothing.
+    [InlineData("Clerical matches the rubric.", null)]
+    public void Extract_ShortSpansAndNamedRows_AreReadOnlyUnderARubricCharge(string evidence, string? expectedRow)
+    {
+        var quotes = BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, evidence, Run76Q9Rubric);
+
+        if (expectedRow == null)
+        {
+            Assert.Empty(quotes);
+        }
+        else
+        {
+            var quote = Assert.Single(quotes);
+            Assert.Equal(expectedRow, quote.Text);
+            Assert.True(quote.RubricCited);
+        }
+    }
+
+    public static TheoryData<string, string, string[]> Harness45Fixtures => new()
+    {
+        { AnswerText, Evidence("Applying it heals 1000   hit points and restores 500 mana."), new[] { "Applying it heals **1000 hit points** and restores 500 mana." } },
+        { AnswerText, "The rubric states \"the grail heals 2000 hit points when invoked\" instead.", Array.Empty<string>() },
+        {
+            AnswerText,
+            "The answer claims “It has no charges and never runs out.” and later “the answer's \"Gnolls regenerate hit points faster at night\" line” is invented.",
+            new[] { "Gnolls regenerate hit points faster at night", "It has no charges and never runs out." }
+        },
+        {
+            "Alpha beta gamma delta one. Alpha beta gamma delta two. Alpha beta gamma delta three. A much longer sentence the assessor also quoted here.",
+            Evidence("Alpha beta gamma delta one.", "Alpha beta gamma delta two.", "Alpha beta gamma delta three.", "A much longer sentence the assessor also quoted here."),
+            new[] { "A much longer sentence the assessor also quoted here.", "Alpha beta gamma delta three.", "Alpha beta gamma delta one." }
+        },
+        { Run55Q17Answer, Run55Q17Evidence, new[] { "healthy supply of vegan food" } },
+        {
+            "An uncursed scroll of identify reveals 2 items (and a blessed one reveals 3), so read it first.\n\n"
+                + "Soft glass scratches/crushes differently than real gems, so rub the gray stones before you sell them.",
+            "Correct on the core mechanic (\"an uncursed scroll of identify reveals 2 items (and a blessed one reveals 3)\"). "
+                + "Imprecision: \"Soft glass scratches/crushes differently than real gems\" implies a hardness test the game does not model.",
+            new[] { "Soft glass scratches/crushes differently than real gems" }
+        },
+        {
+            "The headstone reads Here lies Fred, killed by a jackal. That makes this a bones level.",
+            "The answer says the grave reads 'Here lies Fred, killed by a jackal.' which is not what the board shows.",
+            new[] { "Here lies Fred, killed by a jackal." }
+        },
+        {
+            "Items from the grave lie on the floor, not buried. Digging up a grave as a lawful character costs alignment, "
+                + "and you see 'You have violated the sanctity of this grave!' when you do. Bones gear is often cursed, "
+                + "so test them with your Holy Grail before wearing anything.",
+            "Core claims match the rubric (items lie on the floor, not buried; lawful alignment loss and the exact "
+                + "'You have violated the sanctity of this grave!' message; bones gear often cursed). The suggestion to "
+                + "'test them with your Holy Grail' is an imprecise/unsupported BUC-testing method, keeping this below 6.",
+            new[] { "test them with your Holy Grail" }
+        },
+        {
+            "Items lie on the floor. You see 'You have violated the sanctity of this grave!' when digging.",
+            "Core claims match the rubric (items lie on the floor; the exact 'You have violated the sanctity of this grave!' "
+                + "message is wrong; bones gear often cursed).",
+            new[] { "You have violated the sanctity of this grave!" }
+        },
+        { Run56Q18Answer, Run56Q18Evidence, Array.Empty<string>() },
+        {
+            "Wands of digging dig through any wall in the dungeon. Engrave-testing a wand always identifies it. Zapping a wand of wishing downwards is safe.",
+            "Accuracy 3. Wrong: \"dig through any wall in the dungeon\" and \"Wands of digging dig through\" overstate it; "
+                + "\"Engrave-testing a wand always identifies it\" is not true either. Also \"always identifies it\" is wrong.",
+            new[] { "dig through any wall in the dungeon", "Engrave-testing a wand always identifies it" }
+        }
+    };
+
+    [Theory]
+    [MemberData(nameof(Harness45Fixtures))]
+    public void Extract_TheSwitchOff_ReproducesHarness45_OnFixturesWhoseSpansOccurOnce(string answer, string evidence, string[] firstFragments)
+    {
+        var quotes = BenchmarkService.ExtractAccusedQuotes(answer, evidence, rubricText: null, rubricChargedQuotes: false);
+
+        // Each submission's first quoted fragment, in submission order: longest sentence first, at most three.
+        Assert.Equal(firstFragments, quotes.Select(q => q.QuotedFragments![0]).ToArray());
+        Assert.True(quotes.Count <= BenchmarkService.MaxAccusedQuotesPerAnswerRubricChargesOff);
+        Assert.All(quotes, q =>
+        {
+            Assert.False(q.RubricCited);
+            Assert.Null(q.RubricQuote);
+        });
+    }
+
+    [Theory]
+    [InlineData(true, 1)]
+    [InlineData(false, 0)]
+    public void TheRubricChargedSwitch_DecidesWhetherARubricChargedBacktickQuoteIsSubmitted(bool enabled, int expected)
+    {
+        var service = CreateService(new Dictionary<string, string?>
+        {
+            ["Benchmark:ClaimVerification:RubricChargedQuotesEnabled"] = enabled ? "true" : "false"
+        });
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerText = Run76Q16Answer,
+            AccuracyLevel = 4,
+            AssessmentEvidenceJson = JsonSerializer.Serialize(new { accuracy = Run76Q16EvidenceA })
+        };
+
+        var quotes = service.AccusedQuotesFor(answer, Run76Q16Rubric);
+
+        Assert.Equal(expected, quotes.Count);
+        Assert.Equal(enabled, service.NeedsClaimVerificationOrAccusation(answer));
+    }
+
+    [Fact]
+    public void StampRoles_CarriesTheRubricCitationFromTheManifest_AndOmitsItWhenAbsent()
+    {
+        var accused = BenchmarkService.ExtractAccusedQuotes(Run76Q9Answer, Run76Q9EvidenceA, Run76Q9Rubric);
+        var manifest = BenchmarkService.BuildClaimManifest(new[] { "Arcane spells are somatic." }, null, null, accused);
+        var stamped = BenchmarkService.StampRoles(manifest
+            .Select((m, i) => new BenchmarkClaimVerification(i, m.Text, BenchmarkClaimVerdict.Supported, "src/spell.c:1210", "True."))
+            .ToList(), manifest);
+
+        var clerical = Assert.Single(stamped, v => v.Claim == ClericalRow);
+        Assert.True(clerical.RubricCited);
+        Assert.Equal("Wis/Cha", clerical.RubricQuote);
+        var own = Assert.Single(stamped, v => v.Claim == "Arcane spells are somatic.");
+        Assert.Null(own.RubricCited);
+        Assert.Null(own.RubricQuote);
+
+        string json = JsonSerializer.Serialize(new[] { clerical });
+        Assert.Contains("\"rubricCited\":true", json);
+        Assert.Contains("\"rubricQuote\":\"Wis/Cha\"", json);
+        string ownJson = JsonSerializer.Serialize(new[] { own });
+        Assert.DoesNotContain("rubricCited", ownJson);
+        Assert.DoesNotContain("rubricQuote", ownJson);
+
+        var read = JsonSerializer.Deserialize<List<BenchmarkClaimVerification>>(json)!;
+        Assert.True(read[0].RubricCited);
+        Assert.Equal("Wis/Cha", read[0].RubricQuote);
+    }
+
+    private static BenchmarkClaimVerification ClericalVerdict(
+        BenchmarkClaimVerdict verdict,
+        string? citation,
+        bool rubricCited,
+        string? citationNote = null,
+        IReadOnlyList<string>? accusedBy = null)
+        => new(0, ClericalRow, verdict, citation, "Clerical spells use Wisdom alone.")
+        {
+            Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+            QuotedFragments = new[] { "Wisdom" },
+            Charge = Run76Q9EvidenceA,
+            RubricCited = rubricCited ? true : null,
+            RubricQuote = rubricCited ? "Wis/Cha" : null,
+            ChargedPart = true,
+            CitationNote = citationNote,
+            RaisedBy = accusedBy,
+            AccusedBy = accusedBy
+        };
+
+    [Theory]
+    [InlineData(BenchmarkClaimVerdict.Supported, "src/spell.c:1210", true, null, true, true)]
+    [InlineData(BenchmarkClaimVerdict.Refuted, "src/spell.c:1210", true, null, false, false)]
+    [InlineData(BenchmarkClaimVerdict.Indeterminate, null, true, null, false, false)]
+    [InlineData(BenchmarkClaimVerdict.Supported, null, true, null, false, false)]
+    [InlineData(BenchmarkClaimVerdict.Supported, "src/spell.c:1210", true, BenchmarkClaimVerificationParser.ChargedPartNotJudgedNote, false, false)]
+    [InlineData(BenchmarkClaimVerdict.Supported, "src/spell.c:1210", false, null, false, true)]
+    public void Outcome_RaisesRubricContradictedBySource_OnlyForASupportedCitedAccusationChargedAgainstTheRubric(
+        BenchmarkClaimVerdict verdict, string? citation, bool rubricCited, string? citationNote, bool expectedRubricFlag, bool expectedContested)
+    {
+        var answer = new BenchmarkRunAnswer
+        {
+            AnswerText = Run76Q9Answer,
+            AccuracyLevel = 3,
+            // A stale flag from an earlier verification is cleared when this one does not raise it.
+            AnswerFlags = (int)BenchmarkAnswerFlags.RubricContradictedBySource
+        };
+
+        BenchmarkService.ApplyClaimVerificationOutcome(answer, new[] { ClericalVerdict(verdict, citation, rubricCited, citationNote) }, false, null);
+
+        var flags = (BenchmarkAnswerFlags)answer.AnswerFlags;
+        Assert.Equal(expectedRubricFlag, flags.HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource));
+        Assert.Equal(expectedContested, flags.HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction));
+        Assert.Equal(expectedRubricFlag, BenchmarkRunFinalizer.IsRubricContradicted(answer));
+        // Both flags are advisory.
+        Assert.Equal(expectedRubricFlag || expectedContested, BenchmarkRunFinalizer.HasAdvisoryFlag(answer));
+    }
+
+    [Theory]
+    [InlineData(new[] { "B" }, false, true)]
+    [InlineData(new[] { "A" }, true, false)]
+    [InlineData(new[] { "A", "B" }, true, true)]
+    public void PanelOutcome_RaisesRubricContradictedBySource_OnTheAccusingMembersOnly(string[] accusedBy, bool expectedA, bool expectedB)
+    {
+        var answer = PanelAnswer(3, Run76Q9EvidenceA, 3, Run76Q9EvidenceB);
+        var verifications = new[] { ClericalVerdict(BenchmarkClaimVerdict.Supported, "src/spell.c:1210", true, accusedBy: accusedBy) };
+
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer, verifications, BenchmarkVerdictView.FromPrimary(answer), BenchmarkVerdictView.FromCoAssessment(answer));
+
+        var record = BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!;
+        Assert.Equal(expectedA, ((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource));
+        Assert.Equal(expectedB, record.Flags!.RubricContradictedBySource);
+        // The contested deduction follows the same members.
+        Assert.Equal(expectedA, ((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.ContestedAccuracyDeduction));
+        Assert.Equal(expectedB, record.Flags.ContestedAccuracyDeduction);
+        Assert.True(BenchmarkRunFinalizer.IsRubricContradicted(answer));
+    }
+
+    [Fact]
+    public void PanelOutcome_ANonRubricAccusation_RaisesNoRubricContradiction()
+    {
+        var answer = PanelAnswer(3, Run76Q9EvidenceA, 3, Run76Q9EvidenceB);
+        var verifications = new[] { ClericalVerdict(BenchmarkClaimVerdict.Supported, "src/spell.c:1210", false, accusedBy: new[] { "A", "B" }) };
+
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer, verifications, BenchmarkVerdictView.FromPrimary(answer), BenchmarkVerdictView.FromCoAssessment(answer));
+
+        Assert.False(((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource));
+        Assert.False(BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!.Flags!.RubricContradictedBySource);
+        Assert.False(BenchmarkRunFinalizer.IsRubricContradicted(answer));
+    }
+
+    [Fact]
+    public void ANewVerdict_ClearsRubricContradictedBySource_ForBothMembers()
+    {
+        var answer = PanelAnswer(3, Run76Q9EvidenceA, 3, Run76Q9EvidenceB);
+        BenchmarkService.ApplyPanelClaimVerificationOutcome(
+            answer,
+            new[] { ClericalVerdict(BenchmarkClaimVerdict.Supported, "src/spell.c:1210", true, accusedBy: new[] { "A", "B" }) },
+            BenchmarkVerdictView.FromPrimary(answer),
+            BenchmarkVerdictView.FromCoAssessment(answer));
+        Assert.True(BenchmarkRunFinalizer.IsRubricContradicted(answer));
+
+        BenchmarkService.ClearReplacedVerdictEvidence(answer);
+
+        Assert.False(((BenchmarkAnswerFlags)answer.AnswerFlags).HasFlag(BenchmarkAnswerFlags.RubricContradictedBySource));
+        Assert.False(BenchmarkCoAssessmentRecord.Parse(answer.CoAssessmentJson)!.Flags!.RubricContradictedBySource);
+        Assert.False(BenchmarkRunFinalizer.IsRubricContradicted(answer));
     }
 
     // --- A docked Suspected-false sentence (run 56, Q18) -------------------------------------

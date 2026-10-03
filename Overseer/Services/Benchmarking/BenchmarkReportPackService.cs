@@ -239,6 +239,7 @@ public sealed class BenchmarkReportPackPreparation
             SubjectKey = subject.Key,
             Sources = sources,
             Runs = subjectRuns.ToDictionary(r => r.Id),
+            AnswerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, subjectRunIds, withRefutedSentences: false, ct),
             AnswerExcerptChars = answerExcerptChars,
             DetailQuestionsPerSuite = detailQuestionsPerSuite,
             MaxPromptChars = maxPromptChars

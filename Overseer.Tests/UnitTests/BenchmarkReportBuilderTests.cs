@@ -1617,14 +1617,14 @@ public class BenchmarkReportBuilderTests
 
         // Every member of AdvisoryFlags is enumerated, so the parenthetical accounts for the
         // total rather than listing a subset of it. The two harness-18 members and the harness-19
-        // one are included for that reason and read 0 here; the harness-20 one reads "not
-        // recorded", because this run is stamped 7.
+        // one are included for that reason and read 0 here; the harness-20 and harness-46 ones read
+        // "not recorded", because this run is stamped 7.
         Assert.Contains(
             "**Advisory Flags:** 2 (reasoning bleed: 1, repeated fragments: 0, contested verdicts: 1, " +
             "unevidenced deductions: 0, omissions as accuracy: 0, refuted claims: 0, " +
             "contested critical errors: 0, out-of-rubric accuracy deductions: 0, " +
-            "contested accuracy deductions: not recorded, dimension outliers: 0, " +
-            "answer-framing openers: 0)",
+            "contested accuracy deductions: not recorded, rubric contradicted by source: not recorded, " +
+            "dimension outliers: 0, answer-framing openers: 0)",
             report);
     }
 
@@ -3628,6 +3628,74 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("contested accuracy deductions: not recorded", report);
         Assert.DoesNotContain("contested accuracy deductions: 0", report);
         Assert.DoesNotContain("**Contested Accuracy Deductions:**", report);
+    }
+
+    // Run 76, Q9: a school-table row a grader docked against the rubric, supported by the verifier.
+    private const string ClericalRow = "| Clerical | Wisdom | No |";
+
+    private static BenchmarkRunAnswer RubricContradictedAnswer(int orderIndex)
+    {
+        var answer = ScoredAnswer(orderIndex, BenchmarkDifficulty.Intermediate, 55, 61);
+        answer.AnswerFlags = (int)(BenchmarkAnswerFlags.ContestedAccuracyDeduction | BenchmarkAnswerFlags.RubricContradictedBySource);
+        answer.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+        {
+            new BenchmarkClaimVerification(0, ClericalRow, BenchmarkClaimVerdict.Supported, "src/spell.c:1210", "Clerical spells use Wisdom alone.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.AccusedQuote },
+                QuotedFragments = new[] { "Wisdom" },
+                RubricCited = true,
+                RubricQuote = "Wis/Cha",
+                ChargedPart = true
+            },
+            new BenchmarkClaimVerification(1, "Arcane spells are somatic.", BenchmarkClaimVerdict.Supported, "src/spell.c:1300", "Arcane is somatic.")
+            {
+                Roles = new[] { BenchmarkClaimRoles.UnverifiedClaim }
+            }
+        });
+        return answer;
+    }
+
+    [Fact]
+    public void RunIntegrity_ListsEachRubricContradiction_WithItsSentenceRubricQuoteAndCitation_AndEndsWithTheRepairLead()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var q9 = RubricContradictedAnswer(9);
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q9);
+        run.HarnessVersion = "46";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1, q9 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("rubric contradicted by source: 1", report);
+        Assert.Contains("- **Rubric Contradicted by Source:** 1 (question(s) Q9) — a sentence the assessor docked because it disagrees with the rubric's text", report);
+        Assert.Contains(
+            "  - Q9: \"| Clerical | Wisdom | No |\" (charged part: \"Wisdom\") — rubric: \"Wis/Cha\" — source: src/spell.c:1210 — Clerical spells use Wisdom alone.",
+            report);
+        Assert.Contains("  - *" + BenchmarkReportBuilder.RubricRepairLeadLine + "*", report);
+        Assert.Contains("Suite repair lead: check the rubric point against the cited source before the next run.", report);
+        // An ordinary claim the verifier supported is no rubric contradiction.
+        Assert.DoesNotContain("Arcane spells are somatic.\" — rubric:", report);
+
+        // The bullet follows Contested Accuracy Deductions.
+        Assert.True(
+            report.IndexOf("**Contested Accuracy Deductions:**", StringComparison.Ordinal)
+            < report.IndexOf("**Rubric Contradicted by Source:**", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RunIntegrity_OmitsTheRubricContradictionBullet_WhenNoAnswerIsFlagged()
+    {
+        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        run.HarnessVersion = "46";
+        BenchmarkRunFinalizer.Apply(run, new[] { q1 });
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.DoesNotContain("**Rubric Contradicted by Source:**", report);
+        Assert.DoesNotContain(BenchmarkReportBuilder.RubricRepairLeadLine, report);
+        Assert.Contains("rubric contradicted by source: 0", report);
     }
 
     [Fact]

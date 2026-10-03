@@ -4,6 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 
@@ -12,7 +16,8 @@ using Overseer.Models;
 // a battery document renders through the same code as a run document, plus the battery's own keys.
 // Every analysis figure is read from the battery's persisted BenchmarkBatteryStatisticsResult and
 // never recomputed; the per-answer figures (tokens, tool calls, refuted sentences, the response-style
-// conflict) come from the member runs' answer rows, as a run document's do.
+// conflict) come from the member runs' answer rows, as a run document's do, and the tool-call
+// outcomes from their per-call rows, as BenchmarkBatteryAnswerOutcomes.LoadAsync loads them.
 //
 // Generic keys and how a battery supplies them:
 //   subject.*, comparison.*, config.chat     as for a run; subject.runs counts the usable member runs
@@ -28,10 +33,14 @@ using Overseer.Models;
 //                                            per battery pass
 //   tokens.*, tools.callsPerQuestion, tools.share.*, tools.zeroKnowledgeBaseAnswers, style.*
 //                                            from the member runs' answers, as for a run
-//   tools.failed, tools.refusedByBudget      unavailable: per-call tool rows are not loaded for a battery
+//   tools.failed, tools.refusedByBudget      counted, by the run-level rule, over the per-call rows of the usable
+//                                            member runs' answers that count toward the index; unavailable when a
+//                                            member run predates harness 17 or the rows were not loaded
 //   tools.callsPerQuestion.peerMean          unavailable with peers: their answers are not loaded
 //   answers.scored, errors.critical          summed over the persisted item rows
-//   claims.*                                 the persisted usage totals
+//   claims.supported, .refuted, .indeterminate
+//                                            the persisted usage totals: rulings on the answers' own claims
+//   claims.refutedAnswerSentences            the questions' refuted answer sentences summed, accused ones included
 //   panel.*                                  as for a run, over the member runs; panel.judgeDependentPairs is
 //                                            unavailable
 //   scoring.*, run.*                         as for a run, over the member runs
@@ -70,6 +79,12 @@ public sealed class BenchmarkBatteryReportFactsInput
     /// <summary>The subject's usable member runs, with their answers, keyed by run id.</summary>
     public IReadOnlyDictionary<long, BenchmarkRun> Runs { get; init; } = new Dictionary<long, BenchmarkRun>();
 
+    /// <summary>
+    /// The usable member runs' tool-call outcomes, from <see cref="BenchmarkBatteryAnswerOutcomes.LoadAsync"/>;
+    /// null when they were not loaded, which leaves <c>tools.failed</c> and <c>tools.refusedByBudget</c> unavailable.
+    /// </summary>
+    public BenchmarkBatteryAnswerOutcomes? AnswerOutcomes { get; init; }
+
     public int AnswerExcerptChars { get; init; } = BenchmarkReportPackPreparation.DefaultAnswerExcerptChars;
 
     public int DetailQuestionsPerSuite { get; init; } = BenchmarkBatteryReportFacts.DefaultDetailQuestionsPerSuite;
@@ -89,6 +104,97 @@ public sealed class BenchmarkBatteryReportFactsResult
     public IReadOnlyList<BenchmarkReportValidationNote> Notes { get; init; } = Array.Empty<BenchmarkReportValidationNote>();
 
     public string? Refusal { get; init; }
+}
+
+/// <summary>
+/// What a battery report counts over its usable member runs' rows beyond the persisted analysis: the
+/// tool-call outcomes of the answers that count toward the index, classified as a run report classifies
+/// them (<see cref="BenchmarkToolCallRecorder.Outcomes"/>), and the refuted answer sentences.
+/// </summary>
+public sealed class BenchmarkBatteryAnswerOutcomes
+{
+    /// <summary>Why the tool-call outcomes are unavailable when a member run predates per-call tool records.</summary>
+    public const string ToolRecordsReason = "A run predates per-call tool records (harness 17).";
+
+    /// <summary>Calls that ran and did not complete; null when <see cref="ToolCallsUnavailableReason"/> is set.</summary>
+    public int? ToolCallsFailed { get; init; }
+
+    /// <summary>Calls the tool budget refused; null when <see cref="ToolCallsUnavailableReason"/> is set.</summary>
+    public int? ToolCallsRefusedByBudget { get; init; }
+
+    public string? ToolCallsUnavailableReason { get; init; }
+
+    /// <summary>
+    /// Refuted answer sentences, accused ones included, as <see cref="BenchmarkReportFacts.RefutedAnswerSentencesOf"/>
+    /// counts them; null when they were not loaded, or an answer's verifications are unreadable or carry no roles.
+    /// </summary>
+    public int? RefutedAnswerSentences { get; init; }
+
+    /// <summary>
+    /// Counts over the runs <paramref name="runIds"/>. The tool-call query loads only the columns the
+    /// classification reads (the call's status and error, its answer's status and finish reason), never
+    /// a call's arguments or result. With <paramref name="withRefutedSentences"/>, the answers'
+    /// claim verifications are loaded as well, for <see cref="RefutedAnswerSentences"/>.
+    /// </summary>
+    public static async Task<BenchmarkBatteryAnswerOutcomes> LoadAsync(
+        ApplicationDbContext db, IReadOnlyCollection<long> runIds, bool withRefutedSentences, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        var ids = (runIds ?? Array.Empty<long>()).Distinct().ToList();
+
+        int? refutedSentences = null;
+        if (withRefutedSentences)
+        {
+            var verifications = await db.BenchmarkRunAnswers
+                .AsNoTracking()
+                .Where(a => ids.Contains(a.BenchmarkRunId))
+                .Select(a => a.ClaimVerificationJson)
+                .ToListAsync(ct);
+            refutedSentences = BenchmarkReportFacts.RefutedAnswerSentencesOf(
+                verifications.Select(json => new BenchmarkRunAnswer { ClaimVerificationJson = json }));
+        }
+
+        var harnessVersions = await db.BenchmarkRuns
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(r => ids.Contains(r.Id))
+            .Select(r => r.HarnessVersion)
+            .ToListAsync(ct);
+        bool recorded = harnessVersions.Count > 0 && harnessVersions.All(v =>
+            int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out int h) && h >= 17);
+        if (!recorded)
+        {
+            return new BenchmarkBatteryAnswerOutcomes
+            {
+                ToolCallsUnavailableReason = ToolRecordsReason,
+                RefutedAnswerSentences = refutedSentences
+            };
+        }
+
+        var rows = await db.BenchmarkRunAnswerToolCalls
+            .AsNoTracking()
+            .Where(t => ids.Contains(t.BenchmarkRunAnswer!.BenchmarkRunId))
+            .Select(t => new
+            {
+                t.Status,
+                t.Error,
+                AnswerStatus = t.BenchmarkRunAnswer!.Status,
+                t.BenchmarkRunAnswer!.ProviderFinishReason
+            })
+            .ToListAsync(ct);
+
+        var (_, failed, refused) = BenchmarkToolCallRecorder.Outcomes(rows
+            .Where(r => BenchmarkRunFinalizer.CountsTowardQualityIndex(
+                new BenchmarkRunAnswer { Status = r.AnswerStatus, ProviderFinishReason = r.ProviderFinishReason }))
+            .Select(r => new BenchmarkRunAnswerToolCall { Status = r.Status, Error = r.Error }));
+
+        return new BenchmarkBatteryAnswerOutcomes
+        {
+            ToolCallsFailed = failed,
+            ToolCallsRefusedByBudget = refused,
+            RefutedAnswerSentences = refutedSentences
+        };
+    }
 }
 
 /// <summary>
@@ -123,6 +229,9 @@ public static class BenchmarkBatteryReportFacts
         "A battery report does not load per-call tool rows; each member run's Tool-call log has them.";
 
     public const string PeerAnswersReason = "A comparison of battery results does not load the peers' answers.";
+
+    public const string RefutedSentencesReason =
+        "Some answers' claim verifications are unreadable or record no roles, so refuted answer sentences cannot be told from graders' statements.";
 
     public const string JudgeDependentReason = "Judge-dependent pairs are not computed across battery results.";
 
@@ -285,7 +394,11 @@ public static class BenchmarkBatteryReportFacts
         BenchmarkReportFacts.AddTokenFacts(facts, subjectStats);
         AddErrorAndClaimFacts(facts, result, questions);
         BenchmarkReportFacts.AddToolFacts(facts, subjectStats, subjectRuns, Array.Empty<BenchmarkReportFacts.EntryStats>());
-        facts.Withhold(k => k is "tools.failed" or "tools.refusedByBudget", ToolRowsReason);
+        var outcomes = input.AnswerOutcomes;
+        if (outcomes is not { ToolCallsFailed: not null, ToolCallsRefusedByBudget: not null })
+        {
+            facts.Withhold(k => k is "tools.failed" or "tools.refusedByBudget", outcomes?.ToolCallsUnavailableReason ?? ToolRowsReason);
+        }
         if (peers.Count > 0) facts.Withhold(k => k == "tools.callsPerQuestion.peerMean", PeerAnswersReason);
         BenchmarkReportFacts.AddPanelFacts(facts, subject, subjectRuns, comparison, peers);
         facts.Withhold(k => k == "panel.judgeDependentPairs", JudgeDependentReason);
@@ -302,6 +415,7 @@ public static class BenchmarkBatteryReportFacts
         }
 
         sheet.Facts = facts.Sorted();
+        SetToolOutcomes(sheet.Facts, outcomes);
         sheet.Entries = BuildEntries(subject, source, subjectRuns, subjectStats, peers.Select(p => (p.Entry, p.Letter)).ToList(), eligible, sources);
 
         var names = BenchmarkReportFacts.BuildKnownNames(sheet);
@@ -682,7 +796,10 @@ public static class BenchmarkBatteryReportFacts
         }
     }
 
-    /// <summary>Scored answers and critical errors from the persisted item rows; the claim rulings from the persisted usage.</summary>
+    /// <summary>
+    /// Scored answers and critical errors from the persisted item rows; the claim rulings from the
+    /// persisted usage; the refuted answer sentences summed over the questions.
+    /// </summary>
     private static void AddErrorAndClaimFacts(
         BenchmarkReportFacts.FactList facts, BenchmarkBatteryStatisticsResult result, IReadOnlyList<BenchmarkReportQuestion> questions)
     {
@@ -694,7 +811,7 @@ public static class BenchmarkBatteryReportFacts
         var usage = result.Usage;
         if (usage == null || usage.ClaimsChecked == 0)
         {
-            foreach (var key in new[] { "claims.supported", "claims.refuted", "claims.indeterminate" })
+            foreach (var key in new[] { "claims.supported", "claims.refuted", "claims.indeterminate", "claims.refutedAnswerSentences" })
             {
                 facts.Unavailable(key, "No claim verifier ruled on these answers.");
             }
@@ -704,6 +821,39 @@ public static class BenchmarkBatteryReportFacts
         facts.Add("claims.supported", usage.ClaimsSupported, Inv(usage.ClaimsSupported));
         facts.Add("claims.refuted", usage.ClaimsRefuted, Inv(usage.ClaimsRefuted));
         facts.Add("claims.indeterminate", usage.ClaimsIndeterminate, Inv(usage.ClaimsIndeterminate));
+
+        if (questions.Any(q => q.RefutedAnswerSentences == null))
+        {
+            facts.Unavailable("claims.refutedAnswerSentences", RefutedSentencesReason);
+        }
+        else
+        {
+            int sentences = questions.Sum(q => q.RefutedAnswerSentences!.Value);
+            facts.Add("claims.refutedAnswerSentences", sentences, Inv(sentences));
+        }
+    }
+
+    /// <summary>
+    /// <c>tools.failed</c> and <c>tools.refusedByBudget</c> from the member runs' loaded per-call rows, in
+    /// place of what the answers' unloaded tool rows gave; left as they are when the outcomes are unavailable.
+    /// </summary>
+    private static void SetToolOutcomes(List<BenchmarkReportFact> facts, BenchmarkBatteryAnswerOutcomes? outcomes)
+    {
+        if (outcomes == null || outcomes.ToolCallsFailed is not int failed || outcomes.ToolCallsRefusedByBudget is not int refused) return;
+
+        for (int i = 0; i < facts.Count; i++)
+        {
+            int? count = facts[i].Key switch
+            {
+                "tools.failed" => failed,
+                "tools.refusedByBudget" => refused,
+                _ => null
+            };
+            if (count is int n)
+            {
+                facts[i] = new BenchmarkReportFact { Key = facts[i].Key, Value = JsonValue.Create(n), Display = Inv(n) };
+            }
+        }
     }
 
     private static void AddBatteryFacts(

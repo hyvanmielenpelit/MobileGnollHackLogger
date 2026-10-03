@@ -13,7 +13,7 @@ import {
   BatteryProgressDialogComponent,
   batterySlotState
 } from './battery-progress-dialog.component';
-import { INDEX_WITHHELD_HINT } from './battery.models';
+import { BATTERY_POST_RUN_GRACE_MS, INDEX_WITHHELD_HINT } from './battery.models';
 
 function dto<T>(value: object): T {
   return value as T;
@@ -287,7 +287,163 @@ describe('BatteryProgressDialogComponent', () => {
     fixture.detectChanges();
 
     expect(closed).toHaveBeenCalled();
-    expect(runProgress).toHaveBeenCalledWith(103);
+    expect(runProgress).toHaveBeenCalledWith({ runId: 103, batteryRunId: 7 });
+  });
+
+  it('names the battery run in the hand-off even when the host drops it as the dialog closes', () => {
+    open(batteryRun());
+    const runProgress = vi.fn().mockName('runProgress');
+    component.openRunProgress.subscribe(runProgress);
+    component.closed.subscribe(() => fixture.componentRef.setInput('batteryRunId', null));
+
+    (cell(0, 1).querySelector('.bp-open-run') as HTMLButtonElement).click();
+
+    expect(runProgress).toHaveBeenCalledWith({ runId: 101, batteryRunId: 7 });
+  });
+
+  describe('the stage rail and post-run work', () => {
+    const railItems = (): HTMLElement[] => Array.from(el().querySelectorAll('.bp-rail .run-stage'));
+    const stageNote = (item: HTMLElement): string => (item.querySelector('.run-stage-note')?.textContent ?? '').trim();
+
+    /** A battery run that finished just now, both suites usable. */
+    function finishedRun(overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkBatteryRunDto {
+      const first = member({ memberId: 1, suiteIndex: 0, round: 1, runId: 101 });
+      const second = member({ memberId: 2, suiteIndex: 1, round: 1, runId: 102 });
+      return batteryRun({
+        status: 'Completed', completedAtUtc: new Date().toISOString(), completedSuiteCount: 2,
+        runsPerSuite: 1, requestedMemberCount: 2, completedMemberCount: 2, isDriving: false,
+        currentSuiteIndex: null, currentSuitePosition: null, currentSuiteName: null, currentRound: null, currentRunId: null,
+        slots: [slot(0, 1, first), slot(1, 1, second)], members: [first, second],
+        latestAnalysisId: 31, overallIndex: 84.94, testedProvider: 'OpenAI', testedThinkingLevel: 'high',
+        ...overrides
+      });
+    }
+
+    const withWriter = (status: number, overrides: Partial<BenchmarkBatteryRunDto> = {}): BenchmarkBatteryRunDto =>
+      finishedRun({ reportWriterModelConfigurationId: 3, reportDocumentsStatus: status, ...overrides });
+
+    beforeEach(() => {
+      service.getBatteryReportJob = vi.fn().mockName('AdminBenchmarkService.getBatteryReportJob').mockReturnValue(of(null)) as any;
+    });
+
+    it('has two stages without a report writer, the suite runs current while the battery runs', () => {
+      open(batteryRun());
+
+      const items = railItems();
+      expect(items.length).toBe(2);
+      expect(items.map(item => item.querySelector('.run-stage-name')?.textContent?.trim()))
+        .toEqual(['Suite runs', 'Battery analysis']);
+      expect(items[0].classList).toContain('is-current');
+      expect(items[0].getAttribute('aria-current')).toBe('step');
+      // Runs 101 and 102 have finished; 103 is still running.
+      expect(stageNote(items[0])).toBe('2 of 4 runs');
+      expect(items[1].classList).not.toContain('is-current');
+      expect(el().querySelector('.bp-report-writer')).toBeNull();
+    });
+
+    it('has three stages with a report writer, and names the writer and the model in the header', () => {
+      open(withWriter(3));
+
+      const items = railItems();
+      expect(items.length).toBe(3);
+      expect(items[2].querySelector('.run-stage-name')?.textContent?.trim()).toBe('AI-written reports');
+      expect(text('.bp-report-writer dd')).toBe('Configuration #3');
+      expect(text('.bp-model-line .model-name')).toBe('Model X');
+      expect(el().querySelector('.bp-model-line app-provider-badge')).not.toBeNull();
+      expect(el().querySelector('.bp-model-line .thinking-badge')).not.toBeNull();
+    });
+
+    it('marks the analysis done with the Overall Index', () => {
+      open(finishedRun());
+
+      const items = railItems();
+      expect(items[0].classList).toContain('is-done');
+      expect(stageNote(items[0])).toBe('2 of 2 runs');
+      expect(items[1].classList).toContain('is-done');
+      expect(stageNote(items[1])).toBe('Overall Index 84.9');
+      expect(items[1].querySelector('.visually-hidden')?.textContent?.trim()).toBe('(done)');
+    });
+
+    it('shows the analysis current while it is computed, and ended once the grace has passed', fakeAsync(() => {
+      open(finishedRun({ latestAnalysisId: null, overallIndex: null }));
+
+      expect(railItems()[1].classList).toContain('is-current');
+      expect(stageNote(railItems()[1])).toBe('Computing the Overall Index…');
+      expect(text('.bp-stage-line')).toBe('Computing the battery analysis…');
+
+      tick(BATTERY_POST_RUN_GRACE_MS);
+      fixture.detectChanges();
+      expect(railItems()[1].classList).toContain('is-ended');
+      expect(stageNote(railItems()[1])).toBe('Not computed: use Recompute in the Battery Run Report');
+
+      const polls = service.getBatteryRun.mock.calls.length;
+      tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS * 3);
+      expect(service.getBatteryRun.mock.calls.length).toBe(polls);
+      close();
+      discardPeriodicTasks();
+    }));
+
+    it('shows the reports current while they are written, polls the job, and keeps polling the battery run', fakeAsync(() => {
+      open(withWriter(2));
+
+      const items = railItems();
+      expect(items[2].classList).toContain('is-current');
+      expect(items[2].getAttribute('aria-current')).toBe('step');
+      expect(stageNote(items[2])).toBe('Writing the Executive Summary and the Researcher report');
+      expect(text('.bp-stage-line')).toBe('Writing the AI reports…');
+      expect(service.getBatteryReportJob).toHaveBeenCalledWith(7);
+
+      tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
+      expect(service.getBatteryRun).toHaveBeenCalledTimes(2);
+      tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
+      expect(service.getBatteryRun).toHaveBeenCalledTimes(3);
+      close();
+      discardPeriodicTasks();
+    }));
+
+    it('names the queue position while the job waits for the writer', () => {
+      (service.getBatteryReportJob as any).mockReturnValue(of({ runId: 7, jobsAhead: 2, writerConfigId: 3, writerDisplayName: 'Writer Model' }));
+      open(withWriter(1));
+
+      expect(stageNote(railItems()[2])).toBe('Waiting for the report writer (2 jobs ahead)');
+      expect(text('.bp-report-writer dd')).toBe('Writer Model');
+    });
+
+    it('stops polling once the reports are written, and says so in the stage line', fakeAsync(() => {
+      open(withWriter(3));
+
+      expect(railItems()[2].classList).toContain('is-done');
+      expect(text('.bp-stage-line')).toBe('Completed: 2 of 2 suites · reports written');
+      tick(BatteryProgressDialogComponent.POLL_INTERVAL_MS * 3);
+      expect(service.getBatteryRun).toHaveBeenCalledTimes(1);
+      close();
+      discardPeriodicTasks();
+    }));
+
+    it('shows a failed reports stage with its message', () => {
+      open(withWriter(5, { reportDocumentsMessage: 'The writer refused.' }));
+
+      const item = railItems()[2];
+      expect(item.classList).toContain('is-ended');
+      expect(stageNote(item)).toBe('Failed: The writer refused.');
+      expect(item.querySelector('.visually-hidden')?.textContent?.trim()).toBe('(ended)');
+      expect(text('.bp-stage-line')).toBe('Completed: 2 of 2 suites · reports failed');
+    });
+
+    it('keeps exactly one live region through the post-run stages', () => {
+      open(withWriter(2));
+      expect(el().querySelectorAll('[aria-live], [role="status"]').length).toBe(1);
+    });
+
+    it('marks the suite runs ended and the later stages not reached for a canceled battery run', () => {
+      open(finishedRun({ status: 'Cancelled', completedAtUtc: '2026-10-01T12:00:00Z', reportWriterModelConfigurationId: 3 }));
+
+      const items = railItems();
+      expect(items[0].classList).toContain('is-ended');
+      expect(stageNote(items[0])).toBe('Canceled at 2 of 2 runs');
+      expect(stageNote(items[1])).toBe('Not reached');
+      expect(stageNote(items[2])).toBe('Not reached');
+    });
   });
 
   it('offers Open Analysis once finished, closing and emitting the battery run id for the Battery Run Report', () => {

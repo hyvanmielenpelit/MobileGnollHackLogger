@@ -250,4 +250,7 @@ public sealed class BenchmarkCoAssessmentFlags
 
     [JsonPropertyName("contestedAccuracyDeduction")]
     public bool ContestedAccuracyDeduction { get; set; }
+
+    [JsonPropertyName("rubricContradictedBySource")]
+    public bool RubricContradictedBySource { get; set; }
 }
